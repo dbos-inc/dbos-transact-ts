@@ -3,10 +3,9 @@ import { spawn, execSync, ChildProcess } from "child_process";
 import { Writable } from "stream";
 import { Client } from "pg";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "../helpers";
-import fs from "fs";
 import { HealthUrl } from "../../src/httpServer/server";
 
-async function waitForMessageTest(command: ChildProcess, port: string, adminPort?: string) {
+async function waitForMessageTest(command: ChildProcess, port: string, adminPort?: string, checkResponse: boolean = true) {
   const stdout = command.stdout as unknown as Writable;
   const stdin = command.stdin as unknown as Writable;
   const stderr = command.stderr as unknown as Writable;
@@ -37,8 +36,10 @@ async function waitForMessageTest(command: ChildProcess, port: string, adminPort
     // Axios will throw an exception if the return status is 500
     // Trying and catching is the only way to debug issues in this test
     try {
-      const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
-      expect(response.status).toBe(200);
+      if (checkResponse) {
+        const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
+        expect(response.status).toBe(200);
+      }
       const healthRes = await axios.get(`http://127.0.0.1:${adminPort}${HealthUrl}`);
       expect(healthRes.status).toBe(200);
     } catch (error) {
@@ -54,7 +55,7 @@ async function waitForMessageTest(command: ChildProcess, port: string, adminPort
   }
 }
 
-async function dropHelloSystemDB() {
+async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
   config.poolConfig.database = "hello";
   await setUpDBOSTestDb(config);
@@ -63,16 +64,21 @@ async function dropHelloSystemDB() {
     port: config.poolConfig.port,
     host: config.poolConfig.host,
     password: config.poolConfig.password,
-    database: "hello",
+    database: "postgres",
   });
   await pgSystemClient.connect();
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_dbos_sys;`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_typeorm_dbos_sys;`);
-  await pgSystemClient.query(`DROP DATABASE IF EXISTS hello_prisma_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_typeorm_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_prisma_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_drizzle_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_knex_dbos_sys;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_typeorm;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_prisma;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_drizzle;`);
+  await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_knex;`);
   await pgSystemClient.end();
 }
 
-function configureHelloExample() {
+function configureTemplate() {
   execSync("npm i");
   execSync("npm run build");
   if (process.env.PGPASSWORD === undefined) {
@@ -81,127 +87,43 @@ function configureHelloExample() {
   execSync("npx dbos migrate", { env: process.env });
 }
 
-describe("runtime-entrypoint-tests", () => {
+describe("runtime-tests-knex", () => {
   beforeAll(async () => {
-    await dropHelloSystemDB();
-
-    process.chdir("packages/create/templates/hello");
-    execSync("mv src/operations.ts src/entrypoint.ts");
-    configureHelloExample();
-  });
-
-  afterAll(() => {
-    execSync("mv src/entrypoint.ts src/operations.ts");
-    process.chdir("../../../..");
-  });
-
-  test("runtime-hello using entrypoint runtimeConfig", async () => {
-    const mockDBOSConfigYamlString = `
-database:
-  hostname: 'localhost'
-  port: 5432
-  username: 'postgres'
-  password: \${PGPASSWORD}
-  connectionTimeoutMillis: 3000
-  app_db_client: 'knex'
-runtimeConfig:
-  entrypoints:
-    - dist/entrypoint.js
-`;
-    const filePath = "dbos-config.yaml";
-    fs.copyFileSync(filePath, `${filePath}.bak`);
-    fs.writeFileSync(filePath, mockDBOSConfigYamlString, "utf-8");
-
-    try {
-      const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234"], {
-        env: process.env,
-      });
-      await waitForMessageTest(command, "1234");
-    } finally {
-      fs.copyFileSync(`${filePath}.bak`, filePath);
-      fs.unlinkSync(`${filePath}.bak`);
-    }
-  });
-});
-
-describe("runtime-tests", () => {
-  beforeAll(async () => {
-    await dropHelloSystemDB();
-
-    process.chdir("packages/create/templates/hello");
-    configureHelloExample();
+    await dropTemplateDatabases();
+    process.chdir("packages/create/templates/dbos-knex");
+    configureTemplate();
   });
 
   afterAll(() => {
     process.chdir("../../../..");
   });
 
-  test("runtime-hello-jest", () => {
-    execSync("npm run test", { env: process.env }); // Make sure the hello example passes its own tests.
+  test("test hello-knex tests", () => {
+    execSync("npm run test", { env: process.env }); // Make sure hello-knex passes its own tests.
     execSync("npm run lint", { env: process.env }); // Pass linter rules.
   });
 
-  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
-  test("runtime-hello using default runtime configuration", async () => {
-    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
+  test("test hello-knex runtime", async () => {
+    const command = spawn("node", ["dist/main.js"], {
       env: process.env,
     });
     await waitForMessageTest(command, "3000");
   });
 
-  test("runtime hello with port provided as CLI parameter", async () => {
-    const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start", "--port", "1234"], {
+  test("test hello-knex creates database if does not exist", async () => {
+    await dropTemplateDatabases();
+    const command = spawn("node", ["dist/main.js"], {
       env: process.env,
     });
-    await waitForMessageTest(command, "1234");
-  });
-
-  test("runtime hello with appDir provided as CLI parameter", async () => {
-    process.chdir("../../../..");
-    try {
-      const command = spawn("dist/src/dbos-runtime/cli.js", ["start", "--appDir", "packages/create/templates/hello"], {
-        env: process.env,
-      });
-      await waitForMessageTest(command, "3000");
-    } finally {
-      process.chdir("packages/create/templates/hello");
-    }
-  });
-
-  test("runtime hello with ports provided in configuration file", async () => {
-    const mockDBOSConfigYamlString = `
-database:
-  hostname: 'localhost'
-  port: 5432
-  username: 'postgres'
-  password: \${PGPASSWORD}
-  connectionTimeoutMillis: 3000
-  app_db_client: 'knex'
-runtimeConfig:
-  port: 6666
-  admin_port: 6789
-`;
-    const filePath = "dbos-config.yaml";
-    fs.copyFileSync(filePath, `${filePath}.bak`);
-    fs.writeFileSync(filePath, mockDBOSConfigYamlString, "utf-8");
-
-    try {
-      const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
-        env: process.env,
-      });
-      await waitForMessageTest(command, "6666", "6789");
-    } finally {
-      fs.copyFileSync(`${filePath}.bak`, filePath);
-      fs.unlinkSync(`${filePath}.bak`);
-    }
+    await waitForMessageTest(command, "3000", "3001", false);
   });
 });
 
 describe("runtime-tests-typeorm", () => {
   beforeAll(async () => {
-    await dropHelloSystemDB();
-    process.chdir("packages/create/templates/hello-typeorm");
-    configureHelloExample();
+    await dropTemplateDatabases();
+    process.chdir("packages/create/templates/dbos-typeorm");
+    configureTemplate();
   });
 
   afterAll(() => {
@@ -213,7 +135,6 @@ describe("runtime-tests-typeorm", () => {
     execSync("npm run lint", { env: process.env }); // Pass linter rules.
   });
 
-  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("test hello-typeorm runtime", async () => {
     const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,
@@ -224,9 +145,9 @@ describe("runtime-tests-typeorm", () => {
 
 describe("runtime-tests-prisma", () => {
   beforeAll(async () => {
-    await dropHelloSystemDB();
-    process.chdir("packages/create/templates/hello-prisma");
-    configureHelloExample();
+    await dropTemplateDatabases();
+    process.chdir("packages/create/templates/dbos-prisma");
+    configureTemplate();
   });
 
   afterAll(() => {
@@ -238,7 +159,6 @@ describe("runtime-tests-prisma", () => {
     execSync("npm run lint", { env: process.env }); // Pass linter rules.
   });
 
-  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("test hello-prisma runtime", async () => {
     const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,
@@ -249,9 +169,9 @@ describe("runtime-tests-prisma", () => {
 
 describe("runtime-tests-drizzle", () => {
   beforeAll(async () => {
-    await dropHelloSystemDB();
-    process.chdir("packages/create/templates/hello-drizzle");
-    configureHelloExample();
+    await dropTemplateDatabases();
+    process.chdir("packages/create/templates/dbos-drizzle");
+    configureTemplate();
   });
 
   afterAll(() => {
@@ -259,12 +179,10 @@ describe("runtime-tests-drizzle", () => {
   });
 
   test("test hello-drizzle tests", () => {
-    execSync("npm run test", { env: process.env }); // Make sure hello-typeorm passes its own tests.
-    console.log("linting hello-drizzle");
-    execSync("npm run lint", { env: process.env, stdio: 'inherit'}); // Pass linter rules.
+    execSync("npm run test", { env: process.env }); // Make sure hello-drizzle passes its own tests.
+    execSync("npm run lint", { env: process.env, stdio: 'inherit' }); // Pass linter rules.
   });
 
-  // Attention! this test relies on example/hello/dbos-config.yaml not declaring a port!
   test("test hello-drizzle runtime", async () => {
     const command = spawn("node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js", ["start"], {
       env: process.env,

@@ -11,7 +11,7 @@ import {
     logLevel,
     Partitioners,
 } from "kafkajs";
-import { Step, StepContext, ConfiguredInstance, DBOSContext, DBOSEventReceiver, InitContext } from "@dbos-inc/dbos-sdk";
+import { DBOS, Step, StepContext, ConfiguredInstance, DBOSContext, DBOSEventReceiver, InitContext } from "@dbos-inc/dbos-sdk";
 import { associateClassWithEventReceiver, associateMethodWithEventReceiver } from "@dbos-inc/dbos-sdk";
 import { TransactionFunction } from "@dbos-inc/dbos-sdk";
 import { WorkflowFunction } from "@dbos-inc/dbos-sdk";
@@ -70,7 +70,7 @@ export class DBOSKafka implements DBOSEventReceiver {
         if (!this.kafka) {
           this.kafka = new KafkaJS(defaults.kafkaConfig);
         }
-        const consumerConfig = ro.consumerConfig ?? { groupId: `${this.safeGroupName(topics)}` };
+        const consumerConfig = ro.consumerConfig ?? { groupId: `${this.safeGroupName(cname, mname, topics)}` };
         const consumer = this.kafka.consumer(consumerConfig);
         await consumer.connect();
         // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
@@ -96,18 +96,25 @@ export class DBOSKafka implements DBOSEventReceiver {
         }
         await consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
-            // This combination uniquely identifies a message for a given Kafka cluster
-            const workflowUUID = `kafka-unique-id-${topic}-${partition}-${message.offset}`
-            const wfParams = { workflowUUID: workflowUUID, configuredInstance: null, queueName: ro.queueName };
-            // All operations annotated with Kafka decorators must take in these three arguments
-            const args: KafkaArgs = [topic, partition, message];
-            // We can only guarantee exactly-once-per-message execution of transactions and workflows.
-            if (method.txnConfig) {
-              // Execute the transaction
-              await this.executor!.transaction(method.registeredFunction as TransactionFunction<unknown[], unknown>, wfParams, ...args);
-            } else if (method.workflowConfig) {
-              // Safely start the workflow
-              await this.executor!.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
+            const logger = this.executor!.logger;
+            try {
+              // This combination uniquely identifies a message for a given Kafka cluster
+              const workflowUUID = `kafka-unique-id-${topic}-${partition}-${consumerConfig.groupId}-${message.offset}`
+              const wfParams = { workflowUUID: workflowUUID, configuredInstance: null, queueName: ro.queueName };
+              // All operations annotated with Kafka decorators must take in these three arguments
+              const args: KafkaArgs = [topic, partition, message];
+              // We can only guarantee exactly-once-per-message execution of transactions and workflows.
+              if (method.txnConfig) {
+                // Execute the transaction
+                await this.executor!.transaction(method.registeredFunction as TransactionFunction<unknown[], unknown>, wfParams, ...args);
+              } else if (method.workflowConfig) {
+                // Safely start the workflow
+                await this.executor!.workflow(method.registeredFunction as unknown as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
+              }
+            } catch (e) {
+              const error = e as Error;
+              logger.error(`Error processing Kafka message: ${error.message}`);
+              throw error;
             }
           },
         })
@@ -122,8 +129,8 @@ export class DBOSKafka implements DBOSEventReceiver {
     }
   }
 
-  safeGroupName(topics: Array<string | RegExp>) {
-    const safeGroupIdPart =  topics
+  safeGroupName(cls: string, func: string, topics: Array<string | RegExp>) {
+    const safeGroupIdPart = [cls, func, ...topics]
       .map(r => r.toString())
       .map( r => r.replaceAll(/[^a-zA-Z0-9\\-]/g, ''))
       .join('-');
@@ -165,13 +172,15 @@ export interface KafkaRegistrationInfo {
 }
 
 export function KafkaConsume(topics: string | RegExp | Array<string | RegExp>, consumerConfig?: ConsumerConfig, queueName ?: string) {
-  function kafkadec<This, Ctx extends DBOSContext, Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: KafkaArgs) => Promise<Return>>
-  ) {
+  function kafkadec<This, Ctx extends DBOSContext, Args extends (KafkaArgs | [Ctx, ...KafkaArgs]), Return>
+  (target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
+  {
     if (!kafkaInst) kafkaInst = new DBOSKafka();
-    const {descriptor, receiverInfo} = associateMethodWithEventReceiver(kafkaInst, target, propertyKey, inDescriptor);
+    const {descriptor, receiverInfo} =
+      associateMethodWithEventReceiver(
+        kafkaInst, target, propertyKey,
+        inDescriptor
+      );
 
     const kafkaRegistration = receiverInfo as KafkaRegistrationInfo;
     kafkaRegistration.kafkaTopics = topics;
@@ -228,6 +237,11 @@ export class KafkaProduceStep extends ConfiguredInstance
   @Step()
   async sendMessages(_ctx: StepContext, msg: Message[]) {
     return await this.producer?.send({topic: this.topic, messages:msg});
+  }
+
+  @DBOS.step()
+  async send(msg: Message | Message[]) {
+    return await this.producer?.send({topic: this.topic, messages: msg instanceof Array ? msg : [msg]});
   }
 
   async disconnect() {

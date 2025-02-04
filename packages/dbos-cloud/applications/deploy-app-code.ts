@@ -26,6 +26,7 @@ import { Logger } from "winston";
 import { chooseAppDBServer } from "../databases/databases.js";
 import YAML from "yaml";
 import { ConfigFile } from "../configutils.js";
+import fs from 'fs';
 
 type DeployOutput = {
   ApplicationName: string;
@@ -44,15 +45,37 @@ function getFilePermissions(filePath: string) {
   return stats.mode;
 }
 
+function parseIgnoreFile(filePath: string) {
+  if (!fs.existsSync(filePath)) return [];
+  return fs
+  .readFileSync(filePath, 'utf-8')
+  .split('\n')
+  .map((line) => line.trim())
+  .filter((line) => line && !line.startsWith('#')); // Exclude empty lines and comments
+}
+
 async function createZipData(logger: CLILogger): Promise<string> {
+  
   const zip = new JSZip();
 
   const globPattern = convertPathForGlob(path.join(process.cwd(), "**", "*"));
 
+  const dbosIgnoreFilePath = '.dbosignore';
+
+  const ignorePatterns = parseIgnoreFile(dbosIgnoreFilePath);
+  const globIgnorePatterns = ignorePatterns.map((pattern) => {
+    pattern = convertPathForGlob(path.join(process.cwd(), pattern));
+    if (pattern.endsWith('/')) {
+      pattern = path.join(pattern, "**"); // Recursively ignore directories
+    }
+    return pattern;
+  });
+  const hardcodedIgnorePatterns = [ `**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**", "**/.python-version"];
+
   const files = await fg(globPattern, {
     dot: true,
     onlyFiles: true,
-    ignore: [`**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**"],
+    ignore: [...hardcodedIgnorePatterns, ...globIgnorePatterns],
   });
 
   files.forEach((file) => {
@@ -115,13 +138,21 @@ export async function deployAppCode(
     }
   } else if (appLanguage === AppLanguages.Python as string) {
     logger.debug("Checking for requirements.txt...");
-    const requirementsTxtExists = existsSync(path.join(process.cwd(), "requirements.txt"));
+    const requirementsPath = path.join(process.cwd(), "requirements.txt")
+    const requirementsTxtExists = existsSync(requirementsPath);
     logger.debug(`  ... requirements.txt found: ${requirementsTxtExists}`);
 
     if (!requirementsTxtExists) {
       logger.error("No requirements.txt found. Please create one before deploying.");
       return 1;
     }
+
+    const content = fs.readFileSync(requirementsPath, 'utf8');
+    if (!content.includes("dbos")) {
+      logger.error("Your requirements.txt does not include 'dbos'. Please make sure you include all your dependencies.");
+      return 1;
+    }
+
   } else {
     logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`)
     return 1;

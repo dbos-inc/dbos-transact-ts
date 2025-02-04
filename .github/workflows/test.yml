@@ -6,6 +6,10 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        node-version: ['18', '20', '22', '23']
 
     services:
       # Postgres service container
@@ -57,10 +61,10 @@ jobs:
           docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
           docker restart ${{ job.services.postgres.id }}
       - uses: actions/checkout@v4.1.1
-      - name: Use Node.js 20
+      - name: Use Node.js ${{ matrix.node-version }}
         uses: actions/setup-node@v4.0.2
         with:
-          node-version: 20
+          node-version: ${{ matrix.node-version }}
       - name: Compile and Test
         working-directory: ./
         run: |

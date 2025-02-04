@@ -5,6 +5,7 @@ packages/create/templates/**/package-lock.json
 tests/**/package-lock.json
 packages/**/package-lock.json
 .DS_Store
+.env
 
 # Logs
 logs

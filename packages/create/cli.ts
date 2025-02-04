@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
-import { init } from './init.js';
+import { init, isValidApplicationName, listTemplates } from './init.js';
 import fs from 'fs'
 import path from "path";
 import { Package } from "update-notifier";
-import { input } from "@inquirer/prompts";
+import { input, select } from "@inquirer/prompts";
 
 const program = new Command();
 
@@ -26,25 +26,30 @@ program
       throw new Error(`Unexpected arguments: ${command.args.join(',')}; Did you forget '--'?`);
     }
     let {appName, template} = options;
-    if (appName || template) {
-      appName = appName || 'dbos-hello-app';
-      template = template || 'hello';
+    if (template) {
+      appName = appName || template;
     }
     else {
-      template = await input(
+      const templates = listTemplates();
+      // TODO: add descriptions for each template.
+      template = await select(
         {
-          message: 'What is the template to use for the application?',
-          // Providing a default value
-          default: 'hello',
+          message: 'Choose a template to use:',
+          choices: templates.map(t => ({ name: t, value: t })),
         });
       appName = await input(
         {
           message: 'What is the application/directory name to create?',
-          // Providing a default value
-          default: 'dbos-hello-app',
+          default: appName || template,
+          validate: isValidApplicationName,
         });
     }
-    await init(appName, template);
+    try {
+      await init(appName, template);
+    } catch (e) {
+      console.error((e as Error).message);
+      process.exit(1);
+    }
   })
   .allowUnknownOption(false);
 

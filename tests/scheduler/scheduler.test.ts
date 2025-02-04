@@ -10,11 +10,11 @@ type TestTransactionContext = TransactionContext<PoolClient>;
 describe("scheduled-wf-tests-simple", () => {
     let config: DBOSConfig;
     let testRuntime: TestingRuntime;
-  
+
     beforeAll(async () => {
         DBOSSchedTestClass.reset(true);
         config = generateDBOSTestConfig();
-        await setUpDBOSTestDb(config);  
+        await setUpDBOSTestDb(config);
     });
 
     beforeEach(async () => {
@@ -24,7 +24,7 @@ describe("scheduled-wf-tests-simple", () => {
     afterEach(async () => {
         await testRuntime.destroy();
     }, 10000);
-  
+
     test("wf-scheduled", async () => {
         // Make sure two functions with the same name in different classes are not interfering with each other.
         await sleepms(2500);
@@ -68,7 +68,10 @@ class DBOSSchedTestClass {
     @Workflow()
     static async scheduledDefault(ctxt: WorkflowContext, schedTime: Date, startTime: Date) {
         await ctxt.invoke(DBOSSchedTestClass).scheduledTxn();
-        if (schedTime.getTime() > startTime.getTime()) DBOSSchedTestClass.nTooEarly++;
+        if (schedTime.getTime() > startTime.getTime() + .002) { // Floating point, sleep, etc., is a little imprecise
+            ctxt.logger.warn(`Scheduled 'scheduledDefault' function running early: ${ctxt.workflowUUID}; at ${startTime.toISOString()} vs ${schedTime.toISOString()}`);
+            DBOSSchedTestClass.nTooEarly++;
+        }
         if (startTime.getTime() - schedTime.getTime() > 1500) DBOSSchedTestClass.nTooLate++;
 
         if (DBOSSchedTestClass.doSleep) {
@@ -126,18 +129,18 @@ class DBOSSchedTestClassOAOO {
 describe("scheduled-wf-tests-oaoo", () => {
     let config: DBOSConfig;
     let testRuntime: TestingRuntime;
-  
+
     beforeAll(async () => {
         config = generateDBOSTestConfig();
-        await setUpDBOSTestDb(config);  
+        await setUpDBOSTestDb(config);
     });
-  
+
     beforeEach(async () => {
     });
-  
+
     afterEach(async () => {
     }, 10000);
-  
+
     test("wf-scheduled-recover", async () => {
         DBOSSchedTestClassOAOO.reset();
         testRuntime = await createInternalTestRuntime(undefined, config);
@@ -170,18 +173,18 @@ describe("scheduled-wf-tests-oaoo", () => {
 describe("scheduled-wf-tests-when-active", () => {
     let config: DBOSConfig;
     let testRuntime: TestingRuntime;
-  
+
     beforeAll(async () => {
         config = generateDBOSTestConfig();
-        await setUpDBOSTestDb(config);  
+        await setUpDBOSTestDb(config);
     });
-  
+
     beforeEach(async () => {
     });
-  
+
     afterEach(async () => {
     }, 10000);
-  
+
     test("wf-scheduled-recover", async () => {
         DBOSSchedTestClass.reset(false);
         testRuntime = await createInternalTestRuntime(undefined, config);

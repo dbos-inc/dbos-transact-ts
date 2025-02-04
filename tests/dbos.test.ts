@@ -2,7 +2,7 @@ import { WorkflowContext, TransactionContext, StepContext, WorkflowHandle, Trans
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
 import { v1 as uuidv1 } from "uuid";
 import { StatusString } from "../src/workflow";
-import { DBOSConfig } from "../src/dbos-executor";
+import { DBOSConfig, DBOSExecutor } from "../src/dbos-executor";
 import { PoolClient } from "pg";
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
 import { transaction_outputs } from "../schemas/user_db_schema";
@@ -71,13 +71,13 @@ describe("dbos-tests", () => {
 
     const workflowUUID = uuidv1();
     const handle = await testRuntime.startWorkflow(DBOSTestClass, workflowUUID).receiveWorkflow();
-    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow(handle.getWorkflowUUID())).resolves.toBeFalsy(); // return void.
+    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow(handle.workflowID)).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
   });
 
   test("simple-workflow-events", async () => {
     const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventWorkflow();
-    const workflowUUID = handle.getWorkflowUUID();
+    const workflowUUID = handle.workflowID;
     await handle.getResult();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
     await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
@@ -86,7 +86,7 @@ describe("dbos-tests", () => {
 
   test("simple-workflow-events-multiple", async () => {
     const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventMultipleWorkflow();
-    const workflowUUID = handle.getWorkflowUUID();
+    const workflowUUID = handle.workflowID;
     await handle.getResult();
     await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1b");
     await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
@@ -136,7 +136,8 @@ describe("dbos-tests", () => {
     expect(ReadRecording.wfCnt).toBe(2);
 
     // Invoke it again, should return the recorded error and re-execute the workflow function but not the transactions
-    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
+    await DBOSExecutor.globalInstance!.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
+    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID,).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(4);
   });
@@ -201,7 +202,7 @@ describe("dbos-tests", () => {
 
     const workflowHandle = await testRuntime.startWorkflow(RetrieveWorkflowStatus, workflowUUID).testStatusWorkflow(123, "hello");
 
-    expect(workflowHandle.getWorkflowUUID()).toBe(workflowUUID);
+    expect(workflowHandle.workflowID).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
       workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
@@ -223,7 +224,7 @@ describe("dbos-tests", () => {
     await dbosExec.flushWorkflowBuffers();
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
-    expect(retrievedHandle.getWorkflowUUID()).toBe(workflowUUID);
+    expect(retrievedHandle.workflowID).toBe(workflowUUID);
     await expect(retrievedHandle.getResult()).resolves.toBe("hello");
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,

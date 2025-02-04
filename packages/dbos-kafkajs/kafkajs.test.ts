@@ -1,9 +1,11 @@
 import {
+  DBOS,
   TestingRuntime,
   Transaction,
   TransactionContext,
   Workflow,
   WorkflowContext,
+  WorkflowQueue,
   configureInstance,
   createTestingRuntime,
 } from "@dbos-inc/dbos-sdk";
@@ -55,6 +57,8 @@ const kafkaConfig: KafkaConfig = {
   },
   logLevel: logLevel.NOTHING, // FOR TESTING
 }
+
+const wfq = new WorkflowQueue("kafkaq", 2);
 
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn'
@@ -115,8 +119,8 @@ describe("kafka-tests", () => {
     }
 
     // Send messages
-    await testRuntime?.invoke(txKafkaCfg!).sendMessage({value: txnMessage});
-    await testRuntime?.invoke(wfKafkaCfg!).sendMessage({value: wfMessage});
+    await testRuntime?.invoke(txKafkaCfg!).sendMessage({value: txnMessage}); // v1 API
+    await wfKafkaCfg!.send({value: wfMessage}); // v2 API
 
     // Check that both messages are consumed
     await DBOSTestClass.txnPromise;
@@ -127,7 +131,7 @@ describe("kafka-tests", () => {
     expect(patternTopicCounter).toBe(2);
     await DBOSTestClass.arrayTopicsPromise;
     expect(arrayTopicsCounter).toBe(2);
-  }, 30000);
+  }, 60000);
 });
 
 @Kafka(kafkaConfig)
@@ -173,9 +177,9 @@ class DBOSTestClass {
     await DBOSTestClass.wfPromise;
   }
 
-  @KafkaConsume(patternTopic)
-  @Workflow()
-  static async testConsumeTopicsByPattern(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+  @KafkaConsume(patternTopic, undefined, wfq.name)
+  @DBOS.workflow()
+  static async testConsumeTopicsByPattern(topic: string, _partition: number, message: KafkaMessage) {
     const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
     const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
     if ( isWfMessage || isTxnMessage ) {

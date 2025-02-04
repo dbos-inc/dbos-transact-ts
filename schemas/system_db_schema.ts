@@ -54,6 +54,7 @@ export interface event_dispatch_kv {
 export interface workflow_queue {
   workflow_uuid: string;
   queue_name: string;
+  executor_id: string;
   created_at_epoch_ms: number; // This time is provided by the database
   started_at_epoch_ms?: number; // This time is provided by the client
   completed_at_epoch_ms?: number; // This time is provided by the client

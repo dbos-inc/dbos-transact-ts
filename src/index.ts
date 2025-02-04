@@ -60,6 +60,7 @@ export {
   DefaultRequiredRole,
   DefaultArgRequired,
   DefaultArgOptional,
+  DefaultArgValidate,
   // Typeorm Class Decorators
   OrmEntities,
 
@@ -144,7 +145,6 @@ export {
 
 export {
   DBOSRuntimeConfig,
-  DBOS,
 } from "./dbos-runtime/runtime";
 
 export {
@@ -154,3 +154,7 @@ export {
 export {
   WorkflowQueue,
 } from "./wfqueue"
+
+export {
+  DBOS,
+} from "./dbos"

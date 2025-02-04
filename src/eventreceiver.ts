@@ -1,10 +1,11 @@
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
-import { WorkflowFunction, WorkflowHandle, WorkflowParams } from './workflow';
+import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowFunction, WorkflowHandle, WorkflowParams, WorkflowStatus } from './workflow';
 import { TransactionFunction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 import { StepFunction } from './step';
 import { Notification } from "pg";
+import { StoredProcedure } from './procedure';
 
 export type DBNotification = Notification;
 export type DBNotificationCallback = (n: DBNotification) => void;
@@ -44,13 +45,19 @@ export interface DBOSExecutorContext
   transaction<T extends unknown[], R>(txn: TransactionFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
   workflow<T extends unknown[], R>(wf: WorkflowFunction<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;
   external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+  procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+
 
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
-  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number): Promise<T | null>;
+  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  flushWorkflowBuffers(): Promise<void>;
+  getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null>;
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
+  getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
 
   // Event receiver state queries / updates
-  /* 
+  /*
    * An event dispatcher may keep state in the system database
    *  The 'service' should be unique to the event receiver keeping state, to separate from others
    *   The 'workflowFnName' workflow function name should be the fully qualified / unique function name dispatched

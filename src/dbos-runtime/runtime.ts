@@ -8,7 +8,8 @@ import { Server } from 'http';
 import { pathToFileURL } from 'url';
 import { DBOSScheduler } from '../scheduler/scheduler';
 import { wfQueueRunner } from '../wfqueue';
-import { GlobalLogger } from '../telemetry/logs';
+import { DBOS } from '../dbos';
+import { db_wizard } from './db_wizard';
 
 interface ModuleExports {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,20 +20,17 @@ export interface DBOSRuntimeConfig {
   entrypoints: string[];
   port: number;
   admin_port: number;
+  start: string[];
+  setup: string[];
 }
 export const defaultEntryPoint = "dist/operations.js";
 
-export class DBOS {
-  static globalLogger?: GlobalLogger;
-  static dbosConfig?: DBOSConfig;
-}
-
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
-  private dbosExec: DBOSExecutor | null = null;
-  private servers: { appServer: Server; adminServer: Server } | undefined;
-  private scheduler: DBOSScheduler | null = null;
-  private wfQueueRunner: Promise<void> | null = null;
+  private dbosExec?: DBOSExecutor = undefined;
+  private servers: { appServer?: Server; adminServer: Server } | undefined;
+  private scheduler?: DBOSScheduler = undefined;
+  private wfQueueRunner?: Promise<void> = undefined;
 
   constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
     // Initialize workflow executor.
@@ -45,7 +43,7 @@ export class DBOSRuntime {
    */
   async initAndStart() {
     try {
-
+      this.dbosConfig.poolConfig = await db_wizard(this.dbosConfig.poolConfig);
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       DBOS.globalLogger = this.dbosExec.logger;
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
@@ -69,7 +67,10 @@ export class DBOSRuntime {
         evtRcvr.logRegisteredEndpoints();
       }
     } catch (error) {
-      this.dbosExec?.logger.error(error);
+      if (!this.dbosExec) {
+        throw error;
+      }
+      this.dbosExec.logger.error(error);
       if (error instanceof DBOSFailLoadOperationsError) {
         console.error('\x1b[31m%s\x1b[0m', "Did you compile this application? Hint: run `npm run build` and try again");
         process.exit(1);
@@ -125,8 +126,7 @@ export class DBOSRuntime {
     try {
       wfQueueRunner.stop();
       await this.wfQueueRunner;
-    }
-    catch (err) {
+    } catch (err) {
       const e = err as Error;
       this.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
     }
@@ -134,7 +134,7 @@ export class DBOSRuntime {
       await evtRcvr.destroy();
     }
     if (this.servers) {
-      this.servers.appServer.close();
+      this.servers.appServer?.close();
       this.servers.adminServer.close();
     }
     await this.dbosExec?.destroy();

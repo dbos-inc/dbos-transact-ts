@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-import { registerApp, updateApp, listApps, deleteApp, deployAppCode, getAppLogs } from "./applications/index.js";
+import { registerApp, updateApp, listApps, deleteApp, deployAppCode, getAppLogs, createSecret, listSecrets } from "./applications/index.js";
 import { Command } from "commander";
 import { login } from "./users/login.js";
 import { registerUser } from "./users/register.js";
@@ -17,8 +17,9 @@ import updateNotifier, { Package } from "update-notifier";
 import { profile } from "./users/profile.js";
 import { revokeRefreshToken } from "./users/authentication.js";
 import { listAppVersions } from "./applications/list-app-versions.js";
-import { orgInvite, orgListUsers, renameOrganization, joinOrganization } from "./organizations/organization.js";
+import { orgInvite, orgListUsers, renameOrganization, joinOrganization, removeUserFromOrg } from "./organizations/organization.js";
 import { ListWorkflowsInput, listWorkflows } from "./applications/manage-workflows.js";
+import { importSecrets } from "./applications/secrets.js";
 
 // Read local package.json
 const __dirname = fileURLToPath(new URL(".", import.meta.url));
@@ -214,6 +215,39 @@ applicationCommands
     process.exit(exitCode);
   });
 
+  const secretsCommands = applicationCommands.command("secret").alias("secrets").alias("sec").alias("env").description("Manage your application environment and secrets");
+
+  secretsCommands
+  .command("create")
+  .description("Create a secret for this application")
+  .argument("[string]", "application name (Default: name from package.json)")
+  .requiredOption("-s, --name <string>", "Specify the name of the variable to create")
+  .requiredOption("-v, --value <string>", "Specify the value of the variable")
+  .action(async (appName: string | undefined, options: { name: string; value: string }) => {
+    const exitCode = await createSecret(DBOSCloudHost, appName, options.name , options.value);
+    process.exit(exitCode);
+  });
+
+  secretsCommands
+  .command("import")
+  .description("Import environment variables and secrets from a dotenv file")
+  .argument("[string]", "application name (Default: name from package.json)")
+  .requiredOption("-d, --dotenv <string>", "Path to a dotenv file")
+  .action(async (appName: string | undefined, options: { dotenv: string; }) => {
+    const exitCode = await importSecrets(DBOSCloudHost, appName, options.dotenv);
+    process.exit(exitCode);
+  });
+
+  secretsCommands
+  .command("list")
+  .description("List secrets for this application")
+  .argument("[string]", "application name (Default: name from package.json)")
+  .option("--json", "Emit JSON output")
+  .action(async (appName: string | undefined, options: { json: boolean }) => {
+    const exitCode = await listSecrets(DBOSCloudHost, appName, options.json);
+    process.exit(exitCode);
+  });
+
 //////////////////////////////////
 /* DATABASE INSTANCE MANAGEMENT */
 //////////////////////////////////
@@ -260,9 +294,6 @@ databaseCommands
   .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
   .action(async (dbName: string | undefined, options: { password: string }) => {
-    if (!options.password) {
-      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
-    }
     const exitCode = await resetDBCredentials(DBOSCloudHost, dbName, options.password);
     process.exit(exitCode);
   });
@@ -319,9 +350,6 @@ databaseCommands
   .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
   .action(async (dbname: string | undefined, options: { password: string | undefined }) => {
-    if (!options.password) {
-      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
-    }
     const exitCode = await connect(DBOSCloudHost, dbname, options.password, false);
     process.exit(exitCode);
   });
@@ -332,9 +360,6 @@ databaseCommands
   .argument("[name]", "database instance name")
   .option("-W, --password <string>", "Specify the database user password")
   .action(async (dbname: string | undefined, options: { password: string | undefined }) => {
-    if (!options.password) {
-      options.password = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
-    }
     const exitCode = await connect(DBOSCloudHost, dbname, options.password, true);
     process.exit(exitCode);
   });
@@ -410,6 +435,15 @@ orgCommands
   .argument("<secret>", "Organization secret")
   .action(async (organization: string, secret: string) => {
     const exitCode = await joinOrganization(DBOSCloudHost, organization, secret);
+    process.exit(exitCode);
+  });
+
+  orgCommands
+  .command("remove")
+  .description("Remove a user from an organization")
+  .argument("<username>", "User to remove")
+  .action(async (username: string) => {
+    const exitCode = await removeUserFromOrg(DBOSCloudHost, username);
     process.exit(exitCode);
   });
 

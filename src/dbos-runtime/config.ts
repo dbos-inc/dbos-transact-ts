@@ -11,7 +11,8 @@ import Ajv, { ValidateFunction } from 'ajv';
 import path from "path";
 import validator from "validator";
 import fs from "fs";
-
+import { loadDatabaseConnection } from "./db_connection";
+import { GlobalLogger } from "../telemetry/logs";
 
 
 export const dbosConfigFilePath = "dbos-config.yaml";
@@ -23,19 +24,19 @@ export interface ConfigFile {
   name?: string;
   language?: string;
   database: {
-    hostname: string;
-    port: number;
-    username: string;
+    hostname?: string;
+    port?: number;
+    username?: string;
     password?: string;
     connectionTimeoutMillis?: number;
-    app_db_name: string;
+    app_db_name?: string;
     sys_db_name?: string;
     ssl?: boolean;
     ssl_ca?: string;
     app_db_client?: UserDatabaseName;
     migrate?: string[];
     rollback?: string[];
-    local_suffix: boolean;
+    local_suffix?: boolean;
   };
   http?: {
     cors_middleware?: boolean;
@@ -101,7 +102,7 @@ export function writeConfigFile(configFile: YAML.Document, configFilePath: strin
 export function retrieveApplicationName(configFile: ConfigFile): string {
   let appName = configFile.name;
   if (appName !== undefined) {
-    return appName
+    return appName;
   }
   const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json")).toString()) as { name: string };
   appName = packageJson.name;
@@ -111,23 +112,41 @@ export function retrieveApplicationName(configFile: ConfigFile): string {
   return appName;
 }
 
-export function constructPoolConfig(configFile: ConfigFile) {
+export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions) {
+  // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
+  const databaseConnection = loadDatabaseConnection();
+  if (!cliOptions?.skipLoggingInParse) {
+    const logger = new GlobalLogger();
+    if (configFile["database"]["hostname"]) {
+      logger.info("Loading database connection parameters from dbos-config.yaml");
+    } else if (databaseConnection["hostname"]) {
+      logger.info("Loading database connection parameters from .dbos/db_connection");
+    } else {
+      logger.info("Using default database connection parameters");
+    }
+  }
+  configFile["database"]["hostname"] = configFile["database"]["hostname"] || databaseConnection["hostname"] || "localhost";
+  configFile["database"]["port"] = configFile["database"]["port"] || databaseConnection["port"] || 5432;
+  configFile["database"]["username"] = configFile["database"]["username"] || databaseConnection["username"] || "postgres";
+  configFile["database"]["password"] = configFile["database"]["password"] || databaseConnection["password"] || process.env.PGPASSWORD || "dbos";
+  configFile["database"]["local_suffix"] = configFile["database"]["local_suffix"] || databaseConnection["local_suffix"] || false;
+
   let databaseName: string | undefined = configFile.database.app_db_name;
   if (databaseName === undefined) {
-    const appName = retrieveApplicationName(configFile)
-    databaseName = appName.toLowerCase().replaceAll('-', '_');
+    const appName = retrieveApplicationName(configFile);
+    databaseName = appName.toLowerCase().replaceAll("-", "_");
     if (databaseName.match(/^\d/)) {
       databaseName = "_" + databaseName; // Append an underscore if the name starts with a digit
     }
   }
-  databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName
+  databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName;
   const poolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
     password: configFile.database.password,
     connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
-    database: databaseName
+    database: databaseName,
   };
 
   if (!poolConfig.database) {
@@ -137,7 +156,7 @@ export function constructPoolConfig(configFile: ConfigFile) {
   // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
   if (configFile.database.ssl === false) {
     // If SSL is set to false, do not use TLS
-    poolConfig.ssl = false
+    poolConfig.ssl = false;
   } else if (configFile.database.ssl_ca) {
     // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
@@ -171,15 +190,16 @@ export interface ParseOptions {
   configfile?: string;
   appDir?: string;
   appVersion?: string | boolean;
+  skipLoggingInParse?: boolean;
 }
 
 /*
  * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
  * */
-export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = false): [DBOSConfig, DBOSRuntimeConfig] {
+export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRuntimeConfig] {
   if (cliOptions?.appDir) {
-    process.chdir(cliOptions.appDir)
+    process.chdir(cliOptions.appDir);
   }
   const configFilePath = cliOptions?.configfile ?? dbosConfigFilePath;
   const configFile: ConfigFile | undefined = loadConfigFile(configFilePath);
@@ -187,23 +207,12 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
   }
 
-  // Database field must exist
   if (!configFile.database) {
-    throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database config`);
+    configFile.database = {}
   }
 
-  // Check for the database password
-  if (!configFile.database.password) {
-    if (useProxy) {
-      configFile.database.password = "PROXY-MODE"; // Assign a password if not set. We don't need password to authenticate with the local proxy.
-    } else {
-      const pgPassword: string | undefined = process.env.PGPASSWORD;
-      if (pgPassword) {
-        configFile.database.password = pgPassword;
-      } else {
-        throw new DBOSInitializationError(`DBOS configuration (${configFilePath}) does not contain database password`);
-      }
-    }
+  if (configFile.database.local_suffix === true && configFile.database.hostname === "localhost") {
+    throw new DBOSInitializationError(`Invalid configuration (${configFilePath}): local_suffix may only be true when connecting to remote databases, not to localhost`)
   }
 
   const schemaValidator = ajv.compile(dbosConfigSchema);
@@ -213,14 +222,14 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
   }
 
   if (configFile.language && configFile.language !== "node") {
-    throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`)
+    throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`);
   }
 
   /*******************************/
   /* Handle user database config */
   /*******************************/
 
-  const poolConfig = constructPoolConfig(configFile);
+  const poolConfig = constructPoolConfig(configFile, cliOptions);
 
   if (!isValidDBname(poolConfig.database!)) {
     throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
@@ -270,6 +279,8 @@ export function parseConfigFile(cliOptions?: ParseOptions, useProxy: boolean = f
     entrypoints: [...entrypoints],
     port: appPort,
     admin_port: Number(configFile.runtimeConfig?.admin_port) || appPort + 1,
+    start: configFile.runtimeConfig?.start || [],
+    setup: configFile.runtimeConfig?.setup || [],
   };
 
   return [dbosConfig, runtimeConfig];
@@ -287,7 +298,7 @@ function isValidDBname(dbName: string): boolean {
   }
   if (dbName.match(/^\d/)) {
     // Cannot start with a digit
-    return false
+    return false;
   }
   return validator.matches(dbName, "^[a-z0-9_]+$");
 }

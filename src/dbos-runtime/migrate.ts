@@ -4,37 +4,14 @@ import { ConfigFile, constructPoolConfig } from "./config";
 import { PoolConfig, Client } from "pg";
 import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/user_db_schema";
 import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
-import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery } from "../user_database";
+import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery, createDBIfDoesNotExist } from "../user_database";
+import { db_wizard } from "./db_wizard";
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  const userDBName = configFile.database.app_db_name;
-  logger.info(`Starting migration: creating database ${userDBName} if it does not exist`);
-
-  if (!(await checkDatabaseExists(configFile, logger))) {
-    const postgresConfig: PoolConfig = constructPoolConfig(configFile)
-    const app_database = postgresConfig.database
-    postgresConfig.database = "postgres"
-    const postgresClient = new Client(postgresConfig);
-    let connection_failed = true;
-    try {
-      await postgresClient.connect()
-      connection_failed = false;
-      await postgresClient.query(`CREATE DATABASE ${app_database}`);
-    } catch (e) {
-      if (e instanceof Error) {
-        if (connection_failed) {
-          logger.error(`Error connecting to database ${postgresConfig.host}:${postgresConfig.port} with user ${postgresConfig.user}: ${e.message}`);
-        } else {
-          logger.error(`Error creating database ${app_database}: ${e.message}`);
-        }
-      } else {
-        logger.error(e);
-      }
-      return 1;
-    } finally {
-      await postgresClient.end()
-    }
-  }
+  let poolConfig: PoolConfig = constructPoolConfig(configFile)
+  poolConfig = await db_wizard(poolConfig);
+  logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
+  await createDBIfDoesNotExist(poolConfig, logger);
 
   const migrationCommands = configFile.database.migrate;
 
@@ -42,7 +19,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     migrationCommands?.forEach((cmd) => {
       logger.info(`Executing migration command: ${cmd}`);
       const migrateCommandOutput = execSync(cmd, { encoding: 'utf-8' });
-      logger.info(migrateCommandOutput.trimEnd());
+      console.log(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
     logMigrationError(e, logger, "Error running migration")
@@ -51,7 +28,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 
   logger.info("Creating DBOS tables and system database.");
   try {
-    await createDBOSTables(configFile);
+    await createDBOSTables(configFile, poolConfig);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);
@@ -63,21 +40,6 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 
   logger.info("Migration successful!")
   return 0;
-}
-
-export async function checkDatabaseExists(configFile: ConfigFile, logger: GlobalLogger) {
-  const pgUserConfig: PoolConfig = constructPoolConfig(configFile)
-  const pgUserClient = new Client(pgUserConfig);
-
-  try {
-    await pgUserClient.connect(); // Try to establish a connection
-    await pgUserClient.end();
-    logger.info(`Database ${pgUserConfig.database} exists!`)
-    return true; // If successful, return true
-  } catch (error) {
-    logger.info(`Database ${pgUserConfig.database} does not exist, creating...`)
-    return false; // If connection fails, return false
-  }
 }
 
 export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) {
@@ -104,11 +66,8 @@ export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) 
 }
 
 // Create DBOS system DB and tables.
-// TODO: replace this with knex to manage schema.
-async function createDBOSTables(configFile: ConfigFile) {
+async function createDBOSTables(configFile: ConfigFile, userPoolConfig: PoolConfig) {
   const logger = new GlobalLogger();
-
-  const userPoolConfig: PoolConfig = constructPoolConfig(configFile)
 
   const systemPoolConfig = { ...userPoolConfig };
   systemPoolConfig.database = configFile.database.sys_db_name ?? `${userPoolConfig.database}_dbos_sys`;

@@ -82,13 +82,7 @@
           "type": "array",
           "description": "Specify a list of user DB rollback commands to run"
         }
-      },
-      "required": [
-        "hostname",
-        "port",
-        "username",
-        "password"
-      ]
+      }
     },
     "telemetry": {
       "type": "object",
@@ -145,6 +139,20 @@
         "admin_port": {
             "type": "number",
             "description": "The port number of the admin server (Default: 3001 or the app server port + 1)"
+        },
+        "start": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Commands to start the application"
+        },
+        "setup": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Commands to setup the application execution environment"
         }
       }
     },
@@ -172,8 +180,5 @@
       "type": "string",
       "deprecated": true
     }
-  },
-  "required": [
-    "database"
-  ]
+  }
 }

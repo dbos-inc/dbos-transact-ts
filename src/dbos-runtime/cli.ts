@@ -1,17 +1,19 @@
 #!/usr/bin/env node
-import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
-import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from './config';
-import { Command } from 'commander';
-import { DBOSConfig } from '../dbos-executor';
-import { debugWorkflow } from './debug';
-import { migrate, rollbackMigration } from './migrate';
-import { GlobalLogger } from '../telemetry/logs';
-import { TelemetryCollector } from '../telemetry/collector';
-import { TelemetryExporter } from '../telemetry/exporters';
-import { configure } from './configure';
-import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from './workflow_management';
-import { GetWorkflowsInput, StatusString } from '..';
-import { exit } from 'node:process';
+import { DBOSRuntime, DBOSRuntimeConfig } from "./runtime";
+import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from "./config";
+import { Command } from "commander";
+import { DBOSConfig } from "../dbos-executor";
+import { debugWorkflow } from "./debug";
+import { migrate, rollbackMigration } from "./migrate";
+import { GlobalLogger } from "../telemetry/logs";
+import { TelemetryCollector } from "../telemetry/collector";
+import { TelemetryExporter } from "../telemetry/exporters";
+import { configure } from "./configure";
+import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from "./workflow_management";
+import { GetWorkflowsInput, StatusString } from "..";
+import { exit } from "node:process";
+import { runCommand } from "./commands";
+import { reset} from "./reset";
 
 const program = new Command();
 
@@ -25,6 +27,7 @@ export interface DBOSCLIStartOptions {
   configfile?: string;
   appDir?: string;
   appVersion?: string | boolean;
+  skipLoggingInParse?: boolean; // Not a real option--a workaround to prevent the parser's log lines from printing twice
 }
 
 export interface DBOSConfigureOptions {
@@ -52,15 +55,32 @@ program
   .option("-l, --loglevel <string>", "Specify log level")
   .option("-c, --configfile <string>", "Specify the config file path (DEPRECATED)")
   .option("-d, --appDir <string>", "Specify the application root directory")
-  .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
-  .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
+  .option("--app-version <string>", "override DBOS__APPVERSION environment variable")
+  .option("--no-app-version", "ignore DBOS__APPVERSION environment variable")
   .action(async (options: DBOSCLIStartOptions) => {
     if (options?.configfile) {
-      console.warn('\x1b[33m%s\x1b[0m', "The --configfile option is deprecated. Please use --appDir instead.");
+      console.warn("\x1b[33m%s\x1b[0m", "The --configfile option is deprecated. Please use --appDir instead.");
     }
+    options.skipLoggingInParse = true;
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
-    const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
-    await runtime.initAndStart();
+    // If no start commands are provided, start the DBOS runtime
+    if (runtimeConfig.start.length === 0) {
+      const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
+      await runtime.initAndStart();
+    } else {
+      const logger = getGlobalLogger(dbosConfig);
+      for (const command of runtimeConfig.start) {
+        try {
+          const ret = await runCommand(command, logger, options.appDir);
+          if (ret !== 0) {
+            process.exit(ret);
+          }
+        } catch (e) {
+          // We always reject the command with a return code
+          process.exit(e as number);
+        }
+      }
+    }
   });
 
 program
@@ -74,7 +94,7 @@ program
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (options: DBOSDebugOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options, options.proxy !== undefined);
+    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
     await debugWorkflow(dbosConfig, runtimeConfig, options.uuid, options.proxy);
   });
 
@@ -100,6 +120,17 @@ program
   .command('migrate')
   .description("Perform a database migration")
   .action(async () => { await runAndLog(migrate); });
+
+program
+  .command('reset')
+  .description("reset the system database")
+  .option('-y, --yes', 'Skip confirmation prompt', false)
+  .action(async (options: {yes: boolean}) => { 
+    const logger = new GlobalLogger();
+    const _ = parseConfigFile(); // Validate config file
+    const configFile = loadConfigFile(dbosConfigFilePath);
+    await reset(configFile, logger, options.yes);
+  });
 
 program
   .command('rollback')
@@ -135,9 +166,9 @@ workflowCommands
       endTime: options.endTime,
       status: options.status as typeof StatusString[keyof typeof StatusString],
       applicationVersion: options.applicationVersion,
-    }
+    };
     const output = await listWorkflows(dbosConfig, input, options.request);
-    console.log(JSON.stringify(output))
+    console.log(JSON.stringify(output));
   });
 
 workflowCommands
@@ -149,7 +180,7 @@ workflowCommands
   .action(async (uuid: string, options: { appDir?: string, request: boolean }) => {
     const [dbosConfig, _] = parseConfigFile(options);
     const output = await getWorkflow(dbosConfig, uuid, options.request);
-    console.log(JSON.stringify(output))
+    console.log(JSON.stringify(output));
   });
 
 workflowCommands
@@ -201,7 +232,6 @@ if (!process.argv.slice(2).length) {
 //Finally, terminates the program with the exit code.
 export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number) {
   let logger = new GlobalLogger();
-  const _ = parseConfigFile(); // Validate config file
   const configFile = loadConfigFile(dbosConfigFilePath);
   let terminate = undefined;
   if (configFile.telemetry?.OTLPExporter) {
@@ -223,4 +253,11 @@ export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalL
     logger.error(e);
   }
   terminate(returnCode);
+}
+
+function getGlobalLogger(configFile: DBOSConfig): GlobalLogger {
+  if (configFile.telemetry?.OTLPExporter) {
+    return new GlobalLogger(new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)), configFile.telemetry?.logs);
+  }
+  return new GlobalLogger();
 }

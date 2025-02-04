@@ -3,7 +3,7 @@ import "reflect-metadata";
 import * as crypto from "crypto";
 import { TransactionConfig, TransactionContext } from "./transaction";
 import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { DBOSContext, DBOSContextImpl, InitContext } from "./context";
+import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, InitContext } from "./context";
 import { StepConfig, StepContext } from "./step";
 import { DBOSError, DBOSNotAuthorizedError } from "./error";
 import { validateMethodArgs } from "./data_validation";
@@ -132,6 +132,7 @@ export interface RegistrationDefaults
   name: string;
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions;
+  defaultArgValidate: boolean;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 }
 
@@ -140,6 +141,7 @@ export interface MethodRegistrationBase {
   className: string;
 
   args: MethodParameter[];
+  performArgValidation: boolean;
 
   defaults?: RegistrationDefaults;
 
@@ -154,9 +156,13 @@ export interface MethodRegistrationBase {
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  registeredFunction: Function | undefined;
+  wrappedFunction: Function | undefined; // Function that is user-callable, including the WF engine transition
   // eslint-disable-next-line @typescript-eslint/ban-types
-  origFunction: Function;
+  registeredFunction: Function | undefined; // Function that is called by DBOS engine, including input validation and role check
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  origFunction: Function; // Function that the app provided
+  // Pass context as first arg?
+  readonly passContext: boolean;
 
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
@@ -171,17 +177,22 @@ implements MethodRegistrationBase
 
   requiredRole: string[] | undefined = undefined;
 
+  performArgValidation:boolean = false;
   args: MethodParameter[] = [];
+  passContext: boolean = false;
 
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean)
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean, passContext: boolean)
   {
     this.origFunction = origFunc;
     this.isInstance = isInstance;
+    this.passContext = passContext;
   }
+
   needInitialized: boolean = true;
   isInstance: boolean;
   origFunction: (this: This, ...args: Args) => Promise<Return>;
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
+  wrappedFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined = undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   commConfig?: StepConfig;
@@ -215,6 +226,7 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
   name: string = "";
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
+  defaultArgValidate: boolean = false;
   needsInitialized: boolean = true;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
@@ -247,6 +259,9 @@ export function getRegisteredMethodName(func: unknown): string {
     rv = methodToRegistration.get(func)!.name;
   }
   return rv;
+}
+export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<unknown, unknown[], unknown>) {
+  methodToRegistration.set(func, reg);
 }
 
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
@@ -310,7 +325,8 @@ function generateSaltedHash(data: string, salt: string): string {
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string | symbol,
-  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+  passContext: boolean
 ) {
   let regtarget: AnyConstructor;
   let isInstance = false;
@@ -329,9 +345,16 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
   const fname = propertyKey.toString();
   if (!classReg.registeredOperations.has(fname)) {
-    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(descriptor.value!, isInstance));
+    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(descriptor.value!, isInstance, passContext));
   }
   const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(fname)! as MethodRegistration<This, Args, Return>;
+  
+  // Note: We cannot tell if the method takes a context or not.
+  //  Our @Workflow, @Transaction, and @Step decorators are the only ones that would know to set passContext.
+  // So, if passContext is indicated, add it to the registration.
+  if (passContext && !methReg.passContext) {
+    methReg.passContext = true;
+  }
 
   if (methReg.needInitialized) {
     methReg.needInitialized = false;
@@ -347,7 +370,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
         }
-        if (e.index === 0) { // The first argument is always the context.
+        if (e.index === 0 && passContext) { // The first argument is always the context.
           e.logMask = LogMasks.SKIP;
         }
         // TODO else warn/log something
@@ -355,13 +378,17 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     });
 
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
-
       let opCtx : DBOSContextImpl | undefined = undefined;
+      if (passContext) {
+        opCtx = rawArgs[0] as DBOSContextImpl;
+      }
+      else {
+        opCtx = getCurrentDBOSContext() as DBOSContextImpl;
+      }
 
       // Validate the user authentication and populate the role field
       const requiredRoles = methReg.getRequiredRoles();
       if (requiredRoles.length > 0) {
-        opCtx = rawArgs[0] as DBOSContextImpl;
         opCtx.span.setAttribute("requiredRoles", requiredRoles);
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
@@ -386,7 +413,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       validatedArgs.forEach((argValue, idx) => {
         let isCtx = false;
         // TODO: we assume the first argument is always a context, need a more robust way to test it.
-        if (idx === 0)
+        if (idx === 0 && passContext)
         {
           // Context -- I suppose we could just instanceof
           opCtx = validatedArgs[0] as DBOSContextImpl;
@@ -427,12 +454,22 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   return methReg;
 }
 
-export function registerAndWrapFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function registerAndWrapFunctionTakingContext<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
   if (!descriptor.value) {
     throw Error("Use of decorator when original method is undefined");
   }
 
-  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor);
+  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, true);
+
+  return { descriptor, registration };
+}
+
+export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+  if (!descriptor.value) {
+    throw Error("Use of decorator when original method is undefined");
+  }
+
+  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
 
   return { descriptor, registration };
 }
@@ -477,7 +514,7 @@ export function associateClassWithEventReceiver<CT extends { new (...args: unkno
 
 export function associateMethodWithEventReceiver<This, Args extends unknown[], Return>(rcvr: DBOSEventReceiver, target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
 {
-  const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+  const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
   if (!registration.eventReceiverInfo.has(rcvr)) {
     registration.eventReceiverInfo.set(rcvr, {});
   }
@@ -550,7 +587,8 @@ export function ArgVarchar(length: number) {
 ///////////////////////
 
 export function DefaultRequiredRole(anyOf: string[]) {
-  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  function clsdec<T extends { new (...args: any[]) : object }>(ctor: T)
   {
      const clsreg = getOrCreateClassRegistration(ctor);
      clsreg.requiredRole = anyOf;
@@ -562,6 +600,12 @@ export function DefaultArgRequired<T extends { new (...args: unknown[]) : object
 {
    const clsreg = getOrCreateClassRegistration(ctor);
    clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
+}
+
+export function DefaultArgValidate<T extends { new (...args: unknown[]) : object }>(ctor: T)
+{
+   const clsreg = getOrCreateClassRegistration(ctor);
+   clsreg.defaultArgValidate = true;
 }
 
 export function DefaultArgOptional<T extends { new (...args: unknown[]) : object }>(ctor: T)
@@ -591,7 +635,7 @@ export function RequiredRole(anyOf: string[]) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
   {
-    const {descriptor, registration} = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const {descriptor, registration} = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
     registration.requiredRole = anyOf;
 
     return descriptor;
@@ -605,7 +649,7 @@ export function Workflow(config: WorkflowConfig={}) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.workflowConfig = config;
     return descriptor;
   }
@@ -619,7 +663,7 @@ export function Transaction(config: TransactionConfig={}) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
     return descriptor;
   }
@@ -632,7 +676,7 @@ export function StoredProcedure(config: StoredProcedureConfig={}) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StoredProcedureContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.procConfig = config;
     return descriptor;
   }
@@ -645,7 +689,7 @@ export function Step(config: StepConfig={}) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StepContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.commConfig = config;
     return descriptor;
   }
@@ -669,7 +713,7 @@ export function DBOSInitializer() {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }
@@ -683,7 +727,7 @@ export function DBOSDeploy() {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
   {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }

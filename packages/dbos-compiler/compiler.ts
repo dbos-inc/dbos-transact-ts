@@ -1,15 +1,17 @@
 import tsm from 'ts-morph';
 
+type CompileMethodInfo = readonly [tsm.MethodDeclaration, StoredProcedureConfig];
 export type CompileResult = {
   project: tsm.Project;
-  methods: (readonly [tsm.MethodDeclaration, StoredProcedureConfig])[];
+  methods: CompileMethodInfo[];
 };
 
 export type IsolationLevel = "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
 export interface StoredProcedureConfig {
   isolationLevel?: IsolationLevel;
   readOnly?: boolean;
-  executeLocally?: boolean
+  executeLocally?: boolean;
+  version: DbosDecoratorVersion;
 }
 
 function hasError(diags: readonly tsm.ts.Diagnostic[]) {
@@ -44,7 +46,7 @@ export function compile(configFileOrProject: string | tsm.Project, suppressWarni
 
     const methods = project.getSourceFiles()
       .flatMap(getProcMethods)
-      .map(m => [m, getStoredProcConfig(m)] as const);
+      .map(([m, v]) => [m, getStoredProcConfig(m, v)] as const);
 
     diags.push(...checkStoredProcNames(methods.map(([m]) => m)));
     diags.push(...checkStoredProcConfig(methods, false));
@@ -121,7 +123,7 @@ export function checkStoredProcNames(methods: readonly tsm.MethodDeclaration[]):
   return diags;
 }
 
-export function checkStoredProcConfig(methods: readonly (readonly [tsm.MethodDeclaration, StoredProcedureConfig])[], error: boolean = false): readonly tsm.ts.Diagnostic[] {
+export function checkStoredProcConfig(methods: readonly CompileMethodInfo[], error: boolean = false): readonly tsm.ts.Diagnostic[] {
   const category = error ? tsm.ts.DiagnosticCategory.Error : tsm.ts.DiagnosticCategory.Warning;
   const diags = new Array<tsm.ts.Diagnostic>();
   for (const [method, config] of methods) {
@@ -136,8 +138,10 @@ export function checkStoredProcConfig(methods: readonly (readonly [tsm.MethodDec
 
   function getStoredProcDecorator(method: tsm.MethodDeclaration) {
     for (const decorator of method.getDecorators()) {
-      const kind = getDbosDecoratorKind(decorator);
-      if (kind === "storedProcedure") { return decorator; }
+      const info = getDbosDecoratorInfo(decorator);
+      if (info?.kind === "storedProcedure") {
+        return decorator;
+      }
     }
   }
 }
@@ -147,10 +151,11 @@ export function removeDbosMethods(file: tsm.SourceFile) {
     if (tsm.Node.isClassDeclaration(node)) {
       traversal.skip();
       for (const method of node.getStaticMethods()) {
-        const kind = getDbosMethodKind(method);
-        switch (kind) {
+        const info = getDbosMethodInfo(method);
+        if (!info) { continue; }
+        switch (info.kind) {
           case 'workflow':
-          case 'communicator':
+          case 'step':
           case 'initializer':
           case 'transaction':
           case 'handler': {
@@ -158,12 +163,11 @@ export function removeDbosMethods(file: tsm.SourceFile) {
             break;
           }
           case 'storedProcedure':
-          case undefined:
             break;
           default: {
-            const _: never = kind;
+            const _never: never = info.kind;
             // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-            throw new Error(`Unexpected DBOS method kind: ${kind}`);
+            throw new Error(`Unexpected DBOS method kind: ${info.kind}`);
           }
         }
       }
@@ -172,14 +176,14 @@ export function removeDbosMethods(file: tsm.SourceFile) {
 }
 
 export function getProcMethods(file: tsm.SourceFile) {
-  const methods = new Array<tsm.MethodDeclaration>();
+  const methods = new Array<[tsm.MethodDeclaration, DbosDecoratorVersion]>();
   file.forEachDescendant((node, traversal) => {
     if (tsm.Node.isClassDeclaration(node)) {
       traversal.skip();
       for (const method of node.getStaticMethods()) {
-        const kind = getDbosMethodKind(method);
-        if (kind === 'storedProcedure') {
-          methods.push(method);
+        const info = getDbosMethodInfo(method);
+        if (info?.kind === 'storedProcedure') {
+          methods.push([method, info.version]);
         }
       }
     }
@@ -190,7 +194,7 @@ export function getProcMethods(file: tsm.SourceFile) {
 function getProcMethodDeclarations(file: tsm.SourceFile) {
   // initialize set of declarations with all tx methods and their class declaration parents
   const declSet = new Set<tsm.Node>();
-  for (const method of getProcMethods(file)) {
+  for (const [method, _version] of getProcMethods(file)) {
     declSet.add(method);
     const parent = method.getParentIfKind(tsm.SyntaxKind.ClassDeclaration);
     if (parent) { declSet.add(parent); }
@@ -264,7 +268,7 @@ export function removeDecorators(file: tsm.SourceFile | tsm.Project) {
 }
 
 export function removeUnusedFiles(project: tsm.Project) {
-  // get the files w/ one or more @Transaction functions
+  // get the files w/ one or more @StoredProc functions
   const procFiles = new Set<tsm.SourceFile>();
   for (const file of project.getSourceFiles()) {
     const procMethods = getProcMethods(file);
@@ -273,7 +277,7 @@ export function removeUnusedFiles(project: tsm.Project) {
     }
   }
 
-  // get all the files that are imported by the txFiles
+  // get all the files that are imported by the procFiles
   const procImports = new Set<tsm.SourceFile>();
   for (const file of procFiles) {
     procImports.add(file);
@@ -310,7 +314,8 @@ function deAsync(project: tsm.Project) {
     sourceFile.forEachChild(node => {
       if (tsm.Node.isClassDeclaration(node)) {
         for (const method of node.getStaticMethods()) {
-          if (getDbosMethodKind(method) === 'storedProcedure') {
+          const info = getDbosMethodInfo(method)
+          if (info?.kind === 'storedProcedure') {
             method.setIsAsync(false);
             method.getBody()?.transform(traversal => {
               const node = traversal.visitChildren();
@@ -327,42 +332,136 @@ function deAsync(project: tsm.Project) {
 // https://devblogs.microsoft.com/typescript/announcing-typescript-5-5-beta/#inferred-type-predicates
 function isValid<T>(value: T | null | undefined): value is T { return !!value; }
 
-export interface DecoratorInfo {
-  name: string;
-  alias?: string;
-  module?: string;
-  args: tsm.Node[] | undefined;
+type DbosDecoratorKind = "handler" | "storedProcedure" | "transaction" | "workflow" | "step" | "initializer";
+type DbosDecoratorVersion = 1 | 2;
+
+interface DbosDecoratorInfo {
+  kind: DbosDecoratorKind;
+  version: DbosDecoratorVersion;
 }
 
-// helper function to get the actual name (along with any alias) and module of a decorator
-// from its import declaration
-export function getDecoratorInfo(node: tsm.Decorator): DecoratorInfo {
-  const isFactory = node.isDecoratorFactory();
-
-  const identifier = isFactory
-    ? node.getCallExpression()?.getExpressionIfKind(tsm.SyntaxKind.Identifier)
-    : node.getExpressionIfKind(tsm.SyntaxKind.Identifier);
-
-  const args = isFactory
-    ? node.getCallExpression()?.getArguments()
-    : undefined;
-
-  const symbol = identifier?.getSymbol();
+export function getImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {
+  const symbol = node?.getSymbol();
   if (symbol) {
     const importSpecifiers = symbol.getDeclarations()
       .map(n => n.asKind(tsm.ts.SyntaxKind.ImportSpecifier))
       .filter(isValid);
 
-    if (importSpecifiers.length === 1) {
-      const { name, alias } = importSpecifiers[0].getStructure();
-      const modSpec = importSpecifiers[0].getImportDeclaration().getModuleSpecifier();
-      return { name, alias, module: modSpec.getLiteralText(), args };
-    }
-
+    if (importSpecifiers.length === 1) { return importSpecifiers[0]; }
     if (importSpecifiers.length > 1) { throw new Error("Too many import specifiers"); }
   }
 
-  return { name: node.getName(), args };
+  return undefined;
+}
+
+function isDbosImport(node: tsm.ImportSpecifier): boolean {
+  const modSpec = node.getImportDeclaration().getModuleSpecifier();
+  return modSpec.getLiteralText() === "@dbos-inc/dbos-sdk";
+}
+
+function getDbosDecoratorInfo(node: tsm.Decorator): DbosDecoratorInfo | undefined {
+  if (!node.isDecoratorFactory()) { return undefined; }
+
+  const expr = node.getCallExpressionOrThrow().getExpression();
+
+  // v1 decorators single identifiers i.e. such as @Workflow()
+  if (tsm.Node.isIdentifier(expr)) {
+    const impSpec = getImportSpecifier(expr);
+    if (impSpec && isDbosImport(impSpec)) {
+      const kind = getImportSpecifierStructureKind(impSpec.getStructure());
+      if (kind) { return { kind, version: 1 }; }
+    }
+  }
+
+  // v2 decorators property access expressions i.e. such as @DBOS.workflow()
+  if (tsm.Node.isPropertyAccessExpression(expr)) {
+    const impSpec = getImportSpecifier(expr.getExpressionIfKind(tsm.SyntaxKind.Identifier));
+    if (impSpec && isDbosImport(impSpec)) {
+      const { name } = impSpec.getStructure();
+      if (name === "DBOS") {
+        const kind = getPropertyAccessExpressionKind(expr);
+        if (kind) { return { kind, version: 2 }; }
+      }
+    }
+  }
+
+  return undefined;
+
+  function getImportSpecifierStructureKind(
+    { name }: tsm.ImportSpecifierStructure
+  ): DbosDecoratorKind | undefined {
+    switch (name) {
+      case "GetApi":
+      case "PostApi":
+      case "PutApi":
+      case "PatchApi":
+      case "DeleteApi":
+        return "handler";
+      case "StoredProcedure": return "storedProcedure";
+      case "Transaction": return "transaction";
+      case "Workflow": return "workflow";
+      case "Communicator":
+      case "Step":
+        return "step";
+      case "DBOSInitializer":
+      case "DBOSDeploy":
+        return "initializer";
+      default: return undefined;
+    }
+  }
+
+  function getPropertyAccessExpressionKind(
+    node: tsm.PropertyAccessExpression
+  ): DbosDecoratorKind | undefined {
+    switch (node.getName()) {
+      case "getApi":
+      case "postApi":
+      case "putApi":
+      case "patchApi":
+      case "deleteApi":
+        return "handler";
+      case "workflow": return "workflow";
+      case "transaction": return "transaction";
+      case "step": return "step";
+      case "storedProcedure": return "storedProcedure";
+      default: return undefined;
+    }
+  }
+}
+
+// helper function to determine the kind of DBOS method
+export function getDbosMethodInfo(node: tsm.MethodDeclaration): DbosDecoratorInfo | undefined {
+  // Note, other DBOS method decorators (Scheduled, KafkaConsume, RequiredRole) modify runtime behavior
+  //       of DBOS methods, but are not their own unique kind.
+  //       Get/PostApi decorators are atypical in that they can be used on @Step/@Transaction/@Workflow
+  //       methods as well as on their own.
+  let handlerVersion: DbosDecoratorVersion | undefined = undefined;
+  for (const decorator of node.getDecorators()) {
+    const info = getDbosDecoratorInfo(decorator);
+    if (!info) { continue; }
+    switch (info.kind) {
+      case "storedProcedure":
+      case "transaction":
+      case "workflow":
+      case "step":
+      case "initializer":
+        return info;
+      case "handler":
+        if (handlerVersion !== undefined) {
+          throw new Error("Multiple handler decorators");
+        }
+        handlerVersion = info.version;
+        break;
+      default: {
+        const _never: never = info.kind;
+        // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
+        throw new Error(`Unexpected DBOS method kind: ${info.kind}`);
+      }
+    }
+  }
+  return handlerVersion
+    ? { kind: "handler", version: handlerVersion }
+    : undefined;
 }
 
 export type DecoratorArgument = boolean | string | number | DecoratorArgument[] | Record<string, unknown>;
@@ -400,67 +499,18 @@ export function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
   }
 }
 
-type DbosDecoratorKind = "handler" | "storedProcedure" | "transaction" | "workflow" | "communicator" | "initializer";
-
-function getDbosDecoratorKind(node: tsm.Decorator | DecoratorInfo): DbosDecoratorKind | undefined {
-  const decoratorInfo = tsm.Node.isNode(node) ? getDecoratorInfo(node) : node;
-  if (!decoratorInfo) { return undefined; }
-  const { name, module } = decoratorInfo;
-  if (module !== "@dbos-inc/dbos-sdk") { return undefined; }
-  switch (name) {
-    case "GetApi":
-    case "PostApi":
-      return "handler";
-    case "StoredProcedure": return "storedProcedure";
-    case "Transaction": return "transaction";
-    case "Workflow": return "workflow";
-    case "Communicator": return "communicator";
-    case "DBOSInitializer":
-    case "DBOSDeploy":
-      return "initializer";
-  }
-}
-
-// helper function to determine the kind of DBOS method
-export function getDbosMethodKind(node: tsm.MethodDeclaration): DbosDecoratorKind | undefined {
-  // Note, other DBOS method decorators (Scheduled, KafkaConsume, RequiredRole) modify runtime behavior
-  //       of DBOS methods, but are not their own unique kind.
-  //       Get/PostApi decorators are atypical in that they can be used on @Step/@Transaction/@Workflow
-  //       methods as well as on their own.
-  let isHandler = false;
-  for (const decorator of node.getDecorators()) {
-    const kind = getDbosDecoratorKind(decorator);
-    switch (kind) {
-      case "storedProcedure":
-      case "transaction":
-      case "workflow":
-      case "communicator":
-      case "initializer":
-        return kind;
-      case "handler":
-        isHandler = true;
-        break;
-      case undefined:
-        break;
-      default: {
-        const _never: never = kind;
-        // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-        throw new Error(`Unexpected DBOS method kind: ${kind}`);
-      }
-    }
-  }
-  return isHandler ? "handler" : undefined;
-}
-
-export function getStoredProcConfig(node: tsm.MethodDeclaration): StoredProcedureConfig {
-  const decorators = node.getDecorators().map(getDecoratorInfo);
-  const procDecorator = decorators.find(d => getDbosDecoratorKind(d) === "storedProcedure");
+export function getStoredProcConfig(node: tsm.MethodDeclaration, version: DbosDecoratorVersion): StoredProcedureConfig {
+  const decorators = node.getDecorators();
+  const procDecorator = decorators.find(d => {
+    const info = getDbosDecoratorInfo(d);
+    return info?.kind === "storedProcedure";
+  });
   if (!procDecorator) { throw new Error("Missing StoredProcedure decorator"); }
 
-  const arg0 = procDecorator.args?.[0];
+  const arg0 = procDecorator.getCallExpression()?.getArguments()[0] ?? undefined;
   const configArg = arg0 ? parseDecoratorArgument(arg0) as Partial<StoredProcedureConfig> : undefined;
   const readOnly = configArg?.readOnly;
   const executeLocally = configArg?.executeLocally;
   const isolationLevel = configArg?.isolationLevel;
-  return { isolationLevel, readOnly, executeLocally };
+  return { isolationLevel, readOnly, executeLocally, version };
 }

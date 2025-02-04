@@ -1,17 +1,17 @@
-import { MethodParameter, registerAndWrapFunction, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, ConfiguredInstance } from "../decorators";
+import { MethodParameter, registerAndWrapFunctionTakingContext, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, ConfiguredInstance } from "../decorators";
 import { DBOSExecutor, OperationType } from "../dbos-executor";
 import { DBOSContext, DBOSContextImpl } from "../context";
 import Koa from "koa";
 import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs, WFInvokeFuncsInst, GetWorkflowsInput, GetWorkflowsOutput } from "../workflow";
 import { Transaction } from "../transaction";
 import { W3CTraceContextPropagator } from "@opentelemetry/core";
-import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
+import { trace, defaultTextMapGetter, ROOT_CONTEXT } from "@opentelemetry/api";
 import { Span } from "@opentelemetry/sdk-trace-base";
-import { v4 as uuidv4 } from 'uuid';
 import { StepFunction } from "../step";
 import { APITypes, ArgSources } from "./handlerTypes";
 import { StoredProcedure } from "../procedure";
 import { WorkflowQueue } from "../wfqueue";
+import { getOrGenerateRequestID, RequestIDHeader } from "./middleware";
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -55,37 +55,26 @@ export interface HandlerContext extends DBOSContext {
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): SyncHandlerWfFuncs<T>;
   startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, queue?: WorkflowQueue): AsyncHandlerWfFuncInst<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T>;
-  
+
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
 }
 
-export const RequestIDHeader = "x-request-id";
-function getOrGenerateRequestID(ctx: Koa.Context): string {
-  const reqID = ctx.get(RequestIDHeader);
-  if (reqID) {
-    return reqID;
-  }
-  const newID = uuidv4();
-  ctx.set(RequestIDHeader, newID);
-  return newID;
-}
-
+// TODO: this should be refactored to not take a koaContext in.
 export class HandlerContextImpl extends DBOSContextImpl implements HandlerContext {
   readonly #dbosExec: DBOSExecutor;
   readonly W3CTraceContextPropagator: W3CTraceContextPropagator;
 
   constructor(dbosExec: DBOSExecutor, readonly koaContext: Koa.Context) {
     // Retrieve or generate the request ID
-    const requestID = getOrGenerateRequestID(koaContext);
+    const requestID = getOrGenerateRequestID(koaContext.request.headers);
+    koaContext.set(RequestIDHeader, requestID);
 
     // If present, retrieve the trace context from the request
     const httpTracer = new W3CTraceContextPropagator();
-    const extractedSpanContext = trace.getSpanContext(
-      httpTracer.extract(ROOT_CONTEXT, koaContext.request.headers, defaultTextMapGetter)
-    )
+    const extractedSpanContext = trace.getSpanContext(httpTracer.extract(ROOT_CONTEXT, koaContext.request.headers, defaultTextMapGetter));
     let span: Span;
     const spanAttributes = {
       operationType: OperationType.HANDLER,
@@ -105,7 +94,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
 
     // If running in DBOS Cloud, set the executor ID
     if (process.env.DBOS__VMID) {
-      this.executorID = process.env.DBOS__VMID
+      this.executorID = process.env.DBOS__VMID;
     }
 
     this.W3CTraceContextPropagator = httpTracer;
@@ -166,7 +155,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
           ? (...args: unknown[]) => this.#external(op.registeredFunction as StepFunction<unknown[], unknown>, params, ...args)
           : op.procConfig
 
-          ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown>, params, ...args)
+          ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown[], unknown>, params, ...args)
           : undefined;
       } else {
 
@@ -229,7 +218,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.#dbosExec.external(stepFn, params, ...args);
   }
 
-  async #procedure<R>(proc: StoredProcedure<R>, params: WorkflowParams, ...args: unknown[]): Promise<R> {
+  async #procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return this.#dbosExec.procedure(proc, params, ...args);
   }
 }
@@ -259,10 +248,11 @@ function generateApiDec(verb: APITypes, url: string) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
   ) {
-    const { descriptor, registration } = registerAndWrapFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
+    registration.performArgValidation = true;
 
     return descriptor;
   }

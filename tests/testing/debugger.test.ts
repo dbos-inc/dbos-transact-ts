@@ -164,10 +164,10 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username)).rejects.toThrow("Workflow status or inputs not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username)).rejects.toThrow(`DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`);
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testWorkflow(username)).rejects.toThrow("Workflow UUID not found!");
+    await expect(debugRuntime.invoke(DebuggerTest).testWorkflow(username)).rejects.toThrow(/DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm);
   });
 
   test("debug-sleep-workflow", async () => {
@@ -236,10 +236,10 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow("Workflow status or inputs not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow(`DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`);
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testFunction(username)).rejects.toThrow("Workflow UUID not found!");
+    await expect(debugRuntime.invoke(DebuggerTest).testFunction(username)).rejects.toThrow(/DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm);
   });
 
   test("debug-read-only-transaction", async () => {
@@ -259,10 +259,10 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testReadOnlyFunction(1)).rejects.toThrow("Workflow status or inputs not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testReadOnlyFunction(1)).rejects.toThrow(`DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`);
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testReadOnlyFunction(1)).rejects.toThrow("Workflow UUID not found!");
+    await expect(debugRuntime.invoke(DebuggerTest).testReadOnlyFunction(1)).rejects.toThrow(/DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm);
   });
 
   test("debug-step", async () => {
@@ -281,10 +281,10 @@ describe("debugger-test", () => {
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testStep()).rejects.toThrow("Workflow status or inputs not found!");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testStep()).rejects.toThrow(`DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`);
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testStep()).rejects.toThrow("Workflow UUID not found!");
+    await expect(debugRuntime.invoke(DebuggerTest).testStep()).rejects.toThrow(/DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm);
 
     // Make sure we correctly record the function's class name
     await dbosExec.flushWorkflowBuffers();
@@ -333,6 +333,6 @@ describe("debugger-test", () => {
     expect(DebuggerTest.cnt).toBe(2);
 
     // Execute again with different input, should still get the same output.
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).diffWorkflow(2)).rejects.toThrow("Detect different input for the workflow");
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).diffWorkflow(2)).rejects.toThrow(/DEBUGGER: Detected different inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.\s*Received: \[2\]\s*Original: \[1\]/gm);
   })
 });

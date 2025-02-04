@@ -2,22 +2,9 @@ import fs from "fs";
 import path from "path";
 
 /*
- * Use the node.js `fs` module to read the content of a file
- * Handles cases where:
- * - the file does not exist
- * - the file is not a valid file
+ * A wrapper of readFileSync used for mocking in tests
  **/
 export function readFileSync(path: string, encoding: BufferEncoding = "utf8"): string {
-  // First, check the file
-  fs.stat(path, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
-    if (error) {
-      throw new Error(`checking on ${path}. ${error.code}: ${error.errno}`);
-    } else if (!stats.isFile()) {
-      throw new Error(`config file ${path} is not a file`);
-    }
-  });
-
-  // Then, read its content
   return fs.readFileSync(path, { encoding } );
 }
 
@@ -93,32 +80,32 @@ export function DBOSReplacer(this: any, key: string, value: unknown) {
         dbos_data: actualValue.toISOString()
     }
     return res;
-  } 
-  
+  }
+
   if (typeof actualValue === 'bigint') {
     const res: DBOSSerializedBigInt = {
       dbos_type: 'dbos_BigInt',
       dbos_data: actualValue.toString(),
     };
     return res;
-  } 
+  }
   return value;
 }
 
 function isSerializedBuffer(value: unknown): value is SerializedBuffer {
-  return typeof value === 'object' 
+  return typeof value === 'object'
     && value !== null
     && (value as Record<string, unknown>).type === 'Buffer';
 }
 
 function isSerializedDate(value: unknown): value is DBOSSerializedDate {
-  return typeof value === 'object' 
+  return typeof value === 'object'
     && value !== null
     && (value as Record<string, unknown>).dbos_type === 'dbos_Date';
 }
 
 function isSerializedBigInt(value: unknown): value is DBOSSerializedBigInt {
-  return typeof value === 'object' 
+  return typeof value === 'object'
     && value !== null
     && (value as Record<string, unknown>).dbos_type === 'dbos_BigInt';
 }

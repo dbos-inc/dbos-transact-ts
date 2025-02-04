@@ -15,11 +15,11 @@ npm install --save @dbos-inc/component-aws-s3
 
 Second, ensure that the library class is imported and exported from an application entrypoint source file:
 ```typescript
-import { S3Ops } from "@dbos-inc/component-aws-s3";
-export { S3Ops };
+import { DBOS_S3 } from "@dbos-inc/component-aws-s3";
+export { DBOS_S3 };
 ```
 
-Third, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/api-reference/configuration) file; the following example will pull the AWS information from the environment:
+Third, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/typescript/reference/configuration) file; the following example will pull the AWS information from the environment:
 ```yaml
 application:
   aws_s3_configuration: aws_config # Optional if the section is called `aws_config`
@@ -34,20 +34,20 @@ If a different configuration file section should be used for S3, the `aws_s3_con
 The application will need at least one s3 bucket.  This can be placed in the `application` section of `dbos-config.yaml` also, but the naming key is to be established by the application.
 
 ## Selecting A Configuration
-`S3Ops` is a configured class.  The AWS configuration (or config file key name) and bucket name must be provided when a class instance is created, for example:
+`DBOS_S3` is a configured class.  The AWS configuration (or config file key name) and bucket name must be provided when a class instance is created, for example:
 ```typescript
-const defaultS3 = configureInstance(S3Ops, 'myS3Bucket', {awscfgname: 'aws_config', bucket: 'my-s3-bucket', ...});
+const defaultS3 = configureInstance(DBOS_S3, 'myS3Bucket', {awscfgname: 'aws_config', bucket: 'my-s3-bucket', ...});
 ```
 
 ## Simple Operation Wrappers
-The `S3Ops` class provides several [communicator](https://docs.dbos.dev/tutorials/communicator-tutorial) wrappers for S3 functions.
+The `DBOS_S3` class provides several DBOS [step](https://docs.dbos.dev/typescript/tutorials/step-tutorial) wrappers for S3 functions.
 
 ### Reading and Writing S3 From DBOS Handlers and Workflows
 
 #### Writing S3 Objects
 A string can be written to an S3 key with the following:
 ```typescript
-    const putres = await ctx.invoke(defaultS3).put('/my/test/key', "Test string from DBOS");
+    const putres = await defaultS3.put('/my/test/key', "Test string from DBOS");
 ```
 
 Note that the arguments to `put` will be logged to the database.  Consider [having the client upload to S3 with a presigned post](#client-access-to-s3-objects) if the data is generated outside of DBOS or if the data is larger than a few megabytes.
@@ -55,7 +55,7 @@ Note that the arguments to `put` will be logged to the database.  Consider [havi
 ### Reading S3 Objects
 A string can be read from an S3 key with the following:
 ```typescript
-    const getres = await ctx.invoke(defaultS3).get('/my/test/key');
+    const getres = await defaultS3.get('/my/test/key');
 ```
 
 Note that the return value from `get` will be logged to the database.  Consider [reading directly from S3 with a signed URL](#presigned-get-urls) if the data is large.
@@ -63,7 +63,7 @@ Note that the return value from `get` will be logged to the database.  Consider 
 ### Deleting Objects
 An S3 key can be removed/deleted with the following:
 ```typescript
-    const delres = await ctx.invoke(defaultS3).delete('/my/test/key');
+    const delres = await defaultS3.delete('/my/test/key');
 ```
 
 ### Client Access To S3 Objects
@@ -74,7 +74,7 @@ In these cases, the client can place a request to DBOS that produces a presigned
 #### Presigned GET URLs
 A presigned GET URL can be created for an S3 key with the following:
 ```typescript
-const geturl = await ctx.invoke(defaultS3).presignedGetURL('/my/test/key', 30 /*expiration, in seconds*/);
+const geturl = await defaultS3.presignedGetURL('/my/test/key', 30 /*expiration, in seconds*/);
 ```
 
 The resulting URL string can be used in the same way as any other URL for placing HTTP GET requests.
@@ -83,13 +83,13 @@ It may be desired to return the `Content-Type`, `Content-Disposition`, or other 
 
 ```typescript
 // Let the client know it is downloading a .zip file
-const geturl = await ctx.invoke(defaultS3).presignedGetURL('/my/test/key', 30 /*expiration, in seconds*/, {ResponseContentType: 'application/zip', ResponseContentDisposition: `attachment; filename="file.zip"`});
+const geturl = await defaultS3.presignedGetURL('/my/test/key', 30 /*expiration, in seconds*/, {ResponseContentType: 'application/zip', ResponseContentDisposition: `attachment; filename="file.zip"`});
 ```
 
 #### Presigned POSTs
 A presigned POST URL can be created for an S3 key with the following:
 ```typescript
-const presignedPost = await ctx.invoke(defaultS3).createPresignedPost(
+const presignedPost = await defaultS3.createPresignedPost(
     '/my/test/key', 30/*expiration*/, {contentType: 'text/plain'}/*size/content restrictions*/);
 ```
 
@@ -115,9 +115,9 @@ The resulting `PresignedPost` object is slightly more involved than a regular UR
 ## Consistently Maintaining a Database Table of S3 Objects
 In many cases, an application wants to keep track of objects that have been stored in S3.  S3 is, as the name implies, simple storage, and it doesn't track file attributes, permissions, fine-grained ownership, dependencies, etc.
 
-Keeping an indexed set of file metadata records, including referential links to their owners, is a "database problem".  And, while keeping the database in sync with the contents of S3 sounds like it may be tricky, [DBOS Transact Workflows](https://docs.dbos.dev/tutorials/workflow-tutorial) provide the perfect tool for accomplishing this, even in the face of client or server failures.
+Keeping an indexed set of file metadata records, including referential links to their owners, is a "database problem".  And, while keeping the database in sync with the contents of S3 sounds like it may be tricky, [DBOS Transact Workflows](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial) provide the perfect tool for accomplishing this, even in the face of client or server failures.
 
-The `S3Ops` class provides workflows that can be used to ensure that a table of file records is maintained for an S3 bucket.  This table can have any schema suitable to the application (an example table schema can be found in `s3_utils.test.ts`), because the application provides the code to maintain it as a set of callback functions that will be triggered from the workflow.
+The `DBOS_S3` class provides workflows that can be used to ensure that a table of file records is maintained for an S3 bucket.  This table can have any schema suitable to the application (an example table schema can be found in `s3_utils.test.ts`), because the application provides the code to maintain it as a set of callback functions that will be triggered from the workflow.
 
 The interface for the workflow functions (described below) allows for the following callbacks:
 ```typescript
@@ -125,19 +125,19 @@ export interface FileRecord {
     key: string; // AWS S3 Key
 }
 
-export interface S3Config{
+export interface DBOSS3Config{
     s3Callbacks?: {
         /* Called when a new active file is added to S3 */
-        newActiveFile: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        newActiveFile: (rec: FileRecord) => Promise<unknown>;
 
         /* Called when a new pending (still undergoing workflow processing) file is added to S3 */
-        newPendingFile: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        newPendingFile: (rec: FileRecord) => Promise<unknown>;
 
         /* Called when pending file becomes active */
-        fileActivated: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        fileActivated: (rec: FileRecord) => Promise<unknown>;
 
         /* Called when a file is deleted from S3 */
-        fileDeleted: (ctx: WorkflowContext, rec: FileRecord) => Promise<unknown>;
+        fileDeleted: (rec: FileRecord) => Promise<unknown>;
     },
     //... remainder of S3 Config
 }
@@ -147,7 +147,7 @@ export interface S3Config{
 The `saveStringToFile` workflow stores a string to an S3 key, and runs the callback function to update the database.  If anything goes wrong during the workflow, S3 will be cleaned up and the database will be unchanged by the workflow.
 
 ```typescript
-    await ctx.invokeWorkflow(defaultS3).saveStringToFile(fileDBRecord, 'This is my file');
+    await defaultS3.saveStringToFile(fileDBRecord, 'This is my file');
 ```
 
 This workflow performs the following actions:
@@ -158,7 +158,7 @@ This workflow performs the following actions:
 Note that the arguments to `saveStringToFile` will be logged to the database.  Consider [having the client upload to S3 with a presigned post](#workflow-to-allow-client-file-upload) if the data is larger than a few megabytes.
 
 ### Workflow to Retrieve a String from S3
-The workflow function `readStringFromFile(ctx: WorkflowContext, fileDetails: FileRecord)` will retrieve the contents of an S3 object as a `string`.
+The workflow function `readStringFromFile(fileDetails: FileRecord)` will retrieve the contents of an S3 object as a `string`.
 
 This workflow currently performs no additional operations outside of a call to `get(fileDetails.key)`.
 
@@ -168,7 +168,7 @@ Note that the return value from `readStringFromFile` will be logged to the datab
 The `deleteFile` workflow function removes a file from both S3 and the database.
 
 ```typescript
-await ctx.invokeWorkflow(defaultS3).deleteFile(fileDBRecord);
+await defaultS3.deleteFile(fileDBRecord);
 ```
 
 This workflow performs the following actions:
@@ -186,23 +186,23 @@ The workflow to allow application clients to upload to S3 directly is more invol
 The workflow can be used in the following way:
 ```typescript
 // Start the workflow
-const wfHandle = await ctx.startWorkflow(defaultS3)
+const wfHandle = await DBOS.startWorkflow(defaultS3)
     .writeFileViaURL(fileDBRec, 60/*expiration*/, {contentType: 'text/plain'} /*content restrictions*/);
 
 // Get the presigned post from the workflow
-const ppost = await ctx.getEvent<PresignedPost>(wfHandle.getWorkflowUUID(), "uploadkey");
+const ppost = await DBOS.getEvent<PresignedPost>(wfHandle.workflowID, "uploadkey");
 
 // Return the ppost object to the client for use as in 'Presigned POSTs' section above
-// The workflow UUID should also be known in some way
+// The workflow ID should also be known in some way
 ```
 
 Upon a completion call from the client, the following should be performed to notify the workflow to proceed:
 ```typescript
-// Look up wfHandle by the workflow UUID
-const wfHandle = ctx.retrieveWorkflow(uuid);
+// Look up wfHandle by the workflow ID
+const wfHandle = DBOS.retrieveWorkflow(wfid);
 
 // Notify workflow - truish means success, any falsy value indicates failure / cancel
-await ctx.send<boolean>(wfHandle.getWorkflowUUID(), true, "uploadfinish");
+await DBOS.send<boolean>(wfHandle.workflowID(), true, "uploadfinish");
 
 // Optionally, await completion of the workflow; this ensures that the database record is written,
 //  or will throw an error if anything went wrong in the workflow
@@ -210,7 +210,7 @@ await wfHandle.getResult();
 ```
 
 ### Workflow to Allow Client File Download
-The workflow function `getFileReadURL(ctx: WorkflowContext, fileDetails: FileRecord, expiration: number, options: S3GetResponseOptions)` returns a signed URL for retrieving object contents from S3, valid for `expiration` seconds, and using any provided [response options](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-s3/Interface/GetObjectCommandInput/).
+The workflow function `getFileReadURL(fileDetails: FileRecord, expiration: number, options: S3GetResponseOptions)` returns a signed URL for retrieving object contents from S3, valid for `expiration` seconds, and using any provided [response options](https://docs.aws.amazon.com/AWSJavaScriptSDK/v3/latest/Package/-aws-sdk-client-s3/Interface/GetObjectCommandInput/).
 
 This workflow currently performs no additional operations outside of a call to `presignedGetURL(fileDetails.key, expiration, options)`.
 
@@ -229,6 +229,6 @@ The `s3_utils.test.ts` file included in the source repository can be used to upl
 - `AWS_SECRET_ACCESS_KEY`: The secret access key corresponding to `AWS_ACCESS_KEY_ID`
 
 ## Next Steps
-- For a detailed DBOS Transact tutorial, check out our [programming quickstart](https://docs.dbos.dev/getting-started/quickstart-programming).
-- To learn how to deploy your application to DBOS Cloud, visit our [cloud quickstart](https://docs.dbos.dev/getting-started/quickstart-cloud/)
+- To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
+- For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).

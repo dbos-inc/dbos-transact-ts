@@ -5,7 +5,6 @@ import { Span } from "@opentelemetry/sdk-trace-base";
 import { DBOSContext, DBOSContextImpl } from "./context";
 import { ValuesOf } from "./utils";
 import { GlobalLogger as Logger } from "./telemetry/logs";
-import { WorkflowContextDebug } from "./debugger/debug_workflow";
 
 // Can we gradually call it TransactionFunction?
 export type Transaction<T extends unknown[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
@@ -32,7 +31,7 @@ export class TransactionContextImpl<T extends UserDatabaseClient> extends DBOSCo
   constructor(
     readonly clientKind: UserDatabaseName,
     readonly client: T,
-    workflowContext: WorkflowContextImpl | WorkflowContextDebug,
+    workflowContext: WorkflowContextImpl,
     span: Span,
     logger: Logger,
     readonly functionID: number,

@@ -52,7 +52,14 @@ function formatPgDatabaseError(err: DatabaseError): string {
 
 // Return if the error is caused by client request or by server internal.
 export function isClientError(dbosErrorCode: number) {
-  return (dbosErrorCode === DataValidationError) || (dbosErrorCode === WorkflowPermissionDeniedError) || (dbosErrorCode === TopicPermissionDeniedError) || (dbosErrorCode === ConflictingUUIDError) || (dbosErrorCode === NotRegisteredError);
+  return (
+    dbosErrorCode === DataValidationError ||
+    dbosErrorCode === WorkflowPermissionDeniedError ||
+    dbosErrorCode === TopicPermissionDeniedError ||
+    dbosErrorCode === ConflictingUUIDError ||
+    dbosErrorCode === NotRegisteredError ||
+    dbosErrorCode === ConflictingWorkflowError
+  );
 }
 
 export class DBOSError extends Error {
@@ -179,5 +186,36 @@ const FailedSqlTransactionError = 19;
 export class DBOSFailedSqlTransactionError extends DBOSError {
   constructor(workflowUUID: string, txnName: string) {
     super(`Postgres aborted the ${txnName} transaction of Workflow ${workflowUUID}.`, FailedSqlTransactionError);
+  }
+}
+
+const ExecutorNotInitializedError = 20;
+export class DBOSExecutorNotInitializedError extends DBOSError {
+  constructor() {
+    super("DBOS not initialized", ExecutorNotInitializedError);
+  }
+}
+
+const InvalidWorkflowTransition = 21;
+export class DBOSInvalidWorkflowTransitionError extends DBOSError {
+  constructor(msg?: string) {
+    super(msg ?? "Invalid workflow state", InvalidWorkflowTransition);
+  }
+}
+
+const ConflictingWorkflowError = 22;
+export class DBOSConflictingWorkflowError extends DBOSError {
+  constructor(workflowID: string, msg: string) {
+    super(`Conflicting workflow invocation with the same ID (${workflowID}): ${msg}`, ConflictingWorkflowError);
+  }
+}
+
+const MaximumRetriesError = 23;
+export class DBOSMaxStepRetriesError extends DBOSError {
+  readonly errors;
+  constructor(stepName: string, maxRetries: number, errors: Error[]) {
+    const formattedErrors = errors.map((error, index) => `Error ${index + 1}: ${error.message}`).join('. ')
+    super(`Step ${stepName} has exceeded its maximum of ${maxRetries} retries. Previous errors: ${formattedErrors}`, MaximumRetriesError);
+    this.errors = errors;
   }
 }

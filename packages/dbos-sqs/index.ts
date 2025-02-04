@@ -1,4 +1,6 @@
 import {
+  DBOS,
+
   Communicator,
   CommunicatorContext,
   InitContext,
@@ -14,7 +16,7 @@ import {
 } from '@dbos-inc/dbos-sdk';
 
 import { DeleteMessageCommand, GetQueueAttributesCommand, GetQueueAttributesCommandInput, Message, ReceiveMessageCommand, ReceiveMessageCommandOutput, SQSClient, SendMessageCommand, SendMessageCommandInput } from "@aws-sdk/client-sqs";
-import { AWSServiceConfig, getAWSConfigForService, loadAWSConfigByName } from '@dbos-inc/aws-config';
+import { AWSServiceConfig, getAWSConfigByName, getAWSConfigForService, getConfigForAWSService, loadAWSConfigByName } from '@dbos-inc/aws-config';
 
 // Create a new type that omits the QueueUrl property
 type MessageWithoutQueueUrl = Omit<SendMessageCommandInput, 'QueueUrl'>;
@@ -32,7 +34,7 @@ interface SQSConfig {
     workflowQueueName?: string;
 }
 
-class SQSCommunicator extends ConfiguredInstance
+class DBOS_SQS extends ConfiguredInstance
 {
     config: SQSConfig;
     client?: SQSClient;
@@ -43,20 +45,22 @@ class SQSCommunicator extends ConfiguredInstance
     }
 
     static AWS_SQS_CONFIGURATION = 'aws_sqs_configuration';
-    async initialize(ctx: InitContext) {
+    async initialize() {
+        DBOS.logger.info(`DBOS_SQS initialize`);
+
         // Get the config and call the validation
         if (!this.config.awscfg) {
             if (this.config.awscfgname) {
-                this.config.awscfg = loadAWSConfigByName(ctx, this.config.awscfgname);
+                this.config.awscfg = getAWSConfigByName(this.config.awscfgname);
             }
             else {
-                this.config.awscfg = getAWSConfigForService(ctx, SQSCommunicator.AWS_SQS_CONFIGURATION);
+                this.config.awscfg = getConfigForAWSService(DBOS_SQS.AWS_SQS_CONFIGURATION);
             }
         }
         if (!this.config.awscfg) {
-            throw new Error(`AWS Configuration not specified for SQSCommunicator: ${this.name}`);
+            throw new Error(`AWS Configuration not specified for DBOS_SQS: ${this.name}`);
         }
-	    this.client = SQSCommunicator.createSQS(this.config.awscfg);
+	    this.client = DBOS_SQS.createSQS(this.config.awscfg);
         return Promise.resolve();
     }
 
@@ -67,6 +71,73 @@ class SQSCommunicator extends ConfiguredInstance
         };
 
         const _validateSQSConfiguration = await client.send(new GetQueueAttributesCommand(params));
+    }
+
+    @DBOS.step()
+    async sendMessage(
+	    msg: MessageWithOptionalQueueUrl,
+    )
+    {
+        try {
+            const smsg = {...msg, QueueUrl: msg.QueueUrl || this.config.queueUrl || this.config.queueURL};
+            return await this.client!.send(new SendMessageCommand(smsg));
+        }
+        catch (e) {
+            DBOS.logger.error(e);
+            throw e;
+        }
+    }
+
+    static createSQS(cfg: AWSServiceConfig) {
+        return new SQSClient({
+            region: cfg.region,
+            credentials: cfg.credentials,
+            maxAttempts: cfg.maxRetries,
+            endpoint: cfg.endpoint,
+            //logger: console,
+        });
+    }
+}
+
+class SQSCommunicator extends ConfiguredInstance
+{
+    config: SQSConfig;
+    client?: SQSClient;
+
+    constructor(name: string, cfg: SQSConfig) {
+        super(name);
+	    this.config = cfg;
+    }
+
+    async initialize(ctx: InitContext) {
+        // Get the config and call the validation
+        if (!this.config.awscfg) {
+            if (this.config.awscfgname) {
+                this.config.awscfg = loadAWSConfigByName(ctx, this.config.awscfgname);
+            }
+            else {
+                this.config.awscfg = getAWSConfigForService(ctx, DBOS_SQS.AWS_SQS_CONFIGURATION);
+            }
+        }
+        if (!this.config.awscfg) {
+            throw new Error(`AWS Configuration not specified for SQSCommunicator: ${this.name}`);
+        }
+	    this.client = DBOS_SQS.createSQS(this.config.awscfg);
+        return Promise.resolve();
+    }
+
+    static async validateConnection(client: SQSClient, url: string) {
+        return DBOS_SQS.validateConnection(client, url);
+    }
+
+    static createSQS(cfg: AWSServiceConfig) {
+        return new SQSClient({
+            region: cfg.region,
+            credentials: cfg.credentials,
+            maxAttempts: cfg.maxRetries,
+            endpoint: cfg.endpoint,
+            //logger: console,
+        });
     }
 
     @Communicator()
@@ -83,16 +154,6 @@ class SQSCommunicator extends ConfiguredInstance
             ctx.logger.error(e);
             throw e;
         }
-    }
-
-    static createSQS(cfg: AWSServiceConfig) {
-        return new SQSClient({
-            region: cfg.region,
-            credentials: cfg.credentials,
-            maxAttempts: cfg.maxRetries,
-            endpoint: cfg.endpoint,
-            //logger: console,
-        });
     }
 }
 
@@ -160,15 +221,15 @@ class SQSReceiver implements DBOSEventReceiver
                     awscfg = loadAWSConfigByName(this.executor, cro.config.awscfgname);
                 }
                 if (!awscfg) {
-                    awscfg = getAWSConfigForService(this.executor, SQSCommunicator.AWS_SQS_CONFIGURATION);
+                    awscfg = getAWSConfigForService(this.executor, DBOS_SQS.AWS_SQS_CONFIGURATION);
                 }
                 if (!awscfg) {
                     throw new DBOSError.DBOSError(`AWS Configuration not specified for SQS Receiver: ${cname}.${mname}`);
                 }
 
-                const sqs = SQSCommunicator.createSQS(awscfg);
+                const sqs = DBOS_SQS.createSQS(awscfg);
                 try {
-                    await SQSCommunicator.validateConnection(sqs, url);
+                    await DBOS_SQS.validateConnection(sqs, url);
                     executor.logger.info(`Successfully connected to SQS queue ${url} for ${cname}.${mname}`);
                 }
                 catch (e) { 
@@ -259,10 +320,10 @@ function SQSConfigure(config: SQSConfig) {
 
 // Decorators - method  
 function SQSMessageConsumer(config?: SQSConfig) {
-    function mtddec<This, Ctx extends WorkflowContext, Return>(
+    function mtddec<This, Args extends ([Message] | [WorkflowContext, Message]), Return>(
         target: object,
         propertyKey: string,
-        inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: [Message]) => Promise<Return>>
+        inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
     ) {
         if (!sqsRcv) sqsRcv = new SQSReceiver();
 
@@ -278,6 +339,7 @@ function SQSMessageConsumer(config?: SQSConfig) {
 
 export {
     SQSConfig,
+    DBOS_SQS,
     SQSCommunicator,
     SQSCommunicator as SQSStep,
     SQSConfigure,
