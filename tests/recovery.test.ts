@@ -1,4 +1,4 @@
-import { WorkflowContext, Workflow, TestingRuntime } from "../src/";
+import { WorkflowContext, Workflow, WorkflowQueue, TestingRuntime } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
@@ -49,6 +49,11 @@ describe("recovery-tests", () => {
       LocalRecovery.resolve2 = resolve;
     });
 
+    static resolve3: () => void;
+    static promise3 = new Promise<void>((resolve) => {
+      LocalRecovery.resolve3 = resolve;
+    });
+
     static cnt = 0;
 
     @Workflow()
@@ -79,6 +84,13 @@ describe("recovery-tests", () => {
       LocalRecovery.recoveryCount += 1
       await LocalRecovery.deadLetterPromise;
     }
+
+    @Workflow({maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts})
+    static async fencedDeadLetterWorkflow(_ctxt: WorkflowContext) {
+      LocalRecovery.recoveryCount += 1
+      LocalRecovery.resolve3()
+      await LocalRecovery.deadLetterPromise;
+    }
   }
 
   test("dead-letter-queue", async () => {
@@ -93,13 +105,8 @@ describe("recovery-tests", () => {
       expect(LocalRecovery.recoveryCount).toBeLessThanOrEqual(LocalRecovery.maxRecoveryAttempts);
     }
 
-    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
-      await testRuntime.startWorkflow(LocalRecovery, handle.getWorkflowUUID()).deadLetterWorkflow();
-      expect(LocalRecovery.recoveryCount).toBe(i + LocalRecovery.maxRecoveryAttempts + 1);
-    }
-
     let result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
-    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts));
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
     expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
 
     LocalRecovery.deadLetterResolve();
@@ -107,7 +114,36 @@ describe("recovery-tests", () => {
 
     await dbosExec.flushWorkflowBuffers();
     result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
-    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts));
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
+    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
+  });
+
+  test("enqueued-dead-letter-queue", async () => {
+    LocalRecovery.cnt = 0;
+    LocalRecovery.recoveryCount = 0;
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+
+    const queue = new WorkflowQueue("DLQQ", { concurrency: 1 });
+
+    const handle = await testRuntime.startWorkflow(LocalRecovery, undefined, undefined, queue).fencedDeadLetterWorkflow();
+    await LocalRecovery.promise3;
+
+    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
+      await dbosExec.recoverPendingWorkflows();
+      expect(LocalRecovery.recoveryCount).toBeGreaterThanOrEqual(Math.min(i, LocalRecovery.maxRecoveryAttempts));
+      expect(LocalRecovery.recoveryCount).toBeLessThanOrEqual(LocalRecovery.maxRecoveryAttempts);
+    }
+
+    let result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
+    expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
+
+    LocalRecovery.deadLetterResolve();
+    await handle.getResult();
+
+    await dbosExec.flushWorkflowBuffers();
+    result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 

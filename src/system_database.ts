@@ -102,7 +102,6 @@ export interface WorkflowStatusInternal {
   applicationID: string;
   createdAt: number;
   maxRetries: number;
-  recovery: boolean;
 }
 
 export interface ExistenceCheck {
@@ -218,11 +217,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         executor_id,
         application_version,
         application_id,
-        created_at
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        created_at,
+        recovery_attempts
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (workflow_uuid)
         DO UPDATE SET
-          recovery_attempts = CASE WHEN $16 THEN workflow_status.recovery_attempts + 1 ELSE workflow_status.recovery_attempts END
+          recovery_attempts = workflow_status.recovery_attempts + 1
         RETURNING recovery_attempts, status, name, class_name, config_name, queue_name`,
       [
         initStatus.workflowUUID,
@@ -240,7 +240,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.applicationVersion,
         initStatus.applicationID,
         initStatus.createdAt,
-        initStatus.recovery,
+        initStatus.status === StatusString.ENQUEUED ? 0 : 1,
       ]
     );
     // Check the started workflow matches the expected name, class_name, config_name, and queue_name
@@ -264,11 +264,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
       throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
     }
 
-    const recovery_attempts = resRow.recovery_attempts;
-    if (recovery_attempts >= initStatus.maxRetries && initStatus.recovery) {
+    // recovery_attempt means "attempts" (we kept the name for backward compatibility). It's default value is 1.
+    // Every time we init the status, we increment `recovery_attempts` by 1.
+    // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
+    const attempts = resRow.recovery_attempts;
+    if (attempts > initStatus.maxRetries) {
       await this.pool.query(`UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`, [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING]);
       throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
     }
+    this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
     const status = resRow.status;
 
     const serializedInputs = DBOSJSON.stringify(args);

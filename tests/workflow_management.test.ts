@@ -231,38 +231,39 @@ describe("workflow-management-tests", () => {
   test("test-cancel-retry-restart", async () => {
     TestEndpoints.tries = 0;
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
-
     const handle = await testRuntime.startWorkflow(TestEndpoints).waitingWorkflow();
     expect(TestEndpoints.tries).toBe(1);
     await cancelWorkflow(config, handle.getWorkflowUUID());
 
-    let result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
-    expect(result.rows[0].recovery_attempts).toBe(String(0));
+    let result = await systemDBClient.query<{status: string, attempts: number}>(`SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.CANCELLED);
 
-    await dbosExec.recoverPendingWorkflows();
+    await dbosExec.recoverPendingWorkflows(); // Does nothing as the workflow is CANCELLED
     expect(TestEndpoints.tries).toBe(1);
 
     TestEndpoints.testResolve();
-    await reattemptWorkflow(config, null, handle.getWorkflowUUID(), false); // Retry the workflow
+    await reattemptWorkflow(config, null, handle.getWorkflowUUID(), false); // Retry the workflow, resetting the attempts counter
+    result = await systemDBClient.query<{status: string, attempts: number}>(`SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].attempts).toBe(String(1));
     expect(TestEndpoints.tries).toBe(2);
     await handle.getResult();
 
     await dbosExec.flushWorkflowBuffers();
-    result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
-    expect(result.rows[0].recovery_attempts).toBe(String(1));
+    result = await systemDBClient.query<{status: string, attempts: number}>(`SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
     await reattemptWorkflow(config, null, handle.getWorkflowUUID(), true); // Restart the workflow
     expect(TestEndpoints.tries).toBe(3);
     await dbosExec.flushWorkflowBuffers();
     // Validate a new workflow is started and successful
-    result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid!=$1`, [handle.getWorkflowUUID()]);
-    expect(result.rows[0].recovery_attempts).toBe(String(0));
+    result = await systemDBClient.query<{status: string, attempts: number}>(`SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid!=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
     // Validate the original workflow status hasn't changed
-    result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
-    expect(result.rows[0].recovery_attempts).toBe(String(1));
+    result = await systemDBClient.query<{status: string, attempts: number}>(`SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 

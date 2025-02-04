@@ -41,7 +41,6 @@ export interface WorkflowParams {
   workflowUUID?: string;
   parentCtx?: DBOSContextImpl;
   configuredInstance?: ConfiguredInstance | null;
-  recovery?: boolean;
   queueName?: string;
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
 }
