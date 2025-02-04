@@ -49,6 +49,11 @@ describe("recovery-tests", () => {
       LocalRecovery.resolve2 = resolve;
     });
 
+    static resolve3: () => void;
+    static promise3 = new Promise<void>((resolve) => {
+      LocalRecovery.resolve3 = resolve;
+    });
+
     static cnt = 0;
 
     @Workflow()
@@ -83,7 +88,7 @@ describe("recovery-tests", () => {
     @Workflow({maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts})
     static async fencedDeadLetterWorkflow(_ctxt: WorkflowContext) {
       LocalRecovery.recoveryCount += 1
-      LocalRecovery.resolve1()
+      LocalRecovery.resolve3()
       await LocalRecovery.deadLetterPromise;
     }
   }
@@ -115,12 +120,13 @@ describe("recovery-tests", () => {
 
   test("enqueued-dead-letter-queue", async () => {
     LocalRecovery.cnt = 0;
+    LocalRecovery.recoveryCount = 0;
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     const queue = new WorkflowQueue("DLQQ", { concurrency: 1 });
 
     const handle = await testRuntime.startWorkflow(LocalRecovery, undefined, undefined, queue).fencedDeadLetterWorkflow();
-    await LocalRecovery.promise1;
+    await LocalRecovery.promise3;
 
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
       await dbosExec.recoverPendingWorkflows();
