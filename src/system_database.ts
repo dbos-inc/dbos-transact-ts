@@ -217,8 +217,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         executor_id,
         application_version,
         application_id,
-        created_at
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+        created_at,
+        recovery_attempts
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = workflow_status.recovery_attempts + 1
@@ -239,6 +240,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.applicationVersion,
         initStatus.applicationID,
         initStatus.createdAt,
+        initStatus.status === StatusString.ENQUEUED ? 0 : 1,
       ]
     );
     // Check the started workflow matches the expected name, class_name, config_name, and queue_name

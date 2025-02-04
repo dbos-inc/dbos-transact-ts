@@ -1,4 +1,4 @@
-import { WorkflowContext, Workflow, TestingRuntime } from "../src/";
+import { WorkflowContext, Workflow, WorkflowQueue, TestingRuntime, DBOS } from "../src/";
 import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
 import { DBOSConfig } from "../src/dbos-executor";
 import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
@@ -79,6 +79,13 @@ describe("recovery-tests", () => {
       LocalRecovery.recoveryCount += 1
       await LocalRecovery.deadLetterPromise;
     }
+
+    @Workflow({maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts})
+    static async fencedDeadLetterWorkflow(_ctxt: WorkflowContext) {
+      LocalRecovery.recoveryCount += 1
+      LocalRecovery.resolve1()
+      await LocalRecovery.deadLetterPromise;
+    }
   }
 
   test("dead-letter-queue", async () => {
@@ -86,6 +93,34 @@ describe("recovery-tests", () => {
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     const handle = await testRuntime.startWorkflow(LocalRecovery).deadLetterWorkflow();
+
+    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
+      await dbosExec.recoverPendingWorkflows();
+      expect(LocalRecovery.recoveryCount).toBeGreaterThanOrEqual(Math.min(i, LocalRecovery.maxRecoveryAttempts));
+      expect(LocalRecovery.recoveryCount).toBeLessThanOrEqual(LocalRecovery.maxRecoveryAttempts);
+    }
+
+    let result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
+    expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
+
+    LocalRecovery.deadLetterResolve();
+    await handle.getResult();
+
+    await dbosExec.flushWorkflowBuffers();
+    result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
+    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
+  });
+
+  test("enqueued-dead-letter-queue", async () => {
+    LocalRecovery.cnt = 0;
+    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+
+    const queue = new WorkflowQueue("DLQQ", { concurrency: 1 });
+
+    const handle = await testRuntime.startWorkflow(LocalRecovery, undefined, undefined, queue).fencedDeadLetterWorkflow();
+    await LocalRecovery.promise1;
 
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
       await dbosExec.recoverPendingWorkflows();
