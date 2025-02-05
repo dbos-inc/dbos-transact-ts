@@ -1,5 +1,6 @@
-import { DBOS, DBOSRuntimeConfig } from '../../src';
-import { DBOSConfig } from '../../src/dbos-executor';
+import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
+import { DBOSConfig, DBOSExecutor } from '../../src/dbos-executor';
+import { sleepms } from '../../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 
 describe('admin-server-tests', () => {
@@ -62,5 +63,72 @@ describe('admin-server-tests', () => {
       signal: AbortSignal.timeout(5000),
     });
     expect(postNotFoundResponse.status).toBe(404);
+  });
+
+  class TestAdminResume {
+    static counter = 0;
+
+    @DBOS.workflow()
+    static async simpleWorkflow() {
+      TestAdminResume.counter++;
+      return Promise.resolve();
+    }
+  }
+
+  test('test-admin-resume', async () => {
+    // Run the workflow. Verify it succeeds.
+    const handle = await DBOS.startWorkflow(TestAdminResume).simpleWorkflow();
+    await handle.getResult();
+    expect(TestAdminResume.counter).toBe(1);
+    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Cancel the workflow. Verify it was cancelled.
+    let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/cancel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([]),
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(response.status).toBe(204);
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+    });
+
+    // Resume the workflow. Verify it succeeds again.
+    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/resume`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([]),
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(response.status).toBe(204);
+    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
+    expect(TestAdminResume.counter).toBe(2);
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Resume the workflow. Verify it does not run and statuc remains SUCCESS
+    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/resume`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify([]),
+      signal: AbortSignal.timeout(5000),
+    });
+    expect(response.status).toBe(204);
+    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
+    expect(TestAdminResume.counter).toBe(2);
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
   });
 });
