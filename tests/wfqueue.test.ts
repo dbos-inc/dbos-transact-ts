@@ -436,6 +436,43 @@ describe('queued-wf-tests-simple', () => {
     expect(TestQueueRecovery.taskCount).toEqual(10);
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
+
+  class TestCancelQueues {
+    static startEvent = new Event();
+    static blockingEvent = new Event();
+    static queue = new WorkflowQueue('TestCancelQueues', { concurrency: 1 });
+
+    @DBOS.workflow()
+    static async stuckWorkflow() {
+      TestCancelQueues.startEvent.set();
+      await TestCancelQueues.blockingEvent.wait();
+    }
+
+    @DBOS.workflow()
+    static async regularWorkflow() {
+      return Promise.resolve();
+    }
+  }
+
+  test('test-cancel-queues', async () => {
+    const wfid = uuidv4();
+    const blockedHandle = await DBOS.startWorkflow(TestCancelQueues, {
+      workflowID: wfid,
+      queueName: TestCancelQueues.queue.name,
+    }).stuckWorkflow();
+    const regularHandle = await DBOS.startWorkflow(TestCancelQueues, {
+      queueName: TestCancelQueues.queue.name,
+    }).regularWorkflow();
+
+    await TestCancelQueues.startEvent.wait();
+    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+    });
+    await expect(regularHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+    TestCancelQueues.blockingEvent.set();
+  });
 });
 
 describe('queued-wf-tests-concurrent-workers', () => {
