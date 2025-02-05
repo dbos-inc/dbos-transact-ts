@@ -96,7 +96,7 @@ export async function reattemptWorkflow(
   try {
     await dbosExec.init();
     if (!startNewWorkflow) {
-      await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
+      await dbosExec.systemDatabase.resumeWorkflow(workflowUUID);
     }
     const handle = await dbosExec.executeWorkflowUUID(workflowUUID, startNewWorkflow);
     const output = await handle.getResult();

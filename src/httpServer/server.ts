@@ -5,7 +5,7 @@ import cors from '@koa/cors';
 import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
-import { Workflow, StatusString } from '../workflow';
+import { Workflow } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../error';
 import { DBOSExecutor } from '../dbos-executor';
 import { GlobalLogger as Logger } from '../telemetry/logs';
@@ -247,7 +247,7 @@ export class DBOSHttpServer {
       const workflowId = koaCtxt.params.workflow_id;
       console.log(`Resuming workflow with ID: ${workflowId}`);
       //eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
-      await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, true);
+      await dbosExec.systemDatabase.resumeWorkflow(workflowId);
 
       // eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
       await dbosExec.executeWorkflowUUID(workflowId, false);
