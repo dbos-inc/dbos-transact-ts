@@ -1,6 +1,16 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Span } from "@opentelemetry/sdk-trace-base";
-import { DBOSError, DBOSInitializationError, DBOSWorkflowConflictUUIDError, DBOSNotRegisteredError, DBOSDebuggerError, DBOSConfigKeyTypeError, DBOSFailedSqlTransactionError, DBOSMaxStepRetriesError, DBOSWorkflowRecoveryError  } from "./error";
+import { Span } from '@opentelemetry/sdk-trace-base';
+import {
+  DBOSError,
+  DBOSInitializationError,
+  DBOSWorkflowConflictUUIDError,
+  DBOSNotRegisteredError,
+  DBOSDebuggerError,
+  DBOSConfigKeyTypeError,
+  DBOSFailedSqlTransactionError,
+  DBOSMaxStepRetriesError,
+  DBOSWorkflowRecoveryError,
+} from './error';
 import {
   InvokedHandle,
   Workflow,
@@ -1790,14 +1800,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const foundPendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID);
       // Re-enqueue workflows member of a queue
       for (const pendingWorkflow of foundPendingWorkflows) {
-        this.logger.debug(`Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`)
+        this.logger.debug(
+          `Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`,
+        );
         if (pendingWorkflow.queueName) {
           try {
             await this.systemDatabase.reEnqueueWorkflow(pendingWorkflow.workflowUUID);
           } catch (e) {
             // If this is a serialization failure, i.e., some other DBOS process is trying to re-enqueue or complete the workflow, skip it.
             if (this.userDatabase.isRetriableTransactionError(e)) {
-              this.logger.warn(`Failed to re-enqueue workflow ${pendingWorkflow.workflowUUID}: ${(e as Error).message}`);
+              this.logger.warn(
+                `Failed to re-enqueue workflow ${pendingWorkflow.workflowUUID}: ${(e as Error).message}`,
+              );
               continue;
             } else {
               throw new DBOSWorkflowRecoveryError(pendingWorkflow.workflowUUID, (e as Error).message);
