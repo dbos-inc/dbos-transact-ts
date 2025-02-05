@@ -60,21 +60,21 @@ describe('admin-server-tests', () => {
     expect(postNotFoundResponse.status).toBe(404);
   });
 
-  class TestAdminResume {
+  class testAdminWorkflow {
     static counter = 0;
 
     @DBOS.workflow()
     static async simpleWorkflow() {
-      TestAdminResume.counter++;
+      testAdminWorkflow.counter++;
       return Promise.resolve();
     }
   }
 
-  test('test-admin-resume', async () => {
+  test('test-admin-workflow-management', async () => {
     // Run the workflow. Verify it succeeds.
-    const handle = await DBOS.startWorkflow(TestAdminResume).simpleWorkflow();
+    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow();
     await handle.getResult();
-    expect(TestAdminResume.counter).toBe(1);
+    expect(testAdminWorkflow.counter).toBe(1);
     await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -101,7 +101,7 @@ describe('admin-server-tests', () => {
     });
     expect(response.status).toBe(204);
     await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
-    expect(TestAdminResume.counter).toBe(2);
+    expect(testAdminWorkflow.counter).toBe(2);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -115,9 +115,20 @@ describe('admin-server-tests', () => {
     });
     expect(response.status).toBe(204);
     await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
-    expect(TestAdminResume.counter).toBe(2);
+    expect(testAdminWorkflow.counter).toBe(2);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
+
+    // Restart the workflow. Verify it runs
+    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/restart`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(response.status).toBe(204);
+    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
+    expect(testAdminWorkflow.counter).toBe(3);
   });
 });

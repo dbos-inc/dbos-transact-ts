@@ -259,13 +259,9 @@ export class DBOSHttpServer {
   static registerRestartWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const workflowResumeUrl = '/workflows/:workflow_id/restart';
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const workflowId = koaCtxt.params.workflow_id;
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       console.log(`Restarting workflow: ${workflowId} with a new id`);
-
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
       await dbosExec.executeWorkflowUUID(workflowId, true);
-
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
