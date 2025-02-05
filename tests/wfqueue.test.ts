@@ -484,7 +484,7 @@ describe('queued-wf-tests-simple', () => {
     });
 
     // Cancel the blocked workflow. Verify the regular workflow runs.
-    await DBOSExecutor.globalInstance?.systemDatabase.cancelWorkflow(wfid);
+    await DBOSExecutor.globalInstance?.cancelWorkflow(wfid);
     await expect(blockedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
     });

@@ -227,7 +227,7 @@ export class DBOSHttpServer {
       const workflowId = koaCtxt.params.workflow_id;
       console.log(`Cancelling workflow with ID: ${workflowId}`);
       //eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await dbosExec.systemDatabase.cancelWorkflow(workflowId);
+      await dbosExec.cancelWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowCancelUrl, workflowCancelHandler);

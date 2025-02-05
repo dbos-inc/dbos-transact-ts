@@ -1964,6 +1964,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return oc;
   }
 
+  async cancelWorkflow(workflowID: string): Promise<void> {
+    return await this.systemDatabase.cancelWorkflow(workflowID);
+  }
+
   /* BACKGROUND PROCESSES */
   /**
    * Periodically flush the workflow output buffer to the system database.
