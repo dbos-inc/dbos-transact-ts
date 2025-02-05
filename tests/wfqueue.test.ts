@@ -498,23 +498,40 @@ describe('queued-wf-tests-simple', () => {
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
 
+  class TestResumeQueues {
+    static startEvent = new Event();
+    static blockingEvent = new Event();
+    static queue = new WorkflowQueue('TestResumeQueues', { concurrency: 1 });
+
+    @DBOS.workflow()
+    static async stuckWorkflow() {
+      TestResumeQueues.startEvent.set();
+      await TestResumeQueues.blockingEvent.wait();
+    }
+
+    @DBOS.workflow()
+    static async regularWorkflow() {
+      return Promise.resolve();
+    }
+  }
+
   test('test-resume-queues', async () => {
     const wfid = uuidv4();
 
     // Enqueue the blocked and regular workflow on a queue with concurrency 1
-    const blockedHandle = await DBOS.startWorkflow(TestCancelQueues, {
-      queueName: TestCancelQueues.queue.name,
+    const blockedHandle = await DBOS.startWorkflow(TestResumeQueues, {
+      queueName: TestResumeQueues.queue.name,
     }).stuckWorkflow();
-    const regularHandle = await DBOS.startWorkflow(TestCancelQueues, {
+    const regularHandle = await DBOS.startWorkflow(TestResumeQueues, {
       workflowID: wfid,
-      queueName: TestCancelQueues.queue.name,
+      queueName: TestResumeQueues.queue.name,
     }).regularWorkflow();
-    const regularHandleTwo = await DBOS.startWorkflow(TestCancelQueues, {
-      queueName: TestCancelQueues.queue.name,
+    const regularHandleTwo = await DBOS.startWorkflow(TestResumeQueues, {
+      queueName: TestResumeQueues.queue.name,
     }).regularWorkflow();
 
-    // Verify the blocked workflow starts and is PENDING while the regular workflow remains ENQUEUED
-    await TestCancelQueues.startEvent.wait();
+    // Verify the blocked workflow starts and is PENDING while the regular workflows remain ENQUEUED
+    await TestResumeQueues.startEvent.wait();
     await expect(blockedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
     });
@@ -530,7 +547,7 @@ describe('queued-wf-tests-simple', () => {
     await expect(regularHandle.getResult()).resolves.toBeNull();
 
     // Complete the blocked workflow. Verify the second regular workflow also completes.
-    TestCancelQueues.blockingEvent.set();
+    TestResumeQueues.blockingEvent.set();
     await expect(blockedHandle.getResult()).resolves.toBeNull();
     await expect(regularHandleTwo.getResult()).resolves.toBeNull();
 

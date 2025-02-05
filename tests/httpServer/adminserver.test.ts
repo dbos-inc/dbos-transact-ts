@@ -1,6 +1,5 @@
 import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
 import { DBOSConfig, DBOSExecutor } from '../../src/dbos-executor';
-import { sleepms } from '../../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 
 describe('admin-server-tests', () => {
