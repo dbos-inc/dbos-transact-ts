@@ -1,5 +1,5 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import { WorkflowQueue } from '../src';
 import { v4 as uuidv4 } from 'uuid';
@@ -464,6 +464,8 @@ describe('queued-wf-tests-simple', () => {
 
   test('test-cancel-queues', async () => {
     const wfid = uuidv4();
+
+    // Enqueue the blocked and regular workflow on a queue with concurrency 1
     const blockedHandle = await DBOS.startWorkflow(TestCancelQueues, {
       workflowID: wfid,
       queueName: TestCancelQueues.queue.name,
@@ -472,6 +474,7 @@ describe('queued-wf-tests-simple', () => {
       queueName: TestCancelQueues.queue.name,
     }).regularWorkflow();
 
+    // Verify the blocked workflow starts and is PENDING while the regular workflow remains ENQUEUED
     await TestCancelQueues.startEvent.wait();
     await expect(blockedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
@@ -479,7 +482,20 @@ describe('queued-wf-tests-simple', () => {
     await expect(regularHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ENQUEUED,
     });
+
+    // Cancel the blocked workflow. Verify the regular workflow runs.
+    await DBOSExecutor.globalInstance?.systemDatabase.cancelWorkflow(wfid);
+    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+    });
+    await expect(regularHandle.getResult()).resolves.toBeNull();
+
+    // Complete the blocked workflow
     TestCancelQueues.blockingEvent.set();
+    await expect(blockedHandle.getResult()).resolves.toBeNull();
+
+    // Verify all queue entries eventually get cleaned up
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
 });
 
