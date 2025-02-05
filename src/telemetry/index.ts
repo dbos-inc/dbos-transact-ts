@@ -1,8 +1,8 @@
-import { LoggerConfig } from "./logs";
-import { OTLPExporterConfig } from "./exporters";
-import { Span } from "@opentelemetry/sdk-trace-base";
-import { LogRecord } from "@opentelemetry/api-logs";
-import { TelemetrySignal } from "./collector";
+import { LoggerConfig } from './logs';
+import { OTLPExporterConfig } from './exporters';
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { LogRecord } from '@opentelemetry/api-logs';
+import { TelemetrySignal } from './collector';
 
 export function isTraceSignal(signal: TelemetrySignal): signal is Span {
   // Span is an interface that has a property 'kind'

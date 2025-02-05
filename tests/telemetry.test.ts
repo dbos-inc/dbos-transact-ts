@@ -1,11 +1,11 @@
-import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from "@opentelemetry/core";
-import { DBOSExecutor, DBOSConfig } from "../src/dbos-executor";
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { Transaction, Workflow, RequiredRole } from "../src/decorators";
-import request from "supertest";
-import { GetApi, HandlerContext, TestingRuntime, TransactionContext, WorkflowContext } from "../src";
-import { PoolClient } from "pg";
-import { createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from '@opentelemetry/core';
+import { DBOSExecutor, DBOSConfig } from '../src/dbos-executor';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { Transaction, Workflow, RequiredRole } from '../src/decorators';
+import request from 'supertest';
+import { GetApi, HandlerContext, TestingRuntime, TransactionContext, WorkflowContext } from '../src';
+import { PoolClient } from 'pg';
+import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -19,30 +19,30 @@ export class TestClass {
   }
 
   @Workflow()
-  @RequiredRole(["dbosAppAdmin", "dbosAppUser"])
+  @RequiredRole(['dbosAppAdmin', 'dbosAppUser'])
   static async test_workflow(workflowCtxt: WorkflowContext, name: string): Promise<string> {
     const funcResult = await workflowCtxt.invoke(TestClass).test_function(name);
     return funcResult;
   }
 
-  @GetApi("/hello")
+  @GetApi('/hello')
   static async hello(_ctx: HandlerContext) {
-    return Promise.resolve({ message: "hello!" });
+    return Promise.resolve({ message: 'hello!' });
   }
 }
 
-describe("dbos-telemetry", () => {
+describe('dbos-telemetry', () => {
   afterEach(() => {
     jest.restoreAllMocks();
   });
 
-  test("DBOS init works with exporters", async () => {
+  test('DBOS init works with exporters', async () => {
     const dbosConfig = generateDBOSTestConfig();
     expect(dbosConfig.telemetry).not.toBeUndefined();
     if (dbosConfig.telemetry) {
       dbosConfig.telemetry.OTLPExporter = {
-        tracesEndpoint: "http://localhost:4317/v1/traces",
-        logsEndpoint: "http://localhost:4317/v1/logs",
+        tracesEndpoint: 'http://localhost:4317/v1/traces',
+        logsEndpoint: 'http://localhost:4317/v1/logs',
       };
     }
     await setUpDBOSTestDb(dbosConfig);
@@ -55,7 +55,7 @@ describe("dbos-telemetry", () => {
 
   // TODO write a test intercepting OTLP over HTTP requests and test span/logs payloads
 
-  describe("http Tracer", () => {
+  describe('http Tracer', () => {
     let config: DBOSConfig;
     let testRuntime: TestingRuntime;
 
@@ -72,26 +72,26 @@ describe("dbos-telemetry", () => {
       await testRuntime.destroy();
     });
 
-    test("Trace context is propagated in and out of workflow execution", async () => {
+    test('Trace context is propagated in and out of workflow execution', async () => {
       const headers = {
-        [TRACE_PARENT_HEADER]: "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01",
-        [TRACE_STATE_HEADER]: "some_state=some_value",
+        [TRACE_PARENT_HEADER]: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
+        [TRACE_STATE_HEADER]: 'some_state=some_value',
       };
 
-      const response = await request(testRuntime.getHandlersCallback()).get("/hello").set(headers);
+      const response = await request(testRuntime.getHandlersCallback()).get('/hello').set(headers);
       expect(response.statusCode).toBe(200);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(response.body.message).toBe("hello!");
+      expect(response.body.message).toBe('hello!');
       // traceId should be the same, spanId should be different (ID of the last operation's span)
-      expect(response.headers.traceparent).toContain("00-4bf92f3577b34da6a3ce929d0e0e4736");
+      expect(response.headers.traceparent).toContain('00-4bf92f3577b34da6a3ce929d0e0e4736');
       expect(response.headers.tracestate).toBe(headers[TRACE_STATE_HEADER]);
     });
 
-    test("New trace context is propagated out of workflow", async () => {
-      const response = await request(testRuntime.getHandlersCallback()).get("/hello");
+    test('New trace context is propagated out of workflow', async () => {
+      const response = await request(testRuntime.getHandlersCallback()).get('/hello');
       expect(response.statusCode).toBe(200);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(response.body.message).toBe("hello!");
+      expect(response.body.message).toBe('hello!');
       // traceId should be the same, spanId should be different (ID of the last operation's span)
       expect(response.headers.traceparent).not.toBe(null);
     });

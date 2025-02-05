@@ -11,10 +11,7 @@
     "language": {
       "type": "string",
       "description": "The language used in your application",
-      "enum": [
-        "node",
-        "python"
-      ]
+      "enum": ["node", "python"]
     },
     "database": {
       "type": "object",
@@ -66,13 +63,7 @@
         "app_db_client": {
           "type": "string",
           "description": "Specify the database client to use to connect to the application database",
-          "enum": [
-            "pg-node",
-            "prisma",
-            "typeorm",
-            "knex",
-            "drizzle"
-          ]
+          "enum": ["pg-node", "prisma", "typeorm", "knex", "drizzle"]
         },
         "migrate": {
           "type": "array",
@@ -137,8 +128,8 @@
           "description": "The port number of the application server (Default: 3000)"
         },
         "admin_port": {
-            "type": "number",
-            "description": "The port number of the admin server (Default: 3001 or the app server port + 1)"
+          "type": "number",
+          "description": "The port number of the admin server (Default: 3001 or the app server port + 1)"
         },
         "start": {
           "type": "array",

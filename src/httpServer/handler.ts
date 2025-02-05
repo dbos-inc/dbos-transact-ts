@@ -1,17 +1,34 @@
-import { MethodParameter, registerAndWrapFunctionTakingContext, getOrCreateMethodArgsRegistration, MethodRegistrationBase, getRegisteredOperations, ConfiguredInstance } from "../decorators";
-import { DBOSExecutor, OperationType } from "../dbos-executor";
-import { DBOSContext, DBOSContextImpl } from "../context";
-import Koa from "koa";
-import { Workflow, TailParameters, WorkflowHandle, WorkflowParams, WorkflowContext, WFInvokeFuncs, WFInvokeFuncsInst, GetWorkflowsInput, GetWorkflowsOutput } from "../workflow";
-import { Transaction } from "../transaction";
-import { W3CTraceContextPropagator } from "@opentelemetry/core";
-import { trace, defaultTextMapGetter, ROOT_CONTEXT } from "@opentelemetry/api";
-import { Span } from "@opentelemetry/sdk-trace-base";
-import { StepFunction } from "../step";
-import { APITypes, ArgSources } from "./handlerTypes";
-import { StoredProcedure } from "../procedure";
-import { WorkflowQueue } from "../wfqueue";
-import { getOrGenerateRequestID, RequestIDHeader } from "./middleware";
+import {
+  MethodParameter,
+  registerAndWrapFunctionTakingContext,
+  getOrCreateMethodArgsRegistration,
+  MethodRegistrationBase,
+  getRegisteredOperations,
+  ConfiguredInstance,
+} from '../decorators';
+import { DBOSExecutor, OperationType } from '../dbos-executor';
+import { DBOSContext, DBOSContextImpl } from '../context';
+import Koa from 'koa';
+import {
+  Workflow,
+  TailParameters,
+  WorkflowHandle,
+  WorkflowParams,
+  WorkflowContext,
+  WFInvokeFuncs,
+  WFInvokeFuncsInst,
+  GetWorkflowsInput,
+  GetWorkflowsOutput,
+} from '../workflow';
+import { Transaction } from '../transaction';
+import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { StepFunction } from '../step';
+import { APITypes, ArgSources } from './handlerTypes';
+import { StoredProcedure } from '../procedure';
+import { WorkflowQueue } from '../wfqueue';
+import { getOrGenerateRequestID, RequestIDHeader } from './middleware';
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -19,32 +36,36 @@ type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
 export type InvokeFuncsInst<T> = WFInvokeFuncsInst<T>;
 
-export type AsyncHandlerWfFuncs<T> =
-  T extends ConfiguredInstance
+export type AsyncHandlerWfFuncs<T> = T extends ConfiguredInstance
   ? never
   : {
-    [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
-  };
+      [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc
+        ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>>
+        : never;
+    };
 
-export type SyncHandlerWfFuncs<T> =
-  T extends ConfiguredInstance
+export type SyncHandlerWfFuncs<T> = T extends ConfiguredInstance
   ? never
   : {
-    [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<Awaited<ReturnType<T[P]>>> : never;
-  };
+      [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc
+        ? (...args: TailParameters<T[P]>) => Promise<Awaited<ReturnType<T[P]>>>
+        : never;
+    };
 
-export type AsyncHandlerWfFuncInst<T> =
-  T extends ConfiguredInstance
+export type AsyncHandlerWfFuncInst<T> = T extends ConfiguredInstance
   ? {
-    [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
-  }
+      [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc
+        ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>>
+        : never;
+    }
   : never;
 
-export type SyncHandlerWfFuncsInst<T> =
-  T extends ConfiguredInstance
+export type SyncHandlerWfFuncsInst<T> = T extends ConfiguredInstance
   ? {
-    [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => Promise<Awaited<ReturnType<T[P]>>> : never;
-  }
+      [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc
+        ? (...args: TailParameters<T[P]>) => Promise<Awaited<ReturnType<T[P]>>>
+        : never;
+    }
   : never;
 
 export interface HandlerContext extends DBOSContext {
@@ -53,7 +74,11 @@ export interface HandlerContext extends DBOSContext {
   invoke<T extends object>(targetClass: T, workflowUUID?: string): InvokeFuncs<T>;
   invokeWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string): SyncHandlerWfFuncsInst<T>;
   invokeWorkflow<T extends object>(targetClass: T, workflowUUID?: string): SyncHandlerWfFuncs<T>;
-  startWorkflow<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string, queue?: WorkflowQueue): AsyncHandlerWfFuncInst<T>;
+  startWorkflow<T extends ConfiguredInstance>(
+    targetCfg: T,
+    workflowUUID?: string,
+    queue?: WorkflowQueue,
+  ): AsyncHandlerWfFuncInst<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T>;
 
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
@@ -67,14 +92,19 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   readonly #dbosExec: DBOSExecutor;
   readonly W3CTraceContextPropagator: W3CTraceContextPropagator;
 
-  constructor(dbosExec: DBOSExecutor, readonly koaContext: Koa.Context) {
+  constructor(
+    dbosExec: DBOSExecutor,
+    readonly koaContext: Koa.Context,
+  ) {
     // Retrieve or generate the request ID
     const requestID = getOrGenerateRequestID(koaContext.request.headers);
     koaContext.set(RequestIDHeader, requestID);
 
     // If present, retrieve the trace context from the request
     const httpTracer = new W3CTraceContextPropagator();
-    const extractedSpanContext = trace.getSpanContext(httpTracer.extract(ROOT_CONTEXT, koaContext.request.headers, defaultTextMapGetter));
+    const extractedSpanContext = trace.getSpanContext(
+      httpTracer.extract(ROOT_CONTEXT, koaContext.request.headers, defaultTextMapGetter),
+    );
     let span: Span;
     const spanAttributes = {
       operationType: OperationType.HANDLER,
@@ -122,7 +152,11 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.#dbosExec.send(destinationUUID, message, topic, idempotencyKey);
   }
 
-  async getEvent<T>(workflowUUID: string, key: string, timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec): Promise<T | null> {
+  async getEvent<T>(
+    workflowUUID: string,
+    key: string,
+    timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
+  ): Promise<T | null> {
     return this.#dbosExec.getEvent(workflowUUID, key, timeoutSeconds);
   }
 
@@ -134,34 +168,38 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
    * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
    * to use WorkflowContext.Transaction(OpClass.someMethod, param);
    */
-  mainInvoke<T extends object>(object: T, workflowUUID: string | undefined, asyncWf: boolean, configuredInstance: ConfiguredInstance | null, queue?: WorkflowQueue)
-    : InvokeFuncs<T>
-  {
+  mainInvoke<T extends object>(
+    object: T,
+    workflowUUID: string | undefined,
+    asyncWf: boolean,
+    configuredInstance: ConfiguredInstance | null,
+    queue?: WorkflowQueue,
+  ): InvokeFuncs<T> {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
     const params = { workflowUUID: workflowUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
 
     for (const op of ops) {
       if (asyncWf) {
-
         proxy[op.name] = op.txnConfig
-
-          ? (...args: unknown[]) => this.#transaction(op.registeredFunction as Transaction<unknown[], unknown>, params, ...args)
+          ? (...args: unknown[]) =>
+              this.#transaction(op.registeredFunction as Transaction<unknown[], unknown>, params, ...args)
           : op.workflowConfig
-
-          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args)
-          : op.commConfig
-
-          ? (...args: unknown[]) => this.#external(op.registeredFunction as StepFunction<unknown[], unknown>, params, ...args)
-          : op.procConfig
-
-          ? (...args: unknown[]) => this.#procedure(op.registeredFunction as StoredProcedure<unknown[], unknown>, params, ...args)
-          : undefined;
+            ? (...args: unknown[]) =>
+                this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args)
+            : op.commConfig
+              ? (...args: unknown[]) =>
+                  this.#external(op.registeredFunction as StepFunction<unknown[], unknown>, params, ...args)
+              : op.procConfig
+                ? (...args: unknown[]) =>
+                    this.#procedure(op.registeredFunction as StoredProcedure<unknown[], unknown>, params, ...args)
+                : undefined;
       } else {
-
         proxy[op.name] = op.workflowConfig
-
-          ? (...args: unknown[]) => this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args).then((handle) => handle.getResult())
+          ? (...args: unknown[]) =>
+              this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args).then((handle) =>
+                handle.getResult(),
+              )
           : undefined;
       }
     }
@@ -171,30 +209,40 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   invoke<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): InvokeFuncs<T> | InvokeFuncsInst<T> {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, true, null, undefined);
-    }
-    else {
+    } else {
       const targetInst = object as ConfiguredInstance;
       return this.mainInvoke(targetInst, workflowUUID, true, targetInst, undefined) as unknown as InvokeFuncsInst<T>;
     }
   }
 
-  startWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string, queue?: WorkflowQueue): AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T> {
+  startWorkflow<T extends object>(
+    object: T | ConfiguredInstance,
+    workflowUUID?: string,
+    queue?: WorkflowQueue,
+  ): AsyncHandlerWfFuncs<T> | AsyncHandlerWfFuncInst<T> {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, true, null, queue);
-    }
-    else {
+    } else {
       const targetInst = object as ConfiguredInstance;
       return this.mainInvoke(targetInst, workflowUUID, true, targetInst, queue) as unknown as AsyncHandlerWfFuncInst<T>;
     }
   }
 
-  invokeWorkflow<T extends object>(object: T | ConfiguredInstance, workflowUUID?: string): SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsInst<T> {
+  invokeWorkflow<T extends object>(
+    object: T | ConfiguredInstance,
+    workflowUUID?: string,
+  ): SyncHandlerWfFuncs<T> | SyncHandlerWfFuncsInst<T> {
     if (typeof object === 'function') {
       return this.mainInvoke(object, workflowUUID, false, null, undefined) as unknown as SyncHandlerWfFuncs<T>;
-    }
-    else {
+    } else {
       const targetInst = object as ConfiguredInstance;
-      return this.mainInvoke(targetInst, workflowUUID, false, targetInst, undefined) as unknown as SyncHandlerWfFuncsInst<T>;
+      return this.mainInvoke(
+        targetInst,
+        workflowUUID,
+        false,
+        targetInst,
+        undefined,
+      ) as unknown as SyncHandlerWfFuncsInst<T>;
     }
   }
 
@@ -206,7 +254,11 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   /* PRIVATE METHODS */
   /////////////////////
 
-  async #workflow<T extends unknown[], R>(wf: Workflow<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>> {
+  async #workflow<T extends unknown[], R>(
+    wf: Workflow<T, R>,
+    params: WorkflowParams,
+    ...args: T
+  ): Promise<WorkflowHandle<R>> {
     return this.#dbosExec.workflow(wf, params, ...args);
   }
 
@@ -218,7 +270,11 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     return this.#dbosExec.external(stepFn, params, ...args);
   }
 
-  async #procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async #procedure<T extends unknown[], R>(
+    proc: StoredProcedure<T, R>,
+    params: WorkflowParams,
+    ...args: T
+  ): Promise<R> {
     return this.#dbosExec.procedure(proc, params, ...args);
   }
 }
@@ -246,7 +302,7 @@ function generateApiDec(verb: APITypes, url: string) {
   return function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>,
   ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
@@ -255,27 +311,27 @@ function generateApiDec(verb: APITypes, url: string) {
     registration.performArgValidation = true;
 
     return descriptor;
-  }
+  };
 }
 
 export function GetApi(url: string) {
-  return generateApiDec(APITypes.GET, url)
+  return generateApiDec(APITypes.GET, url);
 }
 
 export function PostApi(url: string) {
-  return generateApiDec(APITypes.POST, url)
+  return generateApiDec(APITypes.POST, url);
 }
 
 export function PutApi(url: string) {
-  return generateApiDec(APITypes.PUT, url)
+  return generateApiDec(APITypes.PUT, url);
 }
 
 export function PatchApi(url: string) {
-  return generateApiDec(APITypes.PATCH, url)
+  return generateApiDec(APITypes.PATCH, url);
 }
 
 export function DeleteApi(url: string) {
-  return generateApiDec(APITypes.DELETE, url)
+  return generateApiDec(APITypes.DELETE, url);
 }
 
 ///////////////////////////////////

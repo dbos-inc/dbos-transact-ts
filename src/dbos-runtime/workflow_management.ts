@@ -1,30 +1,36 @@
-import { createLogger } from "winston";
-import { DBOSConfig, GetWorkflowsInput, StatusString } from "..";
-import { PostgresSystemDatabase, SystemDatabase } from "../system_database";
-import { GlobalLogger } from "../telemetry/logs";
-import { WorkflowStatus } from "../workflow";
-import { HTTPRequest } from "../context";
-import { DBOSExecutor } from "../dbos-executor";
-import { DBOSRuntime, DBOSRuntimeConfig } from "./runtime";
+import { createLogger } from 'winston';
+import { DBOSConfig, GetWorkflowsInput, StatusString } from '..';
+import { PostgresSystemDatabase, SystemDatabase } from '../system_database';
+import { GlobalLogger } from '../telemetry/logs';
+import { WorkflowStatus } from '../workflow';
+import { HTTPRequest } from '../context';
+import { DBOSExecutor } from '../dbos-executor';
+import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
 
 export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput, getRequest: boolean) {
-  const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
+  const systemDatabase = new PostgresSystemDatabase(
+    config.poolConfig,
+    config.system_database,
+    createLogger() as unknown as GlobalLogger,
+  );
   const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs.reverse(); // Reverse so most recent entries are printed last
-  const workflowInfos = await Promise.all(workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)))
+  const workflowInfos = await Promise.all(
+    workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
+  );
   await systemDatabase.destroy();
   return workflowInfos;
 }
 
 export type WorkflowInformation = Omit<WorkflowStatus, 'request'> & {
-  workflowUUID: string,
-  input?: unknown[],
-  output?: unknown,
-  error?: unknown,
-  request?: HTTPRequest,
-}
+  workflowUUID: string;
+  input?: unknown[];
+  output?: unknown;
+  error?: unknown;
+  request?: HTTPRequest;
+};
 
 async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: string, getRequest: boolean) {
-  const info = await systemDatabase.getWorkflowStatus(workflowUUID) as WorkflowInformation;
+  const info = (await systemDatabase.getWorkflowStatus(workflowUUID)) as WorkflowInformation;
   info.workflowUUID = workflowUUID;
   if (info === null) {
     return {};
@@ -50,10 +56,14 @@ async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: str
 }
 
 export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getRequest: boolean) {
-  const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
+  const systemDatabase = new PostgresSystemDatabase(
+    config.poolConfig,
+    config.system_database,
+    createLogger() as unknown as GlobalLogger,
+  );
   try {
-    const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest)
-  return info;
+    const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest);
+    return info;
   } finally {
     await systemDatabase.destroy();
   }
@@ -61,15 +71,24 @@ export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getR
 
 // Cancelling a workflow prevents it from being automatically recovered, but active executions are not halted.
 export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
-  const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, createLogger() as unknown as GlobalLogger)
+  const systemDatabase = new PostgresSystemDatabase(
+    config.poolConfig,
+    config.system_database,
+    createLogger() as unknown as GlobalLogger,
+  );
   try {
-    await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false)
+    await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false);
   } finally {
     await systemDatabase.destroy();
   }
 }
 
-export async function reattemptWorkflow(config: DBOSConfig, runtimeConfig: DBOSRuntimeConfig | null, workflowUUID: string, startNewWorkflow: boolean) {
+export async function reattemptWorkflow(
+  config: DBOSConfig,
+  runtimeConfig: DBOSRuntimeConfig | null,
+  workflowUUID: string,
+  startNewWorkflow: boolean,
+) {
   const dbosExec = new DBOSExecutor(config);
   if (runtimeConfig !== null) {
     await DBOSRuntime.loadClasses(runtimeConfig.entrypoints);

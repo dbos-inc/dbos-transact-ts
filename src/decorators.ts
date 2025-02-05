@@ -1,22 +1,31 @@
-import "reflect-metadata";
+import 'reflect-metadata';
 
-import * as crypto from "crypto";
-import { TransactionConfig, TransactionContext } from "./transaction";
-import { WorkflowConfig, WorkflowContext } from "./workflow";
-import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, InitContext } from "./context";
-import { StepConfig, StepContext } from "./step";
-import { DBOSError, DBOSNotAuthorizedError } from "./error";
-import { validateMethodArgs } from "./data_validation";
-import { StoredProcedureConfig, StoredProcedureContext } from "./procedure";
-import { DBOSEventReceiver } from "./eventreceiver";
+import * as crypto from 'crypto';
+import { TransactionConfig, TransactionContext } from './transaction';
+import { WorkflowConfig, WorkflowContext } from './workflow';
+import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, InitContext } from './context';
+import { StepConfig, StepContext } from './step';
+import { DBOSError, DBOSNotAuthorizedError } from './error';
+import { validateMethodArgs } from './data_validation';
+import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
+import { DBOSEventReceiver } from './eventreceiver';
 
 /**
  * Any column type column can be.
  */
-export type DBOSFieldType = "integer" | "double" | "decimal" | "timestamp" | "text" | "varchar" | "boolean" | "uuid" | "json";
+export type DBOSFieldType =
+  | 'integer'
+  | 'double'
+  | 'decimal'
+  | 'timestamp'
+  | 'text'
+  | 'varchar'
+  | 'boolean'
+  | 'uuid'
+  | 'json';
 
 export class DBOSDataType {
-  dataType: DBOSFieldType = "text";
+  dataType: DBOSFieldType = 'text';
   length: number = -1;
   precision: number = -1;
   scale: number = -1;
@@ -24,7 +33,7 @@ export class DBOSDataType {
   /** Varchar has length */
   static varchar(length: number) {
     const dt = new DBOSDataType();
-    dt.dataType = "varchar";
+    dt.dataType = 'varchar';
     dt.length = length;
     return dt;
   }
@@ -32,7 +41,7 @@ export class DBOSDataType {
   /** Some decimal has precision / scale (as opposed to floating point decimal) */
   static decimal(precision: number, scale: number) {
     const dt = new DBOSDataType();
-    dt.dataType = "decimal";
+    dt.dataType = 'decimal';
     dt.precision = precision;
     dt.scale = scale;
 
@@ -45,15 +54,15 @@ export class DBOSDataType {
     const dt = new DBOSDataType();
 
     if (arg === String) {
-      dt.dataType = "text";
+      dt.dataType = 'text';
     } else if (arg === Date) {
-      dt.dataType = "timestamp";
+      dt.dataType = 'timestamp';
     } else if (arg === Number) {
-      dt.dataType = "double";
+      dt.dataType = 'double';
     } else if (arg === Boolean) {
-      dt.dataType = "boolean";
+      dt.dataType = 'boolean';
     } else {
-      dt.dataType = "json";
+      dt.dataType = 'json';
     }
 
     return dt;
@@ -61,10 +70,10 @@ export class DBOSDataType {
 
   formatAsString(): string {
     let rv: string = this.dataType;
-    if (this.dataType === "varchar" && this.length > 0) {
+    if (this.dataType === 'varchar' && this.length > 0) {
       rv += `(${this.length})`;
     }
-    if (this.dataType === "decimal" && this.precision > 0) {
+    if (this.dataType === 'decimal' && this.precision > 0) {
       if (this.scale > 0) {
         rv += `(${this.precision},${this.scale})`;
       } else {
@@ -75,7 +84,7 @@ export class DBOSDataType {
   }
 }
 
-const paramMetadataKey = Symbol.for("dbos:parameter");
+const paramMetadataKey = Symbol.for('dbos:parameter');
 
 /* Arguments parsing heuristic:
  * - Convert the function to a string
@@ -87,25 +96,25 @@ const paramMetadataKey = Symbol.for("dbos:parameter");
 // eslint-disable-next-line @typescript-eslint/ban-types
 function getArgNames(func: Function): string[] {
   let fn = func.toString();
-  fn = fn.replace(/\s/g, "");
-  fn = fn.substring(fn.indexOf("(") + 1, fn.indexOf(")"));
-  return fn.split(",");
+  fn = fn.replace(/\s/g, '');
+  fn = fn.substring(fn.indexOf('(') + 1, fn.indexOf(')'));
+  return fn.split(',');
 }
 
 export enum LogMasks {
-  NONE = "NONE",
-  HASH = "HASH",
-  SKIP = "SKIP",
+  NONE = 'NONE',
+  HASH = 'HASH',
+  SKIP = 'SKIP',
 }
 
 export enum ArgRequiredOptions {
-  REQUIRED = "REQUIRED",
-  OPTIONAL = "OPTIONAL",
-  DEFAULT = "DEFAULT",
+  REQUIRED = 'REQUIRED',
+  OPTIONAL = 'OPTIONAL',
+  DEFAULT = 'DEFAULT',
 }
 
 export class MethodParameter {
-  name: string = "";
+  name: string = '';
   required: ArgRequiredOptions = ArgRequiredOptions.DEFAULT;
   validate: boolean = true;
   logMask: LogMasks = LogMasks.NONE;
@@ -127,8 +136,7 @@ export class MethodParameter {
 /* REGISTRATION OBJECTS and read access */
 //////////////////////////////////////////
 
-export interface RegistrationDefaults
-{
+export interface RegistrationDefaults {
   name: string;
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions;
@@ -145,7 +153,7 @@ export interface MethodRegistrationBase {
 
   defaults?: RegistrationDefaults;
 
-  getRequiredRoles(): string [];
+  getRequiredRoles(): string[];
 
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
@@ -167,22 +175,19 @@ export interface MethodRegistrationBase {
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
 
-export class MethodRegistration <This, Args extends unknown[], Return>
-implements MethodRegistrationBase
-{
+export class MethodRegistration<This, Args extends unknown[], Return> implements MethodRegistrationBase {
   defaults?: RegistrationDefaults | undefined;
 
-  name: string = "";
-  className: string = "";
+  name: string = '';
+  className: string = '';
 
   requiredRole: string[] | undefined = undefined;
 
-  performArgValidation:boolean = false;
+  performArgValidation: boolean = false;
   args: MethodParameter[] = [];
   passContext: boolean = false;
 
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean, passContext: boolean)
-  {
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean, passContext: boolean) {
     this.origFunction = origFunc;
     this.isInstance = isInstance;
     this.passContext = passContext;
@@ -201,7 +206,7 @@ implements MethodRegistrationBase
 
   init: boolean = false;
 
-  invoke(pthis:This, args: Args) : Promise<Return> {
+  invoke(pthis: This, args: Args): Promise<Return> {
     return this.registeredFunction!.call(pthis, ...args);
   }
 
@@ -221,9 +226,8 @@ export abstract class ConfiguredInstance {
   abstract initialize(ctx: InitContext): Promise<void>;
 }
 
-export class ClassRegistration <CT extends { new (...args: unknown[]) : object }> implements RegistrationDefaults
-{
-  name: string = "";
+export class ClassRegistration<CT extends { new (...args: unknown[]): object }> implements RegistrationDefaults {
+  name: string = '';
   requiredRole: string[] | undefined;
   defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
   defaultArgValidate: boolean = false;
@@ -247,14 +251,14 @@ export class ClassRegistration <CT extends { new (...args: unknown[]) : object }
 // This is a bit ugly, if we got the class / instance it would help avoid this auxiliary structure
 const methodToRegistration: Map<unknown, MethodRegistration<unknown, unknown[], unknown>> = new Map();
 export function getRegisteredMethodClassName(func: unknown): string {
-  let rv:string = "";
+  let rv: string = '';
   if (methodToRegistration.has(func)) {
     rv = methodToRegistration.get(func)!.className;
   }
   return rv;
 }
 export function getRegisteredMethodName(func: unknown): string {
-  let rv:string = "";
+  let rv: string = '';
   if (methodToRegistration.has(func)) {
     rv = methodToRegistration.get(func)!.name;
   }
@@ -267,11 +271,11 @@ export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<u
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
 
-  if (typeof target === 'function') { // Constructor case
+  if (typeof target === 'function') {
+    // Constructor case
     const classReg = classesByName.get(target.name);
-    classReg?.registeredOperations?.forEach((m) =>registeredOperations.push(m));
-  }
-  else {
+    classReg?.registeredOperations?.forEach((m) => registeredOperations.push(m));
+  } else {
     let current: object | undefined = target;
     while (current) {
       const cname = current.constructor.name;
@@ -303,11 +307,12 @@ export function getOrCreateMethodArgsRegistration(target: object, propertyKey: s
   if (typeof regtarget !== 'function') {
     regtarget = regtarget.constructor;
   }
-  let mParameters: MethodParameter[] = (Reflect.getOwnMetadata(paramMetadataKey, regtarget, propertyKey) as MethodParameter[]) || [];
+  let mParameters: MethodParameter[] =
+    (Reflect.getOwnMetadata(paramMetadataKey, regtarget, propertyKey) as MethodParameter[]) || [];
 
   if (!mParameters.length) {
     // eslint-disable-next-line @typescript-eslint/ban-types
-    const designParamTypes = Reflect.getMetadata("design:paramtypes", target, propertyKey) as Function[];
+    const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[];
     mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
 
     Reflect.defineMetadata(paramMetadataKey, mParameters, regtarget, propertyKey);
@@ -317,25 +322,23 @@ export function getOrCreateMethodArgsRegistration(target: object, propertyKey: s
 }
 
 function generateSaltedHash(data: string, salt: string): string {
-  const hash = crypto.createHash("sha256"); // You can use other algorithms like 'md5', 'sha512', etc.
+  const hash = crypto.createHash('sha256'); // You can use other algorithms like 'md5', 'sha512', etc.
   hash.update(data + salt);
-  return hash.digest("hex");
+  return hash.digest('hex');
 }
 
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string | symbol,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-  passContext: boolean
+  passContext: boolean,
 ) {
   let regtarget: AnyConstructor;
   let isInstance = false;
   if (typeof target === 'function') {
     // Static method case
     regtarget = target as AnyConstructor;
-  }
-  else
-  {
+  } else {
     // Instance method case
     regtarget = target.constructor as AnyConstructor;
     isInstance = true;
@@ -345,10 +348,15 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
   const fname = propertyKey.toString();
   if (!classReg.registeredOperations.has(fname)) {
-    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(descriptor.value!, isInstance, passContext));
+    classReg.registeredOperations.set(
+      fname,
+      new MethodRegistration<This, Args, Return>(descriptor.value!, isInstance, passContext),
+    );
   }
-  const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(fname)! as MethodRegistration<This, Args, Return>;
-  
+  const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(
+    fname,
+  )! as MethodRegistration<This, Args, Return>;
+
   // Note: We cannot tell if the method takes a context or not.
   //  Our @Workflow, @Transaction, and @Step decorators are the only ones that would know to set passContext.
   // So, if passContext is indicated, add it to the registration.
@@ -370,7 +378,8 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
         }
-        if (e.index === 0 && passContext) { // The first argument is always the context.
+        if (e.index === 0 && passContext) {
+          // The first argument is always the context.
           e.logMask = LogMasks.SKIP;
         }
         // TODO else warn/log something
@@ -378,18 +387,17 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     });
 
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
-      let opCtx : DBOSContextImpl | undefined = undefined;
+      let opCtx: DBOSContextImpl | undefined = undefined;
       if (passContext) {
         opCtx = rawArgs[0] as DBOSContextImpl;
-      }
-      else {
+      } else {
         opCtx = getCurrentDBOSContext() as DBOSContextImpl;
       }
 
       // Validate the user authentication and populate the role field
       const requiredRoles = methReg.getRequiredRoles();
       if (requiredRoles.length > 0) {
-        opCtx.span.setAttribute("requiredRoles", requiredRoles);
+        opCtx.span.setAttribute('requiredRoles', requiredRoles);
         const curRoles = opCtx.authenticatedRoles;
         let authorized = false;
         const set = new Set(curRoles);
@@ -401,8 +409,11 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
           }
         }
         if (!authorized) {
-          const err = new DBOSNotAuthorizedError(`User does not have a role with permission to call ${methReg.name}`, 403);
-          opCtx.span.addEvent("DBOSNotAuthorizedError", { message: err.message });
+          const err = new DBOSNotAuthorizedError(
+            `User does not have a role with permission to call ${methReg.name}`,
+            403,
+          );
+          opCtx.span.addEvent('DBOSNotAuthorizedError', { message: err.message });
           throw err;
         }
       }
@@ -413,8 +424,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       validatedArgs.forEach((argValue, idx) => {
         let isCtx = false;
         // TODO: we assume the first argument is always a context, need a more robust way to test it.
-        if (idx === 0 && passContext)
-        {
+        if (idx === 0 && passContext) {
           // Context -- I suppose we could just instanceof
           opCtx = validatedArgs[0] as DBOSContextImpl;
           isCtx = true;
@@ -426,12 +436,12 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         } else {
           if (methReg.args[idx].logMask !== LogMasks.NONE) {
             // For now this means hash
-            if (methReg.args[idx].dataType.dataType === "json") {
-              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "JSONSALT");
+            if (methReg.args[idx].dataType.dataType === 'json') {
+              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), 'JSONSALT');
             } else {
               // Yes, we are doing the same as above for now.
               // It can be better if we have verified the type of the data
-              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), "DBOSSALT");
+              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), 'DBOSSALT');
             }
           }
           opCtx?.span.setAttribute(methReg.args[idx].name, loggedArgValue as string);
@@ -440,7 +450,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
       return methReg.origFunction.call(this, ...validatedArgs);
     };
-    Object.defineProperty(wrappedMethod, "name", {
+    Object.defineProperty(wrappedMethod, 'name', {
       value: methReg.name,
     });
 
@@ -454,9 +464,13 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   return methReg;
 }
 
-export function registerAndWrapFunctionTakingContext<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function registerAndWrapFunctionTakingContext<This, Args extends unknown[], Return>(
+  target: object,
+  propertyKey: string,
+  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+) {
   if (!descriptor.value) {
-    throw Error("Use of decorator when original method is undefined");
+    throw Error('Use of decorator when original method is undefined');
   }
 
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, true);
@@ -464,9 +478,13 @@ export function registerAndWrapFunctionTakingContext<This, Args extends unknown[
   return { descriptor, registration };
 }
 
-export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(target: object, propertyKey: string, descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(
+  target: object,
+  propertyKey: string,
+  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+) {
   if (!descriptor.value) {
-    throw Error("Use of decorator when original method is undefined");
+    throw Error('Use of decorator when original method is undefined');
   }
 
   const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
@@ -475,7 +493,7 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
 }
 
 type AnyConstructor = new (...args: unknown[]) => object;
-const classesByName: Map<string, ClassRegistration<AnyConstructor> > = new Map();
+const classesByName: Map<string, ClassRegistration<AnyConstructor>> = new Map();
 
 export function getAllRegisteredClasses() {
   const ctors: AnyConstructor[] = [];
@@ -485,9 +503,7 @@ export function getAllRegisteredClasses() {
   return ctors;
 }
 
-export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]) : object }>(
-  ctor: CT
-) {
+export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]): object }>(ctor: CT) {
   const name = ctor.name;
   if (!classesByName.has(name)) {
     classesByName.set(name, new ClassRegistration<CT>(ctor));
@@ -501,10 +517,10 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
   return clsReg;
 }
 
-export function associateClassWithEventReceiver<CT extends { new (...args: unknown[]) : object }>(
-  rcvr: DBOSEventReceiver, ctor: CT
-)
-{
+export function associateClassWithEventReceiver<CT extends { new (...args: unknown[]): object }>(
+  rcvr: DBOSEventReceiver,
+  ctor: CT,
+) {
   const clsReg = getOrCreateClassRegistration(ctor);
   if (!clsReg.eventReceiverInfo.has(rcvr)) {
     clsReg.eventReceiverInfo.set(rcvr, {});
@@ -512,13 +528,17 @@ export function associateClassWithEventReceiver<CT extends { new (...args: unkno
   return clsReg.eventReceiverInfo.get(rcvr)!;
 }
 
-export function associateMethodWithEventReceiver<This, Args extends unknown[], Return>(rcvr: DBOSEventReceiver, target: object, propertyKey: string, inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>)
-{
+export function associateMethodWithEventReceiver<This, Args extends unknown[], Return>(
+  rcvr: DBOSEventReceiver,
+  target: object,
+  propertyKey: string,
+  inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+) {
   const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
   if (!registration.eventReceiverInfo.has(rcvr)) {
     registration.eventReceiverInfo.set(rcvr, {});
   }
-  return {descriptor, registration, receiverInfo: registration.eventReceiverInfo.get(rcvr)!};
+  return { descriptor, registration, receiverInfo: registration.eventReceiverInfo.get(rcvr)! };
 }
 
 //////////////////////////
@@ -547,7 +567,7 @@ export function SkipLogging(target: object, propertyKey: string | symbol, parame
 }
 
 export function LogMask(mask: LogMasks) {
-  return function(target: object, propertyKey: string | symbol, parameterIndex: number) {
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
@@ -564,7 +584,8 @@ export function ArgName(name: string) {
   };
 }
 
-export function ArgDate() { // TODO a little more info about it - is it a date or timestamp precision?
+export function ArgDate() {
+  // TODO a little more info about it - is it a date or timestamp precision?
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
     const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
@@ -588,36 +609,35 @@ export function ArgVarchar(length: number) {
 
 export function DefaultRequiredRole(anyOf: string[]) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function clsdec<T extends { new (...args: any[]) : object }>(ctor: T)
-  {
-     const clsreg = getOrCreateClassRegistration(ctor);
-     clsreg.requiredRole = anyOf;
+  function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
+    const clsreg = getOrCreateClassRegistration(ctor);
+    clsreg.requiredRole = anyOf;
   }
   return clsdec;
 }
 
-export function DefaultArgRequired<T extends { new (...args: unknown[]) : object }>(ctor: T)
-{
-   const clsreg = getOrCreateClassRegistration(ctor);
-   clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
+export function DefaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
+  const clsreg = getOrCreateClassRegistration(ctor);
+  clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
 }
 
-export function DefaultArgValidate<T extends { new (...args: unknown[]) : object }>(ctor: T)
-{
-   const clsreg = getOrCreateClassRegistration(ctor);
-   clsreg.defaultArgValidate = true;
+export function DefaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
+  const clsreg = getOrCreateClassRegistration(ctor);
+  clsreg.defaultArgValidate = true;
 }
 
-export function DefaultArgOptional<T extends { new (...args: unknown[]) : object }>(ctor: T)
-{
-   const clsreg = getOrCreateClassRegistration(ctor);
-   clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
+export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
+  const clsreg = getOrCreateClassRegistration(ctor);
+  clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 }
 
-export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(cls: new (name:string, ...args: T) => R, name: string, ...args: T) : R
-{
+export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
+  cls: new (name: string, ...args: T) => R,
+  name: string,
+  ...args: T
+): R {
   const inst = new cls(name, ...args);
-  const creg = getOrCreateClassRegistration(cls as new(...args: unknown[])=>R);
+  const creg = getOrCreateClassRegistration(cls as new (...args: unknown[]) => R);
   if (creg.configuredInstances.has(name)) {
     throw new DBOSError(`Registration: Class ${cls.name} configuration ${name} is not unique`);
   }
@@ -633,9 +653,9 @@ export function RequiredRole(anyOf: string[]) {
   function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>)
-  {
-    const {descriptor, registration} = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>,
+  ) {
+    const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
     registration.requiredRole = anyOf;
 
     return descriptor;
@@ -643,12 +663,12 @@ export function RequiredRole(anyOf: string[]) {
   return apidec;
 }
 
-export function Workflow(config: WorkflowConfig={}) {
+export function Workflow(config: WorkflowConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>)
-  {
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>,
+  ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.workflowConfig = config;
     return descriptor;
@@ -656,13 +676,13 @@ export function Workflow(config: WorkflowConfig={}) {
   return decorator;
 }
 
-export function Transaction(config: TransactionConfig={}) {
+export function Transaction(config: TransactionConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>)
-  {
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>,
+  ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.txnConfig = config;
     return descriptor;
@@ -670,12 +690,12 @@ export function Transaction(config: TransactionConfig={}) {
   return decorator;
 }
 
-export function StoredProcedure(config: StoredProcedureConfig={}) {
+export function StoredProcedure(config: StoredProcedureConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StoredProcedureContext, ...args: Args) => Promise<Return>>)
-  {
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StoredProcedureContext, ...args: Args) => Promise<Return>>,
+  ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.procConfig = config;
     return descriptor;
@@ -683,12 +703,12 @@ export function StoredProcedure(config: StoredProcedureConfig={}) {
   return decorator;
 }
 
-export function Step(config: StepConfig={}) {
+export function Step(config: StepConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StepContext, ...args: Args) => Promise<Return>>)
-  {
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StepContext, ...args: Args) => Promise<Return>>,
+  ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.commConfig = config;
     return descriptor;
@@ -698,11 +718,9 @@ export function Step(config: StepConfig={}) {
 
 // eslint-disable-next-line @typescript-eslint/ban-types
 export function OrmEntities(entities: Function[] | { [key: string]: object } = []) {
-
-  function clsdec<T extends { new (...args: unknown[]) : object }>(ctor: T)
-  {
-     const clsreg = getOrCreateClassRegistration(ctor);
-     clsreg.ormEntities = entities;
+  function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
+    const clsreg = getOrCreateClassRegistration(ctor);
+    clsreg.ormEntities = entities;
   }
   return clsdec;
 }
@@ -711,8 +729,8 @@ export function DBOSInitializer() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
-  {
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>,
+  ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
@@ -725,8 +743,8 @@ export function DBOSDeploy() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>)
-  {
+    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>,
+  ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;

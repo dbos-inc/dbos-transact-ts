@@ -1,13 +1,13 @@
-import { WorkflowContext, Workflow, WorkflowQueue, TestingRuntime } from "../src/";
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { DBOSConfig } from "../src/dbos-executor";
-import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
-import { WorkflowRecoveryUrl } from "../src/httpServer/server";
-import request from "supertest";
-import { Client } from "pg";
-import { StatusString } from "../dist/src";
+import { WorkflowContext, Workflow, WorkflowQueue, TestingRuntime } from '../src/';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { DBOSConfig } from '../src/dbos-executor';
+import { TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
+import { WorkflowRecoveryUrl } from '../src/httpServer/server';
+import request from 'supertest';
+import { Client } from 'pg';
+import { StatusString } from '../dist/src';
 
-describe("recovery-tests", () => {
+describe('recovery-tests', () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
   let systemDBClient: Client;
@@ -19,7 +19,7 @@ describe("recovery-tests", () => {
 
   beforeEach(async () => {
     testRuntime = await createInternalTestRuntime(undefined, config);
-    process.env.DBOS__VMID = ""
+    process.env.DBOS__VMID = '';
     systemDBClient = new Client({
       user: config.poolConfig.user,
       port: config.poolConfig.port,
@@ -58,7 +58,7 @@ describe("recovery-tests", () => {
 
     @Workflow()
     static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
-      if (ctxt.authenticatedUser === "test_recovery_user" && ctxt.request.url === "test-recovery-url") {
+      if (ctxt.authenticatedUser === 'test_recovery_user' && ctxt.request.url === 'test-recovery-url') {
         LocalRecovery.cnt += input;
       }
 
@@ -78,22 +78,21 @@ describe("recovery-tests", () => {
       LocalRecovery.deadLetterResolve = resolve;
     });
 
-
-    @Workflow({maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts})
+    @Workflow({ maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts })
     static async deadLetterWorkflow(_ctxt: WorkflowContext) {
-      LocalRecovery.recoveryCount += 1
+      LocalRecovery.recoveryCount += 1;
       await LocalRecovery.deadLetterPromise;
     }
 
-    @Workflow({maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts})
+    @Workflow({ maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts })
     static async fencedDeadLetterWorkflow(_ctxt: WorkflowContext) {
-      LocalRecovery.recoveryCount += 1
-      LocalRecovery.resolve3()
+      LocalRecovery.recoveryCount += 1;
+      LocalRecovery.resolve3();
       await LocalRecovery.deadLetterPromise;
     }
   }
 
-  test("dead-letter-queue", async () => {
+  test('dead-letter-queue', async () => {
     LocalRecovery.cnt = 0;
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
@@ -105,7 +104,10 @@ describe("recovery-tests", () => {
       expect(LocalRecovery.recoveryCount).toBeLessThanOrEqual(LocalRecovery.maxRecoveryAttempts);
     }
 
-    let result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    let result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
+      `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [handle.getWorkflowUUID()],
+    );
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
     expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
 
@@ -113,19 +115,24 @@ describe("recovery-tests", () => {
     await handle.getResult();
 
     await dbosExec.flushWorkflowBuffers();
-    result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
+      `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [handle.getWorkflowUUID()],
+    );
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
-  test("enqueued-dead-letter-queue", async () => {
+  test('enqueued-dead-letter-queue', async () => {
     LocalRecovery.cnt = 0;
     LocalRecovery.recoveryCount = 0;
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
-    const queue = new WorkflowQueue("DLQQ", { concurrency: 1 });
+    const queue = new WorkflowQueue('DLQQ', { concurrency: 1 });
 
-    const handle = await testRuntime.startWorkflow(LocalRecovery, undefined, undefined, queue).fencedDeadLetterWorkflow();
+    const handle = await testRuntime
+      .startWorkflow(LocalRecovery, undefined, undefined, queue)
+      .fencedDeadLetterWorkflow();
     await LocalRecovery.promise3;
 
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
@@ -134,7 +141,10 @@ describe("recovery-tests", () => {
       expect(LocalRecovery.recoveryCount).toBeLessThanOrEqual(LocalRecovery.maxRecoveryAttempts);
     }
 
-    let result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    let result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
+      `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [handle.getWorkflowUUID()],
+    );
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
     expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
 
@@ -142,42 +152,55 @@ describe("recovery-tests", () => {
     await handle.getResult();
 
     await dbosExec.flushWorkflowBuffers();
-    result = await systemDBClient.query<{status: string, recovery_attempts: number}>(`SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
+    result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
+      `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [handle.getWorkflowUUID()],
+    );
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
-  test("local-recovery", async () => {
+  test('local-recovery', async () => {
     LocalRecovery.cnt = 0;
     // Run a workflow until pending and start recovery.
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
-    const handle = await testRuntime.startWorkflow(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
+    const handle = await testRuntime
+      .startWorkflow(LocalRecovery, undefined, {
+        authenticatedUser: 'test_recovery_user',
+        request: { url: 'test-recovery-url' },
+      })
+      .testRecoveryWorkflow(5);
 
     const recoverHandles = await dbosExec.recoverPendingWorkflows();
     await LocalRecovery.promise2; // Wait for the recovery to be done.
     LocalRecovery.resolve1(); // Both can finish now.
 
     expect(recoverHandles.length).toBe(1);
-    await expect(recoverHandles[0].getResult()).resolves.toBe("test_recovery_user");
-    await expect(handle.getResult()).resolves.toBe("test_recovery_user");
+    await expect(recoverHandles[0].getResult()).resolves.toBe('test_recovery_user');
+    await expect(handle.getResult()).resolves.toBe('test_recovery_user');
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
   });
 
-  test("skip-local-recovery", async () => {
-    process.env.DBOS__VMID = "testskip"
+  test('skip-local-recovery', async () => {
+    process.env.DBOS__VMID = 'testskip';
     LocalRecovery.cnt = 0;
 
     // Run a workflow until pending and start recovery. We should skip the recovery since the DBOS__VMID is not empty.
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
-    const handle = await testRuntime.startWorkflow(LocalRecovery, undefined, { authenticatedUser: "test_recovery_user", request: { url: "test-recovery-url" } }).testRecoveryWorkflow(5);
+    const handle = await testRuntime
+      .startWorkflow(LocalRecovery, undefined, {
+        authenticatedUser: 'test_recovery_user',
+        request: { url: 'test-recovery-url' },
+      })
+      .testRecoveryWorkflow(5);
 
     const recoverHandles = await dbosExec.recoverPendingWorkflows();
 
     expect(recoverHandles.length).toBe(0);
     LocalRecovery.resolve1(); // Both can finish now.
-    await expect(handle.getResult()).resolves.toBe("test_recovery_user");
+    await expect(handle.getResult()).resolves.toBe('test_recovery_user');
     expect(LocalRecovery.cnt).toBe(5); // Should run once because we skipped the local recovery
   });
 
@@ -224,30 +247,34 @@ describe("recovery-tests", () => {
     }
   }
 
-  test("selective-recovery", async () => {
+  test('selective-recovery', async () => {
     // Invoke a workflow multiple times with different executor IDs, but only recover workflows for a specific executor.
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
-    const localHandle = await testRuntime.startWorkflow(ExecutorRecovery, undefined, { authenticatedUser: "local_user" }).localWorkflow(3);
+    const localHandle = await testRuntime
+      .startWorkflow(ExecutorRecovery, undefined, { authenticatedUser: 'local_user' })
+      .localWorkflow(3);
 
-    process.env.DBOS__VMID = "fcvm123"
-    const execHandle = await testRuntime.invoke(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user" }).executorWorkflow(5);
+    process.env.DBOS__VMID = 'fcvm123';
+    const execHandle = await testRuntime
+      .invoke(ExecutorRecovery, undefined, { authenticatedUser: 'cloud_user' })
+      .executorWorkflow(5);
 
-    const recoverHandles = await dbosExec.recoverPendingWorkflows(["fcvm123"]);
+    const recoverHandles = await dbosExec.recoverPendingWorkflows(['fcvm123']);
     await ExecutorRecovery.promise2; // Wait for the recovery to be done.
     ExecutorRecovery.resolve1();
     ExecutorRecovery.localResolve();
 
     expect(recoverHandles.length).toBe(1);
-    await expect(recoverHandles[0].getResult()).resolves.toBe("cloud_user");
-    await expect(localHandle.getResult()).resolves.toBe("local_user");
-    await expect(execHandle.getResult()).resolves.toBe("cloud_user");
+    await expect(recoverHandles[0].getResult()).resolves.toBe('cloud_user');
+    await expect(localHandle.getResult()).resolves.toBe('local_user');
+    await expect(execHandle.getResult()).resolves.toBe('cloud_user');
 
     expect(ExecutorRecovery.localCnt).toBe(3); // Should run only once.
     expect(ExecutorRecovery.executorCnt).toBe(10); // Should run twice.
   });
 
-  test("http-recovery", async () => {
+  test('http-recovery', async () => {
     // Invoke a workflow and invoke a recovery through HTTP endpoint.
     // Reset variables.
     ExecutorRecovery.executorCnt = 0;
@@ -258,12 +285,12 @@ describe("recovery-tests", () => {
       ExecutorRecovery.resolve2 = resolve;
     });
 
-    process.env.DBOS__VMID = "fcvm123"
-    const execHandle = await testRuntime.startWorkflow(ExecutorRecovery, undefined, { authenticatedUser: "cloud_user" }).executorWorkflow(5);
+    process.env.DBOS__VMID = 'fcvm123';
+    const execHandle = await testRuntime
+      .startWorkflow(ExecutorRecovery, undefined, { authenticatedUser: 'cloud_user' })
+      .executorWorkflow(5);
 
-    const response = await request(testRuntime.getAdminCallback())
-      .post(WorkflowRecoveryUrl)
-      .send(["fcvm123"]);
+    const response = await request(testRuntime.getAdminCallback()).post(WorkflowRecoveryUrl).send(['fcvm123']);
     expect(response.statusCode).toBe(200);
     expect(response.body).toStrictEqual([execHandle.getWorkflowUUID()]);
 
@@ -271,7 +298,7 @@ describe("recovery-tests", () => {
     ExecutorRecovery.resolve1();
 
     // Check output.
-    await expect(execHandle.getResult()).resolves.toBe("cloud_user");
+    await expect(execHandle.getResult()).resolves.toBe('cloud_user');
     expect(ExecutorRecovery.executorCnt).toBe(10); // Should run twice.
   });
 });

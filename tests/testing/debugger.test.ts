@@ -1,14 +1,23 @@
-import { WorkflowContext, TransactionContext, Transaction, Workflow, DBOSInitializer, InitContext, StepContext, Step } from "../../src/";
-import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "../helpers";
-import { v1 as uuidv1 } from "uuid";
-import { DBOSConfig } from "../../src/dbos-executor";
-import { Client, PoolClient } from "pg";
-import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../../src/testing/testing_runtime";
+import {
+  WorkflowContext,
+  TransactionContext,
+  Transaction,
+  Workflow,
+  DBOSInitializer,
+  InitContext,
+  StepContext,
+  Step,
+} from '../../src/';
+import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
+import { v1 as uuidv1 } from 'uuid';
+import { DBOSConfig } from '../../src/dbos-executor';
+import { Client, PoolClient } from 'pg';
+import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../../src/testing/testing_runtime';
 
 type TestTransactionContext = TransactionContext<PoolClient>;
-const testTableName = "debugger_test_kv";
+const testTableName = 'debugger_test_kv';
 
-describe("debugger-test", () => {
+describe('debugger-test', () => {
   let username: string;
   let config: DBOSConfig;
   let debugConfig: DBOSConfig;
@@ -21,15 +30,15 @@ describe("debugger-test", () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined, true);
-    debugProxyConfig = generateDBOSTestConfig(undefined, true, "postgresql://localhost:5432");
-    username = config.poolConfig.user || "postgres";
+    debugProxyConfig = generateDBOSTestConfig(undefined, true, 'postgresql://localhost:5432');
+    username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
     debugRuntime = await createInternalTestRuntime(undefined, debugConfig);
     testRuntime = await createInternalTestRuntime(undefined, config);
-    debugProxyRuntime = await createInternalTestRuntime(undefined, debugProxyConfig);     // TODO: connect to the real proxy.
+    debugProxyRuntime = await createInternalTestRuntime(undefined, debugProxyConfig); // TODO: connect to the real proxy.
     DebuggerTest.cnt = 0;
     systemDBClient = new Client({
       user: config.poolConfig.user,
@@ -57,15 +66,18 @@ describe("debugger-test", () => {
       await ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     }
 
-    @Transaction({readOnly: true})
+    @Transaction({ readOnly: true })
     static async testReadOnlyFunction(txnCtxt: TestTransactionContext, number: number) {
-      const { rows } = await txnCtxt.client.query<{one: number}>(`SELECT 1 AS one`);
+      const { rows } = await txnCtxt.client.query<{ one: number }>(`SELECT 1 AS one`);
       return Number(rows[0].one) + number;
     }
 
     @Transaction()
     static async testFunction(txnCtxt: TestTransactionContext, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
+        `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
+        [name],
+      );
       return Number(rows[0].id);
     }
 
@@ -84,28 +96,28 @@ describe("debugger-test", () => {
     static async receiveWorkflow(ctxt: WorkflowContext) {
       const message1 = await ctxt.recv<string>();
       const message2 = await ctxt.recv<string>();
-      const fail = await ctxt.recv("message3", 0);
-      return message1 === "message1" && message2 === "message2" && fail === null;
+      const fail = await ctxt.recv('message3', 0);
+      return message1 === 'message1' && message2 === 'message2' && fail === null;
     }
 
     @Workflow()
     static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string) {
-      await ctxt.send(destinationUUID, "message1");
-      await ctxt.send(destinationUUID, "message2");
+      await ctxt.send(destinationUUID, 'message1');
+      await ctxt.send(destinationUUID, 'message2');
     }
 
     @Workflow()
     static async setEventWorkflow(ctxt: WorkflowContext) {
-      await ctxt.setEvent("key1", "value1");
-      await ctxt.setEvent("key2", "value2");
+      await ctxt.setEvent('key1', 'value1');
+      await ctxt.setEvent('key2', 'value2');
       return 0;
     }
 
     @Workflow()
     static async getEventWorkflow(ctxt: WorkflowContext, targetUUID: string) {
-      const val1 = await ctxt.getEvent<string>(targetUUID, "key1");
-      const val2 = await ctxt.getEvent<string>(targetUUID, "key2");
-      return val1 + "-" + val2;
+      const val1 = await ctxt.getEvent<string>(targetUUID, 'key1');
+      const val2 = await ctxt.getEvent<string>(targetUUID, 'key2');
+      return val1 + '-' + val2;
     }
 
     @Transaction()
@@ -127,7 +139,7 @@ describe("debugger-test", () => {
     // Workflow that sleep
     @Workflow()
     static async sleepWorkflow(ctxt: WorkflowContext, num: number) {
-      await ctxt.sleep(1)
+      await ctxt.sleep(1);
       const funcResult = await ctxt.invoke(DebuggerTest).testReadOnlyFunction(num);
       return funcResult;
     }
@@ -142,57 +154,61 @@ describe("debugger-test", () => {
     }
   }
 
-  test("debug-workflow", async () => {
+  test('debug-workflow', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
-    const res = await testRuntime
-      .invokeWorkflow(DebuggerTest, wfUUID)
-      .testWorkflow(username);
+    const res = await testRuntime.invokeWorkflow(DebuggerTest, wfUUID).testWorkflow(username);
     expect(res).toBe(1);
     await testRuntime.destroy();
 
     // Execute again in debug mode.
-    const debugRes = await debugRuntime
-      .invokeWorkflow(DebuggerTest, wfUUID)
-      .testWorkflow(username);
+    const debugRes = await debugRuntime.invokeWorkflow(DebuggerTest, wfUUID).testWorkflow(username);
     expect(debugRes).toBe(1);
 
     // Execute again with the provided UUID.
-    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(
+      (debugRuntime as TestingRuntimeImpl)
+        .getDBOSExec()
+        .executeWorkflowUUID(wfUUID)
+        .then((x) => x.getResult()),
+    ).resolves.toBe(1);
 
-    await expect((debugProxyRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(
+      (debugProxyRuntime as TestingRuntimeImpl)
+        .getDBOSExec()
+        .executeWorkflowUUID(wfUUID)
+        .then((x) => x.getResult()),
+    ).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username)).rejects.toThrow(`DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`);
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testWorkflow(username)).rejects.toThrow(
+      `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
+    );
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testWorkflow(username)).rejects.toThrow(/DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm);
+    await expect(debugRuntime.invoke(DebuggerTest).testWorkflow(username)).rejects.toThrow(
+      /DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
+    );
   });
 
-  test("debug-sleep-workflow", async () => {
+  test('debug-sleep-workflow', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
-    const res = await testRuntime
-      .invokeWorkflow(DebuggerTest, wfUUID)
-      .sleepWorkflow(2);
+    const res = await testRuntime.invokeWorkflow(DebuggerTest, wfUUID).sleepWorkflow(2);
     expect(res).toBe(3);
     await testRuntime.destroy();
 
     // Execute again in debug mode, should return the correct value
-    const debugRes = await debugRuntime
-      .invokeWorkflow(DebuggerTest, wfUUID)
-      .sleepWorkflow(2);
+    const debugRes = await debugRuntime.invokeWorkflow(DebuggerTest, wfUUID).sleepWorkflow(2);
     expect(debugRes).toBe(3);
 
     // Proxy mode should return the same result
-    const debugProxyRes = await debugProxyRuntime
-      .invokeWorkflow(DebuggerTest, wfUUID)
-      .sleepWorkflow(2);
+    const debugProxyRes = await debugProxyRuntime.invokeWorkflow(DebuggerTest, wfUUID).sleepWorkflow(2);
     expect(debugProxyRes).toBe(3);
   });
 
-  test("debug-void-transaction", async () => {
+  test('debug-void-transaction', async () => {
     const wfUUID = uuidv1();
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
     // Execute the workflow and destroy the runtime
@@ -208,18 +224,26 @@ describe("debugger-test", () => {
     expect(DebuggerTest.cnt).toBe(1);
 
     // Execute again with the provided UUID.
-    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBeFalsy();
+    await expect(
+      (debugRuntime as TestingRuntimeImpl)
+        .getDBOSExec()
+        .executeWorkflowUUID(wfUUID)
+        .then((x) => x.getResult()),
+    ).resolves.toBeFalsy();
     expect(DebuggerTest.cnt).toBe(1);
 
     // Make sure we correctly record the function's class name
     await dbosExec.flushWorkflowBuffers();
-    const result = await systemDBClient.query<{status: string, name: string, class_name: string}>(`SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID]);
-    expect(result.rows[0].class_name).toBe("DebuggerTest");
-    expect(result.rows[0].name).toContain("voidFunction");
-    expect(result.rows[0].status).toBe("SUCCESS");
+    const result = await systemDBClient.query<{ status: string; name: string; class_name: string }>(
+      `SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [wfUUID],
+    );
+    expect(result.rows[0].class_name).toBe('DebuggerTest');
+    expect(result.rows[0].name).toContain('voidFunction');
+    expect(result.rows[0].status).toBe('SUCCESS');
   });
 
-  test("debug-transaction", async () => {
+  test('debug-transaction', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
     await expect(testRuntime.invoke(DebuggerTest, wfUUID).testFunction(username)).resolves.toBe(1);
@@ -229,20 +253,34 @@ describe("debugger-test", () => {
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testFunction(username)).resolves.toBe(1);
 
     // Execute again with the provided UUID.
-    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(
+      (debugRuntime as TestingRuntimeImpl)
+        .getDBOSExec()
+        .executeWorkflowUUID(wfUUID)
+        .then((x) => x.getResult()),
+    ).resolves.toBe(1);
 
     // Proxy mode should return the same result.
-    await expect((debugProxyRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(
+      (debugProxyRuntime as TestingRuntimeImpl)
+        .getDBOSExec()
+        .executeWorkflowUUID(wfUUID)
+        .then((x) => x.getResult()),
+    ).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow(`DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`);
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow(
+      `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
+    );
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testFunction(username)).rejects.toThrow(/DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm);
+    await expect(debugRuntime.invoke(DebuggerTest).testFunction(username)).rejects.toThrow(
+      /DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
+    );
   });
 
-  test("debug-read-only-transaction", async () => {
+  test('debug-read-only-transaction', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
     await expect(testRuntime.invoke(DebuggerTest, wfUUID).testReadOnlyFunction(1)).resolves.toBe(2);
@@ -252,20 +290,34 @@ describe("debugger-test", () => {
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testReadOnlyFunction(1)).resolves.toBe(2);
 
     // Execute again with the provided UUID.
-    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(2);
+    await expect(
+      (debugRuntime as TestingRuntimeImpl)
+        .getDBOSExec()
+        .executeWorkflowUUID(wfUUID)
+        .then((x) => x.getResult()),
+    ).resolves.toBe(2);
 
     // Proxy mode should return the same result.
-    await expect((debugProxyRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(2);
+    await expect(
+      (debugProxyRuntime as TestingRuntimeImpl)
+        .getDBOSExec()
+        .executeWorkflowUUID(wfUUID)
+        .then((x) => x.getResult()),
+    ).resolves.toBe(2);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testReadOnlyFunction(1)).rejects.toThrow(`DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`);
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testReadOnlyFunction(1)).rejects.toThrow(
+      `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
+    );
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testReadOnlyFunction(1)).rejects.toThrow(/DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm);
+    await expect(debugRuntime.invoke(DebuggerTest).testReadOnlyFunction(1)).rejects.toThrow(
+      /DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
+    );
   });
 
-  test("debug-step", async () => {
+  test('debug-step', async () => {
     const wfUUID = uuidv1();
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
@@ -277,24 +329,36 @@ describe("debugger-test", () => {
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testStep()).resolves.toBe(1);
 
     // Execute again with the provided UUID.
-    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(
+      (debugRuntime as TestingRuntimeImpl)
+        .getDBOSExec()
+        .executeWorkflowUUID(wfUUID)
+        .then((x) => x.getResult()),
+    ).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testStep()).rejects.toThrow(`DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`);
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testStep()).rejects.toThrow(
+      `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
+    );
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testStep()).rejects.toThrow(/DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm);
+    await expect(debugRuntime.invoke(DebuggerTest).testStep()).rejects.toThrow(
+      /DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
+    );
 
     // Make sure we correctly record the function's class name
     await dbosExec.flushWorkflowBuffers();
-    const result = await systemDBClient.query<{status: string, name: string, class_name: string}>(`SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID]);
-    expect(result.rows[0].class_name).toBe("DebuggerTest");
-    expect(result.rows[0].name).toContain("testStep");
-    expect(result.rows[0].status).toBe("SUCCESS");
+    const result = await systemDBClient.query<{ status: string; name: string; class_name: string }>(
+      `SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [wfUUID],
+    );
+    expect(result.rows[0].class_name).toBe('DebuggerTest');
+    expect(result.rows[0].name).toContain('testStep');
+    expect(result.rows[0].status).toBe('SUCCESS');
   });
 
-  test("debug-workflow-notifications", async() => {
+  test('debug-workflow-notifications', async () => {
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
     // Execute the workflow and destroy the runtime
@@ -305,23 +369,27 @@ describe("debugger-test", () => {
 
     // Execute again in debug mode.
     await expect(debugRuntime.invokeWorkflow(DebuggerTest, recvUUID).receiveWorkflow()).resolves.toBe(true);
-    await expect(debugRuntime.invokeWorkflow(DebuggerTest, sendUUID).sendWorkflow(recvUUID, )).resolves.toBeFalsy();
+    await expect(debugRuntime.invokeWorkflow(DebuggerTest, sendUUID).sendWorkflow(recvUUID)).resolves.toBeFalsy();
   });
 
-  test("debug-workflow-events", async() => {
+  test('debug-workflow-events', async () => {
     const getUUID = uuidv1();
     const setUUID = uuidv1();
     // Execute the workflow and destroy the runtime
     await expect(testRuntime.invokeWorkflow(DebuggerTest, setUUID).setEventWorkflow()).resolves.toBe(0);
-    await expect(testRuntime.invokeWorkflow(DebuggerTest, getUUID).getEventWorkflow(setUUID, )).resolves.toBe("value1-value2");
+    await expect(testRuntime.invokeWorkflow(DebuggerTest, getUUID).getEventWorkflow(setUUID)).resolves.toBe(
+      'value1-value2',
+    );
     await testRuntime.destroy();
 
     // Execute again in debug mode.
     await expect(debugRuntime.invokeWorkflow(DebuggerTest, setUUID).setEventWorkflow()).resolves.toBe(0);
-    await expect(debugRuntime.invokeWorkflow(DebuggerTest, getUUID).getEventWorkflow(setUUID)).resolves.toBe("value1-value2");
+    await expect(debugRuntime.invokeWorkflow(DebuggerTest, getUUID).getEventWorkflow(setUUID)).resolves.toBe(
+      'value1-value2',
+    );
   });
 
-  test("debug-workflow-input-output", async() => {
+  test('debug-workflow-input-output', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
     const res = await testRuntime.invokeWorkflow(DebuggerTest, wfUUID).diffWorkflow(1);
@@ -329,10 +397,17 @@ describe("debugger-test", () => {
     await testRuntime.destroy();
 
     // Execute again with the provided UUID, should still get the same output.
-    await expect((debugRuntime as TestingRuntimeImpl).getDBOSExec().executeWorkflowUUID(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(
+      (debugRuntime as TestingRuntimeImpl)
+        .getDBOSExec()
+        .executeWorkflowUUID(wfUUID)
+        .then((x) => x.getResult()),
+    ).resolves.toBe(1);
     expect(DebuggerTest.cnt).toBe(2);
 
     // Execute again with different input, should still get the same output.
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).diffWorkflow(2)).rejects.toThrow(/DEBUGGER: Detected different inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.\s*Received: \[2\]\s*Original: \[1\]/gm);
-  })
+    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).diffWorkflow(2)).rejects.toThrow(
+      /DEBUGGER: Detected different inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.\s*Received: \[2\]\s*Original: \[1\]/gm,
+    );
+  });
 });

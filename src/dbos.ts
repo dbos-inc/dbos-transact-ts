@@ -1,4 +1,4 @@
-import { Span } from "@opentelemetry/sdk-trace-base";
+import { Span } from '@opentelemetry/sdk-trace-base';
 import {
   assertCurrentDBOSContext,
   assertCurrentWorkflowContext,
@@ -7,9 +7,9 @@ import {
   HTTPRequest,
   runWithTopContext,
   DBOSContextImpl,
-  getNextWFID
-} from "./context";
-import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from "./dbos-executor";
+  getNextWFID,
+} from './context';
+import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from './dbos-executor';
 import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
@@ -17,46 +17,53 @@ import {
   GetWorkflowsOutput,
   WorkflowConfig,
   WorkflowFunction,
-  WorkflowParams
-} from "./workflow";
-import { DBOSExecutorContext } from "./eventreceiver";
-import { DLogger, GlobalLogger } from "./telemetry/logs";
-import { DBOSError, DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from "./error";
-import { parseConfigFile } from "./dbos-runtime/config";
-import { DBOSRuntime, DBOSRuntimeConfig } from "./dbos-runtime/runtime";
-import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from "./scheduler/scheduler";
-import { configureInstance, getOrCreateClassRegistration, getRegisteredOperations, MethodRegistration, registerAndWrapDBOSFunction, registerFunctionWrapper } from "./decorators";
-import { sleepms } from "./utils";
-import { DBOSHttpServer } from "./httpServer/server";
-import { koaTracingMiddleware, expressTracingMiddleware } from "./httpServer/middleware";
-import { Server } from "http";
-import { DrizzleClient, PrismaClient, TypeORMEntityManager, UserDatabaseClient } from "./user_database";
-import { TransactionConfig, TransactionContextImpl, TransactionFunction } from "./transaction";
+  WorkflowParams,
+} from './workflow';
+import { DBOSExecutorContext } from './eventreceiver';
+import { DLogger, GlobalLogger } from './telemetry/logs';
+import { DBOSError, DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from './error';
+import { parseConfigFile } from './dbos-runtime/config';
+import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
+import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
+import {
+  configureInstance,
+  getOrCreateClassRegistration,
+  getRegisteredOperations,
+  MethodRegistration,
+  registerAndWrapDBOSFunction,
+  registerFunctionWrapper,
+} from './decorators';
+import { sleepms } from './utils';
+import { DBOSHttpServer } from './httpServer/server';
+import { koaTracingMiddleware, expressTracingMiddleware } from './httpServer/middleware';
+import { Server } from 'http';
+import { DrizzleClient, PrismaClient, TypeORMEntityManager, UserDatabaseClient } from './user_database';
+import { TransactionConfig, TransactionContextImpl, TransactionFunction } from './transaction';
 
-import Koa from "koa";
-import { Application as ExpressApp } from "express";
-import { INestApplication } from "@nestjs/common";
-import { FastifyInstance } from "fastify";
-import _fastifyExpress from "@fastify/express"; // This is for fastify.use()
+import Koa from 'koa';
+import { Application as ExpressApp } from 'express';
+import { INestApplication } from '@nestjs/common';
+import { FastifyInstance } from 'fastify';
+import _fastifyExpress from '@fastify/express'; // This is for fastify.use()
 
-import { PoolClient } from "pg";
-import { Knex } from "knex";
-import { StepConfig, StepFunction } from "./step";
-import { wfQueueRunner } from "./wfqueue";
+import { PoolClient } from 'pg';
+import { Knex } from 'knex';
+import { StepConfig, StepFunction } from './step';
+import { wfQueueRunner } from './wfqueue';
 import {
   HandlerContext,
   StepContext,
   StoredProcedureContext,
   TransactionContext,
   WorkflowContext,
-  WorkflowHandle
-} from ".";
-import { ConfiguredInstance } from ".";
-import { StoredProcedure, StoredProcedureConfig } from "./procedure";
-import { APITypes } from "./httpServer/handlerTypes";
-import { HandlerRegistrationBase } from "./httpServer/handler";
-import { set } from "lodash";
-import { db_wizard } from "./dbos-runtime/db_wizard";
+  WorkflowHandle,
+} from '.';
+import { ConfiguredInstance } from '.';
+import { StoredProcedure, StoredProcedureConfig } from './procedure';
+import { APITypes } from './httpServer/handlerTypes';
+import { HandlerRegistrationBase } from './httpServer/handler';
+import { set } from 'lodash';
+import { db_wizard } from './dbos-runtime/db_wizard';
 
 // Declare all the HTTP applications a user can pass to the DBOS object during launch()
 // This allows us to add a DBOS tracing middleware (extract W3C Trace context, set request ID, etc)
@@ -71,22 +78,27 @@ export interface DBOSHttpApps {
 type PossiblyWFFunc = (...args: any[]) => Promise<unknown>;
 type InvokeFunctionsAsync<T> =
   // eslint-disable-next-line @typescript-eslint/ban-types
-  T extends Function ?
-  {
-    [P in keyof T]: T[P] extends PossiblyWFFunc ? (...args: Parameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
-  }
-  : never;
+  T extends Function
+    ? {
+        [P in keyof T]: T[P] extends PossiblyWFFunc
+          ? (...args: Parameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>>
+          : never;
+      }
+    : never;
 
-type InvokeFunctionsAsyncInst<T> =
-  T extends ConfiguredInstance
+type InvokeFunctionsAsyncInst<T> = T extends ConfiguredInstance
   ? {
-    [P in keyof T]: T[P] extends PossiblyWFFunc ? (...args: Parameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>> : never;
-  }
+      [P in keyof T]: T[P] extends PossiblyWFFunc
+        ? (...args: Parameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>>
+        : never;
+    }
   : never;
 
 // local type declarations for invoking old-style transaction and step function
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any ? P : never;
+export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any
+  ? P
+  : never;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -95,25 +107,27 @@ type StepFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
 type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes transaction/step/proc functions + converts the method signature to exclude the context parameter
-type InvokeFuncs<T> =
-  T extends ConfiguredInstance
+type InvokeFuncs<T> = T extends ConfiguredInstance
   ? never
   : {
-    [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-  };
+      [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc
+        ? (...args: TailParameters<T[P]>) => ReturnType<T[P]>
+        : never;
+    };
 
-type InvokeFuncsInst<T> =
-  T extends ConfiguredInstance
+type InvokeFuncsInst<T> = T extends ConfiguredInstance
   ? {
-    [P in keyof T as T[P] extends TxFunc | StepFunc ? P : never]: T[P] extends TxFunc | StepFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-  }
+      [P in keyof T as T[P] extends TxFunc | StepFunc ? P : never]: T[P] extends TxFunc | StepFunc
+        ? (...args: TailParameters<T[P]>) => ReturnType<T[P]>
+        : never;
+    }
   : never;
 
 function httpApiDec(verb: APITypes, url: string) {
   return function apidec<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   ) {
     const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
@@ -122,7 +136,7 @@ function httpApiDec(verb: APITypes, url: string) {
     registration.performArgValidation = true;
 
     return descriptor;
-  }
+  };
 }
 
 export interface StartWorkflowParams {
@@ -161,7 +175,7 @@ export class DBOS {
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     const debugMode = debugWorkflowId !== undefined;
     const debugProxy = process.env.DBOS_DEBUG_PROXY;
-  
+
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig] = parseConfigFile();
@@ -185,7 +199,7 @@ export class DBOS {
       DBOS.logger.info(`Workflow Debugging complete. Exiting process.`);
       await executor.destroy();
       process.exit(0);
-      return; // return for cases where process.exit is mocked 
+      return; // return for cases where process.exit is mocked
     }
 
     DBOSExecutor.globalInstance.scheduler = new DBOSScheduler(DBOSExecutor.globalInstance);
@@ -210,23 +224,23 @@ export class DBOS {
 
     if (httpApps) {
       if (httpApps.koaApp) {
-        DBOS.logger.info("Setting up Koa tracing middleware");
+        DBOS.logger.info('Setting up Koa tracing middleware');
         httpApps.koaApp.use(koaTracingMiddleware);
       }
       if (httpApps.expressApp) {
-        DBOS.logger.info("Setting up Express tracing middleware");
+        DBOS.logger.info('Setting up Express tracing middleware');
         httpApps.expressApp.use(expressTracingMiddleware);
       }
       if (httpApps.fastifyApp) {
         // Fastify can use express or middie under the hood, for middlewares.
         // Middie happens to have the same semantic than express.
         // See https://fastify.dev/docs/latest/Reference/Middleware/
-        DBOS.logger.info("Setting up Fastify tracing middleware");
+        DBOS.logger.info('Setting up Fastify tracing middleware');
         httpApps.fastifyApp.use(expressTracingMiddleware);
       }
       if (httpApps.nestApp) {
         // Nest.kj can use express or fastify under the hood. With fastify, Nest.js uses middie.
-        DBOS.logger.info("Setting up NestJS tracing middleware");
+        DBOS.logger.info('Setting up NestJS tracing middleware');
         httpApps.nestApp.use(expressTracingMiddleware);
       }
     }
@@ -321,7 +335,7 @@ export class DBOS {
 
   static get request(): HTTPRequest {
     const r = DBOS.getRequest();
-    if (!r) throw new DBOSError("`DBOS.request` accessed from outside of HTTP requests");
+    if (!r) throw new DBOSError('`DBOS.request` accessed from outside of HTTP requests');
     return r;
   }
 
@@ -331,7 +345,7 @@ export class DBOS {
 
   static get koaContext(): Koa.Context {
     const r = DBOS.getKoaContext();
-    if (!r) throw new DBOSError("`DBOS.koaContext` accessed from outside koa request");
+    if (!r) throw new DBOSError('`DBOS.koaContext` accessed from outside koa request');
     return r;
   }
 
@@ -339,13 +353,13 @@ export class DBOS {
     return getCurrentDBOSContext()?.workflowUUID;
   }
   static get authenticatedUser(): string {
-    return getCurrentDBOSContext()?.authenticatedUser ?? "";
+    return getCurrentDBOSContext()?.authenticatedUser ?? '';
   }
   static get authenticatedRoles(): string[] {
     return getCurrentDBOSContext()?.authenticatedRoles ?? [];
   }
   static get assumedRole(): string {
-    return getCurrentDBOSContext()?.assumedRole ?? "";
+    return getCurrentDBOSContext()?.assumedRole ?? '';
   }
 
   static isInTransaction(): boolean {
@@ -368,7 +382,8 @@ export class DBOS {
 
   // sql session (various forms)
   static get sqlClient(): UserDatabaseClient {
-    if (!DBOS.isInTransaction()) throw new DBOSInvalidWorkflowTransitionError("Invalid use of `DBOS.sqlClient` outside of a `transaction`");
+    if (!DBOS.isInTransaction())
+      throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
     const ctx = assertCurrentDBOSContext() as TransactionContextImpl<UserDatabaseClient>;
     return ctx.client;
   }
@@ -435,7 +450,7 @@ export class DBOS {
   static async sleepms(durationMS: number): Promise<void> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       if (DBOS.isInTransaction()) {
-        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.sleep` inside a `transaction`");
+        throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.sleep` inside a `transaction`');
       }
       return (getCurrentDBOSContext()! as WorkflowContext).sleepms(durationMS);
     }
@@ -455,8 +470,7 @@ export class DBOS {
       try {
         pctx.idAssignedForNextWorkflow = wfid;
         return callback();
-      }
-      finally {
+      } finally {
         pctx.idAssignedForNextWorkflow = pcwfid;
       }
     } else {
@@ -464,7 +478,12 @@ export class DBOS {
     }
   }
 
-  static async withTracedContext<R>(callerName: string, span: Span, request: HTTPRequest, callback: () => Promise<R>): Promise<R> {
+  static async withTracedContext<R>(
+    callerName: string,
+    span: Span,
+    request: HTTPRequest,
+    callback: () => Promise<R>,
+  ): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
       pctx.operationCaller = callerName;
@@ -505,29 +524,32 @@ export class DBOS {
       try {
         pctx.queueAssignedForWorkflows = wfq;
         return callback();
-      }
-      finally {
+      } finally {
         pctx.queueAssignedForWorkflows = pcwfq;
       }
-    }
-    else {
+    } else {
       return runWithTopContext({ queueAssignedForWorkflows: wfq }, callback);
     }
   }
 
-  static startWorkflow<T extends ConfiguredInstance>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsyncInst<T>;
+  static startWorkflow<T extends ConfiguredInstance>(
+    targetClass: T,
+    params?: StartWorkflowParams,
+  ): InvokeFunctionsAsyncInst<T>;
   static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
   static startWorkflow<T extends object>(target: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T> {
     if (typeof target === 'function') {
       return DBOS.proxyInvokeWF(target, null, params) as unknown as InvokeFunctionsAsync<T>;
-    }
-    else {
+    } else {
       return DBOS.proxyInvokeWF(target, target as ConfiguredInstance, params) as unknown as InvokeFunctionsAsync<T>;
     }
   }
 
-  static proxyInvokeWF<T extends object>(object: T, configuredInstance: ConfiguredInstance | null, inParams?: StartWorkflowParams):
-    InvokeFunctionsAsync<T> {
+  static proxyInvokeWF<T extends object>(
+    object: T,
+    configuredInstance: ConfiguredInstance | null,
+    inParams?: StartWorkflowParams,
+  ): InvokeFunctionsAsync<T> {
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
 
@@ -540,19 +562,24 @@ export class DBOS {
       const wfctx = assertCurrentWorkflowContext();
 
       const funcId = wfctx.functionIDGetIncrement();
-      wfId = wfId || (wfctx.workflowUUID + "-" + funcId);
+      wfId = wfId || wfctx.workflowUUID + '-' + funcId;
       const wfParams: WorkflowParams = {
         workflowUUID: wfId,
         parentCtx: wfctx,
         configuredInstance,
-        queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows
+        queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
       };
 
       for (const op of ops) {
         proxy[op.name] = op.workflowConfig
-          ? (...args: unknown[]) => DBOSExecutor.globalInstance!.internalWorkflow(
-            (op.registeredFunction as WorkflowFunction<unknown[], unknown>),
-            wfParams, wfctx.workflowUUID, funcId, ...args)
+          ? (...args: unknown[]) =>
+              DBOSExecutor.globalInstance!.internalWorkflow(
+                op.registeredFunction as WorkflowFunction<unknown[], unknown>,
+                wfParams,
+                wfctx.workflowUUID,
+                funcId,
+                ...args,
+              )
           : undefined;
       }
 
@@ -565,23 +592,20 @@ export class DBOS {
       // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
       let span = pctx.span;
       if (!span) {
-        span = DBOS.executor.tracer.startSpan(
-          pctx.operationCaller || "startWorkflow",
-          {
-            operationUUID: wfId,
-            operationType: pctx.operationType,
-            authenticatedUser: pctx.authenticatedUser,
-            assumedRole: pctx.assumedRole,
-            authenticatedRoles: pctx.authenticatedRoles,
-          },
-        );
+        span = DBOS.executor.tracer.startSpan(pctx.operationCaller || 'startWorkflow', {
+          operationUUID: wfId,
+          operationType: pctx.operationType,
+          authenticatedUser: pctx.authenticatedUser,
+          assumedRole: pctx.assumedRole,
+          authenticatedRoles: pctx.authenticatedRoles,
+        });
       }
-      parentCtx = new DBOSContextImpl(pctx.operationCaller || "startWorkflow", span, DBOS.logger as GlobalLogger);
+      parentCtx = new DBOSContextImpl(pctx.operationCaller || 'startWorkflow', span, DBOS.logger as GlobalLogger);
       parentCtx.request = pctx.request || {};
-      parentCtx.authenticatedUser = pctx.authenticatedUser || "";
-      parentCtx.assumedRole = pctx.assumedRole || "";
+      parentCtx.authenticatedUser = pctx.authenticatedUser || '';
+      parentCtx.assumedRole = pctx.assumedRole || '';
       parentCtx.authenticatedRoles = pctx.authenticatedRoles || [];
-      parentCtx.workflowUUID = wfId || "";
+      parentCtx.workflowUUID = wfId || '';
     }
 
     const wfParams: InternalWorkflowParams = {
@@ -593,7 +617,8 @@ export class DBOS {
 
     for (const op of ops) {
       proxy[op.name] = op.workflowConfig
-        ? (...args: unknown[]) => DBOS.executor.workflow((op.registeredFunction as WorkflowFunction<unknown[], unknown>), wfParams, ...args)
+        ? (...args: unknown[]) =>
+            DBOS.executor.workflow(op.registeredFunction as WorkflowFunction<unknown[], unknown>, wfParams, ...args)
         : undefined;
     }
 
@@ -613,29 +638,49 @@ export class DBOS {
         const proxy: Record<string, unknown> = {};
         for (const op of ops) {
           proxy[op.name] = op.txnConfig
-            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.transaction(
-              op.registeredFunction as TransactionFunction<unknown[], unknown>, {}, ...args)
+            ? (...args: unknown[]) =>
+                DBOSExecutor.globalInstance!.transaction(
+                  op.registeredFunction as TransactionFunction<unknown[], unknown>,
+                  {},
+                  ...args,
+                )
             : op.commConfig
-              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.external(
-                op.registeredFunction as StepFunction<unknown[], unknown>, {}, ...args)
+              ? (...args: unknown[]) =>
+                  DBOSExecutor.globalInstance!.external(
+                    op.registeredFunction as StepFunction<unknown[], unknown>,
+                    {},
+                    ...args,
+                  )
               : op.procConfig
-                ? (...args: unknown[]) => DBOSExecutor.globalInstance!.procedure<unknown[], unknown>(op.registeredFunction as StoredProcedure<unknown[], unknown>, {}, ...args)
+                ? (...args: unknown[]) =>
+                    DBOSExecutor.globalInstance!.procedure<unknown[], unknown>(
+                      op.registeredFunction as StoredProcedure<unknown[], unknown>,
+                      {},
+                      ...args,
+                    )
                 : undefined;
         }
         return proxy as InvokeFuncs<T>;
-      }
-      else {
+      } else {
         const targetInst = object as ConfiguredInstance;
         const ops = getRegisteredOperations(targetInst);
 
         const proxy: Record<string, unknown> = {};
         for (const op of ops) {
           proxy[op.name] = op.txnConfig
-            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.transaction(
-              op.registeredFunction as TransactionFunction<unknown[], unknown>, { configuredInstance: targetInst }, ...args)
+            ? (...args: unknown[]) =>
+                DBOSExecutor.globalInstance!.transaction(
+                  op.registeredFunction as TransactionFunction<unknown[], unknown>,
+                  { configuredInstance: targetInst },
+                  ...args,
+                )
             : op.commConfig
-              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.external(
-                op.registeredFunction as StepFunction<unknown[], unknown>, { configuredInstance: targetInst }, ...args)
+              ? (...args: unknown[]) =>
+                  DBOSExecutor.globalInstance!.external(
+                    op.registeredFunction as StepFunction<unknown[], unknown>,
+                    { configuredInstance: targetInst },
+                    ...args,
+                  )
               : undefined;
         }
         return proxy as InvokeFuncsInst<T>;
@@ -648,30 +693,53 @@ export class DBOS {
       const proxy: Record<string, unknown> = {};
       for (const op of ops) {
         proxy[op.name] = op.txnConfig
-          ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callTransactionFunction(
-            op.registeredFunction as TransactionFunction<unknown[], unknown>, null, wfctx, ...args)
+          ? (...args: unknown[]) =>
+              DBOSExecutor.globalInstance!.callTransactionFunction(
+                op.registeredFunction as TransactionFunction<unknown[], unknown>,
+                null,
+                wfctx,
+                ...args,
+              )
           : op.commConfig
-            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callStepFunction(
-              op.registeredFunction as StepFunction<unknown[], unknown>, null, wfctx, ...args)
+            ? (...args: unknown[]) =>
+                DBOSExecutor.globalInstance!.callStepFunction(
+                  op.registeredFunction as StepFunction<unknown[], unknown>,
+                  null,
+                  wfctx,
+                  ...args,
+                )
             : op.procConfig
-              ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callProcedureFunction(
-                op.registeredFunction as StoredProcedure<unknown[], unknown>, wfctx, ...args)
+              ? (...args: unknown[]) =>
+                  DBOSExecutor.globalInstance!.callProcedureFunction(
+                    op.registeredFunction as StoredProcedure<unknown[], unknown>,
+                    wfctx,
+                    ...args,
+                  )
               : undefined;
       }
       return proxy as InvokeFuncs<T>;
-    }
-    else {
+    } else {
       const targetInst = object as ConfiguredInstance;
       const ops = getRegisteredOperations(targetInst);
 
       const proxy: Record<string, unknown> = {};
       for (const op of ops) {
         proxy[op.name] = op.txnConfig
-          ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callTransactionFunction(
-            op.registeredFunction as TransactionFunction<unknown[], unknown>, targetInst, wfctx, ...args)
+          ? (...args: unknown[]) =>
+              DBOSExecutor.globalInstance!.callTransactionFunction(
+                op.registeredFunction as TransactionFunction<unknown[], unknown>,
+                targetInst,
+                wfctx,
+                ...args,
+              )
           : op.commConfig
-            ? (...args: unknown[]) => DBOSExecutor.globalInstance!.callStepFunction(
-              op.registeredFunction as StepFunction<unknown[], unknown>, targetInst, wfctx, ...args)
+            ? (...args: unknown[]) =>
+                DBOSExecutor.globalInstance!.callStepFunction(
+                  op.registeredFunction as StepFunction<unknown[], unknown>,
+                  targetInst,
+                  wfctx,
+                  ...args,
+                )
             : undefined;
       }
       return proxy as InvokeFuncsInst<T>;
@@ -681,10 +749,12 @@ export class DBOS {
   static async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.send` inside a `step` or `transaction`");
+        throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.send` inside a `step` or `transaction`');
       }
       if (idempotencyKey) {
-        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.send` with an idempotency key from within a workflow");
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `DBOS.send` with an idempotency key from within a workflow',
+        );
       }
       return (getCurrentDBOSContext() as WorkflowContext).send(destinationID, message, topic);
     }
@@ -694,27 +764,33 @@ export class DBOS {
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.setEvent` inside a `step` or `transaction`");
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `DBOS.setEvent` inside a `step` or `transaction`',
+        );
       }
       return (getCurrentDBOSContext() as WorkflowContext).recv<T>(topic, timeoutSeconds);
     }
-    throw new DBOSInvalidWorkflowTransitionError("Attempt to call `DBOS.recv` outside of a workflow"); // Only workflows can recv
+    throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.recv` outside of a workflow'); // Only workflows can recv
   }
 
   static async setEvent<T>(key: string, value: T): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.setEvent` inside a `step` or `transaction`");
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `DBOS.setEvent` inside a `step` or `transaction`',
+        );
       }
       return (getCurrentDBOSContext() as WorkflowContext).setEvent(key, value);
     }
-    throw new DBOSInvalidWorkflowTransitionError("Attempt to call `DBOS.setEvent` outside of a workflow"); // Only workflows can set event
+    throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.setEvent` outside of a workflow'); // Only workflows can set event
   }
 
   static async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError("Invalid call to `DBOS.getEvent` inside a `step` or `transaction`");
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `DBOS.getEvent` inside a `step` or `transaction`',
+        );
       }
       return (getCurrentDBOSContext() as WorkflowContext).getEvent(workflowID, key, timeoutSeconds);
     }
@@ -728,7 +804,7 @@ export class DBOS {
     function scheddec<This, Return>(
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>,
     ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       const schedRegistration = registration as unknown as SchedulerRegistrationBase;
@@ -740,16 +816,11 @@ export class DBOS {
   }
 
   static workflow(config: WorkflowConfig = {}) {
-    function decorator<
-      This,
-      Args extends unknown[],
-      Return
-    >
-      (
-        target: object,
-        propertyKey: string,
-        inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
-      ) {
+    function decorator<This, Args extends unknown[], Return>(
+      target: object,
+      propertyKey: string,
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+    ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.workflowConfig = config;
 
@@ -758,11 +829,12 @@ export class DBOS {
         let inst: ConfiguredInstance | undefined = undefined;
         if (typeof this === 'function') {
           // This is static
-        }
-        else {
+        } else {
           inst = this as ConfiguredInstance;
-          if (!("name" in inst)) {
-            throw new DBOSInvalidWorkflowTransitionError("Attempt to call a `workflow` function on an object that is not a `ConfiguredInstance`");
+          if (!('name' in inst)) {
+            throw new DBOSInvalidWorkflowTransitionError(
+              'Attempt to call a `workflow` function on an object that is not a `ConfiguredInstance`',
+            );
           }
         }
 
@@ -774,17 +846,20 @@ export class DBOS {
           const wfctx = assertCurrentWorkflowContext();
 
           const funcId = wfctx.functionIDGetIncrement();
-          wfId = wfId || (wfctx.workflowUUID + "-" + funcId);
+          wfId = wfId || wfctx.workflowUUID + '-' + funcId;
           const params: WorkflowParams = {
             workflowUUID: wfId,
             parentCtx: wfctx,
             configuredInstance: inst,
-            queueName: pctx?.queueAssignedForWorkflows
+            queueName: pctx?.queueAssignedForWorkflows,
           };
 
           const cwfh = await DBOSExecutor.globalInstance!.internalWorkflow(
             registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
-            params, wfctx.workflowUUID, funcId, ...rawArgs
+            params,
+            wfctx.workflowUUID,
+            funcId,
+            ...rawArgs,
           );
           return await cwfh.getResult();
         }
@@ -795,23 +870,20 @@ export class DBOS {
           // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
           let span = pctx.span;
           if (!span) {
-            span = DBOS.executor.tracer.startSpan(
-              pctx.operationCaller || "workflowCaller",
-              {
-                operationUUID: wfId,
-                operationType: pctx.operationType,
-                authenticatedUser: pctx.authenticatedUser,
-                assumedRole: pctx.assumedRole,
-                authenticatedRoles: pctx.authenticatedRoles,
-              },
-            );
+            span = DBOS.executor.tracer.startSpan(pctx.operationCaller || 'workflowCaller', {
+              operationUUID: wfId,
+              operationType: pctx.operationType,
+              authenticatedUser: pctx.authenticatedUser,
+              assumedRole: pctx.assumedRole,
+              authenticatedRoles: pctx.authenticatedRoles,
+            });
           }
-          parentCtx = new DBOSContextImpl(pctx.operationCaller || "workflowCaller", span, DBOS.logger as GlobalLogger);
+          parentCtx = new DBOSContextImpl(pctx.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
           parentCtx.request = pctx.request || {};
-          parentCtx.authenticatedUser = pctx.authenticatedUser || "";
-          parentCtx.assumedRole = pctx.assumedRole || "";
+          parentCtx.authenticatedUser = pctx.authenticatedUser || '';
+          parentCtx.assumedRole = pctx.assumedRole || '';
           parentCtx.authenticatedRoles = pctx.authenticatedRoles || [];
-          parentCtx.workflowUUID = wfId || "";
+          parentCtx.workflowUUID = wfId || '';
         }
 
         const wfParams: InternalWorkflowParams = {
@@ -823,14 +895,15 @@ export class DBOS {
 
         const handle = await DBOS.executor.workflow(
           registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
-          wfParams, ...rawArgs
+          wfParams,
+          ...rawArgs,
         );
         return await handle.getResult();
       };
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
-      Object.defineProperty(invokeWrapper, "name", {
+      Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
       });
 
@@ -847,7 +920,7 @@ export class DBOS {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.txnConfig = config;
@@ -856,25 +929,34 @@ export class DBOS {
         let inst: ConfiguredInstance | undefined = undefined;
         if (typeof this === 'function') {
           // This is static
-        }
-        else {
+        } else {
           inst = this as ConfiguredInstance;
-          if (!("name" in inst)) {
-            throw new DBOSInvalidWorkflowTransitionError("Attempt to call a `transaction` function on an object that is not a `ConfiguredInstance`");
+          if (!('name' in inst)) {
+            throw new DBOSInvalidWorkflowTransitionError(
+              'Attempt to call a `transaction` function on an object that is not a `ConfiguredInstance`',
+            );
           }
         }
 
         if (DBOS.isWithinWorkflow()) {
           if (DBOS.isInTransaction()) {
-            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `transaction` function from within a `transaction`");
+            throw new DBOSInvalidWorkflowTransitionError(
+              'Invalid call to a `transaction` function from within a `transaction`',
+            );
           }
           if (DBOS.isInStep()) {
-            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `transaction` function from within a `step`");
+            throw new DBOSInvalidWorkflowTransitionError(
+              'Invalid call to a `transaction` function from within a `step`',
+            );
           }
 
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callTransactionFunction(
-            registration.registeredFunction as unknown as TransactionFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
+            registration.registeredFunction as unknown as TransactionFunction<Args, Return>,
+            inst ?? null,
+            wfctx,
+            ...rawArgs,
+          );
         }
 
         const wfId = getNextWFID(undefined);
@@ -882,28 +964,24 @@ export class DBOS {
         const pctx = getCurrentContextStore();
         let span = pctx?.span;
         if (!span) {
-          span = DBOS.executor.tracer.startSpan(
-            pctx?.operationCaller || "transactionCaller",
-            {
-              operationType: pctx?.operationType,
-              authenticatedUser: pctx?.authenticatedUser,
-              assumedRole: pctx?.assumedRole,
-              authenticatedRoles: pctx?.authenticatedRoles,
-            },
-          );
+          span = DBOS.executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+            operationType: pctx?.operationType,
+            authenticatedUser: pctx?.authenticatedUser,
+            assumedRole: pctx?.assumedRole,
+            authenticatedRoles: pctx?.authenticatedRoles,
+          });
         }
 
         let parentCtx: DBOSContextImpl | undefined = undefined;
         if (pctx) {
-          parentCtx = pctx.ctx as DBOSContextImpl
+          parentCtx = pctx.ctx as DBOSContextImpl;
         }
         if (!parentCtx) {
-          parentCtx = new DBOSContextImpl(pctx?.operationCaller || "workflowCaller", span, DBOS.logger as GlobalLogger);
+          parentCtx = new DBOSContextImpl(pctx?.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
           parentCtx.request = pctx?.request || {};
-          parentCtx.authenticatedUser = pctx?.authenticatedUser || "";
-          parentCtx.assumedRole = pctx?.assumedRole || "";
+          parentCtx.authenticatedUser = pctx?.authenticatedUser || '';
+          parentCtx.assumedRole = pctx?.assumedRole || '';
           parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
-
         }
         const wfParams: WorkflowParams = {
           configuredInstance: inst,
@@ -913,14 +991,15 @@ export class DBOS {
 
         return await DBOS.executor.transaction(
           registration.registeredFunction as unknown as TransactionFunction<Args, Return>,
-          wfParams, ...rawArgs
+          wfParams,
+          ...rawArgs,
         );
       };
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
 
-      Object.defineProperty(invokeWrapper, "name", {
+      Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
       });
 
@@ -933,20 +1012,23 @@ export class DBOS {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.procConfig = config;
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         if (typeof this !== 'function') {
-          throw new Error("Stored procedures must be static");
+          throw new Error('Stored procedures must be static');
         }
 
         if (DBOS.isWithinWorkflow()) {
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callProcedureFunction(
-            registration.registeredFunction as unknown as StoredProcedure<Args, Return>, wfctx, ...rawArgs);
+            registration.registeredFunction as unknown as StoredProcedure<Args, Return>,
+            wfctx,
+            ...rawArgs,
+          );
         }
 
         const wfId = getNextWFID(undefined);
@@ -954,26 +1036,23 @@ export class DBOS {
         const pctx = getCurrentContextStore();
         let span = pctx?.span;
         if (!span) {
-          span = DBOS.executor.tracer.startSpan(
-            pctx?.operationCaller || "transactionCaller",
-            {
-              operationType: pctx?.operationType,
-              authenticatedUser: pctx?.authenticatedUser,
-              assumedRole: pctx?.assumedRole,
-              authenticatedRoles: pctx?.authenticatedRoles,
-            },
-          );
+          span = DBOS.executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+            operationType: pctx?.operationType,
+            authenticatedUser: pctx?.authenticatedUser,
+            assumedRole: pctx?.assumedRole,
+            authenticatedRoles: pctx?.authenticatedRoles,
+          });
         }
 
         let parentCtx: DBOSContextImpl | undefined = undefined;
         if (pctx) {
-          parentCtx = pctx.ctx as DBOSContextImpl
+          parentCtx = pctx.ctx as DBOSContextImpl;
         }
         if (!parentCtx) {
-          parentCtx = new DBOSContextImpl(pctx?.operationCaller || "workflowCaller", span, DBOS.logger as GlobalLogger);
+          parentCtx = new DBOSContextImpl(pctx?.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
           parentCtx.request = pctx?.request || {};
-          parentCtx.authenticatedUser = pctx?.authenticatedUser || "";
-          parentCtx.assumedRole = pctx?.assumedRole || "";
+          parentCtx.authenticatedUser = pctx?.authenticatedUser || '';
+          parentCtx.assumedRole = pctx?.assumedRole || '';
           parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
         }
 
@@ -984,14 +1063,15 @@ export class DBOS {
 
         return await DBOS.executor.procedure(
           registration.registeredFunction as unknown as StoredProcedure<Args, Return>,
-          wfParams, ...rawArgs
+          wfParams,
+          ...rawArgs,
         );
       };
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
 
-      Object.defineProperty(invokeWrapper, "name", {
+      Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
       });
 
@@ -1005,7 +1085,7 @@ export class DBOS {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.commConfig = config;
@@ -1014,17 +1094,20 @@ export class DBOS {
         let inst: ConfiguredInstance | undefined = undefined;
         if (typeof this === 'function') {
           // This is static
-        }
-        else {
+        } else {
           inst = this as ConfiguredInstance;
-          if (!("name" in inst)) {
-            throw new DBOSInvalidWorkflowTransitionError("Attempt to call a `step` function on an object that is not a `ConfiguredInstance`");
+          if (!('name' in inst)) {
+            throw new DBOSInvalidWorkflowTransitionError(
+              'Attempt to call a `step` function on an object that is not a `ConfiguredInstance`',
+            );
           }
         }
 
         if (DBOS.isWithinWorkflow()) {
           if (DBOS.isInTransaction()) {
-            throw new DBOSInvalidWorkflowTransitionError("Invalid call to a `step` function from within a `transaction`");
+            throw new DBOSInvalidWorkflowTransitionError(
+              'Invalid call to a `step` function from within a `transaction`',
+            );
           }
           if (DBOS.isInStep()) {
             // There should probably be checks here about the compatibility of the StepConfig...
@@ -1032,7 +1115,11 @@ export class DBOS {
           }
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callStepFunction(
-            registration.registeredFunction as unknown as StepFunction<Args, Return>, inst ?? null, wfctx, ...rawArgs);
+            registration.registeredFunction as unknown as StepFunction<Args, Return>,
+            inst ?? null,
+            wfctx,
+            ...rawArgs,
+          );
         }
 
         const wfId = getNextWFID(undefined);
@@ -1040,26 +1127,23 @@ export class DBOS {
         const pctx = getCurrentContextStore();
         let span = pctx?.span;
         if (!span) {
-          span = DBOS.executor.tracer.startSpan(
-            pctx?.operationCaller || "transactionCaller",
-            {
-              operationType: pctx?.operationType,
-              authenticatedUser: pctx?.authenticatedUser,
-              assumedRole: pctx?.assumedRole,
-              authenticatedRoles: pctx?.authenticatedRoles,
-            },
-          );
+          span = DBOS.executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+            operationType: pctx?.operationType,
+            authenticatedUser: pctx?.authenticatedUser,
+            assumedRole: pctx?.assumedRole,
+            authenticatedRoles: pctx?.authenticatedRoles,
+          });
         }
 
         let parentCtx: DBOSContextImpl | undefined = undefined;
         if (pctx) {
-          parentCtx = pctx.ctx as DBOSContextImpl
+          parentCtx = pctx.ctx as DBOSContextImpl;
         }
         if (!parentCtx) {
-          parentCtx = new DBOSContextImpl(pctx?.operationCaller || "workflowCaller", span, DBOS.logger as GlobalLogger);
+          parentCtx = new DBOSContextImpl(pctx?.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
           parentCtx.request = pctx?.request || {};
-          parentCtx.authenticatedUser = pctx?.authenticatedUser || "";
-          parentCtx.assumedRole = pctx?.assumedRole || "";
+          parentCtx.authenticatedUser = pctx?.authenticatedUser || '';
+          parentCtx.assumedRole = pctx?.assumedRole || '';
           parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
         }
         const wfParams: WorkflowParams = {
@@ -1070,14 +1154,15 @@ export class DBOS {
 
         return await DBOS.executor.external(
           registration.registeredFunction as unknown as StepFunction<Args, Return>,
-          wfParams, ...rawArgs
+          wfParams,
+          ...rawArgs,
         );
       };
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
 
-      Object.defineProperty(invokeWrapper, "name", {
+      Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
       });
 
@@ -1087,28 +1172,28 @@ export class DBOS {
   }
 
   static getApi(url: string) {
-    return httpApiDec(APITypes.GET, url)
+    return httpApiDec(APITypes.GET, url);
   }
 
   static postApi(url: string) {
-    return httpApiDec(APITypes.POST, url)
+    return httpApiDec(APITypes.POST, url);
   }
 
   static putApi(url: string) {
-    return httpApiDec(APITypes.PUT, url)
+    return httpApiDec(APITypes.PUT, url);
   }
 
   static patchApi(url: string) {
-    return httpApiDec(APITypes.PATCH, url)
+    return httpApiDec(APITypes.PATCH, url);
   }
 
   static deleteApi(url: string) {
-    return httpApiDec(APITypes.DELETE, url)
+    return httpApiDec(APITypes.DELETE, url);
   }
 
   static defaultRequiredRole(anyOf: string[]) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    function clsdec<T extends { new(...args: any[]): object }>(ctor: T) {
+    function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
       const clsreg = getOrCreateClassRegistration(ctor);
       clsreg.requiredRole = anyOf;
     }
@@ -1119,7 +1204,8 @@ export class DBOS {
     function apidec<This, Args extends unknown[], Return>(
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>) {
+      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+    ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.requiredRole = anyOf;
 
@@ -1131,7 +1217,11 @@ export class DBOS {
   /////
   // Registration, etc
   /////
-  static configureInstance<R extends ConfiguredInstance, T extends unknown[]>(cls: new (name: string, ...args: T) => R, name: string, ...args: T): R {
+  static configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
+    cls: new (name: string, ...args: T) => R,
+    name: string,
+    ...args: T
+  ): R {
     return configureInstance(cls, name, ...args);
   }
 
@@ -1144,14 +1234,17 @@ export class DBOS {
     return registerAndWrapDBOSFunction(target, propertyKey, descriptor);
   }
 
-  static async executeWorkflowById(workflowId: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
+  static async executeWorkflowById(
+    workflowId: string,
+    startNewWorkflow: boolean = false,
+  ): Promise<WorkflowHandle<unknown>> {
     if (!DBOSExecutor.globalInstance) {
       throw new DBOSExecutorNotInitializedError();
     }
     return DBOSExecutor.globalInstance.executeWorkflowUUID(workflowId, startNewWorkflow);
   }
 
-  static async recoverPendingWorkflows(executorIDs: string[] = ["local"]): Promise<WorkflowHandle<unknown>[]> {
+  static async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
     if (!DBOSExecutor.globalInstance) {
       throw new DBOSExecutorNotInitializedError();
     }

@@ -1,7 +1,7 @@
-import { DatabaseError } from "pg";
+import { DatabaseError } from 'pg';
 
 function formatPgDatabaseError(err: DatabaseError): string {
-  let msg = "";
+  let msg = '';
   if (err.severity) {
     msg = msg.concat(`severity: ${err.severity} \n`);
   }
@@ -64,7 +64,10 @@ export function isClientError(dbosErrorCode: number) {
 
 export class DBOSError extends Error {
   // TODO: define a better coding system.
-  constructor(msg: string, readonly dbosErrorCode: number = 1) {
+  constructor(
+    msg: string,
+    readonly dbosErrorCode: number = 1,
+  ) {
     super(msg);
   }
 }
@@ -87,7 +90,9 @@ export class DBOSInitializationError extends DBOSError {
 const TopicPermissionDeniedError = 4;
 export class DBOSTopicPermissionDeniedError extends DBOSError {
   constructor(destinationUUID: string, workflowUUID: string, functionID: number, runAs: string) {
-    const msg = `Subject ${runAs} does not have permission on destination UUID ${destinationUUID}.` + `(workflow UUID: ${workflowUUID}, function ID: ${functionID})`;
+    const msg =
+      `Subject ${runAs} does not have permission on destination UUID ${destinationUUID}.` +
+      `(workflow UUID: ${workflowUUID}, function ID: ${functionID})`;
     super(msg, TopicPermissionDeniedError);
   }
 }
@@ -128,14 +133,20 @@ export class DBOSDataValidationError extends DBOSError {
 // This error is thrown by applications.
 const ResponseError = 11;
 export class DBOSResponseError extends DBOSError {
-  constructor(msg: string, readonly status: number = 500) {
+  constructor(
+    msg: string,
+    readonly status: number = 500,
+  ) {
     super(msg, ResponseError);
   }
 }
 
 const NotAuthorizedError = 12;
 export class DBOSNotAuthorizedError extends DBOSError {
-  constructor(msg: string, readonly status: number = 403) {
+  constructor(
+    msg: string,
+    readonly status: number = 403,
+  ) {
     super(msg, NotAuthorizedError);
   }
 }
@@ -157,7 +168,7 @@ export class DBOSConfigKeyTypeError extends DBOSError {
 const DebuggerError = 15;
 export class DBOSDebuggerError extends DBOSError {
   constructor(msg: string) {
-    super("DEBUGGER: " + msg, DebuggerError);
+    super('DEBUGGER: ' + msg, DebuggerError);
   }
 }
 
@@ -178,7 +189,10 @@ export class DBOSFailLoadOperationsError extends DBOSError {
 const DeadLetterQueueError = 18;
 export class DBOSDeadLetterQueueError extends DBOSError {
   constructor(workflowUUID: string, maxRetries: number) {
-    super(`Workflow ${workflowUUID} has been moved to the dead-letter queue after exceeding the maximum of ${maxRetries} retries`, DeadLetterQueueError);
+    super(
+      `Workflow ${workflowUUID} has been moved to the dead-letter queue after exceeding the maximum of ${maxRetries} retries`,
+      DeadLetterQueueError,
+    );
   }
 }
 
@@ -192,14 +206,14 @@ export class DBOSFailedSqlTransactionError extends DBOSError {
 const ExecutorNotInitializedError = 20;
 export class DBOSExecutorNotInitializedError extends DBOSError {
   constructor() {
-    super("DBOS not initialized", ExecutorNotInitializedError);
+    super('DBOS not initialized', ExecutorNotInitializedError);
   }
 }
 
 const InvalidWorkflowTransition = 21;
 export class DBOSInvalidWorkflowTransitionError extends DBOSError {
   constructor(msg?: string) {
-    super(msg ?? "Invalid workflow state", InvalidWorkflowTransition);
+    super(msg ?? 'Invalid workflow state', InvalidWorkflowTransition);
   }
 }
 
@@ -214,8 +228,11 @@ const MaximumRetriesError = 23;
 export class DBOSMaxStepRetriesError extends DBOSError {
   readonly errors;
   constructor(stepName: string, maxRetries: number, errors: Error[]) {
-    const formattedErrors = errors.map((error, index) => `Error ${index + 1}: ${error.message}`).join('. ')
-    super(`Step ${stepName} has exceeded its maximum of ${maxRetries} retries. Previous errors: ${formattedErrors}`, MaximumRetriesError);
+    const formattedErrors = errors.map((error, index) => `Error ${index + 1}: ${error.message}`).join('. ');
+    super(
+      `Step ${stepName} has exceeded its maximum of ${maxRetries} retries. Previous errors: ${formattedErrors}`,
+      MaximumRetriesError,
+    );
     this.errors = errors;
   }
 }

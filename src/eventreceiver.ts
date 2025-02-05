@@ -1,10 +1,19 @@
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
-import { GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, WorkflowFunction, WorkflowHandle, WorkflowParams, WorkflowStatus } from './workflow';
+import {
+  GetWorkflowQueueInput,
+  GetWorkflowQueueOutput,
+  GetWorkflowsInput,
+  GetWorkflowsOutput,
+  WorkflowFunction,
+  WorkflowHandle,
+  WorkflowParams,
+  WorkflowStatus,
+} from './workflow';
 import { TransactionFunction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 import { StepFunction } from './step';
-import { Notification } from "pg";
+import { Notification } from 'pg';
 import { StoredProcedure } from './procedure';
 
 export type DBNotification = Notification;
@@ -14,9 +23,9 @@ export interface DBNotificationListener {
 }
 
 export interface DBOSEventReceiverRegistration {
-  methodConfig: unknown,
-  classConfig: unknown,
-  methodReg: MethodRegistrationBase
+  methodConfig: unknown;
+  classConfig: unknown;
+  methodReg: MethodRegistrationBase;
 }
 
 /*
@@ -24,8 +33,7 @@ export interface DBOSEventReceiverRegistration {
  *  which contains the things that it needs to do its work
  *  (retrieve decorated endpoints, and run new transactions / workflows)
  */
-export interface DBOSExecutorContext
-{
+export interface DBOSExecutorContext {
   /* Logging service */
   readonly logger: Logger;
   /* Tracing service */
@@ -40,13 +48,16 @@ export interface DBOSExecutorContext
    *  classConfig: the class info the receiver stored
    *  methodReg: the method registration (w/ workflow, transaction, function, and other info)
    */
-  getRegistrationsFor(eri: DBOSEventReceiver) : DBOSEventReceiverRegistration[];
+  getRegistrationsFor(eri: DBOSEventReceiver): DBOSEventReceiverRegistration[];
 
   transaction<T extends unknown[], R>(txn: TransactionFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
-  workflow<T extends unknown[], R>(wf: WorkflowFunction<T, R>, params: WorkflowParams, ...args: T): Promise<WorkflowHandle<R>>;
+  workflow<T extends unknown[], R>(
+    wf: WorkflowFunction<T, R>,
+    params: WorkflowParams,
+    ...args: T
+  ): Promise<WorkflowHandle<R>>;
   external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
   procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
-
 
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -68,7 +79,11 @@ export interface DBOSExecutorContext
    *       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
    *       The upsert returns the current record, which is useful if it is more recent.
    */
-  getEventDispatchState(service: string, workflowFnName: string, key: string): Promise<DBOSEventReceiverState | undefined>;
+  getEventDispatchState(
+    service: string,
+    workflowFnName: string,
+    key: string,
+  ): Promise<DBOSEventReceiverState | undefined>;
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
   queryUserDB(sql: string, params?: unknown[]): Promise<unknown[]>;
@@ -84,16 +99,14 @@ export interface DBOSExecutorContext
  *  Initialized / destroyed with the executor
  * It is the implememnter's job to keep going and dispatch workflows between those times
  */
-export interface DBOSEventReceiver
-{
-    executor ?: DBOSExecutorContext;
-    destroy() : Promise<void>;
-    initialize(executor: DBOSExecutorContext) : Promise<void>;
-    logRegisteredEndpoints() : void;
+export interface DBOSEventReceiver {
+  executor?: DBOSExecutorContext;
+  destroy(): Promise<void>;
+  initialize(executor: DBOSExecutorContext): Promise<void>;
+  logRegisteredEndpoints(): void;
 }
 
-export interface DBOSEventReceiverState
-{
+export interface DBOSEventReceiverState {
   service: string;
   workflowFnName: string;
   key: string;
@@ -102,8 +115,7 @@ export interface DBOSEventReceiverState
   updateSeq?: bigint;
 }
 
-export interface DBOSEventReceiverQuery
-{
+export interface DBOSEventReceiverQuery {
   service?: string;
   workflowFnName?: string;
   key?: string;

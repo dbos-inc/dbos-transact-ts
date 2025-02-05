@@ -1,15 +1,8 @@
-import {
-  configureInstance,
-  ConfiguredInstance,
-  InitContext,
-  Workflow,
-  WorkflowContext,
-  TestingRuntime,
-} from "../src/";
+import { configureInstance, ConfiguredInstance, InitContext, Workflow, WorkflowContext, TestingRuntime } from '../src/';
 
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { DBOSConfig } from "../src/dbos-executor";
-import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { DBOSConfig } from '../src/dbos-executor';
+import { TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
 
 type RF = () => void;
 class CCRConfig {
@@ -17,7 +10,7 @@ class CCRConfig {
   promise1: Promise<void>;
   resolve2: RF | undefined = undefined;
   promise2: Promise<void>;
-  
+
   constructor() {
     this.promise1 = new Promise<void>((resolve) => {
       this.resolve1 = resolve;
@@ -33,9 +26,14 @@ class CCRConfig {
  * Test for the default local workflow recovery for configured classes.
  */
 class CCRecovery extends ConfiguredInstance {
-  constructor(name: string, readonly config: CCRConfig) {super(name);}
+  constructor(
+    name: string,
+    readonly config: CCRConfig,
+  ) {
+    super(name);
+  }
 
-  initialize(_ctx: InitContext) : Promise<void> {
+  initialize(_ctx: InitContext): Promise<void> {
     return Promise.resolve();
   }
 
@@ -53,10 +51,10 @@ class CCRecovery extends ConfiguredInstance {
   }
 }
 
-const configA = configureInstance(CCRecovery, "configA", new CCRConfig());
-const configB = configureInstance(CCRecovery, "configB", new CCRConfig());
+const configA = configureInstance(CCRecovery, 'configA', new CCRConfig());
+const configB = configureInstance(CCRecovery, 'configB', new CCRConfig());
 
-describe("recovery-cc-tests", () => {
+describe('recovery-cc-tests', () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
 
@@ -67,14 +65,14 @@ describe("recovery-cc-tests", () => {
 
   beforeEach(async () => {
     testRuntime = await createInternalTestRuntime(undefined, config);
-    process.env.DBOS__VMID = ""
+    process.env.DBOS__VMID = '';
   });
 
   afterEach(async () => {
     await testRuntime.destroy();
   });
 
-  test("local-recovery", async () => {
+  test('local-recovery', async () => {
     // Run a workflow pair until pending and start recovery.
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
@@ -90,8 +88,8 @@ describe("recovery-cc-tests", () => {
     expect(recoverHandles.length).toBe(2);
     await expect(recoverHandles[0].getResult()).resolves.toBeTruthy();
     await expect(recoverHandles[1].getResult()).resolves.toBeTruthy();
-    await expect(handleA.getResult()).resolves.toBe("configA");
-    await expect(handleB.getResult()).resolves.toBe("configB");
+    await expect(handleA.getResult()).resolves.toBe('configA');
+    await expect(handleB.getResult()).resolves.toBe('configB');
     expect(configA.config.count).toBe(10); // Should run twice.
     expect(configB.config.count).toBe(10); // Should run twice.
   });

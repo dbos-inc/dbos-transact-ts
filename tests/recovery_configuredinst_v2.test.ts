@@ -1,12 +1,7 @@
-import {
-  configureInstance,
-  ConfiguredInstance,
-  InitContext,
-  DBOS,
-} from "../src";
+import { configureInstance, ConfiguredInstance, InitContext, DBOS } from '../src';
 
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { DBOSConfig } from "../src/dbos-executor";
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { DBOSConfig } from '../src/dbos-executor';
 
 type RF = () => void;
 class CCRConfig {
@@ -31,9 +26,14 @@ class CCRConfig {
  * Test for the default local workflow recovery for configured classes.
  */
 class CCRecovery extends ConfiguredInstance {
-  constructor(name: string, readonly config: CCRConfig) {super(name);}
+  constructor(
+    name: string,
+    readonly config: CCRConfig,
+  ) {
+    super(name);
+  }
 
-  initialize(_ctx: InitContext) : Promise<void> {
+  initialize(_ctx: InitContext): Promise<void> {
     return Promise.resolve();
   }
 
@@ -51,10 +51,10 @@ class CCRecovery extends ConfiguredInstance {
   }
 }
 
-const configA = configureInstance(CCRecovery, "configA", new CCRConfig());
-const configB = configureInstance(CCRecovery, "configB", new CCRConfig());
+const configA = configureInstance(CCRecovery, 'configA', new CCRConfig());
+const configB = configureInstance(CCRecovery, 'configB', new CCRConfig());
 
-describe("recovery-cc-tests", () => {
+describe('recovery-cc-tests', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -63,7 +63,7 @@ describe("recovery-cc-tests", () => {
   });
 
   beforeEach(async () => {
-    process.env.DBOS__VMID = ""
+    process.env.DBOS__VMID = '';
     DBOS.setConfig(config);
     await DBOS.launch();
   });
@@ -72,7 +72,7 @@ describe("recovery-cc-tests", () => {
     await DBOS.shutdown();
   });
 
-  test("local-recovery", async () => {
+  test('local-recovery', async () => {
     const handleA = await DBOS.startWorkflow(configA).testRecoveryWorkflow(5);
     const handleB = await DBOS.startWorkflow(configB).testRecoveryWorkflow(5);
 
@@ -85,8 +85,8 @@ describe("recovery-cc-tests", () => {
     expect(recoverHandles.length).toBe(2);
     await expect(recoverHandles[0].getResult()).resolves.toBeTruthy();
     await expect(recoverHandles[1].getResult()).resolves.toBeTruthy();
-    await expect(handleA.getResult()).resolves.toBe("configA");
-    await expect(handleB.getResult()).resolves.toBe("configB");
+    await expect(handleA.getResult()).resolves.toBe('configA');
+    await expect(handleB.getResult()).resolves.toBe('configB');
     expect(configA.config.count).toBe(10); // Should run twice.
     expect(configB.config.count).toBe(10); // Should run twice.
   });

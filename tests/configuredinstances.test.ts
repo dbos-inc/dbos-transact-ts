@@ -10,18 +10,18 @@ import {
   Workflow,
   WorkflowContext,
   configureInstance,
-} from "../src";
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { DBOSConfig } from "../src/dbos-executor";
-import { Client, PoolClient } from "pg";
-import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
-import request from "supertest";
-import { v1 as uuidv1 } from "uuid";
+} from '../src';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { DBOSConfig } from '../src/dbos-executor';
+import { Client, PoolClient } from 'pg';
+import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
+import request from 'supertest';
+import { v1 as uuidv1 } from 'uuid';
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 class ConfigTracker {
-  name: string = "";
+  name: string = '';
   nInit = 0;
   nByName = 0;
   nWF = 0;
@@ -37,15 +37,18 @@ class ConfigTracker {
 }
 
 class DBOSTestConfiguredClass extends ConfiguredInstance {
-  static configs : Map<string, ConfigTracker> = new Map();
+  static configs: Map<string, ConfigTracker> = new Map();
 
   tracker: ConfigTracker;
-  constructor(name: string, readonly val:number) {
+  constructor(
+    name: string,
+    readonly val: number,
+  ) {
     super(name);
     this.tracker = new ConfigTracker(name);
   }
 
-  initialize(_ctx: InitContext) : Promise<void> {
+  initialize(_ctx: InitContext): Promise<void> {
     const arg = this.tracker;
     if (!arg.name || DBOSTestConfiguredClass.configs.has(arg.name)) {
       throw new Error(`Invalid or duplicate config name: ${arg.name}`);
@@ -77,7 +80,7 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
 
   @Workflow()
   async testBasicWorkflow(ctxt: WorkflowContext, key: string): Promise<void> {
-    expect(key).toBe("please");
+    expect(key).toBe('please');
     const arg = this.tracker;
     expect(DBOSTestConfiguredClass.configs.has(this.name)).toBeTruthy();
     expect(arg).toBe(DBOSTestConfiguredClass.configs.get(this.name));
@@ -118,7 +121,7 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
   @GetApi('/bad')
   static async testUnconfiguredHandler(_ctx: HandlerContext) {
     // A handler in a configured class doesn't have a configuration / this.
-    return Promise.resolve("This is a bad idea");
+    return Promise.resolve('This is a bad idea');
   }
 
   @GetApi('/instance') // You can't actually call this...
@@ -127,10 +130,10 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
   }
 }
 
-const config1 = configureInstance(DBOSTestConfiguredClass, "config1", 1);
-const configA = configureInstance(DBOSTestConfiguredClass, "configA", 2);
+const config1 = configureInstance(DBOSTestConfiguredClass, 'config1', 1);
+const configA = configureInstance(DBOSTestConfiguredClass, 'configA', 2);
 
-describe("dbos-configclass-tests", () => {
+describe('dbos-configclass-tests', () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
   let systemDBClient: Client;
@@ -161,7 +164,7 @@ describe("dbos-configclass-tests", () => {
     await testRuntime.destroy();
   });
 
-  test("simple-functions", async () => {
+  test('simple-functions', async () => {
     try {
       await testRuntime.invoke(config1).testStep();
     } catch (e) {
@@ -186,34 +189,40 @@ describe("dbos-configclass-tests", () => {
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
     // Make sure we correctly record the function's class name and config name
     await dbosExec.flushWorkflowBuffers();
-    let result = await systemDBClient.query<{status: string, name: string, class_name: string, config_name: string}>(`SELECT status, name, class_name, config_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID1]);
-    expect(result.rows[0].class_name).toBe("DBOSTestConfiguredClass");
-    expect(result.rows[0].name).toContain("testTransaction1");
-    expect(result.rows[0].config_name).toBe("config1");
-    expect(result.rows[0].status).toBe("SUCCESS");
+    let result = await systemDBClient.query<{ status: string; name: string; class_name: string; config_name: string }>(
+      `SELECT status, name, class_name, config_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [wfUUID1],
+    );
+    expect(result.rows[0].class_name).toBe('DBOSTestConfiguredClass');
+    expect(result.rows[0].name).toContain('testTransaction1');
+    expect(result.rows[0].config_name).toBe('config1');
+    expect(result.rows[0].status).toBe('SUCCESS');
 
-    result = await systemDBClient.query<{status: string, name: string, class_name: string, config_name: string}>(`SELECT status, name, class_name, config_name FROM dbos.workflow_status WHERE workflow_uuid=$1`, [wfUUID2]);
-    expect(result.rows[0].class_name).toBe("DBOSTestConfiguredClass");
-    expect(result.rows[0].name).toContain("testTransaction1");
-    expect(result.rows[0].config_name).toBe("configA");
-    expect(result.rows[0].status).toBe("SUCCESS");
+    result = await systemDBClient.query<{ status: string; name: string; class_name: string; config_name: string }>(
+      `SELECT status, name, class_name, config_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [wfUUID2],
+    );
+    expect(result.rows[0].class_name).toBe('DBOSTestConfiguredClass');
+    expect(result.rows[0].name).toContain('testTransaction1');
+    expect(result.rows[0].config_name).toBe('configA');
+    expect(result.rows[0].status).toBe('SUCCESS');
   });
 
-  test("simplewf", async() => {
-    await testRuntime.invokeWorkflow(config1).testBasicWorkflow("please");
+  test('simplewf', async () => {
+    await testRuntime.invokeWorkflow(config1).testBasicWorkflow('please');
     expect(config1.tracker.nTrans).toBe(1);
     expect(config1.tracker.nComm).toBe(1);
     expect(config1.tracker.nWF).toBe(1);
     expect(config1.tracker.nByName).toBe(3);
 
-    await (await testRuntime.startWorkflow(configA).testBasicWorkflow("please")).getResult();
+    await (await testRuntime.startWorkflow(configA).testBasicWorkflow('please')).getResult();
     expect(configA.tracker.nTrans).toBe(1);
     expect(configA.tracker.nComm).toBe(1);
     expect(configA.tracker.nWF).toBe(1);
     expect(configA.tracker.nByName).toBe(3);
   });
 
-  test("childwf", async() => {
+  test('childwf', async () => {
     await testRuntime.invokeWorkflow(config1).testChildWorkflow();
     expect(config1.tracker.nTrans).toBe(2);
     expect(config1.tracker.nComm).toBe(2);
@@ -221,22 +230,21 @@ describe("dbos-configclass-tests", () => {
     expect(config1.tracker.nByName).toBe(7);
   });
 
-  test("badhandler", async() => {
-    const response1 = await request(testRuntime.getHandlersCallback()).get("/bad");
+  test('badhandler', async () => {
+    const response1 = await request(testRuntime.getHandlersCallback()).get('/bad');
     expect(response1.statusCode).toBe(200);
 
-    const response2 = await request(testRuntime.getHandlersCallback()).get("/instance");
+    const response2 = await request(testRuntime.getHandlersCallback()).get('/instance');
     expect(response2.statusCode).toBe(404);
   });
 
-  test("badwfinvoke", async() => {
+  test('badwfinvoke', async () => {
     let threw = false;
     try {
       await testRuntime.invokeWorkflow(configA).bogusChildWorkflow();
-    }
-    catch (e) {
+    } catch (e) {
       threw = true;
     }
     expect(threw).toBeTruthy();
-  })
+  });
 });

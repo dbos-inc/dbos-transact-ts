@@ -1,9 +1,9 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryResultRow, Client } from "pg";
-import { createUserDBSchema, userDBIndex, userDBSchema } from "../schemas/user_db_schema";
-import { IsolationLevel, TransactionConfig } from "./transaction";
-import { ValuesOf } from "./utils";
-import { Knex } from "knex";
+import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryResultRow, Client } from 'pg';
+import { createUserDBSchema, userDBIndex, userDBSchema } from '../schemas/user_db_schema';
+import { IsolationLevel, TransactionConfig } from './transaction';
+import { ValuesOf } from './utils';
+import { Knex } from 'knex';
 import { GlobalLogger as Logger } from './telemetry/logs';
 
 export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Logger) {
@@ -13,20 +13,22 @@ export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Log
     await pgUserClient.end();
     return; // If successful, return
   } catch (error) {
-    logger.info(`Database ${poolConfig.database} does not exist, creating...`)
+    logger.info(`Database ${poolConfig.database} does not exist, creating...`);
   }
-  const app_database = poolConfig.database
-  const postgresConfig = { ...poolConfig, database: "postgres" }
+  const app_database = poolConfig.database;
+  const postgresConfig = { ...poolConfig, database: 'postgres' };
   const postgresClient = new Client(postgresConfig);
   let connection_failed = true;
   try {
-    await postgresClient.connect()
+    await postgresClient.connect();
     connection_failed = false;
     await postgresClient.query(`CREATE DATABASE ${app_database}`);
   } catch (e) {
     if (e instanceof Error) {
       if (connection_failed) {
-        logger.error(`Error connecting to database ${postgresConfig.host}:${postgresConfig.port} with user ${postgresConfig.user}: ${e.message}`);
+        logger.error(
+          `Error connecting to database ${postgresConfig.host}:${postgresConfig.port} with user ${postgresConfig.user}: ${e.message}`,
+        );
       } else {
         logger.error(`Error creating database ${app_database}: ${e.message}`);
       }
@@ -35,7 +37,7 @@ export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Log
     }
     throw e;
   } finally {
-    await postgresClient.end()
+    await postgresClient.end();
   }
 }
 
@@ -45,13 +47,24 @@ export interface UserDatabase {
   getName(): UserDatabaseName;
 
   // Run transactionFunction as a database transaction with a given config and arguments.
-  transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R>;
+  transaction<R, T extends unknown[]>(
+    transactionFunction: UserDatabaseTransaction<R, T>,
+    config: TransactionConfig,
+    ...args: T
+  ): Promise<R>;
   // Execute a query function
-  queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(queryFunction: UserDatabaseQuery<C, R, T>, ...params: T): Promise<R>;
+  queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(
+    queryFunction: UserDatabaseQuery<C, R, T>,
+    ...params: T
+  ): Promise<R>;
   // Execute a raw SQL query.
   query<R, T extends unknown[]>(sql: string, ...params: T): Promise<R[]>;
   // Execute a raw SQL query in the session/transaction of a particular client.
-  queryWithClient<R, T extends unknown[] = unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]>;
+  queryWithClient<R, T extends unknown[] = unknown[]>(
+    client: UserDatabaseClient,
+    sql: string,
+    ...params: T
+  ): Promise<R[]>;
 
   // Is a database error retriable?  Currently only serialization errors are retriable.
   isRetriableTransactionError(error: unknown): boolean;
@@ -73,11 +86,11 @@ type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient
 export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex | DrizzleClient;
 
 export const UserDatabaseName = {
-  PGNODE: "pg-node",
-  PRISMA: "prisma",
-  TYPEORM: "typeorm",
-  KNEX: "knex",
-  DRIZZLE: "drizzle",
+  PGNODE: 'pg-node',
+  PRISMA: 'prisma',
+  TYPEORM: 'typeorm',
+  KNEX: 'knex',
+  DRIZZLE: 'drizzle',
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
 
@@ -94,7 +107,7 @@ export function pgNodeIsKeyConflictError(error: unknown): boolean {
     return false;
   }
   const pge = getPostgresErrorCode(error);
-  return pge === "23505";
+  return pge === '23505';
 
   function getPostgresErrorCode(error: unknown): string | null {
     const dbErr: PGDatabaseError = error as PGDatabaseError;
@@ -137,7 +150,11 @@ export class PGNodeUserDatabase implements UserDatabase {
     return UserDatabaseName.PGNODE;
   }
 
-  async transaction<R, T extends unknown[]>(txn: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R, T extends unknown[]>(
+    txn: UserDatabaseTransaction<R, T>,
+    config: TransactionConfig,
+    ...args: T
+  ): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try {
       const readOnly = config.readOnly ?? false;
@@ -157,12 +174,14 @@ export class PGNodeUserDatabase implements UserDatabase {
     }
   }
 
-  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(
+    func: UserDatabaseQuery<C, R, T>,
+    ...args: T
+  ): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try {
       return func(client as C, ...args);
-    }
-    finally {
+    } finally {
       client.release();
     }
   }
@@ -189,7 +208,7 @@ export class PGNodeUserDatabase implements UserDatabase {
     if (!(error instanceof PGDatabaseError)) {
       return false;
     }
-    return this.getPostgresErrorCode(error) === "40001";
+    return this.getPostgresErrorCode(error) === '40001';
   }
 
   isKeyConflictError(error: unknown): boolean {
@@ -197,22 +216,22 @@ export class PGNodeUserDatabase implements UserDatabase {
       return false;
     }
     const pge = this.getPostgresErrorCode(error);
-    return pge === "23505";
+    return pge === '23505';
   }
 
   isFailedSqlTransactionError(error: unknown): boolean {
     if (!(error instanceof PGDatabaseError)) {
       return false;
     }
-    return this.getPostgresErrorCode(error) === "25P02";
+    return this.getPostgresErrorCode(error) === '25P02';
   }
 
   async createSchema(): Promise<void> {
-    return Promise.reject(new Error("createSchema() is not supported in PG user database."));
+    return Promise.reject(new Error('createSchema() is not supported in PG user database.'));
   }
 
   async dropSchema(): Promise<void> {
-    return Promise.reject(new Error("dropSchema() is not supported in PG user database."));
+    return Promise.reject(new Error('dropSchema() is not supported in PG user database.'));
   }
 }
 
@@ -221,7 +240,10 @@ export class PGNodeUserDatabase implements UserDatabase {
  */
 export interface PrismaClient {
   $queryRawUnsafe<R, T extends unknown[]>(query: string, ...params: T): Promise<R[]>;
-  $transaction<R>(fn: (prisma: unknown) => Promise<R>, options?: { maxWait?: number; timeout?: number; isolationLevel?: unknown }): Promise<R>;
+  $transaction<R>(
+    fn: (prisma: unknown) => Promise<R>,
+    options?: { maxWait?: number; timeout?: number; isolationLevel?: unknown },
+  ): Promise<R>;
   $disconnect(): Promise<void>;
 }
 
@@ -234,14 +256,14 @@ interface PrismaError {
 }
 
 const PrismaIsolationLevel = {
-  ReadUncommitted: "ReadUncommitted",
-  ReadCommitted: "ReadCommitted",
-  RepeatableRead: "RepeatableRead",
-  Serializable: "Serializable",
+  ReadUncommitted: 'ReadUncommitted',
+  ReadCommitted: 'ReadCommitted',
+  RepeatableRead: 'RepeatableRead',
+  Serializable: 'Serializable',
 } as const;
 
 export class PrismaUserDatabase implements UserDatabase {
-  constructor(readonly prisma: PrismaClient) { }
+  constructor(readonly prisma: PrismaClient) {}
 
   async init(debugMode: boolean = false): Promise<void> {
     if (!debugMode) {
@@ -249,7 +271,9 @@ export class PrismaUserDatabase implements UserDatabase {
       if (!schemaExists[0].exists) {
         await this.prisma.$queryRawUnsafe(createUserDBSchema);
       }
-      const txnOutputTableExists = await this.prisma.$queryRawUnsafe<ExistenceCheck, unknown[]>(txnOutputTableExistsQuery);
+      const txnOutputTableExists = await this.prisma.$queryRawUnsafe<ExistenceCheck, unknown[]>(
+        txnOutputTableExistsQuery,
+      );
       if (!txnOutputTableExists[0].exists) {
         await this.prisma.$queryRawUnsafe(userDBSchema);
       }
@@ -268,7 +292,11 @@ export class PrismaUserDatabase implements UserDatabase {
     return UserDatabaseName.PRISMA;
   }
 
-  async transaction<R, T extends unknown[]>(transaction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R, T extends unknown[]>(
+    transaction: UserDatabaseTransaction<R, T>,
+    config: TransactionConfig,
+    ...args: T
+  ): Promise<R> {
     let isolationLevel: string;
     if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
       isolationLevel = PrismaIsolationLevel.ReadUncommitted;
@@ -283,12 +311,15 @@ export class PrismaUserDatabase implements UserDatabase {
       async (tx) => {
         return await transaction(tx as PrismaClient, ...args);
       },
-      { isolationLevel: isolationLevel }
+      { isolationLevel: isolationLevel },
     );
     return result;
   }
 
-  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(
+    func: UserDatabaseQuery<C, R, T>,
+    ...args: T
+  ): Promise<R> {
     return func(this.prisma as C, ...args);
   }
 
@@ -307,23 +338,23 @@ export class PrismaUserDatabase implements UserDatabase {
   }
 
   isRetriableTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "40001";
+    return this.getPostgresErrorCode(error) === '40001';
   }
 
   isKeyConflictError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "23505";
+    return this.getPostgresErrorCode(error) === '23505';
   }
 
   isFailedSqlTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "25P02";
+    return this.getPostgresErrorCode(error) === '25P02';
   }
 
   async createSchema(): Promise<void> {
-    return Promise.reject(new Error("createSchema() is not supported in Prisma user database."));
+    return Promise.reject(new Error('createSchema() is not supported in Prisma user database.'));
   }
 
   async dropSchema(): Promise<void> {
-    return Promise.reject(new Error("dropSchema() is not supported in Prisma user database."));
+    return Promise.reject(new Error('dropSchema() is not supported in Prisma user database.'));
   }
 }
 
@@ -339,12 +370,15 @@ interface TypeORMDataSource {
 }
 
 export interface TypeORMEntityManager {
-  query<R, T extends unknown[]>(query: string, parameters?: T): Promise<R>
-  transaction<R>(isolationLevel: IsolationLevel, runinTransaction: (entityManager: TypeORMEntityManager) => Promise<R>): Promise<R>
+  query<R, T extends unknown[]>(query: string, parameters?: T): Promise<R>;
+  transaction<R>(
+    isolationLevel: IsolationLevel,
+    runinTransaction: (entityManager: TypeORMEntityManager) => Promise<R>,
+  ): Promise<R>;
 }
 
 interface QueryFailedError<T> {
-  driverError: T
+  driverError: T;
 }
 
 /**
@@ -388,10 +422,15 @@ export class TypeORMDatabase implements UserDatabase {
     return UserDatabaseName.TYPEORM;
   }
 
-  async transaction<R, T extends unknown[]>(txn: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R, T extends unknown[]>(
+    txn: UserDatabaseTransaction<R, T>,
+    config: TransactionConfig,
+    ...args: T
+  ): Promise<R> {
     const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
 
-    return this.dataSource.manager.transaction(isolationLevel,
+    return this.dataSource.manager.transaction(
+      isolationLevel,
       async (transactionEntityManager: TypeORMEntityManager) => {
         const result = await txn(transactionEntityManager, ...args);
         return result;
@@ -399,7 +438,10 @@ export class TypeORMDatabase implements UserDatabase {
     );
   }
 
-  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(
+    func: UserDatabaseQuery<C, R, T>,
+    ...args: T
+  ): Promise<R> {
     return func(this.dataSource.manager as C, ...args);
   }
 
@@ -427,15 +469,15 @@ export class TypeORMDatabase implements UserDatabase {
   }
 
   isRetriableTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "40001";
+    return this.getPostgresErrorCode(error) === '40001';
   }
 
   isKeyConflictError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "23505";
+    return this.getPostgresErrorCode(error) === '23505';
   }
 
   isFailedSqlTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "25P02";
+    return this.getPostgresErrorCode(error) === '25P02';
   }
 
   async createSchema(): Promise<void> {
@@ -450,8 +492,7 @@ export class TypeORMDatabase implements UserDatabase {
  * Knex user data access interface
  */
 export class KnexUserDatabase implements UserDatabase {
-
-  constructor(readonly knex: Knex) { }
+  constructor(readonly knex: Knex) {}
 
   async init(debugMode: boolean = false): Promise<void> {
     if (!debugMode) {
@@ -478,32 +519,39 @@ export class KnexUserDatabase implements UserDatabase {
     return UserDatabaseName.KNEX;
   }
 
-  async transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R, T extends unknown[]>(
+    transactionFunction: UserDatabaseTransaction<R, T>,
+    config: TransactionConfig,
+    ...args: T
+  ): Promise<R> {
     let isolationLevel: Knex.IsolationLevels;
     if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
-      isolationLevel = "read uncommitted";
+      isolationLevel = 'read uncommitted';
     } else if (config.isolationLevel === IsolationLevel.ReadCommitted) {
-      isolationLevel = "read committed";
+      isolationLevel = 'read committed';
     } else if (config.isolationLevel === IsolationLevel.RepeatableRead) {
-      isolationLevel = "repeatable read";
+      isolationLevel = 'repeatable read';
     } else {
-      isolationLevel = "serializable";
+      isolationLevel = 'serializable';
     }
     const result = await this.knex.transaction<R>(
       async (transactionClient: Knex.Transaction) => {
         return await transactionFunction(transactionClient, ...args);
       },
-      { isolationLevel: isolationLevel, readOnly: config.readOnly ?? false }
+      { isolationLevel: isolationLevel, readOnly: config.readOnly ?? false },
     );
     return result;
   }
 
-  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(
+    func: UserDatabaseQuery<C, R, T>,
+    ...args: T
+  ): Promise<R> {
     const result = await this.knex.transaction<R>(
       async (transactionClient: Knex.Transaction) => {
         return await func(transactionClient as unknown as C, ...args);
       },
-      { isolationLevel: "read committed", readOnly: true }
+      { isolationLevel: 'read committed', readOnly: true },
     );
     return result;
   }
@@ -516,8 +564,8 @@ export class KnexUserDatabase implements UserDatabase {
     const knexSql = sql.replace(/\$\d+/g, '?'); // Replace $1, $2... with ?
     let params = uparams as any[];
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    params = params.map(i => i === undefined ? null : i); // Set undefined parameters to null.
-    const rows = await client.raw<R>(knexSql, params) as { rows: R[] };
+    params = params.map((i) => (i === undefined ? null : i)); // Set undefined parameters to null.
+    const rows = (await client.raw<R>(knexSql, params)) as { rows: R[] };
     return rows.rows;
   }
 
@@ -527,23 +575,23 @@ export class KnexUserDatabase implements UserDatabase {
   }
 
   isRetriableTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "40001";
+    return this.getPostgresErrorCode(error) === '40001';
   }
 
   isKeyConflictError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "23505";
+    return this.getPostgresErrorCode(error) === '23505';
   }
 
   isFailedSqlTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "25P02";
+    return this.getPostgresErrorCode(error) === '25P02';
   }
 
   async createSchema(): Promise<void> {
-    return Promise.reject(new Error("createSchema() is not supported in Knex user database."));
+    return Promise.reject(new Error('createSchema() is not supported in Knex user database.'));
   }
 
   async dropSchema(): Promise<void> {
-    return Promise.reject(new Error("dropSchema() is not supported in Knex user database."));
+    return Promise.reject(new Error('dropSchema() is not supported in Knex user database.'));
   }
 }
 
@@ -556,17 +604,18 @@ export interface DrizzleClient {
   execute(query: unknown): unknown;
   _: {
     session: any;
-  }
-  transaction<R>(fn: (tx: any) => Promise<R>, options: { isolationLevel: any, accessMode: any }): Promise<R>;
+  };
+  transaction<R>(fn: (tx: any) => Promise<R>, options: { isolationLevel: any; accessMode: any }): Promise<R>;
 }
 
 /**
  * Drizzle user data access interface
  */
 export class DrizzleUserDatabase implements UserDatabase {
-
-  constructor(readonly pool: Pool, readonly db: DrizzleClient) {
-  }
+  constructor(
+    readonly pool: Pool,
+    readonly db: DrizzleClient,
+  ) {}
 
   async init(debugMode: boolean = false): Promise<void> {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
@@ -578,9 +627,9 @@ export class DrizzleUserDatabase implements UserDatabase {
       }
       const txnOutputTableExists = await poolClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
-        await  poolClient.query(userDBSchema);
+        await poolClient.query(userDBSchema);
       }
-      const txnIndexExists =  await poolClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
+      const txnIndexExists = await poolClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
       if (!txnIndexExists.rows[0].exists) {
         await poolClient.query(userDBIndex);
       }
@@ -595,28 +644,35 @@ export class DrizzleUserDatabase implements UserDatabase {
     return UserDatabaseName.DRIZZLE;
   }
 
-  async transaction<R, T extends unknown[]>(transactionFunction: UserDatabaseTransaction<R, T>, config: TransactionConfig, ...args: T): Promise<R> {
+  async transaction<R, T extends unknown[]>(
+    transactionFunction: UserDatabaseTransaction<R, T>,
+    config: TransactionConfig,
+    ...args: T
+  ): Promise<R> {
     let isolationLevel: 'read uncommitted' | 'read committed' | 'repeatable read' | 'serializable';
     if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
-      isolationLevel = "read uncommitted";
+      isolationLevel = 'read uncommitted';
     } else if (config.isolationLevel === IsolationLevel.ReadCommitted) {
-      isolationLevel = "read committed";
+      isolationLevel = 'read committed';
     } else if (config.isolationLevel === IsolationLevel.RepeatableRead) {
-      isolationLevel = "repeatable read";
+      isolationLevel = 'repeatable read';
     } else {
-      isolationLevel = "serializable";
+      isolationLevel = 'serializable';
     }
     const accessMode: 'read only' | 'read write' = config.readOnly ? 'read only' : 'read write';
     const result = await this.db.transaction<R>(
       async (tx: DrizzleClient) => {
         return await transactionFunction(tx, ...args);
       },
-      { isolationLevel, accessMode }
+      { isolationLevel, accessMode },
     );
     return result;
   }
 
-  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(func: UserDatabaseQuery<C, R, T>, ...args: T): Promise<R> {
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(
+    func: UserDatabaseQuery<C, R, T>,
+    ...args: T
+  ): Promise<R> {
     return func(this.db as unknown as C, ...args);
   }
 
@@ -638,22 +694,22 @@ export class DrizzleUserDatabase implements UserDatabase {
   }
 
   isRetriableTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "40001";
+    return this.getPostgresErrorCode(error) === '40001';
   }
 
   isKeyConflictError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "23505";
+    return this.getPostgresErrorCode(error) === '23505';
   }
 
   isFailedSqlTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === "25P02";
+    return this.getPostgresErrorCode(error) === '25P02';
   }
 
   async createSchema(): Promise<void> {
-    return Promise.reject(new Error("createSchema() is not supported in Drizzle user database."));
+    return Promise.reject(new Error('createSchema() is not supported in Drizzle user database.'));
   }
 
   async dropSchema(): Promise<void> {
-    return Promise.reject(new Error("dropSchema() is not supported in Drizzle user database."));
+    return Promise.reject(new Error('dropSchema() is not supported in Drizzle user database.'));
   }
 }

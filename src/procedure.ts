@@ -1,16 +1,16 @@
-import { DBOSContext, DBOSContextImpl } from "./context";
-import { Span } from "@opentelemetry/sdk-trace-base";
-import { GlobalLogger as Logger } from "./telemetry/logs";
-import { WorkflowContextImpl } from "./workflow";
-import { PoolClient } from "pg";
-import { TransactionConfig } from "./transaction";
+import { DBOSContext, DBOSContextImpl } from './context';
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { GlobalLogger as Logger } from './telemetry/logs';
+import { WorkflowContextImpl } from './workflow';
+import { PoolClient } from 'pg';
+import { TransactionConfig } from './transaction';
 
 export interface QueryResultBase {
   rowCount: number;
 }
 
 export interface StoredProcedureConfig extends TransactionConfig {
-  executeLocally?: boolean
+  executeLocally?: boolean;
 }
 
 export interface QueryResultRow {
@@ -24,7 +24,11 @@ export interface QueryResult<R extends QueryResultRow> extends QueryResultBase {
 
 export type StoredProcedure<T extends unknown[], R> = (ctxt: StoredProcedureContext, ...args: T) => Promise<R>;
 
-export interface StoredProcedureContext extends Pick<DBOSContext, 'request' | 'workflowUUID' | 'authenticatedUser' | 'assumedRole' | 'authenticatedRoles' | 'logger'> {
+export interface StoredProcedureContext
+  extends Pick<
+    DBOSContext,
+    'request' | 'workflowUUID' | 'authenticatedUser' | 'assumedRole' | 'authenticatedRoles' | 'logger'
+  > {
   query<R extends QueryResultRow>(sql: string, ...params: unknown[]): Promise<QueryResult<R>>;
 }
 
@@ -35,7 +39,7 @@ export class StoredProcedureContextImpl extends DBOSContextImpl implements Store
     span: Span,
     logger: Logger,
     readonly functionID: number,
-    operationName: string
+    operationName: string,
   ) {
     super(operationName, span, logger, workflowContext);
   }

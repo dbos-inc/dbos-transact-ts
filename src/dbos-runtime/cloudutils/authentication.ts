@@ -1,13 +1,13 @@
-import axios from "axios";
-import jwt, { JwtPayload } from "jsonwebtoken";
-import jwksClient from "jwks-rsa";
-import { Logger } from "winston";
+import axios from 'axios';
+import jwt, { JwtPayload } from 'jsonwebtoken';
+import jwksClient from 'jwks-rsa';
+import { Logger } from 'winston';
 
-const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
-const productionEnvironment = DBOSCloudHost === "cloud.dbos.dev";
-const Auth0Domain = productionEnvironment ? "login.dbos.dev" : "dbos-inc.us.auth0.com";
-const DBOSClientID = productionEnvironment ? "6p7Sjxf13cyLMkdwn14MxlH7JdhILled" : "G38fLmVErczEo9ioCFjVIHea6yd0qMZu";
-const DBOSCloudIdentifier = "dbos-cloud-api";
+const DBOSCloudHost = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
+const productionEnvironment = DBOSCloudHost === 'cloud.dbos.dev';
+const Auth0Domain = productionEnvironment ? 'login.dbos.dev' : 'dbos-inc.us.auth0.com';
+const DBOSClientID = productionEnvironment ? '6p7Sjxf13cyLMkdwn14MxlH7JdhILled' : 'G38fLmVErczEo9ioCFjVIHea6yd0qMZu';
+const DBOSCloudIdentifier = 'dbos-cloud-api';
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 interface DeviceCodeResponse {
@@ -43,14 +43,14 @@ async function getSigningKey(kid: string): Promise<string> {
 async function verifyToken(token: string): Promise<JwtPayload> {
   const decoded = jwt.decode(token, { complete: true });
 
-  if (!decoded || typeof decoded === "string" || !decoded.header.kid) {
-    throw new Error("Invalid token");
+  if (!decoded || typeof decoded === 'string' || !decoded.header.kid) {
+    throw new Error('Invalid token');
   }
 
   const signingKey = await getSigningKey(decoded.header.kid);
 
   return new Promise((resolve, reject) => {
-    jwt.verify(token, signingKey, { algorithms: ["RS256"] }, (err, verifiedToken) => {
+    jwt.verify(token, signingKey, { algorithms: ['RS256'] }, (err, verifiedToken) => {
       if (err) {
         reject(err);
       } else {
@@ -61,16 +61,19 @@ async function verifyToken(token: string): Promise<JwtPayload> {
 }
 
 // Redirect a user to auth0 to authenticate, retrieving a JWT bearer token
-export async function authenticate(logger: Logger, getRefreshToken: boolean = false): Promise<AuthenticationResponse | null> {
+export async function authenticate(
+  logger: Logger,
+  getRefreshToken: boolean = false,
+): Promise<AuthenticationResponse | null> {
   logger.info(`Please authenticate with DBOS Cloud!`);
 
   const deviceCodeRequest = {
-    method: "POST",
+    method: 'POST',
     url: `https://${Auth0Domain}/oauth/device/code`,
-    headers: { "content-type": "application/x-www-form-urlencoded" },
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
     data: {
       client_id: DBOSClientID,
-      scope: getRefreshToken ? "offline_access" : "sub",
+      scope: getRefreshToken ? 'offline_access' : 'sub',
       audience: DBOSCloudIdentifier,
     },
   };
@@ -90,11 +93,11 @@ export async function authenticate(logger: Logger, getRefreshToken: boolean = fa
   console.log(`Login URL: ${loginURL}`);
 
   const tokenRequest = {
-    method: "POST",
+    method: 'POST',
     url: `https://${Auth0Domain}/oauth/token`,
-    headers: { "content-type": "application/x-www-form-urlencoded" },
+    headers: { 'content-type': 'application/x-www-form-urlencoded' },
     data: {
-      grant_type: "urn:ietf:params:oauth:grant-type:device_code",
+      grant_type: 'urn:ietf:params:oauth:grant-type:device_code',
       device_code: deviceCodeResponse.device_code,
       client_id: DBOSClientID,
     },
@@ -122,4 +125,3 @@ export async function authenticate(logger: Logger, getRefreshToken: boolean = fa
     refreshToken: tokenResponse.refresh_token,
   };
 }
-

@@ -1,14 +1,19 @@
-import { execSync, SpawnSyncReturns } from "child_process";
-import { GlobalLogger } from "../telemetry/logs";
-import { ConfigFile, constructPoolConfig } from "./config";
-import { PoolConfig, Client } from "pg";
-import { createUserDBSchema, userDBIndex, userDBSchema } from "../../schemas/user_db_schema";
-import { ExistenceCheck, migrateSystemDatabase } from "../system_database";
-import { schemaExistsQuery, txnOutputIndexExistsQuery, txnOutputTableExistsQuery, createDBIfDoesNotExist } from "../user_database";
-import { db_wizard } from "./db_wizard";
+import { execSync, SpawnSyncReturns } from 'child_process';
+import { GlobalLogger } from '../telemetry/logs';
+import { ConfigFile, constructPoolConfig } from './config';
+import { PoolConfig, Client } from 'pg';
+import { createUserDBSchema, userDBIndex, userDBSchema } from '../../schemas/user_db_schema';
+import { ExistenceCheck, migrateSystemDatabase } from '../system_database';
+import {
+  schemaExistsQuery,
+  txnOutputIndexExistsQuery,
+  txnOutputTableExistsQuery,
+  createDBIfDoesNotExist,
+} from '../user_database';
+import { db_wizard } from './db_wizard';
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  let poolConfig: PoolConfig = constructPoolConfig(configFile)
+  let poolConfig: PoolConfig = constructPoolConfig(configFile);
   poolConfig = await db_wizard(poolConfig);
   logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
   await createDBIfDoesNotExist(poolConfig, logger);
@@ -22,11 +27,11 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
       console.log(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
-    logMigrationError(e, logger, "Error running migration")
+    logMigrationError(e, logger, 'Error running migration');
     return 1;
   }
 
-  logger.info("Creating DBOS tables and system database.");
+  logger.info('Creating DBOS tables and system database.');
   try {
     await createDBOSTables(configFile, poolConfig);
   } catch (e) {
@@ -38,28 +43,28 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     return 1;
   }
 
-  logger.info("Migration successful!")
+  logger.info('Migration successful!');
   return 0;
 }
 
 export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) {
-  logger.info("Starting Migration Rollback");
+  logger.info('Starting Migration Rollback');
 
   let dbType = configFile.database.app_db_client;
   if (dbType === undefined) {
-    dbType = "knex";
+    dbType = 'knex';
   }
 
   const rollbackcommands = configFile.database.rollback;
 
   try {
     rollbackcommands?.forEach((cmd) => {
-      logger.info("Executing " + cmd);
+      logger.info('Executing ' + cmd);
       const migrateCommandOutput = execSync(cmd, { encoding: 'utf-8' });
       logger.info(migrateCommandOutput.trimEnd());
     });
   } catch (e) {
-    logMigrationError(e, logger, "Error rolling back migration.");
+    logMigrationError(e, logger, 'Error rolling back migration.');
     return 1;
   }
   return 0;
@@ -91,7 +96,9 @@ async function createDBOSTables(configFile: ConfigFile, userPoolConfig: PoolConf
   }
 
   // Create the DBOS system database.
-  const dbExists = await pgUserClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemPoolConfig.database}')`);
+  const dbExists = await pgUserClient.query<ExistenceCheck>(
+    `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemPoolConfig.database}')`,
+  );
   if (!dbExists.rows[0].exists) {
     await pgUserClient.query(`CREATE DATABASE ${systemPoolConfig.database}`);
   }
@@ -103,7 +110,9 @@ async function createDBOSTables(configFile: ConfigFile, userPoolConfig: PoolConf
   try {
     await migrateSystemDatabase(systemPoolConfig);
   } catch (e) {
-    const tableExists = await pgSystemClient.query<ExistenceCheck>(`SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`);
+    const tableExists = await pgSystemClient.query<ExistenceCheck>(
+      `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`,
+    );
     if (tableExists.rows[0].exists) {
       // If the table has been created by someone else. Ignore the error.
       logger.warn(`System tables creation failed, may conflict with concurrent tasks: ${(e as Error).message}`);
@@ -121,13 +130,17 @@ type ExecSyncError<T> = Error & SpawnSyncReturns<T>;
 function isExecSyncError(e: Error): e is ExecSyncError<string | Buffer> {
   if (
     //Safeguard against NaN. NaN type is number but NaN !== NaN
-    "pid" in e && (typeof e.pid === 'number' && e.pid === e.pid) &&
-    "stdout" in e && (Buffer.isBuffer(e.stdout) || typeof e.stdout === 'string') &&
-    "stderr" in e && (Buffer.isBuffer(e.stderr) || typeof e.stderr === 'string')
+    'pid' in e &&
+    typeof e.pid === 'number' &&
+    e.pid === e.pid &&
+    'stdout' in e &&
+    (Buffer.isBuffer(e.stdout) || typeof e.stdout === 'string') &&
+    'stderr' in e &&
+    (Buffer.isBuffer(e.stderr) || typeof e.stderr === 'string')
   ) {
     return true;
   }
-  return false
+  return false;
 }
 
 function logMigrationError(e: unknown, logger: GlobalLogger, title: string) {

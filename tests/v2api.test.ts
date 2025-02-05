@@ -1,9 +1,9 @@
-import fs from "fs";
-import path from "path";
-import ts from "typescript";
+import fs from 'fs';
+import path from 'path';
+import ts from 'typescript';
 
 async function compileTypeScriptFile(filePath: string): Promise<boolean> {
-  const tempDir = path.join(__dirname, "temp-dist");
+  const tempDir = path.join(__dirname, 'temp-dist');
 
   try {
     const program = ts.createProgram([filePath], {
@@ -21,10 +21,10 @@ async function compileTypeScriptFile(filePath: string): Promise<boolean> {
       diagnostics.forEach((diagnostic) => {
         if (diagnostic.file) {
           const { line, character } = diagnostic.file.getLineAndCharacterOfPosition(diagnostic.start!);
-          const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n");
+          const message = ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n');
           console.error(`Error in ${diagnostic.file.fileName} (${line + 1},${character + 1}): ${message}`);
         } else {
-          console.error(ts.flattenDiagnosticMessageText(diagnostic.messageText, "\n"));
+          console.error(ts.flattenDiagnosticMessageText(diagnostic.messageText, '\n'));
         }
       });
     }
@@ -37,8 +37,8 @@ async function compileTypeScriptFile(filePath: string): Promise<boolean> {
 
 // Write the code string to a temporary file & compile
 async function compileCodeWithImports(code: string): Promise<boolean> {
-  const tempDir = path.join(__dirname, "temp-tests");
-  const tempFilePath = path.join(tempDir, "tempTest.ts");
+  const tempDir = path.join(__dirname, 'temp-tests');
+  const tempFilePath = path.join(tempDir, 'tempTest.ts');
 
   try {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
@@ -47,14 +47,13 @@ async function compileCodeWithImports(code: string): Promise<boolean> {
 
     const isSuccess = await compileTypeScriptFile(tempFilePath);
     return isSuccess;
-  }
-  finally {
+  } finally {
     await fs.promises.rm(tempDir, { recursive: true, force: true });
   }
 }
 
-describe("v2api-compile", () => {
-  it("should compile", async () => {
+describe('v2api-compile', () => {
+  it('should compile', async () => {
     const validCode = `
           import { DBOS } from "../../src";
 
@@ -67,8 +66,7 @@ describe("v2api-compile", () => {
     expect(result).toBe(true);
   }, 20000);
 
-
-  it("should NOT compile", async () => {
+  it('should NOT compile', async () => {
     const invalidCode = `
         import { DBOS, WorkflowContext } from "../../src";
 

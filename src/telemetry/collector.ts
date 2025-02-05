@@ -1,6 +1,6 @@
-import { ITelemetryExporter } from "./exporters";
-import { Span } from "@opentelemetry/sdk-trace-base";
-import { LogRecord } from "@opentelemetry/api-logs";
+import { ITelemetryExporter } from './exporters';
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { LogRecord } from '@opentelemetry/api-logs';
 
 export type TelemetrySignal = LogRecord | Span;
 
