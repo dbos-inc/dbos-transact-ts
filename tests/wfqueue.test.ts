@@ -497,6 +497,47 @@ describe('queued-wf-tests-simple', () => {
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
+
+  test('test-resume-queues', async () => {
+    const wfid = uuidv4();
+
+    // Enqueue the blocked and regular workflow on a queue with concurrency 1
+    const blockedHandle = await DBOS.startWorkflow(TestCancelQueues, {
+      queueName: TestCancelQueues.queue.name,
+    }).stuckWorkflow();
+    const regularHandle = await DBOS.startWorkflow(TestCancelQueues, {
+      workflowID: wfid,
+      queueName: TestCancelQueues.queue.name,
+    }).regularWorkflow();
+    const regularHandleTwo = await DBOS.startWorkflow(TestCancelQueues, {
+      queueName: TestCancelQueues.queue.name,
+    }).regularWorkflow();
+
+    // Verify the blocked workflow starts and is PENDING while the regular workflow remains ENQUEUED
+    await TestCancelQueues.startEvent.wait();
+    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+    });
+    await expect(regularHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+    await expect(regularHandleTwo.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+
+    // Resume a regular workflow. Verify it completes.
+    await DBOSExecutor.globalInstance?.systemDatabase.resumeWorkflow(wfid);
+    await DBOSExecutor.globalInstance?.executeWorkflowUUID(wfid, false);
+    await expect(regularHandle.getResult()).resolves.toBeNull();
+
+    // Complete the blocked workflow. Verify the second regular workflow also completes.
+    TestCancelQueues.blockingEvent.set();
+    await expect(blockedHandle.getResult()).resolves.toBeNull();
+    await expect(regularHandleTwo.getResult()).resolves.toBeNull();
+
+    // Verify all queue entries eventually get cleaned up
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  });
 });
 
 describe('queued-wf-tests-concurrent-workers', () => {
