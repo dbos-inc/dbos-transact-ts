@@ -1092,6 +1092,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             .update('started_at_epoch_ms', startTimeMs)
             .update('executor_id', executorID);
         }
+
         // If we did not update this record, probably someone else did.  Count in either case.
         ++numRecentQueries;
       }
