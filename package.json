@@ -17,7 +17,8 @@
     "build": "tsc --project tsconfig.build.json && npm run --workspaces build",
     "lint": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
-    "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles --testPathIgnorePatterns=packages/*"
+    "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles --testPathIgnorePatterns=packages/*",
+    "prepare": "husky install"
   },
   "bin": {
     "dbos": "./dist/src/dbos-runtime/cli.js",
@@ -42,8 +43,11 @@
     "drizzle-orm": "^0.38.3",
     "eslint": "^9.4.0",
     "fastify": "^5.1.0",
+    "husky": "^9.1.7",
     "jest": "^29.7.0",
     "koa-jwt": "^4.0.4",
+    "lint-staged": "^15.4.3",
+    "prettier": "^3.4.2",
     "prisma": "^5.1.1",
     "supertest": "^7.0.0",
     "ts-jest": "^29.2.4",
@@ -86,5 +90,9 @@
   "peerDependencies": {
     "@types/koa": "^2.15.0",
     "koa": "^2.15.0"
+  },
+  "lint-staged": {
+    "*.js": "eslint --cache --fix",
+    "*.{js,css,md}": "prettier --write"
   }
 }
