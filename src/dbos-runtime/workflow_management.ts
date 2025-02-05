@@ -77,7 +77,7 @@ export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
     createLogger() as unknown as GlobalLogger,
   );
   try {
-    await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false);
+    await systemDatabase.cancelWorkflow(workflowUUID);
   } finally {
     await systemDatabase.destroy();
   }

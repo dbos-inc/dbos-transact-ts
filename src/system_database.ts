@@ -62,6 +62,7 @@ export interface SystemDatabase {
     status: (typeof StatusString)[keyof typeof StatusString],
     resetRecoveryAttempts: boolean,
   ): Promise<void>;
+  cancelWorkflow(workflowID: string): Promise<void>;
 
   enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
@@ -908,6 +909,34 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET recovery_attempts=0 WHERE workflow_uuid=$1`,
         [workflowUUID],
       );
+    }
+  }
+
+  async cancelWorkflow(workflowUUID: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Remove workflow from queues table
+      await client.query(
+        `DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue 
+         WHERE workflow_uuid = $1`,
+        [workflowUUID],
+      );
+
+      await client.query(
+        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
+         SET status = $1 
+         WHERE workflow_uuid = $2`,
+        [StatusString.CANCELLED, workflowUUID],
+      );
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
   }
 
