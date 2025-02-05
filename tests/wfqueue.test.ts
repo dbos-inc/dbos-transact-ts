@@ -1,6 +1,6 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import { WorkflowQueue } from '../src';
 import { v4 as uuidv4 } from 'uuid';
 import { sleepms } from '../src/utils';
@@ -387,6 +387,42 @@ describe('queued-wf-tests-simple', () => {
     // Call with a different input would generate a warning, but still use the recorded input.
     const handle3 = await DBOS.startWorkflow(TestDuplicateID, { workflowID: wfid }).testWorkflow('def');
     await expect(handle3.getResult()).resolves.toBe('abc');
+  });
+
+  class TestQueueRecovery {
+    static queuedSteps = 5;
+    static event = new Event();
+    static stepEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
+    static stepCount = 0;
+
+    @DBOS.workflow()
+    static async testWorkflow() {
+      const handles = [];
+      for (let i = 0; i < TestQueueRecovery.queuedSteps; i++) {
+        const h = await DBOS.startWorkflow(TestQueueRecovery).blockingStep(i);
+        handles.push(h);
+      }
+      return Promise.all(handles.map((h) => h.getResult()));
+    }
+
+    @DBOS.workflow()
+    static async blockingStep(i: number) {
+      TestQueueRecovery.stepEvents[i].set();
+      TestQueueRecovery.stepCount++;
+      await TestQueueRecovery.event.wait();
+      return i;
+    }
+  }
+
+  test('test-queue-recovery', async () => {
+    const wfid = uuidv4();
+    const originalHandle = await DBOS.startWorkflow(TestQueueRecovery, { workflowID: wfid }).testWorkflow();
+    for (const e of TestQueueRecovery.stepEvents) {
+      await e.wait();
+    }
+    expect(TestQueueRecovery.stepCount).toEqual(5);
+    TestQueueRecovery.event.set();
+    await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
   });
 });
 

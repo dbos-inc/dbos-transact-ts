@@ -62,3 +62,28 @@ export interface TestKvTable {
   id?: number;
   value?: string;
 }
+
+// A helper class for testing concurrency. Behaves similarly to threading.Event in Python.
+// The class contains a promise and a resolution.
+// Await Event.wait() to await the promise.
+// Call event.set() to resolve the promise.
+export class Event {
+  private _resolve: (() => void) | null = null;
+  private _promise: Promise<void>;
+
+  constructor() {
+    this._promise = new Promise((resolve) => {
+      this._resolve = resolve;
+    });
+  }
+
+  set(): void {
+    if (this._resolve) {
+      this._resolve();
+    }
+  }
+
+  wait(): Promise<void> {
+    return this._promise;
+  }
+}
