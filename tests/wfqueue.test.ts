@@ -394,12 +394,13 @@ describe('queued-wf-tests-simple', () => {
     static event = new Event();
     static taskEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
     static taskCount = 0;
+    static queue = new WorkflowQueue('testQueueRecovery');
 
     @DBOS.workflow()
     static async testWorkflow() {
       const handles = [];
       for (let i = 0; i < TestQueueRecovery.queuedSteps; i++) {
-        const h = await DBOS.startWorkflow(TestQueueRecovery).blockingTask(i);
+        const h = await DBOS.startWorkflow(TestQueueRecovery, { queueName: queue.name }).blockingTask(i);
         handles.push(h);
       }
       return Promise.all(handles.map((h) => h.getResult()));
@@ -432,7 +433,8 @@ describe('queued-wf-tests-simple', () => {
       }
     }
     await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
-    expect(TestQueueRecovery.taskCount).toEqual(15);
+    expect(TestQueueRecovery.taskCount).toEqual(10);
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
 });
 
