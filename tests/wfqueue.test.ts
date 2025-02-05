@@ -392,23 +392,23 @@ describe('queued-wf-tests-simple', () => {
   class TestQueueRecovery {
     static queuedSteps = 5;
     static event = new Event();
-    static stepEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
-    static stepCount = 0;
+    static taskEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
+    static taskCount = 0;
 
     @DBOS.workflow()
     static async testWorkflow() {
       const handles = [];
       for (let i = 0; i < TestQueueRecovery.queuedSteps; i++) {
-        const h = await DBOS.startWorkflow(TestQueueRecovery).blockingStep(i);
+        const h = await DBOS.startWorkflow(TestQueueRecovery).blockingTask(i);
         handles.push(h);
       }
       return Promise.all(handles.map((h) => h.getResult()));
     }
 
     @DBOS.workflow()
-    static async blockingStep(i: number) {
-      TestQueueRecovery.stepEvents[i].set();
-      TestQueueRecovery.stepCount++;
+    static async blockingTask(i: number) {
+      TestQueueRecovery.taskEvents[i].set();
+      TestQueueRecovery.taskCount++;
       await TestQueueRecovery.event.wait();
       return i;
     }
@@ -417,12 +417,22 @@ describe('queued-wf-tests-simple', () => {
   test('test-queue-recovery', async () => {
     const wfid = uuidv4();
     const originalHandle = await DBOS.startWorkflow(TestQueueRecovery, { workflowID: wfid }).testWorkflow();
-    for (const e of TestQueueRecovery.stepEvents) {
+    for (const e of TestQueueRecovery.taskEvents) {
       await e.wait();
     }
-    expect(TestQueueRecovery.stepCount).toEqual(5);
+    expect(TestQueueRecovery.taskCount).toEqual(5);
+
+    const recoveryHandles = await DBOS.recoverPendingWorkflows();
+    expect(recoveryHandles.length).toBe(TestQueueRecovery.queuedSteps + 1);
     TestQueueRecovery.event.set();
+
+    for (const h of recoveryHandles) {
+      if (h.workflowID === wfid) {
+        await expect(h.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
+      }
+    }
     await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
+    expect(TestQueueRecovery.taskCount).toEqual(15);
   });
 });
 
