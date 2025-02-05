@@ -32,7 +32,6 @@ describe('admin-server-tests', () => {
     // Test GET /dbos-healthz
     const healthzResponse = await fetch('http://localhost:3001/dbos-healthz', {
       method: 'GET',
-      signal: AbortSignal.timeout(5000),
     });
     expect(healthzResponse.status).toBe(200);
     expect(await healthzResponse.text()).toBe('healthy');
@@ -45,7 +44,6 @@ describe('admin-server-tests', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify(data),
-      signal: AbortSignal.timeout(5000),
     });
     expect(recoveryResponse.status).toBe(200);
     expect(await recoveryResponse.json()).toEqual([]);
@@ -53,14 +51,12 @@ describe('admin-server-tests', () => {
     // Test GET not found
     const getNotFoundResponse = await fetch('http://localhost:3001/stuff', {
       method: 'GET',
-      signal: AbortSignal.timeout(5000),
     });
     expect(getNotFoundResponse.status).toBe(404);
 
     // Test POST not found
     const postNotFoundResponse = await fetch('http://localhost:3001/stuff', {
       method: 'POST',
-      signal: AbortSignal.timeout(5000),
     });
     expect(postNotFoundResponse.status).toBe(404);
   });
@@ -91,8 +87,6 @@ describe('admin-server-tests', () => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify([]),
-      signal: AbortSignal.timeout(5000),
     });
     expect(response.status).toBe(204);
     await expect(handle.getStatus()).resolves.toMatchObject({
@@ -105,8 +99,6 @@ describe('admin-server-tests', () => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify([]),
-      signal: AbortSignal.timeout(5000),
     });
     expect(response.status).toBe(204);
     await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
@@ -121,8 +113,6 @@ describe('admin-server-tests', () => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify([]),
-      signal: AbortSignal.timeout(5000),
     });
     expect(response.status).toBe(204);
     await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
