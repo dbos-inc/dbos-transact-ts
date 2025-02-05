@@ -8,9 +8,9 @@ export interface workflow_status {
   output: string;
   error: string;
   assumed_role: string;
-  authenticated_roles: string;  // Serialized list of roles.
-  request: string;  // Serialized HTTPRequest
-  executor_id: string;  // Set to "local" for local deployment, set to microVM ID for cloud deployment.
+  authenticated_roles: string; // Serialized list of roles.
+  request: string; // Serialized HTTPRequest
+  executor_id: string; // Set to "local" for local deployment, set to microVM ID for cloud deployment.
   application_version: string;
   queue_name?: string;
 }

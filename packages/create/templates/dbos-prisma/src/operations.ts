@@ -5,14 +5,13 @@
 
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient } from '@prisma/client';
 
 export class Hello {
-
   // Serve this function from HTTP GET requests at the /greeting endpoint with 'name' as a path parameter
   @DBOS.getApi('/greeting/:name')
   @DBOS.transaction()
-  static async helloTransaction(name: string)  {
+  static async helloTransaction(name: string) {
     const greeting = `Hello, ${name}!`;
     const res = await (DBOS.prismaClient as PrismaClient).dbosHello.create({
       data: {
@@ -29,14 +28,15 @@ export class Hello {
     const message = Hello.makeHTML(
       `Visit the route <code class="bg-gray-100 px-1 rounded">/greeting/{name}</code> to be greeted!<br>
       For example, visit <code class="bg-gray-100 px-1 rounded"><a href="/greeting/Mike" class="text-blue-600 hover:underline">/greeting/Mike</a></code><br>
-      The counter increments with each page visit.`
+      The counter increments with each page visit.`,
     );
     return Promise.resolve(message);
   }
 
   // A helper function to create HTML pages with some styling
   static makeHTML(message: string) {
-    const page = `
+    const page =
+      `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -45,7 +45,9 @@ export class Hello {
     </head>
     <body class="font-sans text-gray-800 p-6 max-w-2xl mx-auto">
         <h1 class="text-3xl font-semibold mb-4">Welcome to DBOS!</h1>
-        <p class="mt-8 mb-8">` + message + `</p>
+        <p class="mt-8 mb-8">` +
+      message +
+      `</p>
         <p class="mb-2">
             This is the Prisma quickstart template app. Read the documentation for it <a href="https://docs.dbos.dev/typescript/tutorials/using-prisma" class="text-blue-600 hover:underline">here</a>.
         </p>

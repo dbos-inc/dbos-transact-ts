@@ -1,20 +1,20 @@
-import Koa from "koa";
-import { Request, Response, NextFunction } from "express";
-import { IncomingHttpHeaders } from "http";
+import Koa from 'koa';
+import { Request, Response, NextFunction } from 'express';
+import { IncomingHttpHeaders } from 'http';
 
-import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from "../decorators";
-import { DBOSUndefinedDecoratorInputError } from "../error";
-import { Logger as DBOSLogger } from "../telemetry/logs";
-import { UserDatabaseClient } from "../user_database";
-import { OperationType } from "../dbos-executor";
-import { DBOS } from "../dbos";
-import { HTTPRequest } from "../context";
+import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from '../decorators';
+import { DBOSUndefinedDecoratorInputError } from '../error';
+import { Logger as DBOSLogger } from '../telemetry/logs';
+import { UserDatabaseClient } from '../user_database';
+import { OperationType } from '../dbos-executor';
+import { DBOS } from '../dbos';
+import { HTTPRequest } from '../context';
 
-import { Span } from "@opentelemetry/sdk-trace-base";
-import { W3CTraceContextPropagator } from "@opentelemetry/core";
-import { trace, defaultTextMapGetter, ROOT_CONTEXT, SpanStatusCode } from "@opentelemetry/api";
-import { v4 as uuidv4 } from "uuid";
-import { DBOSJSON } from "../utils";
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { trace, defaultTextMapGetter, ROOT_CONTEXT, SpanStatusCode } from '@opentelemetry/api';
+import { v4 as uuidv4 } from 'uuid';
+import { DBOSJSON } from '../utils';
 
 // Middleware context does not extend base context because it runs before handler/workflow operations.
 export interface MiddlewareContext {
@@ -27,7 +27,10 @@ export interface MiddlewareContext {
 
   getConfig<T>(key: string, deflt: T | undefined): T | undefined; // Access to configuration information
 
-  query<C extends UserDatabaseClient, R, T extends unknown[]>(qry: (dbclient: C, ...args: T) => Promise<R>, ...args: T): Promise<R>;
+  query<C extends UserDatabaseClient, R, T extends unknown[]>(
+    qry: (dbclient: C, ...args: T) => Promise<R>,
+    ...args: T
+  ): Promise<R>;
 }
 
 /**
@@ -54,7 +57,10 @@ export interface MiddlewareDefaults extends RegistrationDefaults {
   koaGlobalMiddlewares?: Koa.Middleware[];
 }
 
-export class MiddlewareClassRegistration<CT extends { new(...args: unknown[]): object }> extends ClassRegistration<CT> implements MiddlewareDefaults {
+export class MiddlewareClassRegistration<CT extends { new (...args: unknown[]): object }>
+  extends ClassRegistration<CT>
+  implements MiddlewareDefaults
+{
   authMiddleware?: DBOSHttpAuthMiddleware;
   koaBodyParser?: Koa.Middleware;
   koaCors?: Koa.Middleware;
@@ -75,9 +81,9 @@ export class MiddlewareClassRegistration<CT extends { new(...args: unknown[]): o
  */
 export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
   if (authMiddleware === undefined) {
-    throw new DBOSUndefinedDecoratorInputError("Authentication");
+    throw new DBOSUndefinedDecoratorInputError('Authentication');
   }
-  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
+  function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
     clsreg.authMiddleware = authMiddleware;
   }
@@ -88,7 +94,7 @@ export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
  * Define a Koa body parser applied before any middleware. If not set, the default @koa/bodyparser is used.
  */
 export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
-  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
+  function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
     clsreg.koaBodyParser = koaBodyParser;
   }
@@ -99,7 +105,7 @@ export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
  * Define a Koa CORS policy applied before any middleware. If not set, the default @koa/cors (w/ .yaml config) is used.
  */
 export function KoaCors(koaCors: Koa.Middleware) {
-  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
+  function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
     clsreg.koaCors = koaCors;
   }
@@ -112,10 +118,10 @@ export function KoaCors(koaCors: Koa.Middleware) {
 export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
     if (i === undefined) {
-      throw new DBOSUndefinedDecoratorInputError("KoaMiddleware");
+      throw new DBOSUndefinedDecoratorInputError('KoaMiddleware');
     }
   });
-  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
+  function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
     clsreg.koaMiddlewares = koaMiddleware;
   }
@@ -129,16 +135,15 @@ export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
 export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
     if (i === undefined) {
-      throw new DBOSUndefinedDecoratorInputError("KoaGlobalMiddleware");
+      throw new DBOSUndefinedDecoratorInputError('KoaGlobalMiddleware');
     }
   });
-  function clsdec<T extends { new(...args: unknown[]): object }>(ctor: T) {
+  function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
     clsreg.koaGlobalMiddlewares = koaMiddleware;
   }
   return clsdec;
 }
-
 
 /////////////////////////////////
 /* OPEN API DECORATORS (Moved) */
@@ -150,14 +155,14 @@ export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
  */
 // eslint-disable-next-line @typescript-eslint/no-unused-vars
 export function OpenApiSecurityScheme(securityScheme: unknown) {
-  throw new Error("@OpenApiSecurityScheme has been moved to the @dbos-inc/dbos-openapi package as of v2.0");
+  throw new Error('@OpenApiSecurityScheme has been moved to the @dbos-inc/dbos-openapi package as of v2.0');
 }
 
 /////////////////////////////////
 /* HTTP APP TRACING MIDDLEWARES */
 /////////////////////////////////
 
-export const RequestIDHeader = "X-Request-ID";
+export const RequestIDHeader = 'X-Request-ID';
 export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
   const reqID = headers[RequestIDHeader.toLowerCase()] as string | undefined; // RequestIDHeader is expected to be a single value, so we dismiss the possible string[] returned type.
   if (reqID) {
@@ -170,7 +175,9 @@ export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
 
 export function createHTTPSpan(request: HTTPRequest, httpTracer: W3CTraceContextPropagator): Span {
   // If present, retrieve the trace context from the request
-  const extractedSpanContext = trace.getSpanContext(httpTracer.extract(ROOT_CONTEXT, request.headers, defaultTextMapGetter));
+  const extractedSpanContext = trace.getSpanContext(
+    httpTracer.extract(ROOT_CONTEXT, request.headers, defaultTextMapGetter),
+  );
   let span: Span;
   const spanAttributes = {
     operationType: OperationType.HANDLER,
@@ -212,7 +219,7 @@ export async function koaTracingMiddleware(ctx: Koa.Context, next: Koa.Next) {
 
   try {
     await DBOS.withTracedContext(request.url as string, span, request, next);
-    span.setStatus({ code: SpanStatusCode.OK});
+    span.setStatus({ code: SpanStatusCode.OK });
   } catch (e) {
     if (e instanceof Error) {
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
@@ -237,7 +244,7 @@ export async function expressTracingMiddleware(req: Request, res: Response, next
     body: req.body,
     rawBody: req.rawBody,
     // query: req.query,
-    querystring: req.url.split("?")[1],
+    querystring: req.url.split('?')[1],
     url: req.url,
     ip: req.ip,
     method: req.method,
@@ -251,7 +258,7 @@ export async function expressTracingMiddleware(req: Request, res: Response, next
     if (res.statusCode >= 400) {
       span.setStatus({ code: SpanStatusCode.ERROR, message: res.statusMessage });
     } else {
-      span.setStatus({ code: SpanStatusCode.OK});
+      span.setStatus({ code: SpanStatusCode.OK });
     }
   } catch (e) {
     if (e instanceof Error) {

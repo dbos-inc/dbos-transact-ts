@@ -1,4 +1,4 @@
-export const sampleDbosClass = /*ts*/`
+export const sampleDbosClass = /*ts*/ `
 import {
   DBOS,
   GetApi, PostApi, PutApi, PatchApi, DeleteApi, HandlerContext,
@@ -154,7 +154,7 @@ export class Test {
 }
 `;
 
-export const sampleDbosClassAliased = /*ts*/`
+export const sampleDbosClassAliased = /*ts*/ `
 import {
   DBOS as TestDBOS,
   GetApi as TestGetApi, PostApi as TestPostApi,

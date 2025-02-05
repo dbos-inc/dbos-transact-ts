@@ -2,7 +2,7 @@ name: Create DBOS Package Artifact
 
 on:
   workflow_call:
-  
+
 jobs:
   build:
     runs-on: ubuntu-latest

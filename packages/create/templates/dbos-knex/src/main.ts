@@ -4,7 +4,7 @@
 // It greets visitors and keeps track of how many times each visitor has been greeted.
 
 import express, { Request, Response } from 'express';
-import { DBOS } from "@dbos-inc/dbos-sdk";
+import { DBOS } from '@dbos-inc/dbos-sdk';
 
 export interface dbos_hello {
   name: string;
@@ -16,7 +16,8 @@ export class Hello {
   // It retrieves and increments the number of times a user has been greeted.
   @DBOS.transaction()
   static async helloTransaction(user: string) {
-    const query = "INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;";
+    const query =
+      'INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;';
     const { rows } = (await DBOS.knexClient.raw(query, [user])) as { rows: dbos_hello[] };
     const greet_count = rows[0].greet_count;
     const greeting = `Hello, ${user}! You have been greeted ${greet_count} times.`;
@@ -29,12 +30,13 @@ function readme() {
   return makeHTML(
     `Visit the route <code class="bg-gray-100 px-1 rounded">/greeting/{name}</code> to be greeted!<br>
     For example, visit <code class="bg-gray-100 px-1 rounded"><a href="/greeting/Mike" class="text-blue-600 hover:underline">/greeting/Mike</a></code><br>
-    The counter increments with each page visit.`
+    The counter increments with each page visit.`,
   );
 }
 
 function makeHTML(message: string) {
-  const page = `
+  const page =
+    `
     <!DOCTYPE html>
     <html lang="en">
     <head>
@@ -43,7 +45,9 @@ function makeHTML(message: string) {
     </head>
     <body class="font-sans text-gray-800 p-6 max-w-2xl mx-auto">
         <h1 class="text-3xl font-semibold mb-4">Welcome to DBOS!</h1>
-        <p class="mt-8 mb-8">` + message + `</p>
+        <p class="mt-8 mb-8">` +
+    message +
+    `</p>
         <p class="mb-2">
             To learn how to run this app yourself, visit our
             <a href="https://docs.dbos.dev/quickstart?language=typescript" class="text-blue-600 hover:underline">Quickstart</a>.
@@ -69,8 +73,8 @@ app.get('/', (req: Request, res: Response) => {
 app.get('/greeting/:name', (req: Request, res: Response) => {
   const { name } = req.params;
   Hello.helloTransaction(name)
-    .then(result => res.send(result))
-    .catch(error => {
+    .then((result) => res.send(result))
+    .catch((error) => {
       console.error(error);
       res.status(500).send('Internal Server Error');
     });
@@ -78,7 +82,7 @@ app.get('/greeting/:name', (req: Request, res: Response) => {
 
 // Finally, launch DBOS and start the server
 async function main() {
-  await DBOS.launch({expressApp: app});
+  await DBOS.launch({ expressApp: app });
   const PORT = 3000;
   const ENV = process.env.NODE_ENV || 'development';
 

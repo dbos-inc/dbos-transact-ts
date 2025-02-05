@@ -1,5 +1,5 @@
-import axios, { AxiosError } from "axios";
-import { statSync, existsSync, readFileSync } from "fs";
+import axios, { AxiosError } from 'axios';
+import { statSync, existsSync, readFileSync } from 'fs';
 import {
   handleAPIErrors,
   dbosConfigFilePath,
@@ -15,17 +15,17 @@ import {
   retrieveApplicationLanguage,
   AppLanguages,
   DBOSCloudCredentials,
-} from "../cloudutils.js";
-import path from "path";
-import { Application } from "./types.js";
-import JSZip from "jszip";
-import fg from "fast-glob";
-import chalk from "chalk";
-import { registerApp } from "./register-app.js";
-import { Logger } from "winston";
-import { chooseAppDBServer } from "../databases/databases.js";
-import YAML from "yaml";
-import { ConfigFile } from "../configutils.js";
+} from '../cloudutils.js';
+import path from 'path';
+import { Application } from './types.js';
+import JSZip from 'jszip';
+import fg from 'fast-glob';
+import chalk from 'chalk';
+import { registerApp } from './register-app.js';
+import { Logger } from 'winston';
+import { chooseAppDBServer } from '../databases/databases.js';
+import YAML from 'yaml';
+import { ConfigFile } from '../configutils.js';
 import fs from 'fs';
 
 type DeployOutput = {
@@ -34,8 +34,8 @@ type DeployOutput = {
 };
 
 function convertPathForGlob(p: string) {
-  if (path.sep === "\\") {
-    return p.replace(/\\/g, "/");
+  if (path.sep === '\\') {
+    return p.replace(/\\/g, '/');
   }
   return p;
 }
@@ -48,17 +48,16 @@ function getFilePermissions(filePath: string) {
 function parseIgnoreFile(filePath: string) {
   if (!fs.existsSync(filePath)) return [];
   return fs
-  .readFileSync(filePath, 'utf-8')
-  .split('\n')
-  .map((line) => line.trim())
-  .filter((line) => line && !line.startsWith('#')); // Exclude empty lines and comments
+    .readFileSync(filePath, 'utf-8')
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line && !line.startsWith('#')); // Exclude empty lines and comments
 }
 
 async function createZipData(logger: CLILogger): Promise<string> {
-  
   const zip = new JSZip();
 
-  const globPattern = convertPathForGlob(path.join(process.cwd(), "**", "*"));
+  const globPattern = convertPathForGlob(path.join(process.cwd(), '**', '*'));
 
   const dbosIgnoreFilePath = '.dbosignore';
 
@@ -66,11 +65,20 @@ async function createZipData(logger: CLILogger): Promise<string> {
   const globIgnorePatterns = ignorePatterns.map((pattern) => {
     pattern = convertPathForGlob(path.join(process.cwd(), pattern));
     if (pattern.endsWith('/')) {
-      pattern = path.join(pattern, "**"); // Recursively ignore directories
+      pattern = path.join(pattern, '**'); // Recursively ignore directories
     }
     return pattern;
   });
-  const hardcodedIgnorePatterns = [ `**/${dbosEnvPath}/**`, "**/node_modules/**", "**/dist/**", "**/.git/**", `**/${dbosConfigFilePath}`, "**/venv/**", "**/.venv/**", "**/.python-version"];
+  const hardcodedIgnorePatterns = [
+    `**/${dbosEnvPath}/**`,
+    '**/node_modules/**',
+    '**/dist/**',
+    '**/.git/**',
+    `**/${dbosConfigFilePath}`,
+    '**/venv/**',
+    '**/.venv/**',
+    '**/.python-version',
+  ];
 
   const files = await fg(globPattern, {
     dot: true,
@@ -80,11 +88,11 @@ async function createZipData(logger: CLILogger): Promise<string> {
 
   files.forEach((file) => {
     logger.debug(`    Zipping file ${file}`);
-    const relativePath = path.relative(process.cwd(), file).replace(/\\/g, "/");
+    const relativePath = path.relative(process.cwd(), file).replace(/\\/g, '/');
     const fileData = readFileSync(file);
     const filePerms = getFilePermissions(file);
     logger.debug(`      File permissions: ${filePerms.toString(8)}`);
-    zip.file(relativePath, fileData, { binary: true, unixPermissions: filePerms});
+    zip.file(relativePath, fileData, { binary: true, unixPermissions: filePerms });
   });
 
   // Add the interpolated config file at package root
@@ -95,9 +103,9 @@ async function createZipData(logger: CLILogger): Promise<string> {
 
   // Generate ZIP file as a Buffer
   logger.debug(`    Finalizing zip archive ...`);
-  const buffer = await zip.generateAsync({ platform: "UNIX", type: "nodebuffer" });
+  const buffer = await zip.generateAsync({ platform: 'UNIX', type: 'nodebuffer' });
   logger.debug(`    ... zip archive complete (${buffer.length} bytes).`);
-  return buffer.toString("base64");
+  return buffer.toString('base64');
 }
 
 export async function deployAppCode(
@@ -108,53 +116,54 @@ export async function deployAppCode(
   targetDatabaseName: string | null = null, // Used for changing database instance
   appName: string | undefined,
   userDBName: string | undefined = undefined, // Used for registering the app
-  enableTimeTravel: boolean = false
+  enableTimeTravel: boolean = false,
 ): Promise<number> {
   const startTime = Date.now();
   const logger = getLogger(verbose);
-  logger.debug("Getting cloud credentials...");
+  logger.debug('Getting cloud credentials...');
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
-  logger.debug("  ... got cloud credentials");
+  const bearerToken = 'Bearer ' + userCredentials.token;
+  logger.debug('  ... got cloud credentials');
 
-  logger.debug("Retrieving app name...");
+  logger.debug('Retrieving app name...');
   appName = appName || retrieveApplicationName(logger);
   if (!appName) {
-    logger.error("Failed to get app name.");
+    logger.error('Failed to get app name.');
     return 1;
   }
   logger.debug(`  ... app name is ${appName}.`);
 
   const appLanguage = retrieveApplicationLanguage();
 
-  if (appLanguage === AppLanguages.Node as string) {
-    logger.debug("Checking for package-lock.json...");
-    const packageLockJsonExists = existsSync(path.join(process.cwd(), "package-lock.json"));
+  if (appLanguage === (AppLanguages.Node as string)) {
+    logger.debug('Checking for package-lock.json...');
+    const packageLockJsonExists = existsSync(path.join(process.cwd(), 'package-lock.json'));
     logger.debug(`  ... package-lock.json found: ${packageLockJsonExists}`);
 
     if (!packageLockJsonExists) {
       logger.error("No package-lock.json found. Please run 'npm install' before deploying.");
       return 1;
     }
-  } else if (appLanguage === AppLanguages.Python as string) {
-    logger.debug("Checking for requirements.txt...");
-    const requirementsPath = path.join(process.cwd(), "requirements.txt")
+  } else if (appLanguage === (AppLanguages.Python as string)) {
+    logger.debug('Checking for requirements.txt...');
+    const requirementsPath = path.join(process.cwd(), 'requirements.txt');
     const requirementsTxtExists = existsSync(requirementsPath);
     logger.debug(`  ... requirements.txt found: ${requirementsTxtExists}`);
 
     if (!requirementsTxtExists) {
-      logger.error("No requirements.txt found. Please create one before deploying.");
+      logger.error('No requirements.txt found. Please create one before deploying.');
       return 1;
     }
 
     const content = fs.readFileSync(requirementsPath, 'utf8');
-    if (!content.includes("dbos")) {
-      logger.error("Your requirements.txt does not include 'dbos'. Please make sure you include all your dependencies.");
+    if (!content.includes('dbos')) {
+      logger.error(
+        "Your requirements.txt does not include 'dbos'. Please make sure you include all your dependencies.",
+      );
       return 1;
     }
-
   } else {
-    logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`)
+    logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`);
     return 1;
   }
 
@@ -167,15 +176,15 @@ export async function deployAppCode(
 
   if (appRegistered === undefined) {
     userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
-    if (userDBName === "") {
+    if (userDBName === '') {
       return 1;
     }
 
     // Register the app
     if (enableTimeTravel) {
-      logger.info("Enabling time travel for this application");
+      logger.info('Enabling time travel for this application');
     } else {
-      logger.info("Time travel is disabled for this application");
+      logger.info('Time travel is disabled for this application');
     }
     const ret = await registerApp(userDBName, host, enableTimeTravel, appName);
     if (ret !== 0) {
@@ -184,12 +193,20 @@ export async function deployAppCode(
   } else {
     logger.info(`Application ${appName} exists, updating...`);
     if (userDBName && appRegistered.PostgresInstanceName !== userDBName) {
-      logger.warn(`Application ${chalk.bold(appName)} is deployed with database instance ${chalk.bold(appRegistered.PostgresInstanceName)}. Ignoring the provided database instance name ${chalk.bold(userDBName)}.`);
+      logger.warn(
+        `Application ${chalk.bold(appName)} is deployed with database instance ${chalk.bold(appRegistered.PostgresInstanceName)}. Ignoring the provided database instance name ${chalk.bold(userDBName)}.`,
+      );
     }
 
     // Make sure the app database is the same.
-    if (appRegistered.ApplicationDatabaseName && dbosConfig.database.app_db_name && (dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName)) {
-      logger.error(`Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`);
+    if (
+      appRegistered.ApplicationDatabaseName &&
+      dbosConfig.database.app_db_name &&
+      dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName
+    ) {
+      logger.error(
+        `Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`,
+      );
       return 1;
     }
   }
@@ -197,9 +214,9 @@ export async function deployAppCode(
   try {
     const body: { application_archive?: string; previous_version?: string; target_database_name?: string } = {};
     if (previousVersion === null) {
-      logger.debug("Creating application zip ...");
+      logger.debug('Creating application zip ...');
       body.application_archive = await createZipData(logger);
-      logger.debug("  ... application zipped.");
+      logger.debug('  ... application zipped.');
     } else {
       logger.info(`Restoring previous version ${previousVersion}`);
       body.previous_version = previousVersion;
@@ -211,7 +228,7 @@ export async function deployAppCode(
     }
 
     // Submit the deploy request
-    let url = "";
+    let url = '';
     if (rollback) {
       url = `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/rollback`;
     } else if (targetDatabaseName !== null) {
@@ -223,7 +240,7 @@ export async function deployAppCode(
     logger.info(`Submitting deploy request for ${appName}`);
     const response = await axios.post(url, body, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
@@ -238,11 +255,13 @@ export async function deployAppCode(
       if (count % 50 === 0) {
         logger.info(`Waiting for ${appName} with version ${deployOutput.ApplicationVersion} to be available`);
         if (count > 200) {
-          logger.info(`If ${appName} takes too long to become available, check its logs with 'dbos-cloud applications logs'`);
+          logger.info(
+            `If ${appName} takes too long to become available, check its logs with 'dbos-cloud applications logs'`,
+          );
         }
       }
       if (count > 1800) {
-        logger.error("Application taking too long to become available");
+        logger.error('Application taking too long to become available');
         return 1;
       }
 
@@ -254,7 +273,7 @@ export async function deployAppCode(
       });
       const applications: Application[] = list.data as Application[];
       for (const application of applications) {
-        if (application.Name === appName && application.Status === "AVAILABLE") {
+        if (application.Name === appName && application.Status === 'AVAILABLE') {
           applicationAvailable = true;
         }
       }
@@ -273,10 +292,14 @@ export async function deployAppCode(
       handleAPIErrors(errorLabel, axiosError);
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
       if (resp.DetailedError) {
-        logger.error(resp.DetailedError)
+        logger.error(resp.DetailedError);
       }
       if (resp.message.includes(`application ${appName} not found`)) {
-        console.log(chalk.red("Did you register this application? Hint: run `dbos-cloud app register -d <database-instance-name>` to register your app and try again"));
+        console.log(
+          chalk.red(
+            'Did you register this application? Hint: run `dbos-cloud app register -d <database-instance-name>` to register your app and try again',
+          ),
+        );
       }
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
@@ -291,22 +314,27 @@ function readInterpolatedConfig(configFilePath: string, logger: CLILogger): stri
   return configFileContent.replace(regex, (_, g1: string) => {
     if (process.env[g1] !== undefined) {
       logger.debug(`      Substituting value of '${g1}' from process environment.`);
-      return process.env[g1] ?? "";
+      return process.env[g1] ?? '';
     }
-    if (g1 !== "PGPASSWORD") {
+    if (g1 !== 'PGPASSWORD') {
       logger.warn(`      Variable '${g1}' would be substituted from the process environment, but is not defined.`);
     }
-    return "";
+    return '';
   });
 }
 
-async function isAppRegistered(logger: Logger, host: string, appName: string, userCredentials: DBOSCloudCredentials): Promise<Application | undefined> {
-  const bearerToken = "Bearer " + userCredentials.token;
+async function isAppRegistered(
+  logger: Logger,
+  host: string,
+  appName: string,
+  userCredentials: DBOSCloudCredentials,
+): Promise<Application | undefined> {
+  const bearerToken = 'Bearer ' + userCredentials.token;
   let app: Application | undefined = undefined;
   try {
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });

@@ -1,16 +1,15 @@
-import { StepContext, Step, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from "../src";
-import { v1 as uuidv1 } from "uuid";
-import { sleepms } from "../src/utils";
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
-import { DBOSConfig } from "../src/dbos-executor";
-import { PoolClient } from "pg";
-import { TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { StepContext, Step, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from '../src';
+import { v1 as uuidv1 } from 'uuid';
+import { sleepms } from '../src/utils';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { DBOSConfig } from '../src/dbos-executor';
+import { PoolClient } from 'pg';
+import { TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
 
 type TestTransactionContext = TransactionContext<PoolClient>;
-const testTableName = "dbos_concurrency_test_kv";
+const testTableName = 'dbos_concurrency_test_kv';
 
-describe("concurrency-tests", () => {
-
+describe('concurrency-tests', () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
 
@@ -31,7 +30,7 @@ describe("concurrency-tests", () => {
     await testRuntime.destroy();
   });
 
-  test("duplicate-transaction", async () => {
+  test('duplicate-transaction', async () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     const workflowUUID = uuidv1();
@@ -44,13 +43,11 @@ describe("concurrency-tests", () => {
     expect(ConcurrTestClass.cnt).toBe(1);
   });
 
-  test("concurrent-workflow", async () => {
+  test('concurrent-workflow', async () => {
     // Invoke testWorkflow twice with the same UUID and flush workflow output buffer right before the second transaction starts.
     // The second transaction should get the correct recorded execution without being executed.
     const uuid = uuidv1();
-    await testRuntime
-      .invokeWorkflow(ConcurrTestClass, uuid)
-      .testWorkflow();
+    await testRuntime.invokeWorkflow(ConcurrTestClass, uuid).testWorkflow();
     const handle = await testRuntime.invoke(ConcurrTestClass, uuid).testWorkflow();
     await ConcurrTestClass.promise2;
 
@@ -63,7 +60,7 @@ describe("concurrency-tests", () => {
     expect(ConcurrTestClass.wfCnt).toBe(2);
   });
 
-  test("duplicate-step", async () => {
+  test('duplicate-step', async () => {
     // Run two steps concurrently with the same UUID; both should succeed.
     // Since we only record the output after the function, it may cause more than once executions.
     const workflowUUID = uuidv1();
@@ -77,26 +74,26 @@ describe("concurrency-tests", () => {
     expect(ConcurrTestClass.cnt).toBeGreaterThanOrEqual(1);
   });
 
-  test("duplicate-notifications", async () => {
+  test('duplicate-notifications', async () => {
     // Run two send/recv concurrently with the same UUID, both should succeed.
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
     const recvUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
-      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2),
-      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow( "testTopic", 2),
+      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow('testTopic', 2),
+      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow('testTopic', 2),
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
     await sleepms(10); // Both would be listening to the notification.
 
-    await expect(testRuntime.send(recvUUID, "testmsg", "testTopic")).resolves.toBeFalsy();
+    await expect(testRuntime.send(recvUUID, 'testmsg', 'testTopic')).resolves.toBeFalsy();
 
     const recvRes = await recvResPromise;
-    expect((recvRes[0] as PromiseFulfilledResult<string | null>).value).toBe("testmsg");
-    expect((recvRes[1] as PromiseFulfilledResult<string | null>).value).toBe("testmsg");
+    expect((recvRes[0] as PromiseFulfilledResult<string | null>).value).toBe('testmsg');
+    expect((recvRes[1] as PromiseFulfilledResult<string | null>).value).toBe('testmsg');
 
     const recvHandle = testRuntime.retrieveWorkflow(recvUUID);
-    await expect(recvHandle.getResult()).resolves.toBe("testmsg");
+    await expect(recvHandle.getResult()).resolves.toBe('testmsg');
   });
 });
 

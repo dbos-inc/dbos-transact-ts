@@ -1,10 +1,10 @@
-import { TelemetrySignal } from "./collector";
-import { isLogSignal, isTraceSignal } from "./";
-import { OTLPTraceExporter } from "@opentelemetry/exporter-trace-otlp-proto";
-import { OTLPLogExporter } from "@opentelemetry/exporter-logs-otlp-proto";
-import type { ReadableSpan } from "@opentelemetry/sdk-trace-base";
+import { TelemetrySignal } from './collector';
+import { isLogSignal, isTraceSignal } from './';
+import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
+import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
-import { ExportResult, ExportResultCode } from "@opentelemetry/core";
+import { ExportResult, ExportResultCode } from '@opentelemetry/core';
 
 export interface OTLPExporterConfig {
   logsEndpoint?: string;
@@ -46,7 +46,7 @@ export class TelemetryExporter implements ITelemetryExporter {
         exportLogs.push(signal as ReadableLogRecord);
       }
     });
-    const tasks : Promise<void>[] = [];
+    const tasks: Promise<void>[] = [];
     // A short-lived app that exits before the callback of export() will lose its data.
     // We wrap these callbacks in promise objects to make sure we wait for them:
     if (exportSpans.length > 0 && this.tracesExporter) {
@@ -57,7 +57,7 @@ export class TelemetryExporter implements ITelemetryExporter {
             console.warn(results);
           }
           resolve();
-        }
+        };
         this.tracesExporter?.export(exportSpans, exportCallback);
       });
       tasks.push(traceExportTask);
@@ -70,7 +70,7 @@ export class TelemetryExporter implements ITelemetryExporter {
             console.warn(results);
           }
           resolve();
-        }
+        };
         this.logsExporter?.export(exportLogs, exportCallback);
       });
       tasks.push(logExportTask);
@@ -83,4 +83,3 @@ export class TelemetryExporter implements ITelemetryExporter {
     await this.tracesExporter?.forceFlush();
   }
 }
-

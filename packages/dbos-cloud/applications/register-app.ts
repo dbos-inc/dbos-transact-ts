@@ -1,4 +1,4 @@
-import axios, { AxiosError } from "axios";
+import axios, { AxiosError } from 'axios';
 import {
   handleAPIErrors,
   getCloudCredentials,
@@ -8,8 +8,8 @@ import {
   CloudAPIErrorResponse,
   retrieveApplicationLanguage,
   DBOSCloudCredentials,
-} from "../cloudutils.js";
-import chalk from "chalk";
+} from '../cloudutils.js';
+import chalk from 'chalk';
 
 type RegisterAppRequest = {
   name: string;
@@ -25,13 +25,13 @@ export async function registerApp(
   enableTimetravel: boolean = false,
   appName?: string,
   executorsMemoryMib?: number,
-  userCredentials?: DBOSCloudCredentials
+  userCredentials?: DBOSCloudCredentials,
 ): Promise<number> {
   const logger = getLogger();
   if (!userCredentials) {
     userCredentials = await getCloudCredentials(host, logger);
   }
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   appName = appName || retrieveApplicationName(logger);
   if (!appName) {
@@ -45,7 +45,7 @@ export async function registerApp(
       name: appName,
       database: dbname,
       language: appLanguage,
-      provenancedb: enableTimetravel ? dbname : "",
+      provenancedb: enableTimetravel ? dbname : '',
     };
     if (executorsMemoryMib) {
       body.executors_memory_mib = executorsMemoryMib;
@@ -53,7 +53,7 @@ export async function registerApp(
 
     const register = await axios.put(`https://${host}/v1alpha1/${userCredentials.organization}/applications`, body, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
@@ -68,7 +68,11 @@ export async function registerApp(
       handleAPIErrors(errorLabel, axiosError);
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
       if (resp.message.includes(`database ${dbname} not found`)) {
-        console.log(chalk.red(`Did you provision this database? Hint: run \`dbos-cloud db provision ${dbname} -U <database-username>\` to provision the database and try again`));
+        console.log(
+          chalk.red(
+            `Did you provision this database? Hint: run \`dbos-cloud db provision ${dbname} -U <database-username>\` to provision the database and try again`,
+          ),
+        );
       }
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);

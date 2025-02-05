@@ -1,6 +1,6 @@
-import chalk from "chalk";
-import fs from "fs";
-import path from "path";
+import chalk from 'chalk';
+import fs from 'fs';
+import path from 'path';
 
 const DEMO_REPO_API = 'https://api.github.com/repos/dbos-inc/dbos-demo-apps';
 const TS_DEMO_PATH = 'typescript/';
@@ -52,8 +52,8 @@ export async function createTemplateFromGitHub(appName: string, templateName: st
         const filePath = item.path.replace(templatePath, '');
         const targetPath = `${appName}/${filePath}`;
         await fs.promises.mkdir(path.dirname(targetPath), { recursive: true });
-        await fs.promises.writeFile(targetPath, content, {mode: parseInt(item.mode, 8)});
-      })
+        await fs.promises.writeFile(targetPath, content, { mode: parseInt(item.mode, 8) });
+      }),
   );
   console.log(`Downloaded ${filesToDownload.length} files from the template GitHub repository`);
 }
@@ -72,7 +72,9 @@ async function fetchGitHub(url: string): Promise<Response> {
         `Error fetching from GitHub API: rate limit exceeded.\r\nPlease wait a few minutes and try again.\r\nTo increase the limit, you can create a personal access token and set it in the ${chalk.bold('GITHUB_TOKEN')} environment variable. \r\nDetails: https://docs.github.com/en/rest/using-the-rest-api/rate-limits-for-the-rest-api`,
       );
     } else if (response.status === 401) {
-      throw new Error(`Error fetching content from GitHub ${url}: ${response.status} ${response.statusText}.\r\nPlease ensure your ${chalk.bold('GITHUB_TOKEN')} environment variable is set to a valid personal access token.`);
+      throw new Error(
+        `Error fetching content from GitHub ${url}: ${response.status} ${response.statusText}.\r\nPlease ensure your ${chalk.bold('GITHUB_TOKEN')} environment variable is set to a valid personal access token.`,
+      );
     }
     throw new Error(`Error fetching content from GitHub ${url}: ${response.status} ${response.statusText}`);
   }

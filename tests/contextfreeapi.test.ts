@@ -1,14 +1,23 @@
-import { ArgOptional, ArgRequired, Authentication, DBOS, DBOSResponseError, DefaultArgValidate, KoaMiddleware, MiddlewareContext, WorkflowQueue } from '../src';
+import {
+  ArgOptional,
+  ArgRequired,
+  Authentication,
+  DBOS,
+  DBOSResponseError,
+  DefaultArgValidate,
+  KoaMiddleware,
+  MiddlewareContext,
+  WorkflowQueue,
+} from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
-import jwt from "koa-jwt";
+import jwt from 'koa-jwt';
 
-DBOS.logger.info("This should not cause a kaboom.");
+DBOS.logger.info('This should not cause a kaboom.');
 
-class TestFunctions
-{
+class TestFunctions {
   @DBOS.transaction()
   static async doTransaction(arg: string) {
-    await DBOS.pgClient.query("SELECT 1");
+    await DBOS.pgClient.query('SELECT 1');
     return Promise.resolve(`selected ${arg}`);
   }
 
@@ -19,7 +28,7 @@ class TestFunctions
 
   @DBOS.workflow()
   static async doWorkflow() {
-    await TestFunctions.doTransaction("");
+    await TestFunctions.doTransaction('');
     expect(DBOS.getConfig('is_in_unit_test', false)).toBe(true);
     return 'done';
   }
@@ -27,18 +36,18 @@ class TestFunctions
   @DBOS.workflow()
   static async doWorkflowAAAAA() {
     expect(DBOS.workflowID).toBe('aaaaa');
-    await TestFunctions.doTransaction("");
+    await TestFunctions.doTransaction('');
     return 'done';
   }
 
   @DBOS.workflow()
   static async doWorkflowArg(arg: string) {
-    await TestFunctions.doTransaction("");
+    await TestFunctions.doTransaction('');
     return `done ${arg}`;
   }
 
   static nSchedCalls = 0;
-  @DBOS.scheduled({crontab: '* * * * * *'})
+  @DBOS.scheduled({ crontab: '* * * * * *' })
   @DBOS.workflow()
   static async doCron(_sdate: Date, _cdate: Date) {
     ++TestFunctions.nSchedCalls;
@@ -54,22 +63,22 @@ class TestFunctions
 
   @DBOS.workflow()
   static async sendWorkflow(destinationID: string) {
-    await DBOS.send(destinationID, "message1");
-    await DBOS.send(destinationID, "message2");
+    await DBOS.send(destinationID, 'message1');
+    await DBOS.send(destinationID, 'message2');
   }
 
   @DBOS.workflow()
   static async setEventWorkflow(v1: string, v2: string) {
-    await DBOS.setEvent("key1", v1);
-    await DBOS.setEvent("key2", v2);
+    await DBOS.setEvent('key1', v1);
+    await DBOS.setEvent('key2', v2);
     return Promise.resolve(0);
   }
 
   @DBOS.workflow()
   static async getEventWorkflow(wfid: string) {
-    const kv1 = await DBOS.getEvent<string>(wfid, "key1");
-    const kv2 = await DBOS.getEvent<string>(wfid, "key2");
-    return kv1+','+kv2;
+    const kv1 = await DBOS.getEvent<string>(wfid, 'key1');
+    const kv2 = await DBOS.getEvent<string>(wfid, 'key2');
+    return kv1 + ',' + kv2;
   }
 
   static awaitThis: Promise<void> | undefined = undefined;
@@ -79,21 +88,20 @@ class TestFunctions
   }
 
   @DBOS.workflow()
-  static async argOptionalWorkflow(arg?:string) {
+  static async argOptionalWorkflow(arg?: string) {
     return Promise.resolve(arg);
   }
 
   @DBOS.workflow()
-  static async argRequiredWorkflow(@ArgRequired arg:string) {
+  static async argRequiredWorkflow(@ArgRequired arg: string) {
     return Promise.resolve(arg);
   }
 }
 
 @DefaultArgValidate
-class OptionalArgs
-{
+class OptionalArgs {
   @DBOS.workflow()
-  static async argOptionalWorkflow(@ArgOptional arg?:string) {
+  static async argOptionalWorkflow(@ArgOptional arg?: string) {
     return Promise.resolve(arg);
   }
 
@@ -103,14 +111,14 @@ class OptionalArgs
   }
 
   @DBOS.workflow()
-  static async argOptionalOops(@ArgOptional arg?:string) {
+  static async argOptionalOops(@ArgOptional arg?: string) {
     return OptionalArgs.argRequiredWorkflow(arg!);
   }
 }
 
-const testTableName = "dbos_test_kv";
+const testTableName = 'dbos_test_kv';
 
-@DBOS.defaultRequiredRole(["user"])
+@DBOS.defaultRequiredRole(['user'])
 class TestSec {
   @DBOS.requiredRole([])
   @DBOS.workflow()
@@ -120,7 +128,10 @@ class TestSec {
 
   @DBOS.transaction()
   static async testTranscation(name: string) {
-    const { rows } = await DBOS.pgClient.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
+    const { rows } = await DBOS.pgClient.query<TestKvTable>(
+      `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
+      [name],
+    );
     return `hello ${name} ${rows[0].id}`;
   }
 
@@ -132,7 +143,7 @@ class TestSec {
 }
 
 class TestSec2 {
-  @DBOS.requiredRole(["user"])
+  @DBOS.requiredRole(['user'])
   @DBOS.workflow()
   static async bye() {
     return Promise.resolve(`bye ${DBOS.assumedRole} ${DBOS.authenticatedUser}!`);
@@ -140,9 +151,9 @@ class TestSec2 {
 }
 
 class ChildWorkflows {
-  @DBOS.transaction({readOnly: true})
+  @DBOS.transaction({ readOnly: true })
   static async childTx() {
-    await DBOS.pgClient.query("SELECT 1");
+    await DBOS.pgClient.query('SELECT 1');
     return Promise.resolve(`selected ${DBOS.workflowID}`);
   }
 
@@ -167,7 +178,7 @@ class ChildWorkflows {
 }
 
 const testJwt = jwt({
-  secret: 'your-secret-goes-here'
+  secret: 'your-secret-goes-here',
 });
 
 export async function testAuthMiddleware(ctx: MiddlewareContext) {
@@ -175,37 +186,37 @@ export async function testAuthMiddleware(ctx: MiddlewareContext) {
   if (ctx.requiredRole.length > 0) {
     //console.log("required role: ", ctx.requiredRole);
     if (!ctx.koaContext.state.user) {
-      throw new DBOSResponseError("No authenticated user!", 401);
+      throw new DBOSResponseError('No authenticated user!', 401);
     }
 
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-    const authenticatedUser: string = ctx.koaContext.state.user["preferred_username"] ?? "";
+    const authenticatedUser: string = ctx.koaContext.state.user['preferred_username'] ?? '';
     //console.log("current user: ", authenticatedUser);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-    const authenticatedRoles: string[] = ctx.koaContext.state.user["realm_access"]["roles"] ?? [];
+    const authenticatedRoles: string[] = ctx.koaContext.state.user['realm_access']['roles'] ?? [];
     //console.log("JWT claimed roles: ", authenticatedRoles);
-    if (authenticatedRoles.includes("appAdmin")) {
+    if (authenticatedRoles.includes('appAdmin')) {
       // appAdmin role has more priviledges than appUser.
-      authenticatedRoles.push("appUser");
+      authenticatedRoles.push('appUser');
     }
     //console.log("authenticated roles: ", authenticatedRoles);
     return Promise.resolve({ authenticatedUser: authenticatedUser, authenticatedRoles: authenticatedRoles });
   }
 }
 
-@DBOS.defaultRequiredRole(["appUser"])
+@DBOS.defaultRequiredRole(['appUser'])
 @Authentication(testAuthMiddleware)
 @KoaMiddleware(testJwt)
 export class AuthTestOps {
   @DBOS.transaction()
-  @DBOS.getApi("/api/list_all")
+  @DBOS.getApi('/api/list_all')
   static async listAccountsFunc() {
     return Promise.resolve('ok');
   }
 
   @DBOS.transaction()
-  @DBOS.postApi("/api/create_account")
-  @DBOS.requiredRole(["appAdmin"]) // Only an admin can create a new account.
+  @DBOS.postApi('/api/create_account')
+  @DBOS.requiredRole(['appAdmin']) // Only an admin can create a new account.
   static async createAccountFunc() {
     return Promise.resolve('ok');
   }
@@ -227,7 +238,7 @@ export class TransitionTests {
     await DBOS.sleepms(100);
   }
 
-  @DBOS.step({retriesAllowed: false})
+  @DBOS.step({ retriesAllowed: false })
   static async sleepStep() {
     await DBOS.sleepms(100);
   }
@@ -237,12 +248,12 @@ export class TransitionTests {
     await TransitionTests.sleepStep();
   }
 
-  @DBOS.step({retriesAllowed: false})
+  @DBOS.step({ retriesAllowed: false })
   static async oopsCallTransactionFromStep() {
     return TransitionTests.leafTransaction();
   }
 
-  @DBOS.step({retriesAllowed: false})
+  @DBOS.step({ retriesAllowed: false })
   static async callStepFromStep() {
     return TransitionTests.sleepStep();
   }
@@ -252,7 +263,7 @@ export class TransitionTests {
     await DBOS.send('aaa', 'a', 'aa');
   }
 
-  @DBOS.step({retriesAllowed: false})
+  @DBOS.step({ retriesAllowed: false })
   static async oopsCallSendFromStep() {
     await DBOS.send('aaa', 'a', 'aa');
   }
@@ -262,7 +273,7 @@ export class TransitionTests {
     await DBOS.getEvent('aaa', 'a');
   }
 
-  @DBOS.step({retriesAllowed: false})
+  @DBOS.step({ retriesAllowed: false })
   static async oopsCallGetFromStep() {
     await DBOS.getEvent('aaa', 'a');
   }
@@ -277,10 +288,10 @@ async function main() {
   await DBOS.launch();
 
   const res = await TestFunctions.doWorkflow();
-  expect (res).toBe('done');
+  expect(res).toBe('done');
 
   // Check for this to have run
-  const wfs = await DBOS.getWorkflows({workflowName: 'doWorkflow'});
+  const wfs = await DBOS.getWorkflows({ workflowName: 'doWorkflow' });
   expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
   expect(wfs.workflowUUIDs.length).toBe(1);
   await DBOS.executor.flushWorkflowBuffers();
@@ -294,7 +305,7 @@ async function main() {
   // Try a second run
   await DBOS.launch();
   const res2 = await TestFunctions.doWorkflow();
-  expect (res2).toBe('done');
+  expect(res2).toBe('done');
   await DBOS.shutdown();
 }
 
@@ -304,14 +315,14 @@ async function main2() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  const res = await DBOS.withNextWorkflowID('aaaaa', async ()=>{
+  const res = await DBOS.withNextWorkflowID('aaaaa', async () => {
     return await TestFunctions.doWorkflowAAAAA();
   });
-  expect (res).toBe('done');
+  expect(res).toBe('done');
 
   // Validate that it had the ID given...
   const wfh = DBOS.retrieveWorkflow('aaaaa');
-  expect (await wfh.getResult()).toBe('done');
+  expect(await wfh.getResult()).toBe('done');
 
   await DBOS.shutdown();
 }
@@ -323,7 +334,7 @@ async function main3() {
   await DBOS.launch();
 
   const handle = await DBOS.startWorkflow(TestFunctions).doWorkflowArg('a');
-  expect (await handle.getResult()).toBe('done a');
+  expect(await handle.getResult()).toBe('done a');
 
   await DBOS.shutdown();
 }
@@ -335,10 +346,10 @@ async function main4() {
   await DBOS.launch();
 
   const tres = await TestFunctions.doTransaction('a');
-  expect(tres).toBe("selected a");
+  expect(tres).toBe('selected a');
 
   const sres = await TestFunctions.doStep('a');
-  expect(sres).toBe("step a done");
+  expect(sres).toBe('step a done');
 
   await DBOS.shutdown();
 }
@@ -351,30 +362,32 @@ async function main5() {
   DBOS.setAppConfig('is_in_unit_test', true);
   await DBOS.launch();
 
-  const res = await DBOS.withWorkflowQueue(wfq.name, async ()=>{
+  const res = await DBOS.withWorkflowQueue(wfq.name, async () => {
     return await TestFunctions.doWorkflow();
   });
   expect(res).toBe('done');
 
-
-  const wfs = await DBOS.getWorkflows({workflowName: 'doWorkflow'});
+  const wfs = await DBOS.getWorkflows({ workflowName: 'doWorkflow' });
   expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
   expect(wfs.workflowUUIDs.length).toBe(1);
   const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
   expect(wfstat?.queueName).toBe('wfq');
 
   // Check queues in startWorkflow
-  let resolve: ()=>void = ()=>{};
+  let resolve: () => void = () => {};
   TestFunctions.awaitThis = new Promise<void>((r) => {
     resolve = r;
   });
 
-  const wfhq = await DBOS.startWorkflow(TestFunctions, {workflowID: 'waitPromiseWF', queueName: wfq.name}).awaitAPromise()
+  const wfhq = await DBOS.startWorkflow(TestFunctions, {
+    workflowID: 'waitPromiseWF',
+    queueName: wfq.name,
+  }).awaitAPromise();
   const wfstatsw = await DBOS.getWorkflowStatus('waitPromiseWF');
   expect(wfstatsw?.queueName).toBe('wfq');
 
   // Validate that it had the queue
-  const wfqcontent = await DBOS.getWorkflowQueue({queueName: wfq.name});
+  const wfqcontent = await DBOS.getWorkflowQueue({ queueName: wfq.name });
   expect(wfqcontent.workflows.length).toBe(1);
   expect(wfqcontent.workflows[0].workflowID).toBe('waitPromiseWF');
 
@@ -383,7 +396,7 @@ async function main5() {
 
   // Quick check on scheduled WFs
   await DBOS.sleepSeconds(2);
-  expect (TestFunctions.nSchedCalls).toBeGreaterThanOrEqual(2);
+  expect(TestFunctions.nSchedCalls).toBeGreaterThanOrEqual(2);
 
   await DBOS.shutdown();
 }
@@ -395,23 +408,23 @@ async function main6() {
   await DBOS.launch();
 
   const wfhandle = await DBOS.startWorkflow(TestFunctions).getEventWorkflow('wfidset');
-  await DBOS.withNextWorkflowID('wfidset', async() => {
+  await DBOS.withNextWorkflowID('wfidset', async () => {
     await TestFunctions.setEventWorkflow('a', 'b');
   });
   const res = await wfhandle.getResult();
 
-  expect(res).toBe("a,b");
+  expect(res).toBe('a,b');
   expect(await DBOS.getEvent('wfidset', 'key1')).toBe('a');
   expect(await DBOS.getEvent('wfidset', 'key2')).toBe('b');
 
-  const wfhandler = await DBOS.withNextWorkflowID('wfidrecv', async() => {
+  const wfhandler = await DBOS.withNextWorkflowID('wfidrecv', async () => {
     return await DBOS.startWorkflow(TestFunctions).receiveWorkflow('r');
   });
   await TestFunctions.sendWorkflow('wfidrecv');
   const rres = await wfhandler.getResult();
   expect(rres).toBe('r:message1|message2');
 
-  const wfhandler2 = await DBOS.withNextWorkflowID('wfidrecv2', async() => {
+  const wfhandler2 = await DBOS.withNextWorkflowID('wfidrecv2', async () => {
     return await DBOS.startWorkflow(TestFunctions).receiveWorkflow('r2');
   });
   await DBOS.send('wfidrecv2', 'm1');
@@ -430,26 +443,26 @@ async function main7() {
   await DBOS.executor.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
   await DBOS.executor.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
 
-  await expect(async()=>{
+  await expect(async () => {
     await TestSec.testWorkflow('unauthorized');
   }).rejects.toThrow('User does not have a role with permission to call testWorkflow');
 
   const res = await TestSec.testAuth('and welcome');
   expect(res).toBe('hello and welcome');
 
-  await expect(async()=>{
+  await expect(async () => {
     await TestSec2.bye();
   }).rejects.toThrow('User does not have a role with permission to call bye');
 
-  const hijoe = await DBOS.withAuthedContext('joe', ['user'], async() => {
+  const hijoe = await DBOS.withAuthedContext('joe', ['user'], async () => {
     return await TestSec.testWorkflow('joe');
   });
-  expect (hijoe).toBe('hello joe 1');
+  expect(hijoe).toBe('hello joe 1');
 
-  const byejoe = await DBOS.withAuthedContext('joe', ['user'], async() => {
+  const byejoe = await DBOS.withAuthedContext('joe', ['user'], async () => {
     return await TestSec2.bye();
   });
-  expect (byejoe).toBe('bye user joe!');
+  expect(byejoe).toBe('bye user joe!');
 
   await DBOS.withAuthedContext('admin', ['appAdmin'], async () => {
     expect(await AuthTestOps.createAccountFunc()).toBe('ok');
@@ -464,15 +477,15 @@ async function main8() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  const res = await DBOS.withNextWorkflowID('child-direct', async ()=>{
+  const res = await DBOS.withNextWorkflowID('child-direct', async () => {
     return await ChildWorkflows.callSubWF();
   });
-  expect (res).toBe('ParentID:child-direct|ChildID:child-direct-0|selected child-direct-0');
+  expect(res).toBe('ParentID:child-direct|ChildID:child-direct-0|selected child-direct-0');
 
-  const cres = await DBOS.withNextWorkflowID('child-start', async ()=>{
+  const cres = await DBOS.withNextWorkflowID('child-start', async () => {
     return await ChildWorkflows.startSubWF();
   });
-  expect (cres).toBe('ParentID:child-start|ChildID:child-start-0|selected child-start-0');
+  expect(cres).toBe('ParentID:child-start|ChildID:child-start-0|selected child-start-0');
 
   await DBOS.shutdown();
 }
@@ -484,17 +497,33 @@ async function main9() {
   await DBOS.launch();
 
   await TransitionTests.leafTransaction();
-  await expect(()=>TransitionTests.oopsCallTransaction()).rejects.toThrow("Invalid call to a `transaction` function from within a `transaction`");
-  await expect(()=>TransitionTests.oopsCallSleep()).rejects.toThrow("Invalid call to `DBOS.sleep` inside a `transaction`");
+  await expect(() => TransitionTests.oopsCallTransaction()).rejects.toThrow(
+    'Invalid call to a `transaction` function from within a `transaction`',
+  );
+  await expect(() => TransitionTests.oopsCallSleep()).rejects.toThrow(
+    'Invalid call to `DBOS.sleep` inside a `transaction`',
+  );
   await TransitionTests.sleepStep();
-  await expect(()=>TransitionTests.oopsCallStep()).rejects.toThrow("Invalid call to a `step` function from within a `transaction`");
+  await expect(() => TransitionTests.oopsCallStep()).rejects.toThrow(
+    'Invalid call to a `step` function from within a `transaction`',
+  );
   await TransitionTests.callStepFromStep();
-  await expect(()=>TransitionTests.oopsCallTransactionFromStep()).rejects.toThrow("Invalid call to a `transaction` function from within a `step`");
+  await expect(() => TransitionTests.oopsCallTransactionFromStep()).rejects.toThrow(
+    'Invalid call to a `transaction` function from within a `step`',
+  );
 
-  await expect(()=>TransitionTests.oopsCallSendFromTx()).rejects.toThrow("Invalid call to `DBOS.send` inside a `step` or `transaction`");
-  await expect(()=>TransitionTests.oopsCallSendFromStep()).rejects.toThrow("Invalid call to `DBOS.send` inside a `step` or `transaction`");
-  await expect(()=>TransitionTests.oopsCallGetFromTx()).rejects.toThrow("Invalid call to `DBOS.getEvent` inside a `step` or `transaction`");
-  await expect(()=>TransitionTests.oopsCallGetFromStep()).rejects.toThrow("Invalid call to `DBOS.getEvent` inside a `step` or `transaction`");
+  await expect(() => TransitionTests.oopsCallSendFromTx()).rejects.toThrow(
+    'Invalid call to `DBOS.send` inside a `step` or `transaction`',
+  );
+  await expect(() => TransitionTests.oopsCallSendFromStep()).rejects.toThrow(
+    'Invalid call to `DBOS.send` inside a `step` or `transaction`',
+  );
+  await expect(() => TransitionTests.oopsCallGetFromTx()).rejects.toThrow(
+    'Invalid call to `DBOS.getEvent` inside a `step` or `transaction`',
+  );
+  await expect(() => TransitionTests.oopsCallGetFromStep()).rejects.toThrow(
+    'Invalid call to `DBOS.getEvent` inside a `step` or `transaction`',
+  );
 
   await DBOS.shutdown();
 }
@@ -508,7 +537,7 @@ async function main10() {
   // Shouldn't throw a validation error
   await TestFunctions.argOptionalWorkflow('a');
   await TestFunctions.argOptionalWorkflow();
-  await expect(async()=>{
+  await expect(async () => {
     await TestFunctions.argRequiredWorkflow((undefined as string | undefined)!);
   }).rejects.toThrow();
 
@@ -519,51 +548,51 @@ async function main10() {
   await OptionalArgs.argRequiredWorkflow('a');
 
   await OptionalArgs.argOptionalOops('a');
-  await expect(async()=>{
+  await expect(async () => {
     await OptionalArgs.argOptionalOops();
   }).rejects.toThrow();
 
   await DBOS.shutdown();
 }
 
-describe("dbos-v2api-tests-main", () => {
-  test("simple-functions", async () => {
+describe('dbos-v2api-tests-main', () => {
+  test('simple-functions', async () => {
     await main();
   }, 15000);
 
-  test("assign_workflow_id", async() => {
+  test('assign_workflow_id', async () => {
     await main2();
   }, 15000);
 
-  test("start_workflow", async() => {
+  test('start_workflow', async () => {
     await main3();
   }, 15000);
 
-  test("temp_step_transaction", async() => {
+  test('temp_step_transaction', async () => {
     await main4();
   }, 15000);
 
-  test("assign_workflow_queue", async() => {
+  test('assign_workflow_queue', async () => {
     await main5();
   }, 15000);
 
-  test("send_recv_get_set", async() => {
+  test('send_recv_get_set', async () => {
     await main6();
   }, 15000);
 
-  test("roles", async() => {
+  test('roles', async () => {
     await main7();
   }, 15000);
 
-  test("child-wf", async() => {
+  test('child-wf', async () => {
     await main8();
   }, 15000);
 
-  test("transitions", async() => {
+  test('transitions', async () => {
     await main9();
   }, 15000);
 
-  test("argvalidate", async() => {
+  test('argvalidate', async () => {
     await main10();
   }, 15000);
 });

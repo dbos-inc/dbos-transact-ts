@@ -1,11 +1,11 @@
-import { transports, createLogger, format, Logger as IWinstonLogger } from "winston";
-import TransportStream = require("winston-transport"); // eslint-disable-line @typescript-eslint/no-require-imports
-import { DBOSContextImpl } from "../context";
-import { Logger as OTelLogger, LogAttributes, SeverityNumber } from "@opentelemetry/api-logs";
-import { LogRecord, LoggerProvider } from "@opentelemetry/sdk-logs";
-import { Span } from "@opentelemetry/sdk-trace-base";
-import { TelemetryCollector } from "./collector";
-import { DBOSJSON } from "../utils";
+import { transports, createLogger, format, Logger as IWinstonLogger } from 'winston';
+import TransportStream = require('winston-transport'); // eslint-disable-line @typescript-eslint/no-require-imports
+import { DBOSContextImpl } from '../context';
+import { Logger as OTelLogger, LogAttributes, SeverityNumber } from '@opentelemetry/api-logs';
+import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { TelemetryCollector } from './collector';
+import { DBOSJSON } from '../utils';
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -37,18 +37,21 @@ export class GlobalLogger {
   private readonly logger: IWinstonLogger;
   readonly addContextMetadata: boolean;
 
-  constructor(private readonly telemetryCollector?: TelemetryCollector, config?: LoggerConfig) {
+  constructor(
+    private readonly telemetryCollector?: TelemetryCollector,
+    config?: LoggerConfig,
+  ) {
     const winstonTransports: TransportStream[] = [];
     winstonTransports.push(
       new transports.Console({
         format: consoleFormat,
-        level: config?.logLevel || "info",
+        level: config?.logLevel || 'info',
         silent: config?.silent || false,
-      })
+      }),
     );
     // Only enable the OTLP transport if we have a telemetry collector and an exporter
     if (this.telemetryCollector?.exporter) {
-      winstonTransports.push(new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || "info"));
+      winstonTransports.push(new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info'));
     }
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
@@ -56,7 +59,7 @@ export class GlobalLogger {
 
   // We use this form of winston logging methods: `(message: string, ...meta: any[])`. See node_modules/winston/index.d.ts
   info(logEntry: unknown, metadata?: ContextualMetadata): void {
-    if (typeof logEntry === "string") {
+    if (typeof logEntry === 'string') {
       this.logger.info(logEntry, metadata);
     } else {
       this.logger.info(DBOSJSON.stringify(logEntry), metadata);
@@ -64,7 +67,7 @@ export class GlobalLogger {
   }
 
   debug(logEntry: unknown, metadata?: ContextualMetadata): void {
-    if (typeof logEntry === "string") {
+    if (typeof logEntry === 'string') {
       this.logger.debug(logEntry, metadata);
     } else {
       this.logger.debug(DBOSJSON.stringify(logEntry), metadata);
@@ -72,7 +75,7 @@ export class GlobalLogger {
   }
 
   warn(logEntry: unknown, metadata?: ContextualMetadata): void {
-    if (typeof logEntry === "string") {
+    if (typeof logEntry === 'string') {
       this.logger.warn(logEntry, metadata);
     } else {
       this.logger.warn(DBOSJSON.stringify(logEntry), metadata);
@@ -83,7 +86,7 @@ export class GlobalLogger {
   error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
     if (inputError instanceof Error) {
       this.logger.error(inputError.message, { ...metadata, stack: inputError.stack });
-    } else if (typeof inputError === "string") {
+    } else if (typeof inputError === 'string') {
       this.logger.error(inputError, { ...metadata, stack: new Error().stack });
     } else {
       this.logger.error(DBOSJSON.stringify(inputError), { ...metadata, stack: new Error().stack });
@@ -109,7 +112,10 @@ export interface DLogger {
 // Wrapper around our global logger. Expected to be instantiated by a new contexts so they can inject contextual metadata
 export class Logger implements DLogger {
   readonly metadata: ContextualMetadata;
-  constructor(private readonly globalLogger: GlobalLogger, readonly ctx: DBOSContextImpl) {
+  constructor(
+    private readonly globalLogger: GlobalLogger,
+    readonly ctx: DBOSContextImpl,
+  ) {
     this.metadata = {
       span: ctx.span,
       includeContextMetadata: this.globalLogger.addContextMetadata,
@@ -144,36 +150,39 @@ const consoleFormat = format.combine(
   format.printf((info) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack } = info;
-    const applicationVersion = process.env.DBOS__APPVERSION || "";
+    const applicationVersion = process.env.DBOS__APPVERSION || '';
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const ts = timestamp.slice(0, 19).replace("T", " ");
+    const ts = timestamp.slice(0, 19).replace('T', ' ');
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const formattedStack = stack?.split("\n").slice(1).join("\n");
+    const formattedStack = stack?.split('\n').slice(1).join('\n');
 
-    const messageString: string = typeof message === "string" ? message : DBOSJSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as Span)?.attributes)}` : ""}`;
+    const messageString: string = typeof message === 'string' ? message : DBOSJSON.stringify(message);
+    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as Span)?.attributes)}` : ''}`;
 
-    const versionString = applicationVersion ? ` [version ${applicationVersion}]` : "";
-    return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? "\n" + formattedStack : ""}`;
-  })
+    const versionString = applicationVersion ? ` [version ${applicationVersion}]` : '';
+    return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? '\n' + formattedStack : ''}`;
+  }),
 );
 
 class OTLPLogQueueTransport extends TransportStream {
-  readonly name = "OTLPLogQueueTransport";
+  readonly name = 'OTLPLogQueueTransport';
   readonly otelLogger: OTelLogger;
   readonly applicationID: string;
   readonly applicationVersion: string;
   readonly executorID: string;
 
-  constructor(readonly telemetryCollector: TelemetryCollector, logLevel: string) {
+  constructor(
+    readonly telemetryCollector: TelemetryCollector,
+    logLevel: string,
+  ) {
     super();
     this.level = logLevel;
     // not sure if we need a more explicit name here
     const loggerProvider = new LoggerProvider();
-    this.otelLogger = loggerProvider.getLogger("default");
-    this.applicationID = process.env.DBOS__APPID || "";
-    this.applicationVersion = process.env.DBOS__APPVERSION || "";
-    this.executorID = process.env.DBOS__VMID || "local";
+    this.otelLogger = loggerProvider.getLogger('default');
+    this.applicationID = process.env.DBOS__APPID || '';
+    this.applicationVersion = process.env.DBOS__APPVERSION || '';
+    this.executorID = process.env.DBOS__VMID || 'local';
     const logRecordProcessor = {
       forceFlush: async () => {
         // no-op

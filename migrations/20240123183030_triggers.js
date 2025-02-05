@@ -1,5 +1,5 @@
-exports.up = function(knex) {
-    return knex.raw(`
+exports.up = function (knex) {
+  return knex.raw(`
       CREATE OR REPLACE FUNCTION dbos.notifications_function() RETURNS TRIGGER AS $$
       DECLARE
           payload text := NEW.destination_uuid || '::' || NEW.topic;
@@ -26,14 +26,13 @@ exports.up = function(knex) {
       AFTER INSERT ON dbos.workflow_events
       FOR EACH ROW EXECUTE FUNCTION dbos.workflow_events_function();
     `);
-  };
-  
-  exports.down = function(knex) {
-    return knex.raw(`
+};
+
+exports.down = function (knex) {
+  return knex.raw(`
       DROP TRIGGER IF EXISTS dbos_notifications_trigger ON dbos.notifications;
       DROP FUNCTION IF EXISTS dbos.notifications_function;
       DROP TRIGGER IF EXISTS dbos_workflow_events_trigger ON dbos.workflow_events;
       DROP FUNCTION IF EXISTS dbos.workflow_events_function;
     `);
-  };
-  
+};

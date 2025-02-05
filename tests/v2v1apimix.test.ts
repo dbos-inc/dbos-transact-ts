@@ -1,15 +1,14 @@
-import {ConfiguredInstance, configureInstance, DBOS, StepContext, TransactionContext, WorkflowContext} from '../src';
-import {Step, Transaction, Workflow} from '../src';
+import { ConfiguredInstance, configureInstance, DBOS, StepContext, TransactionContext, WorkflowContext } from '../src';
+import { Step, Transaction, Workflow } from '../src';
 import { PoolClient } from 'pg';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { TestingRuntime } from '../src';
 import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 
-class TestFunctions
-{
+class TestFunctions {
   @DBOS.transaction()
   static async doTransactionV2(arg: string) {
-    await DBOS.pgClient.query("SELECT 1");
+    await DBOS.pgClient.query('SELECT 1');
     return Promise.resolve(`selected ${arg}`);
   }
 
@@ -20,14 +19,12 @@ class TestFunctions
 
   @DBOS.workflow()
   static async doWorkflowV2() {
-    return "wv2"
-         + await TestFunctions.doTransactionV2("tv2")
-         + await TestFunctions.doStepV2("sv2");
+    return 'wv2' + (await TestFunctions.doTransactionV2('tv2')) + (await TestFunctions.doStepV2('sv2'));
   }
 
   @Transaction()
   static async doTransactionV1(ctx: TransactionContext<PoolClient>, arg: string) {
-    await ctx.client.query("SELECT 1");
+    await ctx.client.query('SELECT 1');
     return Promise.resolve(`selected ${arg}`);
   }
 
@@ -38,51 +35,45 @@ class TestFunctions
 
   @Workflow()
   static async doWorkflowV1(ctx: WorkflowContext): Promise<string> {
-    return "wv1"
-         + await ctx.invoke(TestFunctions).doTransactionV1('tv1')
-         + await ctx.invoke(TestFunctions).doStepV1('sv1');
+    return (
+      'wv1' +
+      (await ctx.invoke(TestFunctions).doTransactionV1('tv1')) +
+      (await ctx.invoke(TestFunctions).doStepV1('sv1'))
+    );
   }
 
   @DBOS.workflow()
   static async doWorkflowV2_V2V1(): Promise<string> {
-    return "wv2"
-         + await TestFunctions.doTransactionV2("tv2")
-         + await DBOS.invoke(TestFunctions).doStepV1("sv1");
+    return 'wv2' + (await TestFunctions.doTransactionV2('tv2')) + (await DBOS.invoke(TestFunctions).doStepV1('sv1'));
   }
 
   @DBOS.workflow()
   static async doWorkflowV2_V1V1(): Promise<string> {
-    return "wv2"
-         + await DBOS.invoke(TestFunctions).doTransactionV1("tv1")
-         + await DBOS.invoke(TestFunctions).doStepV1("sv1");
+    return (
+      'wv2' +
+      (await DBOS.invoke(TestFunctions).doTransactionV1('tv1')) +
+      (await DBOS.invoke(TestFunctions).doStepV1('sv1'))
+    );
   }
 
   @DBOS.workflow()
   static async doWorkflowV2_V1V2(): Promise<string> {
-    return "wv2"
-         + await DBOS.invoke(TestFunctions).doTransactionV1("tv1")
-         + await TestFunctions.doStepV2("sv2");
+    return 'wv2' + (await DBOS.invoke(TestFunctions).doTransactionV1('tv1')) + (await TestFunctions.doStepV2('sv2'));
   }
 
   @Workflow()
   static async doWorkflowV1_V2V1(ctx: WorkflowContext): Promise<string> {
-    return "wv1"
-         + await TestFunctions.doTransactionV2("tv2")
-         + await ctx.invoke(TestFunctions).doStepV1('sv1');
+    return 'wv1' + (await TestFunctions.doTransactionV2('tv2')) + (await ctx.invoke(TestFunctions).doStepV1('sv1'));
   }
 
   @Workflow()
   static async doWorkflowV1_V1V2(ctx: WorkflowContext): Promise<string> {
-    return "wv1"
-         + await ctx.invoke(TestFunctions).doTransactionV1('tv1')
-         + await TestFunctions.doStepV2('sv2');
+    return 'wv1' + (await ctx.invoke(TestFunctions).doTransactionV1('tv1')) + (await TestFunctions.doStepV2('sv2'));
   }
 
   @Workflow()
   static async doWorkflowV1_V2V2(_ctx: WorkflowContext): Promise<string> {
-    return "wv1"
-         + await TestFunctions.doTransactionV2("tv2")
-         +  await TestFunctions.doStepV2('sv2');
+    return 'wv1' + (await TestFunctions.doTransactionV2('tv2')) + (await TestFunctions.doStepV2('sv2'));
   }
 }
 
@@ -108,12 +99,12 @@ async function main() {
   await DBOS.shutdown();
 }
 
-describe("dbos-v1v2api-mix-tests-main", () => {
-  test("v2start", async () => {
+describe('dbos-v1v2api-mix-tests-main', () => {
+  test('v2start', async () => {
     await main();
   }, 15000);
 
-  test("v1start", async () => {
+  test('v1start', async () => {
     let testRuntime: TestingRuntime | undefined = undefined;
     try {
       const config = generateDBOSTestConfig();
@@ -121,25 +112,23 @@ describe("dbos-v1v2api-mix-tests-main", () => {
       testRuntime = await createInternalTestRuntime(undefined, config);
 
       const res1 = await testRuntime.invokeWorkflow(TestFunctions).doWorkflowV1();
-      expect (res1).toBe('wv1selected tv1step sv1 done');
+      expect(res1).toBe('wv1selected tv1step sv1 done');
 
       const res121 = await testRuntime.invokeWorkflow(TestFunctions).doWorkflowV1_V2V1();
-      expect (res121).toBe('wv1selected tv2step sv1 done');
+      expect(res121).toBe('wv1selected tv2step sv1 done');
 
       const res112 = await testRuntime.invokeWorkflow(TestFunctions).doWorkflowV1_V1V2();
-      expect (res112).toBe('wv1selected tv1step sv2 done');
+      expect(res112).toBe('wv1selected tv1step sv2 done');
 
       const res122 = await testRuntime.invokeWorkflow(TestFunctions).doWorkflowV1_V2V2();
-      expect (res122).toBe('wv1selected tv2step sv2 done');
-    }
-    finally {
+      expect(res122).toBe('wv1selected tv2step sv2 done');
+    } finally {
       await testRuntime?.destroy();
     }
   });
 });
 
-class TestFunctionsInst extends ConfiguredInstance
-{
+class TestFunctionsInst extends ConfiguredInstance {
   constructor(name: string) {
     super(name);
   }
@@ -150,7 +139,7 @@ class TestFunctionsInst extends ConfiguredInstance
 
   @DBOS.transaction()
   async doTransactionV2(arg: string) {
-    await DBOS.pgClient.query("SELECT 1");
+    await DBOS.pgClient.query('SELECT 1');
     return Promise.resolve(`selected ${arg}`);
   }
 
@@ -161,14 +150,12 @@ class TestFunctionsInst extends ConfiguredInstance
 
   @DBOS.workflow()
   async doWorkflowV2() {
-    return "wv2"
-         + await this.doTransactionV2("tv2")
-         + await this.doStepV2("sv2");
+    return 'wv2' + (await this.doTransactionV2('tv2')) + (await this.doStepV2('sv2'));
   }
 
   @Transaction()
   async doTransactionV1(ctx: TransactionContext<PoolClient>, arg: string) {
-    await ctx.client.query("SELECT 1");
+    await ctx.client.query('SELECT 1');
     return Promise.resolve(`selected ${arg}`);
   }
 
@@ -179,58 +166,44 @@ class TestFunctionsInst extends ConfiguredInstance
 
   @Workflow()
   async doWorkflowV1(ctx: WorkflowContext): Promise<string> {
-    return "wv1"
-         + await ctx.invoke(this).doTransactionV1('tv1')
-         + await ctx.invoke(this).doStepV1('sv1');
+    return 'wv1' + (await ctx.invoke(this).doTransactionV1('tv1')) + (await ctx.invoke(this).doStepV1('sv1'));
   }
 
   @DBOS.workflow()
   async doWorkflowV2_V2V1(): Promise<string> {
-    return "wv2"
-         + await this.doTransactionV2("tv2")
-         + await DBOS.invoke(this).doStepV1("sv1");
+    return 'wv2' + (await this.doTransactionV2('tv2')) + (await DBOS.invoke(this).doStepV1('sv1'));
   }
 
   @DBOS.workflow()
   async doWorkflowV2_V1V1(): Promise<string> {
-    return "wv2"
-         + await DBOS.invoke(this).doTransactionV1("tv1")
-         + await DBOS.invoke(this).doStepV1("sv1");
+    return 'wv2' + (await DBOS.invoke(this).doTransactionV1('tv1')) + (await DBOS.invoke(this).doStepV1('sv1'));
   }
 
   @DBOS.workflow()
   async doWorkflowV2_V1V2(): Promise<string> {
-    return "wv2"
-         + await DBOS.invoke(this).doTransactionV1("tv1")
-         + await this.doStepV2("sv2");
+    return 'wv2' + (await DBOS.invoke(this).doTransactionV1('tv1')) + (await this.doStepV2('sv2'));
   }
 
   @Workflow()
   async doWorkflowV1_V2V1(ctx: WorkflowContext): Promise<string> {
-    return "wv1"
-         + await this.doTransactionV2("tv2")
-         + await ctx.invoke(this).doStepV1('sv1');
+    return 'wv1' + (await this.doTransactionV2('tv2')) + (await ctx.invoke(this).doStepV1('sv1'));
   }
 
   @Workflow()
   async doWorkflowV1_V1V2(ctx: WorkflowContext): Promise<string> {
-    return "wv1"
-         + await ctx.invoke(this).doTransactionV1('tv1')
-         + await this.doStepV2('sv2');
+    return 'wv1' + (await ctx.invoke(this).doTransactionV1('tv1')) + (await this.doStepV2('sv2'));
   }
 
   @Workflow()
   async doWorkflowV1_V2V2(_ctx: WorkflowContext): Promise<string> {
-    return "wv1"
-         + await this.doTransactionV2("tv2")
-         + await this.doStepV2('sv2');
+    return 'wv1' + (await this.doTransactionV2('tv2')) + (await this.doStepV2('sv2'));
   }
 }
 
 class ChildWorkflowsV1 {
-  @Transaction({readOnly: true})
+  @Transaction({ readOnly: true })
   static async childTx(tx: TransactionContext<PoolClient>) {
-    await tx.client.query("SELECT 1");
+    await tx.client.query('SELECT 1');
     return Promise.resolve(`selected ${DBOS.workflowID}`);
   }
 
@@ -284,12 +257,12 @@ async function mainInst() {
   await DBOS.shutdown();
 }
 
-describe("dbos-v1v2api-mix-tests-main-inst", () => {
-  test("v2start", async () => {
+describe('dbos-v1v2api-mix-tests-main-inst', () => {
+  test('v2start', async () => {
     await mainInst();
   }, 15000);
 
-  test("v1start", async () => {
+  test('v1start', async () => {
     let testRuntime: TestingRuntime | undefined = undefined;
     try {
       const config = generateDBOSTestConfig();
@@ -297,24 +270,23 @@ describe("dbos-v1v2api-mix-tests-main-inst", () => {
       testRuntime = await createInternalTestRuntime(undefined, config);
 
       const res1 = await testRuntime.invokeWorkflow(inst).doWorkflowV1();
-      expect (res1).toBe('wv1selected tv1step sv1 done');
+      expect(res1).toBe('wv1selected tv1step sv1 done');
 
       const res121 = await testRuntime.invokeWorkflow(inst).doWorkflowV1_V2V1();
-      expect (res121).toBe('wv1selected tv2step sv1 done');
+      expect(res121).toBe('wv1selected tv2step sv1 done');
 
       const res112 = await testRuntime.invokeWorkflow(inst).doWorkflowV1_V1V2();
-      expect (res112).toBe('wv1selected tv1step sv2 done');
+      expect(res112).toBe('wv1selected tv1step sv2 done');
 
       const res122 = await testRuntime.invokeWorkflow(inst).doWorkflowV1_V2V2();
-      expect (res122).toBe('wv1selected tv2step sv2 done');
+      expect(res122).toBe('wv1selected tv2step sv2 done');
 
       const rescwfv1 = await testRuntime.invokeWorkflow(ChildWorkflowsV1, 'child-direct').callSubWF();
-      expect (rescwfv1).toBe('ParentID:child-direct|ChildID:child-direct-0|selected child-direct-0');
+      expect(rescwfv1).toBe('ParentID:child-direct|ChildID:child-direct-0|selected child-direct-0');
 
       const rescwfv1h = await testRuntime.startWorkflow(ChildWorkflowsV1, 'child-start').startSubWF();
-      expect (await rescwfv1h.getResult()).toBe('ParentID:child-start|ChildID:child-start-0|selected child-start-0');
-    }
-    finally {
+      expect(await rescwfv1h.getResult()).toBe('ParentID:child-start|ChildID:child-start-0|selected child-start-0');
+    } finally {
       await testRuntime?.destroy();
     }
   });

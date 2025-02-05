@@ -1,11 +1,11 @@
-import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse } from "../cloudutils.js";
-import { Application, prettyPrintApplication } from "./types.js";
+import axios, { AxiosError } from 'axios';
+import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse } from '../cloudutils.js';
+import { Application, prettyPrintApplication } from './types.js';
 
 export async function listApps(host: string, json: boolean): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   try {
     const list = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/applications`, {
@@ -18,16 +18,16 @@ export async function listApps(host: string, json: boolean): Promise<number> {
       console.log(JSON.stringify(applications));
     } else {
       if (applications.length === 0) {
-        logger.info("No applications found");
+        logger.info('No applications found');
       }
       applications.forEach((app) => {
         prettyPrintApplication(app);
-        console.log("-------------------------");
+        console.log('-------------------------');
       });
     }
     return 0;
   } catch (e) {
-    const errorLabel = "Failed to list applications";
+    const errorLabel = 'Failed to list applications';
     const axiosError = e as AxiosError;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       handleAPIErrors(errorLabel, axiosError);

@@ -1,21 +1,23 @@
-import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger } from "../cloudutils.js";
+import axios, { AxiosError } from 'axios';
+import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger } from '../cloudutils.js';
 
 export async function orgInvite(host: string, json: boolean) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
   try {
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/secret`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
     if (json) {
       console.log(JSON.stringify(res.data));
     } else {
-      logger.info(`To invite a user to your organization, ${userCredentials.organization}, give them this single-use secret: `);
+      logger.info(
+        `To invite a user to your organization, ${userCredentials.organization}, give them this single-use secret: `,
+      );
       logger.info(res.data);
     }
     return 0;
@@ -39,11 +41,11 @@ export interface OrgUsers {
 export async function orgListUsers(host: string, json: boolean) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
   try {
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/users`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
@@ -73,11 +75,13 @@ export async function orgListUsers(host: string, json: boolean) {
 export async function renameOrganization(host: string, oldname: string, newname: string) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   const currentOrg = userCredentials.organization;
   if (currentOrg !== oldname) {
-    logger.error(`You are currently authenticated to organization ${currentOrg}, but you are trying to rename ${oldname}. Please logout and login to the correct organization.`);
+    logger.error(
+      `You are currently authenticated to organization ${currentOrg}, but you are trying to rename ${oldname}. Please logout and login to the correct organization.`,
+    );
     return 1;
   }
 
@@ -89,13 +93,15 @@ export async function renameOrganization(host: string, oldname: string, newname:
       },
       {
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: bearerToken,
         },
-      }
+      },
     );
 
-    logger.info(`Successfully renamed organization ${oldname} to ${newname}. Please logout and login to refresh your local context before any further commands.`);
+    logger.info(
+      `Successfully renamed organization ${oldname} to ${newname}. Please logout and login to refresh your local context before any further commands.`,
+    );
 
     return 0;
   } catch (e) {
@@ -113,7 +119,7 @@ export async function renameOrganization(host: string, oldname: string, newname:
 export async function joinOrganization(host: string, orgname: string, secret: string) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   try {
     await axios.post(
@@ -123,13 +129,15 @@ export async function joinOrganization(host: string, orgname: string, secret: st
       },
       {
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: bearerToken,
         },
-      }
+      },
     );
 
-    logger.info(`Successfully joined organization ${orgname}. Please logout and login to refresh your local context before any further commands.`);
+    logger.info(
+      `Successfully joined organization ${orgname}. Please logout and login to refresh your local context before any further commands.`,
+    );
     return 0;
   } catch (e) {
     const errorLabel = `Failed to join organization ${orgname}`;
@@ -146,18 +154,15 @@ export async function joinOrganization(host: string, orgname: string, secret: st
 export async function removeUserFromOrg(host: string, usernameToDelete: string) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   try {
-    await axios.delete(
-      `https://${host}/v1alpha1/${userCredentials.organization}/${usernameToDelete}`,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: bearerToken,
-        },
-      }
-    );
+    await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/${usernameToDelete}`, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: bearerToken,
+      },
+    });
 
     logger.info(`Successfully removed ${usernameToDelete} from organization ${userCredentials.organization}`);
     return 0;

@@ -1,12 +1,12 @@
-import { transports, createLogger, format, Logger } from "winston";
-import fs from "fs";
-import axios, { AxiosError } from "axios";
-import jwt from "jsonwebtoken";
-import path from "node:path";
-import { loadConfigFile } from "./configutils.js";
-import { input } from "@inquirer/prompts";
-import validator from "validator";
-import { authenticate, authenticateWithRefreshToken } from "./users/authentication.js";
+import { transports, createLogger, format, Logger } from 'winston';
+import fs from 'fs';
+import axios, { AxiosError } from 'axios';
+import jwt from 'jsonwebtoken';
+import path from 'node:path';
+import { loadConfigFile } from './configutils.js';
+import { input } from '@inquirer/prompts';
+import validator from 'validator';
+import { authenticate, authenticateWithRefreshToken } from './users/authentication.js';
 
 export interface DBOSCloudCredentials {
   token: string;
@@ -23,13 +23,13 @@ export interface UserProfile {
 }
 
 export enum AppLanguages {
-  Node = "node",
-  Python = "python",
+  Node = 'node',
+  Python = 'python',
 }
 
-export const dbosConfigFilePath = "dbos-config.yaml";
-export const DBOSCloudHost = process.env.DBOS_DOMAIN || "cloud.dbos.dev";
-export const dbosEnvPath = ".dbos";
+export const dbosConfigFilePath = 'dbos-config.yaml';
+export const DBOSCloudHost = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
+export const dbosEnvPath = '.dbos';
 
 export function retrieveApplicationName(logger: Logger, silent: boolean = false): string | undefined {
   const configFile = loadConfigFile(dbosConfigFilePath);
@@ -38,12 +38,16 @@ export function retrieveApplicationName(logger: Logger, silent: boolean = false)
     if (!silent) {
       logger.info(`Loaded application name from dbos-config.yaml: ${appName}`);
     }
-    return appName
+    return appName;
   }
-  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json")).toString()) as { name: string };
+  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json')).toString()) as {
+    name: string;
+  };
   appName = packageJson.name;
   if (appName === undefined) {
-    logger.error("Error: cannot find a valid package.json file. Please run this command in an application root directory.");
+    logger.error(
+      'Error: cannot find a valid package.json file. Please run this command in an application root directory.',
+    );
     return undefined;
   }
   if (!silent) {
@@ -65,8 +69,8 @@ export function getLogger(verbose?: boolean): CLILogger {
   winstonTransports.push(
     new transports.Console({
       format: consoleFormat,
-      level: verbose ? "debug" : "info",
-    })
+      level: verbose ? 'debug' : 'info',
+    }),
   );
   return (curLogger = createLogger({ transports: winstonTransports }));
 }
@@ -79,14 +83,14 @@ const consoleFormat = format.combine(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack } = info;
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const ts = timestamp.slice(0, 19).replace("T", " ");
+    const ts = timestamp.slice(0, 19).replace('T', ' ');
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const formattedStack = stack?.split("\n").slice(1).join("\n");
+    const formattedStack = stack?.split('\n').slice(1).join('\n');
 
-    const messageString: string = typeof message === "string" ? message : JSON.stringify(message);
+    const messageString: string = typeof message === 'string' ? message : JSON.stringify(message);
 
-    return `${ts} [${level}]: ${messageString} ${stack ? "\n" + formattedStack : ""}`;
-  })
+    return `${ts} [${level}]: ${messageString} ${stack ? '\n' + formattedStack : ''}`;
+  }),
 );
 
 export function isTokenExpired(token: string): boolean {
@@ -99,7 +103,6 @@ export function isTokenExpired(token: string): boolean {
   }
 }
 
-
 export function credentialsExist(): boolean {
   return fs.existsSync(`./${dbosEnvPath}/credentials`);
 }
@@ -110,10 +113,10 @@ export function deleteCredentials() {
 
 export function writeCredentials(credentials: DBOSCloudCredentials) {
   fs.mkdirSync(dbosEnvPath, { recursive: true });
-  fs.writeFileSync(path.join(dbosEnvPath, "credentials"), JSON.stringify(credentials), "utf-8");
+  fs.writeFileSync(path.join(dbosEnvPath, 'credentials'), JSON.stringify(credentials), 'utf-8');
 }
 
-export function checkReadFile(path: string, encoding: BufferEncoding = "utf8"): string | Buffer {
+export function checkReadFile(path: string, encoding: BufferEncoding = 'utf8'): string | Buffer {
   // First, check the file
   fs.stat(path, (error: NodeJS.ErrnoException | null, stats: fs.Stats) => {
     if (error) {
@@ -143,14 +146,14 @@ export interface CloudAPIErrorResponse {
 
 export function isCloudAPIErrorResponse(obj: unknown): obj is CloudAPIErrorResponse {
   return (
-    typeof obj === "object" &&
+    typeof obj === 'object' &&
     obj !== null &&
-    "message" in obj &&
-    typeof obj["message"] === "string" &&
-    "statusCode" in obj &&
-    typeof obj["statusCode"] === "number" &&
-    "requestID" in obj &&
-    typeof obj["requestID"] === "string"
+    'message' in obj &&
+    typeof obj['message'] === 'string' &&
+    'statusCode' in obj &&
+    typeof obj['statusCode'] === 'number' &&
+    'requestID' in obj &&
+    typeof obj['requestID'] === 'string'
   );
 }
 
@@ -159,7 +162,6 @@ export function handleAPIErrors(label: string, e: AxiosError) {
   const resp: CloudAPIErrorResponse = e.response?.data as CloudAPIErrorResponse;
   logger.error(`[${resp.requestID}] ${label}: ${resp.message}.`);
 }
-
 
 /**
  * Login and obtain user credentials.
@@ -170,15 +172,20 @@ export function handleAPIErrors(label: string, e: AxiosError) {
  * @param {string} host - The DBOS Cloud host to authenticate against.
  * @returns {DBOSCloudCredentials} - The user's DBOS Cloud credentials.
  */
-export async function getCloudCredentials(host: string, logger: Logger, userName?: string, secret?: string): Promise<DBOSCloudCredentials> {
+export async function getCloudCredentials(
+  host: string,
+  logger: Logger,
+  userName?: string,
+  secret?: string,
+): Promise<DBOSCloudCredentials> {
   // Check if credentials exist and are not expired
   const credentials = await checkCredentials(logger);
 
   // Log in the user.
-  if (credentials.token === "") {
+  if (credentials.token === '') {
     const authResponse = await authenticate(logger, false);
     if (authResponse === null) {
-      logger.error("Failed to login. Exiting...");
+      logger.error('Failed to login. Exiting...');
       process.exit(1);
     }
     credentials.token = authResponse.token;
@@ -211,27 +218,29 @@ export async function getCloudCredentials(host: string, logger: Logger, userName
  * @returns {DBOSCloudCredentials} - The user's DBOS Cloud credentials if exists, or an empty one.
  */
 async function checkCredentials(logger: Logger): Promise<DBOSCloudCredentials> {
-  const emptyCredentials: DBOSCloudCredentials = { token: "", userName: "", organization: "" };
+  const emptyCredentials: DBOSCloudCredentials = { token: '', userName: '', organization: '' };
   if (!credentialsExist()) {
     return emptyCredentials;
   }
-  const credentials = JSON.parse(fs.readFileSync(`./${dbosEnvPath}/credentials`).toString("utf-8")) as DBOSCloudCredentials;
-  credentials.token = credentials.token.replace(/\r|\n/g, ""); // Trim the trailing /r /n.
+  const credentials = JSON.parse(
+    fs.readFileSync(`./${dbosEnvPath}/credentials`).toString('utf-8'),
+  ) as DBOSCloudCredentials;
+  credentials.token = credentials.token.replace(/\r|\n/g, ''); // Trim the trailing /r /n.
   logger.debug(`Loaded credentials from ${dbosEnvPath}/credentials`);
   if (isTokenExpired(credentials.token)) {
     if (credentials.refreshToken) {
-      logger.debug("Refreshing access token with refresh token");
+      logger.debug('Refreshing access token with refresh token');
       const authResponse = await authenticateWithRefreshToken(logger, credentials.refreshToken);
       if (authResponse === null) {
-        logger.warn("Refreshing access token with refresh token failed. Logging in again...");
+        logger.warn('Refreshing access token with refresh token failed. Logging in again...');
         deleteCredentials();
         return emptyCredentials;
       } else {
         // Update the token and save the credentials
-        credentials.token = authResponse.token.replace(/\r|\n/g, "");
+        credentials.token = authResponse.token.replace(/\r|\n/g, '');
       }
     } else {
-      logger.warn("Credentials expired. Logging in again...");
+      logger.warn('Credentials expired. Logging in again...');
       deleteCredentials();
       return emptyCredentials;
     }
@@ -247,11 +256,11 @@ async function checkCredentials(logger: Logger): Promise<DBOSCloudCredentials> {
  * @returns {boolean} - True if the user profile exists, false otherwise.
  */
 async function checkUserProfile(host: string, credentials: DBOSCloudCredentials, logger: Logger): Promise<boolean> {
-  const bearerToken = "Bearer " + credentials.token;
+  const bearerToken = 'Bearer ' + credentials.token;
   try {
     const response = await axios.get(`https://${host}/v1alpha1/user/profile`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
@@ -264,7 +273,7 @@ async function checkUserProfile(host: string, credentials: DBOSCloudCredentials,
     const errorLabel = `Failed to login`;
     if (isCloudAPIErrorResponse(axiosError.response?.data)) {
       const resp: CloudAPIErrorResponse = axiosError.response?.data;
-      if (!resp.message.includes("user not found in DBOS Cloud")) {
+      if (!resp.message.includes('user not found in DBOS Cloud')) {
         handleAPIErrors(errorLabel, axiosError);
         process.exit(1);
       }
@@ -278,10 +287,10 @@ async function checkUserProfile(host: string, credentials: DBOSCloudCredentials,
 
 function isValidUsername(value: string): boolean | string {
   if (value.length < 3 || value.length > 30) {
-    return "Username must be 3~30 characters long";
+    return 'Username must be 3~30 characters long';
   }
-  if (!validator.matches(value, "^[a-z0-9_]+$")) {
-    return "Username must contain only lowercase letters, numbers, and underscores.";
+  if (!validator.matches(value, '^[a-z0-9_]+$')) {
+    return 'Username must contain only lowercase letters, numbers, and underscores.';
   }
   // TODO: Check if the username is already taken. Need a cloud endpoint for this.
   return true;
@@ -295,40 +304,50 @@ function isValidUsername(value: string): boolean | string {
  * @param {Logger} logger - The logger instance.
  * @returns
  */
-async function registerUser(host: string, credentials: DBOSCloudCredentials, logger: Logger, userName?: string, secret?: string): Promise<void> {
+async function registerUser(
+  host: string,
+  credentials: DBOSCloudCredentials,
+  logger: Logger,
+  userName?: string,
+  secret?: string,
+): Promise<void> {
   logger.info(`User not registered in DBOS Cloud. Registering...`);
 
   if (!userName) {
     userName = await input({
-      message: "Choose your username:",
+      message: 'Choose your username:',
       required: true,
       validate: isValidUsername,
     });
   }
 
   if (isValidUsername(userName) !== true) {
-      logger.error(`Invalid username: ${userName}. Usernames must be between 3 and 30 characters long and contain only lowercase letters, underscores, and numbers.`);
-      process.exit(1);
+    logger.error(
+      `Invalid username: ${userName}. Usernames must be between 3 and 30 characters long and contain only lowercase letters, underscores, and numbers.`,
+    );
+    process.exit(1);
   }
 
-  let givenName = "", familyName = "", company = "";
+  let givenName = '',
+    familyName = '',
+    company = '';
   if (!credentials.userName) {
     // In automated tests, we don't prompt these.
     givenName = await input({
-      message: "Enter first/given name:",
+      message: 'Enter first/given name:',
       required: true,
     });
     familyName = await input({
-      message: "Enter last/family name:",
+      message: 'Enter last/family name:',
       required: true,
     });
     company = await input({
-      message: "Enter company name:",
+      message: 'Enter company name:',
       required: true,
     });
   }
 
-  const bearerToken = "Bearer " + credentials.token;
+  const bearerToken = 'Bearer ' + credentials.token;
   try {
     await axios.put(
       `https://${host}/v1alpha1/user`,
@@ -341,14 +360,14 @@ async function registerUser(host: string, credentials: DBOSCloudCredentials, log
       },
       {
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: bearerToken,
         },
-      }
+      },
     );
     const response = await axios.get(`https://${host}/v1alpha1/user/profile`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
@@ -368,4 +387,3 @@ async function registerUser(host: string, credentials: DBOSCloudCredentials, log
   }
   return;
 }
-

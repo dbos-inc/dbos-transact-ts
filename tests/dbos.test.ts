@@ -1,24 +1,34 @@
-import { WorkflowContext, TransactionContext, StepContext, WorkflowHandle, Transaction, Workflow, Step, DBOSInitializer, InitContext } from "../src/";
-import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from "./helpers";
-import { v1 as uuidv1 } from "uuid";
-import { StatusString } from "../src/workflow";
-import { DBOSConfig, DBOSExecutor } from "../src/dbos-executor";
-import { PoolClient, Client } from "pg";
-import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from "../src/testing/testing_runtime";
-import { transaction_outputs } from "../schemas/user_db_schema";
-import { DBOSFailedSqlTransactionError } from "../src/error";
+import {
+  WorkflowContext,
+  TransactionContext,
+  StepContext,
+  WorkflowHandle,
+  Transaction,
+  Workflow,
+  Step,
+  DBOSInitializer,
+  InitContext,
+} from '../src/';
+import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
+import { v1 as uuidv1 } from 'uuid';
+import { StatusString } from '../src/workflow';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { PoolClient, Client } from 'pg';
+import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
+import { transaction_outputs } from '../schemas/user_db_schema';
+import { DBOSFailedSqlTransactionError } from '../src/error';
 
 type TestTransactionContext = TransactionContext<PoolClient>;
-const testTableName = "dbos_test_kv";
+const testTableName = 'dbos_test_kv';
 
-describe("dbos-tests", () => {
+describe('dbos-tests', () => {
   let username: string;
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    username = config.poolConfig.user || "postgres";
+    username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
   });
 
@@ -31,13 +41,15 @@ describe("dbos-tests", () => {
     await testRuntime.destroy();
   });
 
-  test("simple-function", async () => {
-    const workflowHandle: WorkflowHandle<string> = await testRuntime.startWorkflow(DBOSTestClass).testWorkflow(username);
+  test('simple-function', async () => {
+    const workflowHandle: WorkflowHandle<string> = await testRuntime
+      .startWorkflow(DBOSTestClass)
+      .testWorkflow(username);
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
   });
 
-  test("simple-workflow-attempts-counter", async () => {
+  test('simple-workflow-attempts-counter', async () => {
     const systemDBClient = new Client({
       user: config.poolConfig.user,
       port: config.poolConfig.port,
@@ -46,49 +58,54 @@ describe("dbos-tests", () => {
       database: config.system_database,
     });
     try {
-        await systemDBClient.connect();
-        const handle = await testRuntime.startWorkflow(DBOSTestClass).noopWorkflow()
-        for (let i = 0; i < 10; i++) {
-            await testRuntime.startWorkflow(DBOSTestClass, handle.getWorkflowUUID()).noopWorkflow();
-            const result = await systemDBClient.query<{status: string, attempts: number}>(`SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`, [handle.getWorkflowUUID()]);
-            expect(result.rows[0].attempts).toBe(String(i + 2));
-        }
+      await systemDBClient.connect();
+      const handle = await testRuntime.startWorkflow(DBOSTestClass).noopWorkflow();
+      for (let i = 0; i < 10; i++) {
+        await testRuntime.startWorkflow(DBOSTestClass, handle.getWorkflowUUID()).noopWorkflow();
+        const result = await systemDBClient.query<{ status: string; attempts: number }>(
+          `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+          [handle.getWorkflowUUID()],
+        );
+        expect(result.rows[0].attempts).toBe(String(i + 2));
+      }
     } finally {
-        await systemDBClient.end();
+      await systemDBClient.end();
     }
   });
 
-  test("return-void", async () => {
+  test('return-void', async () => {
     const workflowUUID = uuidv1();
     await testRuntime.invoke(DBOSTestClass, workflowUUID).testVoidFunction();
     await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
     await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
   });
 
-  test("tight-loop", async () => {
+  test('tight-loop', async () => {
     for (let i = 0; i < 100; i++) {
       await expect(testRuntime.invokeWorkflow(DBOSTestClass).testNameWorkflow(username)).resolves.toBe(username);
     }
   });
 
-  test("abort-function", async () => {
+  test('abort-function', async () => {
     for (let i = 0; i < 10; i++) {
       await expect(testRuntime.invokeWorkflow(DBOSTestClass).testFailWorkflow(username)).resolves.toBe(i + 1);
     }
 
     // Should not appear in the database.
-    await expect(testRuntime.invokeWorkflow(DBOSTestClass).testFailWorkflow("fail")).rejects.toThrow("fail");
+    await expect(testRuntime.invokeWorkflow(DBOSTestClass).testFailWorkflow('fail')).rejects.toThrow('fail');
   });
 
-  test("simple-step", async () => {
+  test('simple-step', async () => {
     const workflowUUID: string = uuidv1();
     await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testStep()).resolves.toBe(0);
     await expect(testRuntime.invoke(DBOSTestClass).testStep()).resolves.toBe(1);
   });
 
-  test("simple-workflow-notifications", async () => {
+  test('simple-workflow-notifications', async () => {
     // Send to non-existent workflow should fail
-    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow('1234567')).rejects.toThrow('Sent to non-existent destination workflow UUID');
+    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow('1234567')).rejects.toThrow(
+      'Sent to non-existent destination workflow UUID',
+    );
 
     const workflowUUID = uuidv1();
     const handle = await testRuntime.startWorkflow(DBOSTestClass, workflowUUID).receiveWorkflow();
@@ -96,22 +113,22 @@ describe("dbos-tests", () => {
     expect(await handle.getResult()).toBe(true);
   });
 
-  test("simple-workflow-events", async () => {
+  test('simple-workflow-events', async () => {
     const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventWorkflow();
     const workflowUUID = handle.workflowID;
     await handle.getResult();
-    await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1");
-    await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
-    await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
+    await expect(testRuntime.getEvent(workflowUUID, 'key1')).resolves.toBe('value1');
+    await expect(testRuntime.getEvent(workflowUUID, 'key2')).resolves.toBe('value2');
+    await expect(testRuntime.getEvent(workflowUUID, 'fail', 0)).resolves.toBe(null);
   });
 
-  test("simple-workflow-events-multiple", async () => {
+  test('simple-workflow-events-multiple', async () => {
     const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventMultipleWorkflow();
     const workflowUUID = handle.workflowID;
     await handle.getResult();
-    await expect(testRuntime.getEvent(workflowUUID, "key1")).resolves.toBe("value1b");
-    await expect(testRuntime.getEvent(workflowUUID, "key2")).resolves.toBe("value2");
-    await expect(testRuntime.getEvent(workflowUUID, "fail", 0)).resolves.toBe(null);
+    await expect(testRuntime.getEvent(workflowUUID, 'key1')).resolves.toBe('value1b');
+    await expect(testRuntime.getEvent(workflowUUID, 'key2')).resolves.toBe('value2');
+    await expect(testRuntime.getEvent(workflowUUID, 'fail', 0)).resolves.toBe(null);
   });
 
   class ReadRecording {
@@ -122,7 +139,7 @@ describe("dbos-tests", () => {
     static async testReadFunction(txnCtxt: TestTransactionContext, id: number) {
       const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
       ReadRecording.cnt++;
-      await txnCtxt.client.query(`SELECT pg_current_xact_id()`);  // Increase transaction ID, testing if we can capture xid and snapshot correctly.
+      await txnCtxt.client.query(`SELECT pg_current_xact_id()`); // Increase transaction ID, testing if we can capture xid and snapshot correctly.
       if (rows.length === 0) {
         return null;
       }
@@ -131,10 +148,10 @@ describe("dbos-tests", () => {
 
     @Transaction()
     static async updateFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
-        id,
-        name,
-      ]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
+        `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`,
+        [id, name],
+      );
       return rows[0].value;
     }
 
@@ -145,36 +162,50 @@ describe("dbos-tests", () => {
       await workflowCtxt.invoke(ReadRecording).updateFunction(id, name);
       ReadRecording.wfCnt++;
       // Make sure the workflow actually runs.
-      throw Error("dumb test error");
+      throw Error('dumb test error');
     }
   }
 
-  test("readonly-recording", async () => {
+  test('readonly-recording', async () => {
     const workflowUUID = uuidv1();
     // Invoke the workflow, should get the error
-    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
+    await expect(
+      testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, 'test'),
+    ).rejects.toThrow(new Error('dumb test error'));
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(2);
 
     // Invoke it again, should return the recorded error and re-execute the workflow function but not the transactions
     await DBOSExecutor.globalInstance!.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
-    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID,).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
+    await expect(
+      testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, 'test'),
+    ).rejects.toThrow(new Error('dumb test error'));
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(4);
   });
 
-  test("txn-snapshot-recording", async () => {
+  test('txn-snapshot-recording', async () => {
     // Test the recording of transaction snapshot information in our transaction_outputs table.
     const workflowUUID = uuidv1();
     // Invoke the workflow, should get the error.
-    await expect(testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, "test")).rejects.toThrow(new Error("dumb test error"));
+    await expect(
+      testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, 'test'),
+    ).rejects.toThrow(new Error('dumb test error'));
 
     // Check the transaction output table and make sure we record transaction information correctly.
-    const readRec = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 0);
+    const readRec = await testRuntime.queryUserDB<transaction_outputs>(
+      'SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2',
+      workflowUUID,
+      0,
+    );
     expect(readRec[0].txn_id).toBeFalsy();
     expect(readRec[0].txn_snapshot).toBeTruthy();
 
-    const writeRec = await testRuntime.queryUserDB<transaction_outputs>("SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2", workflowUUID, 1);
+    const writeRec = await testRuntime.queryUserDB<transaction_outputs>(
+      'SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2',
+      workflowUUID,
+      1,
+    );
     expect(writeRec[0].txn_id).toBeTruthy();
     expect(writeRec[0].txn_snapshot).toBeTruthy();
 
@@ -201,10 +232,10 @@ describe("dbos-tests", () => {
 
     @Transaction()
     static async testWriteFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`, [
-        id,
-        name,
-      ]);
+      const { rows } = await txnCtxt.client.query<TestKvTable>(
+        `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`,
+        [id, name],
+      );
       return rows[0].value;
     }
 
@@ -218,27 +249,32 @@ describe("dbos-tests", () => {
     }
   }
 
-  test("retrieve-workflowstatus", async () => {
+  test('retrieve-workflowstatus', async () => {
     const workflowUUID = uuidv1();
 
-    const workflowHandle = await testRuntime.startWorkflow(RetrieveWorkflowStatus, workflowUUID).testStatusWorkflow(123, "hello");
+    const workflowHandle = await testRuntime
+      .startWorkflow(RetrieveWorkflowStatus, workflowUUID)
+      .testStatusWorkflow(123, 'hello');
 
     expect(workflowHandle.workflowID).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
       workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
     });
-    await expect(workflowHandle.getWorkflowInputs()).resolves.toMatchObject([123, "hello"])
+    await expect(workflowHandle.getWorkflowInputs()).resolves.toMatchObject([123, 'hello']);
 
     RetrieveWorkflowStatus.resolve1();
     await RetrieveWorkflowStatus.promise3;
 
     // Retrieve handle, should get the pending status.
-    await expect(testRuntime.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({ status: StatusString.PENDING, workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name });
+    await expect(testRuntime.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+      workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
+    });
 
     // Proceed to the end.
     RetrieveWorkflowStatus.resolve2();
-    await expect(workflowHandle.getResult()).resolves.toBe("hello");
+    await expect(workflowHandle.getResult()).resolves.toBe('hello');
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
@@ -246,7 +282,7 @@ describe("dbos-tests", () => {
     const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     expect(retrievedHandle.workflowID).toBe(workflowUUID);
-    await expect(retrievedHandle.getResult()).resolves.toBe("hello");
+    await expect(retrievedHandle.getResult()).resolves.toBe('hello');
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -255,23 +291,22 @@ describe("dbos-tests", () => {
     });
   });
 
-  test("aborted-transaction", async () => {
+  test('aborted-transaction', async () => {
     const workflowUUID: string = uuidv1();
-    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).attemptToCatchAbortingStoredProc())
-      .rejects
-      .toThrow(new DBOSFailedSqlTransactionError(workflowUUID, "attemptToCatchAbortingStoredProc"));
-  })
+    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).attemptToCatchAbortingStoredProc()).rejects.toThrow(
+      new DBOSFailedSqlTransactionError(workflowUUID, 'attemptToCatchAbortingStoredProc'),
+    );
+  });
 });
 
 class DBOSTestClass {
-
   static initialized = false;
   static cnt: number = 0;
 
   @DBOSInitializer()
   static async init(_ctx: InitContext) {
     DBOSTestClass.initialized = true;
-    expect(_ctx.getConfig("counter")).toBe(3);
+    expect(_ctx.getConfig('counter')).toBe(3);
     await _ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await _ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     await _ctx.queryUserDB(`CREATE OR REPLACE FUNCTION test_proc_raise() returns void as $$
@@ -283,7 +318,7 @@ class DBOSTestClass {
 
   @Transaction()
   static async testFunction(txnCtxt: TestTransactionContext, name: string) {
-    expect(txnCtxt.getConfig<number>("counter")).toBe(3);
+    expect(txnCtxt.getConfig<number>('counter')).toBe(3);
     const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
     return JSON.stringify(rows[0]);
   }
@@ -291,7 +326,7 @@ class DBOSTestClass {
   @Workflow()
   static async testWorkflow(ctxt: WorkflowContext, name: string) {
     expect(DBOSTestClass.initialized).toBe(true);
-    expect(ctxt.getConfig<number>("counter")).toBe(3);
+    expect(ctxt.getConfig<number>('counter')).toBe(3);
     const funcResult = await ctxt.invoke(DBOSTestClass).testFunction(name);
     return funcResult;
   }
@@ -313,9 +348,12 @@ class DBOSTestClass {
 
   @Transaction()
   static async testFailFunction(txnCtxt: TestTransactionContext, name: string) {
-    const { rows } = await txnCtxt.client.query<TestKvTable>(`INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`, [name]);
-    if (name === "fail") {
-      throw new Error("fail");
+    const { rows } = await txnCtxt.client.query<TestKvTable>(
+      `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
+      [name],
+    );
+    if (name === 'fail') {
+      throw new Error('fail');
     }
     return Number(rows[0].id);
   }
@@ -334,9 +372,9 @@ class DBOSTestClass {
   @Transaction()
   static async attemptToCatchAbortingStoredProc(txnCtxt: TestTransactionContext) {
     try {
-      return await txnCtxt.client.query("select xx()");
+      return await txnCtxt.client.query('select xx()');
     } catch (e) {
-      return "all good"
+      return 'all good';
     }
   }
 
@@ -350,7 +388,7 @@ class DBOSTestClass {
 
   @Step()
   static async testStep(ctxt: StepContext) {
-    expect(ctxt.getConfig<number>("counter")).toBe(3);
+    expect(ctxt.getConfig<number>('counter')).toBe(3);
     return Promise.resolve(DBOSTestClass.cnt++);
   }
 
@@ -359,29 +397,28 @@ class DBOSTestClass {
     expect(DBOSTestClass.initialized).toBe(true);
     const message1 = await ctxt.recv<string>();
     const message2 = await ctxt.recv<string>();
-    const fail = await ctxt.recv("fail", 0);
-    return message1 === "message1" && message2 === "message2" && fail === null;
+    const fail = await ctxt.recv('fail', 0);
+    return message1 === 'message1' && message2 === 'message2' && fail === null;
   }
 
   @Workflow()
   static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string) {
-    await ctxt.send(destinationUUID, "message1");
-    await ctxt.send(destinationUUID, "message2");
+    await ctxt.send(destinationUUID, 'message1');
+    await ctxt.send(destinationUUID, 'message2');
   }
-
 
   @Workflow()
   static async setEventWorkflow(ctxt: WorkflowContext) {
-    await ctxt.setEvent("key1", "value1");
-    await ctxt.setEvent("key2", "value2");
+    await ctxt.setEvent('key1', 'value1');
+    await ctxt.setEvent('key2', 'value2');
     return 0;
   }
 
   @Workflow()
   static async setEventMultipleWorkflow(ctxt: WorkflowContext) {
-    await ctxt.setEvent("key1", "value1");
-    await ctxt.setEvent("key2", "value2");
-    await ctxt.setEvent("key1", "value1b");
+    await ctxt.setEvent('key1', 'value1');
+    await ctxt.setEvent('key2', 'value2');
+    await ctxt.setEvent('key1', 'value1b');
     return 0;
   }
 
@@ -389,5 +426,4 @@ class DBOSTestClass {
   static async noopWorkflow(_: WorkflowContext) {
     return Promise.resolve();
   }
-
 }

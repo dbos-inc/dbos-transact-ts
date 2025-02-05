@@ -56,7 +56,7 @@ jobs:
           KAFKA_CFG_ADVERTISED_LISTENERS: PLAINTEXT://127.0.0.1:9092
 
     steps:
-      - name: "Setup postgres config"
+      - name: 'Setup postgres config'
         run: |
           docker exec ${{ job.services.postgres.id }} sh -c 'echo "wal_level=logical" >> /var/lib/postgresql/data/postgresql.conf'
           docker restart ${{ job.services.postgres.id }}

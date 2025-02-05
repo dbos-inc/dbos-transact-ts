@@ -18,6 +18,6 @@ Congratulations! You just launched a DBOS application.
 
 ## Next Steps
 
-- To add more functionality to this application, modify `src/operations.ts`, then rebuild and restart it.  Alternatively, `npm run dev` uses `nodemon` to automatically rebuild and restart the app when source files change, using instructions specified in `nodemon.json`.
+- To add more functionality to this application, modify `src/operations.ts`, then rebuild and restart it. Alternatively, `npm run dev` uses `nodemon` to automatically rebuild and restart the app when source files change, using instructions specified in `nodemon.json`.
 - For a detailed tutorial, check out the [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [the documentation](https://docs.dbos.dev/) or [source code](https://github.com/dbos-inc/dbos-transact-ts).

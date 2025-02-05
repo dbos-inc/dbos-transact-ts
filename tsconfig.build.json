@@ -1,8 +1,4 @@
 {
-    "extends": "./tsconfig.json",
-    "include": [
-      "src/**/*",
-      "schemas/**/*",
-    ]
-  }
-  
+  "extends": "./tsconfig.json",
+  "include": ["src/**/*", "schemas/**/*"]
+}

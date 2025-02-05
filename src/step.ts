@@ -1,7 +1,7 @@
-import { Span } from "@opentelemetry/sdk-trace-base";
-import { GlobalLogger as Logger } from "./telemetry/logs";
-import { WorkflowContextImpl } from "./workflow";
-import { DBOSContext, DBOSContextImpl } from "./context";
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { GlobalLogger as Logger } from './telemetry/logs';
+import { WorkflowContextImpl } from './workflow';
+import { DBOSContext, DBOSContextImpl } from './context';
 
 export type StepFunction<T extends unknown[], R> = (ctxt: StepContext, ...args: T) => Promise<R>;
 
@@ -26,9 +26,14 @@ export class StepContextImpl extends DBOSContextImpl implements StepContext {
   readonly backoffRate: number;
 
   // TODO: Validate the parameters.
-  constructor(workflowContext: WorkflowContextImpl, functionID: number, span: Span, logger: Logger,
-     params: StepConfig, commName: string)
-  {
+  constructor(
+    workflowContext: WorkflowContextImpl,
+    functionID: number,
+    span: Span,
+    logger: Logger,
+    params: StepConfig,
+    commName: string,
+  ) {
     super(commName, span, logger, workflowContext);
     this.functionID = functionID;
     this.retriesAllowed = params.retriesAllowed ?? false;

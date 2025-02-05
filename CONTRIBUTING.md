@@ -7,10 +7,11 @@ Thank you for considering contributing to DBOS Transact. We welcome contribution
 To get started with DBOS Transact, please read the [README](README.md).
 
 You can contribute in many ways. Some simple ways are:
-* Use the SDK and open issues to report any bugs, questions, concern with the SDK, samples or documentation.
-* Respond to issues with advice or suggestions.
-* Participate in discussions in our [Discord](https://discord.gg/fMwQjeW5zg) channel.
-* Contribute fixes and improvement to code, samples or documentation.
+
+- Use the SDK and open issues to report any bugs, questions, concern with the SDK, samples or documentation.
+- Respond to issues with advice or suggestions.
+- Participate in discussions in our [Discord](https://discord.gg/fMwQjeW5zg) channel.
+- Contribute fixes and improvement to code, samples or documentation.
 
 ### To contribute code, please follow these steps:
 
@@ -27,10 +28,11 @@ You can contribute in many ways. Some simple ways are:
 6. Commit the changes to your forked repository.
 
 7. Submit a pull request to this repository.
-In the PR description please include:
-* Description of the fix/feature.
-* Brief description of implementation.
-* Description of how you tested the fix.
+   In the PR description please include:
+
+- Description of the fix/feature.
+- Brief description of implementation.
+- Description of how you tested the fix.
 
 ## Requesting features
 
@@ -38,7 +40,7 @@ If you have a feature request or an idea for an enhancement, feel free to open a
 
 ## Discuss with the community
 
-If you are stuck, need help, or wondering if a certain contribution will be welcome, please ask! You can reach out to us on  [Discord](https://discord.gg/fMwQjeW5zg) or Github discussions.
+If you are stuck, need help, or wondering if a certain contribution will be welcome, please ask! You can reach out to us on [Discord](https://discord.gg/fMwQjeW5zg) or Github discussions.
 
 ## Code of conduct
 

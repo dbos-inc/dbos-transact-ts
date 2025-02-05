@@ -1,8 +1,14 @@
-import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName } from "../cloudutils.js";
+import axios, { AxiosError } from 'axios';
+import {
+  handleAPIErrors,
+  getCloudCredentials,
+  getLogger,
+  isCloudAPIErrorResponse,
+  retrieveApplicationName,
+} from '../cloudutils.js';
 
 export interface ListWorkflowsInput {
-  workflow_uuids?: string[] // Specific workflow UUIDs to retrieve.
+  workflow_uuids?: string[]; // Specific workflow UUIDs to retrieve.
   workflow_name?: string; // The name of the workflow function
   authenticated_user?: string; // The user who ran the workflow.
   start_time?: string; // Timestamp in ISO 8601 format
@@ -16,7 +22,7 @@ export interface ListWorkflowsInput {
 export async function listWorkflows(host: string, input: ListWorkflowsInput, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   appName = appName ?? retrieveApplicationName(logger, true);
   if (!appName) {
@@ -24,12 +30,16 @@ export async function listWorkflows(host: string, input: ListWorkflowsInput, app
   }
 
   try {
-    const res = await axios.post(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/workflows`, input, {
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: bearerToken,
+    const res = await axios.post(
+      `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/workflows`,
+      input,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: bearerToken,
+        },
       },
-    });
+    );
     console.log(JSON.stringify(res.data));
     return 0;
   } catch (e) {

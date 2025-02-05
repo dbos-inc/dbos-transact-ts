@@ -2,7 +2,7 @@ import { defineConfig } from 'drizzle-kit';
 
 const { parseConfigFile } = require('@dbos-inc/dbos-sdk');
 
-const [dbosConfig, ] = parseConfigFile();
+const [dbosConfig] = parseConfigFile();
 
 export default defineConfig({
   schema: './src/schema.ts',

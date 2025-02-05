@@ -1,6 +1,6 @@
-import { DBOS, DBOSConfig } from "../src";
-import { DBOSLocalCtx, runWithTopContext } from "../src/context";
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
+import { DBOS, DBOSConfig } from '../src';
+import { DBOSLocalCtx, runWithTopContext } from '../src/context';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 class TempWorkflowTest {
   @DBOS.transaction()
@@ -40,7 +40,7 @@ class TempWorkflowTest {
   }
 }
 
-describe("v2api-temp-wf", () => {
+describe('v2api-temp-wf', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -57,7 +57,7 @@ describe("v2api-temp-wf", () => {
     await DBOS.shutdown();
   });
 
-  test("tx_GetWorkflowID", async () => {
+  test('tx_GetWorkflowID', async () => {
     const wfUUID = `tx-${Date.now()}`;
     const actual = await DBOS.withNextWorkflowID(wfUUID, async () => {
       return await TempWorkflowTest.tx_GetWorkflowID();
@@ -65,7 +65,7 @@ describe("v2api-temp-wf", () => {
     expect(actual).toBe(wfUUID);
   });
 
-  test("st_GetWorkflowID", async () => {
+  test('st_GetWorkflowID', async () => {
     const wfUUID = `st-${Date.now()}`;
     const actual = await DBOS.withNextWorkflowID(wfUUID, async () => {
       return await TempWorkflowTest.st_GetWorkflowID();
@@ -73,7 +73,7 @@ describe("v2api-temp-wf", () => {
     expect(actual).toBe(wfUUID);
   });
 
-  test("tx_GetAuth", async () => {
+  test('tx_GetAuth', async () => {
     const now = `${Date.now()}`;
     const user = `user-${now}`;
     const roles = [`role-1-${now}`, `role-2-${now}`, `role-3-${now}`];
@@ -83,7 +83,7 @@ describe("v2api-temp-wf", () => {
     expect(actual).toEqual({ user, roles });
   });
 
-  test("st_GetAuth", async () => {
+  test('st_GetAuth', async () => {
     const now = `${Date.now()}`;
     const user = `user-${now}`;
     const roles = [`role-1-${now}`, `role-2-${now}`, `role-3-${now}`];
@@ -93,9 +93,9 @@ describe("v2api-temp-wf", () => {
     expect(actual).toEqual({ user, roles });
   });
 
-  test("tx_GetRequest", async () => {
+  test('tx_GetRequest', async () => {
     const ctx: DBOSLocalCtx = {
-      request: { requestID: `requestID-${Date.now()}` }
+      request: { requestID: `requestID-${Date.now()}` },
     };
     const actual = await runWithTopContext(ctx, async () => {
       return await TempWorkflowTest.tx_GetRequest();
@@ -103,14 +103,13 @@ describe("v2api-temp-wf", () => {
     expect(actual).toEqual(ctx.request);
   });
 
-  test("st_GetRequest", async () => {
+  test('st_GetRequest', async () => {
     const ctx: DBOSLocalCtx = {
-      request: { requestID: `requestID-${Date.now()}` }
+      request: { requestID: `requestID-${Date.now()}` },
     };
     const actual = await runWithTopContext(ctx, async () => {
       return await TempWorkflowTest.st_GetRequest();
     });
     expect(actual).toEqual(ctx.request);
   });
-
 });

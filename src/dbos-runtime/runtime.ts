@@ -23,7 +23,7 @@ export interface DBOSRuntimeConfig {
   start: string[];
   setup: string[];
 }
-export const defaultEntryPoint = "dist/operations.js";
+export const defaultEntryPoint = 'dist/operations.js';
 
 export class DBOSRuntime {
   private dbosConfig: DBOSConfig;
@@ -32,7 +32,10 @@ export class DBOSRuntime {
   private scheduler?: DBOSScheduler = undefined;
   private wfQueueRunner?: Promise<void> = undefined;
 
-  constructor(dbosConfig: DBOSConfig, private readonly runtimeConfig: DBOSRuntimeConfig) {
+  constructor(
+    dbosConfig: DBOSConfig,
+    private readonly runtimeConfig: DBOSRuntimeConfig,
+  ) {
     // Initialize workflow executor.
     this.dbosConfig = dbosConfig;
     DBOS.dbosConfig = dbosConfig;
@@ -72,7 +75,7 @@ export class DBOSRuntime {
       }
       this.dbosExec.logger.error(error);
       if (error instanceof DBOSFailLoadOperationsError) {
-        console.error('\x1b[31m%s\x1b[0m', "Did you compile this application? Hint: run `npm run build` and try again");
+        console.error('\x1b[31m%s\x1b[0m', 'Did you compile this application? Hint: run `npm run build` and try again');
         process.exit(1);
       }
       await this.destroy(); //wrap up, i.e. flush log contents to OpenTelemetry exporters
@@ -106,13 +109,13 @@ export class DBOSRuntime {
       allClasses.push(...classes);
     }
     if (allClasses.length === 0) {
-      throw new DBOSFailLoadOperationsError("operations not found");
+      throw new DBOSFailLoadOperationsError('operations not found');
     }
     return allClasses;
   }
 
   onSigterm(): void {
-    this.dbosExec?.logger.info("Stopping application: received a termination signal");
+    this.dbosExec?.logger.info('Stopping application: received a termination signal');
     void this.destroy().finally(() => {
       process.exit(1);
     });

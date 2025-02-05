@@ -1,51 +1,57 @@
 import tsm from 'ts-morph';
 
-type TestSource = string | { code: string, filename?: string };
+type TestSource = string | { code: string; filename?: string };
 
 export function makeTestProject(...sources: TestSource[]) {
-
   const project = new tsm.Project({
     compilerOptions: {
-      target: tsm.ScriptTarget.ES2015
+      target: tsm.ScriptTarget.ES2015,
     },
-    useInMemoryFileSystem: true
+    useInMemoryFileSystem: true,
   });
-  project.createSourceFile("knex.d.ts", knex);
-  project.createSourceFile("dbos-sdk.d.ts", dbosSdk);
+  project.createSourceFile('knex.d.ts', knex);
+  project.createSourceFile('dbos-sdk.d.ts', dbosSdk);
 
   const sourceFiles = new Array<tsm.SourceFile>();
   for (const source of sources) {
-    const { code, filename = "operations.ts" } = typeof source === "string" ? { code: source } : source;
+    const { code, filename = 'operations.ts' } = typeof source === 'string' ? { code: source } : source;
     const file = project.createSourceFile(filename, code);
     sourceFiles.push(file);
   }
 
   const diags = formatDiagnostics(project.getPreEmitDiagnostics());
-  if (diags) { throw new Error(diags); }
+  if (diags) {
+    throw new Error(diags);
+  }
 
   return { project, sourceFiles };
 }
 
 function formatDiagnostics(diags: readonly tsm.Diagnostic[]) {
-  if (diags.length === 0) { return; }
+  if (diags.length === 0) {
+    return;
+  }
 
   const formatHost: tsm.ts.FormatDiagnosticsHost = {
     getCurrentDirectory: () => tsm.ts.sys.getCurrentDirectory(),
     getNewLine: () => tsm.ts.sys.newLine,
-    getCanonicalFileName: (fileName: string) => tsm.ts.sys.useCaseSensitiveFileNames
-      ? fileName : fileName.toLowerCase()
-  }
+    getCanonicalFileName: (fileName: string) =>
+      tsm.ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase(),
+  };
 
-  return tsm.ts.formatDiagnosticsWithColorAndContext(diags.map(d => d.compilerObject), formatHost);
+  return tsm.ts.formatDiagnosticsWithColorAndContext(
+    diags.map((d) => d.compilerObject),
+    formatHost,
+  );
 }
 
-const knex = /*ts*/`
+const knex = /*ts*/ `
 declare module 'knex' {
   export interface Knex {}
 }
 `;
 
-const dbosSdk = /*ts*/`
+const dbosSdk = /*ts*/ `
 declare module "@dbos-inc/dbos-sdk" {
   export interface Logger {
     info(logEntry: unknown): void;

@@ -1,24 +1,23 @@
-import { DBOSInitializationError } from "../error";
-import { DBOSJSON, findPackageRoot, readFileSync } from "../utils";
-import { DBOSConfig } from "../dbos-executor";
-import { PoolConfig } from "pg";
-import YAML from "yaml";
-import { DBOSRuntimeConfig, defaultEntryPoint } from "./runtime";
-import { UserDatabaseName } from "../user_database";
-import { TelemetryConfig } from "../telemetry";
-import { writeFileSync } from "fs";
+import { DBOSInitializationError } from '../error';
+import { DBOSJSON, findPackageRoot, readFileSync } from '../utils';
+import { DBOSConfig } from '../dbos-executor';
+import { PoolConfig } from 'pg';
+import YAML from 'yaml';
+import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
+import { UserDatabaseName } from '../user_database';
+import { TelemetryConfig } from '../telemetry';
+import { writeFileSync } from 'fs';
 import Ajv, { ValidateFunction } from 'ajv';
-import path from "path";
-import validator from "validator";
-import fs from "fs";
-import { loadDatabaseConnection } from "./db_connection";
-import { GlobalLogger } from "../telemetry/logs";
+import path from 'path';
+import validator from 'validator';
+import fs from 'fs';
+import { loadDatabaseConnection } from './db_connection';
+import { GlobalLogger } from '../telemetry/logs';
 
-
-export const dbosConfigFilePath = "dbos-config.yaml";
+export const dbosConfigFilePath = 'dbos-config.yaml';
 const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
 const dbosConfigSchema = DBOSJSON.parse(readFileSync(dbosConfigSchemaPath)) as object;
-const ajv = new Ajv({allErrors: true, verbose: true});
+const ajv = new Ajv({ allErrors: true, verbose: true });
 
 export interface ConfigFile {
   name?: string;
@@ -104,10 +103,14 @@ export function retrieveApplicationName(configFile: ConfigFile): string {
   if (appName !== undefined) {
     return appName;
   }
-  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), "package.json")).toString()) as { name: string };
+  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json')).toString()) as {
+    name: string;
+  };
   appName = packageJson.name;
   if (appName === undefined) {
-    throw new DBOSInitializationError("Error: cannot find a valid package.json file. Please run this command in an application root directory.");
+    throw new DBOSInitializationError(
+      'Error: cannot find a valid package.json file. Please run this command in an application root directory.',
+    );
   }
   return appName;
 }
@@ -117,26 +120,30 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   const databaseConnection = loadDatabaseConnection();
   if (!cliOptions?.skipLoggingInParse) {
     const logger = new GlobalLogger();
-    if (configFile["database"]["hostname"]) {
-      logger.info("Loading database connection parameters from dbos-config.yaml");
-    } else if (databaseConnection["hostname"]) {
-      logger.info("Loading database connection parameters from .dbos/db_connection");
+    if (configFile['database']['hostname']) {
+      logger.info('Loading database connection parameters from dbos-config.yaml');
+    } else if (databaseConnection['hostname']) {
+      logger.info('Loading database connection parameters from .dbos/db_connection');
     } else {
-      logger.info("Using default database connection parameters");
+      logger.info('Using default database connection parameters');
     }
   }
-  configFile["database"]["hostname"] = configFile["database"]["hostname"] || databaseConnection["hostname"] || "localhost";
-  configFile["database"]["port"] = configFile["database"]["port"] || databaseConnection["port"] || 5432;
-  configFile["database"]["username"] = configFile["database"]["username"] || databaseConnection["username"] || "postgres";
-  configFile["database"]["password"] = configFile["database"]["password"] || databaseConnection["password"] || process.env.PGPASSWORD || "dbos";
-  configFile["database"]["local_suffix"] = configFile["database"]["local_suffix"] || databaseConnection["local_suffix"] || false;
+  configFile['database']['hostname'] =
+    configFile['database']['hostname'] || databaseConnection['hostname'] || 'localhost';
+  configFile['database']['port'] = configFile['database']['port'] || databaseConnection['port'] || 5432;
+  configFile['database']['username'] =
+    configFile['database']['username'] || databaseConnection['username'] || 'postgres';
+  configFile['database']['password'] =
+    configFile['database']['password'] || databaseConnection['password'] || process.env.PGPASSWORD || 'dbos';
+  configFile['database']['local_suffix'] =
+    configFile['database']['local_suffix'] || databaseConnection['local_suffix'] || false;
 
   let databaseName: string | undefined = configFile.database.app_db_name;
   if (databaseName === undefined) {
     const appName = retrieveApplicationName(configFile);
-    databaseName = appName.toLowerCase().replaceAll("-", "_");
+    databaseName = appName.toLowerCase().replaceAll('-', '_');
     if (databaseName.match(/^\d/)) {
-      databaseName = "_" + databaseName; // Append an underscore if the name starts with a digit
+      databaseName = '_' + databaseName; // Append an underscore if the name starts with a digit
     }
   }
   databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName;
@@ -150,7 +157,9 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   };
 
   if (!poolConfig.database) {
-    throw new DBOSInitializationError(`DBOS configuration (${dbosConfigFilePath}) does not contain application database name`);
+    throw new DBOSInitializationError(
+      `DBOS configuration (${dbosConfigFilePath}) does not contain application database name`,
+    );
   }
 
   // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
@@ -160,7 +169,10 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   } else if (configFile.database.ssl_ca) {
     // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
     poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-  } else if (configFile.database.ssl === undefined && (poolConfig.host === "localhost" || poolConfig.host === "127.0.0.1")) {
+  } else if (
+    configFile.database.ssl === undefined &&
+    (poolConfig.host === 'localhost' || poolConfig.host === '127.0.0.1')
+  ) {
     // For local development only, do not use TLS unless it is specifically asked for (to support Dockerized Postgres, which does not support SSL connections)
     poolConfig.ssl = false;
   } else {
@@ -171,17 +183,19 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 }
 
 function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
-  return validate.errors!.map(error => {
-    let message = `Error: ${error.message}`;
-    if (error.schemaPath) message += ` (schema path: ${error.schemaPath})`;
-    if (error.params && error.keyword === 'additionalProperties') {
-      message += `; the additional property '${error.params.additionalProperty}' is not allowed`;
-    }
-    if (error.data && error.keyword === 'not') {
-      message += `; the value ${DBOSJSON.stringify(error.data)} is not allowed for field ${error.instancePath}`
-    }
-    return message;
-  }).join(', ');
+  return validate
+    .errors!.map((error) => {
+      let message = `Error: ${error.message}`;
+      if (error.schemaPath) message += ` (schema path: ${error.schemaPath})`;
+      if (error.params && error.keyword === 'additionalProperties') {
+        message += `; the additional property '${error.params.additionalProperty}' is not allowed`;
+      }
+      if (error.data && error.keyword === 'not') {
+        message += `; the value ${DBOSJSON.stringify(error.data)} is not allowed for field ${error.instancePath}`;
+      }
+      return message;
+    })
+    .join(', ');
 }
 
 export interface ParseOptions {
@@ -208,11 +222,13 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   }
 
   if (!configFile.database) {
-    configFile.database = {}
+    configFile.database = {};
   }
 
-  if (configFile.database.local_suffix === true && configFile.database.hostname === "localhost") {
-    throw new DBOSInitializationError(`Invalid configuration (${configFilePath}): local_suffix may only be true when connecting to remote databases, not to localhost`)
+  if (configFile.database.local_suffix === true && configFile.database.hostname === 'localhost') {
+    throw new DBOSInitializationError(
+      `Invalid configuration (${configFilePath}): local_suffix may only be true when connecting to remote databases, not to localhost`,
+    );
   }
 
   const schemaValidator = ajv.compile(dbosConfigSchema);
@@ -221,7 +237,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
     throw new DBOSInitializationError(`${configFilePath} failed schema validation. ${errorMessages}`);
   }
 
-  if (configFile.language && configFile.language !== "node") {
+  if (configFile.language && configFile.language !== 'node') {
     throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`);
   }
 
@@ -232,7 +248,9 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   const poolConfig = constructPoolConfig(configFile, cliOptions);
 
   if (!isValidDBname(poolConfig.database!)) {
-    throw new DBOSInitializationError(`${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`);
+    throw new DBOSInitializationError(
+      `${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`,
+    );
   }
 
   /***************************/
@@ -287,8 +305,12 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
 }
 
 function getAppVersion(appVersion: string | boolean | undefined) {
-  if (typeof appVersion === "string") { return appVersion; }
-  if (appVersion === false) { return undefined; }
+  if (typeof appVersion === 'string') {
+    return appVersion;
+  }
+  if (appVersion === false) {
+    return undefined;
+  }
   return process.env.DBOS__APPVERSION;
 }
 
@@ -300,5 +322,5 @@ function isValidDBname(dbName: string): boolean {
     // Cannot start with a digit
     return false;
   }
-  return validator.matches(dbName, "^[a-z0-9_]+$");
+  return validator.matches(dbName, '^[a-z0-9_]+$');
 }

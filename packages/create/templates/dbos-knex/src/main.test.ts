@@ -1,10 +1,10 @@
-import { DBOS } from "@dbos-inc/dbos-sdk";
-import { app, dbos_hello, Hello } from "./main";
-import request from "supertest";
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import { app, dbos_hello, Hello } from './main';
+import request from 'supertest';
 
-describe("operations-test", () => {
+describe('operations-test', () => {
   beforeAll(async () => {
-    await DBOS.launch({expressApp: app});
+    await DBOS.launch({ expressApp: app });
   });
 
   afterAll(async () => {
@@ -14,23 +14,21 @@ describe("operations-test", () => {
   /**
    * Test the transaction.
    */
-  test("test-transaction", async () => {
-    const res = await Hello.helloTransaction("dbos");
-    expect(res).toMatch("Hello, dbos! You have been greeted");
+  test('test-transaction', async () => {
+    const res = await Hello.helloTransaction('dbos');
+    expect(res).toMatch('Hello, dbos! You have been greeted');
 
     // Check the greet count.
-    const rows = await DBOS.executor.queryUserDB("SELECT * FROM dbos_hello WHERE name=$1", ["dbos"]) as dbos_hello[];
+    const rows = (await DBOS.executor.queryUserDB('SELECT * FROM dbos_hello WHERE name=$1', ['dbos'])) as dbos_hello[];
     expect(rows[0].greet_count).toBe(1);
   });
 
   /**
    * Test the HTTP endpoint.
    */
-  test("test-endpoint", async () => {
-    const res = await request(app).get(
-      "/greeting/dbos"
-    );
+  test('test-endpoint', async () => {
+    const res = await request(app).get('/greeting/dbos');
     expect(res.statusCode).toBe(200);
-    expect(res.text).toMatch("Hello, dbos! You have been greeted");
+    expect(res.text).toMatch('Hello, dbos! You have been greeted');
   });
 });

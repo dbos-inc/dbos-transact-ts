@@ -1,26 +1,26 @@
-import request from "supertest";
+import request from 'supertest';
 
-import { PrismaClient, testkv } from "@prisma/client";
-import { generateDBOSTestConfig, setUpDBOSTestDb } from "./helpers";
+import { PrismaClient, testkv } from '@prisma/client';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import {
-  TestingRuntime, Transaction, TransactionContext,
+  TestingRuntime,
+  Transaction,
+  TransactionContext,
   Authentication,
   MiddlewareContext,
   GetApi,
   HandlerContext,
   RequiredRole,
   PostApi,
-} from "../src";
-import {
-  DBOSNotAuthorizedError,
-} from "../src/error";
+} from '../src';
+import { DBOSNotAuthorizedError } from '../src/error';
 
-import { v1 as uuidv1 } from "uuid";
-import { sleepms } from "../src/utils";
-import { PrismaClientKnownRequestError } from "@prisma/client/runtime/library";
-import { UserDatabaseName } from "../src/user_database";
-import { DBOSConfig } from "../src/dbos-executor";
-import { createInternalTestRuntime } from "../src/testing/testing_runtime";
+import { v1 as uuidv1 } from 'uuid';
+import { sleepms } from '../src/utils';
+import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
+import { UserDatabaseName } from '../src/user_database';
+import { DBOSConfig } from '../src/dbos-executor';
+import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 
 interface PrismaPGError {
   code: string;
@@ -36,7 +36,7 @@ type TestTransactionContext = TransactionContext<PrismaClient>;
  * Funtions used in tests.
  */
 let globalCnt = 0;
-const testTableName = "testkv";
+const testTableName = 'testkv';
 
 class PrismaTestClass {
   @Transaction()
@@ -65,7 +65,7 @@ class PrismaTestClass {
   }
 }
 
-describe("prisma-tests", () => {
+describe('prisma-tests', () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
 
@@ -85,48 +85,49 @@ describe("prisma-tests", () => {
     await testRuntime.destroy();
   });
 
-  test("simple-prisma", async () => {
+  test('simple-prisma', async () => {
     const workUUID = uuidv1();
-    await expect(testRuntime.invoke(PrismaTestClass, workUUID).testTxn("test", "value")).resolves.toBe("test");
-    await expect(testRuntime.invoke(PrismaTestClass, workUUID).testTxn("test", "value")).resolves.toBe("test");
+    await expect(testRuntime.invoke(PrismaTestClass, workUUID).testTxn('test', 'value')).resolves.toBe('test');
+    await expect(testRuntime.invoke(PrismaTestClass, workUUID).testTxn('test', 'value')).resolves.toBe('test');
   });
 
-  test("prisma-duplicate-transaction", async () => {
+  test('prisma-duplicate-transaction', async () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
     let results = await Promise.allSettled([
-      testRuntime.invoke(PrismaTestClass, workUUID).testTxn("oaootest", "oaoovalue"),
-      testRuntime.invoke(PrismaTestClass, workUUID).testTxn("oaootest", "oaoovalue"),
+      testRuntime.invoke(PrismaTestClass, workUUID).testTxn('oaootest', 'oaoovalue'),
+      testRuntime.invoke(PrismaTestClass, workUUID).testTxn('oaootest', 'oaoovalue'),
     ]);
-    expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaootest");
-    expect((results[1] as PromiseFulfilledResult<string>).value).toBe("oaootest");
+    expect((results[0] as PromiseFulfilledResult<string>).value).toBe('oaootest');
+    expect((results[1] as PromiseFulfilledResult<string>).value).toBe('oaootest');
     expect(globalCnt).toBe(1);
 
     // Read-only transactions would execute twice.
     globalCnt = 0;
     const readUUID = uuidv1();
     results = await Promise.allSettled([
-      testRuntime.invoke(PrismaTestClass, readUUID).readTxn("oaootestread"),
-      testRuntime.invoke(PrismaTestClass, readUUID).readTxn("oaootestread"),
+      testRuntime.invoke(PrismaTestClass, readUUID).readTxn('oaootestread'),
+      testRuntime.invoke(PrismaTestClass, readUUID).readTxn('oaootestread'),
     ]);
-    expect((results[0] as PromiseFulfilledResult<string>).value).toBe("oaootestread");
-    expect((results[1] as PromiseFulfilledResult<string>).value).toBe("oaootestread");
+    expect((results[0] as PromiseFulfilledResult<string>).value).toBe('oaootestread');
+    expect((results[1] as PromiseFulfilledResult<string>).value).toBe('oaootestread');
     expect(globalCnt).toBeGreaterThanOrEqual(1);
   });
 
-  test("prisma-keyconflict", async () => {
+  test('prisma-keyconflict', async () => {
     // Test if we can get the correct Postgres error code from Prisma.
     // We must use query raw, otherwise, Prisma would convert the error to use its own error code.
     const workflowUUID1 = uuidv1();
     const workflowUUID2 = uuidv1();
     const results = await Promise.allSettled([
-      testRuntime.invoke(PrismaTestClass, workflowUUID1).conflictTxn("conflictkey", "test1"),
-      testRuntime.invoke(PrismaTestClass, workflowUUID2).conflictTxn("conflictkey", "test2"),
+      testRuntime.invoke(PrismaTestClass, workflowUUID1).conflictTxn('conflictkey', 'test1'),
+      testRuntime.invoke(PrismaTestClass, workflowUUID2).conflictTxn('conflictkey', 'test2'),
     ]);
-    const errorResult = results.find((result) => result.status === "rejected");
-    const err: PrismaClientKnownRequestError = (errorResult as PromiseRejectedResult).reason as PrismaClientKnownRequestError;
-    expect((err as unknown as PrismaPGError).meta.code).toBe("23505");
+    const errorResult = results.find((result) => result.status === 'rejected');
+    const err: PrismaClientKnownRequestError = (errorResult as PromiseRejectedResult)
+      .reason as PrismaClientKnownRequestError;
+    expect((err as unknown as PrismaPGError).meta.code).toBe('23505');
   });
 });
 
@@ -149,43 +150,41 @@ class PUserManager {
   @GetApi('/hello')
   @RequiredRole(['user'])
   static async hello(hCtxt: HandlerContext) {
-    return Promise.resolve({messge: "hello "+hCtxt.authenticatedUser});
+    return Promise.resolve({ messge: 'hello ' + hCtxt.authenticatedUser });
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
-    const cfg = ctx.getConfig<string>("shouldExist", "does not exist");
-    if (cfg !== "exists") {
-      throw Error("Auth is misconfigured.");
+    const cfg = ctx.getConfig<string>('shouldExist', 'does not exist');
+    if (cfg !== 'exists') {
+      throw Error('Auth is misconfigured.');
     }
     if (!ctx.requiredRole || !ctx.requiredRole.length) {
       return;
     }
-    const {user} = ctx.koaContext.query;
+    const { user } = ctx.koaContext.query;
     if (!user) {
-      throw new DBOSNotAuthorizedError("User not provided", 401);
+      throw new DBOSNotAuthorizedError('User not provided', 401);
     }
-    const u = await ctx.query(
-      (dbClient: PrismaClient, uname: string) => {
-        return dbClient.dbos_test_user.findFirst({
-          where: {
-            username: uname,
-          },
-        });
-      }, user as string
-      );
+    const u = await ctx.query((dbClient: PrismaClient, uname: string) => {
+      return dbClient.dbos_test_user.findFirst({
+        where: {
+          username: uname,
+        },
+      });
+    }, user as string);
 
     if (!u) {
-      throw new DBOSNotAuthorizedError("User does not exist", 403);
+      throw new DBOSNotAuthorizedError('User does not exist', 403);
     }
     ctx.logger.info(`Allowed in user: ${u.username}`);
     return {
       authenticatedUser: u.username,
-      authenticatedRoles: ["user"],
+      authenticatedRoles: ['user'],
     };
   }
 }
 
-describe("prisma-auth-tests", () => {
+describe('prisma-auth-tests', () => {
   let config: DBOSConfig;
   let testRuntime: TestingRuntime;
 
@@ -197,7 +196,9 @@ describe("prisma-auth-tests", () => {
   beforeEach(async () => {
     testRuntime = await createInternalTestRuntime([PUserManager], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
-    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`);
+    await testRuntime.queryUserDB(
+      `CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`,
+    );
   });
 
   afterEach(async () => {
@@ -205,19 +206,19 @@ describe("prisma-auth-tests", () => {
     await testRuntime.destroy();
   });
 
-  test("auth-prisma", async () => {
+  test('auth-prisma', async () => {
     // No user name
-    const response1 = await request(testRuntime.getHandlersCallback()).get("/hello");
+    const response1 = await request(testRuntime.getHandlersCallback()).get('/hello');
     expect(response1.statusCode).toBe(401);
 
     // User name doesn't exist
-    const response2 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
+    const response2 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
     expect(response2.statusCode).toBe(403);
 
-    const response3 = await request(testRuntime.getHandlersCallback()).post("/register").send({uname: "paul"});
+    const response3 = await request(testRuntime.getHandlersCallback()).post('/register').send({ uname: 'paul' });
     expect(response3.statusCode).toBe(200);
 
-    const response4 = await request(testRuntime.getHandlersCallback()).get("/hello?user=paul");
+    const response4 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
     expect(response4.statusCode).toBe(200);
   });
 });

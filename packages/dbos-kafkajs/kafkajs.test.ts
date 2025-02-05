@@ -8,19 +8,11 @@ import {
   WorkflowQueue,
   configureInstance,
   createTestingRuntime,
-} from "@dbos-inc/dbos-sdk";
+} from '@dbos-inc/dbos-sdk';
 
-import {
-  KafkaConfig,
-  Kafka,
-  KafkaConsume,
-  logLevel,
-  KafkaProduceStep,
-  KafkaMessage,
-  Partitioners,
-} from "./index";
+import { KafkaConfig, Kafka, KafkaConsume, logLevel, KafkaProduceStep, KafkaMessage, Partitioners } from './index';
 
-import { Knex } from "knex";
+import { Knex } from 'knex';
 
 // These tests require local Kafka to run.
 // Without it, they're automatically skipped.
@@ -46,26 +38,27 @@ services:
         KAFKA_CFG_LISTENERS: 'CONTROLLER://:29093,PLAINTEXT_HOST://:9092,PLAINTEXT://:19092'
         KAFKA_CFG_INTER_BROKER_LISTENER_NAME: 'PLAINTEXT'
         KAFKA_CFG_CONTROLLER_LISTENER_NAMES: 'CONTROLLER'
-`
+`;
 
 const kafkaConfig: KafkaConfig = {
   clientId: 'dbos-kafka-test',
   brokers: [`${process.env['KAFKA_BROKER'] ?? 'localhost:9092'}`],
   requestTimeout: 100, // FOR TESTING
-  retry: { // FOR TESTING
-    retries: 5
+  retry: {
+    // FOR TESTING
+    retries: 5,
   },
   logLevel: logLevel.NOTHING, // FOR TESTING
-}
+};
 
-const wfq = new WorkflowQueue("kafkaq", 2);
+const wfq = new WorkflowQueue('kafkaq', 2);
 
 const txnTopic = 'dbos-test-txn-topic';
-const txnMessage = 'dbos-txn'
+const txnMessage = 'dbos-txn';
 let txnCounter = 0;
 
 const wfTopic = 'dbos-test-wf-topic';
-const wfMessage = 'dbos-wf'
+const wfMessage = 'dbos-wf';
 let wfCounter = 0;
 
 const patternTopic = new RegExp(/dbos-test-.*/);
@@ -74,7 +67,7 @@ let patternTopicCounter = 0;
 const arrayTopics = [txnTopic, new RegExp(/dbos-test-wf-topic/)];
 let arrayTopicsCounter = 0;
 
-describe("kafka-tests", () => {
+describe('kafka-tests', () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let kafkaIsAvailable = true;
   let wfKafkaCfg: KafkaProduceStep | undefined = undefined;
@@ -95,10 +88,10 @@ describe("kafka-tests", () => {
     if (kafkaIsAvailable) {
       // This would normally be a global or static or something
       wfKafkaCfg = configureInstance(KafkaProduceStep, 'wfKafka', kafkaConfig, wfTopic, {
-        createPartitioner: Partitioners.DefaultPartitioner
+        createPartitioner: Partitioners.DefaultPartitioner,
       });
       txKafkaCfg = configureInstance(KafkaProduceStep, 'txKafka', kafkaConfig, txnTopic, {
-        createPartitioner: Partitioners.DefaultPartitioner
+        createPartitioner: Partitioners.DefaultPartitioner,
       });
       testRuntime = await createTestingRuntime(undefined, 'kafkajs-test-dbos-config.yaml');
     }
@@ -112,15 +105,15 @@ describe("kafka-tests", () => {
     }
   }, 30000);
 
-  test("txn-kafka", async () => {
+  test('txn-kafka', async () => {
     if (!kafkaIsAvailable) {
-      console.log("Kafka unavailable, skipping Kafka tests")
-      return
+      console.log('Kafka unavailable, skipping Kafka tests');
+      return;
     }
 
     // Send messages
-    await testRuntime?.invoke(txKafkaCfg!).sendMessage({value: txnMessage}); // v1 API
-    await wfKafkaCfg!.send({value: wfMessage}); // v2 API
+    await testRuntime?.invoke(txKafkaCfg!).sendMessage({ value: txnMessage }); // v1 API
+    await wfKafkaCfg!.send({ value: wfMessage }); // v2 API
 
     // Check that both messages are consumed
     await DBOSTestClass.txnPromise;
@@ -136,7 +129,6 @@ describe("kafka-tests", () => {
 
 @Kafka(kafkaConfig)
 class DBOSTestClass {
-
   static txnResolve: () => void;
   static txnPromise = new Promise<void>((r) => {
     DBOSTestClass.txnResolve = r;
@@ -182,7 +174,7 @@ class DBOSTestClass {
   static async testConsumeTopicsByPattern(topic: string, _partition: number, message: KafkaMessage) {
     const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
     const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
-    if ( isWfMessage || isTxnMessage ) {
+    if (isWfMessage || isTxnMessage) {
       patternTopicCounter = patternTopicCounter + 1;
       if (patternTopicCounter === 2) {
         DBOSTestClass.patternTopicResolve();
@@ -193,10 +185,15 @@ class DBOSTestClass {
 
   @KafkaConsume(arrayTopics)
   @Workflow()
-  static async testConsumeTopicsArray(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+  static async testConsumeTopicsArray(
+    _ctxt: WorkflowContext,
+    topic: string,
+    _partition: number,
+    message: KafkaMessage,
+  ) {
     const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
     const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
-    if ( isWfMessage || isTxnMessage ) {
+    if (isWfMessage || isTxnMessage) {
       arrayTopicsCounter = arrayTopicsCounter + 1;
       if (arrayTopicsCounter === 2) {
         DBOSTestClass.arrayTopicsResolve();
