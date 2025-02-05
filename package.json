@@ -92,7 +92,6 @@
     "koa": "^2.15.0"
   },
   "lint-staged": {
-    "*.js": "eslint --cache --fix",
-    "*.{js,ts}": "prettier --write"
+    "*.{js,jsx,ts,tsx,json,css,scss,md}": "prettier --write"
   }
 }
