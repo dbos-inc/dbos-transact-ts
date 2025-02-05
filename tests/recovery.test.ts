@@ -114,19 +114,34 @@ describe('recovery-tests', () => {
     expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
 
     // Verify a direct invocation errors
-    await expect(testRuntime.invokeWorkflow(LocalRecovery, handle.workflowID).deadLetterWorkflow()).rejects.toThrow(
+    await expect(testRuntime.startWorkflow(LocalRecovery, handle.workflowID).deadLetterWorkflow()).rejects.toThrow(
       DBOSDeadLetterQueueError,
     );
 
+    // Resume the workflow. Verify it returns to PENDING status without error and attempts are reset.
+    const resumedHandle = await dbosExec.resumeWorkflow(handle.workflowID);
+    result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
+      `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [handle.getWorkflowUUID()],
+    );
+    expect(result.rows[0].recovery_attempts).toBe(String(1));
+    expect(result.rows[0].status).toBe(StatusString.PENDING);
+
+    // Verify a direct invocation no longer errors
+    await expect(
+      testRuntime.startWorkflow(LocalRecovery, handle.workflowID).deadLetterWorkflow(),
+    ).resolves.toBeDefined();
+
+    // Complete the blocked workflow. Verify it succeeds with two attempts (the resumption and the direct invocation).
     LocalRecovery.deadLetterResolve();
     await handle.getResult();
-
+    await resumedHandle.getResult();
     await dbosExec.flushWorkflowBuffers();
     result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
     );
-    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
+    expect(result.rows[0].recovery_attempts).toBe(String(2));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
