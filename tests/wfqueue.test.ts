@@ -526,8 +526,7 @@ describe('queued-wf-tests-simple', () => {
     });
 
     // Resume a regular workflow. Verify it completes.
-    await DBOSExecutor.globalInstance?.systemDatabase.resumeWorkflow(wfid);
-    await DBOSExecutor.globalInstance?.executeWorkflowUUID(wfid, false);
+    await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
     await expect(regularHandle.getResult()).resolves.toBeNull();
 
     // Complete the blocked workflow. Verify the second regular workflow also completes.

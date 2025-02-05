@@ -1965,7 +1965,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async cancelWorkflow(workflowID: string): Promise<void> {
-    return await this.systemDatabase.cancelWorkflow(workflowID);
+    await this.systemDatabase.cancelWorkflow(workflowID);
+  }
+
+  async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
+    await this.systemDatabase.resumeWorkflow(workflowID);
+    return await this.executeWorkflowUUID(workflowID, false);
   }
 
   /* BACKGROUND PROCESSES */

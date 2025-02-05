@@ -246,12 +246,8 @@ export class DBOSHttpServer {
       // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
       const workflowId = koaCtxt.params.workflow_id;
       console.log(`Resuming workflow with ID: ${workflowId}`);
-      //eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
-      await dbosExec.systemDatabase.resumeWorkflow(workflowId);
-
       // eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
-      await dbosExec.executeWorkflowUUID(workflowId, false);
-
+      await dbosExec.resumeWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
