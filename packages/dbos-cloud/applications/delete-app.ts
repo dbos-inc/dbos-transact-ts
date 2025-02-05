@@ -1,11 +1,18 @@
-import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, retrieveApplicationName, sleepms } from "../cloudutils.js";
-import { Application } from "./types.js";
+import axios, { AxiosError } from 'axios';
+import {
+  isCloudAPIErrorResponse,
+  handleAPIErrors,
+  getCloudCredentials,
+  getLogger,
+  retrieveApplicationName,
+  sleepms,
+} from '../cloudutils.js';
+import { Application } from './types.js';
 
 export async function deleteApp(host: string, dropdb: boolean, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   appName = appName ?? retrieveApplicationName(logger);
   if (!appName) {
@@ -16,7 +23,7 @@ export async function deleteApp(host: string, dropdb: boolean, appName?: string)
   try {
     await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
       data: {
@@ -35,7 +42,7 @@ export async function deleteApp(host: string, dropdb: boolean, appName?: string)
         logger.info(`Waiting for ${appName} to be deleted`);
       }
       if (count > 180) {
-        logger.error("Application taking too long to be deleted");
+        logger.error('Application taking too long to be deleted');
         return 1;
       }
 

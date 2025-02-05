@@ -1,20 +1,17 @@
-import { FileRecord, DBOS_S3 } from "./s3_utils";
-import {
-    DBOS,
-} from "@dbos-inc/dbos-sdk";
+import { FileRecord, DBOS_S3 } from './s3_utils';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import FormData from 'form-data';
 import axios, { AxiosResponse } from 'axios';
-import { PresignedPost } from "@aws-sdk/s3-presigned-post";
+import { PresignedPost } from '@aws-sdk/s3-presigned-post';
 import { Readable } from 'stream';
 import * as fs from 'fs';
 import { v4 as uuidv4 } from 'uuid';
 
-enum FileStatus
-{
-    PENDING  = 'Pending',
-    RECEIVED = 'Received',
-    ACTIVE   = 'Active',
+enum FileStatus {
+  PENDING = 'Pending',
+  RECEIVED = 'Received',
+  ACTIVE = 'Active',
 }
 
 interface FileDetails {
@@ -42,22 +39,22 @@ class TestUserFileTable {
   // Pick a file ID
   @DBOS.step()
   static chooseFileRecord(details: FileDetails): Promise<UserFile> {
-      const rec: UserFile = {
-          user_id: details.user_id,
-          file_status: FileStatus.PENDING,
-          file_type: details.file_type,
-          file_id: uuidv4(),
-          file_name: details.file_name,
-          file_time: new Date().getTime(),
-          key: "",
-      };
-      rec.key = TestUserFileTable.createS3Key(rec);
-      return Promise.resolve(rec);
+    const rec: UserFile = {
+      user_id: details.user_id,
+      file_status: FileStatus.PENDING,
+      file_type: details.file_type,
+      file_id: uuidv4(),
+      file_name: details.file_name,
+      file_time: new Date().getTime(),
+      key: '',
+    };
+    rec.key = TestUserFileTable.createS3Key(rec);
+    return Promise.resolve(rec);
   }
 
   static createS3Key(rec: UserFile) {
-      const key = `${rec.file_type}/${rec.user_id}/${rec.file_id}/${rec.file_time}`;
-      return key;
+    const key = `${rec.file_type}/${rec.user_id}/${rec.file_id}/${rec.file_time}`;
+    return key;
   }
 
   static toFileDetails(rec: UserFile) {
@@ -70,60 +67,75 @@ class TestUserFileTable {
       file_time: rec.file_time,
     };
   }
-  
+
   // File table DML operations
   // Whole record is known
   @DBOS.transaction()
   static async insertFileRecord(rec: UserFile) {
-      await DBOS.knexClient<FileDetails>('user_files').insert(TestUserFileTable.toFileDetails(rec));
+    await DBOS.knexClient<FileDetails>('user_files').insert(TestUserFileTable.toFileDetails(rec));
   }
   @DBOS.transaction()
   static async updateFileRecord(rec: UserFile) {
-      await DBOS.knexClient<FileDetails>('user_files').update(TestUserFileTable.toFileDetails(rec)).where({file_id: rec.file_id});
+    await DBOS.knexClient<FileDetails>('user_files')
+      .update(TestUserFileTable.toFileDetails(rec))
+      .where({ file_id: rec.file_id });
   }
   // Delete when part of record is known
   @DBOS.transaction()
   static async deleteFileRecordById(file_id: string) {
-      await DBOS.knexClient<FileDetails>('user_files').delete().where({file_id});
+    await DBOS.knexClient<FileDetails>('user_files').delete().where({ file_id });
   }
 
   // Queries
-  @DBOS.transaction({readOnly: true})
+  @DBOS.transaction({ readOnly: true })
   static async lookUpByFields(fields: FileDetails) {
-      const rv = await DBOS.knexClient<FileDetails>('user_files').select().where({...fields, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
-      return rv ? [rv] : [];
+    const rv = await DBOS.knexClient<FileDetails>('user_files')
+      .select()
+      .where({ ...fields, file_status: FileStatus.ACTIVE })
+      .orderBy('file_time', 'desc')
+      .first();
+    return rv ? [rv] : [];
   }
-  @DBOS.transaction({readOnly: true})
+  @DBOS.transaction({ readOnly: true })
   static async lookUpByName(user_id: string, file_type: string, file_name: string) {
-      const rv = await DBOS.knexClient<FileDetails>('user_files').select().where({user_id, file_type, file_name, file_status: FileStatus.ACTIVE}).orderBy('file_time', 'desc').first();
-      return rv ? [rv] : [];
+    const rv = await DBOS.knexClient<FileDetails>('user_files')
+      .select()
+      .where({ user_id, file_type, file_name, file_status: FileStatus.ACTIVE })
+      .orderBy('file_time', 'desc')
+      .first();
+    return rv ? [rv] : [];
   }
-  @DBOS.transaction({readOnly: true})
+  @DBOS.transaction({ readOnly: true })
   static async lookUpByType(user_id: string, file_type: string) {
-      const rv = await DBOS.knexClient<FileDetails>('user_files').select().where({user_id, file_type, file_status: FileStatus.ACTIVE});
-      return rv;
+    const rv = await DBOS.knexClient<FileDetails>('user_files')
+      .select()
+      .where({ user_id, file_type, file_status: FileStatus.ACTIVE });
+    return rv;
   }
-  @DBOS.transaction({readOnly: true})
+  @DBOS.transaction({ readOnly: true })
   static async lookUpByUser(user_id: string) {
-      const rv = await DBOS.knexClient<FileDetails>('user_files').select().where({user_id, file_status: FileStatus.ACTIVE});
-      return rv;
+    const rv = await DBOS.knexClient<FileDetails>('user_files')
+      .select()
+      .where({ user_id, file_status: FileStatus.ACTIVE });
+    return rv;
   }
 }
 
-describe("ses-tests", () => {
+describe('ses-tests', () => {
   let s3IsAvailable = true;
-  let s3Cfg : DBOS_S3 | undefined = undefined;
+  let s3Cfg: DBOS_S3 | undefined = undefined;
 
   beforeAll(async () => {
     // Check if S3 is available and update app config, skip the test if it's not
-    if (!process.env['AWS_REGION'] || !process.env['S3_BUCKET'] ) {
+    if (!process.env['AWS_REGION'] || !process.env['S3_BUCKET']) {
       s3IsAvailable = false;
-      console.log("S3 Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET");
-    }
-    else {
+      console.log(
+        'S3 Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET',
+      );
+    } else {
       s3Cfg = DBOS.configureInstance(DBOS_S3, 'default', {
         awscfgname: 'aws_config',
-        bucket: "",
+        bucket: '',
         s3Callbacks: {
           newActiveFile: async (frec: unknown) => {
             const rec = frec as UserFile;
@@ -143,8 +155,8 @@ describe("ses-tests", () => {
           fileDeleted: async (frec: unknown) => {
             const rec = frec as UserFile;
             return await TestUserFileTable.deleteFileRecordById(rec.file_id);
-          }
-        }
+          },
+        },
       });
       await DBOS.launch();
       s3Cfg.config.bucket = DBOS.getConfig<string>('s3_bucket', 's3bucket');
@@ -157,14 +169,14 @@ describe("ses-tests", () => {
     }
   }, 10000);
 
-  test("s3-basic-ops", async () => {
+  test('s3-basic-ops', async () => {
     if (!s3IsAvailable) {
-      console.log("S3 unavailable, skipping S3 tests");
+      console.log('S3 unavailable, skipping S3 tests');
       return;
     }
 
     const fn = `filepath/FN_${new Date().toISOString()}`;
-    const putres = await s3Cfg!.put(fn, "Test string from DBOS");
+    const putres = await s3Cfg!.put(fn, 'Test string from DBOS');
     expect(putres).toBeDefined();
 
     const getres = await s3Cfg!.get(fn);
@@ -175,24 +187,23 @@ describe("ses-tests", () => {
     expect(delres).toBeDefined();
   });
 
-  test("s3-presgined-ops", async () => {
+  test('s3-presgined-ops', async () => {
     if (!s3IsAvailable) {
-      console.log("S3 unavailable, skipping S3 tests");
+      console.log('S3 unavailable, skipping S3 tests');
       return;
     }
-  
+
     const fn = `presigned_filepath/FN_${new Date().toISOString()}`;
 
-    const postres = await s3Cfg!.createPresignedPost(fn, 30, {contentType: 'text/plain'});
+    const postres = await s3Cfg!.createPresignedPost(fn, 30, { contentType: 'text/plain' });
     expect(postres).toBeDefined();
     try {
-        const res = await uploadToS3(postres, './src/s3_utils.test.ts');
-        expect(res.status.toString()[0]).toBe('2');
-    }
-    catch(e) {
-        // You do NOT want to accidentally serialize an AxiosError - they don't!
-        console.log("Caught something awful!", e);
-        expect(e).toBeUndefined();
+      const res = await uploadToS3(postres, './src/s3_utils.test.ts');
+      expect(res.status.toString()[0]).toBe('2');
+    } catch (e) {
+      // You do NOT want to accidentally serialize an AxiosError - they don't!
+      console.log('Caught something awful!', e);
+      expect(e).toBeUndefined();
     }
 
     // Make a fetch request to test it...
@@ -206,9 +217,9 @@ describe("ses-tests", () => {
     expect(delres).toBeDefined();
   });
 
-  test("s3-simple-wfs", async () => {
+  test('s3-simple-wfs', async () => {
     if (!s3IsAvailable) {
-      console.log("S3 unavailable, skipping S3 tests");
+      console.log('S3 unavailable, skipping S3 tests');
       return;
     }
 
@@ -216,16 +227,12 @@ describe("ses-tests", () => {
 
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
-    const myFile : FileDetails = {user_id: userid, file_type: 'text', file_name: 'mytextfile.txt'};
+    const myFile: FileDetails = { user_id: userid, file_type: 'text', file_name: 'mytextfile.txt' };
     const myFileRec = await TestUserFileTable.chooseFileRecord(myFile);
-    await s3Cfg!.saveStringToFile(
-      myFileRec, 'This is my file'
-    );
+    await s3Cfg!.saveStringToFile(myFileRec, 'This is my file');
 
     // Get the file contents out of DBOS (using the table index)
-    const mytxt = await s3Cfg!.readStringFromFile(
-      myFileRec
-    );
+    const mytxt = await s3Cfg!.readStringFromFile(myFileRec);
     expect(mytxt).toBe('This is my file');
 
     // Delete the file contents out of DBOS (using the table index)
@@ -233,9 +240,9 @@ describe("ses-tests", () => {
     expect(dfhandle).toBeDefined();
   });
 
-  test("s3-complex-wfs", async () => {
+  test('s3-complex-wfs', async () => {
     if (!s3IsAvailable) {
-      console.log("S3 unavailable, skipping S3 tests");
+      console.log('S3 unavailable, skipping S3 tests');
       return;
     }
 
@@ -245,30 +252,29 @@ describe("ses-tests", () => {
 
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
-    const myFile : FileDetails = {user_id: userid, file_type: 'text', file_name: 'mytextfile.txt'};
+    const myFile: FileDetails = { user_id: userid, file_type: 'text', file_name: 'mytextfile.txt' };
     const myFileRec = await TestUserFileTable.chooseFileRecord(myFile);
-    const wfhandle = await DBOS.startWorkflow(s3Cfg!).writeFileViaURL(myFileRec, 60, {contentType: 'text/plain'});
+    const wfhandle = await DBOS.startWorkflow(s3Cfg!).writeFileViaURL(myFileRec, 60, { contentType: 'text/plain' });
     //    Get the presigned post
-    const ppost = await DBOS.getEvent<PresignedPost>(wfhandle.workflowID, "uploadkey");
+    const ppost = await DBOS.getEvent<PresignedPost>(wfhandle.workflowID, 'uploadkey');
     //    Upload to the URL
     try {
-        const res = await uploadToS3(ppost!, './src/s3_utils.test.ts');
-        expect(res.status.toString()[0]).toBe('2');
-    }
-    catch(e) {
-        // You do NOT want to accidentally serialize an AxiosError - they don't!
-        console.log("Caught something awful!", e);
-        expect(e).toBeUndefined();
+      const res = await uploadToS3(ppost!, './src/s3_utils.test.ts');
+      expect(res.status.toString()[0]).toBe('2');
+    } catch (e) {
+      // You do NOT want to accidentally serialize an AxiosError - they don't!
+      console.log('Caught something awful!', e);
+      expect(e).toBeUndefined();
     }
     //    Notify WF
-    await DBOS.send<boolean>(wfhandle.workflowID, true, "uploadfinish");
+    await DBOS.send<boolean>(wfhandle.workflowID, true, 'uploadfinish');
 
     //    Wait for WF complete
     const _myFileRecord = await wfhandle.getResult();
 
     // Get the file out of DBOS (using a signed URL)
     const myurl = await s3Cfg!.getFileReadURL(myFileRec);
-    expect (myurl).not.toBeNull();
+    expect(myurl).not.toBeNull();
     // Get the file contents out of S3
     await downloadFromS3(myurl, './deleteme.xxx');
     expect(fs.existsSync('./deleteme.xxx')).toBeTruthy();
@@ -280,33 +286,33 @@ describe("ses-tests", () => {
     expect(dfhandle).toBeDefined();
   });
 
-    async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
-        const formData = new FormData();
+  async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
+    const formData = new FormData();
 
-        // Append all the fields from the presigned post data
-        Object.keys(presignedPostData.fields).forEach(key => {
-            formData.append(key, presignedPostData.fields[key]);
-        });
+    // Append all the fields from the presigned post data
+    Object.keys(presignedPostData.fields).forEach((key) => {
+      formData.append(key, presignedPostData.fields[key]);
+    });
 
-        // Append the file you want to upload
-        const fileStream = fs.createReadStream(filePath);
-        formData.append('file', fileStream);
+    // Append the file you want to upload
+    const fileStream = fs.createReadStream(filePath);
+    formData.append('file', fileStream);
 
-        return await axios.post(presignedPostData.url, formData);
-    }
+    return await axios.post(presignedPostData.url, formData);
+  }
 
-    async function downloadFromS3(presignedGetUrl: string, outputPath: string) {
-        const response: AxiosResponse<Readable> = await axios.get(presignedGetUrl, {
-        responseType: 'stream',  // Important to handle large files
-        });
+  async function downloadFromS3(presignedGetUrl: string, outputPath: string) {
+    const response: AxiosResponse<Readable> = await axios.get(presignedGetUrl, {
+      responseType: 'stream', // Important to handle large files
+    });
 
-        // Use a write stream to save the file to the desired path
-        const writer = fs.createWriteStream(outputPath);
-        response.data.pipe(writer);
+    // Use a write stream to save the file to the desired path
+    const writer = fs.createWriteStream(outputPath);
+    response.data.pipe(writer);
 
-        return new Promise((resolve, reject) => {
-        writer.on('finish', resolve);
-        writer.on('error', reject);
-        });
-    }
+    return new Promise((resolve, reject) => {
+      writer.on('finish', resolve);
+      writer.on('error', reject);
+    });
+  }
 });

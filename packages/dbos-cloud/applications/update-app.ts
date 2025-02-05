@@ -1,12 +1,24 @@
-import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, retrieveApplicationName, DBOSCloudCredentials } from "../cloudutils.js";
+import axios, { AxiosError } from 'axios';
+import {
+  handleAPIErrors,
+  getCloudCredentials,
+  getLogger,
+  isCloudAPIErrorResponse,
+  retrieveApplicationName,
+  DBOSCloudCredentials,
+} from '../cloudutils.js';
 
-export async function updateApp(host: string, appName?: string, executorsMemoryMib?: number, userCredentials?: DBOSCloudCredentials): Promise<number> {
+export async function updateApp(
+  host: string,
+  appName?: string,
+  executorsMemoryMib?: number,
+  userCredentials?: DBOSCloudCredentials,
+): Promise<number> {
   const logger = getLogger();
   if (!userCredentials) {
     userCredentials = await getCloudCredentials(host, logger);
   }
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   appName = appName || retrieveApplicationName(logger);
   if (!appName) {
@@ -22,10 +34,10 @@ export async function updateApp(host: string, appName?: string, executorsMemoryM
       },
       {
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: bearerToken,
         },
-      }
+      },
     );
     logger.info(`Successfully updated ${appName}!`);
     return 0;

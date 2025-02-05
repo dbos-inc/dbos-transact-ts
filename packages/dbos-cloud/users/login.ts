@@ -1,6 +1,13 @@
-import axios, { AxiosError } from "axios";
-import { DBOSCloudCredentials, UserProfile, getLogger, handleAPIErrors, isCloudAPIErrorResponse, writeCredentials } from "../cloudutils.js";
-import { AuthenticationResponse, authenticate, authenticateWithRefreshToken } from "./authentication.js";
+import axios, { AxiosError } from 'axios';
+import {
+  DBOSCloudCredentials,
+  UserProfile,
+  getLogger,
+  handleAPIErrors,
+  isCloudAPIErrorResponse,
+  writeCredentials,
+} from '../cloudutils.js';
+import { AuthenticationResponse, authenticate, authenticateWithRefreshToken } from './authentication.js';
 
 export async function login(host: string, getRefreshToken: boolean, useRefreshToken?: string): Promise<number> {
   const logger = getLogger();
@@ -13,11 +20,11 @@ export async function login(host: string, getRefreshToken: boolean, useRefreshTo
   if (authResponse === null) {
     return 1;
   }
-  const bearerToken = "Bearer " + authResponse.token;
+  const bearerToken = 'Bearer ' + authResponse.token;
   try {
     const response = await axios.get(`https://${host}/v1alpha1/user/profile`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });

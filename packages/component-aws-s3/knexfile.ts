@@ -1,8 +1,8 @@
 import { Knex } from 'knex';
-import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config'
+import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config';
 import { DBOSConfig } from '@dbos-inc/dbos-sdk/dist/src/dbos-executor';
 
-const [dbosConfig, ]: [DBOSConfig, unknown] = parseConfigFile();
+const [dbosConfig]: [DBOSConfig, unknown] = parseConfigFile();
 
 const config: Knex.Config = {
   client: 'pg',
@@ -14,8 +14,8 @@ const config: Knex.Config = {
     ssl: dbosConfig.poolConfig.ssl,
   },
   migrations: {
-    directory: './migrations'
-  }
+    directory: './migrations',
+  },
 };
 
 export default config;

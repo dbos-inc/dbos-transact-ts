@@ -1,11 +1,11 @@
-import axios, { AxiosError } from "axios";
-import { getLogger, getCloudCredentials, isCloudAPIErrorResponse, handleAPIErrors } from "../cloudutils.js";
-import open from "open";
+import axios, { AxiosError } from 'axios';
+import { getLogger, getCloudCredentials, isCloudAPIErrorResponse, handleAPIErrors } from '../cloudutils.js';
+import open from 'open';
 
 export async function launchDashboard(host: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
   try {
     logger.warn(`'dashboard launch' is a deprecated command; use 'dashboard url' instead.`);
     const res = await axios.put(
@@ -13,13 +13,13 @@ export async function launchDashboard(host: string): Promise<number> {
       {},
       {
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: bearerToken,
         },
-      }
+      },
     );
     logger.info(`Dashboard ready at ${res.data}`);
-    if (typeof res.data === "string") {
+    if (typeof res.data === 'string') {
       try {
         await open(res.data);
       } catch (error) {
@@ -42,16 +42,16 @@ export async function launchDashboard(host: string): Promise<number> {
 export async function getDashboardURL(host: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
   try {
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/dashboard`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
     logger.info(`Dashboard URL is ${res.data}`);
-    if (typeof res.data === "string") {
+    if (typeof res.data === 'string') {
       try {
         await open(res.data);
       } catch (error) {
@@ -75,11 +75,11 @@ export async function getDashboardURL(host: string): Promise<number> {
 export async function deleteDashboard(host: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
   try {
     await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/dashboard`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });

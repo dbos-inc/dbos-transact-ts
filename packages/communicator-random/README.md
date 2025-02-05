@@ -7,9 +7,11 @@ The reason that random number generation should be wrapped in a `@DBOS.step` is 
 ## Available Functions
 
 ### `DBOSRandom.random()`
+
 `DBOSRandom.random` is a wrapper for `Math.random()` and similarly produces a `number` in the range from 0 to 1.
 
 ## Next Steps
+
 - To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
 - For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).

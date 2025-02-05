@@ -1,7 +1,7 @@
-import { Knex } from "knex";
+import { Knex } from 'knex';
 
 export async function up(knex: Knex): Promise<void> {
-  await knex.schema.createTable('user_files', table => {
+  await knex.schema.createTable('user_files', (table) => {
     table.uuid('file_id').primary();
     table.uuid('user_id'); //.index().references("cusers.user_id");
     table.string('file_status', 16);

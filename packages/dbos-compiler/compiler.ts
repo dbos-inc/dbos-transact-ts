@@ -6,7 +6,7 @@ export type CompileResult = {
   methods: CompileMethodInfo[];
 };
 
-export type IsolationLevel = "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
+export type IsolationLevel = 'READ UNCOMMITTED' | 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE';
 export interface StoredProcedureConfig {
   isolationLevel?: IsolationLevel;
   readOnly?: boolean;
@@ -15,70 +15,75 @@ export interface StoredProcedureConfig {
 }
 
 function hasError(diags: readonly tsm.ts.Diagnostic[]) {
-  return diags.some(diag => diag.category === tsm.ts.DiagnosticCategory.Error);
+  return diags.some((diag) => diag.category === tsm.ts.DiagnosticCategory.Error);
 }
 
-export function compile(configFileOrProject: string | tsm.Project, suppressWarnings: boolean = false): CompileResult | undefined {
+export function compile(
+  configFileOrProject: string | tsm.Project,
+  suppressWarnings: boolean = false,
+): CompileResult | undefined {
   const diags = new Array<tsm.ts.Diagnostic>();
   try {
-    const project = typeof configFileOrProject === 'string'
-      ? new tsm.Project({
-        tsConfigFilePath: configFileOrProject,
-        compilerOptions: {
-          sourceMap: false,
-          declaration: false,
-          declarationMap: false,
-        }
-      })
-      : configFileOrProject;
+    const project =
+      typeof configFileOrProject === 'string'
+        ? new tsm.Project({
+            tsConfigFilePath: configFileOrProject,
+            compilerOptions: {
+              sourceMap: false,
+              declaration: false,
+              declarationMap: false,
+            },
+          })
+        : configFileOrProject;
 
     // remove test files
     for (const sourceFile of project.getSourceFiles()) {
-      if (sourceFile.getBaseName().endsWith(".test.ts")) {
+      if (sourceFile.getBaseName().endsWith('.test.ts')) {
         sourceFile.delete();
       }
     }
 
-    diags.push(...project.getPreEmitDiagnostics().map(d => d.compilerObject));
-    if (hasError(diags)) { return undefined; }
+    diags.push(...project.getPreEmitDiagnostics().map((d) => d.compilerObject));
+    if (hasError(diags)) {
+      return undefined;
+    }
 
     treeShake(project);
 
-    const methods = project.getSourceFiles()
+    const methods = project
+      .getSourceFiles()
       .flatMap(getProcMethods)
       .map(([m, v]) => [m, getStoredProcConfig(m, v)] as const);
 
     diags.push(...checkStoredProcNames(methods.map(([m]) => m)));
     diags.push(...checkStoredProcConfig(methods, false));
 
-    if (hasError(diags)) { return undefined; }
+    if (hasError(diags)) {
+      return undefined;
+    }
 
     deAsync(project);
     removeDecorators(project);
 
-    return { project, methods }
+    return { project, methods };
   } finally {
     printDiagnostics(diags, suppressWarnings);
   }
 }
 
 interface DiagnosticOptions {
-  code?: number,
-  node?: tsm.Node,
-  endNode?: tsm.Node,
-  category?: tsm.ts.DiagnosticCategory
-};
+  code?: number;
+  node?: tsm.Node;
+  endNode?: tsm.Node;
+  category?: tsm.ts.DiagnosticCategory;
+}
 
 function createDiagnostic(messageText: string, options?: DiagnosticOptions): tsm.ts.Diagnostic {
   const node = options?.node;
   const endNode = options?.endNode;
   const category = options?.category ?? tsm.ts.DiagnosticCategory.Error;
   const code = options?.code ?? 0;
-  const length = node
-    ? endNode
-      ? endNode.getEnd() - node.getPos()
-      : node.getEnd() - node.getPos()
-    : undefined;
+  const length = node ? (endNode ? endNode.getEnd() - node.getPos() : node.getEnd() - node.getPos()) : undefined;
 
   return {
     category,
@@ -94,13 +99,11 @@ function printDiagnostics(diags: readonly tsm.ts.Diagnostic[], suppressWarnings:
   const formatHost: tsm.ts.FormatDiagnosticsHost = {
     getCurrentDirectory: () => tsm.ts.sys.getCurrentDirectory(),
     getNewLine: () => tsm.ts.sys.newLine,
-    getCanonicalFileName: (fileName: string) => tsm.ts.sys.useCaseSensitiveFileNames
-      ? fileName : fileName.toLowerCase()
-  }
+    getCanonicalFileName: (fileName: string) =>
+      tsm.ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase(),
+  };
 
-  const $diags = suppressWarnings
-    ? diags.filter(diag => diag.category !== tsm.ts.DiagnosticCategory.Warning)
-    : diags;
+  const $diags = suppressWarnings ? diags.filter((diag) => diag.category !== tsm.ts.DiagnosticCategory.Warning) : diags;
 
   const msg = tsm.ts.formatDiagnosticsWithColorAndContext($diags, formatHost);
   console.log(msg);
@@ -111,19 +114,32 @@ export function checkStoredProcNames(methods: readonly tsm.MethodDeclaration[]):
   for (const method of methods) {
     const $class = method.getParentIfKind(tsm.SyntaxKind.ClassDeclaration);
     if (!$class) {
-      diags.push(createDiagnostic("Stored procedure method must be a static method of a class", { node: method, category: tsm.ts.DiagnosticCategory.Error }));
+      diags.push(
+        createDiagnostic('Stored procedure method must be a static method of a class', {
+          node: method,
+          category: tsm.ts.DiagnosticCategory.Error,
+        }),
+      );
     }
 
-    const className = $class?.getName() ?? "";
+    const className = $class?.getName() ?? '';
     const methodName = method.getName();
     if (className.length + methodName.length > 48) {
-      diags.push(createDiagnostic("Stored procedure class and method names combined must not be longer that 48 characters", { node: method, category: tsm.ts.DiagnosticCategory.Error }));
+      diags.push(
+        createDiagnostic('Stored procedure class and method names combined must not be longer that 48 characters', {
+          node: method,
+          category: tsm.ts.DiagnosticCategory.Error,
+        }),
+      );
     }
   }
   return diags;
 }
 
-export function checkStoredProcConfig(methods: readonly CompileMethodInfo[], error: boolean = false): readonly tsm.ts.Diagnostic[] {
+export function checkStoredProcConfig(
+  methods: readonly CompileMethodInfo[],
+  error: boolean = false,
+): readonly tsm.ts.Diagnostic[] {
   const category = error ? tsm.ts.DiagnosticCategory.Error : tsm.ts.DiagnosticCategory.Warning;
   const diags = new Array<tsm.ts.Diagnostic>();
   for (const [method, config] of methods) {
@@ -139,7 +155,7 @@ export function checkStoredProcConfig(methods: readonly CompileMethodInfo[], err
   function getStoredProcDecorator(method: tsm.MethodDeclaration) {
     for (const decorator of method.getDecorators()) {
       const info = getDbosDecoratorInfo(decorator);
-      if (info?.kind === "storedProcedure") {
+      if (info?.kind === 'storedProcedure') {
         return decorator;
       }
     }
@@ -152,7 +168,9 @@ export function removeDbosMethods(file: tsm.SourceFile) {
       traversal.skip();
       for (const method of node.getStaticMethods()) {
         const info = getDbosMethodInfo(method);
-        if (!info) { continue; }
+        if (!info) {
+          continue;
+        }
         switch (info.kind) {
           case 'workflow':
           case 'step':
@@ -197,7 +215,9 @@ function getProcMethodDeclarations(file: tsm.SourceFile) {
   for (const [method, _version] of getProcMethods(file)) {
     declSet.add(method);
     const parent = method.getParentIfKind(tsm.SyntaxKind.ClassDeclaration);
-    if (parent) { declSet.add(parent); }
+    if (parent) {
+      declSet.add(parent);
+    }
   }
 
   while (true) {
@@ -206,31 +226,34 @@ function getProcMethodDeclarations(file: tsm.SourceFile) {
       switch (true) {
         case tsm.Node.isFunctionDeclaration(decl):
         case tsm.Node.isMethodDeclaration(decl): {
-          decl.getBody()?.forEachDescendant(node => {
+          decl.getBody()?.forEachDescendant((node) => {
             if (tsm.Node.isIdentifier(node)) {
               const _name = node.getSymbol()?.getName();
               const nodeDecls = node.getSymbol()?.getDeclarations() ?? [];
-              nodeDecls.forEach(decl => declSet.add(decl));
+              nodeDecls.forEach((decl) => declSet.add(decl));
             }
-          })
+          });
         }
       }
     }
-    if (declSet.size === size) { break; }
+    if (declSet.size === size) {
+      break;
+    }
   }
 
   return declSet;
 }
 
 function shakeFile(file: tsm.SourceFile) {
-
   removeDbosMethods(file);
 
   const txDecls = getProcMethodDeclarations(file);
 
   file.forEachDescendant((node, traverse) => {
     if (tsm.Node.isExportable(node)) {
-      if (node.isExported()) { return; }
+      if (node.isExported()) {
+        return;
+      }
     }
     if (tsm.Node.isMethodDeclaration(node)) {
       traverse.skip();
@@ -250,12 +273,12 @@ function shakeFile(file: tsm.SourceFile) {
         }
         break;
     }
-  })
+  });
 }
 
 export function removeDecorators(file: tsm.SourceFile | tsm.Project) {
   if (tsm.Node.isNode(file)) {
-    file.forEachDescendant(node => {
+    file.forEachDescendant((node) => {
       if (tsm.Node.isDecorator(node)) {
         node.remove();
       }
@@ -281,12 +304,14 @@ export function removeUnusedFiles(project: tsm.Project) {
   const procImports = new Set<tsm.SourceFile>();
   for (const file of procFiles) {
     procImports.add(file);
-    file.forEachDescendant(node => {
+    file.forEachDescendant((node) => {
       if (tsm.Node.isImportDeclaration(node)) {
         const moduleFile = node.getModuleSpecifierSourceFile();
-        if (moduleFile) { procImports.add(moduleFile); }
+        if (moduleFile) {
+          procImports.add(moduleFile);
+        }
       }
-    })
+    });
   }
 
   // remove all files that don't have @StoredProcedure methods and are not
@@ -299,7 +324,6 @@ export function removeUnusedFiles(project: tsm.Project) {
 }
 
 function treeShake(project: tsm.Project) {
-
   removeUnusedFiles(project);
 
   // delete all workflow/step/init/handler methods
@@ -311,16 +335,16 @@ function treeShake(project: tsm.Project) {
 function deAsync(project: tsm.Project) {
   // pass: remove async from transaction method declaration and remove await keywords
   for (const sourceFile of project.getSourceFiles()) {
-    sourceFile.forEachChild(node => {
+    sourceFile.forEachChild((node) => {
       if (tsm.Node.isClassDeclaration(node)) {
         for (const method of node.getStaticMethods()) {
-          const info = getDbosMethodInfo(method)
+          const info = getDbosMethodInfo(method);
           if (info?.kind === 'storedProcedure') {
             method.setIsAsync(false);
-            method.getBody()?.transform(traversal => {
+            method.getBody()?.transform((traversal) => {
               const node = traversal.visitChildren();
               return tsm.ts.isAwaitExpression(node) ? node.expression : node;
-            })
+            });
           }
         }
       }
@@ -330,9 +354,11 @@ function deAsync(project: tsm.Project) {
 
 // can be removed once TS 5.5 is released
 // https://devblogs.microsoft.com/typescript/announcing-typescript-5-5-beta/#inferred-type-predicates
-function isValid<T>(value: T | null | undefined): value is T { return !!value; }
+function isValid<T>(value: T | null | undefined): value is T {
+  return !!value;
+}
 
-type DbosDecoratorKind = "handler" | "storedProcedure" | "transaction" | "workflow" | "step" | "initializer";
+type DbosDecoratorKind = 'handler' | 'storedProcedure' | 'transaction' | 'workflow' | 'step' | 'initializer';
 type DbosDecoratorVersion = 1 | 2;
 
 interface DbosDecoratorInfo {
@@ -343,12 +369,17 @@ interface DbosDecoratorInfo {
 export function getImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {
   const symbol = node?.getSymbol();
   if (symbol) {
-    const importSpecifiers = symbol.getDeclarations()
-      .map(n => n.asKind(tsm.ts.SyntaxKind.ImportSpecifier))
+    const importSpecifiers = symbol
+      .getDeclarations()
+      .map((n) => n.asKind(tsm.ts.SyntaxKind.ImportSpecifier))
       .filter(isValid);
 
-    if (importSpecifiers.length === 1) { return importSpecifiers[0]; }
-    if (importSpecifiers.length > 1) { throw new Error("Too many import specifiers"); }
+    if (importSpecifiers.length === 1) {
+      return importSpecifiers[0];
+    }
+    if (importSpecifiers.length > 1) {
+      throw new Error('Too many import specifiers');
+    }
   }
 
   return undefined;
@@ -356,11 +387,13 @@ export function getImportSpecifier(node: tsm.Identifier | undefined): tsm.Import
 
 function isDbosImport(node: tsm.ImportSpecifier): boolean {
   const modSpec = node.getImportDeclaration().getModuleSpecifier();
-  return modSpec.getLiteralText() === "@dbos-inc/dbos-sdk";
+  return modSpec.getLiteralText() === '@dbos-inc/dbos-sdk';
 }
 
 function getDbosDecoratorInfo(node: tsm.Decorator): DbosDecoratorInfo | undefined {
-  if (!node.isDecoratorFactory()) { return undefined; }
+  if (!node.isDecoratorFactory()) {
+    return undefined;
+  }
 
   const expr = node.getCallExpressionOrThrow().getExpression();
 
@@ -369,7 +402,9 @@ function getDbosDecoratorInfo(node: tsm.Decorator): DbosDecoratorInfo | undefine
     const impSpec = getImportSpecifier(expr);
     if (impSpec && isDbosImport(impSpec)) {
       const kind = getImportSpecifierStructureKind(impSpec.getStructure());
-      if (kind) { return { kind, version: 1 }; }
+      if (kind) {
+        return { kind, version: 1 };
+      }
     }
   }
 
@@ -378,53 +413,60 @@ function getDbosDecoratorInfo(node: tsm.Decorator): DbosDecoratorInfo | undefine
     const impSpec = getImportSpecifier(expr.getExpressionIfKind(tsm.SyntaxKind.Identifier));
     if (impSpec && isDbosImport(impSpec)) {
       const { name } = impSpec.getStructure();
-      if (name === "DBOS") {
+      if (name === 'DBOS') {
         const kind = getPropertyAccessExpressionKind(expr);
-        if (kind) { return { kind, version: 2 }; }
+        if (kind) {
+          return { kind, version: 2 };
+        }
       }
     }
   }
 
   return undefined;
 
-  function getImportSpecifierStructureKind(
-    { name }: tsm.ImportSpecifierStructure
-  ): DbosDecoratorKind | undefined {
+  function getImportSpecifierStructureKind({ name }: tsm.ImportSpecifierStructure): DbosDecoratorKind | undefined {
     switch (name) {
-      case "GetApi":
-      case "PostApi":
-      case "PutApi":
-      case "PatchApi":
-      case "DeleteApi":
-        return "handler";
-      case "StoredProcedure": return "storedProcedure";
-      case "Transaction": return "transaction";
-      case "Workflow": return "workflow";
-      case "Communicator":
-      case "Step":
-        return "step";
-      case "DBOSInitializer":
-      case "DBOSDeploy":
-        return "initializer";
-      default: return undefined;
+      case 'GetApi':
+      case 'PostApi':
+      case 'PutApi':
+      case 'PatchApi':
+      case 'DeleteApi':
+        return 'handler';
+      case 'StoredProcedure':
+        return 'storedProcedure';
+      case 'Transaction':
+        return 'transaction';
+      case 'Workflow':
+        return 'workflow';
+      case 'Communicator':
+      case 'Step':
+        return 'step';
+      case 'DBOSInitializer':
+      case 'DBOSDeploy':
+        return 'initializer';
+      default:
+        return undefined;
     }
   }
 
-  function getPropertyAccessExpressionKind(
-    node: tsm.PropertyAccessExpression
-  ): DbosDecoratorKind | undefined {
+  function getPropertyAccessExpressionKind(node: tsm.PropertyAccessExpression): DbosDecoratorKind | undefined {
     switch (node.getName()) {
-      case "getApi":
-      case "postApi":
-      case "putApi":
-      case "patchApi":
-      case "deleteApi":
-        return "handler";
-      case "workflow": return "workflow";
-      case "transaction": return "transaction";
-      case "step": return "step";
-      case "storedProcedure": return "storedProcedure";
-      default: return undefined;
+      case 'getApi':
+      case 'postApi':
+      case 'putApi':
+      case 'patchApi':
+      case 'deleteApi':
+        return 'handler';
+      case 'workflow':
+        return 'workflow';
+      case 'transaction':
+        return 'transaction';
+      case 'step':
+        return 'step';
+      case 'storedProcedure':
+        return 'storedProcedure';
+      default:
+        return undefined;
     }
   }
 }
@@ -438,17 +480,19 @@ export function getDbosMethodInfo(node: tsm.MethodDeclaration): DbosDecoratorInf
   let handlerVersion: DbosDecoratorVersion | undefined = undefined;
   for (const decorator of node.getDecorators()) {
     const info = getDbosDecoratorInfo(decorator);
-    if (!info) { continue; }
+    if (!info) {
+      continue;
+    }
     switch (info.kind) {
-      case "storedProcedure":
-      case "transaction":
-      case "workflow":
-      case "step":
-      case "initializer":
+      case 'storedProcedure':
+      case 'transaction':
+      case 'workflow':
+      case 'step':
+      case 'initializer':
         return info;
-      case "handler":
+      case 'handler':
         if (handlerVersion !== undefined) {
-          throw new Error("Multiple handler decorators");
+          throw new Error('Multiple handler decorators');
         }
         handlerVersion = info.version;
         break;
@@ -459,20 +503,23 @@ export function getDbosMethodInfo(node: tsm.MethodDeclaration): DbosDecoratorInf
       }
     }
   }
-  return handlerVersion
-    ? { kind: "handler", version: handlerVersion }
-    : undefined;
+  return handlerVersion ? { kind: 'handler', version: handlerVersion } : undefined;
 }
 
 export type DecoratorArgument = boolean | string | number | DecoratorArgument[] | Record<string, unknown>;
 
 export function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
   switch (true) {
-    case tsm.Node.isTrueLiteral(node): return true;
-    case tsm.Node.isFalseLiteral(node): return false;
-    case tsm.Node.isStringLiteral(node): return node.getLiteralValue();
-    case tsm.Node.isNumericLiteral(node): return node.getLiteralValue();
-    case tsm.Node.isArrayLiteralExpression(node): return node.getElements().map(parseDecoratorArgument);
+    case tsm.Node.isTrueLiteral(node):
+      return true;
+    case tsm.Node.isFalseLiteral(node):
+      return false;
+    case tsm.Node.isStringLiteral(node):
+      return node.getLiteralValue();
+    case tsm.Node.isNumericLiteral(node):
+      return node.getLiteralValue();
+    case tsm.Node.isArrayLiteralExpression(node):
+      return node.getElements().map(parseDecoratorArgument);
     case tsm.Node.isObjectLiteralExpression(node): {
       const obj: Record<string, unknown> = {};
       const props = node.getProperties().map(parseProperty);
@@ -501,14 +548,16 @@ export function parseDecoratorArgument(node: tsm.Node): DecoratorArgument {
 
 export function getStoredProcConfig(node: tsm.MethodDeclaration, version: DbosDecoratorVersion): StoredProcedureConfig {
   const decorators = node.getDecorators();
-  const procDecorator = decorators.find(d => {
+  const procDecorator = decorators.find((d) => {
     const info = getDbosDecoratorInfo(d);
-    return info?.kind === "storedProcedure";
+    return info?.kind === 'storedProcedure';
   });
-  if (!procDecorator) { throw new Error("Missing StoredProcedure decorator"); }
+  if (!procDecorator) {
+    throw new Error('Missing StoredProcedure decorator');
+  }
 
   const arg0 = procDecorator.getCallExpression()?.getArguments()[0] ?? undefined;
-  const configArg = arg0 ? parseDecoratorArgument(arg0) as Partial<StoredProcedureConfig> : undefined;
+  const configArg = arg0 ? (parseDecoratorArgument(arg0) as Partial<StoredProcedureConfig>) : undefined;
   const readOnly = configArg?.readOnly;
   const executeLocally = configArg?.executeLocally;
   const isolationLevel = configArg?.isolationLevel;

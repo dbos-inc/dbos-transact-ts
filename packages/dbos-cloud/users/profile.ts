@@ -1,15 +1,21 @@
-import axios, { AxiosError } from "axios";
-import { handleAPIErrors, getCloudCredentials, getLogger, isCloudAPIErrorResponse, UserProfile } from "../cloudutils.js";
+import axios, { AxiosError } from 'axios';
+import {
+  handleAPIErrors,
+  getCloudCredentials,
+  getLogger,
+  isCloudAPIErrorResponse,
+  UserProfile,
+} from '../cloudutils.js';
 
 export async function profile(host: string, json: boolean): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   try {
     const res = await axios.get(`https://${host}/v1alpha1/user/profile`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });

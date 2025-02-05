@@ -1,5 +1,5 @@
-import { readFileSync, writeFileSync } from "fs";
-import YAML from "yaml";
+import { readFileSync, writeFileSync } from 'fs';
+import YAML from 'yaml';
 
 // A stripped-down interface containing only the fields the cloud console needs to manipulate.
 export interface ConfigFile {
@@ -17,7 +17,7 @@ export interface ConfigFile {
 
 export function loadConfigFile(configFilePath: string): ConfigFile {
   try {
-    const configFileContent = readFileSync(configFilePath, "utf8");
+    const configFileContent = readFileSync(configFilePath, 'utf8');
     const configFile = YAML.parse(configFileContent) as ConfigFile;
     return configFile;
   } catch (e) {

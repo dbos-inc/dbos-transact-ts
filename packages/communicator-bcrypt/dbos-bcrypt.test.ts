@@ -1,4 +1,4 @@
-import { BcryptStep, BcryptCommunicator } from ".";
+import { BcryptStep, BcryptCommunicator } from '.';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 describe('bcryptWrapper', () => {
@@ -29,7 +29,7 @@ describe('bcryptWrapper', () => {
   });
 
   it('should hash a password', async () => {
-    hashedPassword = "";
+    hashedPassword = '';
     hashedPassword = await DBOS.invoke(BcryptCommunicator).bcryptHash(password);
     expect(hashedPassword).toBeDefined();
     expect(typeof hashedPassword).toBe('string');
@@ -43,5 +43,5 @@ describe('bcryptWrapper', () => {
   it('should not verify an incorrect password', async () => {
     const isValid = await BcryptCommunicator.bcryptCompare('wrongPassword', hashedPassword);
     expect(isValid).toBe(false);
-  })
+  });
 });

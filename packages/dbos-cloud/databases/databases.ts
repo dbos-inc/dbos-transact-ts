@@ -1,31 +1,53 @@
-import axios, { AxiosError } from "axios";
-import { isCloudAPIErrorResponse, handleAPIErrors, getCloudCredentials, getLogger, sleepms, dbosConfigFilePath, DBOSCloudCredentials } from "../cloudutils.js";
-import { Logger } from "winston";
-import { ConfigFile, loadConfigFile, writeConfigFile } from "../configutils.js";
-import { copyFileSync, existsSync } from "fs";
-import { UserDBInstance } from "../applications/types.js";
-import { input, select } from "@inquirer/prompts";
-import promptSync from "prompt-sync";
-
+import axios, { AxiosError } from 'axios';
+import {
+  isCloudAPIErrorResponse,
+  handleAPIErrors,
+  getCloudCredentials,
+  getLogger,
+  sleepms,
+  dbosConfigFilePath,
+  DBOSCloudCredentials,
+} from '../cloudutils.js';
+import { Logger } from 'winston';
+import { ConfigFile, loadConfigFile, writeConfigFile } from '../configutils.js';
+import { copyFileSync, existsSync } from 'fs';
+import { UserDBInstance } from '../applications/types.js';
+import { input, select } from '@inquirer/prompts';
+import promptSync from 'prompt-sync';
 
 function isValidPassword(logger: Logger, password: string): boolean {
   if (password.length < 8 || password.length > 128) {
-    logger.error("Invalid database password. Passwords must be between 8 and 128 characters long");
+    logger.error('Invalid database password. Passwords must be between 8 and 128 characters long');
     return false;
   }
-  if (password.includes("/") || password.includes('"') || password.includes("@") || password.includes(" ") || password.includes("'")) {
-    logger.error("Password contains invalid character. Passwords can contain any ASCII character except @, /, \\, \", ', and spaces");
+  if (
+    password.includes('/') ||
+    password.includes('"') ||
+    password.includes('@') ||
+    password.includes(' ') ||
+    password.includes("'")
+  ) {
+    logger.error(
+      'Password contains invalid character. Passwords can contain any ASCII character except @, /, \\, ", \', and spaces',
+    );
     return false;
   }
   return true;
 }
 
-export async function createUserDb(host: string, dbName: string, appDBUsername: string, appDBPassword: string, sync: boolean, userCredentials?: DBOSCloudCredentials) {
+export async function createUserDb(
+  host: string,
+  dbName: string,
+  appDBUsername: string,
+  appDBPassword: string,
+  sync: boolean,
+  userCredentials?: DBOSCloudCredentials,
+) {
   const logger = getLogger();
   if (!userCredentials) {
     userCredentials = await getCloudCredentials(host, logger);
   }
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   if (!isValidPassword(logger, appDBPassword)) {
     return 1;
@@ -37,18 +59,18 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
       { Name: dbName, AdminName: appDBUsername, AdminPassword: appDBPassword },
       {
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: bearerToken,
         },
-      }
+      },
     );
 
     logger.info(`Successfully started provisioning database: ${dbName}`);
 
     if (sync) {
-      let status = "";
-      while (status !== "available" && status !== "backing-up") {
-        if (status === "") {
+      let status = '';
+      while (status !== 'available' && status !== 'backing-up') {
+        if (status === '') {
           await sleepms(5000); // First time sleep 5 sec
         } else {
           await sleepms(30000); // Otherwise, sleep 30 sec
@@ -72,34 +94,47 @@ export async function createUserDb(host: string, dbName: string, appDBUsername: 
   }
 }
 
-export async function linkUserDB(host: string, dbName: string, hostName: string, port: number, dbPassword: string, enableTimetravel: boolean, supabaseReference: string | undefined) {
+export async function linkUserDB(
+  host: string,
+  dbName: string,
+  hostName: string,
+  port: number,
+  dbPassword: string,
+  enableTimetravel: boolean,
+  supabaseReference: string | undefined,
+) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   if (!isValidPassword(logger, dbPassword)) {
     return 1;
   }
 
-  let data = {}
+  let data = {};
   if (supabaseReference === undefined) {
-    data = { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel}
+    data = { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel };
   } else {
-    data = { Name: dbName, HostName: hostName, Port: port, Password: dbPassword, captureProvenance: enableTimetravel, supabaseReference: supabaseReference }
+    data = {
+      Name: dbName,
+      HostName: hostName,
+      Port: port,
+      Password: dbPassword,
+      captureProvenance: enableTimetravel,
+      supabaseReference: supabaseReference,
+    };
   }
 
-  logger.info(`Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel} Supabase Reference: ${supabaseReference}`);
+  logger.info(
+    `Linking Postgres instance ${dbName} to DBOS Cloud. Hostname: ${hostName} Port: ${port} Time travel: ${enableTimetravel} Supabase Reference: ${supabaseReference}`,
+  );
   try {
-    await axios.post(
-      `https://${host}/v1alpha1/${userCredentials.organization}/databases/byod`,
-      data,
-      {
-        headers: {
-          "Content-Type": "application/json",
-          Authorization: bearerToken,
-        },
-      }
-    );
+    await axios.post(`https://${host}/v1alpha1/${userCredentials.organization}/databases/byod`, data, {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: bearerToken,
+      },
+    });
 
     logger.info(`Database successfully linked!`);
     return 0;
@@ -118,12 +153,12 @@ export async function linkUserDB(host: string, dbName: string, hostName: string,
 export async function deleteUserDb(host: string, dbName: string) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   try {
     await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/${dbName}`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
@@ -144,12 +179,12 @@ export async function deleteUserDb(host: string, dbName: string) {
 export async function unlinkUserDB(host: string, dbName: string) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   try {
     await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/databases/byod/${dbName}`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
@@ -199,11 +234,11 @@ export async function listUserDB(host: string, json: boolean) {
 
   try {
     const userCredentials = await getCloudCredentials(host, logger);
-    const bearerToken = "Bearer " + userCredentials.token;
+    const bearerToken = 'Bearer ' + userCredentials.token;
 
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
@@ -213,7 +248,7 @@ export async function listUserDB(host: string, json: boolean) {
       console.log(JSON.stringify(userDBs));
     } else {
       if (userDBs.length === 0) {
-        logger.info("No database instances found");
+        logger.info('No database instances found');
       }
       userDBs.forEach((userDBInfo) => {
         console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
@@ -236,19 +271,26 @@ export async function listUserDB(host: string, json: boolean) {
   }
 }
 
-async function getUserDBInfo(host: string, dbName: string, userCredentials?: DBOSCloudCredentials): Promise<UserDBInstance> {
+async function getUserDBInfo(
+  host: string,
+  dbName: string,
+  userCredentials?: DBOSCloudCredentials,
+): Promise<UserDBInstance> {
   const logger = getLogger();
   if (!userCredentials) {
     userCredentials = await getCloudCredentials(host, logger);
   }
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
-  const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/info/${dbName}`, {
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: bearerToken,
+  const res = await axios.get(
+    `https://${host}/v1alpha1/${userCredentials.organization}/databases/userdb/info/${dbName}`,
+    {
+      headers: {
+        'Content-Type': 'application/json',
+        Authorization: bearerToken,
+      },
     },
-  });
+  );
 
   return res.data as UserDBInstance;
 }
@@ -257,28 +299,30 @@ export async function resetDBCredentials(host: string, dbName: string | undefine
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
 
-  dbName = await chooseAppDBServer(logger, host, userCredentials, dbName)
-  if (dbName === "") {
-    return 1
+  dbName = await chooseAppDBServer(logger, host, userCredentials, dbName);
+  if (dbName === '') {
+    return 1;
   }
 
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   try {
     const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
 
     if (userDBInfo.IsLinked) {
       if (userDBInfo.SupabaseReference !== null) {
-        logger.error("The DBOS CLI cannot reset the password of your Supabase database. Please reset it from your Supabase dashboard.")
+        logger.error(
+          'The DBOS CLI cannot reset the password of your Supabase database. Please reset it from your Supabase dashboard.',
+        );
       } else {
-        logger.error("Error: You cannot reset the password of a linked database from the DBOS CLI.");
+        logger.error('Error: You cannot reset the password of a linked database from the DBOS CLI.');
       }
       return 1;
     }
 
     const prompt = promptSync({ sigint: true });
     if (!appDBPassword) {
-      appDBPassword = prompt("Database Password (must contain at least 8 characters): ", { echo: "*" });
+      appDBPassword = prompt('Database Password (must contain at least 8 characters): ', { echo: '*' });
     }
     if (!isValidPassword(logger, appDBPassword)) {
       return 1;
@@ -289,10 +333,10 @@ export async function resetDBCredentials(host: string, dbName: string | undefine
       { Password: appDBPassword },
       {
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: bearerToken,
         },
-      }
+      },
     );
     logger.info(`Successfully reset user password for database: ${dbName}`);
     return 0;
@@ -308,10 +352,16 @@ export async function resetDBCredentials(host: string, dbName: string | undefine
   }
 }
 
-export async function restoreUserDB(host: string, dbName: string, targetName: string, restoreTime: string, sync: boolean) {
+export async function restoreUserDB(
+  host: string,
+  dbName: string,
+  targetName: string,
+  restoreTime: string,
+  sync: boolean,
+) {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
 
   try {
     await axios.post(
@@ -319,17 +369,19 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
       { RestoreName: targetName, RestoreTimestamp: restoreTime },
       {
         headers: {
-          "Content-Type": "application/json",
+          'Content-Type': 'application/json',
           Authorization: bearerToken,
         },
-      }
+      },
     );
-    logger.info(`Successfully started restoring database: ${dbName}! New database name: ${targetName}, restore time: ${restoreTime}`);
+    logger.info(
+      `Successfully started restoring database: ${dbName}! New database name: ${targetName}, restore time: ${restoreTime}`,
+    );
 
     if (sync) {
-      let status = "";
-      while (status !== "available" && status !== "backing-up") {
-        if (status === "") {
+      let status = '';
+      while (status !== 'available' && status !== 'backing-up') {
+        if (status === '') {
           await sleepms(5000); // First time sleep 5 sec
         } else {
           await sleepms(30000); // Otherwise, sleep 30 sec
@@ -353,18 +405,23 @@ export async function restoreUserDB(host: string, dbName: string, targetName: st
   }
 }
 
-export async function connect(host: string, dbName: string | undefined, password: string | undefined, local_suffix: boolean) {
+export async function connect(
+  host: string,
+  dbName: string | undefined,
+  password: string | undefined,
+  local_suffix: boolean,
+) {
   const logger = getLogger();
 
   const userCredentials = await getCloudCredentials(host, logger);
 
-  dbName = await chooseAppDBServer(logger, host, userCredentials, dbName)
-  if (dbName === "") {
-    return 1
+  dbName = await chooseAppDBServer(logger, host, userCredentials, dbName);
+  if (dbName === '') {
+    return 1;
   }
 
   try {
-    if(!existsSync(dbosConfigFilePath)) {
+    if (!existsSync(dbosConfigFilePath)) {
       logger.error(`Error: ${dbosConfigFilePath} not found`);
       return 1;
     }
@@ -373,16 +430,16 @@ export async function connect(host: string, dbName: string | undefined, password
     logger.info(`Backing up ${dbosConfigFilePath} to ${backupConfigFilePath}`);
     copyFileSync(dbosConfigFilePath, backupConfigFilePath);
 
-    logger.info("Retrieving cloud database info...");
+    logger.info('Retrieving cloud database info...');
     const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
     const isSupabase = userDBInfo.SupabaseReference !== null;
 
     const prompt = promptSync({ sigint: true });
     if (!password) {
       if (isSupabase) {
-        password = prompt("Enter Supabase Database Password: ", { echo: "*" });
+        password = prompt('Enter Supabase Database Password: ', { echo: '*' });
       } else {
-        password = prompt("Enter Database Password: ", { echo: "*" });
+        password = prompt('Enter Database Password: ', { echo: '*' });
       }
     }
 
@@ -394,7 +451,7 @@ export async function connect(host: string, dbName: string | undefined, password
     console.log(`Database Username: ${databaseUsername}`);
     console.log(`Status: ${userDBInfo.Status}`);
 
-    logger.info(`Loading cloud database connection information into ${dbosConfigFilePath}...`)
+    logger.info(`Loading cloud database connection information into ${dbosConfigFilePath}...`);
     const config: ConfigFile = loadConfigFile(dbosConfigFilePath);
     config.database.hostname = userDBInfo.HostName;
     config.database.port = userDBInfo.Port;
@@ -402,7 +459,7 @@ export async function connect(host: string, dbName: string | undefined, password
     config.database.password = password;
     config.database.local_suffix = local_suffix;
     writeConfigFile(config, dbosConfigFilePath);
-    logger.info(`Cloud database connection information loaded into ${dbosConfigFilePath}`)
+    logger.info(`Cloud database connection information loaded into ${dbosConfigFilePath}`);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to retrieve database record ${dbName}`;
@@ -416,14 +473,19 @@ export async function connect(host: string, dbName: string | undefined, password
   }
 }
 
-export async function chooseAppDBServer(logger: Logger, host: string, userCredentials: DBOSCloudCredentials, userDBName: string = ""): Promise<string> {
+export async function chooseAppDBServer(
+  logger: Logger,
+  host: string,
+  userCredentials: DBOSCloudCredentials,
+  userDBName: string = '',
+): Promise<string> {
   // List existing database instances.
   let userDBs: UserDBInstance[] = [];
-  const bearerToken = "Bearer " + userCredentials.token;
+  const bearerToken = 'Bearer ' + userCredentials.token;
   try {
     const res = await axios.get(`https://${host}/v1alpha1/${userCredentials.organization}/databases`, {
       headers: {
-        "Content-Type": "application/json",
+        'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
     });
@@ -436,7 +498,7 @@ export async function chooseAppDBServer(logger: Logger, host: string, userCreden
     } else {
       logger.error(`${errorLabel}: ${(e as Error).message}`);
     }
-    return "";
+    return '';
   }
 
   if (userDBName) {
@@ -450,9 +512,9 @@ export async function chooseAppDBServer(logger: Logger, host: string, userCreden
   if (userDBName || userDBs.length === 0) {
     // If not, prompt the user to provision one.
     if (!userDBName) {
-      logger.info("No database found, provisioning a database instance (server)...");
+      logger.info('No database found, provisioning a database instance (server)...');
       userDBName = await input({
-        message: "Database instance name?",
+        message: 'Database instance name?',
         default: `${userCredentials.userName}-db-server`,
       });
     } else {
@@ -460,16 +522,16 @@ export async function chooseAppDBServer(logger: Logger, host: string, userCreden
     }
 
     // Use a default user name and auto generated password.
-    const appDBUserName = "dbos_user";
-    const appDBPassword = Buffer.from(Math.random().toString()).toString("base64");
+    const appDBUserName = 'dbos_user';
+    const appDBPassword = Buffer.from(Math.random().toString()).toString('base64');
     const res = await createUserDb(host, userDBName, appDBUserName, appDBPassword, true);
     if (res !== 0) {
-      return "";
+      return '';
     }
   } else if (userDBs.length > 1) {
     // If there is more than one database instances, prompt the user to select one.
     userDBName = await select({
-      message: "Choose a database instance for this app:",
+      message: 'Choose a database instance for this app:',
       choices: userDBs.map((db) => ({
         name: db.PostgresInstanceName,
         value: db.PostgresInstanceName,

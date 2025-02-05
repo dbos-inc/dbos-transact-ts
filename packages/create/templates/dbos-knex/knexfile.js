@@ -1,6 +1,6 @@
 const { parseConfigFile } = require('@dbos-inc/dbos-sdk');
 
-const [dbosConfig, ] = parseConfigFile();
+const [dbosConfig] = parseConfigFile();
 
 const config = {
   client: 'pg',
@@ -13,8 +13,8 @@ const config = {
     ssl: dbosConfig.poolConfig.ssl,
   },
   migrations: {
-    directory: './migrations'
-  }
+    directory: './migrations',
+  },
 };
 
 module.exports = config;
