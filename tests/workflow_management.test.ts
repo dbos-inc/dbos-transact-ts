@@ -435,6 +435,20 @@ describe('test-list-queues', () => {
     }
 
     let input: GetWorkflowsInput = {};
+    let output: unknown[] = [];
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+
+    input = {
+      workflowName: 'blockingTask',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+    input = {
+      workflowName: 'no',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(0);
 
     TestListQueues.event.set();
     await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
