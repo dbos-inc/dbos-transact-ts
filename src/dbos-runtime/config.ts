@@ -131,16 +131,16 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     }
   }
   configFile.database.hostname =
-    process.env.DBOS_DBHOST ?? configFile.database.hostname ?? databaseConnection.hostname ?? 'localhost';
+    process.env.DBOS_DBHOST || configFile.database.hostname || databaseConnection.hostname || 'localhost';
   const dbos_dbport = process.env.DBOS_DBPORT ? parseInt(process.env.DBOS_DBPORT) : undefined;
-  configFile.database.port = dbos_dbport ?? configFile.database.port ?? databaseConnection.port ?? 5432;
+  configFile.database.port = dbos_dbport || configFile.database.port || databaseConnection.port || 5432;
   configFile.database.username =
-    process.env.DBOS_DBUSER ?? configFile.database.username ?? databaseConnection.username ?? 'postgres';
+    process.env.DBOS_DBUSER || configFile.database.username || databaseConnection.username || 'postgres';
   configFile.database.password =
-    process.env.DBOS_DBPASSWORD ??
-    configFile.database.password ??
-    databaseConnection.password ??
-    process.env.PGPASSWORD ??
+    process.env.DBOS_DBPASSWORD ||
+    configFile.database.password ||
+    databaseConnection.password ||
+    process.env.PGPASSWORD ||
     'dbos';
   const dbos_dblocalsuffix = process.env.DBOS_DBLOCALSUFFIX ? process.env.DBOS_DBLOCALSUFFIX === 'true' : undefined;
   configFile.database.local_suffix =
