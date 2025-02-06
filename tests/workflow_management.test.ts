@@ -28,6 +28,7 @@ import {
 import { Client } from 'pg';
 import { Knex } from 'knex';
 import { v4 as uuidv4 } from 'uuid';
+import { GetQueuedWorkflowsInput } from '../src/workflow';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -434,11 +435,12 @@ describe('test-list-queues', () => {
       await e.wait();
     }
 
-    let input: GetWorkflowsInput = {};
+    let input: GetQueuedWorkflowsInput = {};
     let output: unknown[] = [];
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
 
+    // Test workflowName
     input = {
       workflowName: 'blockingTask',
     };
@@ -449,6 +451,50 @@ describe('test-list-queues', () => {
     };
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
+
+    // Test startTime and endTime
+    input = {
+      startTime: new Date(Date.now() - 10000).toISOString(),
+      endTime: new Date(Date.now()).toISOString(),
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+    input = {
+      startTime: new Date(Date.now() + 10000).toISOString(),
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(0);
+
+    // Test status
+    input = {
+      status: 'PENDING',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+    input = {
+      status: 'SUCCESS',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(0);
+
+    // Test queue name
+    input = {
+      queueName: TestListQueues.queue.name,
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+    input = {
+      queueName: 'no',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(0);
+
+    // Test limit
+    input = {
+      limit: 5,
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(input.limit);
 
     TestListQueues.event.set();
     await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
