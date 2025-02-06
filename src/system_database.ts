@@ -62,6 +62,8 @@ export interface SystemDatabase {
     status: (typeof StatusString)[keyof typeof StatusString],
     resetRecoveryAttempts: boolean,
   ): Promise<void>;
+  cancelWorkflow(workflowID: string): Promise<void>;
+  resumeWorkflow(workflowID: string): Promise<void>;
 
   enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
@@ -908,6 +910,78 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET recovery_attempts=0 WHERE workflow_uuid=$1`,
         [workflowUUID],
       );
+    }
+  }
+
+  async cancelWorkflow(workflowUUID: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Remove workflow from queues table
+      await client.query(
+        `DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue 
+         WHERE workflow_uuid = $1`,
+        [workflowUUID],
+      );
+
+      await client.query(
+        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
+         SET status = $1 
+         WHERE workflow_uuid = $2`,
+        [StatusString.CANCELLED, workflowUUID],
+      );
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async resumeWorkflow(workflowUUID: string): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      // Check workflow status. If it is complete, do nothing.
+      const statusResult = await client.query<workflow_status>(
+        `SELECT status FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status 
+         WHERE workflow_uuid = $1`,
+        [workflowUUID],
+      );
+      if (
+        statusResult.rows.length === 0 ||
+        statusResult.rows[0].status === StatusString.SUCCESS ||
+        statusResult.rows[0].status === StatusString.ERROR
+      ) {
+        await client.query('COMMIT');
+        return;
+      }
+
+      // Remove the workflow from the queues table so resume can safely be called on an ENQUEUED workflow
+      await client.query(
+        `DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue 
+         WHERE workflow_uuid = $1`,
+        [workflowUUID],
+      );
+
+      // Update status to pending and reset recovery attempts
+      await client.query(
+        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
+         SET status = $1, recovery_attempts = 0 
+         WHERE workflow_uuid = $2`,
+        [StatusString.PENDING, workflowUUID],
+      );
+
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
   }
 

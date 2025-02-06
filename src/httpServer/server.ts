@@ -5,7 +5,7 @@ import cors from '@koa/cors';
 import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
-import { Workflow, StatusString } from '../workflow';
+import { Workflow } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../error';
 import { DBOSExecutor } from '../dbos-executor';
 import { GlobalLogger as Logger } from '../telemetry/logs';
@@ -223,11 +223,9 @@ export class DBOSHttpServer {
   static registerCancelWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const workflowCancelUrl = '/workflows/:workflow_id/cancel';
     const workflowCancelHandler = async (koaCtxt: Koa.Context) => {
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const workflowId = koaCtxt.params.workflow_id;
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       console.log(`Cancelling workflow with ID: ${workflowId}`);
-      //eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.CANCELLED, false);
+      await dbosExec.cancelWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowCancelUrl, workflowCancelHandler);
@@ -243,15 +241,9 @@ export class DBOSHttpServer {
   static registerResumeWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const workflowResumeUrl = '/workflows/:workflow_id/resume';
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const workflowId = koaCtxt.params.workflow_id;
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       console.log(`Resuming workflow with ID: ${workflowId}`);
-      //eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
-      await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, true);
-
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
-      await dbosExec.executeWorkflowUUID(workflowId, false);
-
+      await dbosExec.resumeWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
@@ -267,13 +259,9 @@ export class DBOSHttpServer {
   static registerRestartWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const workflowResumeUrl = '/workflows/:workflow_id/restart';
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const workflowId = koaCtxt.params.workflow_id;
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       console.log(`Restarting workflow: ${workflowId} with a new id`);
-
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
       await dbosExec.executeWorkflowUUID(workflowId, true);
-
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);

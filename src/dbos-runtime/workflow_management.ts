@@ -77,7 +77,7 @@ export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
     createLogger() as unknown as GlobalLogger,
   );
   try {
-    await systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false);
+    await systemDatabase.cancelWorkflow(workflowUUID);
   } finally {
     await systemDatabase.destroy();
   }
@@ -96,7 +96,7 @@ export async function reattemptWorkflow(
   try {
     await dbosExec.init();
     if (!startNewWorkflow) {
-      await dbosExec.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
+      await dbosExec.systemDatabase.resumeWorkflow(workflowUUID);
     }
     const handle = await dbosExec.executeWorkflowUUID(workflowUUID, startNewWorkflow);
     const output = await handle.getResult();

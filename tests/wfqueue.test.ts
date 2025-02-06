@@ -1,6 +1,6 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import { WorkflowQueue } from '../src';
 import { v4 as uuidv4 } from 'uuid';
 import { sleepms } from '../src/utils';
@@ -387,6 +387,172 @@ describe('queued-wf-tests-simple', () => {
     // Call with a different input would generate a warning, but still use the recorded input.
     const handle3 = await DBOS.startWorkflow(TestDuplicateID, { workflowID: wfid }).testWorkflow('def');
     await expect(handle3.getResult()).resolves.toBe('abc');
+  });
+
+  class TestQueueRecovery {
+    static queuedSteps = 5;
+    static event = new Event();
+    static taskEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
+    static taskCount = 0;
+    static queue = new WorkflowQueue('testQueueRecovery');
+
+    @DBOS.workflow()
+    static async testWorkflow() {
+      const handles = [];
+      for (let i = 0; i < TestQueueRecovery.queuedSteps; i++) {
+        const h = await DBOS.startWorkflow(TestQueueRecovery, { queueName: queue.name }).blockingTask(i);
+        handles.push(h);
+      }
+      return Promise.all(handles.map((h) => h.getResult()));
+    }
+
+    @DBOS.workflow()
+    static async blockingTask(i: number) {
+      TestQueueRecovery.taskEvents[i].set();
+      TestQueueRecovery.taskCount++;
+      await TestQueueRecovery.event.wait();
+      return i;
+    }
+  }
+
+  test('test-queue-recovery', async () => {
+    const wfid = uuidv4();
+
+    // Start the workflow. Wait for all five tasks to start. Verify that they started.
+    const originalHandle = await DBOS.startWorkflow(TestQueueRecovery, { workflowID: wfid }).testWorkflow();
+    for (const e of TestQueueRecovery.taskEvents) {
+      await e.wait();
+    }
+    expect(TestQueueRecovery.taskCount).toEqual(5);
+
+    // Recover the workflow, then resume it. There should be one handle for the workflow and another for each task.
+    const recoveryHandles = await DBOS.recoverPendingWorkflows();
+    expect(recoveryHandles.length).toBe(TestQueueRecovery.queuedSteps + 1);
+    TestQueueRecovery.event.set();
+
+    // Verify both the recovered and original workflows complete correctly
+    for (const h of recoveryHandles) {
+      if (h.workflowID === wfid) {
+        await expect(h.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
+      }
+    }
+    await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
+
+    // Each task should start twice, once originally and once in recovery
+    expect(TestQueueRecovery.taskCount).toEqual(10);
+
+    // Verify all queue entries eventually get cleaned up
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  });
+
+  class TestCancelQueues {
+    static startEvent = new Event();
+    static blockingEvent = new Event();
+    static queue = new WorkflowQueue('TestCancelQueues', { concurrency: 1 });
+
+    @DBOS.workflow()
+    static async stuckWorkflow() {
+      TestCancelQueues.startEvent.set();
+      await TestCancelQueues.blockingEvent.wait();
+    }
+
+    @DBOS.workflow()
+    static async regularWorkflow() {
+      return Promise.resolve();
+    }
+  }
+
+  test('test-cancel-queues', async () => {
+    const wfid = uuidv4();
+
+    // Enqueue the blocked and regular workflow on a queue with concurrency 1
+    const blockedHandle = await DBOS.startWorkflow(TestCancelQueues, {
+      workflowID: wfid,
+      queueName: TestCancelQueues.queue.name,
+    }).stuckWorkflow();
+    const regularHandle = await DBOS.startWorkflow(TestCancelQueues, {
+      queueName: TestCancelQueues.queue.name,
+    }).regularWorkflow();
+
+    // Verify the blocked workflow starts and is PENDING while the regular workflow remains ENQUEUED
+    await TestCancelQueues.startEvent.wait();
+    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+    });
+    await expect(regularHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+
+    // Cancel the blocked workflow. Verify the regular workflow runs.
+    await DBOSExecutor.globalInstance?.cancelWorkflow(wfid);
+    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+    });
+    await expect(regularHandle.getResult()).resolves.toBeNull();
+
+    // Complete the blocked workflow
+    TestCancelQueues.blockingEvent.set();
+    await expect(blockedHandle.getResult()).resolves.toBeNull();
+
+    // Verify all queue entries eventually get cleaned up
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  });
+
+  class TestResumeQueues {
+    static startEvent = new Event();
+    static blockingEvent = new Event();
+    static queue = new WorkflowQueue('TestResumeQueues', { concurrency: 1 });
+
+    @DBOS.workflow()
+    static async stuckWorkflow() {
+      TestResumeQueues.startEvent.set();
+      await TestResumeQueues.blockingEvent.wait();
+    }
+
+    @DBOS.workflow()
+    static async regularWorkflow() {
+      return Promise.resolve();
+    }
+  }
+
+  test('test-resume-queues', async () => {
+    const wfid = uuidv4();
+
+    // Enqueue the blocked and regular workflow on a queue with concurrency 1
+    const blockedHandle = await DBOS.startWorkflow(TestResumeQueues, {
+      queueName: TestResumeQueues.queue.name,
+    }).stuckWorkflow();
+    const regularHandle = await DBOS.startWorkflow(TestResumeQueues, {
+      workflowID: wfid,
+      queueName: TestResumeQueues.queue.name,
+    }).regularWorkflow();
+    const regularHandleTwo = await DBOS.startWorkflow(TestResumeQueues, {
+      queueName: TestResumeQueues.queue.name,
+    }).regularWorkflow();
+
+    // Verify the blocked workflow starts and is PENDING while the regular workflows remain ENQUEUED
+    await TestResumeQueues.startEvent.wait();
+    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+    });
+    await expect(regularHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+    await expect(regularHandleTwo.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+
+    // Resume a regular workflow. Verify it completes.
+    await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
+    await expect(regularHandle.getResult()).resolves.toBeNull();
+
+    // Complete the blocked workflow. Verify the second regular workflow also completes.
+    TestResumeQueues.blockingEvent.set();
+    await expect(blockedHandle.getResult()).resolves.toBeNull();
+    await expect(regularHandleTwo.getResult()).resolves.toBeNull();
+
+    // Verify all queue entries eventually get cleaned up
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
 });
 
