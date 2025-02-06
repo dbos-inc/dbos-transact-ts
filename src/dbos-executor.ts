@@ -198,7 +198,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   static readonly defaultNotificationTimeoutSec = 60;
 
   readonly debugMode: boolean;
-  readonly debugProxy: string | undefined;
   static systemDBSchemaName = 'dbos';
 
   readonly logger: Logger;
@@ -222,7 +221,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     systemDatabase?: SystemDatabase,
   ) {
     this.debugMode = config.debugMode ?? false;
-    this.debugProxy = config.debugProxy;
 
     // Set configured environment variables
     if (config.env) {
@@ -247,17 +245,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     if (this.debugMode) {
       this.logger.info('Running in debug mode!');
-      if (this.debugProxy) {
-        try {
-          const url = new URL(this.config.debugProxy!);
-          this.config.poolConfig.host = url.hostname;
-          this.config.poolConfig.port = parseInt(url.port, 10);
-          this.logger.info(`Debugging mode proxy: ${this.config.poolConfig.host}:${this.config.poolConfig.port}`);
-        } catch (err) {
-          this.logger.error(err);
-          throw err;
-        }
-      }
     }
 
     this.procedurePool = new Pool(this.config.poolConfig);
@@ -416,7 +403,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.debug(`Loaded ${length} ORM entities`);
       }
 
-      await createDBIfDoesNotExist(this.config.poolConfig, this.logger);
+      if (!this.debugMode) {
+        await createDBIfDoesNotExist(this.config.poolConfig, this.logger);
+      }
       this.configureDbClient();
 
       if (!this.userDatabase) {
