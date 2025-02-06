@@ -1790,19 +1790,20 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSDebuggerError('Cannot recover pending workflows in debug mode.');
     }
 
-    const pendingWorkflows: string[] = [];
+    const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       if (execID === 'local' && process.env.DBOS__VMID) {
         this.logger.debug(`Skip local recovery because it's running in a VM: ${process.env.DBOS__VMID}`);
         continue;
       }
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const foundPendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID);
+      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID);
       // Re-enqueue workflows member of a queue
-      for (const pendingWorkflow of foundPendingWorkflows) {
+      for (const pendingWorkflow of pendingWorkflows) {
         this.logger.debug(
           `Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`,
         );
+        // If the workflow is member of a queue, re-enqueue it.
         if (pendingWorkflow.queueName) {
           try {
             await this.systemDatabase.clearQueueAssignment(pendingWorkflow.workflowUUID);
@@ -1814,21 +1815,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
               );
               continue;
             } else {
-              throw new DBOSWorkflowRecoveryError(pendingWorkflow.workflowUUID, (e as Error).message);
+              this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
             }
           }
+          handlerArray.push(await this.retrieveWorkflow(pendingWorkflow.workflowUUID));
         } else {
-          pendingWorkflows.push(pendingWorkflow.workflowUUID);
+          try {
+            handlerArray.push(await this.executeWorkflowUUID(pendingWorkflow.workflowUUID));
+          } catch (e) {
+            this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
+          }
         }
-      }
-    }
-
-    const handlerArray: WorkflowHandle<unknown>[] = [];
-    for (const workflowUUID of pendingWorkflows) {
-      try {
-        handlerArray.push(await this.executeWorkflowUUID(workflowUUID));
-      } catch (e) {
-        this.logger.warn(`Recovery of workflow ${workflowUUID} failed: ${(e as Error).message}`);
       }
     }
     return handlerArray;
