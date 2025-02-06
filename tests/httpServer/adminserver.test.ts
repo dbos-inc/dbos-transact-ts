@@ -27,39 +27,6 @@ describe('admin-server-tests', () => {
     await DBOS.shutdown();
   }, 10000);
 
-  test('test-admin-endpoints', async () => {
-    // Test GET /dbos-healthz
-    const healthzResponse = await fetch('http://localhost:3001/dbos-healthz', {
-      method: 'GET',
-    });
-    expect(healthzResponse.status).toBe(200);
-    expect(await healthzResponse.text()).toBe('healthy');
-
-    // Test POST /dbos-workflow-recovery
-    const data = ['executor1', 'executor2'];
-    const recoveryResponse = await fetch('http://localhost:3001/dbos-workflow-recovery', {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify(data),
-    });
-    expect(recoveryResponse.status).toBe(200);
-    expect(await recoveryResponse.json()).toEqual([]);
-
-    // Test GET not found
-    const getNotFoundResponse = await fetch('http://localhost:3001/stuff', {
-      method: 'GET',
-    });
-    expect(getNotFoundResponse.status).toBe(404);
-
-    // Test POST not found
-    const postNotFoundResponse = await fetch('http://localhost:3001/stuff', {
-      method: 'POST',
-    });
-    expect(postNotFoundResponse.status).toBe(404);
-  });
-
   class testAdminWorkflow {
     static counter = 0;
 
@@ -130,5 +97,38 @@ describe('admin-server-tests', () => {
     expect(response.status).toBe(204);
     await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     expect(testAdminWorkflow.counter).toBe(3);
+  });
+
+  test('test-admin-endpoints', async () => {
+    // Test GET /dbos-healthz
+    const healthzResponse = await fetch('http://localhost:3001/dbos-healthz', {
+      method: 'GET',
+    });
+    expect(healthzResponse.status).toBe(200);
+    expect(await healthzResponse.text()).toBe('healthy');
+
+    // Test POST /dbos-workflow-recovery
+    const data = ['executor1', 'executor2'];
+    const recoveryResponse = await fetch('http://localhost:3001/dbos-workflow-recovery', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+    expect(recoveryResponse.status).toBe(200);
+    expect(await recoveryResponse.json()).toEqual([]);
+
+    // Test GET not found
+    const getNotFoundResponse = await fetch('http://localhost:3001/stuff', {
+      method: 'GET',
+    });
+    expect(getNotFoundResponse.status).toBe(404);
+
+    // Test POST not found
+    const postNotFoundResponse = await fetch('http://localhost:3001/stuff', {
+      method: 'POST',
+    });
+    expect(postNotFoundResponse.status).toBe(404);
   });
 });
