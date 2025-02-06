@@ -9,11 +9,18 @@ import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { configure } from './configure';
-import { cancelWorkflow, getWorkflow, listWorkflows, reattemptWorkflow } from './workflow_management';
+import {
+  cancelWorkflow,
+  getWorkflow,
+  listQueuedWorkflows,
+  listWorkflows,
+  reattemptWorkflow,
+} from './workflow_management';
 import { GetWorkflowsInput, StatusString } from '..';
 import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
+import { GetQueuedWorkflowsInput } from '../workflow';
 
 const program = new Command();
 
@@ -151,6 +158,7 @@ const workflowCommands = program
 workflowCommands
   .command('list')
   .description('List workflows from your application')
+  .option('-n, --name <string>', 'Retrieve functions with this name')
   .option('-l, --limit <number>', 'Limit the results returned', '10')
   .option('-u, --user <string>', 'Retrieve workflows run by this user')
   .option('-s, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
@@ -164,6 +172,7 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
     async (options: {
+      name?: string;
       limit?: string;
       appDir?: string;
       user?: string;
@@ -182,6 +191,7 @@ workflowCommands
         exit(1);
       }
       const input: GetWorkflowsInput = {
+        workflowName: options.name,
         limit: Number(options.limit),
         authenticatedUser: options.user,
         startTime: options.startTime,
@@ -237,6 +247,56 @@ workflowCommands
     const output = await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, true);
     console.log(`Workflow output: ${JSON.stringify(output)}`);
   });
+
+const queueCommands = workflowCommands.command('queue').alias('queues').alias('q').description('Manage DBOS queues');
+queueCommands
+  .command('list')
+  .description('List enqueued functions from your application')
+  .option('-n, --name <string>', 'Retrieve functions with this name')
+  .option('-s, --start-time <string>', 'Retrieve functions starting after this timestamp (ISO 8601 format)')
+  .option('-e, --end-time <string>', 'Retrieve functions starting before this timestamp (ISO 8601 format)')
+  .option(
+    '-S, --status <string>',
+    'Retrieve functions with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)',
+  )
+  .option('-l, --limit <number>', 'Limit the results returned')
+  .option('-q, --queue <string>', 'Retrieve functions run on this queue')
+  .option('--request', 'Retrieve workflow request information')
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+  .action(
+    async (
+      appName: string | undefined,
+      options: {
+        name?: string;
+        startTime?: string;
+        endTime?: string;
+        status?: string;
+        limit?: string;
+        queue?: string;
+        request: boolean;
+        appDir?: string;
+      },
+    ) => {
+      const [dbosConfig, _] = parseConfigFile(options);
+      if (
+        options.status &&
+        !Object.values(StatusString).includes(options.status as (typeof StatusString)[keyof typeof StatusString])
+      ) {
+        console.error('Invalid status: ', options.status);
+        exit(1);
+      }
+      const input: GetQueuedWorkflowsInput = {
+        limit: Number(options.limit),
+        startTime: options.startTime,
+        endTime: options.endTime,
+        status: options.status as (typeof StatusString)[keyof typeof StatusString],
+        workflowName: options.name,
+        queueName: options.queue,
+      };
+      const output = await listQueuedWorkflows(dbosConfig, input, options.request);
+      console.log(JSON.stringify(output));
+    },
+  );
 
 /////////////
 /* PARSING */
