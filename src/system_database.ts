@@ -1,10 +1,23 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { deserializeError, serializeError } from "serialize-error";
-import { DBOSExecutor, dbosNull, DBOSNull } from "./dbos-executor";
-import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from "pg";
-import { DBOSWorkflowConflictUUIDError, DBOSNonExistentWorkflowError, DBOSDeadLetterQueueError, DBOSConflictingWorkflowError } from "./error";
-import { GetPendingWorkflowsOutput, GetWorkflowQueueInput, GetWorkflowQueueOutput, GetWorkflowsInput, GetWorkflowsOutput, StatusString, WorkflowStatus } from "./workflow";
+import { deserializeError, serializeError } from 'serialize-error';
+import { DBOSExecutor, dbosNull, DBOSNull } from './dbos-executor';
+import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
+import {
+  DBOSWorkflowConflictUUIDError,
+  DBOSNonExistentWorkflowError,
+  DBOSDeadLetterQueueError,
+  DBOSConflictingWorkflowError,
+} from './error';
+import {
+  GetPendingWorkflowsOutput,
+  GetWorkflowQueueInput,
+  GetWorkflowQueueOutput,
+  GetWorkflowsInput,
+  GetWorkflowsOutput,
+  StatusString,
+  WorkflowStatus,
+} from './workflow';
 import {
   notifications,
   operation_outputs,
@@ -54,7 +67,7 @@ export interface SystemDatabase {
   resumeWorkflow(workflowID: string): Promise<void>;
 
   enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
-  reEnqueueWorkflow(workflowId: string): Promise<void>;
+  clearQueueAssignment(workflowId: string): Promise<void>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
 
@@ -460,16 +473,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getPendingWorkflows(executorID: string): Promise<Array<GetPendingWorkflowsOutput>> {
-    const { rows } = await this.pool.query<workflow_status>(`SELECT workflow_uuid, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2`, [
-      StatusString.PENDING,
-      executorID,
-    ]);
+    const { rows } = await this.pool.query<workflow_status>(
+      `SELECT workflow_uuid, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2`,
+      [StatusString.PENDING, executorID],
+    );
     return rows.map(
       (i) =>
         <GetPendingWorkflowsOutput>{
           workflowUUID: i.workflow_uuid,
           queueName: i.queue_name,
-        }
+        },
     );
   }
 
@@ -1190,7 +1203,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const rows = await query.select('workflow_uuid');
     const workflowUUIDs = rows.map((row) => row.workflow_uuid);
     return {
-      workflowUUIDs: workflowUUIDs
+      workflowUUIDs: workflowUUIDs,
     };
   }
 
@@ -1237,17 +1250,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  async reEnqueueWorkflow(workflowId: string): Promise<void> {
+  async clearQueueAssignment(workflowId: string): Promise<void> {
     const client: PoolClient = await this.pool.connect();
     try {
-      await client.query("BEGIN ISOLATION LEVEL READ COMMITTED");
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await client.query<workflow_queue>(
         `
         UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
         SET started_at_epoch_ms = NULL, executor_id = NULL
         WHERE workflow_uuid = $1;
       `,
-        [workflowId]
+        [workflowId],
       );
       await client.query<workflow_status>(
         `
@@ -1255,11 +1268,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         SET status = $2, executor_id = NULL
         WHERE workflow_uuid = $1;
       `,
-        [workflowId, StatusString.ENQUEUED]
+        [workflowId, StatusString.ENQUEUED],
       );
-      await client.query("COMMIT");
+      await client.query('COMMIT');
     } catch (error) {
-      await client.query("ROLLBACK");
+      await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
@@ -1275,7 +1288,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         SET completed_at_epoch_ms = $2
         WHERE workflow_uuid = $1;
       `,
-        [workflowId, time]
+        [workflowId, time],
       );
     } else {
       await this.pool.query<workflow_queue>(
