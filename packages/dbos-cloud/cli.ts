@@ -630,7 +630,7 @@ queueCommands
   .command('list')
   .description('List enqueued functions from your application')
   .argument('[string]', 'application name (Default: name from package.json)')
-  .option('-l, --limit <number>', 'Limit the results returned', '10')
+  .option('-l, --limit <number>', 'Limit the results returned')
   .option('-o, --offset <number>', 'Skip functions from the results returned.')
   .option('-s, --start-time <string>', 'Retrieve functions starting after this timestamp (ISO 8601 format)')
   .option('-e, --end-time <string>', 'Retrieve functions starting before this timestamp (ISO 8601 format)')
