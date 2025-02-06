@@ -236,10 +236,3 @@ export class DBOSMaxStepRetriesError extends DBOSError {
     this.errors = errors;
   }
 }
-
-const WorkflowRecoveryError = 24;
-export class DBOSWorkflowRecoveryError extends DBOSError {
-  constructor(workflowID: string, msg: string) {
-    super(`Error recovering workflow ${workflowID}: ${msg}`, WorkflowRecoveryError);
-  }
-}

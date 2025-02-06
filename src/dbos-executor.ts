@@ -9,7 +9,6 @@ import {
   DBOSConfigKeyTypeError,
   DBOSFailedSqlTransactionError,
   DBOSMaxStepRetriesError,
-  DBOSWorkflowRecoveryError,
 } from './error';
 import {
   InvokedHandle,
@@ -1798,33 +1797,20 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
       const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID);
-      // Re-enqueue workflows member of a queue
       for (const pendingWorkflow of pendingWorkflows) {
         this.logger.debug(
           `Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`,
         );
-        // If the workflow is member of a queue, re-enqueue it.
-        if (pendingWorkflow.queueName) {
-          try {
+        try {
+          // If the workflow is member of a queue, re-enqueue it.
+          if (pendingWorkflow.queueName) {
             await this.systemDatabase.clearQueueAssignment(pendingWorkflow.workflowUUID);
-          } catch (e) {
-            // If this is a serialization failure, i.e., some other DBOS process is trying to re-enqueue or complete the workflow, skip it.
-            if (this.userDatabase.isRetriableTransactionError(e)) {
-              this.logger.warn(
-                `Failed to re-enqueue workflow ${pendingWorkflow.workflowUUID}: ${(e as Error).message}`,
-              );
-              continue;
-            } else {
-              this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
-            }
-          }
-          handlerArray.push(await this.retrieveWorkflow(pendingWorkflow.workflowUUID));
-        } else {
-          try {
+            handlerArray.push(this.retrieveWorkflow(pendingWorkflow.workflowUUID));
+          } else {
             handlerArray.push(await this.executeWorkflowUUID(pendingWorkflow.workflowUUID));
-          } catch (e) {
-            this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
           }
+        } catch (e) {
+          this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
         }
       }
     }
