@@ -73,7 +73,7 @@ describe('admin-server-tests', () => {
       status: StatusString.SUCCESS,
     });
 
-    // Resume the workflow. Verify it does not run and statuc remains SUCCESS
+    // Resume the workflow. Verify it does not run and status remains SUCCESS
     response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/resume`, {
       method: 'POST',
       headers: {
