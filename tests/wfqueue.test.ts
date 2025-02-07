@@ -401,7 +401,9 @@ describe('queued-wf-tests-simple', () => {
     static async testWorkflow() {
       const handles = [];
       for (let i = 0; i < TestQueueRecovery.queuedSteps; i++) {
-        const h = await DBOS.startWorkflow(TestQueueRecovery, { queueName: queue.name }).blockingTask(i);
+        const h = await DBOS.startWorkflow(TestQueueRecovery, { queueName: TestQueueRecovery.queue.name }).blockingTask(
+          i,
+        );
         handles.push(h);
       }
       return Promise.all(handles.map((h) => h.getResult()));

@@ -10,20 +10,25 @@ import {
   MiddlewareContext,
   TransactionContext,
   Transaction,
+  DBOS,
+  WorkflowQueue,
 } from '../src';
 import request from 'supertest';
 import { DBOSConfig } from '../src/dbos-executor';
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import {
   WorkflowInformation,
   cancelWorkflow,
   getWorkflow,
   listWorkflows,
   reattemptWorkflow,
+  listQueuedWorkflows,
 } from '../src/dbos-runtime/workflow_management';
 import { Client } from 'pg';
 import { Knex } from 'knex';
+import { v4 as uuidv4 } from 'uuid';
+import { GetQueuedWorkflowsInput } from '../src/workflow';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -378,4 +383,123 @@ describe('workflow-management-tests', () => {
       return Promise.resolve();
     }
   }
+});
+
+describe('test-list-queues', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  }, 10000);
+
+  class TestListQueues {
+    static queuedSteps = 5;
+    static event = new Event();
+    static taskEvents = Array.from({ length: TestListQueues.queuedSteps }, () => new Event());
+    static queue = new WorkflowQueue('testQueueRecovery');
+
+    @DBOS.workflow()
+    static async testWorkflow() {
+      const handles = [];
+      for (let i = 0; i < TestListQueues.queuedSteps; i++) {
+        const h = await DBOS.startWorkflow(TestListQueues, { queueName: TestListQueues.queue.name }).blockingTask(i);
+        handles.push(h);
+      }
+      return Promise.all(handles.map((h) => h.getResult()));
+    }
+
+    @DBOS.workflow()
+    static async blockingTask(i: number) {
+      TestListQueues.taskEvents[i].set();
+      await TestListQueues.event.wait();
+      return i;
+    }
+  }
+
+  test('test-list-queues', async () => {
+    const wfid = uuidv4();
+
+    // Start the workflow. Wait for all five tasks to start. Verify that they started.
+    const originalHandle = await DBOS.startWorkflow(TestListQueues, { workflowID: wfid }).testWorkflow();
+    for (const e of TestListQueues.taskEvents) {
+      await e.wait();
+    }
+
+    let input: GetQueuedWorkflowsInput = {};
+    let output: unknown[] = [];
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+
+    // Test workflowName
+    input = {
+      workflowName: 'blockingTask',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+    input = {
+      workflowName: 'no',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(0);
+
+    // Test startTime and endTime
+    input = {
+      startTime: new Date(Date.now() - 10000).toISOString(),
+      endTime: new Date(Date.now()).toISOString(),
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+    input = {
+      startTime: new Date(Date.now() + 10000).toISOString(),
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(0);
+
+    // Test status
+    input = {
+      status: 'PENDING',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+    input = {
+      status: 'SUCCESS',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(0);
+
+    // Test queue name
+    input = {
+      queueName: TestListQueues.queue.name,
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+    input = {
+      queueName: 'no',
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(0);
+
+    // Test limit
+    input = {
+      limit: 5,
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(input.limit);
+
+    TestListQueues.event.set();
+    await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
+
+    input = {};
+    await expect(listQueuedWorkflows(config, input, false)).resolves.toEqual([]);
+  });
 });

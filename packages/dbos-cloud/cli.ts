@@ -43,7 +43,12 @@ import {
   joinOrganization,
   removeUserFromOrg,
 } from './organizations/organization.js';
-import { ListWorkflowsInput, listWorkflows } from './applications/manage-workflows.js';
+import {
+  ListQueuedWorkflowsInput,
+  ListWorkflowsInput,
+  listQueuedWorkflows,
+  listWorkflows,
+} from './applications/manage-workflows.js';
 import { importSecrets } from './applications/secrets.js';
 
 // Read local package.json
@@ -588,12 +593,12 @@ workflowCommands
     'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)',
   )
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
+  .option('-n, --name <string>', 'Retrieve functions with this name')
   .action(
     async (
       appName: string | undefined,
       options: {
         limit?: string;
-        appDir?: string;
         user?: string;
         startTime?: string;
         endTime?: string;
@@ -601,6 +606,7 @@ workflowCommands
         applicationVersion?: string;
         workflowUUIDs?: string[];
         offset?: string;
+        name?: string;
       },
     ) => {
       const input: ListWorkflowsInput = {
@@ -612,8 +618,51 @@ workflowCommands
         status: options.status,
         application_version: options.applicationVersion,
         offset: Number(options.offset),
+        workflow_name: options.name,
       };
       const exitCode = await listWorkflows(DBOSCloudHost, input, appName);
+      process.exit(exitCode);
+    },
+  );
+
+const queueCommands = workflowCommands.command('queue').alias('queues').alias('q').description('Manage DBOS queues');
+queueCommands
+  .command('list')
+  .description('List enqueued functions from your application')
+  .argument('[string]', 'application name (Default: name from package.json)')
+  .option('-l, --limit <number>', 'Limit the results returned')
+  .option('-o, --offset <number>', 'Skip functions from the results returned.')
+  .option('-s, --start-time <string>', 'Retrieve functions starting after this timestamp (ISO 8601 format)')
+  .option('-e, --end-time <string>', 'Retrieve functions starting before this timestamp (ISO 8601 format)')
+  .option('-q, --queue <string>', 'Retrieve functions run on this queue')
+  .option('-n, --name <string>', 'Retrieve functions with this name')
+  .option(
+    '-S, --status <string>',
+    'Retrieve functions with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)',
+  )
+  .action(
+    async (
+      appName: string | undefined,
+      options: {
+        limit?: string;
+        startTime?: string;
+        endTime?: string;
+        status?: string;
+        offset?: string;
+        name?: string;
+        queue?: string;
+      },
+    ) => {
+      const input: ListQueuedWorkflowsInput = {
+        limit: Number(options.limit),
+        start_time: options.startTime,
+        end_time: options.endTime,
+        status: options.status,
+        offset: Number(options.offset),
+        workflow_name: options.name,
+        queue_name: options.queue,
+      };
+      const exitCode = await listQueuedWorkflows(DBOSCloudHost, input, appName);
       process.exit(exitCode);
     },
   );

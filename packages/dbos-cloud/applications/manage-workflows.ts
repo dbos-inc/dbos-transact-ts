@@ -19,6 +19,16 @@ export interface ListWorkflowsInput {
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
 }
 
+export interface ListQueuedWorkflowsInput {
+  workflow_name?: string; // The name of the workflow function
+  queue_name?: string; // The name of the queue
+  start_time?: string; // Timestamp in ISO 8601 format
+  end_time?: string; // Timestamp in ISO 8601 format
+  status?: string; // The status of the workflow.
+  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
+  offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
+}
+
 export async function listWorkflows(host: string, input: ListWorkflowsInput, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
@@ -32,6 +42,45 @@ export async function listWorkflows(host: string, input: ListWorkflowsInput, app
   try {
     const res = await axios.post(
       `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/workflows`,
+      input,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: bearerToken,
+        },
+      },
+    );
+    console.log(JSON.stringify(res.data));
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to list workflows for application ${appName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
+export async function listQueuedWorkflows(
+  host: string,
+  input: ListQueuedWorkflowsInput,
+  appName?: string,
+): Promise<number> {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials(host, logger);
+  const bearerToken = 'Bearer ' + userCredentials.token;
+
+  appName = appName ?? retrieveApplicationName(logger, true);
+  if (!appName) {
+    return 1;
+  }
+
+  try {
+    const res = await axios.post(
+      `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/queues`,
       input,
       {
         headers: {
