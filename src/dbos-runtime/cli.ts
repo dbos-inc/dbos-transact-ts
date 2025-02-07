@@ -93,7 +93,7 @@ program
 program
   .command('debug')
   .description('Debug a workflow')
-  .option('-x, --proxy <string>', 'Specify the time-travel debug proxy URL for debugging cloud traces')
+  .option('-x, --proxy <string>', 'Specify the time-travel debug proxy URL for debugging cloud traces (DEPRECATED)')
   .requiredOption('-u, --uuid <string>', 'Specify the workflow UUID to replay')
   .option('-l, --loglevel <string>', 'Specify log level')
   .option('-c, --configfile <string>', 'Specify the config file path (DEPRECATED)')
@@ -102,7 +102,7 @@ program
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (options: DBOSDebugOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
-    await debugWorkflow(dbosConfig, runtimeConfig, options.uuid, options.proxy);
+    await debugWorkflow(dbosConfig, runtimeConfig, options.uuid);
   });
 
 program

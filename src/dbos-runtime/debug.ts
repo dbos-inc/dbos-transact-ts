@@ -3,13 +3,8 @@ import { DBOSFailLoadOperationsError, DBOSInitializationError, DBOSNotRegistered
 import { GlobalLogger } from '../telemetry/logs';
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
 
-export async function debugWorkflow(
-  dbosConfig: DBOSConfig,
-  runtimeConfig: DBOSRuntimeConfig,
-  workflowUUID: string,
-  proxy?: string,
-) {
-  dbosConfig = { ...dbosConfig, debugProxy: proxy, debugMode: true };
+export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSRuntimeConfig, workflowUUID: string) {
+  dbosConfig = { ...dbosConfig, debugMode: true };
   const logger = new GlobalLogger();
   try {
     const dbosExec = new DBOSExecutor(dbosConfig);
@@ -31,11 +26,7 @@ export async function debugWorkflow(
       for (const err of e.errors) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (err.code && err.code === 'ECONNREFUSED') {
-          if (proxy !== undefined) {
-            console.error('\x1b[31m%s\x1b[0m', `Is DBOS time-travel debug proxy running at ${proxy} ?`);
-          } else {
-            console.error('\x1b[31m%s\x1b[0m', `Is database running at ${dbosConfig.poolConfig.host} ?`);
-          }
+          console.error('\x1b[31m%s\x1b[0m', `Is database running at ${dbosConfig.poolConfig.host} ?`);
           break;
         }
       }
