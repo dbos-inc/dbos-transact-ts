@@ -264,19 +264,16 @@ queueCommands
   .option('--request', 'Retrieve workflow request information')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
-    async (
-      appName: string | undefined,
-      options: {
-        name?: string;
-        startTime?: string;
-        endTime?: string;
-        status?: string;
-        limit?: string;
-        queue?: string;
-        request: boolean;
-        appDir?: string;
-      },
-    ) => {
+    async (options: {
+      name?: string;
+      startTime?: string;
+      endTime?: string;
+      status?: string;
+      limit?: string;
+      queue?: string;
+      request: boolean;
+      appDir?: string;
+    }) => {
       const [dbosConfig, _] = parseConfigFile(options);
       if (
         options.status &&

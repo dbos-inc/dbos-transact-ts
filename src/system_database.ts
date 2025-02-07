@@ -1210,25 +1210,35 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
       )
       .orderBy(`${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`, 'desc');
+
     if (input.workflowName) {
-      query = query.where('name', input.workflowName);
+      query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.name = ?`, [input.workflowName]);
     }
     if (input.queueName) {
-      query = query.where('workflow_status.queue_name', input.queueName);
+      query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.queue_name = ?`, [input.queueName]);
     }
     if (input.startTime) {
-      query = query.where('created_at', '>=', new Date(input.startTime).getTime());
+      query = query.where(
+        `${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`,
+        '>=',
+        new Date(input.startTime).getTime(),
+      );
     }
     if (input.endTime) {
-      query = query.where('created_at', '<=', new Date(input.endTime).getTime());
+      query = query.where(
+        `${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`,
+        '<=',
+        new Date(input.endTime).getTime(),
+      );
     }
     if (input.status) {
-      query = query.where('status', input.status);
+      query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.status = ?`, [input.status]);
     }
     if (input.limit) {
       query = query.limit(input.limit);
     }
-    const rows = await query.select('workflow_status.workflow_uuid');
+
+    const rows = await query.select(`${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`);
     const workflowUUIDs = rows.map((row) => (row as { workflow_uuid: string }).workflow_uuid);
     return {
       workflowUUIDs: workflowUUIDs,
