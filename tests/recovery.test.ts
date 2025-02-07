@@ -1,5 +1,5 @@
 import { WorkflowContext, Workflow, WorkflowQueue, TestingRuntime } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
 import { TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
 import { WorkflowRecoveryUrl } from '../src/httpServer/server';
@@ -7,6 +7,7 @@ import request from 'supertest';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
 import { DBOSDeadLetterQueueError } from '../src/error';
+import { sleepms } from '../src/utils';
 
 describe('recovery-tests', () => {
   let config: DBOSConfig;
@@ -40,6 +41,8 @@ describe('recovery-tests', () => {
    * Test for the default local workflow recovery.
    */
   class LocalRecovery {
+    static cnt = 0;
+
     static resolve1: () => void;
     static promise1 = new Promise<void>((resolve) => {
       LocalRecovery.resolve1 = resolve;
@@ -50,12 +53,8 @@ describe('recovery-tests', () => {
       LocalRecovery.resolve2 = resolve;
     });
 
-    static resolve3: () => void;
-    static promise3 = new Promise<void>((resolve) => {
-      LocalRecovery.resolve3 = resolve;
-    });
-
-    static cnt = 0;
+    static startEvent = new Event();
+    static endEvent = new Event();
 
     @Workflow()
     static async testRecoveryWorkflow(ctxt: WorkflowContext, input: number) {
@@ -87,9 +86,9 @@ describe('recovery-tests', () => {
 
     @Workflow({ maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts })
     static async fencedDeadLetterWorkflow(_ctxt: WorkflowContext) {
+      LocalRecovery.startEvent.set();
       LocalRecovery.recoveryCount += 1;
-      LocalRecovery.resolve3();
-      await LocalRecovery.deadLetterPromise;
+      await LocalRecovery.endEvent.wait();
     }
   }
 
@@ -99,18 +98,19 @@ describe('recovery-tests', () => {
 
     const handle = await testRuntime.startWorkflow(LocalRecovery).deadLetterWorkflow();
 
-    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
+    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
       await dbosExec.recoverPendingWorkflows();
-      expect(LocalRecovery.recoveryCount).toBeGreaterThanOrEqual(Math.min(i, LocalRecovery.maxRecoveryAttempts));
-      expect(LocalRecovery.recoveryCount).toBeLessThanOrEqual(LocalRecovery.maxRecoveryAttempts);
+      expect(LocalRecovery.recoveryCount).toBe(i + 2);
     }
 
-    // Attempt to recover the blocked workflow in excess of the maximum number of times. Verify it enters the DLQ status.
+    // Send to DLQ and verify it enters the DLQ status.
+    await dbosExec.recoverPendingWorkflows();
     let result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
     );
-    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
+    // recovery_attempts is set before checking the number of attempts/retry
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
     expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
 
     // Verify a direct invocation errors
@@ -146,7 +146,6 @@ describe('recovery-tests', () => {
   });
 
   test('enqueued-dead-letter-queue', async () => {
-    LocalRecovery.cnt = 0;
     LocalRecovery.recoveryCount = 0;
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
@@ -155,22 +154,28 @@ describe('recovery-tests', () => {
     const handle = await testRuntime
       .startWorkflow(LocalRecovery, undefined, undefined, queue)
       .fencedDeadLetterWorkflow();
-    await LocalRecovery.promise3;
+    await LocalRecovery.startEvent.wait();
+    expect(LocalRecovery.recoveryCount).toBe(1);
 
-    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts * 2; i++) {
+    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
+      LocalRecovery.startEvent.clear();
       await dbosExec.recoverPendingWorkflows();
-      expect(LocalRecovery.recoveryCount).toBeGreaterThanOrEqual(Math.min(i, LocalRecovery.maxRecoveryAttempts));
-      expect(LocalRecovery.recoveryCount).toBeLessThanOrEqual(LocalRecovery.maxRecoveryAttempts);
+      await LocalRecovery.startEvent.wait();
+      expect(LocalRecovery.recoveryCount).toBe(i + 2);
     }
 
+    // One more recovery attempt should move the workflow to the dead-letter queue.
+    await dbosExec.recoverPendingWorkflows();
+    await sleepms(2000); // Can't wait() because the workflow will land in the DLQ
     let result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
     );
-    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
+    // recovery_attempts is set before checking the number of attempts/retry
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
     expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
 
-    LocalRecovery.deadLetterResolve();
+    LocalRecovery.endEvent.set();
     await handle.getResult();
 
     await dbosExec.flushWorkflowBuffers();
@@ -178,9 +183,9 @@ describe('recovery-tests', () => {
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
     );
-    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 1));
+    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
-  });
+  }, 20000);
 
   test('local-recovery', async () => {
     LocalRecovery.cnt = 0;
