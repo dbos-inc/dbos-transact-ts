@@ -1789,23 +1789,29 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSDebuggerError('Cannot recover pending workflows in debug mode.');
     }
 
-    const pendingWorkflows: string[] = [];
+    const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       if (execID === 'local' && process.env.DBOS__VMID) {
         this.logger.debug(`Skip local recovery because it's running in a VM: ${process.env.DBOS__VMID}`);
         continue;
       }
-      this.logger.debug(`Recovering workflows of executor: ${execID}`);
-      const wIDs = await this.systemDatabase.getPendingWorkflows(execID);
-      pendingWorkflows.push(...wIDs);
-    }
-
-    const handlerArray: WorkflowHandle<unknown>[] = [];
-    for (const workflowUUID of pendingWorkflows) {
-      try {
-        handlerArray.push(await this.executeWorkflowUUID(workflowUUID));
-      } catch (e) {
-        this.logger.warn(`Recovery of workflow ${workflowUUID} failed: ${(e as Error).message}`);
+      this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
+      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID);
+      for (const pendingWorkflow of pendingWorkflows) {
+        this.logger.debug(
+          `Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`,
+        );
+        try {
+          // If the workflow is member of a queue, re-enqueue it.
+          if (pendingWorkflow.queueName) {
+            await this.systemDatabase.clearQueueAssignment(pendingWorkflow.workflowUUID);
+            handlerArray.push(this.retrieveWorkflow(pendingWorkflow.workflowUUID));
+          } else {
+            handlerArray.push(await this.executeWorkflowUUID(pendingWorkflow.workflowUUID));
+          }
+        } catch (e) {
+          this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
+        }
       }
     }
     return handlerArray;

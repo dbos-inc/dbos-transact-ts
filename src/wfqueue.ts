@@ -117,8 +117,10 @@ class WFQueueRunner {
     const logger = exec.logger;
     logger.info('Workflow queues:');
     for (const [qn, q] of this.wfQueuesByName) {
-      const conc = q.concurrency !== undefined ? `${q.concurrency}` : 'No concurrency limit set';
-      logger.info(`    ${qn}: ${conc}`);
+        const conc = q.concurrency !== undefined ? `global concurrency limit: ${q.concurrency}` : 'No concurrency limit set';
+        logger.info(`    ${qn}: ${conc}`);
+        const workerconc = q.workerConcurrency !== undefined ? `worker concurrency limit: ${q.workerConcurrency}` : 'No worker concurrency limit set';
+        logger.info(`    ${qn}: ${workerconc}`);
     }
   }
 }

@@ -9,6 +9,7 @@ import { WF } from './wfqtestprocess';
 
 import { execFile } from 'child_process';
 import { promisify } from 'util';
+import { Client } from 'pg';
 
 const execFileAsync = promisify(execFile);
 
@@ -415,6 +416,17 @@ describe('queued-wf-tests-simple', () => {
       await TestQueueRecovery.event.wait();
       return i;
     }
+
+    static cnt = 0;
+    static blockedWorkflows = 2;
+    static startEvents = Array.from({ length: TestQueueRecovery.blockedWorkflows }, () => new Event());
+    static stopEvent = new Event();
+    @DBOS.workflow()
+    static async blockedWorkflow(i: number) {
+      TestQueueRecovery.startEvents[i].set();
+      TestQueueRecovery.cnt++;
+      await TestQueueRecovery.stopEvent.wait();
+    }
   }
 
   test('test-queue-recovery', async () => {
@@ -424,11 +436,15 @@ describe('queued-wf-tests-simple', () => {
     const originalHandle = await DBOS.startWorkflow(TestQueueRecovery, { workflowID: wfid }).testWorkflow();
     for (const e of TestQueueRecovery.taskEvents) {
       await e.wait();
+      e.clear();
     }
     expect(TestQueueRecovery.taskCount).toEqual(5);
 
     // Recover the workflow, then resume it. There should be one handle for the workflow and another for each task.
     const recoveryHandles = await DBOS.recoverPendingWorkflows();
+    for (const e of TestQueueRecovery.taskEvents) {
+      await e.wait();
+    }
     expect(recoveryHandles.length).toBe(TestQueueRecovery.queuedSteps + 1);
     TestQueueRecovery.event.set();
 
@@ -446,6 +462,96 @@ describe('queued-wf-tests-simple', () => {
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
+
+  test('test-queue-concurrency-under-recovery', async () => {
+    const recoveryQueue = new WorkflowQueue('recoveryQ', { concurrency: 2 });
+    const wfid1 = uuidv4();
+    const wfh1 = await DBOS.startWorkflow(TestQueueRecovery, {
+      workflowID: wfid1,
+      queueName: recoveryQueue.name,
+    }).blockedWorkflow(0);
+    const wfid2 = uuidv4();
+    const wfh2 = await DBOS.startWorkflow(TestQueueRecovery, {
+      workflowID: wfid2,
+      queueName: recoveryQueue.name,
+    }).blockedWorkflow(1);
+    const wfid3 = uuidv4();
+    const wfh3 = await DBOS.startWorkflow(TestWFs, {
+      workflowID: wfid3,
+      queueName: recoveryQueue.name,
+    }).noop();
+
+    for (const e of TestQueueRecovery.startEvents) {
+      await e.wait();
+      e.clear();
+    }
+    expect(TestQueueRecovery.cnt).toBe(2);
+
+    const workflows = await DBOS.getWorkflowQueue({ queueName: recoveryQueue.name });
+    expect(workflows.workflows.length).toBe(3);
+    expect(workflows.workflows[2].workflowID).toBe(wfid1);
+    expect(workflows.workflows[2].executorID).toBe('local');
+    expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
+    expect(workflows.workflows[1].workflowID).toBe(wfid2);
+    expect(workflows.workflows[1].executorID).toBe('local');
+    expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
+    expect(workflows.workflows[0].workflowID).toBe(wfid3);
+    expect(workflows.workflows[0].executorID).toBe(null);
+    expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+    // Manually update the database to pretend wf3 is PENDING and comes from a different executor
+    const systemDBClient = new Client({
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
+      database: config.system_database,
+    });
+    await systemDBClient.connect();
+    try {
+      await systemDBClient.query(
+        "UPDATE dbos.workflow_status SET executor_id = 'test-vmid-2', status = 'PENDING' WHERE workflow_uuid = $1",
+        [wfh3.workflowID],
+      );
+
+      // Trigger workflow recovery. The two first workflows should still be blocked but the 3rd one enqueued
+      const recovered_handles = await DBOS.recoverPendingWorkflows(['test-vmid-2']);
+      expect(recovered_handles.length).toBe(1);
+      expect(recovered_handles[0].workflowID).toBe(wfid3);
+      expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
+      expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
+      expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+      // Trigger workflow recovery for "local". The two first workflows should be re-enqueued then dequeued again
+      const recovered_handles_local = await DBOS.recoverPendingWorkflows(['local']);
+      expect(recovered_handles_local.length).toBe(2);
+      for (const h of recovered_handles_local) {
+        expect([wfid1, wfid2]).toContain(h.workflowID);
+      }
+      for (const e of TestQueueRecovery.startEvents) {
+        await e.wait();
+      }
+      expect(TestQueueRecovery.cnt).toBe(4);
+      expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
+      expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
+      expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
+
+      // Unblock the two first workflows
+      TestQueueRecovery.stopEvent.set();
+      // Verify all queue entries eventually get cleaned up.
+      expect(await wfh1.getResult()).toBe(null);
+      expect(await wfh2.getResult()).toBe(null);
+      expect(await wfh3.getResult()).toBe(null);
+      const result = await systemDBClient.query(
+        'SELECT executor_id FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfh3.workflowID],
+      );
+      expect(result.rows).toEqual([{ executor_id: 'local' }]);
+      expect(await queueEntriesAreCleanedUp()).toBe(true);
+    } finally {
+      await systemDBClient.end();
+    }
+  }, 20000);
 
   class TestCancelQueues {
     static startEvent = new Event();

@@ -10,6 +10,7 @@ import {
   DBOSConflictingWorkflowError,
 } from './error';
 import {
+  GetPendingWorkflowsOutput,
   GetQueuedWorkflowsInput,
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
@@ -48,7 +49,7 @@ export interface SystemDatabase {
   flushWorkflowSystemBuffers(): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
-  getPendingWorkflows(executorID: string): Promise<Array<string>>;
+  getPendingWorkflows(executorID: string): Promise<Array<GetPendingWorkflowsOutput>>;
   bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
@@ -67,6 +68,7 @@ export interface SystemDatabase {
   resumeWorkflow(workflowID: string): Promise<void>;
 
   enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
+  clearQueueAssignment(workflowId: string): Promise<void>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
 
@@ -327,7 +329,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Every time we init the status, we increment `recovery_attempts` by 1.
     // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
     const attempts = resRow.recovery_attempts;
-    if (attempts > initStatus.maxRetries) {
+    if (attempts > initStatus.maxRetries + 1) {
       await this.pool.query(
         `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`,
         [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING],
@@ -472,12 +474,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  async getPendingWorkflows(executorID: string): Promise<Array<string>> {
+  async getPendingWorkflows(executorID: string): Promise<Array<GetPendingWorkflowsOutput>> {
     const { rows } = await this.pool.query<workflow_status>(
-      `SELECT workflow_uuid FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2`,
+      `SELECT workflow_uuid, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2`,
       [StatusString.PENDING, executorID],
     );
-    return rows.map((i) => i.workflow_uuid);
+    return rows.map(
+      (i) =>
+        <GetPendingWorkflowsOutput>{
+          workflowUUID: i.workflow_uuid,
+          queueName: i.queue_name,
+        },
+    );
   }
 
   bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void {
@@ -1266,6 +1274,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const workflows = rows.map((row) => {
       return {
         workflowID: row.workflow_uuid,
+        executorID: row.executor_id,
         queueName: row.queue_name,
         createdAt: row.created_at_epoch_ms,
         startedAt: row.started_at_epoch_ms,
@@ -1276,7 +1285,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
-    const _res = await this.pool.query<workflow_queue>(
+    await this.pool.query<workflow_queue>(
       `
       INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
       VALUES ($1, $2)
@@ -1287,10 +1296,39 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
+  async clearQueueAssignment(workflowId: string): Promise<void> {
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      await client.query<workflow_queue>(
+        `
+        UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
+        SET started_at_epoch_ms = NULL, executor_id = NULL
+        WHERE workflow_uuid = $1;
+      `,
+        [workflowId],
+      );
+      await client.query<workflow_status>(
+        `
+        UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
+        SET status = $2, executor_id = NULL
+        WHERE workflow_uuid = $1;
+      `,
+        [workflowId, StatusString.ENQUEUED],
+      );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
     if (queue.rateLimit) {
       const time = new Date().getTime();
-      const _res = await this.pool.query<workflow_queue>(
+      await this.pool.query<workflow_queue>(
         `
         UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
         SET completed_at_epoch_ms = $2
@@ -1299,7 +1337,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         [workflowId, time],
       );
     } else {
-      const _res = await this.pool.query<workflow_queue>(
+      await this.pool.query<workflow_queue>(
         `
         DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue
         WHERE workflow_uuid = $1;
