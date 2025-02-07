@@ -80,10 +80,17 @@ export class Event {
   set(): void {
     if (this._resolve) {
       this._resolve();
+      this._resolve = null;
     }
   }
 
   wait(): Promise<void> {
     return this._promise;
+  }
+
+  clear(): void {
+    this._promise = new Promise((resolve) => {
+      this._resolve = resolve;
+    });
   }
 }
