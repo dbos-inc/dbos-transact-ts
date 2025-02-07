@@ -327,7 +327,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Every time we init the status, we increment `recovery_attempts` by 1.
     // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
     const attempts = resRow.recovery_attempts;
-    if (attempts > initStatus.maxRetries) {
+    if (attempts > initStatus.maxRetries + 1) {
       await this.pool.query(
         `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`,
         [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING],
