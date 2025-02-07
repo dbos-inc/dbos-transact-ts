@@ -75,6 +75,15 @@ export interface GetWorkflowsInput {
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
 }
 
+export interface GetQueuedWorkflowsInput {
+  workflowName?: string; // The name of the workflow function
+  startTime?: string; // Timestamp in ISO 8601 format
+  endTime?: string; // Timestamp in ISO 8601 format
+  status?: 'PENDING' | 'SUCCESS' | 'ERROR' | 'RETRIES_EXCEEDED' | 'CANCELLED' | 'ENQUEUED'; // The status of the workflow.
+  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
+  queueName?: string; // The queue
+}
+
 export interface GetWorkflowsOutput {
   workflowUUIDs: string[];
 }

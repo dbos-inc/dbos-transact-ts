@@ -118,7 +118,7 @@ export function retrieveApplicationName(configFile: ConfigFile): string {
 export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions) {
   // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
   const databaseConnection = loadDatabaseConnection();
-  if (!cliOptions?.skipLoggingInParse) {
+  if (!cliOptions?.silent) {
     const logger = new GlobalLogger();
     if (configFile['database']['hostname']) {
       logger.info('Loading database connection parameters from dbos-config.yaml');
@@ -204,7 +204,7 @@ export interface ParseOptions {
   configfile?: string;
   appDir?: string;
   appVersion?: string | boolean;
-  skipLoggingInParse?: boolean;
+  silent?: boolean;
 }
 
 /*

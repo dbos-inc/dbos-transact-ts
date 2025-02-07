@@ -2,7 +2,7 @@ import { createLogger } from 'winston';
 import { DBOSConfig, GetWorkflowsInput, StatusString } from '..';
 import { PostgresSystemDatabase, SystemDatabase } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
-import { WorkflowStatus } from '../workflow';
+import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
 import { HTTPRequest } from '../context';
 import { DBOSExecutor } from '../dbos-executor';
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
@@ -14,6 +14,20 @@ export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput
     createLogger() as unknown as GlobalLogger,
   );
   const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs.reverse(); // Reverse so most recent entries are printed last
+  const workflowInfos = await Promise.all(
+    workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
+  );
+  await systemDatabase.destroy();
+  return workflowInfos;
+}
+
+export async function listQueuedWorkflows(config: DBOSConfig, input: GetQueuedWorkflowsInput, getRequest: boolean) {
+  const systemDatabase = new PostgresSystemDatabase(
+    config.poolConfig,
+    config.system_database,
+    createLogger() as unknown as GlobalLogger,
+  );
+  const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs.reverse(); // Reverse so most recent entries are printed last
   const workflowInfos = await Promise.all(
     workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
   );
