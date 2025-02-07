@@ -40,6 +40,18 @@ describe('dbos-config', () => {
   });
 
   describe('Configuration parsing', () => {
+    // reset environment variables for each test as per https://stackoverflow.com/a/48042799
+    const OLD_ENV = process.env;
+
+    beforeEach(() => {
+      jest.resetModules(); // Most important - it clears the cache
+      process.env = { ...OLD_ENV }; // Make a copy
+    });
+
+    afterAll(() => {
+      process.env = OLD_ENV; // Restore old environment
+    });
+
     test('Config is valid and is parsed as expected', () => {
       jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
 
@@ -182,6 +194,37 @@ describe('dbos-config', () => {
       jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
       jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('SQL STATEMENTS');
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
+    });
+
+    test('Config pool settings can be overridden by environment variables', () => {
+      const mockDBOSConfigYamlString = `
+      name: 'some app'
+      language: 'node'
+      database:
+        hostname: 'some host'
+        port: 1234
+        username: 'some user'
+        password: 'some password'
+        app_db_name: 'some_db'
+        local_suffix: true
+        ssl: false`;
+
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
+
+      process.env.DBOS_DBHOST = 'DBHOST_OVERRIDE';
+      process.env.DBOS_DBPORT = '99999';
+      process.env.DBOS_DBUSER = 'DBUSER_OVERRIDE';
+      process.env.DBOS_DBPASSWORD = 'DBPASSWORD_OVERRIDE';
+      process.env.DBOS_DBLOCALSUFFIX = 'false';
+
+      const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+
+      const poolConfig: PoolConfig = dbosConfig.poolConfig;
+      expect(poolConfig.host).toBe('DBHOST_OVERRIDE');
+      expect(poolConfig.port).toBe(99999);
+      expect(poolConfig.user).toBe('DBUSER_OVERRIDE');
+      expect(poolConfig.password).toBe('DBPASSWORD_OVERRIDE');
+      expect(poolConfig.database).toBe('some_db');
     });
   });
 
