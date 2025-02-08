@@ -1,35 +1,30 @@
 import Koa, { Context } from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
-import cors from "@koa/cors";
-import { HandlerContextImpl, HandlerRegistrationBase } from "./handler";
-import { ArgSources, APITypes } from "./handlerTypes";
-import { Transaction } from "../transaction";
-import { Workflow, StatusString } from "../workflow";
-import {
-  DBOSDataValidationError,
-  DBOSError,
-  DBOSResponseError,
-  isClientError,
-} from "../error";
-import { DBOSExecutor } from "../dbos-executor";
-import { GlobalLogger as Logger } from "../telemetry/logs";
-import { MiddlewareDefaults } from "./middleware";
-import { SpanStatusCode, trace, ROOT_CONTEXT } from "@opentelemetry/api";
-import { StepFunction } from "../step";
-import * as net from "net";
-import { performance } from "perf_hooks";
-import { DBOSJSON, exhaustiveCheckGuard } from "../utils";
-import { runWithHandlerContext } from "../context";
-import { wfQueueRunner, QueueParameters } from "../wfqueue";
+import cors from '@koa/cors';
+import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
+import { ArgSources, APITypes } from './handlerTypes';
+import { Transaction } from '../transaction';
+import { Workflow } from '../workflow';
+import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../error';
+import { DBOSExecutor } from '../dbos-executor';
+import { GlobalLogger as Logger } from '../telemetry/logs';
+import { MiddlewareDefaults } from './middleware';
+import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
+import { StepFunction } from '../step';
+import * as net from 'net';
+import { performance } from 'perf_hooks';
+import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
+import { runWithHandlerContext } from '../context';
+import { QueueParameters, wfQueueRunner } from '../wfqueue';
 
-export const WorkflowUUIDHeader = "dbos-idempotency-key";
-export const WorkflowRecoveryUrl = "/dbos-workflow-recovery";
-export const HealthUrl = "/dbos-healthz";
-export const PerfUrl = "/dbos-perf";
+export const WorkflowUUIDHeader = 'dbos-idempotency-key';
+export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
+export const HealthUrl = '/dbos-healthz';
+export const PerfUrl = '/dbos-perf';
 // FIXME this should be /dbos-deactivate to be consistent with other endpoints.
-export const DeactivateUrl = "/deactivate";
-export const WorkflowQueuesMetadataUrl = "/dbos-workflow-queues-metadata";
+export const DeactivateUrl = '/deactivate';
+export const WorkflowQueuesMetadataUrl = '/dbos-workflow-queues-metadata';
 
 export class DBOSHttpServer {
   readonly app: Koa;
@@ -92,89 +87,99 @@ export class DBOSHttpServer {
   async appListen(port: number) {
     await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(port, this.logger);
 
-    const appServer = DBOSHttpServer.nRegisteredEndpoints === 0 ? undefined : this.app.listen(port, () => {
-      this.logger.info(`DBOS Server is running at http://localhost:${port}`);
-    });
+    const appServer =
+      DBOSHttpServer.nRegisteredEndpoints === 0
+        ? undefined
+        : this.app.listen(port, () => {
+            this.logger.info(`DBOS Server is running at http://localhost:${port}`);
+          });
 
     return appServer;
   }
 
   static async checkPortAvailabilityIPv4Ipv6(port: number, logger: Logger) {
     try {
-      await this.checkPortAvailability(port, "127.0.0.1");
+      await this.checkPortAvailability(port, '127.0.0.1');
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
-      if (err.code === "EADDRINUSE") {
-        logger.error(`Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.message}`);
+      if (err.code === 'EADDRINUSE') {
+        logger.error(
+          `Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.message}`,
+        );
         process.exit(1);
       } else {
-        logger.warn(`Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.message}`);
+        logger.warn(
+          `Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.message}`,
+        );
       }
     }
 
     try {
-      await this.checkPortAvailability(port, "::1");
+      await this.checkPortAvailability(port, '::1');
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
-      if (err.code === "EADDRINUSE") {
-        logger.error(`Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.message}`);
+      if (err.code === 'EADDRINUSE') {
+        logger.error(
+          `Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.message}`,
+        );
         process.exit(1);
       } else {
-        logger.warn(`Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.message}`);
+        logger.warn(
+          `Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.message}`,
+        );
       }
     }
   }
 
   static async checkPortAvailability(port: number, host: string): Promise<void> {
     return new Promise<void>((resolve, reject) => {
-    const server = new net.Server();
-    server.on('error', (error: NodeJS.ErrnoException) => {
-      reject(error);
-    });
+      const server = new net.Server();
+      server.on('error', (error: NodeJS.ErrnoException) => {
+        reject(error);
+      });
 
-    server.on('listening', () => {
-      server.close();
-      resolve();
-    });
+      server.on('listening', () => {
+        server.close();
+        resolve();
+      });
 
-    server.listen({port:port, host: host},() => {
-      resolve();
-    });
-
+      server.listen({ port: port, host: host }, () => {
+        resolve();
+      });
     });
   }
 
   /**
    * Health check endpoint.
    */
-    static registerHealthEndpoint(dbosExec: DBOSExecutor, router: Router) {
-      // Handler function that parses request for recovery.
-      const healthHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-        koaCtxt.body = "healthy";
-        await koaNext();
-      };
-      router.get(HealthUrl, healthHandler);
-      dbosExec.logger.debug(`DBOS Server Registered Healthz GET ${HealthUrl}`);
-    }
+  static registerHealthEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    // Handler function that parses request for recovery.
+    const healthHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+      koaCtxt.body = 'healthy';
+      await koaNext();
+    };
+    router.get(HealthUrl, healthHandler);
+    dbosExec.logger.debug(`DBOS Server Registered Healthz GET ${HealthUrl}`);
+  }
 
   /**
    * Register workflow queue metadata endpoint.
    */
   static registerQueueMetadataEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const queueMetadataHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-        type QueueMetadataResponse = QueueParameters & { name: string };
-        const queueDetailsArray: QueueMetadataResponse[] = [];
-        wfQueueRunner.wfQueuesByName.forEach((q, qn) => {
-            queueDetailsArray.push({
-                name: qn,
-                concurrency: q.concurrency,
-                workerConcurrency: q.workerConcurrency,
-                rateLimit: q.rateLimit,
-            });
+      type QueueMetadataResponse = QueueParameters & { name: string };
+      const queueDetailsArray: QueueMetadataResponse[] = [];
+      wfQueueRunner.wfQueuesByName.forEach((q, qn) => {
+        queueDetailsArray.push({
+          name: qn,
+          concurrency: q.concurrency,
+          workerConcurrency: q.workerConcurrency,
+          rateLimit: q.rateLimit,
         });
-        koaCtxt.body = queueDetailsArray;
+      });
+      koaCtxt.body = queueDetailsArray;
 
-        await koaNext();
+      await koaNext();
     };
 
     router.get(WorkflowQueuesMetadataUrl, queueMetadataHandler);
@@ -189,12 +194,12 @@ export class DBOSHttpServer {
     // Handler function that parses request for recovery.
     const recoveryHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       const executorIDs = koaCtxt.request.body as string[];
-      dbosExec.logger.info("Recovering workflows for executors: " + executorIDs.toString());
+      dbosExec.logger.info('Recovering workflows for executors: ' + executorIDs.toString());
       const recoverHandles = await dbosExec.recoverPendingWorkflows(executorIDs);
 
       // Return a list of workflowUUIDs being recovered.
       koaCtxt.body = await Promise.allSettled(recoverHandles.map((i) => i.workflowID)).then((results) =>
-        results.filter((i) => i.status === "fulfilled").map((i) => (i as PromiseFulfilledResult<unknown>).value)
+        results.filter((i) => i.status === 'fulfilled').map((i) => (i as PromiseFulfilledResult<unknown>).value),
       );
       await koaNext();
     };
@@ -228,8 +233,8 @@ export class DBOSHttpServer {
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       await dbosExec.deactivateEventReceivers();
-      dbosExec.logger.info("Deactivating Event Receivers");
-      koaCtxt.body = "Deactivated";
+      dbosExec.logger.info('Deactivating Event Receivers');
+      koaCtxt.body = 'Deactivated';
       await koaNext();
     };
     router.get(DeactivateUrl, deactivateHandler);
@@ -237,74 +242,58 @@ export class DBOSHttpServer {
   }
 
   /**
-   * 
+   *
    * Register Cancel Workflow endpoint.
    * Cancels a workflow by setting its status to CANCELLED.
    */
 
-
   static registerCancelWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
-    const workflowCancelUrl = "/dbos-workflows/:workflow_id/cancel";
+    const workflowCancelUrl = '/workflows/:workflow_id/cancel';
     const workflowCancelHandler = async (koaCtxt: Koa.Context) => {
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const workflowId = koaCtxt.params.workflow_id;
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       console.log(`Cancelling workflow with ID: ${workflowId}`);
-      //eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.CANCELLED, false);
+      await dbosExec.cancelWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowCancelUrl, workflowCancelHandler);
-    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowCancelUrl}`);  
+    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowCancelUrl}`);
   }
 
   /**
-   * 
+   *
    * Register Resume Workflow endpoint.
    * Resume a workflow.
    */
 
-
   static registerResumeWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
-    const workflowResumeUrl = "/dbos-workflows/:workflow_id/resume";
+    const workflowResumeUrl = '/workflows/:workflow_id/resume';
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const workflowId = koaCtxt.params.workflow_id;
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       console.log(`Resuming workflow with ID: ${workflowId}`);
-      //eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
-      await dbosExec.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, true);
-
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
-      await dbosExec.executeWorkflowUUID(workflowId, false);
-
+      await dbosExec.resumeWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
-    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);  
+    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
   }
 
   /**
-   * 
+   *
    * Register Restart Workflow endpoint.
    * Restart a workflow.
    */
 
-
   static registerRestartWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
-    const workflowResumeUrl = "/dbos-workflows/:workflow_id/restart";
+    const workflowResumeUrl = '/workflows/:workflow_id/restart';
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-      const workflowId = koaCtxt.params.workflow_id;
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       console.log(`Restarting workflow: ${workflowId} with a new id`);
-
-      // eslint-disable-next-line  @typescript-eslint/no-unsafe-argument
       await dbosExec.executeWorkflowUUID(workflowId, true);
-
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
-    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);  
+    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
   }
-
 
   /**
    * Register decorated functions as HTTP endpoints.
@@ -317,7 +306,9 @@ export class DBOSHttpServer {
       const ro = registeredOperation as HandlerRegistrationBase;
       if (ro.apiURL) {
         if (ro.isInstance) {
-          dbosExec.logger.warn(`Operation ${ro.className}/${ro.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked.`);
+          dbosExec.logger.warn(
+            `Operation ${ro.className}/${ro.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked.`,
+          );
           return;
         }
         ++DBOSHttpServer.nRegisteredEndpoints;
@@ -327,27 +318,29 @@ export class DBOSHttpServer {
           router.all(ro.apiURL, defaults.koaCors); // Use router.all to register with all methods including preflight requests
         } else {
           if (dbosExec.config.http?.cors_middleware ?? true) {
-            router.all(ro.apiURL, cors({
-              credentials: dbosExec.config.http?.credentials ?? true,
-              origin:
-                (o: Context)=>{
+            router.all(
+              ro.apiURL,
+              cors({
+                credentials: dbosExec.config.http?.credentials ?? true,
+                origin: (o: Context) => {
                   const whitelist = dbosExec.config.http?.allowed_origins;
                   const origin = o.request.header.origin ?? '*';
                   if (whitelist && whitelist.length > 0) {
-                    return (whitelist.includes(origin) ? origin : '');
+                    return whitelist.includes(origin) ? origin : '';
                   }
                   return o.request.header.origin || '*';
                 },
-              allowMethods: 'GET,HEAD,PUT,POST,DELETE,PATCH,OPTIONS',
-              allowHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
-            }));
+                allowMethods: 'GET,HEAD,PUT,POST,DELETE,PATCH,OPTIONS',
+                allowHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+              }),
+            );
           }
         }
         // Check if we need to apply a custom body parser
         if (defaults.koaBodyParser) {
-          router.use(ro.apiURL, defaults.koaBodyParser)
+          router.use(ro.apiURL, defaults.koaBodyParser);
         } else {
-          router.use(ro.apiURL, bodyParser())
+          router.use(ro.apiURL, bodyParser());
         }
         // Check if we need to apply any Koa middleware.
         if (defaults?.koaMiddlewares) {
@@ -362,7 +355,7 @@ export class DBOSHttpServer {
               return;
             }
             dbosExec.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} globally`);
-            globalMiddlewares.add(koaMiddleware)
+            globalMiddlewares.add(koaMiddleware);
             app.use(koaMiddleware);
           });
         }
@@ -403,14 +396,18 @@ export class DBOSHttpServer {
 
               let foundArg = undefined;
               const isQueryMethod = ro.apiType === APITypes.GET || ro.apiType === APITypes.DELETE;
-              const isBodyMethod = ro.apiType === APITypes.POST || ro.apiType === APITypes.PUT || ro.apiType === APITypes.PATCH;
+              const isBodyMethod =
+                ro.apiType === APITypes.POST || ro.apiType === APITypes.PUT || ro.apiType === APITypes.PATCH;
 
               if ((isQueryMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
                 foundArg = koaCtxt.request.query[marg.name];
                 if (foundArg !== undefined) {
                   args.push(foundArg);
                 }
-              } else if ((isBodyMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
+              } else if (
+                (isBodyMethod && marg.argSource === ArgSources.DEFAULT) ||
+                marg.argSource === ArgSources.BODY
+              ) {
                 if (!koaCtxt.request.body) {
                   throw new DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
                 }
@@ -443,23 +440,32 @@ export class DBOSHttpServer {
             // configuredInstance is currently null; we don't allow configured handlers now.
             const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredInstance: null };
             if (ro.txnConfig) {
-              koaCtxt.body = await dbosExec.transaction(ro.registeredFunction as Transaction<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await dbosExec.transaction(
+                ro.registeredFunction as Transaction<unknown[], unknown>,
+                wfParams,
+                ...args,
+              );
             } else if (ro.workflowConfig) {
-              koaCtxt.body = await (await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)).getResult();
+              koaCtxt.body = await (
+                await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
+              ).getResult();
             } else if (ro.commConfig) {
-              koaCtxt.body = await dbosExec.external(ro.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args);
+              koaCtxt.body = await dbosExec.external(
+                ro.registeredFunction as StepFunction<unknown[], unknown>,
+                wfParams,
+                ...args,
+              );
             } else {
               // Directly invoke the handler code.
               let cresult: unknown;
-              await runWithHandlerContext(oc, async ()=> {
+              await runWithHandlerContext(oc, async () => {
                 if (ro.passContext) {
                   cresult = await ro.invoke(undefined, [oc, ...args]);
-                }
-                else {
+                } else {
                   cresult = await ro.invoke(undefined, [...args]);
                 }
               });
-              const retValue = cresult!
+              const retValue = cresult!;
 
               // Set the body to the return value unless the body is already set by the handler.
               if (koaCtxt.body === undefined) {
@@ -469,7 +475,7 @@ export class DBOSHttpServer {
             oc.span.setStatus({ code: SpanStatusCode.OK });
           } catch (e) {
             if (e instanceof Error) {
-              const annotated_e = e as Error & {dbos_already_logged?: boolean};
+              const annotated_e = e as Error & { dbos_already_logged?: boolean };
               if (annotated_e.dbos_already_logged !== true) {
                 oc.logger.error(e);
               }
@@ -511,14 +517,14 @@ export class DBOSHttpServer {
                 set: (carrier: Carrier, key: string, value: string) => {
                   carrier.context.set(key, value);
                 },
-              }
+              },
             );
             dbosExec.tracer.endSpan(oc.span);
             await koaNext();
           }
         };
         // Actually register the endpoint.
-        switch(ro.apiType) {
+        switch (ro.apiType) {
           case APITypes.GET:
             router.get(ro.apiURL, wrappedHandler);
             dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
@@ -540,7 +546,7 @@ export class DBOSHttpServer {
             dbosExec.logger.debug(`DBOS Server Registered DELETE ${ro.apiURL}`);
             break;
           default:
-            exhaustiveCheckGuard(ro.apiType)
+            exhaustiveCheckGuard(ro.apiType);
         }
       }
     });
