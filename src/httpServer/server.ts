@@ -16,7 +16,7 @@ import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
 import { runWithHandlerContext } from '../context';
-import { wfQueueRunner, QueueParameters } from "../wfqueue";
+import { QueueParameters, wfQueueRunner } from '../wfqueue';
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
 export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
@@ -167,19 +167,19 @@ export class DBOSHttpServer {
    */
   static registerQueueMetadataEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const queueMetadataHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-        type QueueMetadataResponse = QueueParameters & { name: string };
-        const queueDetailsArray: QueueMetadataResponse[] = [];
-        wfQueueRunner.wfQueuesByName.forEach((q, qn) => {
-            queueDetailsArray.push({
-                name: qn,
-                concurrency: q.concurrency,
-                workerConcurrency: q.workerConcurrency,
-                rateLimit: q.rateLimit,
-            });
+      type QueueMetadataResponse = QueueParameters & { name: string };
+      const queueDetailsArray: QueueMetadataResponse[] = [];
+      wfQueueRunner.wfQueuesByName.forEach((q, qn) => {
+        queueDetailsArray.push({
+          name: qn,
+          concurrency: q.concurrency,
+          workerConcurrency: q.workerConcurrency,
+          rateLimit: q.rateLimit,
         });
-        koaCtxt.body = queueDetailsArray;
+      });
+      koaCtxt.body = queueDetailsArray;
 
-        await koaNext();
+      await koaNext();
     };
 
     router.get(WorkflowQueuesMetadataUrl, queueMetadataHandler);
