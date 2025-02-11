@@ -5,7 +5,7 @@ import cors from '@koa/cors';
 import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
-import { Workflow, StatusString } from "../workflow";
+import { Workflow, StatusString } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../error';
 import { DBOSExecutor } from '../dbos-executor';
 import { GlobalLogger as Logger } from '../telemetry/logs';
@@ -23,8 +23,8 @@ export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
 export const HealthUrl = '/dbos-healthz';
 export const PerfUrl = '/dbos-perf';
 // FIXME this should be /dbos-deactivate to be consistent with other endpoints.
-export const DeactivateUrl = "/deactivate";
-export const WorkflowQueuesMetadataUrl = "/dbos-workflow-queues-metadata";
+export const DeactivateUrl = '/deactivate';
+export const WorkflowQueuesMetadataUrl = '/dbos-workflow-queues-metadata';
 
 export class DBOSHttpServer {
   readonly app: Koa;
@@ -233,7 +233,6 @@ export class DBOSHttpServer {
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       await dbosExec.deactivateEventReceivers();
-      dbosExec.logger.info('Deactivating Event Receivers');
       koaCtxt.body = 'Deactivated';
       await koaNext();
     };
