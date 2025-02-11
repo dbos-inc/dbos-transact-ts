@@ -13,7 +13,7 @@ interface QueueRateLimit {
   periodSec: number;
 }
 
-interface QueueParameters {
+export interface QueueParameters {
   workerConcurrency?: number;
   concurrency?: number;
   rateLimit?: QueueRateLimit;
