@@ -223,6 +223,11 @@ export class AuthTestOps {
 }
 
 export class TransitionTests {
+  @DBOS.workflow()
+  static async calledWorkflow() {
+    return Promise.resolve('ohno');
+  }
+
   @DBOS.transaction()
   static async leafTransaction() {
     return Promise.resolve('ok');
@@ -276,6 +281,26 @@ export class TransitionTests {
   @DBOS.step({ retriesAllowed: false })
   static async oopsCallGetFromStep() {
     await DBOS.getEvent('aaa', 'a');
+  }
+
+  @DBOS.transaction()
+  static async oopsCallWFFromTransaction() {
+    return await TransitionTests.calledWorkflow();
+  }
+
+  @DBOS.step()
+  static async oopsCallWFFromStep() {
+    return await TransitionTests.calledWorkflow();
+  }
+
+  @DBOS.transaction()
+  static async oopsCallStartWFFromTransaction() {
+    return await DBOS.startWorkflow(TransitionTests).calledWorkflow();
+  }
+
+  @DBOS.step()
+  static async oopsCallStartWFFromStep() {
+    return await DBOS.startWorkflow(TransitionTests).calledWorkflow();
   }
 }
 
@@ -523,6 +548,19 @@ async function main9() {
   );
   await expect(() => TransitionTests.oopsCallGetFromStep()).rejects.toThrow(
     'Invalid call to `DBOS.getEvent` inside a `step` or `transaction`',
+  );
+
+  await expect(() => TransitionTests.oopsCallWFFromTransaction()).rejects.toThrow(
+    'Invalid call to a `workflow` function from within a `step` or `transaction`',
+  );
+  await expect(() => TransitionTests.oopsCallWFFromStep()).rejects.toThrow(
+    'Invalid call to a `workflow` function from within a `step` or `transaction`',
+  );
+  await expect(() => TransitionTests.oopsCallStartWFFromTransaction()).rejects.toThrow(
+    'Invalid call to `DBOS.startWorkflow` from within a `step` or `transaction`',
+  );
+  await expect(() => TransitionTests.oopsCallStartWFFromStep()).rejects.toThrow(
+    'Invalid call to `DBOS.startWorkflow` from within a `step` or `transaction`',
   );
 
   await DBOS.shutdown();
