@@ -144,7 +144,7 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
-export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
+export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: Logger) {
   const migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
   const knexConfig = {
     client: 'pg',
@@ -157,6 +157,8 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
   const knexDB = knex(knexConfig);
   try {
     await knexDB.migrate.latest();
+  } catch (e) {
+    logger.warn(`Exception during system database construction. This is most likely because the system database was configured using a later version of DBOS: ${(e as Error).message}`)
   } finally {
     await knexDB.destroy();
   }
@@ -208,7 +210,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     try {
-      await migrateSystemDatabase(this.systemPoolConfig);
+      await migrateSystemDatabase(this.systemPoolConfig, this.logger);
     } catch (e) {
       const tableExists = await this.pool.query<ExistenceCheck>(
         `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`,
