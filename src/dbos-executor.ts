@@ -9,6 +9,7 @@ import {
   DBOSConfigKeyTypeError,
   DBOSFailedSqlTransactionError,
   DBOSMaxStepRetriesError,
+  DBOSWorkFlowCancelledError,
 } from './error';
 import {
   InvokedHandle,
@@ -189,6 +190,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
   readonly workflowResultBuffer: Map<string, Map<number, BufferedResult>> = new Map(); // Map from workflowUUID to its remaining result buffer.
+  readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowUUID to its cancellation status.
 
   readonly telemetryCollector: TelemetryCollector;
   readonly flushBufferIntervalMs: number = 1000;
@@ -777,6 +779,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
           result = await retrievedHandle.getResult();
           wCtxt.span.setAttribute('cached', true);
           wCtxt.span.setStatus({ code: SpanStatusCode.OK });
+        } else if (err instanceof DBOSWorkFlowCancelledError) {
+          console.log('Successfully caught DBOSWorkFlowCancelledError');
+          internalStatus.error = err.message;
+          internalStatus.status = StatusString.CANCELLED;
+          if (internalStatus.queueName && !this.debugMode) {
+            await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
+          }
+          if (!this.debugMode) {
+            await this.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false);
+          }
+          wCtxt.span.setStatus({ code: SpanStatusCode.CANCELLED, message: err.message });
+          throw err;
         } else {
           // Record the error.
           const e = err as Error & { dbos_already_logged?: boolean };
@@ -1059,6 +1073,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (txnInfo === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
     }
+
+    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
+      throw new Error('Workflow has been cancelled');
+    }
+
     const readOnly = txnInfo.config.readOnly ?? false;
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
@@ -1079,6 +1098,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     );
 
     while (true) {
+      if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
+        throw new Error('Workflow has been cancelled');
+      }
+
       let txn_snapshot = 'invalid';
       const workflowUUID = wfCtx.workflowUUID;
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
@@ -1419,6 +1442,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const readOnly = config.readOnly ?? false;
 
+    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
+      throw new Error('Workflow has been cancelled');
+    }
+
     const $jsonCtx = {
       request: wfCtx.request,
       authenticatedUser: wfCtx.authenticatedUser,
@@ -1524,6 +1551,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     // Create a workflow and call external.
+
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
       return await ctxtImpl.external(stepFn, params.configuredInstance ?? null, ...args);
@@ -1556,6 +1584,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const commInfo = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
     if (commInfo === undefined) {
       throw new DBOSNotRegisteredError(stepFn.name);
+    }
+
+    console.log('Running step for Workflow uuid is ' + wfCtx.workflowUUID);
+
+    console.log(Array.from(this.workflowCancellationMap.entries()));
+    console.log(this.workflowCancellationMap.get(wfCtx.workflowUUID));
+
+    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
+      console.log('Exiting step for Workflow uuid is ' + wfCtx.workflowUUID);
+      // return dbosNull as R ;
+      throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
     }
 
     const funcID = wfCtx.functionIDGetIncrement();
@@ -1615,6 +1654,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
+          if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
+            console.log('Exiting step for Workflow uuid is ' + wfCtx.workflowUUID);
+            // return dbosNull as R ;
+            throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+          }
+
           let cresult: R | undefined;
           if (commInfo.registration.passContext) {
             await runWithStepContext(ctxt, async () => {
@@ -1961,6 +2006,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async cancelWorkflow(workflowID: string): Promise<void> {
     await this.systemDatabase.cancelWorkflow(workflowID);
+    console.log(`mjjjjjj Cancelling workflow ${workflowID}`);
+    this.workflowCancellationMap.set(workflowID, true);
+    console.log(Array.from(this.workflowCancellationMap.entries()));
   }
 
   async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {

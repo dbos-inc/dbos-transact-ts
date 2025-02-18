@@ -91,7 +91,16 @@ export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
     createLogger() as unknown as GlobalLogger,
   );
   try {
+    console.log('mjjjjjj Cancelling workflow ${workflowUUID}');
+
     await systemDatabase.cancelWorkflow(workflowUUID);
+    DBOSExecutor.globalInstance?.workflowCancellationMap.set(workflowUUID, true);
+
+    if (DBOSExecutor.globalInstance !== undefined) {
+      console.log(Array.from(DBOSExecutor.globalInstance?.workflowCancellationMap.entries()));
+    } else {
+      console.log('DBOSExecutor.globalInstance is undefined');
+    }
   } finally {
     await systemDatabase.destroy();
   }
@@ -103,14 +112,28 @@ export async function reattemptWorkflow(
   workflowUUID: string,
   startNewWorkflow: boolean,
 ) {
-  const dbosExec = new DBOSExecutor(config);
+  // const dbosExec = new DBOSExecutor(config);
+
+  let dbosExec = DBOSExecutor?.globalInstance;
+  if (dbosExec === undefined) {
+    dbosExec = new DBOSExecutor(config);
+
+    try {
+      await dbosExec.init();
+    } catch (e) {
+      await dbosExec.destroy();
+      throw e;
+    }
+  }
+
   if (runtimeConfig !== null) {
     await DBOSRuntime.loadClasses(runtimeConfig.entrypoints);
   }
   try {
-    await dbosExec.init();
+    // await dbosExec.init();
     if (!startNewWorkflow) {
       await dbosExec.systemDatabase.resumeWorkflow(workflowUUID);
+      dbosExec.workflowCancellationMap.delete(workflowUUID);
     }
     const handle = await dbosExec.executeWorkflowUUID(workflowUUID, startNewWorkflow);
     const output = await handle.getResult();
