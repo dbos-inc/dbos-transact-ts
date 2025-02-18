@@ -5,6 +5,7 @@ import { WorkflowQueue } from '../src';
 import { v4 as uuidv4 } from 'uuid';
 import { WF } from './wfqtestprocess';
 import { Console } from 'console';
+import { WorkflowStatus } from '../src/workflow';
 
 describe('wf-cancel-tests', () => {
   let config: DBOSConfig;
@@ -48,7 +49,10 @@ describe('wf-cancel-tests', () => {
       console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
 
       expect(WFwith2Steps.stepsExecuted).toBe(1);
-      expect(DBOS.executor.getWorkflowStatus(wfid)).toBe(StatusString.CANCELLED);
+
+      const wfstatus = await DBOS.getWorkflowStatus(wfid);
+
+      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
     }
   });
 
