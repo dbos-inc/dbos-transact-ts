@@ -1074,8 +1074,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(txn.name);
     }
 
+    console.log('Running tranaction for Workflow uuid is ' + wfCtx.workflowUUID);
+
+    console.log(Array.from(this.workflowCancellationMap.entries()));
+    console.log(this.workflowCancellationMap.get(wfCtx.workflowUUID));
+
     if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new Error('Workflow has been cancelled');
+      console.log('Exiting transaction for Workflow uuid is ' + wfCtx.workflowUUID);
+      throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
     }
 
     const readOnly = txnInfo.config.readOnly ?? false;
@@ -1099,7 +1105,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     while (true) {
       if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-        throw new Error('Workflow has been cancelled');
+        console.log('Exiting transaction for Workflow uuid is ' + wfCtx.workflowUUID);
+        throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
       }
 
       let txn_snapshot = 'invalid';
@@ -1593,7 +1600,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
       console.log('Exiting step for Workflow uuid is ' + wfCtx.workflowUUID);
-      // return dbosNull as R ;
       throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
     }
 
@@ -1656,7 +1662,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         try {
           if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
             console.log('Exiting step for Workflow uuid is ' + wfCtx.workflowUUID);
-            // return dbosNull as R ;
             throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
           }
 
