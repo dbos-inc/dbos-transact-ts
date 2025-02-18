@@ -1395,7 +1395,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           .whereNull('completed_at_epoch_ms')
           .andWhere('queue_name', queue.name)
           .andWhere(function () {
-            this.whereNull('executor_id').orWhere('executor_id', executorID);
+            void this.whereNull('executor_id').orWhere('executor_id', executorID);
           })
           .select()
           .orderBy('created_at_epoch_ms', 'asc')
