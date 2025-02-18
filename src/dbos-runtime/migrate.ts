@@ -108,7 +108,7 @@ async function createDBOSTables(configFile: ConfigFile, userPoolConfig: PoolConf
   await pgSystemClient.connect();
 
   try {
-    await migrateSystemDatabase(systemPoolConfig);
+    await migrateSystemDatabase(systemPoolConfig, logger);
   } catch (e) {
     const tableExists = await pgSystemClient.query<ExistenceCheck>(
       `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`,
