@@ -1373,18 +1373,37 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Dequeue functions eligible for this worker and ordered by the time at which they were enqueued.
         // If there is a global or local concurrency limit N, select only the N oldest enqueued
         // functions, else select all of them.
+        const runningTasksSubquery = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
+          .count('*')
+          .where('queue_name', queue.name)
+          .whereNotNull('executor_id')
+          .whereNull('completed_at_epoch_ms');
+
+        let maxTasks = Infinity;
+
+        if (queue.workerConcurrency !== undefined) {
+          maxTasks = queue.workerConcurrency;
+        }
+
+        if (queue.concurrency !== undefined) {
+          const runningTasks = await runningTasksSubquery;
+          const availableTasks = Math.max(0, queue.concurrency - Number(runningTasks[0].count));
+          maxTasks = Math.min(maxTasks, availableTasks);
+        }
+
         let query = trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
           .whereNull('completed_at_epoch_ms')
           .andWhere('queue_name', queue.name)
           .andWhere(function () {
-            void this.whereNull('executor_id').orWhere('executor_id', executorID);
+            this.whereNull('executor_id').orWhere('executor_id', executorID);
           })
-          .select();
-        query = query.orderBy('created_at_epoch_ms', 'asc');
-        if (queue.workerConcurrency !== undefined) {
-          query = query.limit(queue.workerConcurrency);
-        } else if (queue.concurrency !== undefined) {
-          query = query.limit(queue.concurrency);
+          .select()
+          .orderBy('created_at_epoch_ms', 'asc')
+          .forUpdate()
+          .noWait();
+
+        if (maxTasks !== Infinity) {
+          query = query.limit(maxTasks);
         }
 
         // From the functions retrieved, get the workflow IDs of the functions
