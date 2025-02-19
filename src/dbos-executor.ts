@@ -789,7 +789,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           if (!this.debugMode) {
             await this.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false);
           }
-          wCtxt.span.setStatus({ code: SpanStatusCode.CANCELLED, message: err.message });
+          wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
           this.logger.info(`Cancelled workflow ${workflowUUID}`);
 
           result = dbosNull as unknown as R;
