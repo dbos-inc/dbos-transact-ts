@@ -761,7 +761,7 @@ class InterProcessWorkflow {
       });
       workerPromises.push(workerPromise);
     }
-    return workerPromises;
+    return Promise.resolve(workerPromises);
   }
 }
 
