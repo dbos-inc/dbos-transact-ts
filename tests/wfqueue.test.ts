@@ -693,7 +693,7 @@ class InterProcessWorkflow {
     try {
       let num_dequeued = 0;
       while (num_dequeued < InterProcessWorkflow.globalConcurrencyLimit) {
-        const msg = await DBOS.recv<String>('worker_dequeue', 1);
+        const msg = await DBOS.recv<string>('worker_dequeue', 1);
         if (msg) {
           num_dequeued++;
           DBOS.logger.debug(`Dequeued ${num_dequeued} tasks`);
@@ -715,7 +715,7 @@ class InterProcessWorkflow {
       expect(enqueuedWorkflows).toBe(InterProcessWorkflow.nTasks - InterProcessWorkflow.globalConcurrencyLimit);
 
       // Notify the workers they can resume
-      DBOS.setEvent('worker_resume', true);
+      await DBOS.setEvent('worker_resume', true);
     } catch (e) {
       DBOS.logger.error(`Error: ${(e as Error).message}`);
       throw e;
@@ -725,7 +725,7 @@ class InterProcessWorkflow {
   }
 
   @DBOS.step()
-  static async startWorkerProcesses(): Promise<Promise<void>[]> {
+  static startWorkerProcesses(): Promise<Promise<void>[]> {
     const workerPromises: Promise<void>[] = [];
     for (let i = 0; i < InterProcessWorkflow.nWorkers; i++) {
       const workerId = `test-worker-${i}`;

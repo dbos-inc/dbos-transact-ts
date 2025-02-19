@@ -55,7 +55,7 @@ async function main() {
   await InterProcessWorkflowTask.start_event.wait();
 
   // Notify the main process this worker has dequeued a task
-  await DBOS.send<String>(parentWorkflowID, 'worker_dequeue', 'worker_dequeue', workerId.toString());
+  await DBOS.send<string>(parentWorkflowID, 'worker_dequeue', 'worker_dequeue', workerId.toString());
 
   // Wait for a resume signal from the main process
   const can_resume = await DBOS.getEvent(parentWorkflowID, 'worker_resume');
