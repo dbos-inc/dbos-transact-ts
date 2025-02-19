@@ -1376,42 +1376,60 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Dequeue functions eligible for this worker and ordered by the time at which they were enqueued.
         // If there is a global or local concurrency limit N, select only the N oldest enqueued
         // functions, else select all of them.
+
+        // First lets figure out how many tasks the worker can dequeue
         const runningTasksSubquery = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-          .count('*')
+          .select('executor_id')
+          .count('* as task_count')
           .where('queue_name', queue.name)
           .whereNotNull('executor_id')
-          .whereNull('completed_at_epoch_ms');
+          .whereNull('completed_at_epoch_ms')
+          .groupBy('executor_id');
+
+        const runningTasksResult = await runningTasksSubquery;
+        const runningTasksResultDict: Record<string, number> = {};
+        runningTasksResult.forEach((row) => {
+          runningTasksResultDict[row.executor_id] = Number(row.task_count);
+        });
+        const runningTasksForThisWorker = runningTasksResultDict[executorID] || 0;
 
         let maxTasks = Infinity;
 
         if (queue.workerConcurrency !== undefined) {
-          maxTasks = queue.workerConcurrency;
+          if (queue.workerConcurrency < runningTasksForThisWorker) {
+            this.logger.warn(
+              `Worker concurrency limit ${queue.workerConcurrency} is less than the number of tasks running for this worker ${runningTasksForThisWorker}`,
+            );
+          }
+          maxTasks = Math.max(0, queue.workerConcurrency - runningTasksForThisWorker);
         }
 
         if (queue.concurrency !== undefined) {
-          const runningTasks = await runningTasksSubquery;
-          const availableTasks = Math.max(0, queue.concurrency - Number(runningTasks[0].count));
+          const totalRunningTasks = Object.values(runningTasksResultDict).reduce((acc, val) => acc + val, 0);
+          if (queue.concurrency < totalRunningTasks) {
+            this.logger.warn(
+              `Queue global concurrency limit ${queue.concurrency} is less than the number of tasks running for this queue ${totalRunningTasks}`,
+            );
+          }
+          const availableTasks = Math.max(0, queue.concurrency - totalRunningTasks);
           maxTasks = Math.min(maxTasks, availableTasks);
         }
 
+        // Lookup tasks
         let query = trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
           .whereNull('completed_at_epoch_ms') // not started
-          .andWhere('queue_name', queue.name) // member of queue.name
-          .andWhere(function () {
-            void this.whereNull('executor_id').orWhere('executor_id', executorID);
-          }) // either not assigned or assigned to this process
+          .whereNull('executor_id') // not assigned
+          .andWhere('queue_name', queue.name)
           .orderBy('created_at_epoch_ms', 'asc')
           .forUpdate()
           .noWait();
-
         if (maxTasks !== Infinity) {
           query = query.limit(maxTasks);
         }
-
-        // From the functions retrieved, get the workflow IDs of the functions
-        // that have not yet been started so we can start them.
         const rows = await query.select(['workflow_uuid', 'started_at_epoch_ms', 'executor_id']);
-        const workflowIDs = rows.filter((row) => !row.started_at_epoch_ms).map((row) => row.workflow_uuid);
+
+        // Start the workflows
+        const workflowIDs = rows.map((row) => row.workflow_uuid);
         for (const id of workflowIDs) {
           // If we have a rate limit, stop starting functions when the number
           //   of functions started this period exceeds the limit.
