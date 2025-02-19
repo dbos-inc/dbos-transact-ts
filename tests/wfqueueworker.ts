@@ -3,23 +3,38 @@ import { generateDBOSTestConfig, Event } from '../tests/helpers';
 import { sleepms } from '../src/utils';
 
 // Extract worker arguments from command-line input
-const workerId = process.env.DBOS__VMID || process.pid;
-const globalConcurrencyLimit = parseInt(process.argv[2] || '1', 10);
-const parentWorkflowID = process.argv[3];
+const workerId = process.env.DBOS__VMID;
+if (!workerId) {
+  console.error('Worker ID not provided');
+  process.exit(1);
+}
+const localConcurrencyLimit = parseInt(process.argv[2] || '0', 10);
+if (localConcurrencyLimit === 0) {
+  console.error('Local concurrency limit not provided');
+  process.exit(1);
+}
+const globalConcurrencyLimit = parseInt(process.argv[3] || '0', 10);
+if (globalConcurrencyLimit === 0) {
+  console.error('Global concurrency limit not provided');
+  process.exit(1);
+}
+const parentWorkflowID = process.argv[4];
 if (!parentWorkflowID) {
   console.error('Parent workflow ID not provided');
   process.exit(1);
 }
-const queueName = process.argv[4];
+const queueName = process.argv[5];
 if (!queueName) {
   console.error('Queue name not provided');
   process.exit(1);
 }
-console.log(`Worker ID: ${workerId}, Global Concurrency Limit: ${globalConcurrencyLimit}`);
+console.log(
+  `Worker ID: ${workerId}, Global Concurrency Limit: ${globalConcurrencyLimit}, Local Concurrency Limit: ${localConcurrencyLimit}, Parent Workflow ID: ${parentWorkflowID}, Queue Name: ${queueName}`,
+);
 
 // Declare worker queue with controlled concurrency
 new WorkflowQueue(queueName, {
-  workerConcurrency: 1,
+  workerConcurrency: localConcurrencyLimit,
   concurrency: globalConcurrencyLimit,
 });
 
@@ -51,11 +66,15 @@ async function main() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  // Wait for a task to be dequeued
-  await InterProcessWorkflowTask.start_event.wait();
+  // Wait to dequeue as many tasks as we can locally
+  for (let i = 0; i < localConcurrencyLimit; i++) {
+    await InterProcessWorkflowTask.start_event.wait();
+    InterProcessWorkflowTask.start_event.clear();
+  }
+  console.log(`${workerId} dequeued ${localConcurrencyLimit} tasks`);
 
   // Notify the main process this worker has dequeued a task
-  await DBOS.send<string>(parentWorkflowID, 'worker_dequeue', 'worker_dequeue', workerId.toString());
+  await DBOS.send<string>(parentWorkflowID, 'worker_dequeue', 'worker_dequeue', workerId?.toString());
 
   // Wait for a resume signal from the main process
   const can_resume = await DBOS.getEvent(parentWorkflowID, 'worker_resume');
@@ -64,7 +83,7 @@ async function main() {
     process.exit(1);
   }
 
-  // Complete the task
+  // Complete the tasks. 1 set should unlock them all.
   InterProcessWorkflowTask.end_event.set();
 
   const success = await queueEntriesAreCleanedUp();
