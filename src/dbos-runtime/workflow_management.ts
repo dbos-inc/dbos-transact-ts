@@ -104,12 +104,11 @@ export async function reattemptWorkflow(
   startNewWorkflow: boolean,
 ) {
   const dbosExec = new DBOSExecutor(config);
-
   if (runtimeConfig !== null) {
     await DBOSRuntime.loadClasses(runtimeConfig.entrypoints);
   }
   try {
-    // await dbosExec.init();
+    await dbosExec.init();
     if (!startNewWorkflow) {
       await dbosExec.systemDatabase.resumeWorkflow(workflowUUID);
     }
