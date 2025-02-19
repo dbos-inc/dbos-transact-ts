@@ -737,7 +737,7 @@ class InterProcessWorkflow {
       }
     }
     executors = [];
-    let statuses = [];
+    const statuses = [];
     for (const handle of handles) {
       const status = await handle.getStatus();
       expect(status).not.toBeNull();
@@ -771,7 +771,7 @@ class InterProcessWorkflow {
 
     // Notify the workers they can resume
     await DBOS.setEvent('worker_resume', true);
-
+    await Promise.all(workerPromises);
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }
 
