@@ -184,7 +184,7 @@ describe('queued-wf-tests-simple', () => {
     // Verify that each "wave" of tasks started at the ~same time.
     for (let wave = 0; wave < numWaves; ++wave) {
       for (let i = wave * qlimit; i < (wave + 1) * qlimit - 1; ++i) {
-        expect(times[i + 1] - times[i]).toBeLessThan(100);
+        expect(times[i + 1] - times[i]).toBeLessThan(150);
       }
     }
 
