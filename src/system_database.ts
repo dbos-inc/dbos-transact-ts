@@ -158,7 +158,9 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger
   try {
     await knexDB.migrate.latest();
   } catch (e) {
-    logger.warn(`Exception during system database construction. This is most likely because the system database was configured using a later version of DBOS: ${(e as Error).message}`)
+    logger.warn(
+      `Exception during system database construction. This is most likely because the system database was configured using a later version of DBOS: ${(e as Error).message}`,
+    );
   } finally {
     await knexDB.destroy();
   }
@@ -1014,7 +1016,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     const { rows } = await this.pool.query<workflow_status>(
-      `SELECT status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
+      `SELECT status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name, executor_id FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
       [workflowUUID],
     );
     let value = null;
@@ -1029,6 +1031,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         assumedRole: rows[0].assumed_role,
         authenticatedRoles: DBOSJSON.parse(rows[0].authenticated_roles) as string[],
         request: DBOSJSON.parse(rows[0].request) as HTTPRequest,
+        executorId: rows[0].executor_id,
       };
     }
 
@@ -1392,12 +1395,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
 
         let query = trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-          .whereNull('completed_at_epoch_ms')
-          .andWhere('queue_name', queue.name)
+          .whereNull('completed_at_epoch_ms') // not started
+          .andWhere('queue_name', queue.name) // member of queue.name
           .andWhere(function () {
             void this.whereNull('executor_id').orWhere('executor_id', executorID);
-          })
-          .select()
+          }) // either not assigned or assigned to this process
           .orderBy('created_at_epoch_ms', 'asc')
           .forUpdate()
           .noWait();
