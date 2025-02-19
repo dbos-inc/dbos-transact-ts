@@ -58,7 +58,7 @@ async function main() {
   await DBOS.send<String>(parentWorkflowID, 'worker_dequeue', 'worker_dequeue', workerId.toString());
 
   // Wait for a resume signal from the main process
-  const can_resume = await DBOS.getEvent(parentWorkflowID, 'worker_resume', 10);
+  const can_resume = await DBOS.getEvent(parentWorkflowID, 'worker_resume');
   if (!can_resume) {
     console.error(`${workerId} did not receive resume signal`);
     process.exit(1);
