@@ -39,21 +39,45 @@ describe('wf-cancel-tests', () => {
   test('test-two-steps-cancel', async () => {
     const wfid = uuidv4();
 
-    try {
-      const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
+    // try {
+    const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
-      DBOS.executor.cancelWorkflow(wfid);
+    DBOS.executor.cancelWorkflow(wfid);
 
-      await wfh.getResult();
-    } catch (e) {
-      console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
+    await wfh.getResult();
+    // } catch (e) {
+    console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
 
-      expect(WFwith2Steps.stepsExecuted).toBe(1);
+    expect(WFwith2Steps.stepsExecuted).toBe(1);
 
-      const wfstatus = await DBOS.getWorkflowStatus(wfid);
+    const wfstatus = await DBOS.getWorkflowStatus(wfid);
 
-      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
-    }
+    expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+    // }
+  });
+
+  test('test-two-steps-cancel-resume', async () => {
+    const wfid = uuidv4();
+
+    // try {
+    const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
+
+    DBOS.executor.cancelWorkflow(wfid);
+
+    await wfh.getResult();
+    // } catch (e) {
+    console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
+
+    expect(WFwith2Steps.stepsExecuted).toBe(1);
+
+    const wfstatus = await DBOS.getWorkflowStatus(wfid);
+
+    expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+    // }
+
+    const res = await DBOS.executor.resumeWorkflow(wfid);
+    const resstatus = await DBOS.getWorkflowStatus(wfid);
+    expect(resstatus?.status).toBe(StatusString.PENDING);
   });
 
   class WFwith2Steps {

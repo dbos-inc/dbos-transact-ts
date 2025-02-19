@@ -783,6 +783,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           console.log('Successfully caught DBOSWorkFlowCancelledError');
           internalStatus.error = err.message;
           internalStatus.status = StatusString.CANCELLED;
+
           if (internalStatus.queueName && !this.debugMode) {
             await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
           }
@@ -790,7 +791,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
             await this.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false);
           }
           wCtxt.span.setStatus({ code: SpanStatusCode.CANCELLED, message: err.message });
-          throw err;
+          console.log('Successfully done with cancellation');
+
+          result = dbosNull as unknown as R;
+
+          // throw err;
         } else {
           // Record the error.
           const e = err as Error & { dbos_already_logged?: boolean };
@@ -2018,6 +2023,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
     await this.systemDatabase.resumeWorkflow(workflowID);
+    this.workflowCancellationMap.delete(workflowID);
     return await this.executeWorkflowUUID(workflowID, false);
   }
 

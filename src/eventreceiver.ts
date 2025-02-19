@@ -67,6 +67,7 @@ export interface DBOSExecutorContext {
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
   cancelWorkflow(workflowID: string): Promise<void>;
+  resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>>;
 
   // Event receiver state queries / updates
   /*

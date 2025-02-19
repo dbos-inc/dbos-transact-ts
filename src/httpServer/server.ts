@@ -224,7 +224,6 @@ export class DBOSHttpServer {
     const workflowCancelUrl = '/workflows/:workflow_id/cancel';
     const workflowCancelHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      console.log(`mjjjjj Cancelling workflow with ID: ${workflowId}`);
       await dbosExec.cancelWorkflow(workflowId);
       koaCtxt.status = 204;
     };
