@@ -834,7 +834,7 @@ describe('queued-wf-tests-concurrent-workers', () => {
     await DBOS.shutdown();
   });
 
-  test('test_global_concurrency', async () => {
+  test('test_global_and_local_concurrency', async () => {
     const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency(config);
     await wfh.getResult();
     expect(await queueEntriesAreCleanedUp()).toBe(true);
