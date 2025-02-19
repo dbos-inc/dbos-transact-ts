@@ -677,7 +677,7 @@ const IPWQueue = new WorkflowQueue('IPWQueue', {
   rateLimit: { limitPerPeriod: 0, periodSec: 30 },
 });
 class InterProcessWorkflow {
-  static globalConcurrencyLimit = 4;
+  static globalConcurrencyLimit = 3;
   static nWorkers = InterProcessWorkflow.globalConcurrencyLimit * 2;
   static nTasks = InterProcessWorkflow.globalConcurrencyLimit * 5;
 
@@ -692,12 +692,11 @@ class InterProcessWorkflow {
     const workerPromises = await InterProcessWorkflow.startWorkerProcesses();
     try {
       let num_dequeued = 0;
-      // while (num_dequeued < InterProcessWorkflow.globalConcurrencyLimit) {
-      while (num_dequeued < InterProcessWorkflow.nWorkers) {
+      while (num_dequeued < InterProcessWorkflow.globalConcurrencyLimit) {
         const msg = await DBOS.recv<String>('worker_dequeue', 1);
         if (msg) {
           num_dequeued++;
-          DBOS.logger.info(`Dequeued ${num_dequeued} tasks`);
+          DBOS.logger.debug(`Dequeued ${num_dequeued} tasks`);
         }
       }
       // Check the concurrency limit is respected
@@ -783,7 +782,7 @@ describe('queued-wf-tests-concurrent-workers', () => {
     await DBOS.shutdown();
   });
 
-  test.only('test_global_concurrency', async () => {
+  test('test_global_concurrency', async () => {
     const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency();
     await wfh.getResult();
     expect(await queueEntriesAreCleanedUp()).toBe(true);

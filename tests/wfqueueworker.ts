@@ -29,10 +29,8 @@ class InterProcessWorkflowTask {
 
   @DBOS.workflow()
   static async task() {
-    console.log(`${workerId} starting task`);
     InterProcessWorkflowTask.start_event.set();
-    console.log(`${workerId} waiting to end`);
-    InterProcessWorkflowTask.end_event.wait();
+    await InterProcessWorkflowTask.end_event.wait();
     return Promise.resolve();
   }
 }
@@ -55,8 +53,6 @@ async function main() {
 
   // Wait for a task to be dequeued
   await InterProcessWorkflowTask.start_event.wait();
-  // InterProcessWorkflowTask.start_event.clear();
-  console.log(`${workerId} dequeued task`);
 
   // Notify the main process this worker has dequeued a task
   await DBOS.send<String>(parentWorkflowID, 'worker_dequeue', 'worker_dequeue', workerId.toString());
@@ -67,7 +63,6 @@ async function main() {
     console.error(`${workerId} did not receive resume signal`);
     process.exit(1);
   }
-  console.log(`${workerId} received resume signal`);
 
   // Complete the task
   InterProcessWorkflowTask.end_event.set();
@@ -77,7 +72,6 @@ async function main() {
     console.error(`${workerId} detected unhandled workflow queue entries`);
     process.exit(1);
   }
-  console.log(`${workerId} detected no unhandled workflow queue entries`);
 
   await DBOS.shutdown();
   process.exit(0);
