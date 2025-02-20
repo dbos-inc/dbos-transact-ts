@@ -9,7 +9,7 @@ import {
   DBOSConfigKeyTypeError,
   DBOSFailedSqlTransactionError,
   DBOSMaxStepRetriesError,
-  DBOSWorkFlowCancelledError,
+  DBOSWorkflowCancelledError,
 } from './error';
 import {
   InvokedHandle,
@@ -654,6 +654,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const presetUUID: boolean = params.workflowUUID ? true : false;
 
+    console.log('Internal workflow called with workflowUUID: ', workflowUUID);
+
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
       throw new DBOSNotRegisteredError(wf.name);
@@ -779,7 +781,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           result = await retrievedHandle.getResult();
           wCtxt.span.setAttribute('cached', true);
           wCtxt.span.setStatus({ code: SpanStatusCode.OK });
-        } else if (err instanceof DBOSWorkFlowCancelledError) {
+        } else if (err instanceof DBOSWorkflowCancelledError) {
           internalStatus.error = err.message;
           internalStatus.status = StatusString.CANCELLED;
 
@@ -1078,7 +1080,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
     }
 
     const readOnly = txnInfo.config.readOnly ?? false;
@@ -1102,7 +1104,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     while (true) {
       if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-        throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+        throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
       }
 
       let txn_snapshot = 'invalid';
