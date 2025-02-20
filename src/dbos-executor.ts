@@ -1272,7 +1272,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
     }
 
     const executeLocally = this.debugMode || (procInfo.config.executeLocally ?? false);
@@ -1322,7 +1322,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     while (true) {
       if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-        throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+        throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
       }
 
       let txn_snapshot = 'invalid';
@@ -1456,7 +1456,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const readOnly = config.readOnly ?? false;
 
     if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
     }
 
     const $jsonCtx = {
@@ -1600,7 +1600,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
     }
 
     const funcID = wfCtx.functionIDGetIncrement();
@@ -1661,7 +1661,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
           if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-            throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+            throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
           }
 
           let cresult: R | undefined;
