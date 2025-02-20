@@ -1396,9 +1396,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let maxTasks = Infinity;
 
         if (queue.workerConcurrency !== undefined) {
-          if (queue.workerConcurrency < runningTasksForThisWorker) {
+          if (runningTasksForThisWorker > queue.workerConcurrency) {
             this.logger.warn(
-              `Worker concurrency limit ${queue.workerConcurrency} is less than the number of tasks running for this worker ${runningTasksForThisWorker}`,
+              `Number of tasks on this worker (${runningTasksForThisWorker}) exceeds the worker concurrency limit (${queue.workerConcurrency})`,
             );
           }
           maxTasks = Math.max(0, queue.workerConcurrency - runningTasksForThisWorker);
@@ -1406,9 +1406,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         if (queue.concurrency !== undefined) {
           const totalRunningTasks = Object.values(runningTasksResultDict).reduce((acc, val) => acc + val, 0);
-          if (queue.concurrency < totalRunningTasks) {
+          if (totalRunningTasks > queue.concurrency) {
             this.logger.warn(
-              `Queue global concurrency limit ${queue.concurrency} is less than the number of tasks running for this queue ${totalRunningTasks}`,
+              `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${queue.concurrency})`,
             );
           }
           const availableTasks = Math.max(0, queue.concurrency - totalRunningTasks);
