@@ -1111,7 +1111,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowUUID}`);
+          throw new DBOSDebuggerError(`Failed to find the recorded output for the transaction: workflow UUID ${workflowUUID}, step number ${funcId}`);
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1312,7 +1312,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${wfCtx.workflowUUID}`);
+          throw new DBOSDebuggerError(`Failed to find the recorded output for the procedure: workflow UUID ${wfCtx.workflowUUID}, step number ${funcId}`);
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1597,7 +1597,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     if (this.debugMode) {
-      throw new DBOSDebuggerError(`Failed to find recorded output for workflow UUID: ${wfCtx.workflowUUID}`);
+      throw new DBOSDebuggerError(`Failed to find the recorded output for the step: workflow UUID: ${wfCtx.workflowUUID}, step number: ${funcID}`);
     }
 
     // Execute the step function.  If it throws an exception, retry with exponential backoff.
