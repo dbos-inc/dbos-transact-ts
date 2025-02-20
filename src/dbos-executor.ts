@@ -792,6 +792,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
           this.logger.info(`Cancelled workflow ${workflowUUID}`);
 
+          // debatable ? Another way to handle this is to throw the error and let the caller handle it.
           result = dbosNull as unknown as R;
         } else {
           // Record the error.
@@ -1268,6 +1269,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(proc.name);
     }
 
+    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
+      throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+    }
+
     const executeLocally = this.debugMode || (procInfo.config.executeLocally ?? false);
     const funcId = wfCtx.functionIDGetIncrement();
     const span: Span = this.tracer.startSpan(
@@ -1314,6 +1319,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const readOnly = procInfo.config.readOnly ?? false;
 
     while (true) {
+      if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
+        throw new DBOSWorkFlowCancelledError(wfCtx.workflowUUID);
+      }
+
       let txn_snapshot = 'invalid';
       const wrappedProcedure = async (client: PoolClient): Promise<R> => {
         const ctxt = new StoredProcedureContextImpl(client, wfCtx, span, this.logger, funcId, proc.name);
