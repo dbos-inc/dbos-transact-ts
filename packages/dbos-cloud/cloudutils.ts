@@ -81,7 +81,12 @@ const consoleFormat = format.combine(
   format.colorize(),
   format.printf((info) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const { timestamp, level, message, stack } = info;
+    const { timestamp, level, message, stack } = info as unknown as {
+      timestamp: string;
+      level: string;
+      message: string;
+      stack?: string;
+    };
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
     const ts = timestamp.slice(0, 19).replace('T', ' ');
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
