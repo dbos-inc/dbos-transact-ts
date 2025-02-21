@@ -178,7 +178,7 @@ export class DBOS {
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
-      const [dbosConfig, runtimeConfig] = parseConfigFile();
+      const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: debugMode });
       if (!debugProxy) {
         dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
       }
