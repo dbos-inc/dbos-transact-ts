@@ -785,9 +785,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
           internalStatus.error = err.message;
           internalStatus.status = StatusString.CANCELLED;
 
-          if (internalStatus.queueName && !this.debugMode) {
-            await this.systemDatabase.dequeueWorkflow(workflowUUID, this.#getQueueByName(internalStatus.queueName));
-          }
           if (!this.debugMode) {
             await this.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.CANCELLED, false);
           }
