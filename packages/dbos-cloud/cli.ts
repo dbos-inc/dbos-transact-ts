@@ -46,8 +46,11 @@ import {
 import {
   ListQueuedWorkflowsInput,
   ListWorkflowsInput,
+  cancelWorkflow,
   listQueuedWorkflows,
   listWorkflows,
+  restartWorkflow,
+  resumeWorkflow,
 } from './applications/manage-workflows.js';
 import { importSecrets } from './applications/secrets.js';
 
@@ -621,6 +624,57 @@ workflowCommands
         workflow_name: options.name,
       };
       const exitCode = await listWorkflows(DBOSCloudHost, input, appName);
+      process.exit(exitCode);
+    },
+  );
+
+workflowCommands
+  .command('cancel')
+  .description('Cancel a workflow so it is no longer automatically retried or restarted')
+  .argument('[string]', 'application name (Default: name from package.json)')
+  .requiredOption('-w, --workflowid <wfid>', 'The ID of the workflow to cancel')
+  .action(
+    async (
+      appName: string | undefined,
+      options: {
+        workflowid: string;
+      },
+    ) => {
+      const exitCode = await cancelWorkflow(DBOSCloudHost, options.workflowid, appName);
+      process.exit(exitCode);
+    },
+  );
+
+workflowCommands
+  .command('resume')
+  .description('Resume a workflow from the last step it executed, keeping its workflow ID')
+  .argument('[string]', 'application name (Default: name from package.json)')
+  .requiredOption('-w, --workflowid <wfid>', 'The ID of the workflow to resume')
+  .action(
+    async (
+      appName: string | undefined,
+      options: {
+        workflowid: string;
+      },
+    ) => {
+      const exitCode = await resumeWorkflow(DBOSCloudHost, options.workflowid, appName);
+      process.exit(exitCode);
+    },
+  );
+
+workflowCommands
+  .command('restart')
+  .description('Restart a workflow from the beginning with a new workflow ID')
+  .argument('[string]', 'application name (Default: name from package.json)')
+  .requiredOption('-w, --workflowid <wfid>', 'The ID of the workflow to restart')
+  .action(
+    async (
+      appName: string | undefined,
+      options: {
+        workflowid: string;
+      },
+    ) => {
+      const exitCode = await restartWorkflow(DBOSCloudHost, options.workflowid, appName);
       process.exit(exitCode);
     },
   );
