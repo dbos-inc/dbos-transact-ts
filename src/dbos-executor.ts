@@ -654,8 +654,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const workflowUUID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const presetUUID: boolean = params.workflowUUID ? true : false;
 
-    console.log('Internal workflow called with workflowUUID: ', workflowUUID);
-
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
       throw new DBOSNotRegisteredError(wf.name);
