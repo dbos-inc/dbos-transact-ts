@@ -136,6 +136,7 @@ export async function cancelWorkflow(host: string, workflowID: string, appName?:
     return 1;
   }
 }
+
 export async function resumeWorkflow(host: string, workflowID: string, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
