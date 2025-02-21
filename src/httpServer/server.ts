@@ -224,7 +224,6 @@ export class DBOSHttpServer {
     const workflowCancelUrl = '/workflows/:workflow_id/cancel';
     const workflowCancelHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      console.log(`Cancelling workflow with ID: ${workflowId}`);
       await dbosExec.cancelWorkflow(workflowId);
       koaCtxt.status = 204;
     };
@@ -242,7 +241,7 @@ export class DBOSHttpServer {
     const workflowResumeUrl = '/workflows/:workflow_id/resume';
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      console.log(`Resuming workflow with ID: ${workflowId}`);
+      dbosExec.logger.info(`Resuming workflow with ID: ${workflowId}`);
       await dbosExec.resumeWorkflow(workflowId);
       koaCtxt.status = 204;
     };

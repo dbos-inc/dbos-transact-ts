@@ -236,3 +236,10 @@ export class DBOSMaxStepRetriesError extends DBOSError {
     this.errors = errors;
   }
 }
+
+const WorkFlowCancelled = 24;
+export class DBOSWorkflowCancelledError extends DBOSError {
+  constructor(workflowUUID: string) {
+    super(`Workflow ${workflowUUID} has been cancelled`, WorkFlowCancelled);
+  }
+}
