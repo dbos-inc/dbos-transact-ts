@@ -102,3 +102,118 @@ export async function listQueuedWorkflows(
     return 1;
   }
 }
+
+export async function cancelWorkflow(
+  host: string,
+  workflowID: string,
+  appName?: string,
+): Promise<number> {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials(host, logger);
+  const bearerToken = 'Bearer ' + userCredentials.token;
+
+  appName = appName ?? retrieveApplicationName(logger, true);
+  if (!appName) {
+    return 1;
+  }
+
+  try {
+    await axios.post(
+      `https://${host}/appsadmin/${userCredentials.organization}/applications/${appName}/workflows/${workflowID}/cancel`,
+      {},
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: bearerToken,
+        },
+      },
+    );
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to cancel workflow ${workflowID} in application ${appName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
+
+export async function resumeWorkflow(
+  host: string,
+  workflowID: string,
+  appName?: string,
+): Promise<number> {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials(host, logger);
+  const bearerToken = 'Bearer ' + userCredentials.token;
+
+  appName = appName ?? retrieveApplicationName(logger, true);
+  if (!appName) {
+    return 1;
+  }
+
+  try {
+    await axios.post(
+      `https://${host}/appsadmin/${userCredentials.organization}/applications/${appName}/workflows/${workflowID}/resume`,
+      {},
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: bearerToken,
+        },
+      },
+    );
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to resume workflow ${workflowID} in application ${appName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
+
+export async function restartWorkflow(
+  host: string,
+  workflowID: string,
+  appName?: string,
+): Promise<number> {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials(host, logger);
+  const bearerToken = 'Bearer ' + userCredentials.token;
+
+  appName = appName ?? retrieveApplicationName(logger, true);
+  if (!appName) {
+    return 1;
+  }
+
+  try {
+    await axios.post(
+      `https://${host}/appsadmin/${userCredentials.organization}/applications/${appName}/workflows/${workflowID}/restart`,
+      {},
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: bearerToken,
+        },
+      },
+    );
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to restart workflow ${workflowID} in application ${appName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
