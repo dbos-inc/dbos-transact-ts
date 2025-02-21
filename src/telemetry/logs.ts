@@ -37,6 +37,7 @@ export interface IGlobalLogger extends IWinstonLogger {
 export class GlobalLogger {
   private readonly logger: IWinstonLogger;
   readonly addContextMetadata: boolean;
+  private isLogging = false; // Prevent recursive logging
 
   constructor(
     private readonly telemetryCollector?: TelemetryCollector,
@@ -57,26 +58,98 @@ export class GlobalLogger {
     }
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
+
+    this.captureStdoutAndStderr();
+  }
+
+  private captureStdoutAndStderr(): void {
+    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
+    const originalStderrWrite = process.stderr.write.bind(process.stderr);
+
+    process.stdout.write = (
+      buffer: Uint8Array | string,
+      encodingOrCb?: BufferEncoding | ((err?: Error) => void),
+      cb?: (err?: Error) => void,
+    ): boolean => {
+      let message: string;
+      let encoding: BufferEncoding | undefined;
+      let callback: ((err?: Error) => void) | undefined;
+
+      if (typeof encodingOrCb === 'function') {
+        // Case: write(buffer, cb)
+        message = buffer instanceof Uint8Array ? Buffer.from(buffer).toString() : buffer;
+        callback = encodingOrCb;
+      } else {
+        // Case: write(buffer, encoding, cb)
+        message = buffer instanceof Uint8Array ? Buffer.from(buffer).toString(encodingOrCb) : buffer;
+        encoding = encodingOrCb;
+        callback = cb;
+      }
+
+      if (!this.isLogging) {
+        this.isLogging = true;
+        this.logger.info(message.trim());
+        this.isLogging = false;
+        return true;
+      }
+
+      return originalStdoutWrite(buffer, encoding, callback);
+    };
+
+    process.stderr.write = (
+      buffer: Uint8Array | string,
+      encodingOrCb?: BufferEncoding | ((err?: Error) => void),
+      cb?: (err?: Error) => void,
+    ): boolean => {
+      let message: string;
+      let encoding: BufferEncoding | undefined;
+      let callback: ((err?: Error) => void) | undefined;
+
+      if (typeof encodingOrCb === 'function') {
+        // Case: write(buffer, cb)
+        message = buffer instanceof Uint8Array ? Buffer.from(buffer).toString() : buffer;
+        callback = encodingOrCb;
+      } else {
+        // Case: write(buffer, encoding, cb)
+        message = buffer instanceof Uint8Array ? Buffer.from(buffer).toString(encodingOrCb) : buffer;
+        encoding = encodingOrCb;
+        callback = cb;
+      }
+
+      if (!this.isLogging) {
+        this.isLogging = true;
+        this.logger.error(message.trim());
+        this.isLogging = false;
+        return true;
+      }
+
+      return originalStderrWrite(buffer, encoding, callback);
+    };
   }
 
   // We use this form of winston logging methods: `(message: string, ...meta: any[])`. See node_modules/winston/index.d.ts
   info(logEntry: unknown, metadata?: ContextualMetadata): void {
+    this.isLogging = true;
     if (typeof logEntry === 'string') {
       this.logger.info(logEntry, metadata);
     } else {
       this.logger.info(DBOSJSON.stringify(logEntry), metadata);
     }
+    this.isLogging = false;
   }
 
   debug(logEntry: unknown, metadata?: ContextualMetadata): void {
+    this.isLogging = true;
     if (typeof logEntry === 'string') {
       this.logger.debug(logEntry, metadata);
     } else {
       this.logger.debug(DBOSJSON.stringify(logEntry), metadata);
     }
+    this.isLogging = false;
   }
 
   warn(logEntry: unknown, metadata?: ContextualMetadata): void {
+    this.isLogging = true;
     if (typeof logEntry === 'string') {
       this.logger.warn(logEntry, metadata);
     } else {
@@ -86,6 +159,7 @@ export class GlobalLogger {
 
   // metadata can have both ContextualMetadata and the error stack trace
   error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
+    this.isLogging = true;
     if (inputError instanceof Error) {
       this.logger.error(inputError.message, { ...metadata, stack: inputError.stack });
     } else if (typeof inputError === 'string') {
@@ -93,6 +167,7 @@ export class GlobalLogger {
     } else {
       this.logger.error(DBOSJSON.stringify(inputError), { ...metadata, stack: new Error().stack });
     }
+    this.isLogging = false;
   }
 
   async destroy() {
