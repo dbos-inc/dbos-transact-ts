@@ -15,6 +15,7 @@ export interface LoggerConfig {
   logLevel?: string;
   silent?: boolean;
   addContextMetadata?: boolean;
+  forceConsole?: boolean;
 }
 
 type ContextualMetadata = {
@@ -47,6 +48,7 @@ export class GlobalLogger {
         format: consoleFormat,
         level: config?.logLevel || 'info',
         silent: config?.silent || false,
+        forceConsole: config?.forceConsole || false,
       }),
     );
     // Only enable the OTLP transport if we have a telemetry collector and an exporter
