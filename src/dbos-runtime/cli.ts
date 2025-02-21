@@ -209,7 +209,7 @@ workflowCommands
 workflowCommands
   .command('get')
   .description('Retrieve the status of a workflow')
-  .argument('<uuid>', 'Target workflow UUID')
+  .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--request', 'Retrieve workflow request information')
   .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
@@ -221,7 +221,7 @@ workflowCommands
 workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
-  .argument('<uuid>', 'Target workflow UUID')
+  .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const [dbosConfig, _] = parseConfigFile(options);
@@ -230,8 +230,8 @@ workflowCommands
 
 workflowCommands
   .command('resume')
-  .description('Resume a workflow from the last step it executed, keeping its UUID')
-  .argument('<uuid>', 'Target workflow UUID')
+  .description('Resume a workflow from the last step it executed, keeping its workflow ID')
+  .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const [dbosConfig, runtimeConfig] = parseConfigFile(options);
@@ -241,8 +241,8 @@ workflowCommands
 
 workflowCommands
   .command('restart')
-  .description('Restart a workflow from the beginning with a new UUID')
-  .argument('<uuid>', 'Target workflow UUID')
+  .description('Restart a workflow from the beginning with a new workflow ID')
+  .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const [dbosConfig, runtimeConfig] = parseConfigFile(options);
