@@ -93,7 +93,7 @@ class WFQueueRunner {
         } catch (e) {
           const err = e as Error;
           // Silence row lock acquisition errors
-          if ('code' in err && err.code !== '55P03') {
+          if ('code' in err && err.code !== '55P03' && err.code !== '40001') {
             exec.logger.warn(`Error getting startable workflows: ${err.message}`);
           }
           // On the premise that this was a transaction conflict error, just try again later.
