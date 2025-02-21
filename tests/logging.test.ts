@@ -68,8 +68,9 @@ describe('dbos-logging', () => {
     await TestFunctions.foo(null as unknown as DBOSContextImpl, 'a', new Date(), false, 4);
   });
 
-  test.skip('forceConsole', async () => {
-    const mockConsoleLog = jest.spyOn(console, 'log');
+  test('forceConsole', async () => {
+    let dbosExec: DBOSExecutor | undefined = undefined;
+    let mockConsoleLog: jest.SpyInstance | undefined = undefined;
     try {
       const $dbosConfig = generateDBOSTestConfig();
       const { telemetry } = $dbosConfig;
@@ -79,13 +80,15 @@ describe('dbos-logging', () => {
       };
 
       await setUpDBOSTestDb(dbosConfig);
-      const dbosExec = new DBOSExecutor(dbosConfig);
+
+      mockConsoleLog = jest.spyOn(console, 'log');
+      dbosExec = new DBOSExecutor(dbosConfig);
 
       await dbosExec.init();
       expect(mockConsoleLog).toHaveBeenCalled();
-      await dbosExec.destroy();
     } finally {
-      mockConsoleLog.mockRestore();
+      mockConsoleLog?.mockRestore();
+      await dbosExec?.destroy();
     }
   });
 });
