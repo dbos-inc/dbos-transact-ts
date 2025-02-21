@@ -145,7 +145,7 @@ export class Logger implements DLogger {
 /* FORMAT & TRANSPORTS */
 /***********************/
 
-const consoleFormat = format.combine(
+export const consoleFormat = format.combine(
   format.errors({ stack: true }),
   format.timestamp(),
   format.colorize(),

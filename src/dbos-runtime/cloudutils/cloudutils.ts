@@ -5,7 +5,8 @@ import path from 'node:path';
 import { input } from '@inquirer/prompts';
 import validator from 'validator';
 import { authenticate } from './authentication';
-import { transports, createLogger, format, Logger } from 'winston';
+import { transports, createLogger, Logger } from 'winston';
+import { consoleFormat } from '../../telemetry/logs';
 
 export interface DBOSCloudCredentials {
   token: string;
@@ -42,21 +43,6 @@ export function getLogger(verbose?: boolean): CLILogger {
   );
   return (curLogger = createLogger({ transports: winstonTransports }));
 }
-
-const consoleFormat = format.combine(
-  format.errors({ stack: true }),
-  format.timestamp(),
-  format.colorize(),
-  format.printf((info) => {
-    const { timestamp, level, message, stack } = info;
-    const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
-    const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
-
-    const messageString: string = typeof message === 'string' ? message : JSON.stringify(message);
-
-    return `${ts} [${level}]: ${messageString} ${stack ? '\n' + formattedStack : ''}`;
-  }),
-);
 
 export function isTokenExpired(token: string): boolean {
   try {
