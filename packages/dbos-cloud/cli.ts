@@ -628,7 +628,7 @@ workflowCommands
     },
   );
 
-  workflowCommands
+workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
   .argument('[string]', 'application name (Default: name from package.json)')
@@ -645,7 +645,7 @@ workflowCommands
     },
   );
 
-  workflowCommands
+workflowCommands
   .command('resume')
   .description('Resume a workflow from the last step it executed, keeping its workflow ID')
   .argument('[string]', 'application name (Default: name from package.json)')
@@ -662,7 +662,7 @@ workflowCommands
     },
   );
 
-  workflowCommands
+workflowCommands
   .command('restart')
   .description('Restart a workflow from the beginning with a new workflow ID')
   .argument('[string]', 'application name (Default: name from package.json)')

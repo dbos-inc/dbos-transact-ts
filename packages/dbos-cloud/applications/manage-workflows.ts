@@ -103,11 +103,7 @@ export async function listQueuedWorkflows(
   }
 }
 
-export async function cancelWorkflow(
-  host: string,
-  workflowID: string,
-  appName?: string,
-): Promise<number> {
+export async function cancelWorkflow(host: string, workflowID: string, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = 'Bearer ' + userCredentials.token;
@@ -140,13 +136,7 @@ export async function cancelWorkflow(
     return 1;
   }
 }
-
-
-export async function resumeWorkflow(
-  host: string,
-  workflowID: string,
-  appName?: string,
-): Promise<number> {
+export async function resumeWorkflow(host: string, workflowID: string, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = 'Bearer ' + userCredentials.token;
@@ -180,11 +170,7 @@ export async function resumeWorkflow(
   }
 }
 
-export async function restartWorkflow(
-  host: string,
-  workflowID: string,
-  appName?: string,
-): Promise<number> {
+export async function restartWorkflow(host: string, workflowID: string, appName?: string): Promise<number> {
   const logger = getLogger();
   const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = 'Bearer ' + userCredentials.token;
