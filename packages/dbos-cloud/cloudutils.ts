@@ -1,4 +1,5 @@
 import { transports, createLogger, format, Logger } from 'winston';
+import type { Logform } from 'winston';
 import fs from 'fs';
 import axios, { AxiosError } from 'axios';
 import jwt from 'jsonwebtoken';
@@ -79,11 +80,18 @@ const consoleFormat = format.combine(
   format.errors({ stack: true }),
   format.timestamp(),
   format.colorize(),
-  format.printf((info) => {
-    const { timestamp, level, message, stack } = info;
-    const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
-    const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
+  format.printf((info: Logform.TransformableInfo) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const { level, message } = info;
+    const timestamp = typeof info.timestamp === 'string' ? info.timestamp : '';
+    const stack = typeof info.stack === 'string' ? info.stack : '';
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+    const ts = timestamp.slice(0, 19).replace('T', ' ');
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
+    const formattedStack = stack?.split('\n').slice(1).join('\n');
+
     const messageString: string = typeof message === 'string' ? message : JSON.stringify(message);
+
     return `${ts} [${level}]: ${messageString} ${stack ? '\n' + formattedStack : ''}`;
   }),
 );
