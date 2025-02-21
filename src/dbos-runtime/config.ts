@@ -70,6 +70,9 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
     const configFileContent = readFileSync(configFilePath);
     const interpolatedConfig = substituteEnvVars(configFileContent);
     const configFile = YAML.parse(interpolatedConfig) as ConfigFile;
+    if (!configFile.database) {
+      configFile.database = {}; // Create an empty database object if it doesn't exist
+    }
     return configFile;
   } catch (e) {
     if (e instanceof Error) {
@@ -228,10 +231,6 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   const configFile: ConfigFile | undefined = loadConfigFile(configFilePath);
   if (!configFile) {
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
-  }
-
-  if (!configFile.database) {
-    configFile.database = {};
   }
 
   if (configFile.database.local_suffix === true && configFile.database.hostname === 'localhost') {

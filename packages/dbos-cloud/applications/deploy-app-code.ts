@@ -201,7 +201,7 @@ export async function deployAppCode(
     // Make sure the app database is the same.
     if (
       appRegistered.ApplicationDatabaseName &&
-      dbosConfig.database.app_db_name &&
+      dbosConfig.database?.app_db_name &&
       dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName
     ) {
       logger.error(
