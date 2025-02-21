@@ -24,7 +24,7 @@
     "diff": "^5.2.0",
     "strip-literal": "^2.1.0",
     "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "vitest": "^3.0.6"
   },
   "dependencies": {
     "commander": "^12.1.0",
