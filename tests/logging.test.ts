@@ -68,7 +68,7 @@ describe('dbos-logging', () => {
     await TestFunctions.foo(null as unknown as DBOSContextImpl, 'a', new Date(), false, 4);
   });
 
-  test.skip('forceConsole', async () => {
+  test('forceConsole', async () => {
     const mockConsoleLog = jest.spyOn(console, 'log');
     try {
       const $dbosConfig = generateDBOSTestConfig();
