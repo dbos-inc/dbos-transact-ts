@@ -18,19 +18,19 @@
   },
   "devDependencies": {
     "@tsconfig/node20": "^20.1.4",
-    "@types/diff": "^5.2.1",
-    "@types/pg": "^8.11.6",
+    "@types/diff": "^7.0.1",
+    "@types/pg": "^8.11.11",
     "colors": "^1.4.0",
-    "diff": "^5.2.0",
-    "strip-literal": "^2.1.0",
-    "typescript": "^5.4.5",
-    "vitest": "^1.6.0"
+    "diff": "^7.0.0",
+    "strip-literal": "^3.0.0",
+    "typescript": "^5.7.3",
+    "vitest": "^3.0.6"
   },
   "dependencies": {
-    "commander": "^12.1.0",
-    "liquidjs": "^10.13.1",
-    "pg": "^8.12.0",
-    "ts-morph": "^22.0.0"
+    "commander": "^13.1.0",
+    "liquidjs": "^10.20.3",
+    "pg": "^8.13.3",
+    "ts-morph": "^25.0.1"
   },
   "peerDependencies": {
     "@dbos-inc/dbos-sdk": "*"
