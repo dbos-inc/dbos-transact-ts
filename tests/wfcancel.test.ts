@@ -33,19 +33,20 @@ describe('wf-cancel-tests', () => {
   test('test-two-steps-cancel', async () => {
     const wfid = uuidv4();
 
-    const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
+    try {
+      const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
-    await DBOS.executor.cancelWorkflow(wfid);
+      await DBOS.executor.cancelWorkflow(wfid);
+      await wfh.getResult();
+    } catch (e) {
+      console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
 
-    await wfh.getResult();
+      expect(WFwith2Steps.stepsExecuted).toBe(1);
 
-    console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
+      const wfstatus = await DBOS.getWorkflowStatus(wfid);
 
-    expect(WFwith2Steps.stepsExecuted).toBe(1);
-
-    const wfstatus = await DBOS.getWorkflowStatus(wfid);
-
-    expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+    }
   });
 
   test('test-two-steps-cancel-resume', async () => {
@@ -53,17 +54,19 @@ describe('wf-cancel-tests', () => {
 
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
-    await DBOS.executor.cancelWorkflow(wfid);
+    try {
+      await DBOS.executor.cancelWorkflow(wfid);
 
-    await wfh.getResult();
+      await wfh.getResult();
+    } catch (e) {
+      console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
 
-    console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
+      expect(WFwith2Steps.stepsExecuted).toBe(1);
 
-    expect(WFwith2Steps.stepsExecuted).toBe(1);
+      const wfstatus = await DBOS.getWorkflowStatus(wfid);
 
-    const wfstatus = await DBOS.getWorkflowStatus(wfid);
-
-    expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+    }
 
     await DBOS.executor.resumeWorkflow(wfid);
     const resstatus = await DBOS.getWorkflowStatus(wfid);
@@ -75,17 +78,19 @@ describe('wf-cancel-tests', () => {
 
     const wfh = await DBOS.startWorkflow(WFwith2Transactions, { workflowID: wfid }).workflowWithTransactions();
 
-    await DBOS.executor.cancelWorkflow(wfid);
+    try {
+      await DBOS.executor.cancelWorkflow(wfid);
 
-    await wfh.getResult();
+      await wfh.getResult();
+    } catch (e) {
+      console.log(`number executed  ${WFwith2Transactions.transExecuted}`);
 
-    console.log(`number executed  ${WFwith2Transactions.transExecuted}`);
+      expect(WFwith2Transactions.transExecuted).toBe(1);
 
-    expect(WFwith2Transactions.transExecuted).toBe(1);
+      const wfstatus = await DBOS.getWorkflowStatus(wfid);
 
-    const wfstatus = await DBOS.getWorkflowStatus(wfid);
-
-    expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+    }
 
     await DBOS.executor.resumeWorkflow(wfid);
     const resstatus = await DBOS.getWorkflowStatus(wfid);

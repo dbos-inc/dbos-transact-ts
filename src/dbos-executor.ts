@@ -789,8 +789,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
           this.logger.info(`Cancelled workflow ${workflowUUID}`);
 
-          // debatable ? Another way to handle this is to throw the error and let the caller handle it.
-          result = dbosNull as unknown as R;
+          throw err;
         } else {
           // Record the error.
           const e = err as Error & { dbos_already_logged?: boolean };
