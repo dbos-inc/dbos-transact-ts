@@ -1,8 +1,8 @@
 import { LogMasks, ArgName, SkipLogging, LogMask, getRegisteredOperations } from '../src/decorators';
 
 import { DBOSContextImpl } from '../src/context';
-// import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-// import { DBOSExecutor } from '../src/dbos-executor';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { DBOSExecutor } from '../src/dbos-executor';
 
 class TestFunctions {
   static foo(
@@ -68,24 +68,24 @@ describe('dbos-logging', () => {
     await TestFunctions.foo(null as unknown as DBOSContextImpl, 'a', new Date(), false, 4);
   });
 
-  // test('forceConsole', async () => {
-  //   const mockConsoleLog = jest.spyOn(console, 'log').mockImplementation((() => {}) as any);
-  //   try {
-  //     const $dbosConfig = generateDBOSTestConfig();
-  //     const { telemetry } = $dbosConfig;
-  //     const dbosConfig = {
-  //       ...$dbosConfig,
-  //       telemetry: { ...telemetry, logs: { ...telemetry?.logs, forceConsole: true } },
-  //     };
+  test('forceConsole', async () => {
+    const mockConsoleLog = jest.spyOn(console, 'log').mockImplementation((() => {}) as any);
+    try {
+      const $dbosConfig = generateDBOSTestConfig();
+      const { telemetry } = $dbosConfig;
+      const dbosConfig = {
+        ...$dbosConfig,
+        telemetry: { ...telemetry, logs: { ...telemetry?.logs, forceConsole: true } },
+      };
 
-  //     await setUpDBOSTestDb(dbosConfig);
-  //     const dbosExec = new DBOSExecutor(dbosConfig);
+      await setUpDBOSTestDb(dbosConfig);
+      const dbosExec = new DBOSExecutor(dbosConfig);
 
-  //     await dbosExec.init();
-  //     expect(mockConsoleLog).toHaveBeenCalled();
-  //     await dbosExec.destroy();
-  //   } finally {
-  //     mockConsoleLog.mockRestore();
-  //   }
-  // });
+      await dbosExec.init();
+      expect(mockConsoleLog).toHaveBeenCalled();
+      await dbosExec.destroy();
+    } finally {
+      jest.restoreAllMocks();
+    }
+  });
 });
