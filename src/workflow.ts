@@ -63,6 +63,7 @@ export interface WorkflowStatus {
   readonly assumedRole: string; // The role used to run this workflow.  Empty string if authorization is not required.
   readonly authenticatedRoles: string[]; // All roles the authenticated user has, if any.
   readonly request: HTTPRequest; // The parent request for this workflow, if any.
+  readonly executorId?: string; // The ID of the workflow executor
 }
 
 export interface GetWorkflowsInput {

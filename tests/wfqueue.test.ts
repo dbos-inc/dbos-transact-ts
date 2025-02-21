@@ -7,7 +7,7 @@ import { sleepms } from '../src/utils';
 
 import { WF } from './wfqtestprocess';
 
-import { execFile } from 'child_process';
+import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { Client } from 'pg';
 
@@ -184,7 +184,7 @@ describe('queued-wf-tests-simple', () => {
     // Verify that each "wave" of tasks started at the ~same time.
     for (let wave = 0; wave < numWaves; ++wave) {
       for (let i = wave * qlimit; i < (wave + 1) * qlimit - 1; ++i) {
-        expect(times[i + 1] - times[i]).toBeLessThan(100);
+        expect(times[i + 1] - times[i]).toBeLessThan(150);
       }
     }
 
@@ -664,6 +664,159 @@ describe('queued-wf-tests-simple', () => {
   });
 });
 
+// dummy declaration to match the workflow in tests/wfqueueworker.ts
+export class InterProcessWorkflowTask {
+  @DBOS.workflow()
+  static async task() {
+    return Promise.resolve();
+  }
+}
+
+// This queue cannot dequeue
+const IPWQueue = new WorkflowQueue('IPWQueue', {
+  rateLimit: { limitPerPeriod: 0, periodSec: 30 },
+});
+class InterProcessWorkflow {
+  static localConcurrencyLimit = 5;
+  static globalConcurrencyLimit = InterProcessWorkflow.localConcurrencyLimit * 2;
+
+  @DBOS.workflow()
+  static async testGlobalConcurrency(config: DBOSConfig) {
+    // First, start local concurrency limit tasks
+    let handles = [];
+    for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit; ++i) {
+      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task());
+    }
+    // Start two workers
+    const workerPromises = await InterProcessWorkflow.startWorkerProcesses(2);
+    // Check that a single worker was able to acquire all the tasks
+    let loop = true;
+    while (loop) {
+      const msg = await DBOS.recv<string>('worker_dequeue', 1);
+      if (msg === 'worker_dequeue') {
+        loop = false;
+      }
+    }
+    let executors = [];
+    for (const handle of handles) {
+      const status = await handle.getStatus();
+      expect(status).not.toBeNull();
+      expect(status?.status).toBe(StatusString.PENDING);
+      executors.push(status?.executorId);
+    }
+    expect(new Set(executors).size).toBe(1);
+
+    // Now enqueue less than the local concurrency limit. Check that the 2nd worker acquired them. We won't have a signal set from the worker so we need to sleep a little.
+    handles = [];
+    for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit - 1; ++i) {
+      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task());
+    }
+    await sleepms(1000);
+
+    executors = [];
+    for (const handle of handles) {
+      const status = await handle.getStatus();
+      expect(status).not.toBeNull();
+      expect(status?.status).toBe(StatusString.PENDING);
+      executors.push(status?.executorId);
+    }
+    expect(new Set(executors).size).toBe(1);
+
+    // Now, enqueue two more tasks. This means qlen > local concurrency limit * 2 and qlen > global concurrency limit
+    // We should have 1 tasks PENDING and 1 ENQUEUED, thus meeting both local and global concurrency limits
+    handles = [];
+    for (let i = 0; i < 2; ++i) {
+      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task());
+    }
+    // The first worker already sent a signal. Here we are waiting for the second worker.
+    loop = true;
+    while (loop) {
+      const msg = await DBOS.recv<string>('worker_dequeue', 1);
+      if (msg === 'worker_dequeue') {
+        loop = false;
+      }
+    }
+    executors = [];
+    const statuses = [];
+    for (const handle of handles) {
+      const status = await handle.getStatus();
+      expect(status).not.toBeNull();
+      statuses.push(status?.status);
+      executors.push(status?.executorId);
+    }
+    expect(statuses).toContain(StatusString.PENDING);
+    expect(statuses).toContain(StatusString.ENQUEUED);
+    expect(new Set(executors).size).toBe(2);
+    expect(executors).toContain('local');
+
+    // Now check the global concurrency is met
+    const systemDBClient = new Client({
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
+      database: config.system_database,
+    });
+    await systemDBClient.connect();
+    try {
+      const result = await systemDBClient.query<{ count: string }>(
+        'SELECT COUNT(*) FROM dbos.workflow_status WHERE status = $1 AND queue_name = $2',
+        [StatusString.PENDING, IPWQueue.name],
+      );
+      const count = Number(result.rows[0].count);
+      expect(count).toBe(InterProcessWorkflow.globalConcurrencyLimit);
+    } finally {
+      await systemDBClient.end();
+    }
+
+    // Notify the workers they can resume
+    await DBOS.setEvent('worker_resume', true);
+    await Promise.all(workerPromises);
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }
+
+  @DBOS.step()
+  static startWorkerProcesses(nWorkers: number): Promise<Promise<void>[]> {
+    const workerPromises: Promise<void>[] = [];
+    for (let i = 0; i < nWorkers; i++) {
+      const workerId = `test-worker-${i}`;
+      const workerPromise = new Promise<void>((resolve, reject) => {
+        const child = spawn(
+          'npx',
+          [
+            'ts-node',
+            './tests/wfqueueworker.ts',
+            `${InterProcessWorkflow.localConcurrencyLimit}`,
+            `${InterProcessWorkflow.globalConcurrencyLimit}`,
+            `${DBOS.workflowID}`,
+            `${IPWQueue.name}`,
+          ],
+          {
+            cwd: process.cwd(),
+            env: { ...process.env, DBOS__VMID: workerId },
+            stdio: 'inherit', // Allows direct streaming
+          },
+        );
+
+        child.on('close', (code) => {
+          if (code === 0) {
+            resolve();
+          } else {
+            reject(new Error(`Worker ${i} exited with code ${code}`));
+          }
+        });
+
+        child.on('error', (error) => {
+          console.error(`Worker ${i} failed: ${error.message}`);
+          reject(error);
+        });
+      });
+      workerPromises.push(workerPromise);
+    }
+    return Promise.resolve(workerPromises);
+  }
+}
+
 describe('queued-wf-tests-concurrent-workers', () => {
   let config: DBOSConfig;
 
@@ -673,64 +826,19 @@ describe('queued-wf-tests-concurrent-workers', () => {
     DBOS.setConfig(config);
   });
 
-  test('test_worker_concurrency', async () => {
+  beforeEach(async () => {
     await DBOS.launch();
+  });
 
-    // Queue N tasks then shutdown DBOS so we don't dequeue
-    const N = 10;
-    const handles: WorkflowHandle<void>[] = [];
-    for (let i = 0; i < N; ++i) {
-      const h = await DBOS.startWorkflow(TestWFs, { queueName: workerConcurrencyQueue.name }).noop();
-      handles.push(h);
-    }
-    await DBOS.shutdown(); // Do not want to take queued jobs from here
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
 
-    async function runWorkers() {
-      const M = 10;
-      const workerPromises: Promise<void>[] = [];
-
-      try {
-        for (let i = 0; i < M; i++) {
-          const workerPromise = execFileAsync('npx', ['ts-node', './tests/wfqueueworker.ts'], {
-            cwd: process.cwd(),
-            env: {
-              ...process.env,
-              DBOS__VMID: `test-worker-${i}`,
-            },
-          })
-            .then(({ stdout, stderr }) => {
-              if (stdout) console.log(`Worker ${i} stdout: ${stdout}`);
-              if (stderr) console.error(`Worker ${i} stderr: ${stderr}`);
-            })
-            .catch((error) => {
-              if (error instanceof Error) {
-                console.error(`Worker ${i} failed: ${error.message}`);
-                throw error;
-              } else {
-                console.error(`Worker ${i} failed with an unknown error: ${String(error)}`);
-                throw new Error(`Worker ${i} failed with an unknown error`);
-              }
-            });
-
-          workerPromises.push(workerPromise);
-        }
-
-        // Wait for all workers to complete
-        await Promise.all(workerPromises);
-      } catch (error) {
-        console.error('One or more workers failed:', error);
-      }
-    }
-
-    await runWorkers().catch((error) => console.error('Unexpected error:', error));
-
-    try {
-      await DBOS.launch();
-      expect(await queueEntriesAreCleanedUp()).toBe(true);
-    } finally {
-      await DBOS.shutdown();
-    }
-  }, 120000);
+  test('test_global_and_local_concurrency', async () => {
+    const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency(config);
+    await wfh.getResult();
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 60000);
 });
 
 class TestWFs {

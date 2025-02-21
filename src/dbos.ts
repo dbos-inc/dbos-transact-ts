@@ -559,6 +559,12 @@ export class DBOS {
     // If this is called from within a workflow, this is a child workflow,
     //  For OAOO, we will need a consistent ID formed from the parent WF and call number
     if (DBOS.isWithinWorkflow()) {
+      if (!DBOS.isInWorkflow()) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `DBOS.startWorkflow` from within a `step` or `transaction`',
+        );
+      }
+
       const wfctx = assertCurrentWorkflowContext();
 
       const funcId = wfctx.functionIDGetIncrement();
@@ -843,6 +849,12 @@ export class DBOS {
         // If this is called from within a workflow, this is a child workflow,
         //  For OAOO, we will need a consistent ID formed from the parent WF and call number
         if (DBOS.isWithinWorkflow()) {
+          if (!DBOS.isInWorkflow()) {
+            throw new DBOSInvalidWorkflowTransitionError(
+              'Invalid call to a `workflow` function from within a `step` or `transaction`',
+            );
+          }
+
           const wfctx = assertCurrentWorkflowContext();
 
           const funcId = wfctx.functionIDGetIncrement();
