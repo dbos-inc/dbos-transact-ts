@@ -134,13 +134,14 @@ describe('wf-cancel-tests', () => {
   class WFwith2Transactions {
     static transExecuted = 0 as number;
 
-    @DBOS.step()
+    @DBOS.transaction()
+    // eslint-disable-next-line @typescript-eslint/require-await
     static async transaction1() {
       WFwith2Transactions.transExecuted++;
       console.log(`Step 1  ${WFwith2Steps.stepsExecuted}`);
     }
 
-    @DBOS.step()
+    @DBOS.transaction()
     // eslint-disable-next-line @typescript-eslint/require-await
     static async transaction2() {
       WFwith2Transactions.transExecuted++;
