@@ -5,7 +5,8 @@ import path from 'node:path';
 import { input } from '@inquirer/prompts';
 import validator from 'validator';
 import { authenticate } from './authentication';
-import { transports, createLogger, format, Logger } from 'winston';
+import { transports, createLogger, Logger } from 'winston';
+import { consoleFormat } from '../../telemetry/logs';
 
 export interface DBOSCloudCredentials {
   token: string;
@@ -42,24 +43,6 @@ export function getLogger(verbose?: boolean): CLILogger {
   );
   return (curLogger = createLogger({ transports: winstonTransports }));
 }
-
-const consoleFormat = format.combine(
-  format.errors({ stack: true }),
-  format.timestamp(),
-  format.colorize(),
-  format.printf((info) => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    const { timestamp, level, message, stack } = info;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const ts = timestamp.slice(0, 19).replace('T', ' ');
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const formattedStack = stack?.split('\n').slice(1).join('\n');
-
-    const messageString: string = typeof message === 'string' ? message : JSON.stringify(message);
-
-    return `${ts} [${level}]: ${messageString} ${stack ? '\n' + formattedStack : ''}`;
-  }),
-);
 
 export function isTokenExpired(token: string): boolean {
   try {

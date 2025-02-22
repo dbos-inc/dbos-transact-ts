@@ -80,15 +80,10 @@ const consoleFormat = format.combine(
   format.timestamp(),
   format.colorize(),
   format.printf((info) => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack } = info;
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const ts = timestamp.slice(0, 19).replace('T', ' ');
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const formattedStack = stack?.split('\n').slice(1).join('\n');
-
+    const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
+    const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
     const messageString: string = typeof message === 'string' ? message : JSON.stringify(message);
-
     return `${ts} [${level}]: ${messageString} ${stack ? '\n' + formattedStack : ''}`;
   }),
 );

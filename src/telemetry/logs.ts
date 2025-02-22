@@ -15,6 +15,7 @@ export interface LoggerConfig {
   logLevel?: string;
   silent?: boolean;
   addContextMetadata?: boolean;
+  forceConsole?: boolean;
 }
 
 type ContextualMetadata = {
@@ -47,6 +48,7 @@ export class GlobalLogger {
         format: consoleFormat,
         level: config?.logLevel || 'info',
         silent: config?.silent || false,
+        forceConsole: config?.forceConsole || false,
       }),
     );
     // Only enable the OTLP transport if we have a telemetry collector and an exporter
@@ -143,18 +145,15 @@ export class Logger implements DLogger {
 /* FORMAT & TRANSPORTS */
 /***********************/
 
-const consoleFormat = format.combine(
+export const consoleFormat = format.combine(
   format.errors({ stack: true }),
   format.timestamp(),
   format.colorize(),
   format.printf((info) => {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { timestamp, level, message, stack } = info;
     const applicationVersion = process.env.DBOS__APPVERSION || '';
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const ts = timestamp.slice(0, 19).replace('T', ' ');
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-assignment
-    const formattedStack = stack?.split('\n').slice(1).join('\n');
+    const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
+    const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
 
     const messageString: string = typeof message === 'string' ? message : DBOSJSON.stringify(message);
     const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as Span)?.attributes)}` : ''}`;

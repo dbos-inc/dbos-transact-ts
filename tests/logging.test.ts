@@ -1,6 +1,8 @@
 import { LogMasks, ArgName, SkipLogging, LogMask, getRegisteredOperations } from '../src/decorators';
 
 import { DBOSContextImpl } from '../src/context';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { DBOSExecutor } from '../src/dbos-executor';
 
 class TestFunctions {
   static foo(
@@ -64,5 +66,35 @@ describe('dbos-logging', () => {
     });
 
     await TestFunctions.foo(null as unknown as DBOSContextImpl, 'a', new Date(), false, 4);
+  });
+
+  test('forceConsole', async () => {
+    // GH Actions must be doing something custom with console.log.
+    // This test passes locally on Debian 12 but fails in GH Actions.
+    if (process.env.GITHUB_ACTIONS === 'true') {
+      return;
+    }
+
+    let dbosExec: DBOSExecutor | undefined = undefined;
+    let mockConsoleLog: jest.SpyInstance | undefined = undefined;
+    try {
+      const $dbosConfig = generateDBOSTestConfig();
+      const { telemetry } = $dbosConfig;
+      const dbosConfig = {
+        ...$dbosConfig,
+        telemetry: { ...telemetry, logs: { ...telemetry?.logs, forceConsole: true } },
+      };
+
+      await setUpDBOSTestDb(dbosConfig);
+
+      mockConsoleLog = jest.spyOn(console, 'log');
+      dbosExec = new DBOSExecutor(dbosConfig);
+
+      await dbosExec.init();
+      expect(mockConsoleLog).toHaveBeenCalled();
+    } finally {
+      mockConsoleLog?.mockRestore();
+      await dbosExec?.destroy();
+    }
   });
 });

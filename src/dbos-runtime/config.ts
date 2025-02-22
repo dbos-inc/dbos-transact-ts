@@ -216,6 +216,7 @@ export interface ParseOptions {
   appDir?: string;
   appVersion?: string | boolean;
   silent?: boolean;
+  forceConsole?: boolean;
 }
 
 /*
@@ -264,15 +265,18 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   /* Handle telemetry config */
   /***************************/
 
-  // Consider CLI --loglevel flag. A bit verbose because everything is optional.
+  // Consider CLI --loglevel and forceConsole flags
   if (cliOptions?.loglevel) {
-    if (!configFile.telemetry) {
-      configFile.telemetry = { logs: { logLevel: cliOptions.loglevel } };
-    } else if (!configFile.telemetry.logs) {
-      configFile.telemetry.logs = { logLevel: cliOptions.loglevel };
-    } else {
-      configFile.telemetry.logs.logLevel = cliOptions.loglevel;
-    }
+    configFile.telemetry = {
+      ...configFile.telemetry,
+      logs: { ...configFile.telemetry?.logs, logLevel: cliOptions.loglevel },
+    };
+  }
+  if (cliOptions?.forceConsole) {
+    configFile.telemetry = {
+      ...configFile.telemetry,
+      logs: { ...configFile.telemetry?.logs, forceConsole: cliOptions.forceConsole },
+    };
   }
 
   /************************************/
