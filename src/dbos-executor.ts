@@ -458,6 +458,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
       }
 
+      // Compute the application version if not provided
+      if (globalAppVersion.version === '') {
+        globalAppVersion.version = this.computeAppVersion();
+      }
+
       await this.recoverPendingWorkflows();
     }
 
@@ -2115,5 +2120,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
     return value;
+  }
+
+  computeAppVersion(): string {
+    for (const workflowReg of this.workflowInfoMap.values()) {
+      console.log(workflowReg.workflow.toString());
+    }
+    return '5';
   }
 }
