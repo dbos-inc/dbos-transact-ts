@@ -1,6 +1,14 @@
 import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
 import { DBOSConfig, DBOSExecutor } from '../../src/dbos-executor';
+import { WorkflowQueue } from '../../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import {
+  HealthUrl,
+  PerfUrl,
+  DeactivateUrl,
+  WorkflowQueuesMetadataUrl,
+  WorkflowRecoveryUrl,
+} from '../../src/httpServer/server';
 
 describe('admin-server-tests', () => {
   let config: DBOSConfig;
@@ -26,6 +34,15 @@ describe('admin-server-tests', () => {
   afterEach(async () => {
     await DBOS.shutdown();
   }, 10000);
+
+  const testQueueOne = new WorkflowQueue('test-queue-1');
+  const testQueueTwo = new WorkflowQueue('test-queue-2', { concurrency: 1 });
+  const testQueueThree = new WorkflowQueue('test-queue-3', { concurrency: 1, workerConcurrency: 1 });
+  const testQueueFour = new WorkflowQueue('test-queue-4', {
+    concurrency: 1,
+    workerConcurrency: 1,
+    rateLimit: { limitPerPeriod: 0, periodSec: 0 },
+  });
 
   class testAdminWorkflow {
     static counter = 0;
@@ -101,7 +118,7 @@ describe('admin-server-tests', () => {
 
   test('test-admin-endpoints', async () => {
     // Test GET /dbos-healthz
-    const healthzResponse = await fetch('http://localhost:3001/dbos-healthz', {
+    const healthzResponse = await fetch(`http://localhost:3001${HealthUrl}`, {
       method: 'GET',
     });
     expect(healthzResponse.status).toBe(200);
@@ -109,7 +126,7 @@ describe('admin-server-tests', () => {
 
     // Test POST /dbos-workflow-recovery
     const data = ['executor1', 'executor2'];
-    const recoveryResponse = await fetch('http://localhost:3001/dbos-workflow-recovery', {
+    const recoveryResponse = await fetch(`http://localhost:3001${WorkflowRecoveryUrl}`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -118,6 +135,33 @@ describe('admin-server-tests', () => {
     });
     expect(recoveryResponse.status).toBe(200);
     expect(await recoveryResponse.json()).toEqual([]);
+
+    // Test WorkflowQueuesMetadataUrl
+    const metadataResponse = await fetch(`http://localhost:3001${WorkflowQueuesMetadataUrl}`, {
+      method: 'GET',
+    });
+    expect(metadataResponse.status).toBe(200);
+    const queueMetadata = await metadataResponse.json();
+    expect(queueMetadata.length).toBe(4);
+    for (const q of queueMetadata) {
+      if (q.name === testQueueOne.name) {
+        expect(q.concurrency).toBeUndefined();
+        expect(q.workerConcurrency).toBeUndefined();
+        expect(q.rateLimit).toBeUndefined();
+      } else if (q.name === testQueueTwo.name) {
+        expect(q.concurrency).toBe(1);
+        expect(q.workerConcurrency).toBeUndefined();
+        expect(q.rateLimit).toBeUndefined();
+      } else if (q.name === testQueueThree.name) {
+        expect(q.concurrency).toBe(1);
+        expect(q.workerConcurrency).toBe(1);
+        expect(q.rateLimit).toBeUndefined();
+      } else if (q.name === testQueueFour.name) {
+        expect(q.concurrency).toBe(1);
+        expect(q.workerConcurrency).toBe(1);
+        expect(q.rateLimit).toEqual({ limitPerPeriod: 0, periodSec: 0 });
+      }
+    }
 
     // Test GET not found
     const getNotFoundResponse = await fetch('http://localhost:3001/stuff', {
