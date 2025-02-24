@@ -1848,7 +1848,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         continue;
       }
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID);
+      const { pendingWorkflows } = await this.systemDatabase.getPendingWorkflows(execID, globalAppVersion.version);
       for (const pendingWorkflow of pendingWorkflows) {
         this.logger.debug(
           `Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`,
