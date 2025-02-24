@@ -79,7 +79,7 @@ import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } fr
 import { NoticeMessage } from 'pg-protocol/dist/messages';
 import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput } from '.';
 
-import { get, has } from 'lodash';
+import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DBOSScheduler } from './scheduler/scheduler';
@@ -473,7 +473,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       await this.recoverPendingWorkflows();
     }
 
-    this.logger.info('Workflow executor initialized');
+    this.logger.info('DBOS launched!');
+    this.logger.info(`Application version: ${globalAppVersion.version}`);
   }
 
   #logNotice(msg: NoticeMessage) {
