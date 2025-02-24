@@ -2140,14 +2140,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /**
     An application's version is computed from a hash of the source of its workflows.
     This is guaranteed to be stable given identical source code because it uses an MD5 hash
-    and because it iterates through the workflows in insertion order (which TS maps guarantee).
+    and because it iterates through the workflows in sorted order.
     This way, if the app's workflows are updated (which would break recovery), its version changes.
     App version can be manually set through the DBOS__APPVERSION environment variable.
    */
   computeAppVersion(): string {
     const hasher = crypto.createHash('md5');
-    for (const workflowReg of this.workflowInfoMap.values()) {
-      const sourceCode = workflowReg.workflowOrigFunction.toString();
+    const sortedWorkflowSource = Array.from(this.workflowInfoMap.values())
+      .map((i) => i.workflowOrigFunction.toString())
+      .sort();
+    for (const sourceCode of sortedWorkflowSource) {
       hasher.update(sourceCode);
     }
     return hasher.digest('hex');
