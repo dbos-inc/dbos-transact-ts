@@ -108,8 +108,7 @@ class WFQueueRunner {
           try {
             const _wfh = await exec.executeWorkflowUUID(wfid);
           } catch (e) {
-            exec.logger.warn(`Could not execute workflow with id ${wfid}`);
-            exec.logger.warn(e);
+            exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
           }
         }
       }
