@@ -79,7 +79,7 @@ import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } fr
 import { NoticeMessage } from 'pg-protocol/dist/messages';
 import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput } from '.';
 
-import { get } from 'lodash';
+import { get, has } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DBOSScheduler } from './scheduler/scheduler';
@@ -90,6 +90,7 @@ import {
   DBNotificationListener,
 } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
+import * as crypto from 'crypto';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -2130,9 +2131,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   computeAppVersion(): string {
+    const hasher = crypto.createHash('md5');
     for (const workflowReg of this.workflowInfoMap.values()) {
-      console.log(workflowReg.workflowOrigFunction.toString());
+      const sourceCode = workflowReg.workflowOrigFunction.toString();
+      hasher.update(sourceCode);
     }
-    return '5';
+    return hasher.digest('hex');
   }
 }
