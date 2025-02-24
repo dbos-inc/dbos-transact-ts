@@ -1,5 +1,5 @@
-import { DBOS } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOS, StatusString } from '../src';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { globalAppVersion } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
@@ -58,5 +58,52 @@ describe('test-app-version', () => {
     expect(globalAppVersion.version.length).toBeGreaterThan(0);
     expect(globalAppVersion.version).not.toEqual(appVersion);
     await expect(AnotherWorkflow.anotherWorkflow()).resolves.toEqual(1);
+  });
+
+  test('test-app-version-recovery', async () => {
+    class TestAppVersion {
+      @DBOS.workflow()
+      static async testWorkflow() {
+        return Promise.resolve(0);
+      }
+    }
+
+    // Complete the workflow, then set its status to PENDING
+    await DBOS.launch();
+    const handle = await DBOS.startWorkflow(TestAppVersion).testWorkflow();
+    await expect(handle.getResult()).resolves.toEqual(0);
+    await DBOS.executor.flushWorkflowBuffers();
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
+      handle.getWorkflowUUID(),
+      StatusString.PENDING,
+      true,
+    );
+
+    // Shutdown and restart with the same source code, verify it recovers correctly. Set status to PENDING again
+    await DBOS.shutdown();
+    await DBOS.launch();
+    let handles = await DBOS.recoverPendingWorkflows();
+    expect(handles.length).toBe(1);
+    expect(handles[0].workflowID).toBe(handle.workflowID);
+    await expect(handles[0].getResult()).resolves.toEqual(0);
+    await DBOS.executor.flushWorkflowBuffers();
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
+      handle.getWorkflowUUID(),
+      StatusString.PENDING,
+      true,
+    );
+
+    // Shutdown and restart with different source code. Verify it does not recover.
+    await DBOS.shutdown();
+    class YetAnotherWorkflow {
+      @DBOS.workflow()
+      static async anotherWorkflow() {
+        return Promise.resolve(1);
+      }
+    }
+    await DBOS.launch();
+    handles = await DBOS.recoverPendingWorkflows();
+    expect(handles.length).toBe(0);
+    await expect(YetAnotherWorkflow.anotherWorkflow()).resolves.toEqual(1);
   });
 });
