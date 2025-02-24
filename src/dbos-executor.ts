@@ -103,7 +103,6 @@ export interface DBOSConfig {
   readonly system_database: string;
   readonly env?: Record<string, string>;
   readonly application?: object;
-  readonly debugProxy?: string;
   readonly debugMode?: boolean;
   readonly appVersion?: string;
   readonly http?: {
@@ -1133,7 +1132,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError(`Failed to find the recorded output for the transaction: workflow UUID ${workflowUUID}, step number ${funcId}`);
+          throw new DBOSDebuggerError(
+            `Failed to find the recorded output for the transaction: workflow UUID ${workflowUUID}, step number ${funcId}`,
+          );
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1342,7 +1343,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError(`Failed to find the recorded output for the procedure: workflow UUID ${wfCtx.workflowUUID}, step number ${funcId}`);
+          throw new DBOSDebuggerError(
+            `Failed to find the recorded output for the procedure: workflow UUID ${wfCtx.workflowUUID}, step number ${funcId}`,
+          );
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1636,7 +1639,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     if (this.debugMode) {
-      throw new DBOSDebuggerError(`Failed to find the recorded output for the step: workflow UUID: ${wfCtx.workflowUUID}, step number: ${funcID}`);
+      throw new DBOSDebuggerError(
+        `Failed to find the recorded output for the step: workflow UUID: ${wfCtx.workflowUUID}, step number: ${funcID}`,
+      );
     }
 
     // Execute the step function.  If it throws an exception, retry with exponential backoff.

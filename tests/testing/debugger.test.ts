@@ -30,7 +30,7 @@ describe('debugger-test', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined, true);
-    debugProxyConfig = generateDBOSTestConfig(undefined, true, 'postgresql://localhost:5432');
+    debugProxyConfig = generateDBOSTestConfig(undefined, true);
     username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
   });
