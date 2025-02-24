@@ -105,7 +105,6 @@ export interface DBOSConfig {
   readonly application?: object;
   readonly debugProxy?: string;
   readonly debugMode?: boolean;
-  readonly appVersion?: string;
   readonly http?: {
     readonly cors_middleware?: boolean;
     readonly credentials?: boolean;
@@ -201,6 +200,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   readonly debugMode: boolean;
   static systemDBSchemaName = 'dbos';
+  static appVersion = process.env.DBOS__APPVERSION || ''; // If the environment variable is not set, generate an appVersion during launch
 
   readonly logger: Logger;
   readonly tracer: Tracer;
@@ -686,7 +686,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
       executorID: wCtxt.executorID,
-      applicationVersion: wCtxt.applicationVersion,
+      applicationVersion: DBOSExecutor.appVersion,
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
       maxRetries: wCtxt.maxRecoveryAttempts,
@@ -1133,7 +1133,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError(`Failed to find the recorded output for the transaction: workflow UUID ${workflowUUID}, step number ${funcId}`);
+          throw new DBOSDebuggerError(
+            `Failed to find the recorded output for the transaction: workflow UUID ${workflowUUID}, step number ${funcId}`,
+          );
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1342,7 +1344,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         if (this.debugMode) {
-          throw new DBOSDebuggerError(`Failed to find the recorded output for the procedure: workflow UUID ${wfCtx.workflowUUID}, step number ${funcId}`);
+          throw new DBOSDebuggerError(
+            `Failed to find the recorded output for the procedure: workflow UUID ${wfCtx.workflowUUID}, step number ${funcId}`,
+          );
         }
 
         // For non-read-only transactions, flush the result buffer.
@@ -1524,7 +1528,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const procClassName = this.getProcedureClassName(proc);
     const plainProcName = `${procClassName}_${proc.name}_p`;
-    const procName = this.config.appVersion ? `v${this.config.appVersion}_${plainProcName}` : plainProcName;
+    const procName = `v${DBOSExecutor.appVersion}_${plainProcName}`;
 
     const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
     try {
@@ -1636,7 +1640,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     if (this.debugMode) {
-      throw new DBOSDebuggerError(`Failed to find the recorded output for the step: workflow UUID: ${wfCtx.workflowUUID}, step number: ${funcID}`);
+      throw new DBOSDebuggerError(
+        `Failed to find the recorded output for the step: workflow UUID: ${wfCtx.workflowUUID}, step number: ${funcID}`,
+      );
     }
 
     // Execute the step function.  If it throws an exception, retry with exponential backoff.

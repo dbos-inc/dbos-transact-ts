@@ -1,6 +1,6 @@
 import { DBOSInitializationError } from '../error';
 import { DBOSJSON, findPackageRoot, readFileSync } from '../utils';
-import { DBOSConfig } from '../dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
 import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
@@ -290,8 +290,9 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
     application: configFile.application || undefined,
     env: configFile.env || {},
     http: configFile.http,
-    appVersion: getAppVersion(cliOptions?.appVersion),
   };
+
+  DBOSExecutor.appVersion = getAppVersion(cliOptions?.appVersion);
 
   /*************************************/
   /* Build final runtime Configuration */
@@ -320,9 +321,9 @@ function getAppVersion(appVersion: string | boolean | undefined) {
     return appVersion;
   }
   if (appVersion === false) {
-    return undefined;
+    return '';
   }
-  return process.env.DBOS__APPVERSION;
+  return process.env.DBOS__APPVERSION || '';
 }
 
 function isValidDBname(dbName: string): boolean {
