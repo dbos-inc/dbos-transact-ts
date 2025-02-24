@@ -6,6 +6,7 @@ import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON } from '../utils';
+import { DBOSExecutor } from '../dbos-executor';
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -151,7 +152,7 @@ export const consoleFormat = format.combine(
   format.colorize(),
   format.printf((info) => {
     const { timestamp, level, message, stack } = info;
-    const applicationVersion = process.env.DBOS__APPVERSION || '';
+    const applicationVersion = DBOSExecutor.appVersion;
     const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
     const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
 
@@ -167,7 +168,6 @@ class OTLPLogQueueTransport extends TransportStream {
   readonly name = 'OTLPLogQueueTransport';
   readonly otelLogger: OTelLogger;
   readonly applicationID: string;
-  readonly applicationVersion: string;
   readonly executorID: string;
 
   constructor(
@@ -180,7 +180,6 @@ class OTLPLogQueueTransport extends TransportStream {
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger('default');
     this.applicationID = process.env.DBOS__APPID || '';
-    this.applicationVersion = process.env.DBOS__APPVERSION || '';
     this.executorID = process.env.DBOS__VMID || 'local';
     const logRecordProcessor = {
       forceFlush: async () => {
@@ -228,7 +227,7 @@ class OTLPLogQueueTransport extends TransportStream {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stack,
         applicationID: this.applicationID,
-        applicationVersion: this.applicationVersion,
+        applicationVersion: DBOSExecutor.appVersion,
         executorID: this.executorID,
       } as LogAttributes,
     });
