@@ -2,13 +2,8 @@ import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
 import { DBOSConfig, DBOSExecutor } from '../../src/dbos-executor';
 import { WorkflowQueue } from '../../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
-import {
-  HealthUrl,
-  PerfUrl,
-  DeactivateUrl,
-  WorkflowQueuesMetadataUrl,
-  WorkflowRecoveryUrl,
-} from '../../src/httpServer/server';
+import { QueueMetadataResponse } from '../../src/httpServer/server';
+import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../../src/httpServer/server';
 
 describe('admin-server-tests', () => {
   let config: DBOSConfig;
@@ -141,7 +136,7 @@ describe('admin-server-tests', () => {
       method: 'GET',
     });
     expect(metadataResponse.status).toBe(200);
-    const queueMetadata = await metadataResponse.json();
+    const queueMetadata: QueueMetadataResponse[] = (await metadataResponse.json()) as QueueMetadataResponse[];
     expect(queueMetadata.length).toBe(4);
     for (const q of queueMetadata) {
       if (q.name === testQueueOne.name) {
