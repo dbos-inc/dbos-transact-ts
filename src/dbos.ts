@@ -174,18 +174,17 @@ export class DBOS {
 
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     const debugMode = debugWorkflowId !== undefined;
-    const debugProxy = process.env.DBOS_DEBUG_PROXY;
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: debugMode });
-      if (!debugProxy) {
+      if (!debugMode) {
         dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
       }
-      DBOS.dbosConfig = { ...dbosConfig, debugMode, debugProxy };
+      DBOS.dbosConfig = { ...dbosConfig, debugMode };
       DBOS.runtimeConfig = runtimeConfig;
     } else {
-      DBOS.dbosConfig = { ...DBOS.dbosConfig, debugMode, debugProxy };
+      DBOS.dbosConfig = { ...DBOS.dbosConfig, debugMode };
     }
 
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig);
