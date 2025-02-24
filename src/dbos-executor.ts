@@ -114,6 +114,8 @@ export interface DBOSConfig {
 
 interface WorkflowRegInfo {
   workflow: Workflow<unknown[], unknown>;
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  workflowOrigFunction: Function;
   config: WorkflowConfig;
   registration?: MethodRegistrationBase; // Always set except for temp WF...
 }
@@ -176,6 +178,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       DBOSExecutor.tempWorkflowName,
       {
         workflow: async () => {
+          this.logger.error('UNREACHABLE: Indirect invoke of temp workflow');
+          return Promise.resolve();
+        },
+        workflowOrigFunction: async () => {
           this.logger.error('UNREACHABLE: Indirect invoke of temp workflow');
           return Promise.resolve();
         },
@@ -531,6 +537,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const workflowInfo: WorkflowRegInfo = {
       workflow: wf,
+      workflowOrigFunction: ro.origFunction,
       config: { ...ro.workflowConfig },
       registration: ro,
     };
@@ -2124,7 +2131,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   computeAppVersion(): string {
     for (const workflowReg of this.workflowInfoMap.values()) {
-      console.log(workflowReg.workflow.toString());
+      console.log(workflowReg.workflowOrigFunction.toString());
     }
     return '5';
   }
