@@ -73,7 +73,7 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, serializeError } from 'serialize-error';
-import { DBOSJSON, sleepms } from './utils';
+import { globalAppVersion, DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
@@ -200,7 +200,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   readonly debugMode: boolean;
   static systemDBSchemaName = 'dbos';
-  static appVersion = process.env.DBOS__APPVERSION || ''; // If the environment variable is not set, generate an appVersion during launch
 
   readonly logger: Logger;
   readonly tracer: Tracer;
@@ -686,7 +685,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
       executorID: wCtxt.executorID,
-      applicationVersion: DBOSExecutor.appVersion,
+      applicationVersion: globalAppVersion.version,
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
       maxRetries: wCtxt.maxRecoveryAttempts,
@@ -1528,7 +1527,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const procClassName = this.getProcedureClassName(proc);
     const plainProcName = `${procClassName}_${proc.name}_p`;
-    const procName = `v${DBOSExecutor.appVersion}_${plainProcName}`;
+    const procName = `v${globalAppVersion.version}_${plainProcName}`;
 
     const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
     try {

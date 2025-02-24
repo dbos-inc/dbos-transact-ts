@@ -5,8 +5,7 @@ import { Logger as OTelLogger, LogAttributes, SeverityNumber } from '@openteleme
 import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { TelemetryCollector } from './collector';
-import { DBOSJSON } from '../utils';
-import { DBOSExecutor } from '../dbos-executor';
+import { DBOSJSON, globalAppVersion } from '../utils';
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -152,7 +151,7 @@ export const consoleFormat = format.combine(
   format.colorize(),
   format.printf((info) => {
     const { timestamp, level, message, stack } = info;
-    const applicationVersion = DBOSExecutor.appVersion;
+    const applicationVersion = globalAppVersion.version;
     const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
     const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
 
@@ -227,7 +226,7 @@ class OTLPLogQueueTransport extends TransportStream {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stack,
         applicationID: this.applicationID,
-        applicationVersion: DBOSExecutor.appVersion,
+        applicationVersion: globalAppVersion.version,
         executorID: this.executorID,
       } as LogAttributes,
     });

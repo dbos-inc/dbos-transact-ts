@@ -1,6 +1,6 @@
 import { DBOSInitializationError } from '../error';
-import { DBOSJSON, findPackageRoot, readFileSync } from '../utils';
-import { DBOSConfig, DBOSExecutor } from '../dbos-executor';
+import { DBOSJSON, findPackageRoot, globalAppVersion, readFileSync } from '../utils';
+import { DBOSConfig } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
 import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
@@ -292,7 +292,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
     http: configFile.http,
   };
 
-  DBOSExecutor.appVersion = getAppVersion(cliOptions?.appVersion);
+  globalAppVersion.version = getAppVersion(cliOptions?.appVersion);
 
   /*************************************/
   /* Build final runtime Configuration */

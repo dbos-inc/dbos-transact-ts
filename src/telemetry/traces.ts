@@ -4,7 +4,7 @@ import opentelemetry, { Attributes, SpanContext } from '@opentelemetry/api';
 import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
 import { TelemetryCollector } from './collector';
 import { hrTime } from '@opentelemetry/core';
-import { DBOSExecutor } from '../dbos-executor';
+import { globalAppVersion } from '../utils';
 
 export class Tracer {
   private readonly tracer: BasicTracerProvider;
@@ -41,7 +41,7 @@ export class Tracer {
   endSpan(span: Span) {
     span.end(hrTime(performance.now()));
     span.attributes.applicationID = this.applicationID;
-    span.attributes.applicationVersion = DBOSExecutor.appVersion;
+    span.attributes.applicationVersion = globalAppVersion.version;
     if (!('executorID' in span.attributes)) {
       span.attributes.executorID = this.executorID;
     }
