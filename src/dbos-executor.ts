@@ -1843,12 +1843,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
-      if (execID === 'local' && process.env.DBOS__VMID) {
-        this.logger.debug(`Skip local recovery because it's running in a VM: ${process.env.DBOS__VMID}`);
-        continue;
-      }
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const { pendingWorkflows } = await this.systemDatabase.getPendingWorkflows(execID, globalAppVersion.version);
+      const { numWrongVersion, pendingWorkflows } = await this.systemDatabase.getPendingWorkflows(
+        execID,
+        globalAppVersion.version,
+      );
+      if (pendingWorkflows.length > 0) {
+        this.logger.info(`Recovering ${pendingWorkflows.length} workflows`);
+      }
+      if (numWrongVersion > 0) {
+        this.logger.info(`${numWrongVersion} workflows with a different app version were not recovered`);
+      }
       for (const pendingWorkflow of pendingWorkflows) {
         this.logger.debug(
           `Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`,
