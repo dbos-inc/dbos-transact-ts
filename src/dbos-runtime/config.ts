@@ -282,6 +282,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   /************************************/
   /* Build final DBOS configuration */
   /************************************/
+  globalAppVersion.version = getAppVersion(cliOptions?.appVersion);
   const dbosConfig: DBOSConfig = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
@@ -291,8 +292,6 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
     env: configFile.env || {},
     http: configFile.http,
   };
-
-  globalAppVersion.version = getAppVersion(cliOptions?.appVersion);
 
   /*************************************/
   /* Build final runtime Configuration */

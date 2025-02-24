@@ -468,6 +468,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // Compute the application version if not provided
       if (globalAppVersion.version === '') {
         globalAppVersion.version = this.computeAppVersion();
+        globalAppVersion.wasComputed = true;
       }
 
       await this.recoverPendingWorkflows();
@@ -1541,7 +1542,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const procClassName = this.getProcedureClassName(proc);
     const plainProcName = `${procClassName}_${proc.name}_p`;
-    const procName = `v${globalAppVersion.version}_${plainProcName}`;
+    const procName = globalAppVersion.wasComputed ? plainProcName : `v${globalAppVersion.version}_${plainProcName}`;
 
     const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
     try {

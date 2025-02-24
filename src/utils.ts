@@ -10,6 +10,7 @@ export function readFileSync(path: string, encoding: BufferEncoding = 'utf8'): s
 
 export const globalAppVersion = {
   version: process.env.DBOS__APPVERSION || '', // The one true source of appVersion
+  wasComputed: false, // Was app version set or computed? Stored procs don't support computed versions.
 };
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

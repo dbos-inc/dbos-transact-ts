@@ -268,6 +268,7 @@ export class DBOS {
 
     // Reset the global app version
     globalAppVersion.version = process.env.DBOS__APPVERSION || '';
+    globalAppVersion.wasComputed = false;
   }
 
   static get executor() {
