@@ -49,7 +49,7 @@ export interface SystemDatabase {
   flushWorkflowSystemBuffers(): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
-  getPendingWorkflows(executorID: string): Promise<Array<GetPendingWorkflowsOutput>>;
+  getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
   bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
@@ -480,12 +480,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  async getPendingWorkflows(executorID: string): Promise<Array<GetPendingWorkflowsOutput>> {
-    const { rows } = await this.pool.query<workflow_status>(
-      `SELECT workflow_uuid, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2`,
-      [StatusString.PENDING, executorID],
+  async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
+    const getWorkflows = await this.pool.query<workflow_status>(
+      `SELECT workflow_uuid, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2 AND application_version=$3`,
+      [StatusString.PENDING, executorID, appVersion],
     );
-    return rows.map(
+    return getWorkflows.rows.map(
       (i) =>
         <GetPendingWorkflowsOutput>{
           workflowUUID: i.workflow_uuid,

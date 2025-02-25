@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from '../error';
-import { DBOSJSON, readFileSync } from '../utils';
+import { DBOSJSON, globalAppVersion, readFileSync } from '../utils';
 import { DBOSConfig } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
@@ -281,6 +281,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   /************************************/
   /* Build final DBOS configuration */
   /************************************/
+  globalAppVersion.version = getAppVersion(cliOptions?.appVersion);
   const dbosConfig: DBOSConfig = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
@@ -289,7 +290,6 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
     application: configFile.application || undefined,
     env: configFile.env || {},
     http: configFile.http,
-    appVersion: getAppVersion(cliOptions?.appVersion),
   };
 
   /*************************************/
@@ -319,9 +319,9 @@ function getAppVersion(appVersion: string | boolean | undefined) {
     return appVersion;
   }
   if (appVersion === false) {
-    return undefined;
+    return '';
   }
-  return process.env.DBOS__APPVERSION;
+  return process.env.DBOS__APPVERSION || '';
 }
 
 function isValidDBname(dbName: string): boolean {

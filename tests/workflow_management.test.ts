@@ -29,6 +29,7 @@ import { Client } from 'pg';
 import { Knex } from 'knex';
 import { v4 as uuidv4 } from 'uuid';
 import { GetQueuedWorkflowsInput } from '../src/workflow';
+import { globalAppVersion } from '../src/utils';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -153,7 +154,7 @@ describe('workflow-management-tests', () => {
     expect(response.text).toBe('alice');
 
     const input: GetWorkflowsInput = {
-      applicationVersion: 'v0',
+      applicationVersion: globalAppVersion.version,
     };
     response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
