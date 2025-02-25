@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from '../error';
-import { DBOSJSON, findPackageRoot, readFileSync } from '../utils';
+import { DBOSJSON, readFileSync } from '../utils';
 import { DBOSConfig } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
@@ -13,10 +13,9 @@ import validator from 'validator';
 import fs from 'fs';
 import { loadDatabaseConnection } from './db_connection';
 import { GlobalLogger } from '../telemetry/logs';
+import dbosConfigSchema from '../../dbos-config.schema.json';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
-const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
-const dbosConfigSchema = DBOSJSON.parse(readFileSync(dbosConfigSchemaPath)) as object;
 const ajv = new Ajv({ allErrors: true, verbose: true });
 
 export interface ConfigFile {
