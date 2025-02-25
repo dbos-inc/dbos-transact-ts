@@ -667,7 +667,7 @@ describe('queued-wf-tests-simple', () => {
 // dummy declaration to match the workflow in tests/wfqueueworker.ts
 export class InterProcessWorkflowTask {
   @DBOS.workflow()
-  static async task(i: number) {
+  static async task(_: number) {
     return Promise.resolve();
   }
 }
