@@ -448,7 +448,7 @@ export class DBOSHttpServer {
               koaCtxt.body = await (
                 await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
               ).getResult();
-            } else if (ro.commConfig) {
+            } else if (ro.stepConfig) {
               koaCtxt.body = await dbosExec.external(
                 ro.registeredFunction as StepFunction<unknown[], unknown>,
                 wfParams,

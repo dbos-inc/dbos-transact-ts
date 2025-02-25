@@ -351,7 +351,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.#registerWorkflow(ro);
       } else if (ro.txnConfig) {
         this.#registerTransaction(ro);
-      } else if (ro.commConfig) {
+      } else if (ro.stepConfig) {
         this.#registerStep(ro);
       } else if (ro.procConfig) {
         this.#registerProcedure(ro);
@@ -557,7 +557,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const stepInfo: StepRegInfo = {
       step: comm,
-      config: { ...ro.commConfig },
+      config: { ...ro.stepConfig },
       registration: ro,
     };
     this.stepInfoMap.set(cfn, stepInfo);

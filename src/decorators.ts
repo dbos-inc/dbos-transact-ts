@@ -5,7 +5,7 @@ import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
 import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, InitContext } from './context';
 import { StepConfig, StepContext } from './step';
-import { DBOSError, DBOSNotAuthorizedError } from './error';
+import { DBOSConflictingRegistrationError, DBOSError, DBOSNotAuthorizedError } from './error';
 import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
@@ -157,7 +157,7 @@ export interface MethodRegistrationBase {
 
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
-  commConfig?: StepConfig;
+  stepConfig?: StepConfig;
   procConfig?: TransactionConfig;
   isInstance: boolean;
 
@@ -200,9 +200,35 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   wrappedFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined = undefined;
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
-  commConfig?: StepConfig;
+  stepConfig?: StepConfig;
   procConfig?: TransactionConfig;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
+
+  checkFuncTypeUnassigned() {
+    if (this.txnConfig || this.workflowConfig || this.stepConfig || this.procConfig) {
+      throw new DBOSConflictingRegistrationError(`${this.className}.${this.name}`);
+    }
+  }
+
+  setTxnConfig(txCfg: TransactionConfig): void {
+    this.checkFuncTypeUnassigned();
+    this.txnConfig = txCfg;
+  }
+
+  setStepConfig(stepCfg: StepConfig): void {
+    this.checkFuncTypeUnassigned();
+    this.stepConfig = stepCfg;
+  }
+
+  setProcConfig(procCfg: TransactionConfig): void {
+    this.checkFuncTypeUnassigned();
+    this.procConfig = procCfg;
+  }
+
+  setWorkflowConfig(wfCfg: WorkflowConfig): void {
+    this.checkFuncTypeUnassigned();
+    this.workflowConfig = wfCfg;
+  }
 
   init: boolean = false;
 
@@ -670,7 +696,7 @@ export function Workflow(config: WorkflowConfig = {}) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>,
   ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.workflowConfig = config;
+    registration.setWorkflowConfig(config);
     return descriptor;
   }
   return decorator;
@@ -684,7 +710,7 @@ export function Transaction(config: TransactionConfig = {}) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>,
   ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.txnConfig = config;
+    registration.setTxnConfig(config);
     return descriptor;
   }
   return decorator;
@@ -697,7 +723,7 @@ export function StoredProcedure(config: StoredProcedureConfig = {}) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StoredProcedureContext, ...args: Args) => Promise<Return>>,
   ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.procConfig = config;
+    registration.setProcConfig(config);
     return descriptor;
   }
   return decorator;
@@ -710,7 +736,7 @@ export function Step(config: StepConfig = {}) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StepContext, ...args: Args) => Promise<Return>>,
   ) {
     const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.commConfig = config;
+    registration.setStepConfig(config);
     return descriptor;
   }
   return decorator;
