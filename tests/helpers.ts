@@ -3,11 +3,7 @@ import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 
 /* DB management helpers */
-export function generateDBOSTestConfig(
-  dbClient?: UserDatabaseName,
-  debugMode?: boolean,
-  debugProxy?: string,
-): DBOSConfig {
+export function generateDBOSTestConfig(dbClient?: UserDatabaseName, debugMode?: boolean): DBOSConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
@@ -35,7 +31,6 @@ export function generateDBOSTestConfig(
     },
     system_database: 'dbostest_dbos_sys',
     userDbclient: dbClient || UserDatabaseName.PGNODE,
-    debugProxy: debugProxy,
     debugMode: debugMode,
   };
 

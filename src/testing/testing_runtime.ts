@@ -257,7 +257,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
           : op.workflowConfig
             ? (...args: unknown[]) =>
                 dbosExec.workflow(op.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
-            : op.commConfig
+            : op.stepConfig
               ? (...args: unknown[]) =>
                   dbosExec.external(op.registeredFunction as StepFunction<unknown[], unknown>, wfParams, ...args)
               : op.procConfig

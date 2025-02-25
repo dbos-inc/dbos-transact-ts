@@ -70,7 +70,7 @@ describe('debugger-test', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined, true);
-    debugProxyConfig = generateDBOSTestConfig(undefined, true, 'localhost:5432');
+    debugProxyConfig = generateDBOSTestConfig(undefined, true);
     await setUpDBOSTestDb(config);
   });
 

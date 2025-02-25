@@ -9,6 +9,7 @@ import { UserDatabaseClient } from '../user_database';
 import { OperationType } from '../dbos-executor';
 import { DBOS } from '../dbos';
 import { HTTPRequest } from '../context';
+import { Context as HonoContext, Next as HonoNext } from 'hono';
 
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
@@ -257,6 +258,47 @@ export async function expressTracingMiddleware(req: Request, res: Response, next
     await DBOS.withTracedContext(request.url as string, span, request, next as () => Promise<void>);
     if (res.statusCode >= 400) {
       span.setStatus({ code: SpanStatusCode.ERROR, message: res.statusMessage });
+    } else {
+      span.setStatus({ code: SpanStatusCode.OK });
+    }
+  } catch (e) {
+    if (e instanceof Error) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+    } else {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
+    }
+    throw e;
+  } finally {
+    DBOS.executor.tracer.endSpan(span);
+  }
+}
+
+export async function honoTracingMiddleware(ctx: HonoContext, next: HonoNext) {
+  const headers = ctx.req.header();
+  const rawHeaders: string[] = [];
+  ctx.req.raw.headers.forEach((v, k) => rawHeaders.push(k, v));
+  const url = ctx.req.url;
+  // Retrieve or generate the request ID
+  const requestID = getOrGenerateRequestID(headers);
+  // Attach it to the response headers (here through Koa's context)
+  ctx.set(RequestIDHeader, requestID);
+  const request: HTTPRequest = {
+    headers,
+    rawHeaders,
+    params: ctx.req.param(),
+    query: ctx.req.query(),
+    querystring: ctx.req.url.split('?')[1],
+    url,
+    method: ctx.req.method,
+    requestID,
+  };
+  const httpTracer = new W3CTraceContextPropagator();
+  const span = createHTTPSpan(request, httpTracer);
+
+  try {
+    await DBOS.withTracedContext(url, span, request, next as () => Promise<void>);
+    if (ctx.res.status >= 400) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: ctx.res.statusText });
     } else {
       span.setStatus({ code: SpanStatusCode.OK });
     }

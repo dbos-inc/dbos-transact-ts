@@ -45,7 +45,7 @@ export interface DBOSConfigureOptions {
 
 interface DBOSDebugOptions {
   uuid: string; // Workflow UUID
-  proxy: string;
+  proxy?: string; // deprecated
   loglevel?: string;
   configfile?: string;
   appVersion?: string | boolean;
