@@ -470,12 +470,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         globalAppVersion.version = this.computeAppVersion();
         globalAppVersion.wasComputed = true;
       }
+      this.logger.info(`Application version: ${globalAppVersion.version}`);
 
-      await this.recoverPendingWorkflows();
+      await this.recoverPendingWorkflows([this.executorID]);
     }
 
     this.logger.info('DBOS launched!');
-    this.logger.info(`Application version: ${globalAppVersion.version}`);
   }
 
   #logNotice(msg: NoticeMessage) {
