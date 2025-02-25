@@ -22,7 +22,7 @@ describe('test-app-version', () => {
       return [...s].every((c) => hexChars.includes(c));
     }
 
-    class TestAppVersion {
+    class TestAppVersionStability {
       @DBOS.workflow()
       static async testWorkflow() {
         return Promise.resolve(0);
@@ -31,7 +31,7 @@ describe('test-app-version', () => {
 
     // Verify the app version is correctly set to a hex string
     await DBOS.launch();
-    await expect(TestAppVersion.testWorkflow()).resolves.toEqual(0);
+    await expect(TestAppVersionStability.testWorkflow()).resolves.toEqual(0);
     const appVersion = globalAppVersion.version;
     expect(appVersion.length).toBeGreaterThan(0);
     expect(isHex(appVersion)).toBe(true);
@@ -41,7 +41,7 @@ describe('test-app-version', () => {
     expect(globalAppVersion.version.length).toBe(0);
     await DBOS.launch();
     expect(globalAppVersion.version).toEqual(appVersion);
-    await expect(TestAppVersion.testWorkflow()).resolves.toEqual(0);
+    await expect(TestAppVersionStability.testWorkflow()).resolves.toEqual(0);
 
     // Verify that changing the workflow source changes the app version
     await DBOS.shutdown();
@@ -61,7 +61,7 @@ describe('test-app-version', () => {
   });
 
   test('test-app-version-recovery', async () => {
-    class TestAppVersion {
+    class TestAppVersionRecovery {
       @DBOS.workflow()
       static async testWorkflow() {
         return Promise.resolve(0);
@@ -70,7 +70,7 @@ describe('test-app-version', () => {
 
     // Complete the workflow, then set its status to PENDING
     await DBOS.launch();
-    const handle = await DBOS.startWorkflow(TestAppVersion).testWorkflow();
+    const handle = await DBOS.startWorkflow(TestAppVersionRecovery).testWorkflow();
     await expect(handle.getResult()).resolves.toEqual(0);
     await DBOS.executor.flushWorkflowBuffers();
     await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
