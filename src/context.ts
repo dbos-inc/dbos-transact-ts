@@ -227,7 +227,6 @@ export class DBOSContextImpl implements DBOSContext {
   assumedRole: string = ''; // Role in use - that user has and provided authorization to current function
   workflowUUID: string = ''; // Workflow UUID. Empty for HandlerContexts.
   executorID: string = process.env.DBOS__VMID || 'local'; // Executor ID. Gathered from the environment and "local" otherwise
-  applicationVersion: string = process.env.DBOS__APPVERSION || ''; // Application version. Gathered from the environment and empty otherwise
   applicationID: string = process.env.DBOS__APPID || ''; // Application ID. Gathered from the environment and empty otherwise
   readonly logger: DBOSLogger; // Wrapper around the global logger for this context.
 

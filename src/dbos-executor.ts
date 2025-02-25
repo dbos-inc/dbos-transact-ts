@@ -73,7 +73,7 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, serializeError } from 'serialize-error';
-import { DBOSJSON, sleepms } from './utils';
+import { globalAppVersion, DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
@@ -90,6 +90,7 @@ import {
   DBNotificationListener,
 } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
+import * as crypto from 'crypto';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -104,7 +105,6 @@ export interface DBOSConfig {
   readonly env?: Record<string, string>;
   readonly application?: object;
   readonly debugMode?: boolean;
-  readonly appVersion?: string;
   readonly http?: {
     readonly cors_middleware?: boolean;
     readonly credentials?: boolean;
@@ -114,6 +114,8 @@ export interface DBOSConfig {
 
 interface WorkflowRegInfo {
   workflow: Workflow<unknown[], unknown>;
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  workflowOrigFunction: Function;
   config: WorkflowConfig;
   registration?: MethodRegistrationBase; // Always set except for temp WF...
 }
@@ -176,6 +178,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       DBOSExecutor.tempWorkflowName,
       {
         workflow: async () => {
+          this.logger.error('UNREACHABLE: Indirect invoke of temp workflow');
+          return Promise.resolve();
+        },
+        workflowOrigFunction: async () => {
           this.logger.error('UNREACHABLE: Indirect invoke of temp workflow');
           return Promise.resolve();
         },
@@ -458,10 +464,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
       }
 
-      await this.recoverPendingWorkflows();
+      // Compute the application version if not provided
+      if (globalAppVersion.version === '') {
+        globalAppVersion.version = this.computeAppVersion();
+        globalAppVersion.wasComputed = true;
+      }
+      this.logger.info(`Application version: ${globalAppVersion.version}`);
+
+      await this.recoverPendingWorkflows([this.executorID]);
     }
 
-    this.logger.info('Workflow executor initialized');
+    this.logger.info('DBOS launched!');
   }
 
   #logNotice(msg: NoticeMessage) {
@@ -526,6 +539,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const workflowInfo: WorkflowRegInfo = {
       workflow: wf,
+      workflowOrigFunction: ro.origFunction,
       config: { ...ro.workflowConfig },
       registration: ro,
     };
@@ -685,7 +699,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
       executorID: wCtxt.executorID,
-      applicationVersion: wCtxt.applicationVersion,
+      applicationVersion: globalAppVersion.version,
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
       maxRetries: wCtxt.maxRecoveryAttempts,
@@ -1527,7 +1541,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const procClassName = this.getProcedureClassName(proc);
     const plainProcName = `${procClassName}_${proc.name}_p`;
-    const procName = this.config.appVersion ? `v${this.config.appVersion}_${plainProcName}` : plainProcName;
+    const procName = globalAppVersion.wasComputed ? plainProcName : `v${globalAppVersion.version}_${plainProcName}`;
 
     const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
     try {
@@ -1828,12 +1842,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
-      if (execID === 'local' && process.env.DBOS__VMID) {
-        this.logger.debug(`Skip local recovery because it's running in a VM: ${process.env.DBOS__VMID}`);
-        continue;
-      }
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID);
+      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID, globalAppVersion.version);
+      if (pendingWorkflows.length > 0) {
+        this.logger.info(
+          `Recovering ${pendingWorkflows.length} workflows from application version ${globalAppVersion.version}`,
+        );
+      } else {
+        this.logger.info(`No workflows to recover from application version ${globalAppVersion.version}`);
+      }
       for (const pendingWorkflow of pendingWorkflows) {
         this.logger.debug(
           `Recovering workflow: ${pendingWorkflow.workflowUUID}. Queue name: ${pendingWorkflow.queueName}`,
@@ -2115,5 +2132,23 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
     }
     return value;
+  }
+
+  /**
+    An application's version is computed from a hash of the source of its workflows.
+    This is guaranteed to be stable given identical source code because it uses an MD5 hash
+    and because it iterates through the workflows in sorted order.
+    This way, if the app's workflows are updated (which would break recovery), its version changes.
+    App version can be manually set through the DBOS__APPVERSION environment variable.
+   */
+  computeAppVersion(): string {
+    const hasher = crypto.createHash('md5');
+    const sortedWorkflowSource = Array.from(this.workflowInfoMap.values())
+      .map((i) => i.workflowOrigFunction.toString())
+      .sort();
+    for (const sourceCode of sortedWorkflowSource) {
+      hasher.update(sourceCode);
+    }
+    return hasher.digest('hex');
   }
 }
