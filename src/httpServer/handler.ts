@@ -187,7 +187,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
           : op.workflowConfig
             ? (...args: unknown[]) =>
                 this.#workflow(op.registeredFunction as Workflow<unknown[], unknown>, params, ...args)
-            : op.commConfig
+            : op.stepConfig
               ? (...args: unknown[]) =>
                   this.#external(op.registeredFunction as StepFunction<unknown[], unknown>, params, ...args)
               : op.procConfig

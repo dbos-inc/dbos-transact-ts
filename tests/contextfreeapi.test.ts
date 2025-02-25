@@ -593,6 +593,14 @@ async function main10() {
   await DBOS.shutdown();
 }
 
+async function main11() {
+  expect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    require('./baddecorator'); // Load it dynamically inside expect
+  }).toThrow('Operation (Name: BadDecoratorClass.cantBeBoth) is already registered with a conflicting function type');
+  return Promise.resolve();
+}
+
 describe('dbos-v2api-tests-main', () => {
   test('simple-functions', async () => {
     await main();
@@ -632,5 +640,9 @@ describe('dbos-v2api-tests-main', () => {
 
   test('argvalidate', async () => {
     await main10();
+  }, 15000);
+
+  test('double decorator error', async () => {
+    await main11();
   }, 15000);
 });

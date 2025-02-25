@@ -649,7 +649,7 @@ export class DBOS {
                   {},
                   ...args,
                 )
-            : op.commConfig
+            : op.stepConfig
               ? (...args: unknown[]) =>
                   DBOSExecutor.globalInstance!.external(
                     op.registeredFunction as StepFunction<unknown[], unknown>,
@@ -679,7 +679,7 @@ export class DBOS {
                   { configuredInstance: targetInst },
                   ...args,
                 )
-            : op.commConfig
+            : op.stepConfig
               ? (...args: unknown[]) =>
                   DBOSExecutor.globalInstance!.external(
                     op.registeredFunction as StepFunction<unknown[], unknown>,
@@ -705,7 +705,7 @@ export class DBOS {
                 wfctx,
                 ...args,
               )
-          : op.commConfig
+          : op.stepConfig
             ? (...args: unknown[]) =>
                 DBOSExecutor.globalInstance!.callStepFunction(
                   op.registeredFunction as StepFunction<unknown[], unknown>,
@@ -737,7 +737,7 @@ export class DBOS {
                 wfctx,
                 ...args,
               )
-          : op.commConfig
+          : op.stepConfig
             ? (...args: unknown[]) =>
                 DBOSExecutor.globalInstance!.callStepFunction(
                   op.registeredFunction as StepFunction<unknown[], unknown>,
@@ -827,7 +827,7 @@ export class DBOS {
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      registration.workflowConfig = config;
+      registration.setWorkflowConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         const pctx = getCurrentContextStore();
@@ -934,7 +934,7 @@ export class DBOS {
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      registration.txnConfig = config;
+      registration.setTxnConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;
@@ -1026,7 +1026,7 @@ export class DBOS {
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      registration.procConfig = config;
+      registration.setProcConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         if (typeof this !== 'function') {
@@ -1099,7 +1099,7 @@ export class DBOS {
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      registration.commConfig = config;
+      registration.setStepConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;

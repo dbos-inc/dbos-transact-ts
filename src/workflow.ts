@@ -436,7 +436,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) =>
               this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, null, ...args)
-          : op.commConfig
+          : op.stepConfig
             ? (...args: unknown[]) =>
                 this.external(op.registeredFunction as StepFunction<unknown[], unknown>, null, ...args)
             : op.procConfig
@@ -454,7 +454,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         proxy[op.name] = op.txnConfig
           ? (...args: unknown[]) =>
               this.transaction(op.registeredFunction as Transaction<unknown[], unknown>, targetInst, ...args)
-          : op.commConfig
+          : op.stepConfig
             ? (...args: unknown[]) =>
                 this.external(op.registeredFunction as StepFunction<unknown[], unknown>, targetInst, ...args)
             : undefined;
