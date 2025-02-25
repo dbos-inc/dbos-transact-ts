@@ -1844,15 +1844,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const { numWrongVersion, pendingWorkflows } = await this.systemDatabase.getPendingWorkflows(
-        execID,
-        globalAppVersion.version,
-      );
+      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID, globalAppVersion.version);
       if (pendingWorkflows.length > 0) {
-        this.logger.info(`Recovering ${pendingWorkflows.length} workflows`);
-      }
-      if (numWrongVersion > 0) {
-        this.logger.info(`${numWrongVersion} workflows with a different app version were not recovered`);
+        this.logger.info(
+          `Recovering ${pendingWorkflows.length} workflows from application version ${globalAppVersion.version}`,
+        );
+      } else {
+        this.logger.info(`No workflows to recover from application version ${globalAppVersion.version}`);
       }
       for (const pendingWorkflow of pendingWorkflows) {
         this.logger.debug(
