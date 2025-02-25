@@ -35,7 +35,7 @@ import {
 } from './decorators';
 import { sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
-import { koaTracingMiddleware, expressTracingMiddleware } from './httpServer/middleware';
+import { koaTracingMiddleware, expressTracingMiddleware, honoTracingMiddleware } from './httpServer/middleware';
 import { Server } from 'http';
 import { DrizzleClient, PrismaClient, TypeORMEntityManager, UserDatabaseClient } from './user_database';
 import { TransactionConfig, TransactionContextImpl, TransactionFunction } from './transaction';
@@ -64,6 +64,7 @@ import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
 import { db_wizard } from './dbos-runtime/db_wizard';
+import { Hono } from 'hono';
 
 // Declare all the HTTP applications a user can pass to the DBOS object during launch()
 // This allows us to add a DBOS tracing middleware (extract W3C Trace context, set request ID, etc)
@@ -72,6 +73,7 @@ export interface DBOSHttpApps {
   expressApp?: ExpressApp;
   nestApp?: INestApplication;
   fastifyApp?: FastifyInstance;
+  honoApp?: Hono;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -241,6 +243,10 @@ export class DBOS {
         // Nest.kj can use express or fastify under the hood. With fastify, Nest.js uses middie.
         DBOS.logger.info('Setting up NestJS tracing middleware');
         httpApps.nestApp.use(expressTracingMiddleware);
+      }
+      if (httpApps.honoApp) {
+        DBOS.logger.info('Setting up Hono tracing middleware');
+        httpApps.honoApp.use(honoTracingMiddleware);
       }
     }
   }
