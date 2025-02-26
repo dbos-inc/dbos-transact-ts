@@ -670,7 +670,7 @@ describe('queued-wf-tests-simple', () => {
 // dummy declaration to match the workflow in tests/wfqueueworker.ts
 export class InterProcessWorkflowTask {
   @DBOS.workflow()
-  static async task() {
+  static async task(_: number) {
     return Promise.resolve();
   }
 }
@@ -688,94 +688,106 @@ class InterProcessWorkflow {
     // First, start local concurrency limit tasks
     let handles = [];
     for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit; ++i) {
-      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task());
+      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task(i));
     }
     // Start two workers
     const workerPromises = await InterProcessWorkflow.startWorkerProcesses(2);
-    // Check that a single worker was able to acquire all the tasks
-    let loop = true;
-    while (loop) {
-      const msg = await DBOS.recv<string>('worker_dequeue', 1);
-      if (msg === 'worker_dequeue') {
-        loop = false;
-      }
-    }
-    let executors = [];
-    for (const handle of handles) {
-      const status = await handle.getStatus();
-      expect(status).not.toBeNull();
-      expect(status?.status).toBe(StatusString.PENDING);
-      executors.push(status?.executorId);
-    }
-    expect(new Set(executors).size).toBe(1);
-
-    // Now enqueue less than the local concurrency limit. Check that the 2nd worker acquired them. We won't have a signal set from the worker so we need to sleep a little.
-    handles = [];
-    for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit - 1; ++i) {
-      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task());
-    }
-    await sleepms(1000);
-
-    executors = [];
-    for (const handle of handles) {
-      const status = await handle.getStatus();
-      expect(status).not.toBeNull();
-      expect(status?.status).toBe(StatusString.PENDING);
-      executors.push(status?.executorId);
-    }
-    expect(new Set(executors).size).toBe(1);
-
-    // Now, enqueue two more tasks. This means qlen > local concurrency limit * 2 and qlen > global concurrency limit
-    // We should have 1 tasks PENDING and 1 ENQUEUED, thus meeting both local and global concurrency limits
-    handles = [];
-    for (let i = 0; i < 2; ++i) {
-      handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task());
-    }
-    // The first worker already sent a signal. Here we are waiting for the second worker.
-    loop = true;
-    while (loop) {
-      const msg = await DBOS.recv<string>('worker_dequeue', 1);
-      if (msg === 'worker_dequeue') {
-        loop = false;
-      }
-    }
-    executors = [];
-    const statuses = [];
-    for (const handle of handles) {
-      const status = await handle.getStatus();
-      expect(status).not.toBeNull();
-      statuses.push(status?.status);
-      executors.push(status?.executorId);
-    }
-    expect(statuses).toContain(StatusString.PENDING);
-    expect(statuses).toContain(StatusString.ENQUEUED);
-    expect(new Set(executors).size).toBe(2);
-    expect(executors).toContain('local');
-
-    // Now check the global concurrency is met
-    const systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
-      database: config.system_database,
-    });
-    await systemDBClient.connect();
     try {
-      const result = await systemDBClient.query<{ count: string }>(
-        'SELECT COUNT(*) FROM dbos.workflow_status WHERE status = $1 AND queue_name = $2',
-        [StatusString.PENDING, IPWQueue.name],
-      );
-      const count = Number(result.rows[0].count);
-      expect(count).toBe(InterProcessWorkflow.globalConcurrencyLimit);
-    } finally {
-      await systemDBClient.end();
-    }
+      // Check that a single worker was able to acquire all the tasks
+      let n_dequeued = 0;
+      while (n_dequeued < InterProcessWorkflow.localConcurrencyLimit) {
+        const msg = await DBOS.recv<string>('worker_dequeue', 1);
+        if (msg === 'worker_dequeue') {
+          n_dequeued++;
+        }
+      }
+      let executors = [];
+      for (const handle of handles) {
+        const status = await handle.getStatus();
+        expect(status).not.toBeNull();
+        expect(status?.status).toBe(StatusString.PENDING);
+        executors.push(status?.executorId);
+      }
+      expect(new Set(executors).size).toBe(1);
 
-    // Notify the workers they can resume
-    await DBOS.setEvent('worker_resume', true);
-    await Promise.all(workerPromises);
-    expect(await queueEntriesAreCleanedUp()).toBe(true);
+      // Now enqueue less than the local concurrency limit. Check that the 2nd worker acquired them.
+      handles = [];
+      for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit - 1; ++i) {
+        handles.push(await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task(i));
+      }
+      n_dequeued = 0;
+      while (n_dequeued < InterProcessWorkflow.localConcurrencyLimit - 1) {
+        const msg = await DBOS.recv<string>('worker_dequeue', 1);
+        if (msg === 'worker_dequeue') {
+          n_dequeued++;
+        }
+      }
+
+      executors = [];
+      for (const handle of handles) {
+        const status = await handle.getStatus();
+        expect(status).not.toBeNull();
+        expect(status?.status).toBe(StatusString.PENDING);
+        executors.push(status?.executorId);
+      }
+      expect(new Set(executors).size).toBe(1);
+
+      // Now, enqueue two more tasks. This means qlen > local concurrency limit * 2 and qlen > global concurrency limit
+      // We should have 1 tasks PENDING and 1 ENQUEUED, thus meeting both local and global concurrency limits
+      handles = [];
+      for (let i = 0; i < 2; ++i) {
+        handles.push(
+          await DBOS.startWorkflow(InterProcessWorkflowTask, { queueName: IPWQueue.name }).task(
+            InterProcessWorkflow.localConcurrencyLimit - 1 + i,
+          ),
+        );
+      }
+      // The first worker already sent a signal. Here we are waiting for the second worker.
+      n_dequeued = 0;
+      while (n_dequeued < 1) {
+        const msg = await DBOS.recv<string>('worker_dequeue', 1);
+        if (msg === 'worker_dequeue') {
+          n_dequeued++;
+        }
+      }
+      executors = [];
+      const statuses = [];
+      for (const handle of handles) {
+        const status = await handle.getStatus();
+        expect(status).not.toBeNull();
+        statuses.push(status?.status);
+        executors.push(status?.executorId);
+      }
+      expect(statuses).toContain(StatusString.PENDING);
+      expect(statuses).toContain(StatusString.ENQUEUED);
+      expect(new Set(executors).size).toBe(2);
+      expect(executors).toContain('local');
+
+      // Now check the global concurrency is met
+      const systemDBClient = new Client({
+        user: config.poolConfig.user,
+        port: config.poolConfig.port,
+        host: config.poolConfig.host,
+        password: config.poolConfig.password,
+        database: config.system_database,
+      });
+      await systemDBClient.connect();
+      try {
+        const result = await systemDBClient.query<{ count: string }>(
+          'SELECT COUNT(*) FROM dbos.workflow_status WHERE status = $1 AND queue_name = $2',
+          [StatusString.PENDING, IPWQueue.name],
+        );
+        const count = Number(result.rows[0].count);
+        expect(count).toBe(InterProcessWorkflow.globalConcurrencyLimit);
+      } finally {
+        await systemDBClient.end();
+      }
+
+      // Notify the workers they can resume
+      await DBOS.setEvent('worker_resume', true);
+    } finally {
+      await Promise.all(workerPromises);
+    }
   }
 
   @DBOS.step()

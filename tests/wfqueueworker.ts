@@ -39,12 +39,14 @@ new WorkflowQueue(queueName, {
 });
 
 class InterProcessWorkflowTask {
-  static start_event = new Event();
+  // Create a bunch of re-usable events. Increase the length if needed.
+  static start_events = Array.from({ length: 20 }, () => new Event());
   static end_event = new Event();
 
   @DBOS.workflow()
-  static async task() {
-    InterProcessWorkflowTask.start_event.set();
+  static async task(i: number) {
+    InterProcessWorkflowTask.start_events[i].set();
+    console.log(`${workerId} started task ${i}`);
     await InterProcessWorkflowTask.end_event.wait();
     return Promise.resolve();
   }
@@ -68,13 +70,11 @@ async function main() {
 
   // Wait to dequeue as many tasks as we can locally
   for (let i = 0; i < localConcurrencyLimit; i++) {
-    await InterProcessWorkflowTask.start_event.wait();
-    InterProcessWorkflowTask.start_event.clear();
+    await InterProcessWorkflowTask.start_events[i].wait();
+    // Notify the main process this worker has dequeued a task
+    await DBOS.send<string>(parentWorkflowID, 'worker_dequeue', 'worker_dequeue', `${workerId?.toString()}-task-${i}`);
   }
   console.log(`${workerId} dequeued ${localConcurrencyLimit} tasks`);
-
-  // Notify the main process this worker has dequeued a task
-  await DBOS.send<string>(parentWorkflowID, 'worker_dequeue', 'worker_dequeue', workerId?.toString());
 
   // Wait for a resume signal from the main process
   const can_resume = await DBOS.getEvent(parentWorkflowID, 'worker_resume');
