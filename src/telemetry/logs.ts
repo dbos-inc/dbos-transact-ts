@@ -1,12 +1,23 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from 'winston';
-import type { Logform } from 'winston';
 import TransportStream = require('winston-transport'); // eslint-disable-line @typescript-eslint/no-require-imports
 import { DBOSContextImpl } from '../context';
 import { Logger as OTelLogger, LogAttributes, SeverityNumber } from '@opentelemetry/api-logs';
 import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { TelemetryCollector } from './collector';
-import { DBOSJSON, globalAppVersion } from '../utils';
+import { DBOSJSON, globalAppVersion, CircularBuffer, interceptStreams } from '../utils';
+
+// Capture the native stdout and stderr write functions
+// We will override them twice: once for buffering logs and once for forwarding logs to the DBOS global logger
+const logBuffer = new CircularBuffer(1000);
+const logErrorBuffer = new CircularBuffer(1000);
+interceptStreams((msg, stream) => {
+  if (stream === 'stdout') {
+    logBuffer.add(msg);
+  } else {
+    logErrorBuffer.add(msg);
+  }
+});
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -39,6 +50,7 @@ export class GlobalLogger {
   private readonly logger: IWinstonLogger;
   readonly addContextMetadata: boolean;
   private isLogging = false; // Prevent recursive logging
+  private readonly otlpTransport?: OTLPLogQueueTransport;
 
   constructor(
     private readonly telemetryCollector?: TelemetryCollector,
@@ -55,7 +67,8 @@ export class GlobalLogger {
     );
     // Only enable the OTLP transport if we have a telemetry collector and an exporter
     if (this.telemetryCollector?.exporter) {
-      winstonTransports.push(new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info'));
+      this.otlpTransport = new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info');
+      winstonTransports.push(this.otlpTransport);
     }
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
@@ -64,68 +77,27 @@ export class GlobalLogger {
   }
 
   private captureStdoutAndStderr(): void {
-    const originalStdoutWrite = process.stdout.write.bind(process.stdout);
-    const originalStderrWrite = process.stderr.write.bind(process.stderr);
-
-    process.stdout.write = (
-      buffer: Uint8Array | string,
-      encodingOrCb?: BufferEncoding | ((err?: Error) => void),
-      cb?: (err?: Error) => void,
-    ): boolean => {
-      let message: string;
-      let encoding: BufferEncoding | undefined;
-      let callback: ((err?: Error) => void) | undefined;
-
-      if (typeof encodingOrCb === 'function') {
-        // Case: write(buffer, cb)
-        message = buffer instanceof Uint8Array ? Buffer.from(buffer).toString() : buffer;
-        callback = encodingOrCb;
+    // First flush the buffers to the OTLP transport
+    if (this.telemetryCollector?.exporter) {
+      for (const line of logBuffer.flush()) {
+        this.otlpTransport?.log({ level: 'info', message: line.trim() }, () => {});
+      }
+      for (const line of logErrorBuffer.flush()) {
+        this.otlpTransport?.log({ level: 'error', message: line.trim() }, () => {});
+      }
+    }
+    // Overwrite the intercepts again to capture non-DBOS logger stdout/stderr and export them through OTLP
+    interceptStreams((msg, stream) => {
+      if (stream === 'stdout') {
+        if (!this.isLogging) {
+          this.otlpTransport?.log({ level: 'info', message: msg.trim() }, () => {});
+        }
       } else {
-        // Case: write(buffer, encoding, cb)
-        message = buffer instanceof Uint8Array ? Buffer.from(buffer).toString(encodingOrCb) : buffer;
-        encoding = encodingOrCb;
-        callback = cb;
+        if (!this.isLogging) {
+          this.otlpTransport?.log({ level: 'error', message: msg.trim(), stack: new Error().stack }, () => {});
+        }
       }
-
-      if (!this.isLogging) {
-        this.isLogging = true;
-        this.logger.info(message.trim());
-        this.isLogging = false;
-        return true;
-      }
-
-      return originalStdoutWrite(buffer, encoding, callback);
-    };
-
-    process.stderr.write = (
-      buffer: Uint8Array | string,
-      encodingOrCb?: BufferEncoding | ((err?: Error) => void),
-      cb?: (err?: Error) => void,
-    ): boolean => {
-      let message: string;
-      let encoding: BufferEncoding | undefined;
-      let callback: ((err?: Error) => void) | undefined;
-
-      if (typeof encodingOrCb === 'function') {
-        // Case: write(buffer, cb)
-        message = buffer instanceof Uint8Array ? Buffer.from(buffer).toString() : buffer;
-        callback = encodingOrCb;
-      } else {
-        // Case: write(buffer, encoding, cb)
-        message = buffer instanceof Uint8Array ? Buffer.from(buffer).toString(encodingOrCb) : buffer;
-        encoding = encodingOrCb;
-        callback = cb;
-      }
-
-      if (!this.isLogging) {
-        this.isLogging = true;
-        this.logger.error(message.trim());
-        this.isLogging = false;
-        return true;
-      }
-
-      return originalStderrWrite(buffer, encoding, callback);
-    };
+    });
   }
 
   // We use this form of winston logging methods: `(message: string, ...meta: any[])`. See node_modules/winston/index.d.ts
