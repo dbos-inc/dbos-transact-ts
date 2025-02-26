@@ -17,6 +17,7 @@ import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
 import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
+export type QueueMetadataResponse = QueueParameters & { name: string };
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
 export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
@@ -167,7 +168,6 @@ export class DBOSHttpServer {
    */
   static registerQueueMetadataEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const queueMetadataHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-      type QueueMetadataResponse = QueueParameters & { name: string };
       const queueDetailsArray: QueueMetadataResponse[] = [];
       wfQueueRunner.wfQueuesByName.forEach((q, qn) => {
         queueDetailsArray.push({
@@ -251,7 +251,6 @@ export class DBOSHttpServer {
     const workflowCancelUrl = '/workflows/:workflow_id/cancel';
     const workflowCancelHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      console.log(`Cancelling workflow with ID: ${workflowId}`);
       await dbosExec.cancelWorkflow(workflowId);
       koaCtxt.status = 204;
     };
@@ -269,7 +268,7 @@ export class DBOSHttpServer {
     const workflowResumeUrl = '/workflows/:workflow_id/resume';
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      console.log(`Resuming workflow with ID: ${workflowId}`);
+      dbosExec.logger.info(`Resuming workflow with ID: ${workflowId}`);
       await dbosExec.resumeWorkflow(workflowId);
       koaCtxt.status = 204;
     };
@@ -449,7 +448,7 @@ export class DBOSHttpServer {
               koaCtxt.body = await (
                 await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
               ).getResult();
-            } else if (ro.commConfig) {
+            } else if (ro.stepConfig) {
               koaCtxt.body = await dbosExec.external(
                 ro.registeredFunction as StepFunction<unknown[], unknown>,
                 wfParams,

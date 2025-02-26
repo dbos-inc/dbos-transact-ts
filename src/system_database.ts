@@ -49,7 +49,7 @@ export interface SystemDatabase {
   flushWorkflowSystemBuffers(): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
-  getPendingWorkflows(executorID: string): Promise<Array<GetPendingWorkflowsOutput>>;
+  getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
   bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
@@ -144,7 +144,7 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
-export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
+export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: Logger) {
   const migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
   const knexConfig = {
     client: 'pg',
@@ -157,6 +157,10 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig) {
   const knexDB = knex(knexConfig);
   try {
     await knexDB.migrate.latest();
+  } catch (e) {
+    logger.warn(
+      `Exception during system database construction. This is most likely because the system database was configured using a later version of DBOS: ${(e as Error).message}`,
+    );
   } finally {
     await knexDB.destroy();
   }
@@ -210,7 +214,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     try {
-      await migrateSystemDatabase(this.systemPoolConfig);
+      await migrateSystemDatabase(this.systemPoolConfig, this.logger);
     } catch (e) {
       const tableExists = await this.pool.query<ExistenceCheck>(
         `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`,
@@ -476,12 +480,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  async getPendingWorkflows(executorID: string): Promise<Array<GetPendingWorkflowsOutput>> {
-    const { rows } = await this.pool.query<workflow_status>(
-      `SELECT workflow_uuid, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2`,
-      [StatusString.PENDING, executorID],
+  async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
+    const getWorkflows = await this.pool.query<workflow_status>(
+      `SELECT workflow_uuid, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE status=$1 AND executor_id=$2 AND application_version=$3`,
+      [StatusString.PENDING, executorID, appVersion],
     );
-    return rows.map(
+    return getWorkflows.rows.map(
       (i) =>
         <GetPendingWorkflowsOutput>{
           workflowUUID: i.workflow_uuid,
@@ -1014,7 +1018,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     const { rows } = await this.pool.query<workflow_status>(
-      `SELECT status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
+      `SELECT status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name, executor_id FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
       [workflowUUID],
     );
     let value = null;
@@ -1029,6 +1033,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         assumedRole: rows[0].assumed_role,
         authenticatedRoles: DBOSJSON.parse(rows[0].authenticated_roles) as string[],
         request: DBOSJSON.parse(rows[0].request) as HTTPRequest,
+        executorId: rows[0].executor_id,
       };
     }
 
@@ -1373,43 +1378,60 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Dequeue functions eligible for this worker and ordered by the time at which they were enqueued.
         // If there is a global or local concurrency limit N, select only the N oldest enqueued
         // functions, else select all of them.
+
+        // First lets figure out how many tasks the worker can dequeue
         const runningTasksSubquery = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-          .count('*')
+          .select('executor_id')
+          .count('* as task_count')
           .where('queue_name', queue.name)
           .whereNotNull('executor_id')
-          .whereNull('completed_at_epoch_ms');
+          .whereNull('completed_at_epoch_ms')
+          .groupBy('executor_id');
+
+        const runningTasksResult = await runningTasksSubquery;
+        const runningTasksResultDict: Record<string, number> = {};
+        runningTasksResult.forEach((row) => {
+          runningTasksResultDict[row.executor_id] = Number(row.task_count);
+        });
+        const runningTasksForThisWorker = runningTasksResultDict[executorID] || 0;
 
         let maxTasks = Infinity;
 
         if (queue.workerConcurrency !== undefined) {
-          maxTasks = queue.workerConcurrency;
+          if (runningTasksForThisWorker > queue.workerConcurrency) {
+            this.logger.warn(
+              `Number of tasks on this worker (${runningTasksForThisWorker}) exceeds the worker concurrency limit (${queue.workerConcurrency})`,
+            );
+          }
+          maxTasks = Math.max(0, queue.workerConcurrency - runningTasksForThisWorker);
         }
 
         if (queue.concurrency !== undefined) {
-          const runningTasks = await runningTasksSubquery;
-          const availableTasks = Math.max(0, queue.concurrency - Number(runningTasks[0].count));
+          const totalRunningTasks = Object.values(runningTasksResultDict).reduce((acc, val) => acc + val, 0);
+          if (totalRunningTasks > queue.concurrency) {
+            this.logger.warn(
+              `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${queue.concurrency})`,
+            );
+          }
+          const availableTasks = Math.max(0, queue.concurrency - totalRunningTasks);
           maxTasks = Math.min(maxTasks, availableTasks);
         }
 
+        // Lookup tasks
         let query = trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-          .whereNull('completed_at_epoch_ms')
+          .whereNull('completed_at_epoch_ms') // not started
+          .whereNull('executor_id') // not assigned
           .andWhere('queue_name', queue.name)
-          .andWhere(function () {
-            void this.whereNull('executor_id').orWhere('executor_id', executorID);
-          })
-          .select()
           .orderBy('created_at_epoch_ms', 'asc')
           .forUpdate()
           .noWait();
-
         if (maxTasks !== Infinity) {
           query = query.limit(maxTasks);
         }
-
-        // From the functions retrieved, get the workflow IDs of the functions
-        // that have not yet been started so we can start them.
         const rows = await query.select(['workflow_uuid', 'started_at_epoch_ms', 'executor_id']);
-        const workflowIDs = rows.filter((row) => !row.started_at_epoch_ms).map((row) => row.workflow_uuid);
+
+        // Start the workflows
+        const workflowIDs = rows.map((row) => row.workflow_uuid);
         for (const id of workflowIDs) {
           // If we have a rate limit, stop starting functions when the number
           //   of functions started this period exceeds the limit.
