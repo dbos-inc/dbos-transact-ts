@@ -7,21 +7,6 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON, globalAppVersion, CircularBuffer, interceptStreams } from '../utils';
 
-// Capture the native stdout and stderr write functions
-// We will override them twice: once for buffering logs and once for forwarding logs to the DBOS global logger
-const logBuffer = new CircularBuffer(100);
-const logErrorBuffer = new CircularBuffer(100);
-if (process.env.DBOS__CAPTURE_STD !== 'false') {
-  interceptStreams((msg, stream) => {
-    const truncatedMsg = msg.slice(0, 65535); // Be on the safe side
-    if (stream === 'stdout') {
-      logBuffer.add(truncatedMsg);
-    } else {
-      logErrorBuffer.add(truncatedMsg);
-    }
-  });
-}
-
 /*****************/
 /* GLOBAL LOGGER */
 /*****************/
@@ -76,33 +61,19 @@ export class GlobalLogger {
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
 
-    if (process.env.DBOS__CAPTURE_STD !== 'false') {
-      this.captureStdoutAndStderr();
-    }
-  }
-
-  private captureStdoutAndStderr(): void {
-    // First flush the buffers to the OTLP transport
-    if (this.telemetryCollector?.exporter) {
-      for (const line of logBuffer.flush()) {
-        this.otlpTransport?.log({ level: 'info', message: line.trim() }, () => {});
-      }
-      for (const line of logErrorBuffer.flush()) {
-        this.otlpTransport?.log({ level: 'error', message: line.trim() }, () => {});
-      }
-    }
-    // Overwrite the intercepts again to capture non-DBOS logger stdout/stderr and export them through OTLP
-    interceptStreams((msg, stream) => {
-      if (stream === 'stdout') {
-        if (!this.isLogging) {
-          this.otlpTransport?.log({ level: 'info', message: msg.trim() }, () => {});
+    if (process.env.DBOS__CAPTURE_STD !== 'false' && this.telemetryCollector?.exporter) {
+      interceptStreams((msg, stream) => {
+        if (stream === 'stdout') {
+          if (!this.isLogging) {
+            this.otlpTransport?.log({ level: 'info', message: msg.trim() }, () => {});
+          }
+        } else {
+          if (!this.isLogging) {
+            this.otlpTransport?.log({ level: 'error', message: msg.trim(), stack: new Error().stack }, () => {});
+          }
         }
-      } else {
-        if (!this.isLogging) {
-          this.otlpTransport?.log({ level: 'error', message: msg.trim(), stack: new Error().stack }, () => {});
-        }
-      }
-    });
+      });
+    }
   }
 
   // We use this form of winston logging methods: `(message: string, ...meta: any[])`. See node_modules/winston/index.d.ts
