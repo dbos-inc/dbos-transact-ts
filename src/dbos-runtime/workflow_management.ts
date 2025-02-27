@@ -6,6 +6,7 @@ import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
 import { HTTPRequest } from '../context';
 import { DBOSExecutor } from '../dbos-executor';
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
+import axios, { AxiosError } from 'axios';
 
 export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(
@@ -84,7 +85,7 @@ export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getR
 }
 
 // Cancelling a workflow prevents it from being automatically recovered, but active executions are not halted.
-export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
+/* export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
   const systemDatabase = new PostgresSystemDatabase(
     config.poolConfig,
     config.system_database,
@@ -94,6 +95,105 @@ export async function cancelWorkflow(config: DBOSConfig, workflowUUID: string) {
     await systemDatabase.cancelWorkflow(workflowUUID);
   } finally {
     await systemDatabase.destroy();
+  } 
+
+} */
+
+export async function cancelWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {
+  let log = new GlobalLogger();
+
+  let url = `http://${host}:3001/workflows/${workflowUUID}/cancel`;
+  console.log(url);
+  try {
+    const res = await axios.post(
+      url,
+      {},
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    if (res.status !== 204) {
+      log.error(`Failed to cancel ${workflowUUID}`);
+      return 1;
+    }
+
+    log.info(`Workflow ${workflowUUID} successfully cancelled!`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to cancel workflow ${workflowUUID}`;
+
+    console.log(e as AxiosError);
+
+    log.error(`${errorLabel}: ${(e as Error).message}`);
+
+    return 1;
+  }
+}
+
+export async function resumeWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {
+  let url = `http://${host}:3001/workflows/${workflowUUID}/resume`;
+  console.log(url);
+  try {
+    const res = await axios.post(
+      url,
+      {},
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    if (res.status !== 204) {
+      logger.error(`Failed to cancel ${workflowUUID}`);
+      return 1;
+    }
+
+    logger.info(`Workflow ${workflowUUID} successfully resume!`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to resume workflow ${workflowUUID}`;
+
+    console.log(e as AxiosError);
+
+    logger.error(`${errorLabel}: ${(e as Error).message}`);
+
+    return 1;
+  }
+}
+
+export async function restartWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {
+  let url = `http://${host}:3001/workflows/${workflowUUID}/restart`;
+  console.log(url);
+  try {
+    const res = await axios.post(
+      url,
+      {},
+      {
+        headers: {
+          'Content-Type': 'application/json',
+        },
+      },
+    );
+
+    if (res.status !== 204) {
+      logger.error(`Failed to restart ${workflowUUID}`);
+      return 1;
+    }
+
+    logger.info(`Workflow ${workflowUUID} successfully restart!`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to restart workflow ${workflowUUID}`;
+
+    console.log(e as AxiosError);
+
+    logger.error(`${errorLabel}: ${(e as Error).message}`);
+
+    return 1;
   }
 }
 

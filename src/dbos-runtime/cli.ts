@@ -11,6 +11,7 @@ import { TelemetryExporter } from '../telemetry/exporters';
 import { configure } from './configure';
 import {
   cancelWorkflow,
+  resumeWorkflow,
   getWorkflow,
   listQueuedWorkflows,
   listWorkflows,
@@ -21,6 +22,7 @@ import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
+import { get } from 'axios';
 
 const program = new Command();
 
@@ -225,21 +227,22 @@ workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
   .argument('<uuid>', 'Target workflow ID')
+  .option('-h, --host <string>', 'Specify the application root directory', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string }) => {
+  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const [dbosConfig, _] = parseConfigFile(options);
-    await cancelWorkflow(dbosConfig, uuid);
+    await cancelWorkflow(options.host, uuid, getGlobalLogger(dbosConfig));
   });
 
 workflowCommands
   .command('resume')
   .description('Resume a workflow from the last step it executed, keeping its workflow ID')
   .argument('<uuid>', 'Target workflow ID')
+  .option('-h, --host <string>', 'Specify the application root directory', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string }) => {
-    const [dbosConfig, runtimeConfig] = parseConfigFile(options);
-    const output = await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, false);
-    console.log(`Workflow output: ${JSON.stringify(output)}`);
+  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
+    const [dbosConfig, _] = parseConfigFile(options);
+    await resumeWorkflow(options.host, uuid, getGlobalLogger(dbosConfig));
   });
 
 workflowCommands
