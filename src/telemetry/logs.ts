@@ -11,13 +11,15 @@ import { DBOSJSON, globalAppVersion, CircularBuffer, interceptStreams } from '..
 // We will override them twice: once for buffering logs and once for forwarding logs to the DBOS global logger
 const logBuffer = new CircularBuffer(1000);
 const logErrorBuffer = new CircularBuffer(1000);
-interceptStreams((msg, stream) => {
-  if (stream === 'stdout') {
-    logBuffer.add(msg);
-  } else {
-    logErrorBuffer.add(msg);
-  }
-});
+if (process.env.DBOS__CAPTURE_STD !== 'false') {
+  interceptStreams((msg, stream) => {
+    if (stream === 'stdout') {
+      logBuffer.add(msg);
+    } else {
+      logErrorBuffer.add(msg);
+    }
+  });
+}
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -73,7 +75,9 @@ export class GlobalLogger {
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
 
-    this.captureStdoutAndStderr();
+    if (process.env.DBOS__CAPTURE_STD !== 'false') {
+      this.captureStdoutAndStderr();
+    }
   }
 
   private captureStdoutAndStderr(): void {
