@@ -9,7 +9,6 @@ import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
 import { WorkflowQueue } from './wfqueue';
-import { DBOSOperationInProgressError } from './error';
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
