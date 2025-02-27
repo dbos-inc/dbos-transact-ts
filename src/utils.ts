@@ -135,28 +135,6 @@ export function exhaustiveCheckGuard(_: never): never {
   throw new Error('Exaustive matching is not applied');
 }
 
-export class CircularBuffer {
-  private buffer: string[] = [];
-  private maxSize: number;
-
-  constructor(maxSize: number) {
-    this.maxSize = maxSize;
-  }
-
-  add(entry: string) {
-    if (this.buffer.length >= this.maxSize) {
-      this.buffer.shift(); // Remove the oldest entry
-    }
-    this.buffer.push(entry);
-  }
-
-  *flush(): Generator<string> {
-    while (this.buffer.length > 0) {
-      yield this.buffer.shift() as string;
-    }
-  }
-}
-
 // Capture original functions
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);

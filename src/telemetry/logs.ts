@@ -5,7 +5,7 @@ import { Logger as OTelLogger, LogAttributes, SeverityNumber } from '@openteleme
 import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { TelemetryCollector } from './collector';
-import { DBOSJSON, globalAppVersion, CircularBuffer, interceptStreams } from '../utils';
+import { DBOSJSON, globalAppVersion, interceptStreams } from '../utils';
 
 /*****************/
 /* GLOBAL LOGGER */
