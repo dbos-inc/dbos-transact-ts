@@ -379,14 +379,12 @@ describe('workflow-management-tests', () => {
 
     @Workflow()
     static async waitingWorkflow(_ctxt: WorkflowContext) {
-      console.log('waitingWorkflow executed');
       TestEndpoints.tries += 1;
       await TestEndpoints.testPromise;
     }
 
     @Transaction()
     static async testTransaction(_ctxt: TransactionContext<Knex>) {
-      console.log('test Transaction executed');
       TestEndpoints.tries += 1;
       return Promise.resolve();
     }
