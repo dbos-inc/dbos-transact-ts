@@ -4,7 +4,7 @@ import { PostgresSystemDatabase, SystemDatabase } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
 import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
 import { HTTPRequest } from '../context';
-import axios, { AxiosError } from 'axios';
+import axios from 'axios';
 
 export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(
@@ -83,7 +83,7 @@ export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getR
 }
 
 export async function cancelWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {
-  let url = `http://${host}:3001/workflows/${workflowUUID}/cancel`;
+  const url = `http://${host}:3001/workflows/${workflowUUID}/cancel`;
   try {
     const res = await axios.post(
       url,
@@ -111,7 +111,7 @@ export async function cancelWorkflow(host: string, workflowUUID: string, logger:
 }
 
 export async function resumeWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {
-  let url = `http://${host}:3001/workflows/${workflowUUID}/resume`;
+  const url = `http://${host}:3001/workflows/${workflowUUID}/resume`;
   try {
     const res = await axios.post(
       url,
@@ -140,7 +140,7 @@ export async function resumeWorkflow(host: string, workflowUUID: string, logger:
 }
 
 export async function restartWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {
-  let url = `http://${host}:3001/workflows/${workflowUUID}/restart`;
+  const url = `http://${host}:3001/workflows/${workflowUUID}/restart`;
   try {
     const res = await axios.post(
       url,

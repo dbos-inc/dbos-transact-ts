@@ -22,7 +22,6 @@ import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
-import { get } from 'axios';
 
 const program = new Command();
 
