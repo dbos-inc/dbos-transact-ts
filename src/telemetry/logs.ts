@@ -9,8 +9,8 @@ import { DBOSJSON, globalAppVersion, CircularBuffer, interceptStreams } from '..
 
 // Capture the native stdout and stderr write functions
 // We will override them twice: once for buffering logs and once for forwarding logs to the DBOS global logger
-const logBuffer = new CircularBuffer(1000);
-const logErrorBuffer = new CircularBuffer(1000);
+const logBuffer = new CircularBuffer(100);
+const logErrorBuffer = new CircularBuffer(100);
 if (process.env.DBOS__CAPTURE_STD !== 'false') {
   interceptStreams((msg, stream) => {
     if (stream === 'stdout') {
