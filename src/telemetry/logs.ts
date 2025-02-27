@@ -13,10 +13,11 @@ const logBuffer = new CircularBuffer(100);
 const logErrorBuffer = new CircularBuffer(100);
 if (process.env.DBOS__CAPTURE_STD !== 'false') {
   interceptStreams((msg, stream) => {
+    const truncatedMsg = msg.slice(0, 65535); // Be on the safe side
     if (stream === 'stdout') {
-      logBuffer.add(msg);
+      logBuffer.add(truncatedMsg);
     } else {
-      logErrorBuffer.add(msg);
+      logErrorBuffer.add(truncatedMsg);
     }
   });
 }
