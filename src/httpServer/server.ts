@@ -284,13 +284,13 @@ export class DBOSHttpServer {
 
   static registerRestartWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const workflowResumeUrl = '/workflows/:workflow_id/restart';
-    const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
+    const workflowRestartHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      console.log(`Restarting workflow: ${workflowId} with a new id`);
+      dbosExec.logger.info(`Restarting workflow: ${workflowId} with a new id`);
       await dbosExec.executeWorkflowUUID(workflowId, true);
       koaCtxt.status = 204;
     };
-    router.post(workflowResumeUrl, workflowResumeHandler);
+    router.post(workflowResumeUrl, workflowRestartHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
   }
 

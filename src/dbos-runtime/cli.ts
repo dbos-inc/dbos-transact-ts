@@ -12,10 +12,10 @@ import { configure } from './configure';
 import {
   cancelWorkflow,
   resumeWorkflow,
+  restartWorkflow,
   getWorkflow,
   listQueuedWorkflows,
   listWorkflows,
-  reattemptWorkflow,
 } from './workflow_management';
 import { GetWorkflowsInput, StatusString } from '..';
 import { exit } from 'node:process';
@@ -249,11 +249,11 @@ workflowCommands
   .command('restart')
   .description('Restart a workflow from the beginning with a new workflow ID')
   .argument('<uuid>', 'Target workflow ID')
+  .option('-h, --host <string>', 'Specify the application root directory', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string }) => {
-    const [dbosConfig, runtimeConfig] = parseConfigFile(options);
-    const output = await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, true);
-    console.log(`Workflow output: ${JSON.stringify(output)}`);
+  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
+    const [dbosConfig, _] = parseConfigFile(options);
+    await restartWorkflow(options.host, uuid, getGlobalLogger(dbosConfig));
   });
 
 const queueCommands = workflowCommands.command('queue').alias('queues').alias('q').description('Manage DBOS queues');
