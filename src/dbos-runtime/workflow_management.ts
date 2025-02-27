@@ -103,7 +103,7 @@ export async function cancelWorkflow(host: string, workflowUUID: string, logger:
     logger.info(`Workflow ${workflowUUID} successfully cancelled!`);
     return 0;
   } catch (e) {
-    const errorLabel = `Failed to cancel workflow ${workflowUUID}`;
+    const errorLabel = `Failed to cancel workflow ${workflowUUID}. Please check that application is running.`;
     logger.error(`${errorLabel}: ${(e as Error).message}`);
 
     return 1;
@@ -131,7 +131,7 @@ export async function resumeWorkflow(host: string, workflowUUID: string, logger:
     logger.info(`Workflow ${workflowUUID} successfully resume!`);
     return 0;
   } catch (e) {
-    const errorLabel = `Failed to resume workflow ${workflowUUID}`;
+    const errorLabel = `Failed to resume workflow ${workflowUUID}. Please check that application is running.`;
 
     logger.error(`${errorLabel}: ${(e as Error).message}`);
 
@@ -160,7 +160,7 @@ export async function restartWorkflow(host: string, workflowUUID: string, logger
     logger.info(`Workflow ${workflowUUID} successfully restart!`);
     return 0;
   } catch (e) {
-    const errorLabel = `Failed to restart workflow ${workflowUUID}`;
+    const errorLabel = `Failed to restart workflow ${workflowUUID}. Please check that application is running.`;
 
     logger.error(`${errorLabel}: ${(e as Error).message}`);
 
