@@ -251,3 +251,11 @@ export class DBOSConflictingRegistrationError extends DBOSError {
     super(msg, ConflictingRegistrationError);
   }
 }
+
+const OperationInProgressError = 25;
+export class DBOSOperationInProgressError extends DBOSError {
+  constructor(name: string) {
+    const msg = `Workflow ${name} completed with operations still in progress.  (Is an 'await' missing?)`;
+    super(msg, OperationInProgressError);
+  }
+}

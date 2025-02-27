@@ -9,6 +9,7 @@ import {
   MiddlewareContext,
   WorkflowQueue,
 } from '../src';
+import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import jwt from 'koa-jwt';
 
@@ -95,6 +96,20 @@ class TestFunctions {
   @DBOS.workflow()
   static async argRequiredWorkflow(@ArgRequired arg: string) {
     return Promise.resolve(arg);
+  }
+
+  @DBOS.step()
+  static async doSomethingThatTakesAWhile(name: string) {
+    await sleepms(1000);
+    return Promise.resolve(`step ${name} done`);
+  }
+
+  static danglingPromise?: Promise<string>;
+
+  @DBOS.workflow()
+  static async droppedPromise() {
+    TestFunctions.danglingPromise = TestFunctions.doSomethingThatTakesAWhile('dontdothis');
+    return Promise.resolve();
   }
 }
 
@@ -601,6 +616,15 @@ async function main11() {
   return Promise.resolve();
 }
 
+async function main12() {
+  await DBOS.launch();
+  await expect(async () => {
+    await TestFunctions.droppedPromise();
+  }).rejects.toThrow("Workflow droppedPromise completed with operations still in progress.  (Is an 'await' missing?)");
+  await TestFunctions.danglingPromise;
+  await DBOS.shutdown();
+}
+
 describe('dbos-v2api-tests-main', () => {
   test('simple-functions', async () => {
     await main();
@@ -644,5 +668,9 @@ describe('dbos-v2api-tests-main', () => {
 
   test('double decorator error', async () => {
     await main11();
+  }, 15000);
+
+  test('dropped promise error', async () => {
+    await main12();
   }, 15000);
 });

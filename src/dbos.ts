@@ -576,7 +576,8 @@ export class DBOS {
 
       const wfctx = assertCurrentWorkflowContext();
 
-      const funcId = wfctx.functionIDGetIncrement();
+      const funcId = wfctx.getFuncIDForChildWorkflow();
+
       wfId = wfId || wfctx.workflowUUID + '-' + funcId;
       const wfParams: WorkflowParams = {
         workflowUUID: wfId,
@@ -866,7 +867,7 @@ export class DBOS {
 
           const wfctx = assertCurrentWorkflowContext();
 
-          const funcId = wfctx.functionIDGetIncrement();
+          const funcId = wfctx.getFuncIDForChildWorkflow();
           wfId = wfId || wfctx.workflowUUID + '-' + funcId;
           const params: WorkflowParams = {
             workflowUUID: wfId,
