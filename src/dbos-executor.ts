@@ -745,7 +745,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const runWorkflow = async () => {
       let result: R;
-      let stepsInProgressAtWFExit = false;
 
       // Execute the workflow.
       try {
@@ -772,7 +771,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
           if (recordedResult === null) {
             return callResult === undefined || callResult === null;
           }
+
           return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
+        }
+
+        // This is not able to catch all promise misuses / accidents, but it can catch some.
+        //  (A better solution is lint, but that only works if you use it.)
+        if (wCtxt.functionsOutstanding > 0) {
+          throw new DBOSOperationInProgressError(wf.name);
         }
 
         internalStatus.output = result;
@@ -827,9 +833,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
       } finally {
         this.tracer.endSpan(wCtxt.span);
-        if (wCtxt.functionsOutstanding > 0) {
-          stepsInProgressAtWFExit = true;
-        }
         if (
           wCtxt.tempWfOperationType === TempWorkflowType.transaction ||
           wCtxt.tempWfOperationType === TempWorkflowType.procedure
@@ -844,12 +847,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // Asynchronously flush the result buffer.
       if (wCtxt.resultBuffer.size > 0) {
         this.workflowResultBuffer.set(wCtxt.workflowUUID, wCtxt.resultBuffer);
-      }
-
-      // This is not able to catch all promise misuses / accidents, but it can catch some.
-      //  (A better solution is lint, but that only works if you use it.)
-      if (stepsInProgressAtWFExit) {
-        throw new DBOSOperationInProgressError(wf.name);
       }
 
       return result;
