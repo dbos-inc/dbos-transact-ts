@@ -104,6 +104,7 @@ export class GlobalLogger {
     } else {
       this.logger.warn(DBOSJSON.stringify(logEntry), metadata);
     }
+    this.isLogging = false;
   }
 
   // metadata can have both ContextualMetadata and the error stack trace
