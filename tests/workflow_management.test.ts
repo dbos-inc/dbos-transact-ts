@@ -240,7 +240,6 @@ describe('workflow-management-tests', () => {
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
     const handle = await testRuntime.startWorkflow(TestEndpoints).waitingWorkflow();
     expect(TestEndpoints.tries).toBe(1);
-    // await cancelWorkflow(config, handle.getWorkflowUUID());
     await dbosExec.cancelWorkflow(handle.getWorkflowUUID());
 
     let result = await systemDBClient.query<{ status: string; attempts: number }>(
