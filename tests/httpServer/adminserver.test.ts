@@ -35,6 +35,7 @@ describe('admin-server-tests', () => {
       database: config.system_database,
     });
     await systemDBClient.connect();
+    testAdminWorkflow.counter = 0;
   });
 
   afterEach(async () => {
