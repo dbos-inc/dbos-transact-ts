@@ -11,10 +11,11 @@ import { TelemetryExporter } from '../telemetry/exporters';
 import { configure } from './configure';
 import {
   cancelWorkflow,
+  resumeWorkflow,
+  restartWorkflow,
   getWorkflow,
   listQueuedWorkflows,
   listWorkflows,
-  reattemptWorkflow,
 } from './workflow_management';
 import { GetWorkflowsInput, StatusString } from '..';
 import { exit } from 'node:process';
@@ -225,32 +226,33 @@ workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
   .argument('<uuid>', 'Target workflow ID')
+  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string }) => {
+  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const [dbosConfig, _] = parseConfigFile(options);
-    await cancelWorkflow(dbosConfig, uuid);
+    await cancelWorkflow(options.host, uuid, getGlobalLogger(dbosConfig));
   });
 
 workflowCommands
   .command('resume')
   .description('Resume a workflow from the last step it executed, keeping its workflow ID')
   .argument('<uuid>', 'Target workflow ID')
+  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string }) => {
-    const [dbosConfig, runtimeConfig] = parseConfigFile(options);
-    const output = await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, false);
-    console.log(`Workflow output: ${JSON.stringify(output)}`);
+  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
+    const [dbosConfig, _] = parseConfigFile(options);
+    await resumeWorkflow(options.host, uuid, getGlobalLogger(dbosConfig));
   });
 
 workflowCommands
   .command('restart')
   .description('Restart a workflow from the beginning with a new workflow ID')
   .argument('<uuid>', 'Target workflow ID')
+  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string }) => {
-    const [dbosConfig, runtimeConfig] = parseConfigFile(options);
-    const output = await reattemptWorkflow(dbosConfig, runtimeConfig, uuid, true);
-    console.log(`Workflow output: ${JSON.stringify(output)}`);
+  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
+    const [dbosConfig, _] = parseConfigFile(options);
+    await restartWorkflow(options.host, uuid, getGlobalLogger(dbosConfig));
   });
 
 const queueCommands = workflowCommands.command('queue').alias('queues').alias('q').description('Manage DBOS queues');
