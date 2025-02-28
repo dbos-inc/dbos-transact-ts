@@ -11,11 +11,11 @@ describe('admin-server-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
 
-  beforeAll(() => {
+  beforeAll(async () => {
+    // Reset the executor ID
+    process.env.DBOS__VMID = 'test-executor';
+    await DBOS.shutdown();
     config = generateDBOSTestConfig();
-  });
-
-  beforeEach(async () => {
     const runtimeConfig: DBOSRuntimeConfig = {
       entrypoints: [],
       port: 3000,
@@ -27,6 +27,9 @@ describe('admin-server-tests', () => {
     await setUpDBOSTestDb(config);
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
+  });
+
+  beforeEach(async () => {
     systemDBClient = new Client({
       user: config.poolConfig.user,
       port: config.poolConfig.port,
@@ -40,8 +43,11 @@ describe('admin-server-tests', () => {
 
   afterEach(async () => {
     await systemDBClient.end();
-    await DBOS.shutdown();
   }, 10000);
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+  });
 
   const testQueueOne = new WorkflowQueue('test-queue-1');
   const testQueueTwo = new WorkflowQueue('test-queue-2', { concurrency: 1 });
@@ -125,12 +131,9 @@ describe('admin-server-tests', () => {
   });
 
   test('test-admin-workflow-recovery', async () => {
-    // Reset the executor ID.
-    process.env.DBOS__VMID = 'test-executor';
-    await DBOS.shutdown();
-    await DBOS.launch();
     // Verify the executor ID is set.
     expect(globalParams.executorID).toBe('test-executor');
+
     // Run the workflow. Verify it succeeds.
     const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow();
     await handle.getResult();
