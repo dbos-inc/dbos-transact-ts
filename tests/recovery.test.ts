@@ -206,47 +206,4 @@ describe('recovery-tests', () => {
     await expect(handle.getResult()).resolves.toBe('test_recovery_user');
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
   });
-
-  /**
-   * Test for selectively recovering workflows run by an executor.
-   */
-  class ExecutorRecovery {
-    static localResolve: () => void;
-    static localPromise = new Promise<void>((resolve) => {
-      ExecutorRecovery.localResolve = resolve;
-    });
-
-    static resolve1: () => void;
-    static promise1 = new Promise<void>((resolve) => {
-      ExecutorRecovery.resolve1 = resolve;
-    });
-
-    static resolve2: () => void;
-    static promise2 = new Promise<void>((resolve) => {
-      ExecutorRecovery.resolve2 = resolve;
-    });
-
-    static localCnt = 0;
-    static executorCnt = 0;
-
-    @Workflow()
-    static async localWorkflow(ctxt: WorkflowContext, input: number) {
-      ExecutorRecovery.localCnt += input;
-      await ExecutorRecovery.localPromise;
-      return ctxt.authenticatedUser;
-    }
-
-    @Workflow()
-    static async executorWorkflow(ctxt: WorkflowContext, input: number) {
-      ExecutorRecovery.executorCnt += input;
-
-      // Signal the workflow has been executed more than once.
-      if (ExecutorRecovery.executorCnt > input) {
-        ExecutorRecovery.resolve2();
-      }
-
-      await ExecutorRecovery.promise1;
-      return ctxt.authenticatedUser;
-    }
-  }
 });

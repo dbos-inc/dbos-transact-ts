@@ -4,9 +4,12 @@ import { WorkflowQueue } from '../../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { QueueMetadataResponse } from '../../src/httpServer/server';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../../src/httpServer/server';
+import { globalParams, sleepms } from '../../src/utils';
+import { Client } from 'pg';
 
 describe('admin-server-tests', () => {
   let config: DBOSConfig;
+  let systemDBClient: Client;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -24,9 +27,18 @@ describe('admin-server-tests', () => {
   beforeEach(async () => {
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
+    systemDBClient = new Client({
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
+      database: config.system_database,
+    });
+    await systemDBClient.connect();
   });
 
   afterEach(async () => {
+    await systemDBClient.end();
     await DBOS.shutdown();
   }, 10000);
 
@@ -109,6 +121,59 @@ describe('admin-server-tests', () => {
     expect(response.status).toBe(204);
     await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     expect(testAdminWorkflow.counter).toBe(3);
+  });
+
+  test('test-admin-workflow-recovery', async () => {
+    // Reset the executor ID.
+    process.env.DBOS__VMID = 'test-executor';
+    await DBOS.shutdown();
+    await DBOS.launch();
+    // Verify the executor ID is set.
+    expect(globalParams.executorID).toBe('test-executor');
+    // Run the workflow. Verify it succeeds.
+    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow();
+    await handle.getResult();
+    expect(testAdminWorkflow.counter).toBe(1);
+    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Set the workflow back to pending and change the executor ID.
+    await systemDBClient.query(
+      `UPDATE dbos.workflow_status SET status='PENDING', executor_id=$1 WHERE workflow_uuid=$2`,
+      ['other-executor', handle.getWorkflowUUID()],
+    );
+    const wfStatus = await DBOS.getWorkflowStatus(handle.getWorkflowUUID());
+    expect(wfStatus).not.toBeNull();
+    expect(wfStatus?.executorId).toBe('other-executor');
+    expect(wfStatus?.status).toBe(StatusString.PENDING);
+
+    // Recover the workflow, and make sure it finishes with the correct executor ID.
+    const data = ['other-executor'];
+    const recoveryResponse = await fetch(`http://localhost:3001${WorkflowRecoveryUrl}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+    expect(recoveryResponse.status).toBe(200);
+    expect(await recoveryResponse.json()).toEqual([handle.getWorkflowUUID()]);
+
+    // Wait until it succeeds.
+    let succeeded = false;
+    for (let i = 0; i < 10; i++) {
+      const status = await DBOS.getWorkflowStatus(handle.getWorkflowUUID());
+      if (status?.status === StatusString.SUCCESS) {
+        expect(status.executorId).toBe('test-executor');
+        expect(status.status).toBe(StatusString.SUCCESS);
+        succeeded = true;
+        break;
+      }
+      await sleepms(1000);
+    }
+    expect(succeeded).toBe(true);
   });
 
   test('test-admin-endpoints', async () => {
