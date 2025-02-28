@@ -226,7 +226,7 @@ workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-h, --host <string>', 'Specify the application root directory', 'localhost')
+  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const [dbosConfig, _] = parseConfigFile(options);
@@ -237,7 +237,7 @@ workflowCommands
   .command('resume')
   .description('Resume a workflow from the last step it executed, keeping its workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-h, --host <string>', 'Specify the application root directory', 'localhost')
+  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const [dbosConfig, _] = parseConfigFile(options);
@@ -248,7 +248,7 @@ workflowCommands
   .command('restart')
   .description('Restart a workflow from the beginning with a new workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-h, --host <string>', 'Specify the application root directory', 'localhost')
+  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const [dbosConfig, _] = parseConfigFile(options);
