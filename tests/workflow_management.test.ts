@@ -19,17 +19,15 @@ import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '.
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import {
   WorkflowInformation,
-  cancelWorkflow,
   getWorkflow,
   listWorkflows,
-  reattemptWorkflow,
   listQueuedWorkflows,
 } from '../src/dbos-runtime/workflow_management';
 import { Client } from 'pg';
 import { Knex } from 'knex';
 import { v4 as uuidv4 } from 'uuid';
 import { GetQueuedWorkflowsInput } from '../src/workflow';
-import { globalAppVersion } from '../src/utils';
+import { globalParams } from '../src/utils';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -154,7 +152,7 @@ describe('workflow-management-tests', () => {
     expect(response.text).toBe('alice');
 
     const input: GetWorkflowsInput = {
-      applicationVersion: globalAppVersion.version,
+      applicationVersion: globalParams.appVersion,
     };
     response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
@@ -242,7 +240,7 @@ describe('workflow-management-tests', () => {
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
     const handle = await testRuntime.startWorkflow(TestEndpoints).waitingWorkflow();
     expect(TestEndpoints.tries).toBe(1);
-    await cancelWorkflow(config, handle.getWorkflowUUID());
+    await dbosExec.cancelWorkflow(handle.getWorkflowUUID());
 
     let result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
@@ -255,7 +253,9 @@ describe('workflow-management-tests', () => {
     expect(TestEndpoints.tries).toBe(1);
 
     TestEndpoints.testResolve();
-    await reattemptWorkflow(config, null, handle.getWorkflowUUID(), false); // Retry the workflow, resetting the attempts counter
+    // Retry the workflow, resetting the attempts counter
+    await dbosExec.resumeWorkflow(handle.getWorkflowUUID());
+
     result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
@@ -272,7 +272,9 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
-    await reattemptWorkflow(config, null, handle.getWorkflowUUID(), true); // Restart the workflow
+    // Restart the workflow
+    const wfh = await dbosExec.executeWorkflowUUID(handle.getWorkflowUUID(), true);
+    await wfh.getResult();
     expect(TestEndpoints.tries).toBe(3);
     await dbosExec.flushWorkflowBuffers();
     // Validate a new workflow is started and successful
@@ -308,7 +310,8 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].name).toBe('temp_workflow-transaction-testTransaction');
     const workflowUUID = result.rows[0].workflow_uuid;
 
-    await reattemptWorkflow(config, null, workflowUUID, true);
+    let wfh = await dbosExec.executeWorkflowUUID(workflowUUID, true);
+    await wfh.getResult();
     expect(TestEndpoints.tries).toBe(2);
     await dbosExec.flushWorkflowBuffers();
 
@@ -321,7 +324,8 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].name).toBe('temp_workflow-transaction-testTransaction');
     const restartedWorkflowUUID = result.rows[0].workflow_uuid;
 
-    await reattemptWorkflow(config, null, restartedWorkflowUUID, true);
+    wfh = await dbosExec.executeWorkflowUUID(restartedWorkflowUUID, true);
+    await wfh.getResult();
     expect(TestEndpoints.tries).toBe(3);
   });
 

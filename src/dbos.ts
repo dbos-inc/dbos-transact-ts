@@ -33,7 +33,7 @@ import {
   registerAndWrapDBOSFunction,
   registerFunctionWrapper,
 } from './decorators';
-import { globalAppVersion, sleepms } from './utils';
+import { globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
 import { koaTracingMiddleware, expressTracingMiddleware, honoTracingMiddleware } from './httpServer/middleware';
 import { Server } from 'http';
@@ -271,9 +271,11 @@ export class DBOS {
       DBOSExecutor.globalInstance = undefined;
     }
 
-    // Reset the global app version
-    globalAppVersion.version = process.env.DBOS__APPVERSION || '';
-    globalAppVersion.wasComputed = false;
+    // Reset the global app version and executor ID
+    globalParams.appVersion = process.env.DBOS__APPVERSION || '';
+    globalParams.wasComputed = false;
+    globalParams.appID = process.env.DBOS__APPID || '';
+    globalParams.executorID = process.env.DBOS__VMID || 'local';
   }
 
   static get executor() {

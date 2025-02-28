@@ -1,5 +1,5 @@
 {
   "extends": "./tsconfig.json",
-  "include": ["src/**/*", "schemas/**/*"],
+  "include": ["src/**/*", "schemas/**/*", "dbos-config.schema.json"],
   "exclude": ["dist/**"]
 }

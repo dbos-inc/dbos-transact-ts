@@ -9,6 +9,7 @@ async function compileTypeScriptFile(filePath: string): Promise<boolean> {
     const program = ts.createProgram([filePath], {
       target: ts.ScriptTarget.ESNext,
       module: ts.ModuleKind.Node16,
+      resolveJsonModule: true,
       experimentalDecorators: true,
       emitDecoratorMetadata: true,
       outDir: tempDir,

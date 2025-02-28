@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from '../error';
-import { DBOSJSON, findPackageRoot, globalAppVersion, readFileSync } from '../utils';
+import { DBOSJSON, globalParams, readFileSync } from '../utils';
 import { DBOSConfig } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
@@ -13,10 +13,9 @@ import validator from 'validator';
 import fs from 'fs';
 import { loadDatabaseConnection } from './db_connection';
 import { GlobalLogger } from '../telemetry/logs';
+import dbosConfigSchema from '../../dbos-config.schema.json';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
-const dbosConfigSchemaPath = path.join(findPackageRoot(__dirname), 'dbos-config.schema.json');
-const dbosConfigSchema = DBOSJSON.parse(readFileSync(dbosConfigSchemaPath)) as object;
 const ajv = new Ajv({ allErrors: true, verbose: true });
 
 export interface ConfigFile {
@@ -282,7 +281,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   /************************************/
   /* Build final DBOS configuration */
   /************************************/
-  globalAppVersion.version = getAppVersion(cliOptions?.appVersion);
+  globalParams.appVersion = getAppVersion(cliOptions?.appVersion);
   const dbosConfig: DBOSConfig = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,

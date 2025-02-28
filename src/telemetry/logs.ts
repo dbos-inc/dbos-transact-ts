@@ -5,7 +5,7 @@ import { Logger as OTelLogger, LogAttributes, SeverityNumber } from '@openteleme
 import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { TelemetryCollector } from './collector';
-import { DBOSJSON, globalAppVersion, interceptStreams } from '../utils';
+import { DBOSJSON, globalParams, interceptStreams } from '../utils';
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -176,7 +176,7 @@ export const consoleFormat = format.combine(
   format.colorize(),
   format.printf((info) => {
     const { timestamp, level, message, stack } = info;
-    const applicationVersion = globalAppVersion.version;
+    const applicationVersion = globalParams.appVersion;
     const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
     const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
 
@@ -203,8 +203,8 @@ class OTLPLogQueueTransport extends TransportStream {
     // not sure if we need a more explicit name here
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger('default');
-    this.applicationID = process.env.DBOS__APPID || '';
-    this.executorID = process.env.DBOS__VMID || 'local';
+    this.applicationID = globalParams.appID;
+    this.executorID = globalParams.executorID;
     const logRecordProcessor = {
       forceFlush: async () => {
         // no-op
@@ -251,7 +251,7 @@ class OTLPLogQueueTransport extends TransportStream {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stack,
         applicationID: this.applicationID,
-        applicationVersion: globalAppVersion.version,
+        applicationVersion: globalParams.appVersion,
         executorID: this.executorID,
       } as LogAttributes,
     });

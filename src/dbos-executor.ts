@@ -73,7 +73,7 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, serializeError } from 'serialize-error';
-import { globalAppVersion, DBOSJSON, sleepms } from './utils';
+import { globalParams, DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
@@ -218,7 +218,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   scheduler?: DBOSScheduler = undefined;
   wfqEnded?: Promise<void> = undefined;
 
-  readonly executorID: string = process.env.DBOS__VMID || 'local';
+  readonly executorID: string = globalParams.executorID;
 
   static globalInstance: DBOSExecutor | undefined = undefined;
 
@@ -465,11 +465,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
 
       // Compute the application version if not provided
-      if (globalAppVersion.version === '') {
-        globalAppVersion.version = this.computeAppVersion();
-        globalAppVersion.wasComputed = true;
+      if (globalParams.appVersion === '') {
+        globalParams.appVersion = this.computeAppVersion();
+        globalParams.wasComputed = true;
       }
-      this.logger.info(`Application version: ${globalAppVersion.version}`);
+      this.logger.info(`Application version: ${globalParams.appVersion}`);
 
       await this.recoverPendingWorkflows([this.executorID]);
     }
@@ -699,7 +699,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
       executorID: wCtxt.executorID,
-      applicationVersion: globalAppVersion.version,
+      applicationVersion: globalParams.appVersion,
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
       maxRetries: wCtxt.maxRecoveryAttempts,
@@ -1541,7 +1541,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const procClassName = this.getProcedureClassName(proc);
     const plainProcName = `${procClassName}_${proc.name}_p`;
-    const procName = globalAppVersion.wasComputed ? plainProcName : `v${globalAppVersion.version}_${plainProcName}`;
+    const procName = globalParams.wasComputed ? plainProcName : `v${globalParams.appVersion}_${plainProcName}`;
 
     const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
     try {
@@ -1843,13 +1843,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID, globalAppVersion.version);
+      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID, globalParams.appVersion);
       if (pendingWorkflows.length > 0) {
         this.logger.info(
-          `Recovering ${pendingWorkflows.length} workflows from application version ${globalAppVersion.version}`,
+          `Recovering ${pendingWorkflows.length} workflows from application version ${globalParams.appVersion}`,
         );
       } else {
-        this.logger.info(`No workflows to recover from application version ${globalAppVersion.version}`);
+        this.logger.info(`No workflows to recover from application version ${globalParams.appVersion}`);
       }
       for (const pendingWorkflow of pendingWorkflows) {
         this.logger.debug(
