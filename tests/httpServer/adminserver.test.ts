@@ -11,8 +11,11 @@ describe('admin-server-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     config = generateDBOSTestConfig();
+  });
+
+  beforeEach(async () => {
     const runtimeConfig: DBOSRuntimeConfig = {
       entrypoints: [],
       port: 3000,
@@ -20,11 +23,8 @@ describe('admin-server-tests', () => {
       start: [],
       setup: [],
     };
-    await setUpDBOSTestDb(config);
     DBOS.setConfig(config, runtimeConfig);
-  });
-
-  beforeEach(async () => {
+    await setUpDBOSTestDb(config);
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
     systemDBClient = new Client({
