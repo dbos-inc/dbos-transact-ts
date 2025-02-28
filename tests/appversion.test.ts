@@ -1,6 +1,6 @@
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { globalAppVersion } from '../src/utils';
+import { globalParams } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 describe('test-app-version', () => {
@@ -32,15 +32,15 @@ describe('test-app-version', () => {
     // Verify the app version is correctly set to a hex string
     await DBOS.launch();
     await expect(TestAppVersionStability.testWorkflow()).resolves.toEqual(0);
-    const appVersion = globalAppVersion.version;
+    const appVersion = globalParams.appVersion;
     expect(appVersion.length).toBeGreaterThan(0);
     expect(isHex(appVersion)).toBe(true);
     await DBOS.shutdown();
 
     // Verify stability -- the same source produces the same app version
-    expect(globalAppVersion.version.length).toBe(0);
+    expect(globalParams.appVersion.length).toBe(0);
     await DBOS.launch();
-    expect(globalAppVersion.version).toEqual(appVersion);
+    expect(globalParams.appVersion).toEqual(appVersion);
     await expect(TestAppVersionStability.testWorkflow()).resolves.toEqual(0);
 
     // Verify that changing the workflow source changes the app version
@@ -53,10 +53,10 @@ describe('test-app-version', () => {
       }
     }
 
-    expect(globalAppVersion.version.length).toBe(0);
+    expect(globalParams.appVersion.length).toBe(0);
     await DBOS.launch();
-    expect(globalAppVersion.version.length).toBeGreaterThan(0);
-    expect(globalAppVersion.version).not.toEqual(appVersion);
+    expect(globalParams.appVersion.length).toBeGreaterThan(0);
+    expect(globalParams.appVersion).not.toEqual(appVersion);
     await expect(AnotherWorkflow.anotherWorkflow()).resolves.toEqual(1);
   });
 

@@ -13,6 +13,7 @@ import { StepContextImpl } from './step';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import { StoredProcedureContextImpl } from './procedure';
 import { HandlerContextImpl } from './httpServer/handler';
+import { globalParams } from './utils';
 
 export interface DBOSLocalCtx {
   ctx?: DBOSContext;
@@ -226,8 +227,8 @@ export class DBOSContextImpl implements DBOSContext {
   authenticatedRoles: string[] = []; // All roles the user has according to authentication
   assumedRole: string = ''; // Role in use - that user has and provided authorization to current function
   workflowUUID: string = ''; // Workflow UUID. Empty for HandlerContexts.
-  executorID: string = process.env.DBOS__VMID || 'local'; // Executor ID. Gathered from the environment and "local" otherwise
-  applicationID: string = process.env.DBOS__APPID || ''; // Application ID. Gathered from the environment and empty otherwise
+  executorID: string = globalParams.executorID; // Executor ID. Gathered from the environment and "local" otherwise
+  applicationID: string = globalParams.appID; // Application ID. Gathered from the environment and empty otherwise
   readonly logger: DBOSLogger; // Wrapper around the global logger for this context.
 
   constructor(

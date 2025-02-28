@@ -28,7 +28,7 @@ import {
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { sleepms, findPackageRoot, DBOSJSON } from './utils';
+import { sleepms, findPackageRoot, DBOSJSON, globalParams } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -189,7 +189,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.systemPoolConfig.database = systemDatabaseName;
     this.systemPoolConfig.connectionTimeoutMillis = PostgresSystemDatabase.connectionTimeoutMillis;
     // This sets the application_name column in pg_stat_activity
-    this.systemPoolConfig.application_name = `dbos_transact_${process.env.DBOS__VMID || 'local'}_${process.env.DBOS__APPVERSION || ''}`;
+    this.systemPoolConfig.application_name = `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`;
     this.pool = new Pool(this.systemPoolConfig);
     const knexConfig = {
       client: 'pg',
@@ -283,11 +283,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
         application_version,
         application_id,
         created_at,
-        recovery_attempts
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+        recovery_attempts,
+        updated_at
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
        ON CONFLICT (workflow_uuid)
         DO UPDATE SET
-          recovery_attempts = workflow_status.recovery_attempts + 1
+          recovery_attempts = workflow_status.recovery_attempts + 1,
+          updated_at = EXCLUDED.updated_at,
+          executor_id = EXCLUDED.executor_id 
         RETURNING recovery_attempts, status, name, class_name, config_name, queue_name`,
       [
         initStatus.workflowUUID,
@@ -306,6 +309,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.applicationID,
         initStatus.createdAt,
         initStatus.status === StatusString.ENQUEUED ? 0 : 1,
+        Date.now(),
       ],
     );
     // Check the started workflow matches the expected name, class_name, config_name, and queue_name
