@@ -3,7 +3,7 @@ import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import { WorkflowQueue } from '../src';
 import { v4 as uuidv4 } from 'uuid';
-import { globalAppVersion, sleepms } from '../src/utils';
+import { globalParams, sleepms } from '../src/utils';
 
 import { WF } from './wfqtestprocess';
 
@@ -289,7 +289,7 @@ describe('queued-wf-tests-simple', () => {
   test('queue workflow in recovered workflow', async () => {
     expect(WF.x).toBe(5);
     console.log('shutdown');
-    const appVersion = globalAppVersion.version;
+    const appVersion = globalParams.appVersion;
     await DBOS.shutdown(); // DO not want to take queued jobs from here
 
     console.log('run side process');

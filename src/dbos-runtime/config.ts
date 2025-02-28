@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from '../error';
-import { DBOSJSON, globalAppVersion, readFileSync } from '../utils';
+import { DBOSJSON, globalParams, readFileSync } from '../utils';
 import { DBOSConfig } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
@@ -281,7 +281,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   /************************************/
   /* Build final DBOS configuration */
   /************************************/
-  globalAppVersion.version = getAppVersion(cliOptions?.appVersion);
+  globalParams.appVersion = getAppVersion(cliOptions?.appVersion);
   const dbosConfig: DBOSConfig = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
