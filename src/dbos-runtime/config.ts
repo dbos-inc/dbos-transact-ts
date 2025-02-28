@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from '../error';
-import { DBOSJSON, globalAppVersion, findPackageRoot, globalParams, readFileSync } from '../utils';
+import { DBOSJSON, globalParams, readFileSync } from '../utils';
 import { DBOSConfig } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
