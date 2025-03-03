@@ -5,7 +5,7 @@ import { Logger as OTelLogger, LogAttributes, SeverityNumber } from '@openteleme
 import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { TelemetryCollector } from './collector';
-import { DBOSJSON, globalParams } from '../utils';
+import { DBOSJSON, globalParams, interceptStreams } from '../utils';
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -37,6 +37,8 @@ export interface IGlobalLogger extends IWinstonLogger {
 export class GlobalLogger {
   private readonly logger: IWinstonLogger;
   readonly addContextMetadata: boolean;
+  private isLogging = false; // Prevent recursive logging
+  private readonly otlpTransport?: OTLPLogQueueTransport;
 
   constructor(
     private readonly telemetryCollector?: TelemetryCollector,
@@ -53,39 +55,61 @@ export class GlobalLogger {
     );
     // Only enable the OTLP transport if we have a telemetry collector and an exporter
     if (this.telemetryCollector?.exporter) {
-      winstonTransports.push(new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info'));
+      this.otlpTransport = new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info');
+      winstonTransports.push(this.otlpTransport);
     }
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
+
+    if (process.env.DBOS__CAPTURE_STD !== 'false' && this.telemetryCollector?.exporter) {
+      interceptStreams((msg, stream) => {
+        if (stream === 'stdout') {
+          if (!this.isLogging) {
+            this.otlpTransport?.log({ level: 'info', message: msg.trim() }, () => {});
+          }
+        } else {
+          if (!this.isLogging) {
+            this.otlpTransport?.log({ level: 'error', message: msg.trim(), stack: new Error().stack }, () => {});
+          }
+        }
+      });
+    }
   }
 
   // We use this form of winston logging methods: `(message: string, ...meta: any[])`. See node_modules/winston/index.d.ts
   info(logEntry: unknown, metadata?: ContextualMetadata): void {
+    this.isLogging = true;
     if (typeof logEntry === 'string') {
       this.logger.info(logEntry, metadata);
     } else {
       this.logger.info(DBOSJSON.stringify(logEntry), metadata);
     }
+    this.isLogging = false;
   }
 
   debug(logEntry: unknown, metadata?: ContextualMetadata): void {
+    this.isLogging = true;
     if (typeof logEntry === 'string') {
       this.logger.debug(logEntry, metadata);
     } else {
       this.logger.debug(DBOSJSON.stringify(logEntry), metadata);
     }
+    this.isLogging = false;
   }
 
   warn(logEntry: unknown, metadata?: ContextualMetadata): void {
+    this.isLogging = true;
     if (typeof logEntry === 'string') {
       this.logger.warn(logEntry, metadata);
     } else {
       this.logger.warn(DBOSJSON.stringify(logEntry), metadata);
     }
+    this.isLogging = false;
   }
 
   // metadata can have both ContextualMetadata and the error stack trace
   error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
+    this.isLogging = true;
     if (inputError instanceof Error) {
       this.logger.error(inputError.message, { ...metadata, stack: inputError.stack });
     } else if (typeof inputError === 'string') {
@@ -93,6 +117,7 @@ export class GlobalLogger {
     } else {
       this.logger.error(DBOSJSON.stringify(inputError), { ...metadata, stack: new Error().stack });
     }
+    this.isLogging = false;
   }
 
   async destroy() {
