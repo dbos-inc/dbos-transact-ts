@@ -135,7 +135,16 @@ export async function deployAppCode(
 
   const appLanguage = retrieveApplicationLanguage();
 
-  if (appLanguage === (AppLanguages.Python as string)) {
+  if (appLanguage === (AppLanguages.Node as string)) {
+    logger.debug('Checking for package.json...');
+    const packageJsonExists = existsSync(path.join(process.cwd(), 'package.json'));
+    logger.debug(`  ... package.json found: ${packageJsonExists}`);
+
+    if (!packageJsonExists) {
+      logger.error('No package.json found.');
+      return 1;
+    }
+  } else if (appLanguage === (AppLanguages.Python as string)) {
     logger.debug('Checking for requirements.txt...');
     const requirementsPath = path.join(process.cwd(), 'requirements.txt');
     const requirementsTxtExists = existsSync(requirementsPath);
@@ -153,7 +162,7 @@ export async function deployAppCode(
       );
       return 1;
     }
-  } else if (appLanguage !== (AppLanguages.Node as string)) {
+  } else {
     logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`);
     return 1;
   }
