@@ -978,6 +978,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
         [workflowUUID, funcID, serialErr, txnSnapshot, Date.now()],
       );
     } catch (error) {
+      // Check for circular JSON structure error
+      if (err instanceof TypeError && err.message.includes('Converting circular structure to JSON')) {
+        this.logger.error('ERROR: Detected circular structure in object being converted to JSON');
+        const circularErr = new Error('Failed to record error due to circular references in error object');
+        throw circularErr;
+      }
+
       if (isKeyConflict(error)) {
         // Serialization and primary key conflict (Postgres).
         throw new DBOSWorkflowConflictUUIDError(workflowUUID);
