@@ -597,6 +597,7 @@ workflowCommands
   )
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
   .option('-n, --name <string>', 'Retrieve functions with this name')
+  .option('--sort-desc', 'Sort outputs by creation time in descending order (else ascending)')
   .action(
     async (
       appName: string | undefined,
@@ -610,6 +611,7 @@ workflowCommands
         workflowUUIDs?: string[];
         offset?: string;
         name?: string;
+        sortDesc?: boolean;
       },
     ) => {
       const input: ListWorkflowsInput = {
@@ -622,6 +624,7 @@ workflowCommands
         application_version: options.applicationVersion,
         offset: Number(options.offset),
         workflow_name: options.name,
+        sort_desc: options.sortDesc,
       };
       const exitCode = await listWorkflows(DBOSCloudHost, input, appName);
       process.exit(exitCode);
@@ -694,6 +697,7 @@ queueCommands
     '-S, --status <string>',
     'Retrieve functions with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)',
   )
+  .option('--sort-desc', 'Sort outputs by creation time in descending order (else ascending)')
   .action(
     async (
       appName: string | undefined,
@@ -705,6 +709,7 @@ queueCommands
         offset?: string;
         name?: string;
         queue?: string;
+        sortDesc?: boolean;
       },
     ) => {
       const input: ListQueuedWorkflowsInput = {
@@ -715,6 +720,7 @@ queueCommands
         offset: Number(options.offset),
         workflow_name: options.name,
         queue_name: options.queue,
+        sort_desc: options.sortDesc,
       };
       const exitCode = await listQueuedWorkflows(DBOSCloudHost, input, appName);
       process.exit(exitCode);
