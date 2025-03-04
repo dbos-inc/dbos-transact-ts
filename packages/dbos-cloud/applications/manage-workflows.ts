@@ -17,6 +17,7 @@ export interface ListWorkflowsInput {
   application_version?: string; // The application version that ran this workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
+  sort_desc?: boolean; // Sort in DESC order by created_at (default ASC)
 }
 
 export interface ListQueuedWorkflowsInput {
@@ -27,6 +28,7 @@ export interface ListQueuedWorkflowsInput {
   status?: string; // The status of the workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
+  sort_desc?: boolean; // Sort in DESC order by created_at (default ASC)
 }
 
 export async function listWorkflows(host: string, input: ListWorkflowsInput, appName?: string): Promise<number> {
