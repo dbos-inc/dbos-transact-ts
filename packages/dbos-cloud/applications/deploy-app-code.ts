@@ -135,16 +135,7 @@ export async function deployAppCode(
 
   const appLanguage = retrieveApplicationLanguage();
 
-  if (appLanguage === (AppLanguages.Node as string)) {
-    logger.debug('Checking for package-lock.json...');
-    const packageLockJsonExists = existsSync(path.join(process.cwd(), 'package-lock.json'));
-    logger.debug(`  ... package-lock.json found: ${packageLockJsonExists}`);
-
-    if (!packageLockJsonExists) {
-      logger.error("No package-lock.json found. Please run 'npm install' before deploying.");
-      return 1;
-    }
-  } else if (appLanguage === (AppLanguages.Python as string)) {
+  if (appLanguage === (AppLanguages.Python as string)) {
     logger.debug('Checking for requirements.txt...');
     const requirementsPath = path.join(process.cwd(), 'requirements.txt');
     const requirementsTxtExists = existsSync(requirementsPath);
@@ -162,7 +153,7 @@ export async function deployAppCode(
       );
       return 1;
     }
-  } else {
+  } else if (appLanguage !== (AppLanguages.Node as string)) {
     logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`);
     return 1;
   }
