@@ -104,8 +104,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
   // Generate ZIP file as a Buffer
   logger.debug(`    Finalizing zip archive ...`);
   const buffer = await zip.generateAsync({ platform: 'UNIX', type: 'nodebuffer', compression: 'DEFLATE' });
-  // const buffer = await zip.generateAsync({ platform: 'UNIX', type: 'nodebuffer' });
-  // Max string size is about 512MB. See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/length#description
+  // Max string size is about 512MB. See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/length#description.
   if (buffer.length > 0x1fffffe8) {
     throw new Error(`Zip archive is too large (${buffer.length} bytes)`);
   }
