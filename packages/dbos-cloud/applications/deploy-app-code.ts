@@ -136,12 +136,12 @@ export async function deployAppCode(
   const appLanguage = retrieveApplicationLanguage();
 
   if (appLanguage === (AppLanguages.Node as string)) {
-    logger.debug('Checking for package-lock.json...');
-    const packageLockJsonExists = existsSync(path.join(process.cwd(), 'package-lock.json'));
-    logger.debug(`  ... package-lock.json found: ${packageLockJsonExists}`);
+    logger.debug('Checking for package.json...');
+    const packageJsonExists = existsSync(path.join(process.cwd(), 'package.json'));
+    logger.debug(`  ... package.json found: ${packageJsonExists}`);
 
-    if (!packageLockJsonExists) {
-      logger.error("No package-lock.json found. Please run 'npm install' before deploying.");
+    if (!packageJsonExists) {
+      logger.error('No package.json found.');
       return 1;
     }
   } else if (appLanguage === (AppLanguages.Python as string)) {
