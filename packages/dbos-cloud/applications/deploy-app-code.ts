@@ -103,8 +103,13 @@ async function createZipData(logger: CLILogger): Promise<string> {
 
   // Generate ZIP file as a Buffer
   logger.debug(`    Finalizing zip archive ...`);
-  const buffer = await zip.generateAsync({ platform: 'UNIX', type: 'nodebuffer' });
+  const buffer = await zip.generateAsync({ platform: 'UNIX', type: 'nodebuffer', compression: 'DEFLATE' });
+  // Max string size is about 512MB. See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/length#description.
+  if (buffer.length > 0x1fffffe8) {
+    throw new Error(`Zip archive is too large (${buffer.length} bytes)`);
+  }
   logger.debug(`    ... zip archive complete (${buffer.length} bytes).`);
+  // This line could still fail if the buffer is too large. That's because base64 adds about 33% in size.
   return buffer.toString('base64');
 }
 
@@ -238,12 +243,49 @@ export async function deployAppCode(
     }
 
     logger.info(`Submitting deploy request for ${appName}`);
+    const s = performance.now();
+    let uploadStartTime: number | undefined = undefined;
+    let uploadEndTime: number | undefined = undefined;
+    interface UploadProgressEvent {
+      loaded: number;
+      total?: number;
+    }
     const response = await axios.post(url, body, {
       headers: {
         'Content-Type': 'application/json',
         Authorization: bearerToken,
       },
+      onUploadProgress: (progressEvent: UploadProgressEvent) => {
+        // Handle start of upload
+        if (progressEvent.loaded === 0) {
+          uploadStartTime = performance.now();
+          logger.debug(`Upload started at: ${(uploadStartTime - startTime).toFixed(2)}ms after request init`);
+        }
+
+        // Handle completion - ensure total is defined and loaded equals total
+        if (progressEvent.total !== undefined && progressEvent.loaded === progressEvent.total) {
+          uploadEndTime = performance.now();
+          if (uploadStartTime !== undefined) {
+            logger.debug(`Upload completed in: ${(uploadEndTime - uploadStartTime).toFixed(2)}ms`);
+          }
+          logger.debug(`Total time from request init to upload complete: ${(uploadEndTime - s).toFixed(2)}ms`);
+        }
+
+        // Log progress percentage only if total is defined
+        if (progressEvent.total !== undefined) {
+          const percentCompleted = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          logger.debug(`Upload progress: ${percentCompleted}%`);
+        } else {
+          // Alternative logging when total size is unknown
+          logger.debug(`Bytes uploaded: ${progressEvent.loaded}`);
+        }
+      },
     });
+    const e: number = performance.now();
+    logger.debug(`Total request time (including response): ${(e - s).toFixed(2)}ms`);
+    if (uploadEndTime !== undefined) {
+      logger.debug(`Time from upload complete to response received: ${(e - uploadEndTime).toFixed(2)}ms`);
+    }
     const deployOutput = response.data as DeployOutput;
     logger.info(`Submitted deploy request for ${appName}. Assigned version: ${deployOutput.ApplicationVersion}`);
 
