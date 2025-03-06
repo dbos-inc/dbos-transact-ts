@@ -209,6 +209,8 @@ describe('recovery-tests', () => {
   });
 
   test('test-resuming-already-completed-queue-workflow', async () => {
+    LocalRecovery.startEvent.clear();
+    LocalRecovery.endEvent.clear();
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     // Disable buffer flush
