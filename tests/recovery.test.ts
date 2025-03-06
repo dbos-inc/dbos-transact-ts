@@ -1,4 +1,4 @@
-import { WorkflowContext, Workflow, WorkflowQueue, TestingRuntime, DBOS } from '../src/';
+import { WorkflowContext, Workflow, WorkflowQueue, TestingRuntime } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
 import { PostgresSystemDatabase } from '../src/system_database';
