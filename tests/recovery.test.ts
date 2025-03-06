@@ -236,7 +236,7 @@ describe('recovery-tests', () => {
     await LocalRecovery.startEvent.wait();
     LocalRecovery.endEvent.set();
     // Manually flush
-    await sleepms(dbosExec.flushBufferIntervalMs); // Wait until our wrapper actually inserts the workflow status in the buffer
+    await sleepms(2000); // Wait until our wrapper actually inserts the workflow status in the buffer
     await dbosExec.flushWorkflowBuffers();
     await expect(recoveredHandles[0].getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
