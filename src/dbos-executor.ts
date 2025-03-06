@@ -161,6 +161,13 @@ const TempWorkflowType = {
 
 type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
 
+function resultsMatch(recordedResult: unknown, callResult: unknown): boolean {
+  if (recordedResult === null) {
+    return callResult === undefined || callResult === null;
+  }
+  return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
+}
+
 export class DBOSExecutor implements DBOSExecutorContext {
   initialized: boolean;
   // User Database
@@ -764,13 +771,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
           result = recordedResult;
         } else {
           result = callResult!;
-        }
-
-        function resultsMatch(recordedResult: Awaited<R>, callResult: Awaited<R>): boolean {
-          if (recordedResult === null) {
-            return callResult === undefined || callResult === null;
-          }
-          return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
         }
 
         internalStatus.output = result;
