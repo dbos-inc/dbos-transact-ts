@@ -212,6 +212,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   static readonly defaultNotificationTimeoutSec = 60;
 
   readonly debugMode: boolean;
+  readonly timeTravelDebug: boolean;
   static systemDBSchemaName = 'dbos';
 
   readonly logger: Logger;
@@ -235,6 +236,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     systemDatabase?: SystemDatabase,
   ) {
     this.debugMode = config.debugMode ?? false;
+    this.timeTravelDebug = this.debugMode ? process.env.DBOS_DEBUG_TIME_TRAVEL === 'true' : false;
 
     // Set configured environment variables
     if (config.env) {
