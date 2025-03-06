@@ -1131,11 +1131,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
         // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
+        let check: BufferedResult | undefined = undefined;
         if (wfCtx.presetUUID) {
           const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
-          const check: BufferedResult = await this.#checkExecution<R>(func, workflowUUID, funcId);
+          check = await this.#checkExecution<R>(func, workflowUUID, funcId);
           txn_snapshot = check.txn_snapshot;
-          if (check.output !== dbosNull) {
+          if (check.output !== dbosNull && !this.timeTravelDebug) {
             tCtxt.span.setAttribute('cached', true);
             tCtxt.span.setStatus({ code: SpanStatusCode.OK });
             this.tracer.endSpan(tCtxt.span);
@@ -1147,14 +1148,38 @@ export class DBOSExecutor implements DBOSExecutorContext {
           txn_snapshot = await DBOSExecutor.#retrieveSnapshot(func);
         }
 
-        if (this.debugMode) {
+        if (this.timeTravelDebug) {
+          const rows = await this.userDatabase.queryWithClient<Pick<transaction_outputs, 'txn_snapshot' | 'txn_id'>>(
+            client,
+            `SELECT txn_snapshot, txn_id FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
+            workflowUUID,
+            funcId,
+          );
+
+          if (rows.length === 0 || rows.length > 1) {
+            this.logger.error(
+              'Unexpected! This should never happen during debug. Found incorrect rows for transaction output.  Returned rows: ' +
+                rows.toString() +
+                `. WorkflowUUID ${workflowUUID}, function ID ${funcId}`,
+            );
+            throw new DBOSDebuggerError(
+              `This should never happen during debug. Found incorrect rows for transaction output. Returned ${rows.length} rows: ` +
+                rows.toString(),
+            );
+          }
+
+          await this.userDatabase.queryWithClient<void>(
+            client,
+            `--proxy:${rows[0].txn_id ?? ''}:${rows[0].txn_snapshot}`,
+          );
+        } else if (this.debugMode) {
           throw new DBOSDebuggerError(
             `Failed to find the recorded output for the transaction: workflow UUID ${workflowUUID}, step number ${funcId}`,
           );
         }
 
         // For non-read-only transactions, flush the result buffer.
-        if (!readOnly) {
+        if (!readOnly && !this.debugMode) {
           await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
         }
 
@@ -1171,6 +1196,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
           });
         }
         const result = cresult!;
+
+        if (check) {
+          if (!resultsMatch(check.output, result)) {
+            this.logger.error(
+              `Detected different output for the transaction UUID ${workflowUUID}, step number ${funcId}!\n Received: ${DBOSJSON.stringify(result)}\n Original: ${DBOSJSON.stringify(check.output)}`,
+            );
+          }
+          return check.output as R;
+        }
 
         // Record the execution, commit, and return.
         if (readOnly) {
