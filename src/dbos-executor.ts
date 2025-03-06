@@ -1858,8 +1858,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         try {
           // If the workflow is member of a queue, re-enqueue it.
           if (pendingWorkflow.queueName) {
-            await this.systemDatabase.clearQueueAssignment(pendingWorkflow.workflowUUID);
-            handlerArray.push(this.retrieveWorkflow(pendingWorkflow.workflowUUID));
+            const cleared = await this.systemDatabase.clearQueueAssignment(pendingWorkflow.workflowUUID);
+            if (cleared) {
+              handlerArray.push(this.retrieveWorkflow(pendingWorkflow.workflowUUID));
+            } else {
+              handlerArray.push(await this.executeWorkflowUUID(pendingWorkflow.workflowUUID));
+            }
           } else {
             handlerArray.push(await this.executeWorkflowUUID(pendingWorkflow.workflowUUID));
           }

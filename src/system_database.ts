@@ -68,7 +68,7 @@ export interface SystemDatabase {
   resumeWorkflow(workflowID: string): Promise<void>;
 
   enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
-  clearQueueAssignment(workflowId: string): Promise<void>;
+  clearQueueAssignment(workflowId: string): Promise<boolean>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
 
@@ -1307,11 +1307,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  async clearQueueAssignment(workflowId: string): Promise<void> {
+  async clearQueueAssignment(workflowId: string): Promise<boolean> {
     const client: PoolClient = await this.pool.connect();
     try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      await client.query<workflow_queue>(
+      const wqRes = await client.query<workflow_queue>(
         `
         UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
         SET started_at_epoch_ms = NULL, executor_id = NULL
@@ -1319,7 +1318,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `,
         [workflowId],
       );
-      await client.query<workflow_status>(
+      if (wqRes.rowCount === 0) {
+        await client.query('ROLLBACK');
+        return false;
+      }
+      const wsRes = await client.query<workflow_status>(
         `
         UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
         SET status = $2, executor_id = NULL
@@ -1327,7 +1330,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `,
         [workflowId, StatusString.ENQUEUED],
       );
+      if (wsRes.rowCount === 0) {
+        throw new Error(
+          `UNREACHABLE: Workflow ${workflowId} is found in the workflow_queue table but not found in the workflow_status table`,
+        );
+      }
       await client.query('COMMIT');
+      return true;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
