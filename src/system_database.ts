@@ -1265,23 +1265,48 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
-    let query = this.knexDB<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`).orderBy(
-      'created_at_epoch_ms',
-      'desc',
-    );
+    // Create the initial query with a join to workflow_status table to get executor_id
+    let query = this.knexDB<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
+      .join(
+        `${DBOSExecutor.systemDBSchemaName}.workflow_status`,
+        `${DBOSExecutor.systemDBSchemaName}.workflow_queue.workflow_uuid`,
+        `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
+      )
+      .orderBy('created_at_epoch_ms', 'desc');
+
+    // Apply filters
     if (input.queueName) {
-      query = query.where('queue_name', input.queueName);
+      query = query.where(`${DBOSExecutor.systemDBSchemaName}.workflow_queue.queue_name`, input.queueName);
     }
     if (input.startTime) {
-      query = query.where('created_at_epoch_ms', '>=', new Date(input.startTime).getTime());
+      query = query.where(
+        `${DBOSExecutor.systemDBSchemaName}.workflow_queue.created_at_epoch_ms`,
+        '>=',
+        new Date(input.startTime).getTime(),
+      );
     }
     if (input.endTime) {
-      query = query.where('created_at_at_epoch_ms', '<=', new Date(input.endTime).getTime());
+      query = query.where(
+        `${DBOSExecutor.systemDBSchemaName}.workflow_queue.created_at_epoch_ms`,
+        '<=',
+        new Date(input.endTime).getTime(),
+      );
     }
     if (input.limit) {
       query = query.limit(input.limit);
     }
-    const rows = await query.select();
+
+    // Select relevant columns, specifying table aliases to avoid column name conflicts
+    const rows = await query.select([
+      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.workflow_uuid`,
+      `${DBOSExecutor.systemDBSchemaName}.workflow_status.executor_id`,
+      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.queue_name`,
+      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.created_at_epoch_ms`,
+      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.started_at_epoch_ms`,
+      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.completed_at_epoch_ms`,
+    ]);
+
+    // Map the results
     const workflows = rows.map((row) => {
       return {
         workflowID: row.workflow_uuid,
@@ -1292,6 +1317,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         completedAt: row.completed_at_epoch_ms,
       };
     });
+
     return { workflows };
   }
 
