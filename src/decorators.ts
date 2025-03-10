@@ -97,7 +97,9 @@ export class DBOSDataType {
 function getArgNames(func: Function): string[] {
   let fn = func.toString();
   fn = fn.replace(/\s/g, '');
+  fn = fn.replace(/\/\*[\s\S]*?\*\//g, '');
   fn = fn.substring(fn.indexOf('(') + 1, fn.indexOf(')'));
+  if (!fn.length) return [];
   return fn.split(',');
 }
 
@@ -346,7 +348,7 @@ export function getOrCreateMethodArgsRegistration(target: object, propertyKey: s
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
     } else {
-      const descriptor = Object.getOwnPropertyDescriptor(regtarget, propertyKey);
+      const descriptor = Object.getOwnPropertyDescriptor(target, propertyKey);
       // eslint-disable-next-line @typescript-eslint/ban-types
       const argnames = getArgNames(descriptor?.value as Function);
       mParameters = argnames.map((_value, index) => new MethodParameter(index));
