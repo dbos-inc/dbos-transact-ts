@@ -83,6 +83,9 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
       args[idx] = argValue;
     }
 
+    // Argument validation - below - if we have any info about it
+    if (!argDescriptor.dataType) return;
+
     // Maybe look into https://www.npmjs.com/package/validator
     //  We could support emails and other validations too with something like that...
     if (argDescriptor.dataType.dataType === 'text' || argDescriptor.dataType.dataType === 'varchar') {
