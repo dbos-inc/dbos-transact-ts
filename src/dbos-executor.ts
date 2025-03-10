@@ -114,7 +114,7 @@ export interface DBOSConfig {
 
 interface WorkflowRegInfo {
   workflow: Workflow<unknown[], unknown>;
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   workflowOrigFunction: Function;
   config: WorkflowConfig;
   registration?: MethodRegistrationBase; // Always set except for temp WF...
@@ -209,7 +209,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   readonly logger: Logger;
   readonly tracer: Tracer;
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   typeormEntities: Function[] = [];
   drizzleEntities: { [key: string]: object } = {};
 
@@ -906,8 +906,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     );
 
     if (rows.length === 0 || rows.length > 2) {
-      this.logger.error('Unexpected! This should never happen. Returned rows: ' + rows.toString());
-      throw new DBOSError('This should never happen. Returned rows: ' + rows.toString());
+      // eslint-disable-next-line  @typescript-eslint/no-base-to-string
+      const returnedRows = rows.toString();
+      this.logger.error('Unexpected! This should never happen. Returned rows: ' + returnedRows);
+      throw new DBOSError('This should never happen. Returned rows: ' + returnedRows);
     }
 
     const res: BufferedResult = {
