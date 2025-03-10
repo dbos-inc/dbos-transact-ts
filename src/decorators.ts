@@ -50,7 +50,9 @@ export class DBOSDataType {
 
   /** Take type from reflect metadata */
   // eslint-disable-next-line @typescript-eslint/ban-types
-  static fromArg(arg: Function) {
+  static fromArg(arg?: Function): DBOSDataType | undefined {
+    if (!arg) return undefined;
+
     const dt = new DBOSDataType();
 
     if (arg === String) {
@@ -84,8 +86,6 @@ export class DBOSDataType {
   }
 }
 
-const paramMetadataKey = Symbol.for('dbos:parameter');
-
 /* Arguments parsing heuristic:
  * - Convert the function to a string
  * - Minify the function
@@ -97,7 +97,9 @@ const paramMetadataKey = Symbol.for('dbos:parameter');
 function getArgNames(func: Function): string[] {
   let fn = func.toString();
   fn = fn.replace(/\s/g, '');
+  fn = fn.replace(/\/\*[\s\S]*?\*\//g, '');
   fn = fn.substring(fn.indexOf('(') + 1, fn.indexOf(')'));
+  if (!fn.length) return [];
   return fn.split(',');
 }
 
@@ -120,12 +122,12 @@ export class MethodParameter {
   logMask: LogMasks = LogMasks.NONE;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  argType: Function = String;
-  dataType: DBOSDataType;
+  argType?: Function = undefined; // This comes from reflect-metadata, if we have it
+  dataType?: DBOSDataType;
   index: number = -1;
 
   // eslint-disable-next-line @typescript-eslint/ban-types
-  constructor(idx: number, at: Function) {
+  constructor(idx: number, at?: Function) {
     this.index = idx;
     this.argType = at;
     this.dataType = DBOSDataType.fromArg(at);
@@ -328,20 +330,31 @@ export function getConfiguredInstance(clsname: string, cfgname: string): Configu
 // initialization time.
 ////////////////////////////////////////////////////////////////////////////////
 
+const methodArgsByFunction: Map<string, MethodParameter[]> = new Map();
+
 export function getOrCreateMethodArgsRegistration(target: object, propertyKey: string | symbol): MethodParameter[] {
   let regtarget = target;
   if (typeof regtarget !== 'function') {
     regtarget = regtarget.constructor;
   }
-  let mParameters: MethodParameter[] =
-    (Reflect.getOwnMetadata(paramMetadataKey, regtarget, propertyKey) as MethodParameter[]) || [];
 
-  if (!mParameters.length) {
+  // eslint-disable-next-line @typescript-eslint/ban-types
+  const mkey = (regtarget as Function).name + '|' + propertyKey.toString();
+
+  let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(mkey);
+  if (mParameters === undefined) {
     // eslint-disable-next-line @typescript-eslint/ban-types
-    const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[];
-    mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
+    const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[] | undefined;
+    if (designParamTypes) {
+      mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
+    } else {
+      const descriptor = Object.getOwnPropertyDescriptor(target, propertyKey);
+      // eslint-disable-next-line @typescript-eslint/ban-types
+      const argnames = getArgNames(descriptor?.value as Function);
+      mParameters = argnames.map((_value, index) => new MethodParameter(index));
+    }
 
-    Reflect.defineMetadata(paramMetadataKey, mParameters, regtarget, propertyKey);
+    methodArgsByFunction.set(mkey, mParameters);
   }
 
   return mParameters;
@@ -462,7 +475,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         } else {
           if (methReg.args[idx].logMask !== LogMasks.NONE) {
             // For now this means hash
-            if (methReg.args[idx].dataType.dataType === 'json') {
+            if (methReg.args[idx].dataType?.dataType === 'json') {
               loggedArgValue = generateSaltedHash(JSON.stringify(argValue), 'JSONSALT');
             } else {
               // Yes, we are doing the same as above for now.
@@ -616,6 +629,7 @@ export function ArgDate() {
     const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
+    if (!curParam.dataType) curParam.dataType = new DBOSDataType();
     curParam.dataType.dataType = 'timestamp';
   };
 }

@@ -48,7 +48,7 @@ describe('dbos-logging', () => {
           return;
         }
         // NB not all types here may match the SQL string
-        let ctype = element.dataType.formatAsString();
+        let ctype = element.dataType!.formatAsString();
         if (element.logMask === LogMasks.HASH) {
           ctype = 'VARCHAR(64)';
         }
