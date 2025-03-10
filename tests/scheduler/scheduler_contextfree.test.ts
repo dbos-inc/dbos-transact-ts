@@ -66,7 +66,7 @@ class DBOSSchedTestClass {
     await DBOSSchedTestClass.scheduledTxn();
     if (schedTime.getTime() > startTime.getTime() + 0.002) {
       // Floating point, sleep, etc., is a little imprecise
-      DBOS.logger.warn(
+      console.log(
         `Scheduled 'scheduledDefault' function running early: ${DBOS.workflowID}; at ${startTime.toISOString()} vs ${schedTime.toISOString()}`,
       );
       DBOSSchedTestClass.nTooEarly++;
