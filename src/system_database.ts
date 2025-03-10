@@ -1436,7 +1436,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Lookup tasks
         let query = trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-          .whereNull('completed_at_epoch_ms') // not started
+          .whereNull('completed_at_epoch_ms') // not completed
+          .whereNull('started_at_epoch_ms') // not started
           .andWhere('queue_name', queue.name)
           .orderBy('created_at_epoch_ms', 'asc')
           .forUpdate()
