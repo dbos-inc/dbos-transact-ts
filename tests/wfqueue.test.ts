@@ -492,15 +492,21 @@ describe('queued-wf-tests-simple', () => {
 
     const workflows = await DBOS.getWorkflowQueue({ queueName: recoveryQueue.name });
     expect(workflows.workflows.length).toBe(3);
+
     expect(workflows.workflows[2].workflowID).toBe(wfid1);
-    expect(workflows.workflows[2].executorID).toBe('local');
-    expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
+    const wf1Status = await wfh1.getStatus();
+    expect(wf1Status?.status).toBe(StatusString.PENDING);
+    expect(wf1Status?.executorId).toBe('local');
+
     expect(workflows.workflows[1].workflowID).toBe(wfid2);
-    expect(workflows.workflows[1].executorID).toBe('local');
-    expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
+    const wf2Status = await wfh2.getStatus();
+    expect(wf2Status?.status).toBe(StatusString.PENDING);
+    expect(wf2Status?.executorId).toBe('local');
+
     expect(workflows.workflows[0].workflowID).toBe(wfid3);
-    expect(workflows.workflows[0].executorID).toBe(null);
-    expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
+    const wf3Status = await wfh3.getStatus();
+    expect(wf3Status?.status).toBe(StatusString.ENQUEUED);
+    expect(wf3Status?.executorId).toBe('local');
 
     // Manually update the database to pretend wf3 is PENDING and comes from a different executor
     const systemDBClient = new Client({
