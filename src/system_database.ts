@@ -1310,22 +1310,25 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async clearQueueAssignment(workflowId: string): Promise<boolean> {
     const client: PoolClient = await this.pool.connect();
     try {
+      // Reset the start time in the queue to mark it as not started
       const wqRes = await client.query<workflow_queue>(
         `
         UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
-        SET started_at_epoch_ms = NULL, executor_id = NULL
-        WHERE workflow_uuid = $1;
+        SET started_at_epoch_ms = NULL
+        WHERE workflow_uuid = $1 AND completed_at_epoch_ms IS NULL;
       `,
         [workflowId],
       );
+      // If no rows were affected, the workflow is not anymore in the queue or was already completed
       if (wqRes.rowCount === 0) {
         await client.query('ROLLBACK');
         return false;
       }
+      // Reset the status of the task to "ENQUEUED"
       const wsRes = await client.query<workflow_status>(
         `
         UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-        SET status = $2, executor_id = NULL
+        SET status = $2
         WHERE workflow_uuid = $1;
       `,
         [workflowId, StatusString.ENQUEUED],
@@ -1392,15 +1395,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // If there is a global or local concurrency limit N, select only the N oldest enqueued
         // functions, else select all of them.
 
-        // First lets figure out how many tasks the worker can dequeue
+        // First lets figure out how many tasks are eligible for dequeue.
+        // This means figuring out how many unstarted tasks are within the local and global concurrency limits
         const runningTasksSubquery = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-          .select('executor_id')
+          .join(
+            `${DBOSExecutor.systemDBSchemaName}.workflow_status`,
+            `${DBOSExecutor.systemDBSchemaName}.workflow_queue.workflow_uuid`,
+            '=',
+            `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
+          )
+          .select(`${DBOSExecutor.systemDBSchemaName}.workflow_status.executor_id`)
           .count('* as task_count')
-          .where('queue_name', queue.name)
-          .whereNotNull('executor_id')
-          .whereNull('completed_at_epoch_ms')
-          .groupBy('executor_id');
-
+          .where(`${DBOSExecutor.systemDBSchemaName}.workflow_queue.queue_name`, queue.name)
+          .whereNotNull(`${DBOSExecutor.systemDBSchemaName}.workflow_queue.started_at_epoch_ms`) // started
+          .whereNull(`${DBOSExecutor.systemDBSchemaName}.workflow_queue.completed_at_epoch_ms`) // not completed
+          .groupBy(`${DBOSExecutor.systemDBSchemaName}.workflow_status.executor_id`);
         const runningTasksResult = await runningTasksSubquery;
         const runningTasksResultDict: Record<string, number> = {};
         runningTasksResult.forEach((row) => {
@@ -1411,11 +1420,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let maxTasks = Infinity;
 
         if (queue.workerConcurrency !== undefined) {
-          if (runningTasksForThisWorker > queue.workerConcurrency) {
-            this.logger.warn(
-              `Number of tasks on this worker (${runningTasksForThisWorker}) exceeds the worker concurrency limit (${queue.workerConcurrency})`,
-            );
-          }
           maxTasks = Math.max(0, queue.workerConcurrency - runningTasksForThisWorker);
         }
 
@@ -1433,7 +1437,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Lookup tasks
         let query = trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
           .whereNull('completed_at_epoch_ms') // not started
-          .whereNull('executor_id') // not assigned
           .andWhere('queue_name', queue.name)
           .orderBy('created_at_epoch_ms', 'asc')
           .forUpdate()
@@ -1441,7 +1444,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         if (maxTasks !== Infinity) {
           query = query.limit(maxTasks);
         }
-        const rows = await query.select(['workflow_uuid', 'started_at_epoch_ms', 'executor_id']);
+        const rows = await query.select(['workflow_uuid']);
 
         // Start the workflows
         const workflowIDs = rows.map((row) => row.workflow_uuid);
@@ -1463,8 +1466,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             claimedIDs.push(id);
             await trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
               .where('workflow_uuid', id)
-              .update('started_at_epoch_ms', startTimeMs)
-              .update('executor_id', executorID);
+              .update('started_at_epoch_ms', startTimeMs);
           }
           // If we did not update this record, probably someone else did.  Count in either case.
           ++numRecentQueries;
