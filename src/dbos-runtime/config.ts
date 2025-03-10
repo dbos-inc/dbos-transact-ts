@@ -194,7 +194,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
 function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {
   return validate
-    .errors!.map((error) => {
+    .errors!.map((error: any) => {
       let message = `Error: ${error.message}`;
       if (error.schemaPath) message += ` (schema path: ${error.schemaPath})`;
       if (error.params && error.keyword === 'additionalProperties') {
