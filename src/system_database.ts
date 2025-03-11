@@ -1267,7 +1267,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
     // Create the initial query with a join to workflow_status table to get executor_id
     let query = this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_queue as wq`)
-      .join(`${DBOSExecutor.systemDBSchemaName}.workflow_status as ws`, 'wq.workflow_uuid', 'ws.workflow_uuid')
+      .join(`${DBOSExecutor.systemDBSchemaName}.workflow_status as ws`, 'wq.workflow_uuid', '=', 'ws.workflow_uuid')
       .orderBy('wq.created_at_epoch_ms', 'desc');
 
     if (input.queueName) {
@@ -1409,19 +1409,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // First lets figure out how many tasks are eligible for dequeue.
         // This means figuring out how many unstarted tasks are within the local and global concurrency limits
-        const runningTasksSubquery = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-          .join(
-            `${DBOSExecutor.systemDBSchemaName}.workflow_status`,
-            `${DBOSExecutor.systemDBSchemaName}.workflow_queue.workflow_uuid`,
-            '=',
-            `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
-          )
-          .select(`${DBOSExecutor.systemDBSchemaName}.workflow_status.executor_id`)
+        const runningTasksSubquery = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_queue as wq`)
+          .join(`${DBOSExecutor.systemDBSchemaName}.workflow_status as ws`, 'wq.workflow_uuid', '=', 'ws.workflow_uuid')
+          .select('ws.executor_id')
           .count('* as task_count')
-          .where(`${DBOSExecutor.systemDBSchemaName}.workflow_queue.queue_name`, queue.name)
-          .whereNotNull(`${DBOSExecutor.systemDBSchemaName}.workflow_queue.started_at_epoch_ms`) // started
-          .whereNull(`${DBOSExecutor.systemDBSchemaName}.workflow_queue.completed_at_epoch_ms`) // not completed
-          .groupBy(`${DBOSExecutor.systemDBSchemaName}.workflow_status.executor_id`);
+          .where('wq.queue_name', queue.name)
+          .whereNotNull('wq.started_at_epoch_ms') // started
+          .whereNull('wq.completed_at_epoch_ms') // not completed
+          .groupBy('ws.executor_id');
         const runningTasksResult = await runningTasksSubquery;
         const runningTasksResultDict: Record<string, number> = {};
         runningTasksResult.forEach((row) => {
