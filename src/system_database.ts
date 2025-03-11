@@ -1270,7 +1270,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       .join(`${DBOSExecutor.systemDBSchemaName}.workflow_status as ws`, 'wq.workflow_uuid', 'ws.workflow_uuid')
       .orderBy('wq.created_at_epoch_ms', 'desc');
 
-    // Apply filters
     if (input.queueName) {
       query = query.where('wq.queue_name', input.queueName);
     }
@@ -1284,7 +1283,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       query = query.limit(input.limit);
     }
 
-    // Select specific columns with aliases that match the workflow_queue interface
     const rows = await query
       .select({
         workflow_uuid: 'wq.workflow_uuid',
@@ -1296,7 +1294,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       })
       .then((rows) => rows as workflow_queue[]);
 
-    // Map the results to the output format
     const workflows = rows.map((row) => {
       return {
         workflowID: row.workflow_uuid,
