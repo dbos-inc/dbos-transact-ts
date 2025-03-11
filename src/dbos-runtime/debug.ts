@@ -1,12 +1,18 @@
-import { DBOSConfig, DBOSExecutor } from '../dbos-executor';
+import { DBOSConfig, DBOSExecutor, DebugMode } from '../dbos-executor';
 import { DBOSFailLoadOperationsError, DBOSInitializationError, DBOSNotRegisteredError } from '../error';
 import { GlobalLogger } from '../telemetry/logs';
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
 
-export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSRuntimeConfig, workflowUUID: string) {
+export async function debugWorkflow(
+  dbosConfig: DBOSConfig,
+  runtimeConfig: DBOSRuntimeConfig,
+  workflowUUID: string,
+  timeTravelMode: boolean,
+) {
+  const debugMode = timeTravelMode ? DebugMode.TIME_TRAVEL : DebugMode.ENABLED;
   const logger = new GlobalLogger();
   try {
-    const dbosExec = new DBOSExecutor(dbosConfig);
+    const dbosExec = new DBOSExecutor(dbosConfig, undefined, debugMode);
     dbosExec.logger.debug(`Loading classes from entrypoints: ${JSON.stringify(runtimeConfig.entrypoints)}`);
     await DBOSRuntime.loadClasses(runtimeConfig.entrypoints);
     await dbosExec.init();

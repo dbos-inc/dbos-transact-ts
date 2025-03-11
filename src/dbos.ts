@@ -9,7 +9,7 @@ import {
   DBOSContextImpl,
   getNextWFID,
 } from './context';
-import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from './dbos-executor';
+import { DBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
 import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
@@ -176,6 +176,11 @@ export class DBOS {
 
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     const isDebugging = debugWorkflowId !== undefined;
+    const debugMode = isDebugging
+      ? process.env.DBOS_DEBUG_TIME_TRAVEL === 'true'
+        ? DebugMode.TIME_TRAVEL
+        : DebugMode.ENABLED
+      : DebugMode.DISABLED;
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
@@ -187,7 +192,7 @@ export class DBOS {
       DBOS.runtimeConfig = runtimeConfig;
     }
 
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig);
+    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, undefined, debugMode);
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
 
