@@ -4,7 +4,6 @@ import { GlobalLogger } from '../telemetry/logs';
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
 
 export async function debugWorkflow(dbosConfig: DBOSConfig, runtimeConfig: DBOSRuntimeConfig, workflowUUID: string) {
-  dbosConfig = { ...dbosConfig, debugMode: true };
   const logger = new GlobalLogger();
   try {
     const dbosExec = new DBOSExecutor(dbosConfig);
