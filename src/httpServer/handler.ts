@@ -288,7 +288,7 @@ export interface HandlerRegistrationBase extends MethodRegistrationBase {
 export class HandlerParameter extends MethodParameter {
   argSource: ArgSources = ArgSources.DEFAULT;
 
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   constructor(idx: number, at: Function) {
     super(idx, at);
   }
