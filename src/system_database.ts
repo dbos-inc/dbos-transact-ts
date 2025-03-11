@@ -1266,47 +1266,37 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
     // Create the initial query with a join to workflow_status table to get executor_id
-    let query = this.knexDB<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-      .join(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status`,
-        `${DBOSExecutor.systemDBSchemaName}.workflow_queue.workflow_uuid`,
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
-      )
-      .orderBy('created_at_epoch_ms', 'desc');
+    let query = this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_queue as wq`)
+      .join(`${DBOSExecutor.systemDBSchemaName}.workflow_status as ws`, 'wq.workflow_uuid', 'ws.workflow_uuid')
+      .orderBy('wq.created_at_epoch_ms', 'desc');
 
     // Apply filters
     if (input.queueName) {
-      query = query.where(`${DBOSExecutor.systemDBSchemaName}.workflow_queue.queue_name`, input.queueName);
+      query = query.where('wq.queue_name', input.queueName);
     }
     if (input.startTime) {
-      query = query.where(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_queue.created_at_epoch_ms`,
-        '>=',
-        new Date(input.startTime).getTime(),
-      );
+      query = query.where('wq.created_at_epoch_ms', '>=', new Date(input.startTime).getTime());
     }
     if (input.endTime) {
-      query = query.where(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_queue.created_at_epoch_ms`,
-        '<=',
-        new Date(input.endTime).getTime(),
-      );
+      query = query.where('wq.created_at_epoch_ms', '<=', new Date(input.endTime).getTime());
     }
     if (input.limit) {
       query = query.limit(input.limit);
     }
 
-    // Select relevant columns, specifying table aliases to avoid column name conflicts
-    const rows = await query.select([
-      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.workflow_uuid`,
-      `${DBOSExecutor.systemDBSchemaName}.workflow_status.executor_id`,
-      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.queue_name`,
-      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.created_at_epoch_ms`,
-      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.started_at_epoch_ms`,
-      `${DBOSExecutor.systemDBSchemaName}.workflow_queue.completed_at_epoch_ms`,
-    ]);
+    // Select specific columns with aliases that match the workflow_queue interface
+    const rows = await query
+      .select({
+        workflow_uuid: 'wq.workflow_uuid',
+        executor_id: 'ws.executor_id',
+        queue_name: 'wq.queue_name',
+        created_at_epoch_ms: 'wq.created_at_epoch_ms',
+        started_at_epoch_ms: 'wq.started_at_epoch_ms',
+        completed_at_epoch_ms: 'wq.completed_at_epoch_ms',
+      })
+      .then((rows) => rows as workflow_queue[]);
 
-    // Map the results
+    // Map the results to the output format
     const workflows = rows.map((row) => {
       return {
         workflowID: row.workflow_uuid,
