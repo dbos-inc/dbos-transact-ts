@@ -1304,7 +1304,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         completedAt: row.completed_at_epoch_ms,
       };
     });
-
     return { workflows };
   }
 
