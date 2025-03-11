@@ -148,10 +148,10 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
    */
-  async init(userClasses?: object[], testConfig?: DBOSConfig, systemDB?: SystemDatabase) {
+  async init(userClasses?: object[], testConfig?: DBOSConfig, systemDatabase?: SystemDatabase) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
     DBOS.dbosConfig = dbosConfig[0];
-    this.#dbosExec = new DBOSExecutor(dbosConfig[0], systemDB);
+    this.#dbosExec = new DBOSExecutor(dbosConfig[0], { systemDatabase });
     this.#applicationConfig = this.#dbosExec.config.application ?? {};
     DBOS.globalLogger = this.#dbosExec.logger;
     await this.#dbosExec.init(userClasses);

@@ -166,6 +166,11 @@ const TempWorkflowType = {
 
 type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
 
+interface DBOSExecutorOptions {
+  systemDatabase?: SystemDatabase;
+  debugMode?: DebugMode;
+}
+
 export class DBOSExecutor implements DBOSExecutorContext {
   initialized: boolean;
   // User Database
@@ -240,8 +245,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(
     readonly config: DBOSConfig,
-    systemDatabase?: SystemDatabase,
-    debugMode?: DebugMode,
+    { systemDatabase, debugMode }: DBOSExecutorOptions = {},
   ) {
     this.debugMode = debugMode ?? DebugMode.DISABLED;
 

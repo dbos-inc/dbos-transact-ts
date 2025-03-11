@@ -192,7 +192,7 @@ export class DBOS {
       DBOS.runtimeConfig = runtimeConfig;
     }
 
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, undefined, debugMode);
+    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, { debugMode });
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
 
