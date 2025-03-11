@@ -14,7 +14,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "tsc --project tsconfig.build.json && npm run --workspaces build",
+    "build": "tsc --project tsconfig.json && npm run --workspaces build",
     "lint": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles --testPathIgnorePatterns=packages/*",
@@ -25,6 +25,7 @@
     "dbos-sdk": "./dist/src/dbos-runtime/cli.js"
   },
   "devDependencies": {
+    "@eslint/js": "^9.22.0",
     "@fastify/express": "^4.0.1",
     "@nestjs/common": "^10.4.7",
     "@prisma/client": "^5.3.1",
@@ -38,10 +39,8 @@
     "@types/pg": "^8.11.2",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^9.0.8",
-    "@typescript-eslint/eslint-plugin": "^8.0.0-alpha.30",
-    "@typescript-eslint/parser": "^8.0.0-alpha.30",
     "drizzle-orm": "^0.38.3",
-    "eslint": "^9.4.0",
+    "eslint": "^9.22.0",
     "fastify": "^5.1.0",
     "hono": "^4.7.2",
     "husky": "^9.1.7",
@@ -54,7 +53,7 @@
     "ts-jest": "^29.2.4",
     "typeorm": "^0.3.17",
     "typescript": "^5.4.5",
-    "typescript-eslint": "^8.0.0-alpha.30"
+    "typescript-eslint": "^8.26.1"
   },
   "dependencies": {
     "@inquirer/prompts": "^5.3.8",

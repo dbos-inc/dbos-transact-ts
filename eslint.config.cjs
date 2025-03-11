@@ -26,7 +26,7 @@ module.exports = typescriptEslint.config(
 
     languageOptions: {
       parser: typescriptEslintParser,
-      parserOptions: { project: './tsconfig.json' },
+      parserOptions: { project: './tsconfig.lint.json' },
       globals: { ...globals.node },
     },
 

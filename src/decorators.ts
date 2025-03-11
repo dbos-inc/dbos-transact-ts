@@ -49,7 +49,7 @@ export class DBOSDataType {
   }
 
   /** Take type from reflect metadata */
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   static fromArg(arg?: Function): DBOSDataType | undefined {
     if (!arg) return undefined;
 
@@ -93,7 +93,7 @@ export class DBOSDataType {
  * This will obviously not work on code that has been obfuscated or optimized as the names get
  *   changed to be really small and useless.
  **/
-// eslint-disable-next-line @typescript-eslint/ban-types
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 function getArgNames(func: Function): string[] {
   let fn = func.toString();
   fn = fn.replace(/\s/g, '');
@@ -121,12 +121,12 @@ export class MethodParameter {
   validate: boolean = true;
   logMask: LogMasks = LogMasks.NONE;
 
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   argType?: Function = undefined; // This comes from reflect-metadata, if we have it
   dataType?: DBOSDataType;
   index: number = -1;
 
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   constructor(idx: number, at?: Function) {
     this.index = idx;
     this.argType = at;
@@ -165,11 +165,11 @@ export interface MethodRegistrationBase {
 
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
 
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   wrappedFunction: Function | undefined; // Function that is user-callable, including the WF engine transition
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   registeredFunction: Function | undefined; // Function that is called by DBOS engine, including input validation and role check
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   origFunction: Function; // Function that the app provided
   // Pass context as first arg?
   readonly passContext: boolean;
@@ -261,7 +261,7 @@ export class ClassRegistration<CT extends { new (...args: unknown[]): object }> 
   defaultArgValidate: boolean = false;
   needsInitialized: boolean = true;
 
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   ormEntities: Function[] | { [key: string]: object } = [];
 
   registeredOperations: Map<string, MethodRegistrationBase> = new Map();
@@ -338,18 +338,18 @@ export function getOrCreateMethodArgsRegistration(target: object, propertyKey: s
     regtarget = regtarget.constructor;
   }
 
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   const mkey = (regtarget as Function).name + '|' + propertyKey.toString();
 
   let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(mkey);
   if (mParameters === undefined) {
-    // eslint-disable-next-line @typescript-eslint/ban-types
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[] | undefined;
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
     } else {
       const descriptor = Object.getOwnPropertyDescriptor(target, propertyKey);
-      // eslint-disable-next-line @typescript-eslint/ban-types
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
       const argnames = getArgNames(descriptor?.value as Function);
       mParameters = argnames.map((_value, index) => new MethodParameter(index));
     }
@@ -756,7 +756,7 @@ export function Step(config: StepConfig = {}) {
   return decorator;
 }
 
-// eslint-disable-next-line @typescript-eslint/ban-types
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export function OrmEntities(entities: Function[] | { [key: string]: object } = []) {
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor);

@@ -79,7 +79,7 @@ export interface DBOSHttpApps {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type PossiblyWFFunc = (...args: any[]) => Promise<unknown>;
 type InvokeFunctionsAsync<T> =
-  // eslint-disable-next-line @typescript-eslint/ban-types
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   T extends Function
     ? {
         [P in keyof T]: T[P] extends PossiblyWFFunc

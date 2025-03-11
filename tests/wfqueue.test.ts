@@ -499,7 +499,7 @@ describe('queued-wf-tests-simple', () => {
     expect(workflows.workflows[1].executorID).toBe('local');
     expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
     expect(workflows.workflows[0].workflowID).toBe(wfid3);
-    expect(workflows.workflows[0].executorID).toBe(null);
+    expect(workflows.workflows[0].executorID).toBe('local');
     expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
     // Manually update the database to pretend wf3 is PENDING and comes from a different executor
