@@ -906,8 +906,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     );
 
     if (rows.length === 0 || rows.length > 2) {
-      // eslint-disable-next-line  @typescript-eslint/no-base-to-string
-      const returnedRows = rows.toString();
+      const returnedRows = JSON.stringify(rows);
       this.logger.error('Unexpected! This should never happen. Returned rows: ' + returnedRows);
       throw new DBOSError('This should never happen. Returned rows: ' + returnedRows);
     }
