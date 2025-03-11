@@ -941,10 +941,18 @@ export class DBOS {
 
   static transaction(config: TransactionConfig = {}) {
     function decorator<This, Args extends unknown[], Return>(
-      target: object,
-      propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+      targetOrFunc: object | ((this: This, ...args: Args) => Promise<Return>),
+      propertyKeyOrCtx: string | symbol | ClassMethodDecoratorContext,
+      inDescriptor?: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
+      const isStage2 = inDescriptor !== undefined;
+      // Supporting stage 3 decorators, as defined, is not possible*.
+      //  This was intentional.  https://github.com/tc39/proposal-decorators/issues/517
+      //  Proposal to make it possible: https://github.com/tc39/proposal-decorators/issues/466
+      // *If you do require a class decorator, it can be done, I suppose...
+      const target: object = isStage2
+        ? (targetOrFunc as object)
+        : ((propertyKeyOrCtx as ClassMethodDecoratorContext).receiver as object);
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
       registration.setTxnConfig(config);
 
