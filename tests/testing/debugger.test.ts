@@ -10,7 +10,7 @@ import {
 } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfig } from '../../src/dbos-executor';
+import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
 import { Client, PoolClient } from 'pg';
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../../src/testing/testing_runtime';
 
@@ -29,16 +29,18 @@ describe('debugger-test', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    debugConfig = generateDBOSTestConfig(undefined, true);
-    debugProxyConfig = generateDBOSTestConfig(undefined, true);
+    debugConfig = generateDBOSTestConfig(undefined);
+    debugProxyConfig = generateDBOSTestConfig(undefined);
     username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
-    debugRuntime = await createInternalTestRuntime(undefined, debugConfig);
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    debugProxyRuntime = await createInternalTestRuntime(undefined, debugProxyConfig); // TODO: connect to the real proxy.
+    testRuntime = await createInternalTestRuntime(undefined, config, { debugMode: DebugMode.DISABLED });
+    debugRuntime = await createInternalTestRuntime(undefined, debugConfig, { debugMode: DebugMode.ENABLED });
+    debugProxyRuntime = await createInternalTestRuntime(undefined, debugProxyConfig, {
+      debugMode: DebugMode.TIME_TRAVEL,
+    }); // TODO: connect to the real proxy.
     DebuggerTest.cnt = 0;
     systemDBClient = new Client({
       user: config.poolConfig.user,

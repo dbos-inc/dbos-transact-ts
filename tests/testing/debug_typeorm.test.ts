@@ -1,7 +1,7 @@
 import { TransactionContext, Transaction, OrmEntities } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfig } from '../../src/dbos-executor';
+import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../../src/testing/testing_runtime';
 import { Column, Entity, EntityManager, PrimaryColumn } from 'typeorm';
 import { UserDatabaseName } from '../../src/user_database';
@@ -16,13 +16,13 @@ describe('typeorm-debugger-test', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.TYPEORM);
-    debugConfig = generateDBOSTestConfig(UserDatabaseName.TYPEORM, true);
+    debugConfig = generateDBOSTestConfig(UserDatabaseName.TYPEORM);
     await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
     // TODO: connect to the real proxy.
-    debugRuntime = await createInternalTestRuntime(undefined, debugConfig);
+    debugRuntime = await createInternalTestRuntime(undefined, debugConfig, { debugMode: DebugMode.ENABLED });
     testRuntime = await createInternalTestRuntime(undefined, config);
     await testRuntime.dropUserSchema();
     await testRuntime.createUserSchema();

@@ -320,8 +320,9 @@ describe('stored-proc-test', () => {
 
     expect(txRows[2].function_id).toBe(2);
     expectNullResult(txRows[2].output);
+    expect(txRows[2].error).not.toBeNull();
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-    expect(JSON.parse(txRows[2].error).message).toMatch('This is a test error');
+    expect(JSON.parse(txRows[2].error!).message).toMatch('This is a test error');
   });
 });
 

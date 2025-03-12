@@ -72,7 +72,7 @@ import {
   runWithStoredProcContext,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
-import { deserializeError, serializeError } from 'serialize-error';
+import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
 import { globalParams, DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
@@ -166,7 +166,7 @@ const TempWorkflowType = {
 
 type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
 
-interface DBOSExecutorOptions {
+export interface DBOSExecutorOptions {
   systemDatabase?: SystemDatabase;
   debugMode?: DebugMode;
 }
@@ -224,6 +224,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         return true;
       default: {
         const _never: never = this.debugMode;
+        // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
         throw new Error(`Unexpected DBOS debug mode: ${this.debugMode}`);
       }
     }
@@ -972,7 +973,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     if (rows.length === 2) {
       const { txn_snapshot, txn_id } = rows[1];
-      const error = DBOSJSON.parse(rows[1].error);
+      const error = DBOSJSON.parse(rows[1].error) as ErrorObject | null;
       if (error) {
         return { result: deserializeError(error), txn_snapshot, txn_id: txn_id ?? undefined };
       } else {
@@ -1237,7 +1238,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
               }
             });
           } catch (e) {
-            return e instanceof Error ? e : new Error(`${e}`);
+            return e instanceof Error ? e : new Error(`${e as any}`);
           }
         })();
 

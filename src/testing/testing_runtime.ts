@@ -13,13 +13,12 @@ import {
   SyncHandlerWfFuncsInst,
 } from '../httpServer/handler';
 import { DBOSHttpServer } from '../httpServer/server';
-import { DBOSExecutor, DBOSConfig } from '../dbos-executor';
+import { DBOSExecutor, DBOSConfig, DBOSExecutorOptions } from '../dbos-executor';
 import { dbosConfigFilePath, parseConfigFile } from '../dbos-runtime/config';
 import { Transaction } from '../transaction';
 import { GetWorkflowsInput, GetWorkflowsOutput, Workflow, WorkflowHandle, WorkflowParams } from '../workflow';
 import { Http2ServerRequest, Http2ServerResponse } from 'http2';
 import { ServerResponse } from 'http';
-import { SystemDatabase } from '../system_database';
 import { get, set } from 'lodash';
 import { Client } from 'pg';
 import { DBOSScheduler } from '../scheduler/scheduler';
@@ -126,10 +125,10 @@ export interface TestingRuntime {
 export async function createInternalTestRuntime(
   userClasses: object[] | undefined,
   testConfig: DBOSConfig,
-  systemDB?: SystemDatabase,
+  options: DBOSExecutorOptions = {},
 ): Promise<TestingRuntime> {
   const otr = new TestingRuntimeImpl();
-  await otr.init(userClasses, testConfig, systemDB);
+  await otr.init(userClasses, testConfig, options);
   return otr;
 }
 
@@ -148,10 +147,10 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
    */
-  async init(userClasses?: object[], testConfig?: DBOSConfig, systemDatabase?: SystemDatabase) {
+  async init(userClasses?: object[], testConfig?: DBOSConfig, options: DBOSExecutorOptions = {}) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
     DBOS.dbosConfig = dbosConfig[0];
-    this.#dbosExec = new DBOSExecutor(dbosConfig[0], { systemDatabase });
+    this.#dbosExec = new DBOSExecutor(dbosConfig[0], options);
     this.#applicationConfig = this.#dbosExec.config.application ?? {};
     DBOS.globalLogger = this.#dbosExec.logger;
     await this.#dbosExec.init(userClasses);
