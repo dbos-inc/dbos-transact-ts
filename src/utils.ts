@@ -124,9 +124,9 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
 }
 
 export const DBOSJSON = {
-  parse: (text: string) => {
+  parse: (text: string | null) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
-    return JSON.parse(text, DBOSReviver);
+    return text === null ? null : JSON.parse(text, DBOSReviver);
   },
   stringify: (value: unknown) => {
     return JSON.stringify(value, DBOSReplacer);

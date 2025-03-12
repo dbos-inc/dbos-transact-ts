@@ -967,7 +967,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         'INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;',
         [workflowUUID, funcID, serialOutput, txnSnapshot, Date.now()],
       );
-      return rows[0].txn_id;
+      return rows[0].txn_id!;
     } catch (error) {
       if (isKeyConflict(error)) {
         // Serialization and primary key conflict (Postgres).
