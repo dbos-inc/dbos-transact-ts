@@ -24,7 +24,7 @@ describe('debugger-test', () => {
   let debugProxyConfig: DBOSConfig;
   let testRuntime: TestingRuntime;
   let debugRuntime: TestingRuntime;
-  let debugProxyRuntime: TestingRuntime;
+  let timeTravelRuntime: TestingRuntime;
   let systemDBClient: Client;
 
   beforeAll(async () => {
@@ -38,10 +38,10 @@ describe('debugger-test', () => {
   beforeEach(async () => {
     testRuntime = await createInternalTestRuntime(undefined, config, { debugMode: DebugMode.DISABLED });
     debugRuntime = await createInternalTestRuntime(undefined, debugConfig, { debugMode: DebugMode.ENABLED });
-    debugProxyRuntime = await createInternalTestRuntime(undefined, debugProxyConfig, {
+    timeTravelRuntime = await createInternalTestRuntime(undefined, debugProxyConfig, {
       debugMode: DebugMode.TIME_TRAVEL,
-    }); // TODO: connect to the real proxy.
-    DebuggerTest.cnt = 0;
+    });
+    DebuggerTest.count = 0;
     systemDBClient = new Client({
       user: config.poolConfig.user,
       port: config.poolConfig.port,
@@ -56,11 +56,11 @@ describe('debugger-test', () => {
     await systemDBClient.end();
     await debugRuntime.destroy();
     await testRuntime.destroy();
-    await debugProxyRuntime.destroy();
+    await timeTravelRuntime.destroy();
   });
 
   class DebuggerTest {
-    static cnt: number = 0;
+    static count: number = 0;
 
     @DBOSInitializer()
     static async init(ctx: InitContext) {
@@ -91,7 +91,7 @@ describe('debugger-test', () => {
 
     @Step()
     static async testStep(_ctxt: StepContext) {
-      return Promise.resolve(++DebuggerTest.cnt);
+      return Promise.resolve(++DebuggerTest.count);
     }
 
     @Workflow()
@@ -124,18 +124,18 @@ describe('debugger-test', () => {
 
     @Transaction()
     static async voidFunction(_txnCtxt: TestTransactionContext) {
-      if (DebuggerTest.cnt > 0) {
-        return Promise.resolve(DebuggerTest.cnt);
+      if (DebuggerTest.count > 0) {
+        return Promise.resolve(DebuggerTest.count);
       }
-      DebuggerTest.cnt++;
+      DebuggerTest.count++;
       return;
     }
 
     // Workflow with different results.
     @Workflow()
     static async diffWorkflow(_ctxt: WorkflowContext, num: number) {
-      DebuggerTest.cnt += num;
-      return Promise.resolve(DebuggerTest.cnt);
+      DebuggerTest.count += num;
+      return Promise.resolve(DebuggerTest.count);
     }
 
     // Workflow that sleep
@@ -144,6 +144,19 @@ describe('debugger-test', () => {
       await ctxt.sleep(1);
       const funcResult = await ctxt.invoke(DebuggerTest).testReadOnlyFunction(num);
       return funcResult;
+    }
+
+    static debugCount: number = 0;
+
+    @Workflow()
+    static async debugWF(ctxt: WorkflowContext, value: number) {
+      return await ctxt.invoke(DebuggerTest).debugTx(value);
+    }
+
+    @Transaction()
+    static async debugTx(_ctxt: TestTransactionContext, value: number) {
+      DebuggerTest.debugCount++;
+      return Promise.resolve(value * 10);
     }
   }
 
@@ -176,7 +189,7 @@ describe('debugger-test', () => {
     ).resolves.toBe(1);
 
     await expect(
-      (debugProxyRuntime as TestingRuntimeImpl)
+      (timeTravelRuntime as TestingRuntimeImpl)
         .getDBOSExec()
         .executeWorkflowUUID(wfUUID)
         .then((x) => x.getResult()),
@@ -194,6 +207,25 @@ describe('debugger-test', () => {
     );
   });
 
+  test('tt-debug-workflow', async () => {
+    DebuggerTest.debugCount = 0;
+    const wfUUID = uuidv1();
+    // Execute the workflow and destroy the runtime
+    const res = await testRuntime.invokeWorkflow(DebuggerTest, wfUUID).debugWF(100);
+    expect(res).toBe(1000);
+    expect(DebuggerTest.debugCount).toBe(1);
+    await testRuntime.destroy();
+
+    // Execute again in debug mode.
+    const debugRes = await debugRuntime.invokeWorkflow(DebuggerTest, wfUUID).debugWF(100);
+    expect(DebuggerTest.debugCount).toBe(1);
+    expect(debugRes).toBe(1000);
+
+    const ttdbgRes = await timeTravelRuntime.invokeWorkflow(DebuggerTest, wfUUID).debugWF(100);
+    expect(DebuggerTest.debugCount).toBe(2);
+    expect(debugRes).toBe(1000);
+  });
+
   test('debug-sleep-workflow', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
@@ -206,7 +238,7 @@ describe('debugger-test', () => {
     expect(debugRes).toBe(3);
 
     // Proxy mode should return the same result
-    const debugProxyRes = await debugProxyRuntime.invokeWorkflow(DebuggerTest, wfUUID).sleepWorkflow(2);
+    const debugProxyRes = await timeTravelRuntime.invokeWorkflow(DebuggerTest, wfUUID).sleepWorkflow(2);
     expect(debugProxyRes).toBe(3);
   });
 
@@ -215,7 +247,7 @@ describe('debugger-test', () => {
     const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
     // Execute the workflow and destroy the runtime
     await expect(testRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeUndefined();
-    expect(DebuggerTest.cnt).toBe(1);
+    expect(DebuggerTest.count).toBe(1);
 
     // Duplicated function name should not affect the execution
     await expect(testRuntime.invoke(DebuggerTestDup).voidFunction()).resolves.toBeUndefined();
@@ -223,7 +255,7 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode.
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeFalsy();
-    expect(DebuggerTest.cnt).toBe(1);
+    expect(DebuggerTest.count).toBe(1);
 
     // Execute again with the provided UUID.
     await expect(
@@ -232,7 +264,7 @@ describe('debugger-test', () => {
         .executeWorkflowUUID(wfUUID)
         .then((x) => x.getResult()),
     ).resolves.toBeFalsy();
-    expect(DebuggerTest.cnt).toBe(1);
+    expect(DebuggerTest.count).toBe(1);
 
     // Make sure we correctly record the function's class name
     await dbosExec.flushWorkflowBuffers();
@@ -264,7 +296,7 @@ describe('debugger-test', () => {
 
     // Proxy mode should return the same result.
     await expect(
-      (debugProxyRuntime as TestingRuntimeImpl)
+      (timeTravelRuntime as TestingRuntimeImpl)
         .getDBOSExec()
         .executeWorkflowUUID(wfUUID)
         .then((x) => x.getResult()),
@@ -301,7 +333,7 @@ describe('debugger-test', () => {
 
     // Proxy mode should return the same result.
     await expect(
-      (debugProxyRuntime as TestingRuntimeImpl)
+      (timeTravelRuntime as TestingRuntimeImpl)
         .getDBOSExec()
         .executeWorkflowUUID(wfUUID)
         .then((x) => x.getResult()),
@@ -405,7 +437,7 @@ describe('debugger-test', () => {
         .executeWorkflowUUID(wfUUID)
         .then((x) => x.getResult()),
     ).resolves.toBe(1);
-    expect(DebuggerTest.cnt).toBe(2);
+    expect(DebuggerTest.count).toBe(2);
 
     // Execute again with different input, should still get the same output.
     await expect(debugRuntime.invoke(DebuggerTest, wfUUID).diffWorkflow(2)).rejects.toThrow(
