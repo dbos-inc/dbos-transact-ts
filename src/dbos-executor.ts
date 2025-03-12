@@ -627,6 +627,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const cfname = getRegisteredMethodClassName(cf) + '.' + cf.name;
     return this.stepInfoMap.get(cfname);
   }
+
+  getStepFuncName(cf: StepFunction<unknown[], unknown>) {
+    return getRegisteredMethodClassName(cf) + '.' + cf.name;
+  }
+
   getStepInfoByNames(className: string, functionName: string, cfgName: string) {
     const cfname = className + '.' + functionName;
     const stepInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
@@ -1616,6 +1621,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     const funcID = wfCtx.functionIDGetIncrement();
+
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
     const span: Span = this.tracer.startSpan(
@@ -1733,13 +1739,23 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (result === dbosNull) {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFn.name, ctxt.maxAttempts, errors) : err;
-      await this.systemDatabase.recordOperationError(wfCtx.workflowUUID, ctxt.functionID, err as Error);
+      await this.systemDatabase.recordOperationError(
+        wfCtx.workflowUUID,
+        ctxt.functionID,
+        err as Error,
+        ctxt.operationName,
+      );
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(ctxt.span);
       throw err as Error;
     } else {
       // Record the execution and return.
-      await this.systemDatabase.recordOperationOutput<R>(wfCtx.workflowUUID, ctxt.functionID, result as R);
+      await this.systemDatabase.recordOperationOutput<R>(
+        wfCtx.workflowUUID,
+        ctxt.functionID,
+        result as R,
+        ctxt.operationName,
+      );
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(ctxt.span);
       return result as R;
