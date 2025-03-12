@@ -223,7 +223,7 @@ describe('debugger-test', () => {
 
     const ttdbgRes = await timeTravelRuntime.invokeWorkflow(DebuggerTest, wfUUID).debugWF(100);
     expect(DebuggerTest.debugCount).toBe(2);
-    expect(debugRes).toBe(1000);
+    expect(ttdbgRes).toBe(1000);
   });
 
   test('debug-sleep-workflow', async () => {
