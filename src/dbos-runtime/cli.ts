@@ -16,6 +16,7 @@ import {
   getWorkflow,
   listQueuedWorkflows,
   listWorkflows,
+  listWorkflowSteps,
 } from './workflow_management';
 import { GetWorkflowsInput, StatusString } from '..';
 import { exit } from 'node:process';
@@ -219,6 +220,17 @@ workflowCommands
   .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
     const [dbosConfig, _] = parseConfigFile(options);
     const output = await getWorkflow(dbosConfig, uuid, options.request);
+    console.log(JSON.stringify(output));
+  });
+
+workflowCommands
+  .command('steps')
+  .description('List the steps of a workflow')
+  .argument('<uuid>', 'Target workflow ID')
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+  .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
+    const [dbosConfig, _] = parseConfigFile(options);
+    const output = await listWorkflowSteps(dbosConfig, uuid);
     console.log(JSON.stringify(output));
   });
 

@@ -59,3 +59,13 @@ export interface workflow_queue {
   started_at_epoch_ms?: number; // This time is provided by the client
   completed_at_epoch_ms?: number; // This time is provided by the client
 }
+
+export interface step_function {
+  function_id: number;
+  function_name: string;
+}
+
+export interface workflow_steps {
+  workflow_uuid: string;
+  steps: step_function[];
+}
