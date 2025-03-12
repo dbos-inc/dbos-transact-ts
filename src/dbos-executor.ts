@@ -217,11 +217,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly debugMode: DebugMode;
   get isDebugging() {
     switch (this.debugMode) {
+      case DebugMode.DISABLED:
+        return false;
       case DebugMode.ENABLED:
       case DebugMode.TIME_TRAVEL:
         return true;
-      default:
-        return false;
+      default: {
+        const _never: never = this.debugMode;
+        throw new Error(`Unexpected DBOS debug mode: ${this.debugMode}`);
+      }
     }
   }
 
@@ -947,6 +951,39 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return res;
   }
 
+  async #checkExecution2<R>(
+    query: QueryFunction,
+    workflowUUID: string,
+    funcID: number,
+  ): Promise<{ result: Error | R | DBOSNull; txn_snapshot: string; txn_id?: string }> {
+    type TxOutputRow = Pick<transaction_outputs, 'output' | 'error' | 'txn_snapshot' | 'txn_id'> & {
+      recorded: boolean;
+    };
+    const rows = await query<TxOutputRow>(
+      '(SELECT output, error, txn_snapshot, txn_id, true as recorded FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, null as txn_id, false as recorded) ORDER BY recorded',
+      [workflowUUID, funcID],
+    );
+
+    if (rows.length === 0 || rows.length > 2) {
+      const returnedRows = JSON.stringify(rows);
+      this.logger.error('Unexpected! This should never happen. Returned rows: ' + returnedRows);
+      throw new DBOSError('This should never happen. Returned rows: ' + returnedRows);
+    }
+
+    if (rows.length === 2) {
+      const { txn_snapshot, txn_id } = rows[1];
+      const error = DBOSJSON.parse(rows[1].error);
+      if (error) {
+        return { result: deserializeError(error), txn_snapshot, txn_id: txn_id ?? undefined };
+      } else {
+        return { result: DBOSJSON.parse(rows[1].output) as R, txn_snapshot, txn_id: txn_id ?? undefined };
+      }
+    } else {
+      const { txn_snapshot } = rows[0];
+      return { result: dbosNull, txn_snapshot, txn_id: undefined };
+    }
+  }
+
   /**
    * Write a operation's output to the database.
    */
@@ -1150,46 +1187,70 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
         // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
+        let prevResult: R | Error | DBOSNull = dbosNull;
+        const queryFunc = <T>(sql: string, args: unknown[]) =>
+          this.userDatabase.queryWithClient<T>(client, sql, ...args);
         if (wfCtx.presetUUID) {
-          const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
-          const check: BufferedResult = await this.#checkExecution<R>(func, workflowUUID, funcId);
-          txn_snapshot = check.txn_snapshot;
-          if (check.output !== dbosNull) {
+          const executionResult = await this.#checkExecution2<R>(queryFunc, workflowUUID, funcId);
+          prevResult = executionResult.result;
+          txn_snapshot = executionResult.txn_snapshot;
+          if (prevResult !== dbosNull) {
             tCtxt.span.setAttribute('cached', true);
-            tCtxt.span.setStatus({ code: SpanStatusCode.OK });
-            this.tracer.endSpan(tCtxt.span);
-            return check.output as R;
+
+            if (this.debugMode === DebugMode.TIME_TRAVEL) {
+              // for time travel debugging, navigate the proxy to the time of this transaction's snapshot
+              await queryFunc(`--proxy:${executionResult.txn_id ?? ''}:${txn_snapshot}`, []);
+            } else {
+              // otherwise, return/throw the previous result
+              if (prevResult instanceof Error) {
+                throw prevResult;
+              } else {
+                return prevResult as R;
+              }
+            }
           }
         } else {
           // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
-          const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
-          txn_snapshot = await DBOSExecutor.#retrieveSnapshot(func);
+          txn_snapshot = await DBOSExecutor.#retrieveSnapshot(queryFunc);
         }
 
-        if (this.isDebugging) {
+        if (this.isDebugging && prevResult === dbosNull) {
           throw new DBOSDebuggerError(
             `Failed to find the recorded output for the transaction: workflow UUID ${workflowUUID}, step number ${funcId}`,
           );
         }
 
         // For non-read-only transactions, flush the result buffer.
-        if (!readOnly) {
+        if (!this.isDebugging && !readOnly) {
           await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
         }
 
         // Execute the user's transaction.
-        let cresult: R | undefined;
-        if (txnInfo.registration.passContext) {
-          await runWithTransactionContext(tCtxt, async () => {
-            cresult = await txn.call(clsinst, tCtxt, ...args);
-          });
-        } else {
-          await runWithTransactionContext(tCtxt, async () => {
-            const tf = txn as unknown as (...args: T) => Promise<R>;
-            cresult = await tf.call(clsinst, ...args);
-          });
+        const result = await (async function () {
+          try {
+            return await runWithTransactionContext(tCtxt, async () => {
+              if (txnInfo.registration.passContext) {
+                return await txn.call(clsinst, tCtxt, ...args);
+              } else {
+                const tf = txn as unknown as (...args: T) => Promise<R>;
+                return await tf.call(clsinst, ...args);
+              }
+            });
+          } catch (e) {
+            return e instanceof Error ? e : new Error(`${e}`);
+          }
+        })();
+
+        if (this.isDebugging) {
+          if (prevResult instanceof Error) {
+            throw prevResult;
+          }
+          return prevResult as R;
         }
-        const result = cresult!;
+
+        if (result instanceof Error) {
+          throw result;
+        }
 
         // Record the execution, commit, and return.
         if (readOnly) {
@@ -1203,10 +1264,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         } else {
           try {
             // Synchronously record the output of write transactions and obtain the transaction ID.
-            const func = <T>(sql: string, args: unknown[]) =>
-              this.userDatabase.queryWithClient<T>(client, sql, ...args);
             const pg_txn_id = await this.#recordOutput(
-              func,
+              queryFunc,
               wfCtx.workflowUUID,
               funcId,
               txn_snapshot,
@@ -1236,34 +1295,33 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.tracer.endSpan(span);
         return result;
       } catch (err) {
-        if (this.isDebugging) {
-          throw err;
-        }
-
-        if (this.userDatabase.isRetriableTransactionError(err)) {
-          // serialization_failure in PostgreSQL
-          span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
-          // Retry serialization failures.
-          await sleepms(retryWaitMillis);
-          retryWaitMillis *= backoffFactor;
-          retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
-          continue;
-        }
-
-        // Record and throw other errors.
         const e: Error = err as Error;
-        await this.userDatabase.transaction(
-          async (client: UserDatabaseClient) => {
-            await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
-            const func = <T>(sql: string, args: unknown[]) =>
-              this.userDatabase.queryWithClient<T>(client, sql, ...args);
-            await this.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, (error) =>
-              this.userDatabase.isKeyConflictError(error),
-            );
-          },
-          { isolationLevel: IsolationLevel.ReadCommitted },
-        );
-        wfCtx.resultBuffer.clear();
+        if (!this.debugMode) {
+          if (this.userDatabase.isRetriableTransactionError(err)) {
+            // serialization_failure in PostgreSQL
+            span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
+            // Retry serialization failures.
+            await sleepms(retryWaitMillis);
+            retryWaitMillis *= backoffFactor;
+            retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
+            continue;
+          }
+
+          // Record and throw other errors.
+          const e: Error = err as Error;
+          await this.userDatabase.transaction(
+            async (client: UserDatabaseClient) => {
+              await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
+              const func = <T>(sql: string, args: unknown[]) =>
+                this.userDatabase.queryWithClient<T>(client, sql, ...args);
+              await this.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, (error) =>
+                this.userDatabase.isKeyConflictError(error),
+              );
+            },
+            { isolationLevel: IsolationLevel.ReadCommitted },
+          );
+          wfCtx.resultBuffer.clear();
+        }
         span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
         this.tracer.endSpan(span);
         throw err;
