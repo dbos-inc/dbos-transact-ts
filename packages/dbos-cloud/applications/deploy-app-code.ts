@@ -180,7 +180,12 @@ export async function deployAppCode(
   const dbosConfig = YAML.parse(interpolatedConfig) as ConfigFile;
 
   if (appRegistered === undefined) {
-    userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
+    try {
+      userDBName = await chooseAppDBServer(logger, host, userCredentials, userDBName);
+    } catch (e) {
+      logger.error(`Failed to choose database instance: ${(e as Error).message}`);
+      return 1;
+    }
     if (userDBName === '') {
       return 1;
     }
