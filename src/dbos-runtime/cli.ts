@@ -50,6 +50,7 @@ interface DBOSDebugOptions {
   loglevel?: string;
   configfile?: string;
   appVersion?: string | boolean;
+  timeTravel?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -101,12 +102,13 @@ program
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
+  .option('--time-travel', 'enable time-travel debugging mode')
   .action(async (options: DBOSDebugOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile({
       ...options,
       forceConsole: true,
     });
-    await debugWorkflow(dbosConfig, runtimeConfig, options.uuid);
+    await debugWorkflow(dbosConfig, runtimeConfig, options.uuid, options.timeTravel ?? false);
   });
 
 program
