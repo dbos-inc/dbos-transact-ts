@@ -554,8 +554,11 @@ describe('test-list-steps', () => {
 
     console.log(wfsteps);
 
+    expect(wfsteps.workflow_uuid).toBe(wfid);
     expect(wfsteps.steps.length).toBe(2);
+    expect(wfsteps.steps[0].function_id).toBe(0);
     expect(wfsteps.steps[0].function_name).toBe('stepOne');
+    expect(wfsteps.steps[1].function_id).toBe(1);
     expect(wfsteps.steps[1].function_name).toBe('stepTwo');
   });
 });
