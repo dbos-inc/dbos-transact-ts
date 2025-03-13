@@ -9,7 +9,7 @@ import {
   DBOSContextImpl,
   getNextWFID,
 } from './context';
-import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from './dbos-executor';
+import { DBOSConfig, isDBOSConfig, DBOSExecutor, InternalWorkflowParams } from './dbos-executor';
 import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
@@ -22,7 +22,7 @@ import {
 import { DBOSExecutorContext } from './eventreceiver';
 import { DLogger, GlobalLogger } from './telemetry/logs';
 import { DBOSError, DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from './error';
-import { parseConfigFile } from './dbos-runtime/config';
+import { parseConfigFile, translateRealDBOSConfigToConfigFile, processConfig } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
 import {
@@ -146,6 +146,23 @@ export interface StartWorkflowParams {
   queueName?: string;
 }
 
+/* Public interface for DBOS configuration */
+// FIXME: find a real name
+export interface RealDBOSConfig {
+  readonly name: string;
+  readonly dbString: string;
+  readonly appDbClient?: string;
+  readonly sysDbName?: string;
+  readonly logLevel?: string;
+  readonly otlpTracesEndpoints?: string[];
+  readonly adminPort?: number;
+}
+
+// A minimal type guard to distinguish between DBOSConfig and RealDBOSConfig
+function isRealDBOSConfig(obj: unknown): obj is RealDBOSConfig {
+  return typeof obj === 'object' && obj !== null && 'name' in obj && 'dbString' in obj;
+}
+
 export class DBOS {
   ///////
   // Lifecycle
@@ -153,14 +170,14 @@ export class DBOS {
   static adminServer: Server | undefined = undefined;
   static appServer: Server | undefined = undefined;
 
-  static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
+  static setConfig(config: DBOSConfig | RealDBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
     DBOS.runtimeConfig = runtimeConfig;
   }
 
   // For unit testing purposes only
   static setAppConfig<T>(key: string, newValue: T): void {
-    const conf = DBOS.dbosConfig?.application;
+    const conf = (DBOS.dbosConfig as DBOSConfig)?.application;
     if (!conf) throw new DBOSExecutorNotInitializedError();
     set(conf, key, newValue);
   }
@@ -177,7 +194,7 @@ export class DBOS {
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     const debugMode = debugWorkflowId !== undefined;
 
-    // Initialize the DBOS executor
+    // If no config is provided, load it from dbos-config.yaml
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: debugMode });
       if (!debugMode) {
@@ -185,11 +202,18 @@ export class DBOS {
       }
       DBOS.dbosConfig = { ...dbosConfig, debugMode };
       DBOS.runtimeConfig = runtimeConfig;
-    } else {
+    } else if (isRealDBOSConfig(DBOS.dbosConfig)) {
+      const unvalidatedConfig = translateRealDBOSConfigToConfigFile(DBOS.dbosConfig);
+      [DBOS.dbosConfig] = processConfig(unvalidatedConfig);
+    } else if (isDBOSConfig(DBOS.dbosConfig)) {
+      // deprecated
       DBOS.dbosConfig = { ...DBOS.dbosConfig, debugMode };
+    } else {
+      throw new DBOSError('Invalid DBOS configuration');
     }
 
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig);
+    // Initialize the DBOS executor
+    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig as DBOSConfig);
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
 
@@ -319,7 +343,7 @@ export class DBOS {
   // Globals
   //////
   static globalLogger?: DLogger;
-  static dbosConfig?: DBOSConfig;
+  static dbosConfig?: DBOSConfig | RealDBOSConfig;
   static runtimeConfig?: DBOSRuntimeConfig = undefined;
   static invokeWrappers: Map<unknown, unknown> = new Map();
 

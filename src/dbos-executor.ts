@@ -112,6 +112,11 @@ export interface DBOSConfig {
   };
 }
 
+// A minimal type guard to distinguish DBOSConfig and RealDBOSConfig
+export function isDBOSConfig(obj: unknown): obj is DBOSConfig {
+  return typeof obj === 'object' && obj !== null && 'system_database' in obj && 'poolConfig' in obj;
+}
+
 interface WorkflowRegInfo {
   workflow: Workflow<unknown[], unknown>;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type

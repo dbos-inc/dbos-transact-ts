@@ -1,7 +1,9 @@
 import { DBOSInitializationError } from '../error';
 import { DBOSJSON, globalParams, readFileSync } from '../utils';
-import { DBOSConfig } from '../dbos-executor';
+import { DBOSConfig, isValidUserDatabaseName } from '../dbos-executor';
+import { RealDBOSConfig } from '../dbos';
 import { PoolConfig } from 'pg';
+import { parse } from 'pg-connection-string';
 import YAML from 'yaml';
 import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
 import { UserDatabaseName } from '../user_database';
@@ -18,24 +20,26 @@ import dbosConfigSchema from '../../dbos-config.schema.json';
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true });
 
+interface DBConfig {
+  hostname?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  connectionTimeoutMillis?: number;
+  app_db_name?: string;
+  sys_db_name?: string;
+  ssl?: boolean;
+  ssl_ca?: string;
+  app_db_client?: UserDatabaseName;
+  migrate?: string[];
+  rollback?: string[];
+  local_suffix?: boolean;
+}
+
 export interface ConfigFile {
   name?: string;
   language?: string;
-  database: {
-    hostname?: string;
-    port?: number;
-    username?: string;
-    password?: string;
-    connectionTimeoutMillis?: number;
-    app_db_name?: string;
-    sys_db_name?: string;
-    ssl?: boolean;
-    ssl_ca?: string;
-    app_db_client?: UserDatabaseName;
-    migrate?: string[];
-    rollback?: string[];
-    local_suffix?: boolean;
-  };
+  database: DBConfig;
   http?: {
     cors_middleware?: boolean;
     credentials?: boolean;
@@ -248,6 +252,14 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
     throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`);
   }
 
+  return processConfig(configFile, configFilePath, cliOptions);
+}
+
+export function processConfig(
+  configFile: ConfigFile,
+  configFilePath?: string,
+  cliOptions?: ParseOptions,
+): [DBOSConfig, DBOSRuntimeConfig] {
   /*******************************/
   /* Handle user database config */
   /*******************************/
@@ -333,4 +345,70 @@ function isValidDBname(dbName: string): boolean {
     return false;
   }
   return validator.matches(dbName, '^[a-z0-9_]+$');
+}
+
+export function parseDbString(dbString: string): DBConfig {
+  const parsed = parse(dbString);
+  // pg-connection-string doesn't parse query parameters, so we resort to the more generic URL() to do so
+  const url = new URL(dbString);
+  const queryParams = Object.fromEntries(url.searchParams.entries());
+  return {
+    hostname: parsed.host || undefined,
+    port: parsed.port ? parseInt(parsed.port, 10) : undefined,
+    username: parsed.user || undefined,
+    password: parsed.password || undefined,
+    app_db_name: parsed.database || undefined,
+    ssl: 'sslmode' in parsed && parsed.sslmode === 'require',
+    ssl_ca: queryParams['sslcert'] || undefined,
+    connectionTimeoutMillis: queryParams['connect_timeout']
+      ? parseInt(queryParams['connect_timeout'], 10) * 1000
+      : undefined,
+  };
+}
+
+export function translateRealDBOSConfigToConfigFile(providedConfig: RealDBOSConfig): ConfigFile {
+  const dbConfig: DBConfig = parseDbString(providedConfig.dbString);
+  if (providedConfig.sysDbName) {
+    dbConfig.sys_db_name = providedConfig.sysDbName;
+  }
+  if (providedConfig.appDbClient) {
+    if (!isValidUserDatabaseName(providedConfig.appDbClient)) {
+      throw new DBOSInitializationError(`Invalid app_db_client ${providedConfig.appDbClient}`);
+    }
+    dbConfig.app_db_client = providedConfig.appDbClient as UserDatabaseName;
+  }
+  const translatedConfig: ConfigFile = {
+    name: providedConfig.name,
+    database: dbConfig,
+    application: {},
+    env: {},
+  };
+  if (providedConfig.adminPort) {
+    translatedConfig.runtimeConfig = {
+      port: 1, // FIXME
+      admin_port: providedConfig.adminPort,
+      entrypoints: [],
+      start: [],
+      setup: [],
+    };
+  }
+
+  const telemetry: TelemetryConfig = {};
+  if (providedConfig.otlpTracesEndpoints && providedConfig.otlpTracesEndpoints.length > 0) {
+    telemetry.OTLPExporter = {
+      tracesEndpoint: providedConfig.otlpTracesEndpoints[0],
+    };
+  }
+
+  if (providedConfig.logLevel) {
+    telemetry.logs = {
+      logLevel: providedConfig.logLevel,
+    };
+  }
+
+  if (Object.keys(telemetry).length > 0) {
+    translatedConfig.telemetry = telemetry;
+  }
+
+  return translatedConfig;
 }
