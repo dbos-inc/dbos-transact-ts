@@ -204,33 +204,52 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   txnConfig?: TransactionConfig;
   stepConfig?: StepConfig;
   procConfig?: TransactionConfig;
+  regLocation?: string[];
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
-  checkFuncTypeUnassigned() {
-    if (this.txnConfig || this.workflowConfig || this.stepConfig || this.procConfig) {
-      throw new DBOSConflictingRegistrationError(
-        `Operation (Name: ${this.className}.${this.name}) is already registered with a conflicting function type`,
-      );
+  getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | 'Procedure' | undefined {
+    if (this.txnConfig) return 'Transaction';
+    if (this.workflowConfig) return 'Workflow';
+    if (this.stepConfig) return 'Step';
+    if (this.procConfig) return 'Procedure';
+    return undefined;
+  }
+
+  checkFuncTypeUnassigned(newType: string) {
+    const oldType = this.getAssignedType();
+    let error: string | undefined = undefined;
+    if (oldType && newType !== oldType) {
+      error = `Operation (Name: ${this.className}.${this.name}) is already registered with a conflicting function type: ${oldType} vs. ${newType}`;
+    } else if (oldType) {
+      error = `Operation (Name: ${this.className}.${this.name}) is already registered.`;
+    }
+    if (error) {
+      if (this.regLocation) {
+        error = error + `\nPrior registration occurred at:\n${this.regLocation.join('\n')}`;
+      }
+      throw new DBOSConflictingRegistrationError(`${error}`);
+    } else {
+      this.regLocation = new StackGrabber().getCleanStack(3);
     }
   }
 
   setTxnConfig(txCfg: TransactionConfig): void {
-    this.checkFuncTypeUnassigned();
+    this.checkFuncTypeUnassigned('Transaction');
     this.txnConfig = txCfg;
   }
 
   setStepConfig(stepCfg: StepConfig): void {
-    this.checkFuncTypeUnassigned();
+    this.checkFuncTypeUnassigned('Step');
     this.stepConfig = stepCfg;
   }
 
   setProcConfig(procCfg: TransactionConfig): void {
-    this.checkFuncTypeUnassigned();
+    this.checkFuncTypeUnassigned('Procedure');
     this.procConfig = procCfg;
   }
 
   setWorkflowConfig(wfCfg: WorkflowConfig): void {
-    this.checkFuncTypeUnassigned();
+    this.checkFuncTypeUnassigned('Workflow');
     this.workflowConfig = wfCfg;
   }
 
