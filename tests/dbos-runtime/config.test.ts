@@ -4,13 +4,19 @@ import fs from 'fs';
 import * as utils from '../../src/utils';
 import { UserDatabaseName } from '../../src/user_database';
 import { PoolConfig } from 'pg';
-import { parseConfigFile, parseDbString } from '../../src/dbos-runtime/config';
+import {
+  ConfigFile,
+  parseConfigFile,
+  parseDbString,
+  translateRealDBOSConfigToConfigFile,
+} from '../../src/dbos-runtime/config';
 import { DBOSRuntimeConfig, defaultEntryPoint } from '../../src/dbos-runtime/runtime';
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error';
 import { DBOSExecutor, DBOSConfig } from '../../src/dbos-executor';
 import { WorkflowContextImpl } from '../../src/workflow';
 import { get } from 'lodash';
 import { db_wizard } from '../../src/dbos-runtime/db_wizard';
+import { RealDBOSConfig } from '../../src/dbos';
 
 describe('dbos-config', () => {
   const mockCLIOptions = { port: NaN, loglevel: 'info' };
@@ -638,6 +644,146 @@ describe('dbos-config', () => {
     test('should handle a connection string missing hostname', () => {
       const dbString = 'postgres://user:password@:5432/mydatabase';
       expect(() => parseDbString(dbString)).toThrow();
+    });
+  });
+
+  describe.only('translateRealDBOSConfigToConfigFile', () => {
+    const dbString = 'postgres://user:password@localhost:5432/mydatabase';
+
+    test('should translate a full RealDBOSConfig correctly', () => {
+      const providedConfig: RealDBOSConfig = {
+        name: 'TestApp',
+        dbString: dbString,
+        appDbClient: 'knex',
+        sysDbName: 'system_db',
+        logLevel: 'debug',
+        otlpTracesEndpoints: ['http://otel-collector:4317', 'random'],
+        adminPort: 8080,
+      };
+
+      const expectedConfig: ConfigFile = {
+        name: 'TestApp',
+        database: {
+          hostname: 'localhost',
+          port: 5432,
+          username: 'user',
+          password: 'password',
+          app_db_name: 'mydatabase',
+          ssl: false,
+          sys_db_name: 'system_db',
+          app_db_client: 'knex',
+        },
+        application: {},
+        env: {},
+        runtimeConfig: {
+          port: 1, // FIXME
+          admin_port: 8080,
+          entrypoints: [],
+          start: [],
+          setup: [],
+        },
+        telemetry: {
+          OTLPExporter: { tracesEndpoint: 'http://otel-collector:4317' },
+          logs: { logLevel: 'debug' },
+        },
+      };
+
+      expect(translateRealDBOSConfigToConfigFile(providedConfig)).toEqual(expectedConfig);
+    });
+
+    test('should handle missing optional fields', () => {
+      const providedConfig: RealDBOSConfig = {
+        name: 'MinimalApp',
+        dbString: dbString,
+      };
+
+      const expectedConfig: ConfigFile = {
+        name: 'MinimalApp',
+        database: {
+          hostname: 'localhost',
+          port: 5432,
+          username: 'user',
+          password: 'password',
+          app_db_name: 'mydatabase',
+          ssl: false,
+        },
+        application: {},
+        env: {},
+      };
+
+      const result = translateRealDBOSConfigToConfigFile(providedConfig);
+      expect(result).toEqual(expectedConfig);
+      expect(result.telemetry).toBeUndefined();
+      expect(result.runtimeConfig).toBeUndefined();
+      expect(result.database.sys_db_name).toBeUndefined();
+    });
+
+    test('should correctly set OTLPExporter when otlpTracesEndpoints is present', () => {
+      const providedConfig: RealDBOSConfig = {
+        name: 'AppWithOTLP',
+        dbString: dbString,
+        otlpTracesEndpoints: ['http://otel-collector:4317'],
+      };
+
+      const expectedConfig: ConfigFile = {
+        name: 'AppWithOTLP',
+        database: {
+          hostname: 'localhost',
+          port: 5432,
+          username: 'user',
+          password: 'password',
+          app_db_name: 'mydatabase',
+          ssl: false,
+        },
+        application: {},
+        env: {},
+        telemetry: {
+          OTLPExporter: {
+            tracesEndpoint: 'http://otel-collector:4317',
+          },
+        },
+      };
+
+      expect(translateRealDBOSConfigToConfigFile(providedConfig)).toEqual(expectedConfig);
+    });
+
+    test('should correctly set logs when logLevel is present', () => {
+      const providedConfig: RealDBOSConfig = {
+        name: 'AppWithLogLevel',
+        dbString: dbString,
+        logLevel: 'info',
+      };
+
+      const expectedConfig: ConfigFile = {
+        name: 'AppWithLogLevel',
+        database: {
+          hostname: 'localhost',
+          port: 5432,
+          username: 'user',
+          password: 'password',
+          app_db_name: 'mydatabase',
+          ssl: false,
+        },
+        application: {},
+        env: {},
+        telemetry: {
+          logs: {
+            logLevel: 'info',
+          },
+        },
+      };
+
+      expect(translateRealDBOSConfigToConfigFile(providedConfig)).toEqual(expectedConfig);
+    });
+
+    test('should throw an error if appDbClient is invalid', () => {
+      const providedConfig: RealDBOSConfig = {
+        name: 'InvalidAppDbClient',
+        dbString: dbString,
+        appDbClient: 'invalid_client',
+      };
+
+      expect(() => translateRealDBOSConfigToConfigFile(providedConfig)).toThrow('Invalid app_db_client invalid_client');
     });
   });
 });

@@ -1,12 +1,12 @@
 import { DBOSInitializationError } from '../error';
 import { DBOSJSON, globalParams, readFileSync } from '../utils';
-import { DBOSConfig, isValidUserDatabaseName } from '../dbos-executor';
+import { DBOSConfig } from '../dbos-executor';
 import { RealDBOSConfig } from '../dbos';
 import { PoolConfig } from 'pg';
 import { parse } from 'pg-connection-string';
 import YAML from 'yaml';
 import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
-import { UserDatabaseName } from '../user_database';
+import { UserDatabaseName, isValidUserDatabaseName } from '../user_database';
 import { TelemetryConfig } from '../telemetry';
 import { writeFileSync } from 'fs';
 import Ajv, { ValidateFunction } from 'ajv';
