@@ -589,7 +589,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       [workflowUUID],
     );
 
-    let workflow_steps: workflow_steps = {
+    const workflow_steps: workflow_steps = {
       workflow_uuid: workflowUUID,
       steps: rows,
     };

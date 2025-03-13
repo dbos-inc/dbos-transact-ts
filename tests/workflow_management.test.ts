@@ -535,11 +535,13 @@ describe('test-list-steps', () => {
     }
 
     @DBOS.step()
+    // eslint-disable-next-line @typescript-eslint/require-await
     static async stepOne() {
       console.log('executed stepOne');
     }
 
     @DBOS.step()
+    // eslint-disable-next-line @typescript-eslint/require-await
     static async stepTwo() {
       console.log('executed stepTwo');
     }
