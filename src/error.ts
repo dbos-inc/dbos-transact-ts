@@ -246,8 +246,7 @@ export class DBOSWorkflowCancelledError extends DBOSError {
 
 const ConflictingRegistrationError = 25;
 export class DBOSConflictingRegistrationError extends DBOSError {
-  constructor(name: string) {
-    const msg = `Operation (Name: ${name}) is already registered with a conflicting function type`;
+  constructor(msg: string) {
     super(msg, ConflictingRegistrationError);
   }
 }

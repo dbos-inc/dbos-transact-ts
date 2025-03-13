@@ -30,6 +30,8 @@ import {
   getOrCreateClassRegistration,
   getRegisteredOperations,
   MethodRegistration,
+  recordDBOSLaunch,
+  recordDBOSShutdown,
   registerAndWrapDBOSFunction,
   registerFunctionWrapper,
 } from './decorators';
@@ -252,6 +254,8 @@ export class DBOS {
         httpApps.honoApp.use(honoTracingMiddleware);
       }
     }
+
+    recordDBOSLaunch();
   }
 
   static async shutdown() {
@@ -279,6 +283,8 @@ export class DBOS {
     globalParams.wasComputed = false;
     globalParams.appID = process.env.DBOS__APPID || '';
     globalParams.executorID = process.env.DBOS__VMID || 'local';
+
+    recordDBOSShutdown();
   }
 
   static get executor() {
