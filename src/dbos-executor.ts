@@ -1217,6 +1217,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
           if (prevResult instanceof Error) {
             throw prevResult;
           }
+
+          const prevResultJson = DBOSJSON.stringify(prevResult);
+          const resultJson = DBOSJSON.stringify(result);
+          if (prevResultJson !== resultJson) {
+            this.logger.error(
+              `Detected different transaction output than the original one!\n Result: ${resultJson}\n Original: ${DBOSJSON.stringify(prevResultJson)}`,
+            );
+          }
           return prevResult as R;
         }
 
@@ -1446,6 +1454,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
         if (this.isDebugging) {
           if (prevResult instanceof Error) {
             throw prevResult;
+          }
+          const prevResultJson = DBOSJSON.stringify(prevResult);
+          const resultJson = DBOSJSON.stringify(result);
+          if (prevResultJson !== resultJson) {
+            this.logger.error(
+              `Detected different transaction output than the original one!\n Result: ${resultJson}\n Original: ${DBOSJSON.stringify(prevResultJson)}`,
+            );
           }
           return prevResult as R;
         }
