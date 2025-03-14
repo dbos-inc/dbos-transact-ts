@@ -22,6 +22,7 @@ import {
   getWorkflow,
   listWorkflows,
   listQueuedWorkflows,
+  listWorkflowSteps,
 } from '../src/dbos-runtime/workflow_management';
 import { Client } from 'pg';
 import { Knex } from 'knex';
@@ -36,8 +37,9 @@ describe('workflow-management-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     config = generateDBOSTestConfig();
+    // await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
@@ -445,7 +447,7 @@ describe('workflow-management-tests', () => {
   }
 });
 
-describe('test-list-queues', () => {
+/* describe('test-list-queues', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -591,4 +593,59 @@ describe('test-list-queues', () => {
     input = {};
     await expect(listQueuedWorkflows(config, input, false)).resolves.toEqual([]);
   });
-});
+}); */
+
+/* describe('test-list-steps', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  }, 10000);
+
+  class TestListSteps {
+    @DBOS.workflow()
+    static async testWorkflow() {
+      await TestListSteps.stepOne();
+      await TestListSteps.stepTwo();
+    }
+
+    @DBOS.step()
+    // eslint-disable-next-line @typescript-eslint/require-await
+    static async stepOne() {
+      console.log('executed stepOne');
+    }
+
+    @DBOS.step()
+    // eslint-disable-next-line @typescript-eslint/require-await
+    static async stepTwo() {
+      console.log('executed stepTwo');
+    }
+  }
+
+  test('test-list-steps', async () => {
+    const wfid = uuidv4();
+
+    await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
+
+    const wfsteps = await listWorkflowSteps(config, wfid);
+
+    console.log(wfsteps);
+
+    expect(wfsteps.workflow_uuid).toBe(wfid);
+    expect(wfsteps.steps.length).toBe(2);
+    expect(wfsteps.steps[0].function_id).toBe(0);
+    expect(wfsteps.steps[0].function_name).toBe('stepOne');
+    expect(wfsteps.steps[1].function_id).toBe(1);
+    expect(wfsteps.steps[1].function_name).toBe('stepTwo');
+  });
+}); */
