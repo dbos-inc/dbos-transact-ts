@@ -35,6 +35,7 @@ import knex, { Knex } from 'knex';
 import path from 'path';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSEventReceiverQuery, DBOSEventReceiverState } from './eventreceiver';
+import { reject } from 'lodash';
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -72,7 +73,11 @@ export interface SystemDatabase {
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
 
-  sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
+  sleepms(
+    workflowUUID: string,
+    functionID: number,
+    duration: number,
+  ): Promise<{ promise: Promise<void>; cancel: () => void }>;
 
   send<T>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T>(
@@ -637,23 +642,25 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async sleepms(workflowUUID: string, functionID: number, durationMS: number): Promise<void> {
+  async sleepms(
+    workflowUUID: string,
+    functionID: number,
+    durationMS: number,
+  ): Promise<{ promise: Promise<void>; cancel: () => void }> {
     const { rows } = await this.pool.query<operation_outputs>(
       `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
       [workflowUUID, functionID],
     );
     if (rows.length > 0) {
       const endTimeMs = DBOSJSON.parse(rows[0].output) as number;
-      await sleepms(Math.max(endTimeMs - Date.now(), 0));
-      return;
+      return cancellableSleep(Math.max(endTimeMs - Date.now(), 0));
     } else {
       const endTimeMs = Date.now() + durationMS;
       await this.pool.query<operation_outputs>(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;`,
         [workflowUUID, functionID, DBOSJSON.stringify(endTimeMs)],
       );
-      await sleepms(Math.max(endTimeMs - Date.now(), 0));
-      return;
+      return cancellableSleep(Math.max(endTimeMs - Date.now(), 0));
     }
   }
 
@@ -733,7 +740,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
       });
       const payload = `${workflowUUID}::${topic}`;
       this.notificationsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-      const { promise: timeoutPromise, cancel: timeoutCancel } = cancellableSleep(timeoutSeconds * 1000);
+      let timeoutPromise: Promise<void> = Promise.resolve();
+      let timeoutCancel: () => void = () => {};
+      try {
+        const { promise, cancel } = await this.sleepms(workflowUUID, timeoutFunctionID, timeoutSeconds * 1000);
+        timeoutPromise = promise;
+        timeoutCancel = cancel;
+      } catch (e) {
+        this.logger.error(e);
+        delete this.notificationsMap[payload];
+        reject(new Error('durable sleepms failed'));
+      }
       try {
         await Promise.race([messagePromise, timeoutPromise]);
       } finally {
@@ -862,7 +879,29 @@ export class PostgresSystemDatabase implements SystemDatabase {
       });
       const payload = `${workflowUUID}::${key}`;
       this.workflowEventsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-      const { promise: timeoutPromise, cancel: timeoutCancel } = cancellableSleep(timeoutSeconds * 1000);
+      // If we have a callerWorkflow, we want a durable sleep, otherwise, not
+      let timeoutPromise: Promise<void> = Promise.resolve();
+      let timeoutCancel: () => void = () => {};
+      if (callerWorkflow) {
+        try {
+          const { promise, cancel } = await this.sleepms(
+            workflowUUID,
+            callerWorkflow?.timeoutFunctionID ?? -1,
+            timeoutSeconds * 1000,
+          );
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+        } catch (e) {
+          this.logger.error(e);
+          delete this.workflowEventsMap[payload];
+          reject(new Error('durable sleepms failed'));
+        }
+      } else {
+        const { promise, cancel } = cancellableSleep(timeoutSeconds * 1000);
+        timeoutPromise = promise;
+        timeoutCancel = cancel;
+      }
+
       try {
         await Promise.race([valuePromise, timeoutPromise]);
       } finally {
