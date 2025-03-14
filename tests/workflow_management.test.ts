@@ -208,6 +208,28 @@ describe('workflow-management-tests', () => {
     for (let i = 0; i < 10; i++) {
       expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[10 - i]);
     }
+
+    // Test LIMIT 2 OFFSET 2 returns the third and fourth workflows
+    input.limit = 2;
+    input.offset = 2;
+    input.sortDesc = false;
+    response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(2);
+    for (let i = 0; i < workflowUUIDs.workflowUUIDs.length; i++) {
+      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[i + 2]);
+    }
+
+    // Test OFFSET 10 returns the last workflow
+    input.offset = 10;
+    response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+    for (let i = 0; i < workflowUUIDs.workflowUUIDs.length; i++) {
+      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[i + 10]);
+    }
   });
 
   test('getworkflows-cli', async () => {
