@@ -16,6 +16,38 @@ export const globalParams = {
 };
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+/*
+A cancellable sleep function that returns a promise and a callback
+The promise can be awaited for and will automatically resolve after the given time
+When cancel is called, not only it clears the timeout, but also resolves the promise
+So any waiters on the cancelable sleep will be resolved
+*/
+export function cancellableSleep(ms: number) {
+  let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
+  let resolvePromise: () => void;
+  let resolved = false;
+
+  const promise = new Promise<void>((resolve) => {
+    resolvePromise = () => {
+      if (resolved) return;
+      resolved = true;
+      resolve();
+      timeoutId = undefined;
+    };
+    timeoutId = setTimeout(resolvePromise, ms);
+  });
+
+  const cancel = () => {
+    if (timeoutId) {
+      clearTimeout(timeoutId);
+      timeoutId = undefined;
+      resolvePromise();
+    }
+  };
+
+  return { promise, cancel };
+}
+
 export type ValuesOf<T> = T[keyof T];
 
 // Adapated and translated from from: https://github.com/junosuarez/find-root
