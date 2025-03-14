@@ -49,7 +49,7 @@ export async function setUpDBOSTestDb(config: DBOSConfig) {
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
     await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
-    await pgSystemClient.end();
+    // await pgSystemClient.end();
   } catch (e) {
     if (e instanceof AggregateError) {
       console.error(`Test database setup failed: AggregateError containing ${e.errors.length} errors:`);
@@ -60,6 +60,8 @@ export async function setUpDBOSTestDb(config: DBOSConfig) {
       console.error(`Test database setup failed:`, e);
     }
     throw e;
+  } finally {
+    await pgSystemClient.end();
   }
 }
 
