@@ -133,7 +133,7 @@ describe('ses-tests', () => {
         'S3 Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET',
       );
     } else {
-      s3Cfg = DBOS.configureInstance(DBOS_S3, 'default', {
+      s3Cfg = new DBOS_S3('default', {
         awscfgname: 'aws_config',
         bucket: '',
         s3Callbacks: {

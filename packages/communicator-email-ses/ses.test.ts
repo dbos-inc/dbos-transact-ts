@@ -14,7 +14,7 @@ describe('ses-tests', () => {
       // This would normally be a global or static or something
       const [config, rtConfig] = parseConfigFile({ configfile: 'ses-test-dbos-config.yaml' });
       DBOS.setConfig(config, rtConfig);
-      sesCfg = DBOS.configureInstance(DBOS_SES, 'default', { awscfgname: 'aws_config' });
+      sesCfg = new DBOS_SES('default', { awscfgname: 'aws_config' });
     }
   });
 

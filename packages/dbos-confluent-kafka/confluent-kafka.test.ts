@@ -113,8 +113,8 @@ describe('kafka-tests', () => {
     DBOS.setConfig(cfg, rtCfg);
 
     // This would normally be a global or static or something
-    wfKafkaCfg = DBOS.configureInstance(KafkaProducer, 'wfKafka', kafkaConfig, wf1Topic);
-    wf2KafkaCfg = DBOS.configureInstance(KafkaProducer, 'wf2Kafka', kafkaConfig, wf2Topic);
+    wfKafkaCfg = new KafkaProducer('wfKafka', kafkaConfig, wf1Topic);
+    wf2KafkaCfg = new KafkaProducer('wf2Kafka', kafkaConfig, wf2Topic);
     await DBOS.launch();
   }, 30000);
 

@@ -377,7 +377,7 @@ describe('queued-wf-tests-simple', () => {
     await expect(handle2.getResult()).resolves.toBe('abc');
 
     // Call the same function in a different configured class is not allowed.
-    const myObj = DBOS.configureInstance(TestDuplicateIDins, 'myname');
+    const myObj = new TestDuplicateIDins('myname');
     await expect(DBOS.startWorkflow(myObj, { workflowID: wfid }).testWorkflow('abc')).rejects.toThrow(
       DBOSConflictingWorkflowError,
     );
