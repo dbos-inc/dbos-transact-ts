@@ -73,7 +73,7 @@ export interface SystemDatabase {
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
 
-  sleepms(
+  durableSleepms(
     workflowUUID: string,
     functionID: number,
     duration: number,
@@ -642,7 +642,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async sleepms(
+  async durableSleepms(
     workflowUUID: string,
     functionID: number,
     durationMS: number,
@@ -743,12 +743,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       let timeoutPromise: Promise<void> = Promise.resolve();
       let timeoutCancel: () => void = () => {};
       try {
-        const { promise, cancel } = await this.sleepms(workflowUUID, timeoutFunctionID, timeoutSeconds * 1000);
+        const { promise, cancel } = await this.durableSleepms(workflowUUID, timeoutFunctionID, timeoutSeconds * 1000);
         timeoutPromise = promise;
         timeoutCancel = cancel;
       } catch (e) {
         this.logger.error(e);
         delete this.notificationsMap[payload];
+        timeoutCancel();
         reject(new Error('durable sleepms failed'));
       }
       try {
@@ -856,70 +857,76 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     }
 
-    // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (
-      await this.pool.query<workflow_events>(
-        `
-      SELECT key, value
-      FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
-      WHERE workflow_uuid=$1 AND key=$2;`,
-        [workflowUUID, key],
-      )
-    ).rows;
-
-    // Return the value if it's in the DB, otherwise return null.
+    // Get the return the value. if it's in the DB, otherwise return null.
     let value: T | null = null;
-    if (initRecvRows.length > 0) {
-      value = DBOSJSON.parse(initRecvRows[0].value) as T;
-    } else {
-      // Register the key with the global notifications listener.
-      let resolveNotification: () => void;
-      const valuePromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
-      const payload = `${workflowUUID}::${key}`;
-      this.workflowEventsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-      // If we have a callerWorkflow, we want a durable sleep, otherwise, not
-      let timeoutPromise: Promise<void> = Promise.resolve();
-      let timeoutCancel: () => void = () => {};
-      if (callerWorkflow) {
-        try {
-          const { promise, cancel } = await this.sleepms(
-            workflowUUID,
-            callerWorkflow?.timeoutFunctionID ?? -1,
-            timeoutSeconds * 1000,
-          );
-          timeoutPromise = promise;
-          timeoutCancel = cancel;
-        } catch (e) {
-          this.logger.error(e);
-          delete this.workflowEventsMap[payload];
-          reject(new Error('durable sleepms failed'));
-        }
-      } else {
-        const { promise, cancel } = cancellableSleep(timeoutSeconds * 1000);
-        timeoutPromise = promise;
-        timeoutCancel = cancel;
-      }
+    const payloadKey = `${workflowUUID}::${key}`;
+    // Register the key with the global notifications listener first... we do not want to look in the DB first
+    //  or that would cause a timing hole.
+    let resolveNotification: () => void;
+    const valuePromise = new Promise<void>((resolve) => {
+      resolveNotification = resolve;
+    });
+    this.workflowEventsMap[payloadKey] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
 
-      try {
-        await Promise.race([valuePromise, timeoutPromise]);
-      } finally {
-        timeoutCancel();
-        delete this.workflowEventsMap[payload];
-      }
-      const finalRecvRows = (
+    try {
+      // Check if the key is already in the DB, then wait for the notification if it isn't.
+      const initRecvRows = (
         await this.pool.query<workflow_events>(
           `
-          SELECT value
-          FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
-          WHERE workflow_uuid=$1 AND key=$2;`,
+        SELECT key, value
+        FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
+        WHERE workflow_uuid=$1 AND key=$2;`,
           [workflowUUID, key],
         )
       ).rows;
-      if (finalRecvRows.length > 0) {
-        value = DBOSJSON.parse(finalRecvRows[0].value) as T;
+
+      if (initRecvRows.length > 0) {
+        value = DBOSJSON.parse(initRecvRows[0].value) as T;
+      } else {
+        // If we have a callerWorkflow, we want a durable sleep, otherwise, not
+        let timeoutPromise: Promise<void> = Promise.resolve();
+        let timeoutCancel: () => void = () => {};
+        if (callerWorkflow) {
+          try {
+            const { promise, cancel } = await this.durableSleepms(
+              callerWorkflow.workflowUUID,
+              callerWorkflow.timeoutFunctionID ?? -1,
+              timeoutSeconds * 1000,
+            );
+            timeoutPromise = promise;
+            timeoutCancel = cancel;
+          } catch (e) {
+            this.logger.error(e);
+            delete this.workflowEventsMap[payloadKey];
+            reject(new Error('durable sleepms failed'));
+          }
+        } else {
+          const { promise, cancel } = cancellableSleep(timeoutSeconds * 1000);
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+        }
+
+        try {
+          await Promise.race([valuePromise, timeoutPromise]);
+        } finally {
+          timeoutCancel();
+        }
+
+        const finalRecvRows = (
+          await this.pool.query<workflow_events>(
+            `
+            SELECT value
+            FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
+            WHERE workflow_uuid=$1 AND key=$2;`,
+            [workflowUUID, key],
+          )
+        ).rows;
+        if (finalRecvRows.length > 0) {
+          value = DBOSJSON.parse(finalRecvRows[0].value) as T;
+        }
       }
+    } finally {
+      delete this.workflowEventsMap[payloadKey];
     }
 
     // Record the output if it is inside a workflow.

@@ -498,8 +498,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     }
     const functionID = this.functionIDGetIncrement();
     // TODO add a new cancellable sleep that also returns the cancel function
-    const { promise } = await this.#dbosExec.systemDatabase.sleepms(this.workflowUUID, functionID, durationMS);
-    return promise;
+    const { promise } = await this.#dbosExec.systemDatabase.durableSleepms(this.workflowUUID, functionID, durationMS);
+    return await promise;
   }
 
   async sleep(durationSec: number): Promise<void> {
