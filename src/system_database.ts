@@ -28,7 +28,7 @@ import {
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { sleepms, findPackageRoot, DBOSJSON, globalParams } from './utils';
+import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -733,20 +733,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       });
       const payload = `${workflowUUID}::${topic}`;
       this.notificationsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-      let timer: NodeJS.Timeout;
-      const timeoutPromise = new Promise<void>(async (resolve, reject) => {
-        try {
-          await this.sleepms(workflowUUID, timeoutFunctionID, timeoutSeconds * 1000);
-          resolve();
-        } catch (e) {
-          this.logger.error(e);
-          reject(new Error('sleepms failed'));
-        }
-      });
+      const { promise: timeoutPromise, cancel: timeoutCancel } = cancellableSleep(timeoutSeconds * 1000);
       try {
         await Promise.race([messagePromise, timeoutPromise]);
       } finally {
-        clearTimeout(timer!);
+        timeoutCancel();
         delete this.notificationsMap[payload];
       }
     }
@@ -871,28 +862,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       });
       const payload = `${workflowUUID}::${key}`;
       this.workflowEventsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-      let timer: NodeJS.Timeout;
-      const timeoutMillis = timeoutSeconds * 1000;
-      const timeoutPromise = callerWorkflow
-        ? new Promise<void>(async (resolve, reject) => {
-            try {
-              await this.sleepms(callerWorkflow.workflowUUID, callerWorkflow.timeoutFunctionID, timeoutMillis);
-              resolve();
-            } catch (e) {
-              this.logger.error(e);
-              reject(new Error('sleepms failed'));
-            }
-          })
-        : new Promise<void>((resolve) => {
-            timer = setTimeout(() => {
-              resolve();
-            }, timeoutMillis);
-          });
-
+      const { promise: timeoutPromise, cancel: timeoutCancel } = cancellableSleep(timeoutSeconds * 1000);
       try {
         await Promise.race([valuePromise, timeoutPromise]);
       } finally {
-        clearTimeout(timer!);
+        timeoutCancel();
         delete this.workflowEventsMap[payload];
       }
       const finalRecvRows = (
