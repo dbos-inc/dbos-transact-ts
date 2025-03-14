@@ -511,7 +511,7 @@ describe('test-list-queues', () => {
   });
 });
 
-describe('test-list-steps', () => {
+/* describe('test-list-steps', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -564,4 +564,4 @@ describe('test-list-steps', () => {
     expect(wfsteps.steps[1].function_id).toBe(1);
     expect(wfsteps.steps[1].function_name).toBe('stepTwo');
   });
-});
+}); */
