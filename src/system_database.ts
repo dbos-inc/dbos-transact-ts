@@ -590,10 +590,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const serialOutput = DBOSJSON.stringify(output);
     try {
       await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, function_name) VALUES ($1, $2, $3, $4);`,
-        [workflowUUID, functionID, serialOutput, functionName],
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);`,
+        [workflowUUID, functionID, serialOutput],
       );
     } catch (error) {
+      console.log('Error in recordOperationOutput');
+      console.log(error);
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') {
         // Serialization and primary key conflict (Postgres).
@@ -613,10 +615,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const serialErr = DBOSJSON.stringify(serializeError(error));
     try {
       await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, error, function_name) VALUES ($1, $2, $3, $4);`,
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, error) VALUES ($1, $2, $3);`,
         [workflowUUID, functionID, serialErr, functionName],
       );
     } catch (error) {
+      console.log('Error in recordOperationOutput');
+      console.log(error);
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') {
         // Serialization and primary key conflict (Postgres).
