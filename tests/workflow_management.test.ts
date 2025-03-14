@@ -37,13 +37,14 @@ describe('workflow-management-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
 
-  beforeAll(() => {
+  beforeAll(async () => {
     config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
     process.env.DBOS__APPVERSION = 'v0';
-    await setUpDBOSTestDb(config);
+    // await setUpDBOSTestDb(config);
     testRuntime = await createInternalTestRuntime([TestEndpoints], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);

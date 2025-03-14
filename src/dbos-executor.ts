@@ -628,10 +628,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return this.stepInfoMap.get(cfname);
   }
 
-  getStepFuncName(cf: StepFunction<unknown[], unknown>) {
-    return getRegisteredMethodClassName(cf) + '.' + cf.name;
-  }
-
   getStepInfoByNames(className: string, functionName: string, cfgName: string) {
     const cfname = className + '.' + functionName;
     const stepInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
