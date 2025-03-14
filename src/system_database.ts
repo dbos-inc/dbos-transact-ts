@@ -1188,12 +1188,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
     let query = this.knexDB<{ workflow_uuid: string }>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`).orderBy(
       'created_at',
-      'desc',
+      input.sortDesc ? 'desc' : 'asc',
     );
     if (input.workflowName) {
       query = query.where('name', input.workflowName);
+    }
+    if (input.workflowIDs) {
+      query = query.whereIn('workflow_uuid', input.workflowIDs);
     }
     if (input.authenticatedUser) {
       query = query.where('authenticated_user', input.authenticatedUser);
@@ -1213,6 +1217,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (input.limit) {
       query = query.limit(input.limit);
     }
+    if (input.offset) {
+      query = query.offset(input.offset);
+    }
     const rows = await query.select('workflow_uuid');
     const workflowUUIDs = rows.map((row) => row.workflow_uuid);
     return {
@@ -1221,6 +1228,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<GetWorkflowsOutput> {
+    const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
     let query = this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
       .join(
         `${DBOSExecutor.systemDBSchemaName}.workflow_status`,
@@ -1228,7 +1236,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         '=',
         `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
       )
-      .orderBy(`${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`, 'desc');
+      .orderBy(`${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`, sortDesc ? 'desc' : 'asc');
 
     if (input.workflowName) {
       query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.name = ?`, [input.workflowName]);
@@ -1255,6 +1263,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     if (input.limit) {
       query = query.limit(input.limit);
+    }
+    if (input.offset) {
+      query = query.offset(input.offset);
     }
 
     const rows = await query.select(`${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`);
