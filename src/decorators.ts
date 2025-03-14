@@ -204,31 +204,52 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   txnConfig?: TransactionConfig;
   stepConfig?: StepConfig;
   procConfig?: TransactionConfig;
+  regLocation?: string[];
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
-  checkFuncTypeUnassigned() {
-    if (this.txnConfig || this.workflowConfig || this.stepConfig || this.procConfig) {
-      throw new DBOSConflictingRegistrationError(`${this.className}.${this.name}`);
+  getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | 'Procedure' | undefined {
+    if (this.txnConfig) return 'Transaction';
+    if (this.workflowConfig) return 'Workflow';
+    if (this.stepConfig) return 'Step';
+    if (this.procConfig) return 'Procedure';
+    return undefined;
+  }
+
+  checkFuncTypeUnassigned(newType: string) {
+    const oldType = this.getAssignedType();
+    let error: string | undefined = undefined;
+    if (oldType && newType !== oldType) {
+      error = `Operation (Name: ${this.className}.${this.name}) is already registered with a conflicting function type: ${oldType} vs. ${newType}`;
+    } else if (oldType) {
+      error = `Operation (Name: ${this.className}.${this.name}) is already registered.`;
+    }
+    if (error) {
+      if (this.regLocation) {
+        error = error + `\nPrior registration occurred at:\n${this.regLocation.join('\n')}`;
+      }
+      throw new DBOSConflictingRegistrationError(`${error}`);
+    } else {
+      this.regLocation = new StackGrabber().getCleanStack(3);
     }
   }
 
   setTxnConfig(txCfg: TransactionConfig): void {
-    this.checkFuncTypeUnassigned();
+    this.checkFuncTypeUnassigned('Transaction');
     this.txnConfig = txCfg;
   }
 
   setStepConfig(stepCfg: StepConfig): void {
-    this.checkFuncTypeUnassigned();
+    this.checkFuncTypeUnassigned('Step');
     this.stepConfig = stepCfg;
   }
 
   setProcConfig(procCfg: TransactionConfig): void {
-    this.checkFuncTypeUnassigned();
+    this.checkFuncTypeUnassigned('Procedure');
     this.procConfig = procCfg;
   }
 
   setWorkflowConfig(wfCfg: WorkflowConfig): void {
-    this.checkFuncTypeUnassigned();
+    this.checkFuncTypeUnassigned('Workflow');
     this.workflowConfig = wfCfg;
   }
 
@@ -273,6 +294,36 @@ export class ClassRegistration<CT extends { new (...args: unknown[]): object }> 
   ctor: CT;
   constructor(ctor: CT) {
     this.ctor = ctor;
+  }
+}
+
+class StackGrabber extends Error {
+  constructor() {
+    super('StackGrabber');
+    Error.captureStackTrace(this, StackGrabber); // Excludes constructor from the stack
+  }
+
+  getCleanStack(frames: number = 1) {
+    return this.stack
+      ?.split('\n')
+      .slice(frames + 1)
+      .map((l) => '>>> ' + l.replace(/^\s*at\s*/, '')); // Remove the first lines
+  }
+}
+
+let dbosLaunchPoint: string[] | undefined = undefined;
+export function recordDBOSLaunch() {
+  dbosLaunchPoint = new StackGrabber().getCleanStack(2); // Remove one for record, one for registerAndWrap...
+}
+export function recordDBOSShutdown() {
+  dbosLaunchPoint = undefined;
+}
+
+export function ensureDBOSIsNotLaunched() {
+  if (dbosLaunchPoint) {
+    throw new DBOSConflictingRegistrationError(
+      `DBOS code is being registered after DBOS.launch().  DBOS was launched from:\n${dbosLaunchPoint.join('\n')}\n`,
+    );
   }
 }
 
@@ -508,6 +559,7 @@ export function registerAndWrapFunctionTakingContext<This, Args extends unknown[
   propertyKey: string,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
 ) {
+  ensureDBOSIsNotLaunched();
   if (!descriptor.value) {
     throw Error('Use of decorator when original method is undefined');
   }
@@ -522,6 +574,7 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
   propertyKey: string,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
 ) {
+  ensureDBOSIsNotLaunched();
   if (!descriptor.value) {
     throw Error('Use of decorator when original method is undefined');
   }

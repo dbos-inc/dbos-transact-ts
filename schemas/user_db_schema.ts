@@ -1,9 +1,9 @@
 export interface transaction_outputs {
   workflow_uuid: string;
   function_id: number;
-  output: string;
-  error: string;
-  txn_id: string;
+  output: string | null;
+  error: string | null;
+  txn_id: string | null;
   txn_snapshot: string;
 }
 

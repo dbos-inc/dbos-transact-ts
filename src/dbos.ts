@@ -9,7 +9,7 @@ import {
   DBOSContextImpl,
   getNextWFID,
 } from './context';
-import { DBOSConfig, DBOSExecutor, InternalWorkflowParams } from './dbos-executor';
+import { DBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
 import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
@@ -30,6 +30,8 @@ import {
   getOrCreateClassRegistration,
   getRegisteredOperations,
   MethodRegistration,
+  recordDBOSLaunch,
+  recordDBOSShutdown,
   registerAndWrapDBOSFunction,
   registerFunctionWrapper,
 } from './decorators';
@@ -175,21 +177,24 @@ export class DBOS {
     if (DBOSExecutor.globalInstance) return;
 
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
-    const debugMode = debugWorkflowId !== undefined;
+    const isDebugging = debugWorkflowId !== undefined;
+    const debugMode = isDebugging
+      ? process.env.DBOS_DEBUG_TIME_TRAVEL === 'true'
+        ? DebugMode.TIME_TRAVEL
+        : DebugMode.ENABLED
+      : DebugMode.DISABLED;
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
-      const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: debugMode });
-      if (!debugMode) {
+      const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
+      if (!isDebugging) {
         dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
       }
-      DBOS.dbosConfig = { ...dbosConfig, debugMode };
+      DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
-    } else {
-      DBOS.dbosConfig = { ...DBOS.dbosConfig, debugMode };
     }
 
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig);
+    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, { debugMode });
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
 
@@ -249,6 +254,8 @@ export class DBOS {
         httpApps.honoApp.use(honoTracingMiddleware);
       }
     }
+
+    recordDBOSLaunch();
   }
 
   static async shutdown() {
@@ -276,6 +283,8 @@ export class DBOS {
     globalParams.wasComputed = false;
     globalParams.appID = process.env.DBOS__APPID || '';
     globalParams.executorID = process.env.DBOS__VMID || 'local';
+
+    recordDBOSShutdown();
   }
 
   static get executor() {
