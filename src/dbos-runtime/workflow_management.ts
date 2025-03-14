@@ -6,7 +6,11 @@ import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
 import { HTTPRequest } from '../context';
 import axios from 'axios';
 
-export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput, getRequest: boolean) {
+export async function listWorkflows(
+  config: DBOSConfig,
+  input: GetWorkflowsInput,
+  getRequest: boolean,
+): Promise<WorkflowInformation[]> {
   const systemDatabase = new PostgresSystemDatabase(
     config.poolConfig,
     config.system_database,
@@ -20,7 +24,11 @@ export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput
   return workflowInfos;
 }
 
-export async function listQueuedWorkflows(config: DBOSConfig, input: GetQueuedWorkflowsInput, getRequest: boolean) {
+export async function listQueuedWorkflows(
+  config: DBOSConfig,
+  input: GetQueuedWorkflowsInput,
+  getRequest: boolean,
+): Promise<WorkflowInformation[]> {
   const systemDatabase = new PostgresSystemDatabase(
     config.poolConfig,
     config.system_database,
@@ -42,11 +50,15 @@ export type WorkflowInformation = Omit<WorkflowStatus, 'request'> & {
   request?: HTTPRequest;
 };
 
-async function getWorkflowInfo(systemDatabase: SystemDatabase, workflowUUID: string, getRequest: boolean) {
+async function getWorkflowInfo(
+  systemDatabase: SystemDatabase,
+  workflowUUID: string,
+  getRequest: boolean,
+): Promise<WorkflowInformation> {
   const info = (await systemDatabase.getWorkflowStatus(workflowUUID)) as WorkflowInformation;
   info.workflowUUID = workflowUUID;
   if (info === null) {
-    return {};
+    return Promise.resolve({} as WorkflowInformation);
   }
   const input = await systemDatabase.getWorkflowInputs(workflowUUID);
   if (input !== null) {
