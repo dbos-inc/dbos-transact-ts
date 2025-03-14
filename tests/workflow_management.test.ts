@@ -167,9 +167,11 @@ describe('workflow-management-tests', () => {
   });
 
   test('getworkflows-with-limit', async () => {
-    let response = await request(testRuntime.getHandlersCallback()).post('/workflow/alice');
+    const workflowIDs: string[] = [];
+    let response = await request(testRuntime.getHandlersCallback()).post('/workflow_get_id');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
+    expect(response.text.length).toBeGreaterThan(0);
+    workflowIDs.push(response.text);
 
     const input: GetWorkflowsInput = {
       limit: 10,
@@ -179,19 +181,33 @@ describe('workflow-management-tests', () => {
     expect(response.statusCode).toBe(200);
     let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
-    const firstUUID = workflowUUIDs.workflowUUIDs[0];
+    expect(workflowUUIDs.workflowUUIDs[0]).toBe(workflowIDs[0]);
 
     for (let i = 0; i < 10; i++) {
-      response = await request(testRuntime.getHandlersCallback()).post('/workflow/alice');
+      response = await request(testRuntime.getHandlersCallback()).post('/workflow_get_id');
       expect(response.statusCode).toBe(200);
-      expect(response.text).toBe('alice');
+      expect(response.text.length).toBeGreaterThan(0);
+      workflowIDs.push(response.text);
     }
 
     response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
     workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(10);
-    expect(workflowUUIDs.workflowUUIDs[0]).toBe(firstUUID); // First workflow should be the same
+    for (let i = 0; i < 10; i++) {
+      // The order should be ascending by default
+      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[i]);
+    }
+
+    // Test sort_desc inverts the order
+    input.sortDesc = true;
+    response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(10);
+    for (let i = 0; i < 10; i++) {
+      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[10 - i]);
+    }
   });
 
   test('getworkflows-cli', async () => {
@@ -356,6 +372,12 @@ describe('workflow-management-tests', () => {
     @Workflow()
     static async testWorkflow(_ctxt: WorkflowContext, name: string) {
       return Promise.resolve(name);
+    }
+
+    @PostApi('/workflow_get_id')
+    @Workflow()
+    static async testWorkflowGetID(ctxt: WorkflowContext) {
+      return Promise.resolve(ctxt.workflowUUID);
     }
 
     @PostApi('/fail/:name')
