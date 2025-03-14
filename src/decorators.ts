@@ -271,6 +271,14 @@ export abstract class ConfiguredInstance {
   readonly name: string;
   constructor(name: string) {
     this.name = name;
+    const creg = getOrCreateClassRegistration(this.constructor as AnyConstructor);
+    if (creg.configuredInstances.has(name)) {
+      throw new DBOSConflictingRegistrationError(
+        `An instance of class '${this.constructor.name}' with name '${name}' was already registered.  Earlier registration occurred at:\n${(creg.configuredInstanceRegLocs.get(name) ?? []).join('\n')}`,
+      );
+    }
+    creg.configuredInstances.set(name, this);
+    creg.configuredInstanceRegLocs.set(name, new StackGrabber().getCleanStack(2) ?? []);
   }
   abstract initialize(ctx: InitContext): Promise<void>;
 }
@@ -288,6 +296,7 @@ export class ClassRegistration<CT extends { new (...args: unknown[]): object }> 
   registeredOperations: Map<string, MethodRegistrationBase> = new Map();
 
   configuredInstances: Map<string, ConfiguredInstance> = new Map();
+  configuredInstanceRegLocs: Map<string, string[]> = new Map();
 
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
@@ -730,11 +739,6 @@ export function configureInstance<R extends ConfiguredInstance, T extends unknow
   ...args: T
 ): R {
   const inst = new cls(name, ...args);
-  const creg = getOrCreateClassRegistration(cls as new (...args: unknown[]) => R);
-  if (creg.configuredInstances.has(name)) {
-    throw new DBOSError(`Registration: Class ${cls.name} configuration ${name} is not unique`);
-  }
-  creg.configuredInstances.set(name, inst);
   return inst;
 }
 

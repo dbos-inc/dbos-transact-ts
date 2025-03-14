@@ -1249,6 +1249,7 @@ export class DBOS {
   /////
   // Registration, etc
   /////
+  /** Calling this is no longer necessary */
   static configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
     cls: new (name: string, ...args: T) => R,
     name: string,
