@@ -35,7 +35,6 @@ import knex, { Knex } from 'knex';
 import path from 'path';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSEventReceiverQuery, DBOSEventReceiverState } from './eventreceiver';
-import { reject } from 'lodash';
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -750,7 +749,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         this.logger.error(e);
         delete this.notificationsMap[payload];
         timeoutCancel();
-        reject(new Error('durable sleepms failed'));
+        throw new Error('durable sleepms failed');
       }
       try {
         await Promise.race([messagePromise, timeoutPromise]);
@@ -898,7 +897,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           } catch (e) {
             this.logger.error(e);
             delete this.workflowEventsMap[payloadKey];
-            reject(new Error('durable sleepms failed'));
+            throw new Error('durable sleepms failed');
           }
         } else {
           const { promise, cancel } = cancellableSleep(timeoutSeconds * 1000);
