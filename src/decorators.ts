@@ -5,7 +5,7 @@ import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
 import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, InitContext } from './context';
 import { StepConfig, StepContext } from './step';
-import { DBOSConflictingRegistrationError, DBOSError, DBOSNotAuthorizedError } from './error';
+import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError } from './error';
 import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
@@ -267,18 +267,22 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   }
 }
 
+function registerClassInstance(inst: ConfiguredInstance, name: string) {
+  const creg = getOrCreateClassRegistration(inst.constructor as AnyConstructor);
+  if (creg.configuredInstances.has(name)) {
+    throw new DBOSConflictingRegistrationError(
+      `An instance of class '${inst.constructor.name}' with name '${name}' was already registered.  Earlier registration occurred at:\n${(creg.configuredInstanceRegLocs.get(name) ?? []).join('\n')}`,
+    );
+  }
+  creg.configuredInstances.set(name, inst);
+  creg.configuredInstanceRegLocs.set(name, new StackGrabber().getCleanStack(3) ?? []);
+}
+
 export abstract class ConfiguredInstance {
   readonly name: string;
   constructor(name: string) {
     this.name = name;
-    const creg = getOrCreateClassRegistration(this.constructor as AnyConstructor);
-    if (creg.configuredInstances.has(name)) {
-      throw new DBOSConflictingRegistrationError(
-        `An instance of class '${this.constructor.name}' with name '${name}' was already registered.  Earlier registration occurred at:\n${(creg.configuredInstanceRegLocs.get(name) ?? []).join('\n')}`,
-      );
-    }
-    creg.configuredInstances.set(name, this);
-    creg.configuredInstanceRegLocs.set(name, new StackGrabber().getCleanStack(2) ?? []);
+    registerClassInstance(this, name);
   }
   abstract initialize(ctx: InitContext): Promise<void>;
 }
