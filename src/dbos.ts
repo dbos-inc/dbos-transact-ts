@@ -67,6 +67,7 @@ import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
 import { db_wizard } from './dbos-runtime/db_wizard';
 import { Hono } from 'hono';
+import { Conductor, ConductorParams } from './conductor/conductor';
 
 // Declare all the HTTP applications a user can pass to the DBOS object during launch()
 // This allows us to add a DBOS tracing middleware (extract W3C Trace context, set request ID, etc)
@@ -154,6 +155,7 @@ export class DBOS {
   ///////
   static adminServer: Server | undefined = undefined;
   static appServer: Server | undefined = undefined;
+  static conductor: Conductor | undefined = undefined;
 
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
@@ -172,7 +174,7 @@ export class DBOS {
     return await DBOSRuntime.loadClasses(dbosEntrypointFiles);
   }
 
-  static async launch(httpApps?: DBOSHttpApps) {
+  static async launch(httpApps?: DBOSHttpApps, conductorParams?: ConductorParams) {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
@@ -212,6 +214,13 @@ export class DBOS {
     DBOSExecutor.globalInstance.scheduler.initScheduler();
 
     DBOSExecutor.globalInstance.wfqEnded = wfQueueRunner.dispatchLoop(DBOSExecutor.globalInstance);
+
+    if (conductorParams) {
+      DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, conductorParams);
+      DBOS.conductor.dispatchLoop().catch((e) => {
+        console.error(`Error in conductor loop: ${(e as Error).message}`);
+      });
+    }
 
     for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
       await evtRcvr.initialize(DBOSExecutor.globalInstance);
@@ -269,6 +278,12 @@ export class DBOS {
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
       DBOS.adminServer = undefined;
+    }
+
+    // Stop the conductor
+    if (DBOS.conductor) {
+      DBOS.conductor.stop();
+      DBOS.conductor = undefined;
     }
 
     // Stop the executor

@@ -149,8 +149,11 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     dbos_dblocalsuffix ?? configFile.database.local_suffix ?? databaseConnection.local_suffix ?? false;
 
   let databaseName: string | undefined = configFile.database.app_db_name;
+  const appName = retrieveApplicationName(configFile);
+  if (globalParams.appName === '') {
+    globalParams.appName = appName;
+  }
   if (databaseName === undefined) {
-    const appName = retrieveApplicationName(configFile);
     databaseName = appName.toLowerCase().replaceAll('-', '_');
     if (databaseName.match(/^\d/)) {
       databaseName = '_' + databaseName; // Append an underscore if the name starts with a digit
