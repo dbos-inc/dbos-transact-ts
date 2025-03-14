@@ -54,8 +54,8 @@ export interface SystemDatabase {
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
-  recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R, functionName: string): Promise<void>;
-  recordOperationError(workflowUUID: string, functionID: number, error: Error, functionName: string): Promise<void>;
+  recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
+  recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
 
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
@@ -581,12 +581,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordOperationOutput<R>(
-    workflowUUID: string,
-    functionID: number,
-    output: R,
-    functionName: string,
-  ): Promise<void> {
+  async recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
     const serialOutput = DBOSJSON.stringify(output);
     try {
       await this.pool.query<operation_outputs>(
@@ -606,17 +601,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordOperationError(
-    workflowUUID: string,
-    functionID: number,
-    error: Error,
-    functionName: string,
-  ): Promise<void> {
+  async recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
     const serialErr = DBOSJSON.stringify(serializeError(error));
     try {
       await this.pool.query<operation_outputs>(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, error) VALUES ($1, $2, $3);`,
-        [workflowUUID, functionID, serialErr, functionName],
+        [workflowUUID, functionID, serialErr],
       );
     } catch (error) {
       console.log('Error in recordOperationOutput');
@@ -926,12 +916,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Record the output if it is inside a workflow.
     if (callerWorkflow) {
-      await this.recordOperationOutput(
-        callerWorkflow.workflowUUID,
-        callerWorkflow.functionID,
-        value,
-        callerWorkflow.functionName,
-      );
+      await this.recordOperationOutput(callerWorkflow.workflowUUID, callerWorkflow.functionID, value);
     }
     return value;
   }
@@ -1068,7 +1053,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Record the output if it is inside a workflow.
     if (callerUUID !== undefined && functionID !== undefined) {
-      await this.recordOperationOutput(callerUUID, functionID, value, functionName);
+      await this.recordOperationOutput(callerUUID, functionID, value);
     }
     return value;
   }
