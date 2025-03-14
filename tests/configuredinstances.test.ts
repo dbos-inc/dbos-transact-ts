@@ -130,8 +130,8 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
   }
 }
 
-const config1 = configureInstance(DBOSTestConfiguredClass, 'config1', 1);
-const configA = configureInstance(DBOSTestConfiguredClass, 'configA', 2);
+const config1 = new DBOSTestConfiguredClass('config1', 1); // The new way
+const configA = configureInstance(DBOSTestConfiguredClass, 'configA', 2); // The old way
 
 describe('dbos-configclass-tests', () => {
   let config: DBOSConfig;

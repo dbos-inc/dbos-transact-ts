@@ -5,7 +5,7 @@ import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
 import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, InitContext } from './context';
 import { StepConfig, StepContext } from './step';
-import { DBOSConflictingRegistrationError, DBOSError, DBOSNotAuthorizedError } from './error';
+import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError } from './error';
 import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
@@ -267,10 +267,22 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   }
 }
 
+function registerClassInstance(inst: ConfiguredInstance, name: string) {
+  const creg = getOrCreateClassRegistration(inst.constructor as AnyConstructor);
+  if (creg.configuredInstances.has(name)) {
+    throw new DBOSConflictingRegistrationError(
+      `An instance of class '${inst.constructor.name}' with name '${name}' was already registered.  Earlier registration occurred at:\n${(creg.configuredInstanceRegLocs.get(name) ?? []).join('\n')}`,
+    );
+  }
+  creg.configuredInstances.set(name, inst);
+  creg.configuredInstanceRegLocs.set(name, new StackGrabber().getCleanStack(3) ?? []);
+}
+
 export abstract class ConfiguredInstance {
   readonly name: string;
   constructor(name: string) {
     this.name = name;
+    registerClassInstance(this, name);
   }
   abstract initialize(ctx: InitContext): Promise<void>;
 }
@@ -288,6 +300,7 @@ export class ClassRegistration<CT extends { new (...args: unknown[]): object }> 
   registeredOperations: Map<string, MethodRegistrationBase> = new Map();
 
   configuredInstances: Map<string, ConfiguredInstance> = new Map();
+  configuredInstanceRegLocs: Map<string, string[]> = new Map();
 
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
@@ -730,11 +743,6 @@ export function configureInstance<R extends ConfiguredInstance, T extends unknow
   ...args: T
 ): R {
   const inst = new cls(name, ...args);
-  const creg = getOrCreateClassRegistration(cls as new (...args: unknown[]) => R);
-  if (creg.configuredInstances.has(name)) {
-    throw new DBOSError(`Registration: Class ${cls.name} configuration ${name} is not unique`);
-  }
-  creg.configuredInstances.set(name, inst);
   return inst;
 }
 

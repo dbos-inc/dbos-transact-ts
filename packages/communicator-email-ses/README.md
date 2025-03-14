@@ -40,15 +40,15 @@ For more information about configuring AWS services, see [AWS Configuration](htt
 
 ## Selecting A Configuration
 
-`DBOS_SES` is a configured class. This means that the configuration (or config file key name) must be provided when a class instance is created. One instance per configuration should be created with `DBOS.configureInstance` when the application code starts. For example:
+An instance of `DBOS_SES` takes configuration information. This means that the configuration (or config file key name) must be provided when a class instance is created. One instance per configuration should be created when the application code starts. For example:
 
 ```typescript
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 // This will use the dbos-config.yaml section named by `aws_ses_configuration` if it is specified, or `aws_config` if not
-const defaultSES = DBOS.configureInstance(DBOS_SES, 'default');
+const defaultSES = new DBOS_SES('default');
 // This will use the section named `aws_config_marketing`
-const marketingSES = DBOS.configureInstance(DBOS_SES, 'marketing', { awscfgname: 'aws_config_marketing' });
+const marketingSES = new DBOS_SES('marketing', { awscfgname: 'aws_config_marketing' });
 ```
 
 ## Sending Messages

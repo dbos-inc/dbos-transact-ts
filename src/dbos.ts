@@ -1249,6 +1249,10 @@ export class DBOS {
   /////
   // Registration, etc
   /////
+  /**
+   * Construct and register an object.
+   * Calling this is not necessary; calling the constructor of any `ConfiguredInstance` subclass is sufficient
+   */
   static configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
     cls: new (name: string, ...args: T) => R,
     name: string,

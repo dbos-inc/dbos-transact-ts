@@ -124,8 +124,8 @@ class TestSec2 extends ConfiguredInstance {
   }
 }
 
-const instA = configureInstance(TestFunctions, 'A');
-const instB = configureInstance(TestFunctions, 'B');
+const instA = new TestFunctions('A'); // New way
+const instB = configureInstance(TestFunctions, 'B'); // Old way
 
 async function main() {
   // First hurdle - configuration.
@@ -281,7 +281,7 @@ async function main6() {
 
 async function main7() {
   const testSecInst = DBOS.configureInstance(TestSec, 'Sec1');
-  const testSec2Inst = DBOS.configureInstance(TestSec2, 'Sec2');
+  const testSec2Inst = new TestSec2('Sec2');
 
   const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);

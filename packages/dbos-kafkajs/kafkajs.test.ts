@@ -6,7 +6,6 @@ import {
   Workflow,
   WorkflowContext,
   WorkflowQueue,
-  configureInstance,
   createTestingRuntime,
 } from '@dbos-inc/dbos-sdk';
 
@@ -87,10 +86,10 @@ describe('kafka-tests', () => {
   beforeEach(async () => {
     if (kafkaIsAvailable) {
       // This would normally be a global or static or something
-      wfKafkaCfg = configureInstance(KafkaProduceStep, 'wfKafka', kafkaConfig, wfTopic, {
+      wfKafkaCfg = new KafkaProduceStep('wfKafka', kafkaConfig, wfTopic, {
         createPartitioner: Partitioners.DefaultPartitioner,
       });
-      txKafkaCfg = configureInstance(KafkaProduceStep, 'txKafka', kafkaConfig, txnTopic, {
+      txKafkaCfg = new KafkaProduceStep('txKafka', kafkaConfig, txnTopic, {
         createPartitioner: Partitioners.DefaultPartitioner,
       });
       testRuntime = await createTestingRuntime(undefined, 'kafkajs-test-dbos-config.yaml');

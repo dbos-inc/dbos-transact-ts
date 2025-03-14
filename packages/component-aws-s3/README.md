@@ -44,7 +44,7 @@ The application will need at least one s3 bucket. This can be placed in the `app
 `DBOS_S3` is a configured class. The AWS configuration (or config file key name) and bucket name must be provided when a class instance is created, for example:
 
 ```typescript
-const defaultS3 = configureInstance(DBOS_S3, 'myS3Bucket', {awscfgname: 'aws_config', bucket: 'my-s3-bucket', ...});
+const defaultS3 = new DBOS_S3('myS3Bucket', {awscfgname: 'aws_config', bucket: 'my-s3-bucket', ...});
 ```
 
 ## Simple Operation Wrappers

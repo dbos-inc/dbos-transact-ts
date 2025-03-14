@@ -51,8 +51,8 @@ class CCRecovery extends ConfiguredInstance {
   }
 }
 
-const configA = configureInstance(CCRecovery, 'configA', new CCRConfig());
-const configB = configureInstance(CCRecovery, 'configB', new CCRConfig());
+const configA = configureInstance(CCRecovery, 'configA', new CCRConfig()); // Old way
+const configB = new CCRecovery('configB', new CCRConfig()); // New way
 
 describe('recovery-cc-tests', () => {
   let config: DBOSConfig;

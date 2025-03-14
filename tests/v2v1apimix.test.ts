@@ -1,4 +1,4 @@
-import { ConfiguredInstance, configureInstance, DBOS, StepContext, TransactionContext, WorkflowContext } from '../src';
+import { ConfiguredInstance, DBOS, StepContext, TransactionContext, WorkflowContext } from '../src';
 import { Step, Transaction, Workflow } from '../src';
 import { PoolClient } from 'pg';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
@@ -227,7 +227,7 @@ class ChildWorkflowsV1 {
   }
 }
 
-const inst = configureInstance(TestFunctionsInst, 'i');
+const inst = new TestFunctionsInst('i');
 
 async function mainInst() {
   const config = generateDBOSTestConfig();
