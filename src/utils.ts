@@ -18,7 +18,7 @@ export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 /*
 A cancellable sleep function that returns a promise and a callback
-The promis can be awaited for and will automatically resolve after the given time
+The promise can be awaited for and will automatically resolve after the given time
 When cancel is called, not only it clears the timeout, but also resolves the promise
 So any waiters on the cancelable sleep will be resolved
 */
