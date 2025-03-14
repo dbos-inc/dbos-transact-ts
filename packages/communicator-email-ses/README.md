@@ -40,7 +40,7 @@ For more information about configuring AWS services, see [AWS Configuration](htt
 
 ## Selecting A Configuration
 
-An instance of `DBOS_SES` takes configuration information. This means that the configuration (or config file key name) must be provided when a class instance is created. One instance per configuration should be created wwhen the application code starts. For example:
+An instance of `DBOS_SES` takes configuration information. This means that the configuration (or config file key name) must be provided when a class instance is created. One instance per configuration should be created when the application code starts. For example:
 
 ```typescript
 import { DBOS } from '@dbos-inc/dbos-sdk';
