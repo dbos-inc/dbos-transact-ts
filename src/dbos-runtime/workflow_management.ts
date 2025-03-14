@@ -12,7 +12,7 @@ export async function listWorkflows(config: DBOSConfig, input: GetWorkflowsInput
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
-  const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs.reverse(); // Reverse so most recent entries are printed last
+  const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs;
   const workflowInfos = await Promise.all(
     workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
   );
@@ -26,7 +26,7 @@ export async function listQueuedWorkflows(config: DBOSConfig, input: GetQueuedWo
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
-  const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs.reverse(); // Reverse so most recent entries are printed last
+  const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs;
   const workflowInfos = await Promise.all(
     workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
   );

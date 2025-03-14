@@ -67,6 +67,7 @@ export interface WorkflowStatus {
 }
 
 export interface GetWorkflowsInput {
+  workflowIDs?: string[]; // The workflow IDs to retrieve
   workflowName?: string; // The name of the workflow function
   authenticatedUser?: string; // The user who ran the workflow.
   startTime?: string; // Timestamp in ISO 8601 format
@@ -74,6 +75,8 @@ export interface GetWorkflowsInput {
   status?: 'PENDING' | 'SUCCESS' | 'ERROR' | 'RETRIES_EXCEEDED' | 'CANCELLED' | 'ENQUEUED'; // The status of the workflow.
   applicationVersion?: string; // The application version that ran this workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
+  offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
+  sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
 }
 
 export interface GetQueuedWorkflowsInput {
@@ -83,6 +86,8 @@ export interface GetQueuedWorkflowsInput {
   status?: 'PENDING' | 'SUCCESS' | 'ERROR' | 'RETRIES_EXCEEDED' | 'CANCELLED' | 'ENQUEUED'; // The status of the workflow.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   queueName?: string; // The queue
+  offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
+  sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
 }
 
 export interface GetWorkflowsOutput {

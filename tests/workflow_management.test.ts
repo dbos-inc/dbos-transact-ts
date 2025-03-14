@@ -191,7 +191,7 @@ describe('workflow-management-tests', () => {
     expect(response.statusCode).toBe(200);
     workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(10);
-    expect(workflowUUIDs.workflowUUIDs).not.toContain(firstUUID);
+    expect(workflowUUIDs.workflowUUIDs[0]).toBe(firstUUID); // First workflow should be the same
   });
 
   test('getworkflows-cli', async () => {
