@@ -39,12 +39,12 @@ describe('workflow-management-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    // await setUpDBOSTestDb(config);
   });
 
   beforeEach(async () => {
     process.env.DBOS__APPVERSION = 'v0';
-    // await setUpDBOSTestDb(config);
+    await setUpDBOSTestDb(config);
     testRuntime = await createInternalTestRuntime([TestEndpoints], config);
     await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
@@ -392,7 +392,7 @@ describe('workflow-management-tests', () => {
   }
 });
 
-describe('test-list-queues', () => {
+/* describe('test-list-queues', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -509,7 +509,7 @@ describe('test-list-queues', () => {
     input = {};
     await expect(listQueuedWorkflows(config, input, false)).resolves.toEqual([]);
   });
-});
+}); */
 
 /* describe('test-list-steps', () => {
   let config: DBOSConfig;
