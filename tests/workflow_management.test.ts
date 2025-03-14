@@ -257,7 +257,7 @@ describe('workflow-management-tests', () => {
     const input: GetWorkflowsInput = {};
     const infos = await listWorkflows(config, input, false);
     expect(infos.length).toBe(2);
-    let info = infos[0] as WorkflowInformation;
+    let info = infos[0];
     expect(info.authenticatedUser).toBe('alice');
     expect(info.workflowName).toBe('testWorkflow');
     expect(info.status).toBe(StatusString.SUCCESS);
@@ -268,7 +268,7 @@ describe('workflow-management-tests', () => {
     expect(info.output).toBe('alice');
     expect(info.input).toEqual(['alice']);
 
-    info = infos[1] as WorkflowInformation;
+    info = infos[1];
     expect(info.authenticatedUser).toBe('alice');
     expect(info.workflowName).toBe('failWorkflow');
     expect(info.status).toBe(StatusString.ERROR);
@@ -280,7 +280,7 @@ describe('workflow-management-tests', () => {
     expect(info.output).toBeUndefined();
     expect(info.input).toEqual(['alice']);
 
-    const getInfo = (await getWorkflow(config, info.workflowUUID, false)) as WorkflowInformation;
+    const getInfo = await getWorkflow(config, info.workflowUUID, false);
     expect(info).toEqual(getInfo);
   });
 
