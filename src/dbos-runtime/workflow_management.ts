@@ -69,6 +69,7 @@ export async function listWorkflowSteps(config: DBOSConfig, workflowUUID: string
     return workflowSteps;
   } catch (e) {
     console.log(e);
+    return { workflow_uuid: workflowUUID, steps: [] };
   } finally {
     await systemDatabase.destroy();
   }
