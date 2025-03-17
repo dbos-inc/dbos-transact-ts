@@ -39,7 +39,7 @@
     "@types/pg": "^8.11.2",
     "@types/supertest": "^6.0.2",
     "@types/uuid": "^9.0.8",
-    "drizzle-orm": "^0.38.3",
+    "drizzle-orm": "^0.40.1",
     "eslint": "^9.22.0",
     "fastify": "^5.1.0",
     "hono": "^4.7.2",
