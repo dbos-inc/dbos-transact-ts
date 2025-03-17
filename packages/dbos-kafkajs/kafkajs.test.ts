@@ -23,7 +23,7 @@ const _ = `
 version: "3.7"
 services:
   broker:
-      image: bitnami/kafka:lbeforeAllatest
+      image: bitnami/kafka:latest
       hostname: broker
       container_name: broker
       ports:
