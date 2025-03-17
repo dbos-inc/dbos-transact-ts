@@ -40,7 +40,7 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.NOTHING, // FOR TESTING
 };
 
-kafkaCfg = DBOS.configureInstance(KafkaProduceStep, 'defKafka', kafkaConfig, defTopic, {
+kafkaCfg = new KafkaProduceStep('defKafka', kafkaConfig, defTopic, {
   createPartitioner: Partitioners.DefaultPartitioner,
 });
 ```

@@ -34,7 +34,7 @@ describe('sqs-tests', () => {
       // This would normally be a global or static or something
       const [cfg, rtCfg] = parseConfigFile({ configfile: 'sqs-test-dbos-config.yaml' });
       DBOS.setConfig(cfg, rtCfg);
-      sqsCfg = DBOS.configureInstance(DBOS_SQS, 'default', {
+      sqsCfg = new DBOS_SQS('default', {
         awscfgname: 'aws_config',
         queueUrl: process.env['SQS_QUEUE_URL'],
       });

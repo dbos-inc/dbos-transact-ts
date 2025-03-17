@@ -2,7 +2,8 @@
 {
   "extends": "../../tsconfig.shared.json",
   "compilerOptions": {
-    "outDir": "./dist"
+    "outDir": "./dist",
+    "resolveJsonModule": true
   },
   "include": [/* Specifies an array of filenames or patterns to include in the program. */ "."],
   "exclude": ["dist"]

@@ -44,7 +44,7 @@ import { DBOS_SQS } from '@dbos-inc/dbos-sqs';
 `DBOS_SQS` is a configured class. This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
 
 ```typescript
-const sqsCfg = configureInstance(DBOS_SQS, 'default', { awscfgname: 'aws_config' });
+const sqsCfg = new DBOS_SQS('default', { awscfgname: 'aws_config' });
 ```
 
 ### Sending With Standard Queues

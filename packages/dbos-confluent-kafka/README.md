@@ -40,7 +40,7 @@ const kafkaConfig: KafkaConfig = {
   logLevel: logLevel.INFO, // FOR TESTING
 };
 
-kafkaCfg = DBOS.configureInstance(KafkaProducer, 'defKafka', kafkaConfig, kafkaTopic);
+kafkaCfg = new KafkaProducer('defKafka', kafkaConfig, kafkaTopic);
 ```
 
 ### Sending

@@ -168,9 +168,11 @@ describe('workflow-management-tests', () => {
   });
 
   test('getworkflows-with-limit', async () => {
-    let response = await request(testRuntime.getHandlersCallback()).post('/workflow/alice');
+    const workflowIDs: string[] = [];
+    let response = await request(testRuntime.getHandlersCallback()).post('/workflow_get_id');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
+    expect(response.text.length).toBeGreaterThan(0);
+    workflowIDs.push(response.text);
 
     const input: GetWorkflowsInput = {
       limit: 10,
@@ -180,19 +182,66 @@ describe('workflow-management-tests', () => {
     expect(response.statusCode).toBe(200);
     let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
-    const firstUUID = workflowUUIDs.workflowUUIDs[0];
+    expect(workflowUUIDs.workflowUUIDs[0]).toBe(workflowIDs[0]);
 
     for (let i = 0; i < 10; i++) {
-      response = await request(testRuntime.getHandlersCallback()).post('/workflow/alice');
+      response = await request(testRuntime.getHandlersCallback()).post('/workflow_get_id');
       expect(response.statusCode).toBe(200);
-      expect(response.text).toBe('alice');
+      expect(response.text.length).toBeGreaterThan(0);
+      workflowIDs.push(response.text);
     }
 
     response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
     workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
     expect(workflowUUIDs.workflowUUIDs.length).toBe(10);
-    expect(workflowUUIDs.workflowUUIDs).not.toContain(firstUUID);
+    for (let i = 0; i < 10; i++) {
+      // The order should be ascending by default
+      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[i]);
+    }
+
+    // Test sort_desc inverts the order
+    input.sortDesc = true;
+    response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(10);
+    for (let i = 0; i < 10; i++) {
+      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[10 - i]);
+    }
+
+    // Test LIMIT 2 OFFSET 2 returns the third and fourth workflows
+    input.limit = 2;
+    input.offset = 2;
+    input.sortDesc = false;
+    response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(2);
+    for (let i = 0; i < workflowUUIDs.workflowUUIDs.length; i++) {
+      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[i + 2]);
+    }
+
+    // Test OFFSET 10 returns the last workflow
+    input.offset = 10;
+    response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input });
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+    for (let i = 0; i < workflowUUIDs.workflowUUIDs.length; i++) {
+      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[i + 10]);
+    }
+
+    // Test search by workflow ID.
+    const wfidInput: GetWorkflowsInput = {
+      workflowIDs: [workflowIDs[5], workflowIDs[7]],
+    };
+    response = await request(testRuntime.getHandlersCallback()).post('/getWorkflows').send({ input: wfidInput });
+    expect(response.statusCode).toBe(200);
+    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
+    expect(workflowUUIDs.workflowUUIDs.length).toBe(2);
+    expect(workflowUUIDs.workflowUUIDs[0]).toBe(workflowIDs[5]);
+    expect(workflowUUIDs.workflowUUIDs[1]).toBe(workflowIDs[7]);
   });
 
   test('getworkflows-cli', async () => {
@@ -209,7 +258,7 @@ describe('workflow-management-tests', () => {
     const input: GetWorkflowsInput = {};
     const infos = await listWorkflows(config, input, false);
     expect(infos.length).toBe(2);
-    let info = infos[0] as WorkflowInformation;
+    let info = infos[0];
     expect(info.authenticatedUser).toBe('alice');
     expect(info.workflowName).toBe('testWorkflow');
     expect(info.status).toBe(StatusString.SUCCESS);
@@ -220,7 +269,7 @@ describe('workflow-management-tests', () => {
     expect(info.output).toBe('alice');
     expect(info.input).toEqual(['alice']);
 
-    info = infos[1] as WorkflowInformation;
+    info = infos[1];
     expect(info.authenticatedUser).toBe('alice');
     expect(info.workflowName).toBe('failWorkflow');
     expect(info.status).toBe(StatusString.ERROR);
@@ -232,7 +281,7 @@ describe('workflow-management-tests', () => {
     expect(info.output).toBeUndefined();
     expect(info.input).toEqual(['alice']);
 
-    const getInfo = (await getWorkflow(config, info.workflowUUID, false)) as WorkflowInformation;
+    const getInfo = await getWorkflow(config, info.workflowUUID, false);
     expect(info).toEqual(getInfo);
   });
 
@@ -359,6 +408,12 @@ describe('workflow-management-tests', () => {
       return Promise.resolve(name);
     }
 
+    @PostApi('/workflow_get_id')
+    @Workflow()
+    static async testWorkflowGetID(ctxt: WorkflowContext) {
+      return Promise.resolve(ctxt.workflowUUID);
+    }
+
     @PostApi('/fail/:name')
     @Workflow()
     static async failWorkflow(_ctxt: WorkflowContext, name: string) {
@@ -442,7 +497,7 @@ describe('test-list-queues', () => {
     }
 
     let input: GetQueuedWorkflowsInput = {};
-    let output: unknown[] = [];
+    let output: WorkflowInformation[] = [];
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
 
@@ -452,11 +507,25 @@ describe('test-list-queues', () => {
     };
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
+    for (let i = 0; i < TestListQueues.queuedSteps; i++) {
+      expect(output[i].input).toEqual([i]);
+    }
+
     input = {
       workflowName: 'no',
     };
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
+
+    // Test sortDesc reverts the order
+    input = {
+      sortDesc: true,
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(TestListQueues.queuedSteps);
+    for (let i = 0; i < TestListQueues.queuedSteps; i++) {
+      expect(output[i].input).toEqual([TestListQueues.queuedSteps - i - 1]);
+    }
 
     // Test startTime and endTime
     input = {
@@ -497,11 +566,26 @@ describe('test-list-queues', () => {
 
     // Test limit
     input = {
-      limit: 5,
+      limit: 2,
     };
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(input.limit);
+    for (let i = 0; i < input.limit!; i++) {
+      expect(output[i].input).toEqual([i]);
+    }
 
+    // Test offset
+    input = {
+      limit: 2,
+      offset: 2,
+    };
+    output = await listQueuedWorkflows(config, input, false);
+    expect(output.length).toBe(input.limit);
+    for (let i = 0; i < input.limit!; i++) {
+      expect(output[i].input).toEqual([i + 2]);
+    }
+
+    // Confirm the workflow finishes and nothing is in the queue afterwards
     TestListQueues.event.set();
     await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
 

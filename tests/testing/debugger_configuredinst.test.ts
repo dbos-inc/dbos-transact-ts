@@ -2,7 +2,6 @@ import {
   Step,
   StepContext,
   ConfiguredInstance,
-  configureInstance,
   InitContext,
   Transaction,
   TransactionContext,
@@ -57,7 +56,7 @@ class DebuggerCCTest extends ConfiguredInstance {
   }
 }
 
-const configR = configureInstance(DebuggerCCTest, 'configA');
+const configR = new DebuggerCCTest('configA');
 
 describe('debugger-test', () => {
   let config: DBOSConfig;

@@ -6,11 +6,12 @@ import {
   Workflow,
   WorkflowContext,
   WorkflowQueue,
-  configureInstance,
   createTestingRuntime,
+  parseConfigFile,
 } from '@dbos-inc/dbos-sdk';
 
 import { KafkaConfig, Kafka, KafkaConsume, logLevel, KafkaProduceStep, KafkaMessage, Partitioners } from './index';
+import { setUpDBOSTestDb } from '@dbos-inc/dbos-sdk/tests/helpers';
 
 import { Knex } from 'knex';
 
@@ -77,6 +78,8 @@ describe('kafka-tests', () => {
     // Check if Kafka is available, skip the test if it's not
     if (process.env['KAFKA_BROKER']) {
       kafkaIsAvailable = true;
+      const [config] = parseConfigFile({ configfile: 'kafkajs-test-dbos-config.yaml' });
+      await setUpDBOSTestDb(config);
     } else {
       kafkaIsAvailable = false;
     }
@@ -87,12 +90,13 @@ describe('kafka-tests', () => {
   beforeEach(async () => {
     if (kafkaIsAvailable) {
       // This would normally be a global or static or something
-      wfKafkaCfg = configureInstance(KafkaProduceStep, 'wfKafka', kafkaConfig, wfTopic, {
+      wfKafkaCfg = new KafkaProduceStep('wfKafka', kafkaConfig, wfTopic, {
         createPartitioner: Partitioners.DefaultPartitioner,
       });
-      txKafkaCfg = configureInstance(KafkaProduceStep, 'txKafka', kafkaConfig, txnTopic, {
+      txKafkaCfg = new KafkaProduceStep('txKafka', kafkaConfig, txnTopic, {
         createPartitioner: Partitioners.DefaultPartitioner,
       });
+
       testRuntime = await createTestingRuntime(undefined, 'kafkajs-test-dbos-config.yaml');
     }
   }, 30000);
