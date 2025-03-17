@@ -446,7 +446,7 @@ describe('workflow-management-tests', () => {
   }
 });
 
-/* describe('test-list-queues', () => {
+describe('test-list-queues', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -488,6 +488,8 @@ describe('workflow-management-tests', () => {
   }
 
   test('test-list-queues', async () => {
+    console.log('starting test-list-queues');
+
     const wfid = uuidv4();
 
     // Start the workflow. Wait for all five tasks to start. Verify that they started.
@@ -496,10 +498,14 @@ describe('workflow-management-tests', () => {
       await e.wait();
     }
 
+    console.log('workflow  started');
+
     let input: GetQueuedWorkflowsInput = {};
     let output: WorkflowInformation[] = [];
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
+
+    console.log('Done with first test');
 
     // Test workflowName
     input = {
@@ -511,11 +517,15 @@ describe('workflow-management-tests', () => {
       expect(output[i].input).toEqual([i]);
     }
 
+    console.log('Done with 2nd test');
+
     input = {
       workflowName: 'no',
     };
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
+
+    console.log('Done with 3rd test');
 
     // Test sortDesc reverts the order
     input = {
@@ -527,6 +537,8 @@ describe('workflow-management-tests', () => {
       expect(output[i].input).toEqual([TestListQueues.queuedSteps - i - 1]);
     }
 
+    console.log('Done with 3rd test');
+
     // Test startTime and endTime
     input = {
       startTime: new Date(Date.now() - 10000).toISOString(),
@@ -537,6 +549,8 @@ describe('workflow-management-tests', () => {
     input = {
       startTime: new Date(Date.now() + 10000).toISOString(),
     };
+
+    console.log('Done with 4th test');
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
 
@@ -549,6 +563,8 @@ describe('workflow-management-tests', () => {
     input = {
       status: 'SUCCESS',
     };
+
+    console.log('Done with 5th test');
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
 
@@ -558,9 +574,15 @@ describe('workflow-management-tests', () => {
     };
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
+
+    console.log('Done with 6rd test');
+
     input = {
       queueName: 'no',
     };
+
+    console.log('Done with 7th test');
+
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
 
@@ -574,6 +596,8 @@ describe('workflow-management-tests', () => {
       expect(output[i].input).toEqual([i]);
     }
 
+    console.log('Done with 8th test');
+
     // Test offset
     input = {
       limit: 2,
@@ -585,16 +609,18 @@ describe('workflow-management-tests', () => {
       expect(output[i].input).toEqual([i + 2]);
     }
 
+    console.log('Done with 9th test');
+
     // Confirm the workflow finishes and nothing is in the queue afterwards
     TestListQueues.event.set();
     await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
 
     input = {};
     await expect(listQueuedWorkflows(config, input, false)).resolves.toEqual([]);
-  });
-}); 
 
-*/
+    console.log('Done with 10th test');
+  });
+});
 
 describe('test-list-steps', () => {
   let config: DBOSConfig;
