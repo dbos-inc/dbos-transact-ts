@@ -18,8 +18,6 @@
     "lint": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
     "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles --testPathIgnorePatterns=packages/*",
-    "testload": "npm run build && jest --detectOpenHandles tests/badload.test.ts",
-    "testv2": "npm run build && jest --detectOpenHandles tests/contextfreeapi.test.ts",
     "prepare": "husky install"
   },
   "bin": {
