@@ -215,11 +215,13 @@ export class DBOS {
 
     DBOSExecutor.globalInstance.wfqEnded = wfQueueRunner.dispatchLoop(DBOSExecutor.globalInstance);
 
-    if (conductorParams) {
+    if (conductorParams && conductorParams.conductorKey) {
+      if (!conductorParams.conductorURL) {
+        const dbosDomain = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
+        conductorParams.conductorURL = `wss://${dbosDomain}/conductor/v1alpha1`;
+      }
       DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, conductorParams);
-      DBOS.conductor.dispatchLoop().catch((e) => {
-        console.error(`Error in conductor loop: ${(e as Error).message}`);
-      });
+      DBOS.conductor.dispatchLoop();
     }
 
     for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
