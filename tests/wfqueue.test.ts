@@ -70,7 +70,7 @@ describe('queued-wf-tests-simple', () => {
     await DBOS.shutdown();
   }, 20000);
 
-  /* test('simple-queue', async () => {
+  test('simple-queue', async () => {
     const wfid = uuidv4();
     TestWFs.wfid = wfid;
 
@@ -90,6 +90,7 @@ describe('queued-wf-tests-simple', () => {
     expect((await wfh.getStatus())?.queueName).toBe('testQ');
   });
 
+  /*
   test('one-at-a-time', async () => {
     await runOneAtATime(serialqueue);
   }, 10000);
