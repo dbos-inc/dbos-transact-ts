@@ -184,7 +184,7 @@ describe('recovery-tests', () => {
     );
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
-  }, 20000);
+  }, 10000);
 
   test('local-recovery', async () => {
     LocalRecovery.cnt = 0;

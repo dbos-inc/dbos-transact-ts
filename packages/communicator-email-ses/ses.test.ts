@@ -32,7 +32,7 @@ describe('ses-tests', () => {
     if (sesIsAvailable) {
       await DBOS.shutdown();
     }
-  }, 20000);
+  }, 10000);
 
   test('ses-send', async () => {
     if (!sesIsAvailable || !sesCfg) {

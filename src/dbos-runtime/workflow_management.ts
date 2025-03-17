@@ -17,19 +17,12 @@ export async function listWorkflows(
     createLogger() as unknown as GlobalLogger,
   );
 
-  try {
-    const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs;
-    const workflowInfos = await Promise.all(
-      workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
-    );
-
-    return workflowInfos;
-  } catch (e) {
-    console.log(e);
-    return [];
-  } finally {
-    await systemDatabase.destroy();
-  }
+  const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs;
+  const workflowInfos = await Promise.all(
+    workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
+  );
+  await systemDatabase.destroy();
+  return workflowInfos;
 }
 
 export async function listQueuedWorkflows(
@@ -43,18 +36,12 @@ export async function listQueuedWorkflows(
     createLogger() as unknown as GlobalLogger,
   );
 
-  try {
-    const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs.reverse(); // Reverse so most recent entries are printed last
-    const workflowInfos = await Promise.all(
-      workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
-    );
-    return workflowInfos;
-  } catch (e) {
-    console.log(e);
-    return [];
-  } finally {
-    await systemDatabase.destroy();
-  }
+  const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs.reverse(); // Reverse so most recent entries are printed last
+  const workflowInfos = await Promise.all(
+    workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
+  );
+  await systemDatabase.destroy();
+  return workflowInfos;
 }
 
 export async function listWorkflowSteps(config: DBOSConfig, workflowUUID: string) {
@@ -63,16 +50,9 @@ export async function listWorkflowSteps(config: DBOSConfig, workflowUUID: string
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
-
-  try {
-    const workflowSteps = await systemDatabase.getWorkflowSteps(workflowUUID);
-    return workflowSteps;
-  } catch (e) {
-    console.log(e);
-    return { workflow_uuid: workflowUUID, steps: [] };
-  } finally {
-    await systemDatabase.destroy();
-  }
+  const workflowSteps = await systemDatabase.getWorkflowSteps(workflowUUID);
+  await systemDatabase.destroy();
+  return workflowSteps;
 }
 
 export type WorkflowInformation = Omit<WorkflowStatus, 'request'> & {
@@ -119,12 +99,10 @@ export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getR
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
-  try {
-    const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest);
-    return info;
-  } finally {
-    await systemDatabase.destroy();
-  }
+
+  const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest);
+  await systemDatabase.destroy();
+  return info;
 }
 
 export async function cancelWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {

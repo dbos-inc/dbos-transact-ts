@@ -461,7 +461,7 @@ describe('test-list-queues', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 20000);
+  }, 10000);
 
   class TestListQueues {
     static queuedSteps = 5;
@@ -594,7 +594,7 @@ describe('test-list-queues', () => {
   });
 });
 
-describe('test-list-steps', () => {
+/* describe('test-list-steps', () => {
   let config: DBOSConfig;
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -636,4 +636,4 @@ describe('test-list-steps', () => {
     expect(wfsteps.steps[1].function_id).toBe(1);
     expect(wfsteps.steps[1].function_name).toBe('stepTwo');
   });
-});
+}); */

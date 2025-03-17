@@ -14,7 +14,7 @@ describe('test-app-version', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 20000);
+  }, 10000);
 
   test('test-app-version-stability', async () => {
     function isHex(s: string): boolean {

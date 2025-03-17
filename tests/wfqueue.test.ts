@@ -68,7 +68,7 @@ describe('queued-wf-tests-simple', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 20000);
+  }, 10000);
 
   test('simple-queue', async () => {
     const wfid = uuidv4();
@@ -90,7 +90,6 @@ describe('queued-wf-tests-simple', () => {
     expect((await wfh.getStatus())?.queueName).toBe('testQ');
   });
 
-  /*
   test('one-at-a-time', async () => {
     await runOneAtATime(serialqueue);
   }, 10000);
@@ -245,51 +244,51 @@ describe('queued-wf-tests-simple', () => {
     expect(await wfh1b.getResult()).toBe('ab');
     expect(await wfh2b.getResult()).toBe('cd');
   }, 10000);
-  */
-  /* MJJJ -- really commented out for now 
-    // Current result: WF1 does get created in system DB, but never starts running.
-    //  WF2 does run.
-    test("test_one_at_a_time_with_crash2", async() => {
-        let wfqRes: () => void = () => { };
-        const _wfqPromise = new Promise<void>((resolve, _rj) => { wfqRes = resolve; });
 
-        setDebugTrigger(DEBUG_TRIGGER_WORKFLOW_ENQUEUE, {
-            callback: () => {
-                wfqRes();
-                throw new Error("Interrupt start workflow here");
-            }
-        });
+  // Current result: WF1 does get created in system DB, but never starts running.
+  //  WF2 does run.
+  test('test_one_at_a_time_with_crash2', async () => {
+    let wfqRes: () => void = () => {};
+    const _wfqPromise = new Promise<void>((resolve, _rj) => {
+      wfqRes = resolve;
+    });
 
-        const wfid1 = 'thisworkflowgetshit';
-        console.log("Start WF1");
-        try {
-            const _wfh1 = await testRuntime.startWorkflow(TestWFs, {workflowID: wfid1, queueName: serialqueue.name}).testWorkflowSimple('a','b');
-        }
-        catch(e) {
-            // Expected
-            const err = e as Error;
-            expect(err.message.includes('Interrupt')).toBeTruthy();
-            console.log("Expected error caught");
-        }
-        console.log("Destroy runtime");
-        await testRuntime.destroy();
-        clearDebugTriggers();
-        console.log("New runtime");
-        testRuntime = await createInternalTestRuntime(undefined, config);
-        console.log("Start WF2");
-        const wfh2 = await DBOS.startWorkflow(TestWFs, {queueName: serialqueue.name}).testWorkflowSimple('c','d');
+    setDebugTrigger(DEBUG_TRIGGER_WORKFLOW_ENQUEUE, {
+      callback: () => {
+        wfqRes();
+        throw new Error('Interrupt start workflow here');
+      },
+    });
 
-        const wfh1b = testRuntime.retrieveWorkflow(wfid1);
-        const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
-        console.log("Wait");
-        expect (await wfh2b.getResult()).toBe('cd');
-        // Current behavior (undesired) WF1 got created but will stay ENQUEUED and not get run.
-        expect((await wfh1b.getStatus())?.status).toBe('SUCCESS');
-        expect (await wfh1b.getResult()).toBe('ab');
-    }, 10000);
-    */
+    const wfid1 = 'thisworkflowgetshit';
+    console.log('Start WF1');
+    try {
+      const _wfh1 = await testRuntime
+        .startWorkflow(TestWFs, { workflowID: wfid1, queueName: serialqueue.name })
+        .testWorkflowSimple('a', 'b');
+    } catch (e) {
+      // Expected
+      const err = e as Error;
+      expect(err.message.includes('Interrupt')).toBeTruthy();
+      console.log('Expected error caught');
+    }
+    console.log('Destroy runtime');
+    await testRuntime.destroy();
+    clearDebugTriggers();
+    console.log('New runtime');
+    testRuntime = await createInternalTestRuntime(undefined, config);
+    console.log('Start WF2');
+    const wfh2 = await DBOS.startWorkflow(TestWFs, { queueName: serialqueue.name }).testWorkflowSimple('c', 'd');
 
-  /*  
+    const wfh1b = testRuntime.retrieveWorkflow(wfid1);
+    const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
+    console.log('Wait');
+    expect(await wfh2b.getResult()).toBe('cd');
+    // Current behavior (undesired) WF1 got created but will stay ENQUEUED and not get run.
+    expect((await wfh1b.getStatus())?.status).toBe('SUCCESS');
+    expect(await wfh1b.getResult()).toBe('ab');
+  }, 10000);
+
   test('queue workflow in recovered workflow', async () => {
     expect(WF.x).toBe(5);
     console.log('shutdown');
@@ -323,7 +322,7 @@ describe('queued-wf-tests-simple', () => {
 
     expect((await wfh.getStatus())?.status).toBe('SUCCESS');
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }, 60000); */
+  }, 60000);
 
   class TestDuplicateID {
     @DBOS.workflow()
@@ -363,8 +362,6 @@ describe('queued-wf-tests-simple', () => {
     }
   }
 
-  /*
-
   test('duplicate-workflow-id', async () => {
     const wfid = uuidv4();
     const handle1 = await DBOS.startWorkflow(TestDuplicateID, { workflowID: wfid }).testWorkflow('abc');
@@ -397,7 +394,7 @@ describe('queued-wf-tests-simple', () => {
     // Call with a different input would generate a warning, but still use the recorded input.
     const handle3 = await DBOS.startWorkflow(TestDuplicateID, { workflowID: wfid }).testWorkflow('def');
     await expect(handle3.getResult()).resolves.toBe('abc');
-  }); */
+  });
 
   class TestQueueRecovery {
     static queuedSteps = 5;
@@ -438,7 +435,6 @@ describe('queued-wf-tests-simple', () => {
     }
   }
 
-  /*
   test('test-queue-recovery', async () => {
     const wfid = uuidv4();
 
@@ -561,7 +557,7 @@ describe('queued-wf-tests-simple', () => {
     } finally {
       await systemDBClient.end();
     }
-  }, 20000); */
+  }, 10000);
 
   class TestCancelQueues {
     static startEvent = new Event();
@@ -580,7 +576,6 @@ describe('queued-wf-tests-simple', () => {
     }
   }
 
-  /*
   test('test-cancel-queues', async () => {
     const wfid = uuidv4();
 
@@ -615,7 +610,7 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }); */
+  });
 
   class TestResumeQueues {
     static startEvent = new Event();
@@ -634,7 +629,6 @@ describe('queued-wf-tests-simple', () => {
     }
   }
 
-  /*
   test('test-resume-queues', async () => {
     const wfid = uuidv4();
 
@@ -673,7 +667,7 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }); */
+  });
 });
 
 // dummy declaration to match the workflow in tests/wfqueueworker.ts
@@ -842,7 +836,6 @@ class InterProcessWorkflow {
   }
 }
 
-/*
 describe('queued-wf-tests-concurrent-workers', () => {
   let config: DBOSConfig;
 
@@ -866,7 +859,7 @@ describe('queued-wf-tests-concurrent-workers', () => {
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 60000);
 });
-*/
+
 class TestWFs {
   static wfCounter = 0;
   static stepCounter = 0;
@@ -963,7 +956,7 @@ class TestChildWFs {
   }
 }
 
-/* async function runOneAtATime(queue: WorkflowQueue) {
+async function runOneAtATime(queue: WorkflowQueue) {
   let wfRes: () => void = () => {};
   TestWFs2.wfPromise = new Promise<void>((resolve, _rj) => {
     wfRes = resolve;
@@ -984,4 +977,4 @@ class TestChildWFs {
   expect(TestWFs2.flag).toBeTruthy();
   expect(TestWFs2.wfCounter).toBe(1);
   expect(await queueEntriesAreCleanedUp()).toBe(true);
-} */
+}
