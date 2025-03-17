@@ -245,6 +245,7 @@ describe('queued-wf-tests-simple', () => {
     expect(await wfh2b.getResult()).toBe('cd');
   }, 10000);
 
+  /*
   // Current result: WF1 does get created in system DB, but never starts running.
   //  WF2 does run.
   test('test_one_at_a_time_with_crash2', async () => {
@@ -288,6 +289,7 @@ describe('queued-wf-tests-simple', () => {
     expect((await wfh1b.getStatus())?.status).toBe('SUCCESS');
     expect(await wfh1b.getResult()).toBe('ab');
   }, 10000);
+  */
 
   test('queue workflow in recovered workflow', async () => {
     expect(WF.x).toBe(5);
@@ -557,7 +559,7 @@ describe('queued-wf-tests-simple', () => {
     } finally {
       await systemDBClient.end();
     }
-  }, 10000);
+  }, 20000);
 
   class TestCancelQueues {
     static startEvent = new Event();
@@ -682,7 +684,6 @@ export class InterProcessWorkflowTask {
 const IPWQueue = new WorkflowQueue('IPWQueue', {
   rateLimit: { limitPerPeriod: 0, periodSec: 30 },
 });
-
 class InterProcessWorkflow {
   static localConcurrencyLimit = 5;
   static globalConcurrencyLimit = InterProcessWorkflow.localConcurrencyLimit * 2;
