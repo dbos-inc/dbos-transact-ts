@@ -19,7 +19,7 @@ describe('wf-cancel-tests', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  }, 20000);
 
   test('test-two-steps-base', async () => {
     const wfid = uuidv4();

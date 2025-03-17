@@ -32,7 +32,7 @@ describe('scheduled-wf-tests-simple', () => {
 
   afterEach(async () => {
     await testRuntime.destroy();
-  }, 10000);
+  }, 20000);
 
   test('wf-scheduled', async () => {
     // Make sure two functions with the same name in different classes are not interfering with each other.

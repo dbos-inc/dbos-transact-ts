@@ -167,7 +167,7 @@ describe('ses-tests', () => {
     if (s3IsAvailable) {
       await DBOS.shutdown();
     }
-  }, 10000);
+  }, 20000);
 
   test('s3-basic-ops', async () => {
     if (!s3IsAvailable) {

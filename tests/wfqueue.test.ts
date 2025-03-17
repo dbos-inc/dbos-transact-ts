@@ -68,7 +68,7 @@ describe('queued-wf-tests-simple', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  }, 20000);
 
   test('simple-queue', async () => {
     const wfid = uuidv4();

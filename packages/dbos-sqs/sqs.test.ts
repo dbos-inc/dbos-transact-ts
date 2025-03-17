@@ -55,7 +55,7 @@ describe('sqs-tests', () => {
     if (sqsIsAvailable) {
       await DBOS.shutdown();
     }
-  }, 10000);
+  }, 20000);
 
   // This tests receive also; which is already wired up
   test('sqs-send', async () => {

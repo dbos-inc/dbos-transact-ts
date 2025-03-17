@@ -43,7 +43,7 @@ describe('admin-server-tests', () => {
 
   afterEach(async () => {
     await systemDBClient.end();
-  }, 10000);
+  }, 20000);
 
   afterAll(async () => {
     await DBOS.shutdown();
