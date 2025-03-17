@@ -34,6 +34,19 @@ export async function listQueuedWorkflows(config: DBOSConfig, input: GetQueuedWo
   return workflowInfos;
 }
 
+export async function listWorkflowSteps(config: DBOSConfig, workflowUUID: string) {
+  const systemDatabase = new PostgresSystemDatabase(
+    config.poolConfig,
+    config.system_database,
+    createLogger() as unknown as GlobalLogger,
+  );
+
+  const workflowSteps = await systemDatabase.getWorkflowSteps(workflowUUID);
+
+  await systemDatabase.destroy();
+  return workflowSteps;
+}
+
 export type WorkflowInformation = Omit<WorkflowStatus, 'request'> & {
   workflowUUID: string;
   input?: unknown[];

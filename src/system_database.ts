@@ -27,6 +27,8 @@ import {
   workflow_inputs,
   workflow_queue,
   event_dispatch_kv,
+  step_function,
+  workflow_steps,
 } from '../schemas/system_db_schema';
 import { sleepms, findPackageRoot, DBOSJSON, globalParams } from './utils';
 import { HTTPRequest } from './context';
@@ -579,6 +581,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } else {
       return DBOSJSON.parse(rows[0].output) as R;
     }
+  }
+
+  async getWorkflowSteps(workflowUUID: string): Promise<workflow_steps> {
+    const { rows } = await this.pool.query<step_function>(
+      `SELECT function_id, function_name FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
+      [workflowUUID],
+    );
+
+    const workflow_steps: workflow_steps = {
+      workflow_uuid: workflowUUID,
+      steps: rows,
+    };
+
+    return workflow_steps;
   }
 
   async recordOperationOutput<R>(
