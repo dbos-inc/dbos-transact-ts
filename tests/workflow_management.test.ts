@@ -22,6 +22,7 @@ import {
   getWorkflow,
   listWorkflows,
   listQueuedWorkflows,
+  listWorkflowSteps,
 } from '../src/dbos-runtime/workflow_management';
 import { Client } from 'pg';
 import { Knex } from 'knex';
