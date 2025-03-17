@@ -594,7 +594,9 @@ describe('workflow-management-tests', () => {
   });
 }); 
 
-/* describe('test-list-steps', () => {
+*/
+
+describe('test-list-steps', () => {
   let config: DBOSConfig;
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -636,4 +638,4 @@ describe('workflow-management-tests', () => {
     expect(wfsteps.steps[1].function_id).toBe(1);
     expect(wfsteps.steps[1].function_name).toBe('stepTwo');
   });
-}); */
+});
