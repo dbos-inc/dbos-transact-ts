@@ -552,7 +552,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     } catch (err) {
       const e = err as Error;
-      this.logger.error('Error destroying DBOSExecutor: ' + e);
       this.logger.error(e.stack);
     }
   }
