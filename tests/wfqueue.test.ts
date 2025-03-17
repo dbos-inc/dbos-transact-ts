@@ -249,6 +249,7 @@ describe('queued-wf-tests-simple', () => {
     test("test_one_at_a_time_with_crash2", async() => {
         let wfqRes: () => void = () => { };
         const _wfqPromise = new Promise<void>((resolve, _rj) => { wfqRes = resolve; });
+
         setDebugTrigger(DEBUG_TRIGGER_WORKFLOW_ENQUEUE, {
             callback: () => {
                 wfqRes();
@@ -274,6 +275,7 @@ describe('queued-wf-tests-simple', () => {
         testRuntime = await createInternalTestRuntime(undefined, config);
         console.log("Start WF2");
         const wfh2 = await DBOS.startWorkflow(TestWFs, {queueName: serialqueue.name}).testWorkflowSimple('c','d');
+        
         const wfh1b = testRuntime.retrieveWorkflow(wfid1);
         const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
         console.log("Wait");

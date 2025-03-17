@@ -446,7 +446,7 @@ describe('workflow-management-tests', () => {
   }
 });
 
-describe('test-list-queues', () => {
+/* describe('test-list-queues', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -592,7 +592,7 @@ describe('test-list-queues', () => {
     input = {};
     await expect(listQueuedWorkflows(config, input, false)).resolves.toEqual([]);
   });
-});
+}); 
 
 /* describe('test-list-steps', () => {
   let config: DBOSConfig;

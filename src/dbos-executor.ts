@@ -553,6 +553,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } catch (err) {
       const e = err as Error;
       this.logger.error(e.stack);
+      throw err;
     }
   }
 

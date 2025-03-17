@@ -184,6 +184,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
       const e = err as Error;
       console.error(`Error destroying testing runtime: ${e.message}`);
       console.error(e.stack);
+      throw err;
     }
   }
 
