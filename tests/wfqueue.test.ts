@@ -13,8 +13,6 @@ import { Client } from 'pg';
 
 const execFileAsync = promisify(execFile);
 
-// fake change to create a PR and run tests with  no new changes
-
 import {
   clearDebugTriggers,
   DEBUG_TRIGGER_WORKFLOW_QUEUE_START,
@@ -246,50 +244,45 @@ describe('queued-wf-tests-simple', () => {
   }, 10000);
 
   /*
-  // Current result: WF1 does get created in system DB, but never starts running.
-  //  WF2 does run.
-  test('test_one_at_a_time_with_crash2', async () => {
-    let wfqRes: () => void = () => {};
-    const _wfqPromise = new Promise<void>((resolve, _rj) => {
-      wfqRes = resolve;
-    });
+    // Current result: WF1 does get created in system DB, but never starts running.
+    //  WF2 does run.
+    test("test_one_at_a_time_with_crash2", async() => {
+        let wfqRes: () => void = () => { };
+        const _wfqPromise = new Promise<void>((resolve, _rj) => { wfqRes = resolve; });
+        setDebugTrigger(DEBUG_TRIGGER_WORKFLOW_ENQUEUE, {
+            callback: () => {
+                wfqRes();
+                throw new Error("Interrupt start workflow here");
+            }
+        });
 
-    setDebugTrigger(DEBUG_TRIGGER_WORKFLOW_ENQUEUE, {
-      callback: () => {
-        wfqRes();
-        throw new Error('Interrupt start workflow here');
-      },
-    });
-
-    const wfid1 = 'thisworkflowgetshit';
-    console.log('Start WF1');
-    try {
-      const _wfh1 = await testRuntime
-        .startWorkflow(TestWFs, { workflowID: wfid1, queueName: serialqueue.name })
-        .testWorkflowSimple('a', 'b');
-    } catch (e) {
-      // Expected
-      const err = e as Error;
-      expect(err.message.includes('Interrupt')).toBeTruthy();
-      console.log('Expected error caught');
-    }
-    console.log('Destroy runtime');
-    await testRuntime.destroy();
-    clearDebugTriggers();
-    console.log('New runtime');
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    console.log('Start WF2');
-    const wfh2 = await DBOS.startWorkflow(TestWFs, { queueName: serialqueue.name }).testWorkflowSimple('c', 'd');
-
-    const wfh1b = testRuntime.retrieveWorkflow(wfid1);
-    const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
-    console.log('Wait');
-    expect(await wfh2b.getResult()).toBe('cd');
-    // Current behavior (undesired) WF1 got created but will stay ENQUEUED and not get run.
-    expect((await wfh1b.getStatus())?.status).toBe('SUCCESS');
-    expect(await wfh1b.getResult()).toBe('ab');
-  }, 10000);
-  */
+        const wfid1 = 'thisworkflowgetshit';
+        console.log("Start WF1");
+        try {
+            const _wfh1 = await testRuntime.startWorkflow(TestWFs, {workflowID: wfid1, queueName: serialqueue.name}).testWorkflowSimple('a','b');
+        }
+        catch(e) {
+            // Expected
+            const err = e as Error;
+            expect(err.message.includes('Interrupt')).toBeTruthy();
+            console.log("Expected error caught");
+        }
+        console.log("Destroy runtime");
+        await testRuntime.destroy();
+        clearDebugTriggers();
+        console.log("New runtime");
+        testRuntime = await createInternalTestRuntime(undefined, config);
+        console.log("Start WF2");
+        const wfh2 = await DBOS.startWorkflow(TestWFs, {queueName: serialqueue.name}).testWorkflowSimple('c','d');
+        const wfh1b = testRuntime.retrieveWorkflow(wfid1);
+        const wfh2b = testRuntime.retrieveWorkflow(wfh2.workflowID);
+        console.log("Wait");
+        expect (await wfh2b.getResult()).toBe('cd');
+        // Current behavior (undesired) WF1 got created but will stay ENQUEUED and not get run.
+        expect((await wfh1b.getStatus())?.status).toBe('SUCCESS');
+        expect (await wfh1b.getResult()).toBe('ab');
+    }, 10000);
+    */
 
   test('queue workflow in recovered workflow', async () => {
     expect(WF.x).toBe(5);

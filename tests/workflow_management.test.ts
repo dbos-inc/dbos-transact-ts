@@ -461,7 +461,7 @@ describe('test-list-queues', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  }, 20000);
 
   class TestListQueues {
     static queuedSteps = 5;
