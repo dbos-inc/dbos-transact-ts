@@ -526,28 +526,36 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async destroy() {
-    if (this.pendingWorkflowMap.size > 0) {
-      this.logger.info('Waiting for pending workflows to finish.');
-      await Promise.allSettled(this.pendingWorkflowMap.values());
-    }
-    clearInterval(this.flushBufferID);
-    if (!this.isDebugging && !this.isFlushingBuffers) {
-      // Don't flush the buffers if we're already flushing them in the background.
-      await this.flushWorkflowBuffers();
-    }
-    while (this.isFlushingBuffers) {
-      this.logger.info('Waiting for result buffers to be exported.');
-      await sleepms(1000);
-    }
-    await this.systemDatabase.destroy();
-    if (this.userDatabase) {
-      await this.userDatabase.destroy();
-    }
-    await this.procedurePool.end();
-    await this.logger.destroy();
+    try {
+      if (this.pendingWorkflowMap.size > 0) {
+        this.logger.info('Waiting for pending workflows to finish.');
+        await Promise.allSettled(this.pendingWorkflowMap.values());
+      }
+      clearInterval(this.flushBufferID);
+      if (!this.isDebugging && !this.isFlushingBuffers) {
+        // Don't flush the buffers if we're already flushing them in the background.
+        await this.flushWorkflowBuffers();
+      }
+      while (this.isFlushingBuffers) {
+        this.logger.info('Waiting for result buffers to be exported.');
+        await sleepms(1000);
+      }
+      await this.systemDatabase.destroy();
+      if (this.userDatabase) {
+        await this.userDatabase.destroy();
+      }
+      await this.procedurePool.end();
+      await this.logger.destroy();
 
-    if (DBOSExecutor.globalInstance === this) {
-      DBOSExecutor.globalInstance = undefined;
+      if (DBOSExecutor.globalInstance === this) {
+        DBOSExecutor.globalInstance = undefined;
+      }
+    } catch (err) {
+      const e = err as Error;
+      this.logger.error('Error destroying DBOSExecutor: ' + e);
+      this.logger.error(e.stack);
+    } finally {
+      await this.systemDatabase.destroy();
     }
   }
 
