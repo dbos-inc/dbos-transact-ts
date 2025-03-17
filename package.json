@@ -83,6 +83,7 @@
     "serialize-error": "8.1.0",
     "uuid": "9.0.1",
     "validator": "^13.12.0",
+    "websocket": "^1.0.35",
     "winston": "3.17.0",
     "winston-transport": "4.7.0",
     "yaml": "2.4.1"

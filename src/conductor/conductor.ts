@@ -23,10 +23,10 @@ export class Conductor {
     this.isRunning = true;
     while (this.isRunning) {
       try {
-        this.dbosExec.logger.info(`Connecting to conductor at ${this.url}`);
-        await sleepms(1000);
+        this.dbosExec.logger.debug(`Connecting to conductor at ${this.url}`);
       } catch (e) {
         this.dbosExec.logger.error(`Error in conductor loop: ${(e as Error).message}`);
+        await sleepms(1000);
       }
     }
   }
