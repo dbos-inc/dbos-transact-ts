@@ -7,8 +7,8 @@ database:
   hostname: 'localhost'
   port: 5432
   username: 'postgres'
+  app_db_name: 'kafkajstest'
   password: ${PGPASSWORD}
-  app_db_name: 'postgres'
   connectionTimeoutMillis: 3000
   app_db_client: 'knex'
   migrate:
