@@ -34,6 +34,7 @@ export interface ConductorParams {
 export class Conductor {
   url: string;
   websocket: WebSocket | undefined = undefined;
+  isShuttingDown = false;
   isClosed = false;
 
   constructor(
@@ -197,8 +198,19 @@ export class Conductor {
       });
 
       this.websocket.on('close', () => {
-        this.dbosExec.logger.info('Conductor connection terminated');
-        this.isClosed = true;
+        if (this.isShuttingDown) {
+          this.dbosExec.logger.info('Shutdown Conductor connection');
+          this.isClosed = true;
+          return;
+        } else {
+          // Try to reconnect
+          this.dbosExec.logger.error('Connection to conductor lost. Reconnecting.');
+          setTimeout(() => {
+            this.websocket?.terminate();
+            this.websocket = undefined;
+            this.dispatchLoop();
+          }, 1000);
+        }
       });
 
       this.websocket.on('error', (err) => {
@@ -222,6 +234,7 @@ export class Conductor {
   }
 
   stop() {
+    this.isShuttingDown = true;
     if (this.websocket) {
       this.websocket.close();
     }
