@@ -493,6 +493,7 @@ export class DBOS {
     return await DBOS.executor.getWorkflowQueue(input);
   }
 
+  // durable sleep when called from within workflows
   static async sleepms(durationMS: number): Promise<void> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       if (DBOS.isInTransaction()) {
