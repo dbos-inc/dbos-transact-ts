@@ -1,20 +1,10 @@
-import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, InitContext } from '../src';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb, Event, queueEntriesAreCleanedUp } from './helpers';
+import { DBOS, ConfiguredInstance, InitContext } from '../src';
+import { DBOSConfig } from '../src/dbos-executor';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { WorkflowQueue } from '../src';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
-const serialqueueLimited = new WorkflowQueue('serialQL', {
-  concurrency: 1,
-  rateLimit: { limitPerPeriod: 10, periodSec: 1 },
-});
-const childqueue = new WorkflowQueue('childQ', 3);
-const workerConcurrencyQueue = new WorkflowQueue('workerQ', { workerConcurrency: 1 });
-
-const qlimit = 5;
-const qperiod = 2;
-const rlqueue = new WorkflowQueue('limited_queue', undefined, { limitPerPeriod: qlimit, periodSec: qperiod });
 
 class InstanceStepTx extends ConfiguredInstance {
   constructor() {
