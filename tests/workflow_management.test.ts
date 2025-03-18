@@ -509,9 +509,7 @@ describe('test-list-queues', () => {
     };
 
     output = await listQueuedWorkflows(config, input, false);
-    console.log(output);
     expect(output.length).toBe(TestListQueues.queuedSteps);
-    console.log(output);
     for (let i = 0; i < TestListQueues.queuedSteps; i++) {
       expect(output[i].input).toEqual([i]);
     }
@@ -636,6 +634,7 @@ describe('test-list-steps', () => {
   test('test-list-steps', async () => {
     const wfid = uuidv4();
     await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
+    DBOS.sleepSeconds(1);
     const wfsteps = await listWorkflowSteps(config, wfid);
     console.log(wfsteps);
     expect(wfsteps.workflow_uuid).toBe(wfid);
