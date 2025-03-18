@@ -645,13 +645,13 @@ describe('test-list-steps', () => {
 
     @DBOS.workflow()
     static async setEventWorkflow() {
-      const msg = await DBOS.setEvent('key', 'value');
+      await DBOS.setEvent('key', 'value');
     }
   }
   test('test-list-steps', async () => {
     const wfid = uuidv4();
-    await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
-    await DBOS.sleep(2000);
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
+    await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.workflow_uuid).toBe(wfid);
     expect(wfsteps.steps.length).toBe(3);
@@ -665,12 +665,12 @@ describe('test-list-steps', () => {
 
   test('test-send-recv', async () => {
     const wfid1 = uuidv4();
-    await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).recvWorkflow('message1');
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).recvWorkflow('message1');
 
     const wfid2 = uuidv4();
     await DBOS.startWorkflow(TestListSteps, { workflowID: wfid2 }).sendWorkflow(wfid1);
 
-    await DBOS.sleep(2000);
+    await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid1);
     console.log(wfsteps);
     expect(wfsteps.workflow_uuid).toBe(wfid1);
@@ -686,9 +686,8 @@ describe('test-list-steps', () => {
 
   test('test-setEvent', async () => {
     const wfid = uuidv4();
-    await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).setEventWorkflow();
-
-    await DBOS.sleep(1000);
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).setEventWorkflow();
+    await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     console.log(wfsteps);
     expect(wfsteps.workflow_uuid).toBe(wfid);
