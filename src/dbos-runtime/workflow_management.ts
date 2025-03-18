@@ -36,7 +36,7 @@ export async function listQueuedWorkflows(
     createLogger() as unknown as GlobalLogger,
   );
 
-  const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs.reverse(); // Reverse so most recent entries are printed last
+  const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs; // Reverse so most recent entries are printed last
   const workflowInfos = await Promise.all(
     workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
   );
