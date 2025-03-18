@@ -28,17 +28,23 @@ class InstanceStepTx extends ConfiguredInstance {
   }
 
   @DBOS.step()
-  async testStep(arg: string): Promise<void> {
+  async testStep(arg: string, rv?: string, id?: string): Promise<string> {
     expect(arg).toBe('a');
+    if (id) {
+      expect(DBOS.workflowID).toBe(id);
+    }
     ++InstanceStepTx.stepCnt;
-    return Promise.resolve();
+    return Promise.resolve(rv ?? '');
   }
 
   @DBOS.transaction()
-  async testTx(arg: string): Promise<void> {
+  async testTx(arg: string, rv?: string, id?: string): Promise<string> {
     expect(arg).toBe('a');
+    if (id) {
+      expect(DBOS.workflowID).toBe(id);
+    }
     ++InstanceStepTx.txCnt;
-    return Promise.resolve();
+    return Promise.resolve(rv ?? '');
   }
 
   static stepCnt = 0;
@@ -61,17 +67,23 @@ class StaticStepTx extends ConfiguredInstance {
   }
 
   @DBOS.step()
-  static async testStep(arg: string): Promise<void> {
+  static async testStep(arg: string, rv?: string, id?: string): Promise<string> {
     expect(arg).toBe('a');
+    if (id) {
+      expect(DBOS.workflowID).toBe(id);
+    }
     ++StaticStepTx.stepCnt;
-    return Promise.resolve();
+    return Promise.resolve(rv ?? '');
   }
 
   @DBOS.transaction()
-  static async testTx(arg: string): Promise<void> {
+  static async testTx(arg: string, rv?: string, id?: string): Promise<string> {
     expect(arg).toBe('a');
+    if (id) {
+      expect(DBOS.workflowID).toBe(id);
+    }
     ++StaticStepTx.txCnt;
-    return Promise.resolve();
+    return Promise.resolve(rv ?? '');
   }
 
   static stepCnt = 0;
@@ -101,11 +113,12 @@ describe('queued-wf-tests-simple', () => {
     await DBOS.shutdown();
   }, 10000);
 
+  // Test that functions run
   test('run-step-tx', async () => {
-    await StaticStepTx.testTx('a');
-    await StaticStepTx.testStep('a');
-    await inst.testTx('a');
-    await inst.testStep('a');
+    expect(await StaticStepTx.testTx('a', '1')).toBe('1');
+    expect(await StaticStepTx.testStep('a', '1')).toBe('1');
+    expect(await inst.testTx('a', '1')).toBe('1');
+    expect(await inst.testStep('a', '1')).toBe('1');
 
     expect(StaticStepTx.stepCnt).toBe(1);
     expect(StaticStepTx.txCnt).toBe(1);
@@ -113,11 +126,33 @@ describe('queued-wf-tests-simple', () => {
     expect(InstanceStepTx.txCnt).toBe(1);
   }, 10000);
 
+  // Test that functions run as workflows
   test('start-step-tx', async () => {
-    await (await DBOS.startWorkflow(StaticStepTx).testTx('a')).getResult();
-    await (await DBOS.startWorkflow(StaticStepTx).testStep('a')).getResult();
-    await (await DBOS.startWorkflow(inst).testTx('a')).getResult();
-    await (await DBOS.startWorkflow(inst).testStep('a')).getResult();
+    expect(await (await DBOS.startWorkflow(StaticStepTx).testTx('a', '1')).getResult()).toBe('1');
+    expect(await (await DBOS.startWorkflow(StaticStepTx).testStep('a', '1')).getResult()).toBe('1');
+    expect(await (await DBOS.startWorkflow(inst).testTx('a', '1')).getResult()).toBe('1');
+    expect(await (await DBOS.startWorkflow(inst).testStep('a', '1')).getResult()).toBe('1');
+
+    expect(StaticStepTx.stepCnt).toBe(1);
+    expect(StaticStepTx.txCnt).toBe(1);
+    expect(InstanceStepTx.stepCnt).toBe(1);
+    expect(InstanceStepTx.txCnt).toBe(1);
+  }, 10000);
+
+  // Test that functions run as workflows w/ assigned IDs
+  test('start-step-tx-wfid', async () => {
+    expect(
+      await (await DBOS.startWorkflow(StaticStepTx, { workflowID: 'wfst1' }).testTx('a', '1', 'wfst1')).getResult(),
+    ).toBe('1');
+    expect(
+      await (await DBOS.startWorkflow(StaticStepTx, { workflowID: 'wfst2' }).testStep('a', '1', 'wfst2')).getResult(),
+    ).toBe('1');
+    expect(await (await DBOS.startWorkflow(inst, { workflowID: 'wfst3' }).testTx('a', '1', 'wfst3')).getResult()).toBe(
+      '1',
+    );
+    expect(
+      await (await DBOS.startWorkflow(inst, { workflowID: 'wfst4' }).testStep('a', '1', 'wfst4')).getResult(),
+    ).toBe('1');
 
     expect(StaticStepTx.stepCnt).toBe(1);
     expect(StaticStepTx.txCnt).toBe(1);
