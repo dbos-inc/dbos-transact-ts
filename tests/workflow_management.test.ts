@@ -619,6 +619,7 @@ describe('test-list-steps', () => {
     static async testWorkflow() {
       await TestListSteps.stepOne();
       await TestListSteps.stepTwo();
+      await DBOS.sleep(10);
     }
     @DBOS.step()
     // eslint-disable-next-line @typescript-eslint/require-await
@@ -630,6 +631,17 @@ describe('test-list-steps', () => {
     static async stepTwo() {
       console.log('executed stepTwo');
     }
+
+    @DBOS.workflow()
+    static async sendWorkflow(target: string) {
+      await DBOS.send(target, 'message1');
+    }
+
+    @DBOS.workflow()
+    static async recvWorkflow(target: string) {
+      const msg = await DBOS.recv(target);
+      console.log('received message:', msg);
+    }
   }
   test('test-list-steps', async () => {
     const wfid = uuidv4();
@@ -637,10 +649,12 @@ describe('test-list-steps', () => {
     await DBOS.sleep(2000);
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.workflow_uuid).toBe(wfid);
-    expect(wfsteps.steps.length).toBe(2);
+    expect(wfsteps.steps.length).toBe(3);
     expect(wfsteps.steps[0].function_id).toBe(0);
     expect(wfsteps.steps[0].function_name).toBe('stepOne');
     expect(wfsteps.steps[1].function_id).toBe(1);
     expect(wfsteps.steps[1].function_name).toBe('stepTwo');
+    expect(wfsteps.steps[2].function_id).toBe(2);
+    expect(wfsteps.steps[2].function_name).toBe('DBOS.sleep');
   });
 });
