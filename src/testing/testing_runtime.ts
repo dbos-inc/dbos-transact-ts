@@ -182,7 +182,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
       }
     } catch (err) {
       const e = err as Error;
-      this.#server?.dbosExec?.logger.error(`Error destroying testing runtime: ${e.message}`);
+      console.log(`Error destroying testing runtime: ${e.message}`);
       throw err;
     }
   }
