@@ -30,7 +30,7 @@ import {
   step_function,
   workflow_steps,
 } from '../schemas/system_db_schema';
-import { sleepms, findPackageRoot, DBOSJSON, globalParams } from './utils';
+import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -74,7 +74,11 @@ export interface SystemDatabase {
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
 
-  sleepms(workflowUUID: string, functionID: number, duration: number): Promise<void>;
+  durableSleepms(
+    workflowUUID: string,
+    functionID: number,
+    duration: number,
+  ): Promise<{ promise: Promise<void>; cancel: () => void }>;
 
   send<T>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T>(
@@ -663,23 +667,25 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async sleepms(workflowUUID: string, functionID: number, durationMS: number): Promise<void> {
+  async durableSleepms(
+    workflowUUID: string,
+    functionID: number,
+    durationMS: number,
+  ): Promise<{ promise: Promise<void>; cancel: () => void }> {
     const { rows } = await this.pool.query<operation_outputs>(
       `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
       [workflowUUID, functionID],
     );
     if (rows.length > 0) {
       const endTimeMs = DBOSJSON.parse(rows[0].output) as number;
-      await sleepms(Math.max(endTimeMs - Date.now(), 0));
-      return;
+      return cancellableSleep(Math.max(endTimeMs - Date.now(), 0));
     } else {
       const endTimeMs = Date.now() + durationMS;
       await this.pool.query<operation_outputs>(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;`,
         [workflowUUID, functionID, DBOSJSON.stringify(endTimeMs)],
       );
-      await sleepms(Math.max(endTimeMs - Date.now(), 0));
-      return;
+      return cancellableSleep(Math.max(endTimeMs - Date.now(), 0));
     }
   }
 
@@ -759,20 +765,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
       });
       const payload = `${workflowUUID}::${topic}`;
       this.notificationsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-      let timer: NodeJS.Timeout;
-      const timeoutPromise = new Promise<void>(async (resolve, reject) => {
-        try {
-          await this.sleepms(workflowUUID, timeoutFunctionID, timeoutSeconds * 1000);
-          resolve();
-        } catch (e) {
-          this.logger.error(e);
-          reject(new Error('sleepms failed'));
-        }
-      });
+      let timeoutPromise: Promise<void> = Promise.resolve();
+      let timeoutCancel: () => void = () => {};
+      try {
+        const { promise, cancel } = await this.durableSleepms(workflowUUID, timeoutFunctionID, timeoutSeconds * 1000);
+        timeoutPromise = promise;
+        timeoutCancel = cancel;
+      } catch (e) {
+        this.logger.error(e);
+        delete this.notificationsMap[payload];
+        timeoutCancel();
+        throw new Error('durable sleepms failed');
+      }
       try {
         await Promise.race([messagePromise, timeoutPromise]);
       } finally {
-        clearTimeout(timer!);
+        timeoutCancel();
         delete this.notificationsMap[payload];
       }
     }
@@ -875,65 +883,76 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     }
 
-    // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (
-      await this.pool.query<workflow_events>(
-        `
-      SELECT key, value
-      FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
-      WHERE workflow_uuid=$1 AND key=$2;`,
-        [workflowUUID, key],
-      )
-    ).rows;
-
-    // Return the value if it's in the DB, otherwise return null.
+    // Get the return the value. if it's in the DB, otherwise return null.
     let value: T | null = null;
-    if (initRecvRows.length > 0) {
-      value = DBOSJSON.parse(initRecvRows[0].value) as T;
-    } else {
-      // Register the key with the global notifications listener.
-      let resolveNotification: () => void;
-      const valuePromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
-      const payload = `${workflowUUID}::${key}`;
-      this.workflowEventsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-      let timer: NodeJS.Timeout;
-      const timeoutMillis = timeoutSeconds * 1000;
-      const timeoutPromise = callerWorkflow
-        ? new Promise<void>(async (resolve, reject) => {
-            try {
-              await this.sleepms(callerWorkflow.workflowUUID, callerWorkflow.timeoutFunctionID, timeoutMillis);
-              resolve();
-            } catch (e) {
-              this.logger.error(e);
-              reject(new Error('sleepms failed'));
-            }
-          })
-        : new Promise<void>((resolve) => {
-            timer = setTimeout(() => {
-              resolve();
-            }, timeoutMillis);
-          });
+    const payloadKey = `${workflowUUID}::${key}`;
+    // Register the key with the global notifications listener first... we do not want to look in the DB first
+    //  or that would cause a timing hole.
+    let resolveNotification: () => void;
+    const valuePromise = new Promise<void>((resolve) => {
+      resolveNotification = resolve;
+    });
+    this.workflowEventsMap[payloadKey] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
 
-      try {
-        await Promise.race([valuePromise, timeoutPromise]);
-      } finally {
-        clearTimeout(timer!);
-        delete this.workflowEventsMap[payload];
-      }
-      const finalRecvRows = (
+    try {
+      // Check if the key is already in the DB, then wait for the notification if it isn't.
+      const initRecvRows = (
         await this.pool.query<workflow_events>(
           `
-          SELECT value
-          FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
-          WHERE workflow_uuid=$1 AND key=$2;`,
+        SELECT key, value
+        FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
+        WHERE workflow_uuid=$1 AND key=$2;`,
           [workflowUUID, key],
         )
       ).rows;
-      if (finalRecvRows.length > 0) {
-        value = DBOSJSON.parse(finalRecvRows[0].value) as T;
+
+      if (initRecvRows.length > 0) {
+        value = DBOSJSON.parse(initRecvRows[0].value) as T;
+      } else {
+        // If we have a callerWorkflow, we want a durable sleep, otherwise, not
+        let timeoutPromise: Promise<void> = Promise.resolve();
+        let timeoutCancel: () => void = () => {};
+        if (callerWorkflow) {
+          try {
+            const { promise, cancel } = await this.durableSleepms(
+              callerWorkflow.workflowUUID,
+              callerWorkflow.timeoutFunctionID ?? -1,
+              timeoutSeconds * 1000,
+            );
+            timeoutPromise = promise;
+            timeoutCancel = cancel;
+          } catch (e) {
+            this.logger.error(e);
+            delete this.workflowEventsMap[payloadKey];
+            throw new Error('durable sleepms failed');
+          }
+        } else {
+          const { promise, cancel } = cancellableSleep(timeoutSeconds * 1000);
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+        }
+
+        try {
+          await Promise.race([valuePromise, timeoutPromise]);
+        } finally {
+          timeoutCancel();
+        }
+
+        const finalRecvRows = (
+          await this.pool.query<workflow_events>(
+            `
+            SELECT value
+            FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
+            WHERE workflow_uuid=$1 AND key=$2;`,
+            [workflowUUID, key],
+          )
+        ).rows;
+        if (finalRecvRows.length > 0) {
+          value = DBOSJSON.parse(finalRecvRows[0].value) as T;
+        }
       }
+    } finally {
+      delete this.workflowEventsMap[payloadKey];
     }
 
     // Record the output if it is inside a workflow.
