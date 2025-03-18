@@ -51,6 +51,66 @@ export class RecoveryResponse implements BaseMessage {
   }
 }
 
+export class CancelRequest implements BaseMessage {
+  type = MessageType.CANCEL;
+  request_id: string;
+  workflow_id: string;
+  constructor(request_id: string, workflow_id: string) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+  }
+}
+
+export class CancelResponse implements BaseMessage {
+  type = MessageType.CANCEL;
+  request_id: string;
+  success: boolean;
+  constructor(request_id: string, success: boolean) {
+    this.request_id = request_id;
+    this.success = success;
+  }
+}
+
+export class ResumeRequest implements BaseMessage {
+  type = MessageType.RESUME;
+  request_id: string;
+  workflow_id: string;
+  constructor(request_id: string, workflow_id: string) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+  }
+}
+
+export class ResumeResponse implements BaseMessage {
+  type = MessageType.RESUME;
+  request_id: string;
+  success: boolean;
+  constructor(request_id: string, success: boolean) {
+    this.request_id = request_id;
+    this.success = success;
+  }
+}
+
+export class RestartRequest implements BaseMessage {
+  type = MessageType.RESTART;
+  request_id: string;
+  workflow_id: string;
+  constructor(request_id: string, workflow_id: string) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+  }
+}
+
+export class RestartResponse implements BaseMessage {
+  type = MessageType.RESTART;
+  request_id: string;
+  success: boolean;
+  constructor(request_id: string, success: boolean) {
+    this.request_id = request_id;
+    this.success = success;
+  }
+}
+
 export interface ListWorkflowsBody {
   workflow_uuids: string[];
   workflow_name?: string;

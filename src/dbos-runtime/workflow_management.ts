@@ -50,7 +50,7 @@ export type WorkflowInformation = Omit<WorkflowStatus, 'request'> & {
   request?: HTTPRequest;
 };
 
-async function getWorkflowInfo(
+export async function getWorkflowInfo(
   systemDatabase: SystemDatabase,
   workflowUUID: string,
   getRequest: boolean,

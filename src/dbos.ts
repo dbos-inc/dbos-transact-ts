@@ -47,6 +47,7 @@ import { Application as ExpressApp } from 'express';
 import { INestApplication } from '@nestjs/common';
 import { FastifyInstance } from 'fastify';
 import _fastifyExpress from '@fastify/express'; // This is for fastify.use()
+import { v4 as uuidv4 } from 'uuid';
 
 import { PoolClient } from 'pg';
 import { Knex } from 'knex';
@@ -186,6 +187,15 @@ export class DBOS {
         : DebugMode.ENABLED
       : DebugMode.DISABLED;
 
+    if (conductorParams?.conductorKey) {
+      // Use a generated executor ID.
+      globalParams.executorID = uuidv4();
+      if (!conductorParams.conductorURL) {
+        const dbosDomain = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
+        conductorParams.conductorURL = `wss://${dbosDomain}/conductor/v1alpha1`;
+      }
+    }
+
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
@@ -215,11 +225,7 @@ export class DBOS {
 
     DBOSExecutor.globalInstance.wfqEnded = wfQueueRunner.dispatchLoop(DBOSExecutor.globalInstance);
 
-    if (conductorParams && conductorParams.conductorKey) {
-      if (!conductorParams.conductorURL) {
-        const dbosDomain = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
-        conductorParams.conductorURL = `wss://${dbosDomain}/conductor/v1alpha1`;
-      }
+    if (conductorParams?.conductorKey) {
       DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, conductorParams);
       DBOS.conductor.dispatchLoop();
     }
@@ -285,6 +291,9 @@ export class DBOS {
     // Stop the conductor
     if (DBOS.conductor) {
       DBOS.conductor.stop();
+      while (!DBOS.conductor.isClosed) {
+        await sleepms(500);
+      }
       DBOS.conductor = undefined;
     }
 
