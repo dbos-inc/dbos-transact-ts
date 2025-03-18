@@ -610,8 +610,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         [workflowUUID, functionID, serialOutput, functionName],
       );
     } catch (error) {
-      console.log('Error in recordOperationOutput');
-      console.log(error);
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') {
         // Serialization and primary key conflict (Postgres).
@@ -635,8 +633,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         [workflowUUID, functionID, serialErr, functionName],
       );
     } catch (error) {
-      console.log('Error in recordOperationOutput');
-      console.log(error);
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') {
         // Serialization and primary key conflict (Postgres).
@@ -942,12 +938,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Record the output if it is inside a workflow.
     if (callerWorkflow) {
-      await this.recordOperationOutput(
-        callerWorkflow.workflowUUID,
-        callerWorkflow.functionID,
-        value,
-        callerWorkflow.functionName,
-      );
+      const funcName = callerWorkflow.functionName || '';
+
+      await this.recordOperationOutput(callerWorkflow.workflowUUID, callerWorkflow.functionID, value, funcName);
     }
     return value;
   }

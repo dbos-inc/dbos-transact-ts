@@ -556,7 +556,6 @@ describe('test-list-queues', () => {
       status: 'SUCCESS',
     };
 
-    console.log('Done with 5th test');
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
 
