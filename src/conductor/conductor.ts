@@ -1,36 +1,11 @@
 import { DBOSExecutor } from '../dbos-executor';
 import { DBOSJSON, globalParams } from '../utils';
 import WebSocket from 'ws';
-import {
-  BaseMessage,
-  CancelRequest,
-  CancelResponse,
-  ExecutorInfoResponse,
-  ExistPendingWorkflowsRequest,
-  ExistPendingWorkflowsResponse,
-  GetWorkflowRequest,
-  GetWorkflowResponse,
-  ListQueuedWorkflowsRequest,
-  ListQueuedWorkflowsResponse,
-  ListWorkflowsRequest,
-  ListWorkflowsResponse,
-  MessageType,
-  RecoveryRequest,
-  RecoveryResponse,
-  RestartRequest,
-  RestartResponse,
-  ResumeRequest,
-  ResumeResponse,
-  WorkflowsOutput,
-} from './protocol';
+import * as protocol from './protocol';
 import { GetWorkflowsInput, StatusString } from '..';
 import { getWorkflowInfo } from '../dbos-runtime/workflow_management';
 import { GetQueuedWorkflowsInput } from '../workflow';
 
-export interface ConductorParams {
-  conductorURL?: string;
-  conductorKey: string;
-}
 export class Conductor {
   url: string;
   websocket: WebSocket | undefined = undefined;
@@ -39,11 +14,12 @@ export class Conductor {
 
   constructor(
     readonly dbosExec: DBOSExecutor,
-    readonly params: ConductorParams,
+    readonly conductorKey: string,
+    readonly conductorURL: string,
   ) {
     const appName = globalParams.appName;
-    const cleanConductorURL = params.conductorURL!.replace(/\/+$/, '');
-    this.url = `${cleanConductorURL}/websocket/${appName}/${params.conductorKey}`;
+    const cleanConductorURL = conductorURL.replace(/\/+$/, '');
+    this.url = `${cleanConductorURL}/websocket/${appName}/${conductorKey}`;
   }
 
   dispatchLoop() {
@@ -62,11 +38,11 @@ export class Conductor {
 
       this.websocket.on('message', async (data: string) => {
         this.dbosExec.logger.debug(`Received message from conductor: ${data}`);
-        const baseMsg = DBOSJSON.parse(data) as BaseMessage;
+        const baseMsg = DBOSJSON.parse(data) as protocol.BaseMessage;
         const msgType = baseMsg.type;
         switch (msgType) {
-          case MessageType.EXECUTOR_INFO:
-            const infoResp = new ExecutorInfoResponse(
+          case protocol.MessageType.EXECUTOR_INFO:
+            const infoResp = new protocol.ExecutorInfoResponse(
               baseMsg.request_id,
               globalParams.executorID,
               globalParams.appVersion,
@@ -74,8 +50,8 @@ export class Conductor {
             this.websocket!.send(DBOSJSON.stringify(infoResp));
             this.dbosExec.logger.info('Connected to DBOS conductor');
             break;
-          case MessageType.RECOVERY:
-            const recoveryMsg = baseMsg as RecoveryRequest;
+          case protocol.MessageType.RECOVERY:
+            const recoveryMsg = baseMsg as protocol.RecoveryRequest;
             let success = true;
             try {
               await this.dbosExec.recoverPendingWorkflows(recoveryMsg.executor_ids);
@@ -83,11 +59,11 @@ export class Conductor {
               this.dbosExec.logger.error(`Exception encountered when recovering workflows: ${(e as Error).message}`);
               success = false;
             }
-            const recoveryResp = new RecoveryResponse(baseMsg.request_id, success);
+            const recoveryResp = new protocol.RecoveryResponse(baseMsg.request_id, success);
             this.websocket!.send(DBOSJSON.stringify(recoveryResp));
             break;
-          case MessageType.CANCEL:
-            const cancelMsg = baseMsg as CancelRequest;
+          case protocol.MessageType.CANCEL:
+            const cancelMsg = baseMsg as protocol.CancelRequest;
             let cancelSuccess = true;
             try {
               await this.dbosExec.cancelWorkflow(cancelMsg.workflow_id);
@@ -97,11 +73,11 @@ export class Conductor {
               );
               cancelSuccess = false;
             }
-            const cancelResp = new CancelResponse(baseMsg.request_id, cancelSuccess);
+            const cancelResp = new protocol.CancelResponse(baseMsg.request_id, cancelSuccess);
             this.websocket!.send(DBOSJSON.stringify(cancelResp));
             break;
-          case MessageType.RESUME:
-            const resumeMsg = baseMsg as ResumeRequest;
+          case protocol.MessageType.RESUME:
+            const resumeMsg = baseMsg as protocol.ResumeRequest;
             let resumeSuccess = true;
             try {
               await this.dbosExec.resumeWorkflow(resumeMsg.workflow_id);
@@ -111,11 +87,11 @@ export class Conductor {
               );
               resumeSuccess = false;
             }
-            const resumeResp = new ResumeResponse(baseMsg.request_id, resumeSuccess);
+            const resumeResp = new protocol.ResumeResponse(baseMsg.request_id, resumeSuccess);
             this.websocket!.send(DBOSJSON.stringify(resumeResp));
             break;
-          case MessageType.RESTART:
-            const restartMsg = baseMsg as RestartRequest;
+          case protocol.MessageType.RESTART:
+            const restartMsg = baseMsg as protocol.RestartRequest;
             let restartSuccess = true;
             try {
               await this.dbosExec.executeWorkflowUUID(restartMsg.workflow_id, true);
@@ -125,11 +101,11 @@ export class Conductor {
               );
               restartSuccess = false;
             }
-            const restartResp = new RestartResponse(baseMsg.request_id, restartSuccess);
+            const restartResp = new protocol.RestartResponse(baseMsg.request_id, restartSuccess);
             this.websocket!.send(DBOSJSON.stringify(restartResp));
             break;
-          case MessageType.LIST_WORKFLOWS:
-            const listWFMsg = baseMsg as ListWorkflowsRequest;
+          case protocol.MessageType.LIST_WORKFLOWS:
+            const listWFMsg = baseMsg as protocol.ListWorkflowsRequest;
             const body = listWFMsg.body;
             const listWFReq: GetWorkflowsInput = {
               workflowIDs: body.workflow_uuids,
@@ -147,14 +123,14 @@ export class Conductor {
             const workflowsOutput = await Promise.all(
               wfIDs.map(async (i) => {
                 const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, i, false);
-                return new WorkflowsOutput(wfInfo);
+                return new protocol.WorkflowsOutput(wfInfo);
               }),
             );
-            const wfsResp = new ListWorkflowsResponse(listWFMsg.request_id, workflowsOutput);
+            const wfsResp = new protocol.ListWorkflowsResponse(listWFMsg.request_id, workflowsOutput);
             this.websocket!.send(DBOSJSON.stringify(wfsResp));
             break;
-          case MessageType.LIST_QUEUED_WORKFLOWS:
-            const listQueuedWFMsg = baseMsg as ListQueuedWorkflowsRequest;
+          case protocol.MessageType.LIST_QUEUED_WORKFLOWS:
+            const listQueuedWFMsg = baseMsg as protocol.ListQueuedWorkflowsRequest;
             const bodyQueued = listQueuedWFMsg.body;
             const listQueuedWFReq: GetQueuedWorkflowsInput = {
               workflowName: bodyQueued.workflow_name,
@@ -170,26 +146,29 @@ export class Conductor {
             const queuedWFOutput = await Promise.all(
               queuedWFIDs.map(async (i) => {
                 const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, i, false);
-                return new WorkflowsOutput(wfInfo);
+                return new protocol.WorkflowsOutput(wfInfo);
               }),
             );
-            const queuedWfsResp = new ListQueuedWorkflowsResponse(listQueuedWFMsg.request_id, queuedWFOutput);
+            const queuedWfsResp = new protocol.ListQueuedWorkflowsResponse(listQueuedWFMsg.request_id, queuedWFOutput);
             this.websocket!.send(DBOSJSON.stringify(queuedWfsResp));
             break;
-          case MessageType.GET_WORKFLOW:
-            const getWFMsg = baseMsg as GetWorkflowRequest;
+          case protocol.MessageType.GET_WORKFLOW:
+            const getWFMsg = baseMsg as protocol.GetWorkflowRequest;
             const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, getWFMsg.workflow_id, false);
-            const wfOutput = wfInfo.workflowUUID ? new WorkflowsOutput(wfInfo) : undefined;
-            const getWFResp = new GetWorkflowResponse(getWFMsg.request_id, wfOutput);
+            const wfOutput = wfInfo.workflowUUID ? new protocol.WorkflowsOutput(wfInfo) : undefined;
+            const getWFResp = new protocol.GetWorkflowResponse(getWFMsg.request_id, wfOutput);
             this.websocket!.send(DBOSJSON.stringify(getWFResp));
             break;
-          case MessageType.EXIST_PENDING_WORKFLOWS:
-            const existPendingMsg = baseMsg as ExistPendingWorkflowsRequest;
+          case protocol.MessageType.EXIST_PENDING_WORKFLOWS:
+            const existPendingMsg = baseMsg as protocol.ExistPendingWorkflowsRequest;
             const pendingWFs = await this.dbosExec.systemDatabase.getPendingWorkflows(
               existPendingMsg.executor_id,
               existPendingMsg.application_version,
             );
-            const existPendingResp = new ExistPendingWorkflowsResponse(baseMsg.request_id, pendingWFs.length > 0);
+            const existPendingResp = new protocol.ExistPendingWorkflowsResponse(
+              baseMsg.request_id,
+              pendingWFs.length > 0,
+            );
             this.websocket!.send(DBOSJSON.stringify(existPendingResp));
             break;
           default:
