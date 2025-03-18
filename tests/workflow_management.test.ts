@@ -634,7 +634,7 @@ describe('test-list-steps', () => {
   test('test-list-steps', async () => {
     const wfid = uuidv4();
     await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
-    DBOS.sleepSeconds(5);
+    await DBOS.sleep(2000);
     const wfsteps = await listWorkflowSteps(config, wfid);
     console.log(wfsteps);
     expect(wfsteps.workflow_uuid).toBe(wfid);
