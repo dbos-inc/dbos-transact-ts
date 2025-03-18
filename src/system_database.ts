@@ -942,7 +942,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Record the output if it is inside a workflow.
     if (callerWorkflow) {
-      await this.recordOperationOutput(callerWorkflow.workflowUUID, callerWorkflow.functionID, value, '');
+      await this.recordOperationOutput(
+        callerWorkflow.workflowUUID,
+        callerWorkflow.functionID,
+        value,
+        callerWorkflow.functionName,
+      );
     }
     return value;
   }

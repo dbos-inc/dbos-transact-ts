@@ -498,34 +498,29 @@ describe('test-list-queues', () => {
       await e.wait();
     }
 
-    console.log('workflow  started');
-
     let input: GetQueuedWorkflowsInput = {};
     let output: WorkflowInformation[] = [];
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
 
-    console.log('Done with first test');
-
     // Test workflowName
     input = {
       workflowName: 'blockingTask',
     };
+
     output = await listQueuedWorkflows(config, input, false);
+    console.log(output);
     expect(output.length).toBe(TestListQueues.queuedSteps);
+    console.log(output);
     for (let i = 0; i < TestListQueues.queuedSteps; i++) {
       expect(output[i].input).toEqual([i]);
     }
-
-    console.log('Done with 2nd test');
 
     input = {
       workflowName: 'no',
     };
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
-
-    console.log('Done with 3rd test');
 
     // Test sortDesc reverts the order
     input = {
@@ -536,8 +531,6 @@ describe('test-list-queues', () => {
     for (let i = 0; i < TestListQueues.queuedSteps; i++) {
       expect(output[i].input).toEqual([TestListQueues.queuedSteps - i - 1]);
     }
-
-    console.log('Done with 3rd test');
 
     // Test startTime and endTime
     input = {
@@ -550,7 +543,6 @@ describe('test-list-queues', () => {
       startTime: new Date(Date.now() + 10000).toISOString(),
     };
 
-    console.log('Done with 4th test');
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
 
@@ -575,13 +567,9 @@ describe('test-list-queues', () => {
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
 
-    console.log('Done with 6rd test');
-
     input = {
       queueName: 'no',
     };
-
-    console.log('Done with 7th test');
 
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
@@ -596,8 +584,6 @@ describe('test-list-queues', () => {
       expect(output[i].input).toEqual([i]);
     }
 
-    console.log('Done with 8th test');
-
     // Test offset
     input = {
       limit: 2,
@@ -609,16 +595,12 @@ describe('test-list-queues', () => {
       expect(output[i].input).toEqual([i + 2]);
     }
 
-    console.log('Done with 9th test');
-
     // Confirm the workflow finishes and nothing is in the queue afterwards
     TestListQueues.event.set();
     await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
 
     input = {};
     await expect(listQueuedWorkflows(config, input, false)).resolves.toEqual([]);
-
-    console.log('Done with 10th test');
   });
 });
 
