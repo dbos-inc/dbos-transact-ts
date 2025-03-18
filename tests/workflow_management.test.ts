@@ -639,7 +639,7 @@ describe('test-list-steps', () => {
 
     @DBOS.workflow()
     static async recvWorkflow(target: string) {
-      const msg = await DBOS.recv(target);
+      const msg = await DBOS.recv(target, 1);
       console.log('received message:', msg);
     }
   }
@@ -656,5 +656,27 @@ describe('test-list-steps', () => {
     expect(wfsteps.steps[1].function_name).toBe('stepTwo');
     expect(wfsteps.steps[2].function_id).toBe(2);
     expect(wfsteps.steps[2].function_name).toBe('DBOS.sleep');
+  });
+
+  test('test-send-recv', async () => {
+    const wfid1 = uuidv4();
+    await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).recvWorkflow('message1');
+
+    const wfid2 = uuidv4();
+    await DBOS.startWorkflow(TestListSteps, { workflowID: wfid2 }).sendWorkflow(wfid1);
+
+    await DBOS.sleep(2000);
+    const wfsteps = await listWorkflowSteps(config, wfid1);
+    console.log(wfsteps);
+    expect(wfsteps.workflow_uuid).toBe(wfid1);
+    expect(wfsteps.steps.length).toBe(2);
+    // expect(wfsteps.steps[1].function_id).toBe(1);
+    expect(wfsteps.steps[0].function_name).toBe('DBOS.sleep');
+    expect(wfsteps.steps[1].function_name).toBe('DBOS.recv');
+
+    const wfsteps2 = await listWorkflowSteps(config, wfid2);
+    console.log(wfsteps2);
+    expect(wfsteps2.steps[0].function_id).toBe(0);
+    expect(wfsteps2.steps[0].function_name).toBe('DBOS.send');
   });
 });
