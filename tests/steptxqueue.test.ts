@@ -2,8 +2,6 @@ import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, InitContext } f
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event, queueEntriesAreCleanedUp } from './helpers';
 import { WorkflowQueue } from '../src';
-import { v4 as uuidv4 } from 'uuid';
-import { sleepms } from '../src/utils';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -153,6 +151,52 @@ describe('queued-wf-tests-simple', () => {
     expect(
       await (await DBOS.startWorkflow(inst, { workflowID: 'wfst4' }).testStep('a', '1', 'wfst4')).getResult(),
     ).toBe('1');
+
+    expect(StaticStepTx.stepCnt).toBe(1);
+    expect(StaticStepTx.txCnt).toBe(1);
+    expect(InstanceStepTx.stepCnt).toBe(1);
+    expect(InstanceStepTx.txCnt).toBe(1);
+  }, 10000);
+
+  // Test that functions run as workflows w/ assigned IDs and q
+  test('start-step-tx-wfid', async () => {
+    expect(
+      await (
+        await DBOS.startWorkflow(StaticStepTx, { workflowID: 'wfstq1', queueName: queue.name }).testTx(
+          'a',
+          '1',
+          'wfstq1',
+        )
+      ).getResult(),
+    ).toBe('1');
+    expect(
+      await (
+        await DBOS.startWorkflow(StaticStepTx, { workflowID: 'wfstq2', queueName: queue.name }).testStep(
+          'a',
+          '1',
+          'wfstq2',
+        )
+      ).getResult(),
+    ).toBe('1');
+    expect(
+      await (
+        await DBOS.startWorkflow(inst, { workflowID: 'wfstq3', queueName: queue.name }).testTx('a', '1', 'wfstq3')
+      ).getResult(),
+    ).toBe('1');
+    expect(
+      await (
+        await DBOS.startWorkflow(inst, { workflowID: 'wfstq4', queueName: queue.name }).testStep('a', '1', 'wfstq4')
+      ).getResult(),
+    ).toBe('1');
+
+    const wfh1 = DBOS.retrieveWorkflow('wfstq1');
+    expect((await wfh1.getStatus())?.queueName).toBe(queue.name);
+    const wfh2 = DBOS.retrieveWorkflow('wfstq2');
+    expect((await wfh2.getStatus())?.queueName).toBe(queue.name);
+    const wfh3 = DBOS.retrieveWorkflow('wfstq3');
+    expect((await wfh3.getStatus())?.queueName).toBe(queue.name);
+    const wfh4 = DBOS.retrieveWorkflow('wfstq4');
+    expect((await wfh4.getStatus())?.queueName).toBe(queue.name);
 
     expect(StaticStepTx.stepCnt).toBe(1);
     expect(StaticStepTx.txCnt).toBe(1);
