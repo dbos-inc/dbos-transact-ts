@@ -2092,6 +2092,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         tempWfType,
         tempWfClass,
         tempWfName,
+        queueName: wfStatus.queueName,
+        executeWorkflow: true,
       },
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       ...inputs,
