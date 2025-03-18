@@ -157,7 +157,7 @@ export const OperationType = {
   PROCEDURE: 'procedure',
 } as const;
 
-const TempWorkflowType = {
+export const TempWorkflowType = {
   transaction: 'transaction',
   procedure: 'procedure',
   external: 'external',
