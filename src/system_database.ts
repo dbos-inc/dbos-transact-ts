@@ -1090,11 +1090,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         authenticatedRoles: DBOSJSON.parse(rows[0].authenticated_roles) as string[],
         request: DBOSJSON.parse(rows[0].request) as HTTPRequest,
         executorId: rows[0].executor_id,
-        createdAt: rows[0].created_at,
-        updatedAt: rows[0].updated_at,
+        createdAt: Number(rows[0].created_at),
+        updatedAt: Number(rows[0].updated_at),
         applicationVersion: rows[0].application_version,
         applicationID: rows[0].application_id,
-        recoveryAttempts: rows[0].recovery_attempts,
+        recoveryAttempts: Number(rows[0].recovery_attempts),
         maxRetries: 0,
       };
     }

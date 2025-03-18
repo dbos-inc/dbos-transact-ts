@@ -179,7 +179,7 @@ export class Conductor {
           case MessageType.GET_WORKFLOW:
             const getWFMsg = baseMsg as GetWorkflowRequest;
             const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, getWFMsg.workflow_id, false);
-            const wfOutput = new WorkflowsOutput(wfInfo);
+            const wfOutput = wfInfo.workflowUUID ? new WorkflowsOutput(wfInfo) : undefined;
             const getWFResp = new GetWorkflowResponse(getWFMsg.request_id, wfOutput);
             this.websocket!.send(DBOSJSON.stringify(getWFResp));
             break;

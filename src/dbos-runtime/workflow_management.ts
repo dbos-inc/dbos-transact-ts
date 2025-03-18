@@ -54,10 +54,10 @@ export async function getWorkflowInfo(
   getRequest: boolean,
 ): Promise<WorkflowInformation> {
   const info = (await systemDatabase.getWorkflowStatusInternal(workflowUUID)) as WorkflowInformation;
-  info.workflowUUID = workflowUUID;
   if (info === null) {
     return Promise.resolve({} as WorkflowInformation);
   }
+  delete info.error; // Remove error from info, and add it back if needed
   const input = await systemDatabase.getWorkflowInputs(workflowUUID);
   if (input !== null) {
     info.input = input;

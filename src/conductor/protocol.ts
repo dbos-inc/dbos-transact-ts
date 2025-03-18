@@ -143,21 +143,23 @@ export class WorkflowsOutput {
   ApplicationVersion?: string;
 
   constructor(info: WorkflowInformation) {
+    // Mark empty fields as undefined
     this.WorkflowUUID = info.workflowUUID;
     this.Status = info.status;
     this.WorkflowName = info.workflowName;
-    this.WorkflowClassName = info.workflowClassName;
-    this.WorkflowConfigName = info.workflowConfigName;
-    this.AuthenticatedUser = info.authenticatedUser;
-    this.AssumedRole = info.assumedRole;
-    this.AuthenticatedRoles = DBOSJSON.stringify(info.authenticatedRoles);
+    this.WorkflowClassName = info.workflowClassName ? info.workflowClassName : undefined;
+    this.WorkflowConfigName = info.workflowConfigName ? info.workflowConfigName : undefined;
+    this.AuthenticatedUser = info.authenticatedUser ? info.authenticatedUser : undefined;
+    this.AssumedRole = info.assumedRole ? info.assumedRole : undefined;
+    this.AuthenticatedRoles =
+      info.authenticatedRoles.length > 0 ? DBOSJSON.stringify(info.authenticatedRoles) : undefined;
     this.Input = info.input ? DBOSJSON.stringify(info.input) : undefined;
     this.Output = info.output ? DBOSJSON.stringify(info.output) : undefined;
     this.Request = info.request ? DBOSJSON.stringify(info.request) : undefined;
     this.Error = info.error ? DBOSJSON.stringify(serializeError(info.error)) : undefined;
     this.CreatedAt = info.createdAt ? String(info.createdAt) : undefined;
     this.UpdatedAt = info.updatedAt ? String(info.updatedAt) : undefined;
-    this.QueueName = info.queueName;
+    this.QueueName = info.queueName ? info.queueName : undefined;
     this.ApplicationVersion = info.applicationVersion;
   }
 }
