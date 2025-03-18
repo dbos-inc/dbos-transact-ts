@@ -167,9 +167,7 @@ function augmentProxy(target: object, proxy: Record<string, unknown>) {
             throw new DBOSNotRegisteredError(`${k} is not a registered DBOS function`);
           };
         }
-      } catch (e) {
-        console.log(`DO NOT DO ${k}`);
-      }
+      } catch (e) {}
     }
     // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     proto = Object.getPrototypeOf(proto);
@@ -685,8 +683,8 @@ export class DBOS {
             );
           };
 
-          proxy[op.name] = (...args: unknown[]) =>
-            DBOSExecutor.globalInstance!.internalWorkflow(
+          proxy[op.name] = (...args: unknown[]) => {
+            return DBOSExecutor.globalInstance!.internalWorkflow(
               temp_workflow as WorkflowFunction<unknown[], unknown>,
               {
                 ...wfParams,
@@ -698,6 +696,7 @@ export class DBOS {
               funcId,
               ...args,
             );
+          };
         } else {
           proxy[op.name] = (..._args: unknown[]) => {
             throw new DBOSNotRegisteredError(
@@ -778,8 +777,8 @@ export class DBOS {
           );
         };
 
-        proxy[op.name] = (...args: unknown[]) =>
-          DBOSExecutor.globalInstance!.workflow(
+        proxy[op.name] = (...args: unknown[]) => {
+          return DBOSExecutor.globalInstance!.workflow(
             temp_workflow as WorkflowFunction<unknown[], unknown>,
             {
               ...wfParams,
@@ -789,6 +788,7 @@ export class DBOS {
             },
             ...args,
           );
+        };
       } else {
         proxy[op.name] = (..._args: unknown[]) => {
           throw new DBOSNotRegisteredError(
