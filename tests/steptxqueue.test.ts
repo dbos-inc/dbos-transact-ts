@@ -92,6 +92,64 @@ class StaticStepTx extends ConfiguredInstance {
   }
 }
 
+class WorkflowsEnqueue {
+  @DBOS.workflow()
+  static async runFuncs() {
+    expect(await StaticStepTx.testTx('a', '1')).toBe('1');
+    expect(await StaticStepTx.testStep('a', '1')).toBe('1');
+    expect(await inst.testTx('a', '1')).toBe('1');
+    expect(await inst.testStep('a', '1')).toBe('1');
+  }
+
+  @DBOS.workflow()
+  static async runAsWFs() {
+    expect(await (await DBOS.startWorkflow(StaticStepTx).testTx('a', '1')).getResult()).toBe('1');
+    expect(await (await DBOS.startWorkflow(StaticStepTx).testStep('a', '1')).getResult()).toBe('1');
+    expect(await (await DBOS.startWorkflow(inst).testTx('a', '1')).getResult()).toBe('1');
+    expect(await (await DBOS.startWorkflow(inst).testStep('a', '1')).getResult()).toBe('1');
+  }
+
+  @DBOS.workflow()
+  static async runAsWFIDs() {
+    expect(
+      await (
+        await DBOS.startWorkflow(StaticStepTx, { workflowID: 'wwfstq1', queueName: serialqueue.name }).testTx(
+          'a',
+          '1',
+          'wwfstq1',
+        )
+      ).getResult(),
+    ).toBe('1');
+    expect(
+      await (
+        await DBOS.startWorkflow(StaticStepTx, { workflowID: 'wwfstq2', queueName: serialqueue.name }).testStep(
+          'a',
+          '1',
+          'wwfstq2',
+        )
+      ).getResult(),
+    ).toBe('1');
+    expect(
+      await (
+        await DBOS.startWorkflow(inst, { workflowID: 'wwfstq3', queueName: serialqueue.name }).testTx(
+          'a',
+          '1',
+          'wwfstq3',
+        )
+      ).getResult(),
+    ).toBe('1');
+    expect(
+      await (
+        await DBOS.startWorkflow(inst, { workflowID: 'wwfstq4', queueName: serialqueue.name }).testStep(
+          'a',
+          '1',
+          'wwfstq4',
+        )
+      ).getResult(),
+    ).toBe('1');
+  }
+}
+
 describe('queued-wf-tests-simple', () => {
   let config: DBOSConfig;
 
@@ -203,4 +261,43 @@ describe('queued-wf-tests-simple', () => {
     expect(InstanceStepTx.stepCnt).toBe(1);
     expect(InstanceStepTx.txCnt).toBe(1);
   }, 10000);
+
+  // Test that functions run (from wf)
+  test('run-step-tx-wf', async () => {
+    await WorkflowsEnqueue.runFuncs();
+
+    expect(StaticStepTx.stepCnt).toBe(1);
+    expect(StaticStepTx.txCnt).toBe(1);
+    expect(InstanceStepTx.stepCnt).toBe(1);
+    expect(InstanceStepTx.txCnt).toBe(1);
+  }, 10000);
+
+  // Test that functions run as child WFs (from wf)
+  test('run-step-tx-cwf', async () => {
+    await WorkflowsEnqueue.runAsWFs();
+
+    expect(StaticStepTx.stepCnt).toBe(1);
+    expect(StaticStepTx.txCnt).toBe(1);
+    expect(InstanceStepTx.stepCnt).toBe(1);
+    expect(InstanceStepTx.txCnt).toBe(1);
+  }, 10000);
+
+  // Test that functions run as child WFs (from wf)
+  test('run-step-tx-wfq', async () => {
+    await WorkflowsEnqueue.runAsWFIDs();
+
+    const wfh1 = DBOS.retrieveWorkflow('wwfstq1');
+    expect((await wfh1.getStatus())?.queueName).toBe(serialqueue.name);
+    const wfh2 = DBOS.retrieveWorkflow('wwfstq2');
+    expect((await wfh2.getStatus())?.queueName).toBe(serialqueue.name);
+    const wfh3 = DBOS.retrieveWorkflow('wwfstq3');
+    expect((await wfh3.getStatus())?.queueName).toBe(serialqueue.name);
+    const wfh4 = DBOS.retrieveWorkflow('wwfstq4');
+    expect((await wfh4.getStatus())?.queueName).toBe(serialqueue.name);
+
+    expect(StaticStepTx.stepCnt).toBe(1);
+    expect(StaticStepTx.txCnt).toBe(1);
+    expect(InstanceStepTx.stepCnt).toBe(1);
+    expect(InstanceStepTx.txCnt).toBe(1);
+  }, 30000);
 });
