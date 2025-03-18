@@ -58,6 +58,7 @@ export interface SystemDatabase {
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R, functionName: string): Promise<void>;
   recordOperationError(workflowUUID: string, functionID: number, error: Error, functionName: string): Promise<void>;
+  copyOperationOutputs(workflowUUID: string, newWorkflowUUID: string, end_function_id: number): Promise<void>;
 
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
@@ -635,6 +636,26 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await this.pool.query<operation_outputs>(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, error, function_name) VALUES ($1, $2, $3, $4);`,
         [workflowUUID, functionID, serialErr, functionName],
+      );
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '40001' || err.code === '23505') {
+        // Serialization and primary key conflict (Postgres).
+        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
+      } else {
+        throw err;
+      }
+    }
+  }
+
+  async copyOperationOutputs(workflowUUID: string, newWorkflowUUID: string, end_function_id: number): Promise<void> {
+    try {
+      await this.pool.query<operation_outputs>(
+        ` INSERT INTO dbos.operation_outputs (workflow_uuid, function_id, output, error, function_name)
+              SELECT $1, function_id, output, error, function_name
+              FROM dbos.operation_outputs
+              WHERE workflow_uuid = $2 AND function_id <= $3;`,
+        [newWorkflowUUID, workflowUUID, end_function_id],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
