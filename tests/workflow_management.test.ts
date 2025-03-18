@@ -642,6 +642,11 @@ describe('test-list-steps', () => {
       const msg = await DBOS.recv(target, 1);
       console.log('received message:', msg);
     }
+
+    @DBOS.workflow()
+    static async setEventWorkflow() {
+      const msg = await DBOS.setEvent('key', 'value');
+    }
   }
   test('test-list-steps', async () => {
     const wfid = uuidv4();
@@ -670,7 +675,6 @@ describe('test-list-steps', () => {
     console.log(wfsteps);
     expect(wfsteps.workflow_uuid).toBe(wfid1);
     expect(wfsteps.steps.length).toBe(2);
-    // expect(wfsteps.steps[1].function_id).toBe(1);
     expect(wfsteps.steps[0].function_name).toBe('DBOS.sleep');
     expect(wfsteps.steps[1].function_name).toBe('DBOS.recv');
 
@@ -678,5 +682,17 @@ describe('test-list-steps', () => {
     console.log(wfsteps2);
     expect(wfsteps2.steps[0].function_id).toBe(0);
     expect(wfsteps2.steps[0].function_name).toBe('DBOS.send');
+  });
+
+  test('test-setEvent', async () => {
+    const wfid = uuidv4();
+    await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).setEventWorkflow();
+
+    await DBOS.sleep(1000);
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    console.log(wfsteps);
+    expect(wfsteps.workflow_uuid).toBe(wfid);
+    expect(wfsteps.steps.length).toBe(1);
+    expect(wfsteps.steps[0].function_name).toBe('DBOS.setEvent');
   });
 });
