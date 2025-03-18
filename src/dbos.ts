@@ -258,6 +258,16 @@ export class DBOS {
     recordDBOSLaunch();
   }
 
+  static logRegisteredEndpoints() {
+    if (!DBOSExecutor.globalInstance) return;
+    DBOSExecutor.globalInstance.logRegisteredHTTPUrls();
+    DBOSExecutor.globalInstance.scheduler?.logRegisteredSchedulerEndpoints();
+    wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
+    for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
+      evtRcvr.logRegisteredEndpoints();
+    }
+  }
+
   static async shutdown() {
     // Stop the app server
     if (DBOS.appServer) {

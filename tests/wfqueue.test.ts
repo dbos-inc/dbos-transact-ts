@@ -1,6 +1,6 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb, Event, queueEntriesAreCleanedUp } from './helpers';
 import { WorkflowQueue } from '../src';
 import { v4 as uuidv4 } from 'uuid';
 import { globalParams, sleepms } from '../src/utils';
@@ -33,21 +33,6 @@ const workerConcurrencyQueue = new WorkflowQueue('workerQ', { workerConcurrency:
 const qlimit = 5;
 const qperiod = 2;
 const rlqueue = new WorkflowQueue('limited_queue', undefined, { limitPerPeriod: qlimit, periodSec: qperiod });
-
-async function queueEntriesAreCleanedUp() {
-  let maxTries = 10;
-  let success = false;
-  while (maxTries > 0) {
-    const r = await DBOS.getWorkflowQueue({});
-    if (r.workflows.length === 0) {
-      success = true;
-      break;
-    }
-    await sleepms(1000);
-    --maxTries;
-  }
-  return success;
-}
 
 describe('queued-wf-tests-simple', () => {
   let config: DBOSConfig;
