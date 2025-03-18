@@ -1,8 +1,8 @@
 import { createLogger } from 'winston';
 import { DBOSConfig, GetWorkflowsInput, StatusString } from '..';
-import { PostgresSystemDatabase, SystemDatabase } from '../system_database';
+import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
-import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
+import { GetQueuedWorkflowsInput } from '../workflow';
 import { HTTPRequest } from '../context';
 import axios from 'axios';
 
@@ -42,12 +42,10 @@ export async function listQueuedWorkflows(
   return workflowInfos;
 }
 
-export type WorkflowInformation = Omit<WorkflowStatus, 'request'> & {
-  workflowUUID: string;
+export type WorkflowInformation = Omit<WorkflowStatusInternal, 'request' | 'error'> & {
   input?: unknown[];
-  output?: unknown;
-  error?: unknown;
   request?: HTTPRequest;
+  error?: unknown;
 };
 
 export async function getWorkflowInfo(
@@ -55,7 +53,7 @@ export async function getWorkflowInfo(
   workflowUUID: string,
   getRequest: boolean,
 ): Promise<WorkflowInformation> {
-  const info = (await systemDatabase.getWorkflowStatus(workflowUUID)) as WorkflowInformation;
+  const info = (await systemDatabase.getWorkflowStatusInternal(workflowUUID)) as WorkflowInformation;
   info.workflowUUID = workflowUUID;
   if (info === null) {
     return Promise.resolve({} as WorkflowInformation);

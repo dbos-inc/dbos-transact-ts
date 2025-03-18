@@ -155,11 +155,10 @@ export class WorkflowsOutput {
     this.Output = info.output ? DBOSJSON.stringify(info.output) : undefined;
     this.Request = info.request ? DBOSJSON.stringify(info.request) : undefined;
     this.Error = info.error ? DBOSJSON.stringify(serializeError(info.error)) : undefined;
-    // TODO: add missing fields
-    // this.CreatedAt = info.created_at ? String(info.created_at) : undefined;
-    // this.UpdatedAt = info.updated_at ? String(info.updated_at) : undefined;
+    this.CreatedAt = info.createdAt ? String(info.createdAt) : undefined;
+    this.UpdatedAt = info.updatedAt ? String(info.updatedAt) : undefined;
     this.QueueName = info.queueName;
-    // this.ApplicationVersion = info.app_version;
+    this.ApplicationVersion = info.applicationVersion;
   }
 }
 
