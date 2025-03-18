@@ -151,6 +151,31 @@ function httpApiDec(verb: APITypes, url: string) {
   };
 }
 
+// Fill in any proxy functions with error-throwing stubs
+//  (Goal being to give a clearer error message)
+function augmentProxy(target: object, proxy: Record<string, unknown>) {
+  let proto = target;
+  while (proto && proto !== Object.prototype) {
+    for (const k of Reflect.ownKeys(proto)) {
+      if (typeof k === 'symbol') continue;
+      if (k === 'constructor' || k === 'caller' || k === 'callee' || k === 'arguments') continue; // Skip constructor
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+        if (typeof (target as any)[k] !== 'function') continue;
+        if (!Object.hasOwn(proxy, k)) {
+          proxy[k] = (..._args: unknown[]) => {
+            throw new DBOSNotRegisteredError(`${k} is not a registered DBOS function`);
+          };
+        }
+      } catch (e) {
+        console.log(`DO NOT DO ${k}`);
+      }
+    }
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    proto = Object.getPrototypeOf(proto);
+  }
+}
+
 export interface StartWorkflowParams {
   workflowID?: string;
   queueName?: string;
@@ -682,6 +707,8 @@ export class DBOS {
         }
       }
 
+      augmentProxy(configuredInstance ?? object, proxy);
+
       return proxy as InvokeFunctionsAsync<T>;
     }
 
@@ -771,6 +798,8 @@ export class DBOS {
       }
     }
 
+    augmentProxy(configuredInstance ?? object, proxy);
+
     return proxy as InvokeFunctionsAsync<T>;
   }
 
@@ -811,6 +840,9 @@ export class DBOS {
                     );
                   };
         }
+
+        augmentProxy(object, proxy);
+
         return proxy as InvokeFuncs<T>;
       } else {
         const targetInst = object as ConfiguredInstance;
@@ -836,6 +868,9 @@ export class DBOS {
                   throw new DBOSNotRegisteredError(`${op.name} is not a registered DBOS step or transaction`);
                 };
         }
+
+        augmentProxy(targetInst, proxy);
+
         return proxy as InvokeFuncsInst<T>;
       }
     }
@@ -874,6 +909,9 @@ export class DBOS {
                   );
                 };
       }
+
+      augmentProxy(object, proxy);
+
       return proxy as InvokeFuncs<T>;
     } else {
       const targetInst = object as ConfiguredInstance;
@@ -899,6 +937,9 @@ export class DBOS {
                 )
             : undefined;
       }
+
+      augmentProxy(targetInst, proxy);
+
       return proxy as InvokeFuncsInst<T>;
     }
   }
