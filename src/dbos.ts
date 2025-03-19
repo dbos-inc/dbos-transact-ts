@@ -9,14 +9,13 @@ import {
   DBOSContextImpl,
   getNextWFID,
 } from './context';
-import { DBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams, TempWorkflowType } from './dbos-executor';
+import { DBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
 import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
   GetWorkflowsOutput,
   WorkflowConfig,
-  WorkflowContextImpl,
   WorkflowFunction,
   WorkflowParams,
 } from './workflow';
@@ -34,8 +33,6 @@ import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBas
 import {
   configureInstance,
   getOrCreateClassRegistration,
-  getRegisteredMethodClassName,
-  getRegisteredMethodName,
   getRegisteredOperations,
   MethodRegistration,
   recordDBOSLaunch,
