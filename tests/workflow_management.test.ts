@@ -654,6 +654,7 @@ describe('test-list-steps', () => {
     @DBOS.workflow()
     static async setEventWorkflow() {
       await DBOS.setEvent('key', 'value');
+      await DBOS.getEvent('fakewid', 'key', 1);
     }
   }
   test('test-list-steps', async () => {
@@ -692,14 +693,15 @@ describe('test-list-steps', () => {
     expect(wfsteps2.steps[0].function_name).toBe('DBOS.send');
   });
 
-  test('test-setEvent', async () => {
+  test('test-set-getEvent', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).setEventWorkflow();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     console.log(wfsteps);
     expect(wfsteps.workflow_uuid).toBe(wfid);
-    expect(wfsteps.steps.length).toBe(1);
+    expect(wfsteps.steps.length).toBe(3);
     expect(wfsteps.steps[0].function_name).toBe('DBOS.setEvent');
+    expect(wfsteps.steps[2].function_name).toBe('DBOS.getEvent');
   });
 });
