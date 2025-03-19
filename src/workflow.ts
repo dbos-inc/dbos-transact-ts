@@ -233,6 +233,10 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   }
 
   functionIDGetIncrement(): number {
+    console.log('functionIDGetIncrement called', this.workflowUUID, this.functionID);
+    /* if (this.functionID === 0) {
+      console.trace();
+    } */
     return this.functionID++;
   }
 

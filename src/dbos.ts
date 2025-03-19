@@ -615,6 +615,7 @@ export class DBOS {
 
       const wfctx = assertCurrentWorkflowContext();
 
+      console.log('interesting functionIDGetIncrement');
       const funcId = wfctx.functionIDGetIncrement();
       wfId = wfId || wfctx.workflowUUID + '-' + funcId;
       const wfParams: WorkflowParams = {
@@ -624,6 +625,7 @@ export class DBOS {
         queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
       };
 
+      console.log('Within the workflow call');
       for (const op of ops) {
         proxy[op.name] = op.workflowConfig
           ? (...args: unknown[]) =>
@@ -668,6 +670,8 @@ export class DBOS {
       configuredInstance,
       parentCtx,
     };
+
+    console.log('Outside the workflow call');
 
     for (const op of ops) {
       proxy[op.name] = op.workflowConfig

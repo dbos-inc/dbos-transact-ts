@@ -716,6 +716,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       params.tempWfName,
     );
 
+    console.log('Workflow Id for this workflow is: ', workflowUUID);
+    console.log('Workflow id for the parent workflow is: ', params.parentCtx?.workflowUUID);
+
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
@@ -770,6 +773,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
         args = ires.args;
         status = ires.status;
         await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
+        /* if (params.parentCtx) {
+          let s = params.parentCtx as WorkflowContextImpl;
+          await this.systemDatabase.recordParentChildRelationship(params.parentCtx.workflowUUID, workflowUUID, s.functionIDGetIncrement(), wf.name);
+        } */
+
+        if (callerFunctionID !== undefined && callerUUID !== undefined) {
+          await this.systemDatabase.recordParentChildRelationship(callerUUID, workflowUUID, callerFunctionID, wf.name);
+        }
       }
     }
 

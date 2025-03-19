@@ -611,6 +611,7 @@ describe('test-list-queues', () => {
 
 describe('test-list-steps', () => {
   let config: DBOSConfig;
+  const queue = new WorkflowQueue('child_queue');
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
@@ -629,6 +630,7 @@ describe('test-list-steps', () => {
       await TestListSteps.stepTwo();
       await DBOS.sleep(10);
     }
+
     @DBOS.step()
     // eslint-disable-next-line @typescript-eslint/require-await
     static async stepOne() {
@@ -655,6 +657,22 @@ describe('test-list-steps', () => {
     static async setEventWorkflow() {
       await DBOS.setEvent('key', 'value');
       await DBOS.getEvent('fakewid', 'key', 1);
+    }
+
+    @DBOS.workflow()
+    static async callChildWorkflow() {
+      // await DBOS.startWorkflow(TestListSteps).testWorkflow();
+      await DBOS.startWorkflow(TestListSteps).testWorkflow();
+      await TestListSteps.stepOne();
+      await TestListSteps.stepTwo();
+    }
+
+    @DBOS.workflow()
+    static async enqueueChildWorkflow() {
+      await TestListSteps.stepOne();
+      await TestListSteps.stepTwo();
+      const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).testWorkflow();
+      await handle.getResult();
     }
   }
   test('test-list-steps', async () => {
@@ -703,5 +721,19 @@ describe('test-list-steps', () => {
     expect(wfsteps.steps.length).toBe(3);
     expect(wfsteps.steps[0].function_name).toBe('DBOS.setEvent');
     expect(wfsteps.steps[2].function_name).toBe('DBOS.getEvent');
+  });
+
+  test('test-call-child-workflow', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflow();
+    await handle.getResult();
+    console.log(await listWorkflowSteps(config, wfid));
+  });
+
+  test('test-queue-child-workflow', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflow();
+    await handle.getResult();
+    console.log(await listWorkflowSteps(config, wfid));
   });
 });

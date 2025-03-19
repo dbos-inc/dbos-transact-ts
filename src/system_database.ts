@@ -58,6 +58,12 @@ export interface SystemDatabase {
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R, functionName: string): Promise<void>;
   recordOperationError(workflowUUID: string, functionID: number, error: Error, functionName: string): Promise<void>;
+  recordParentChildRelationship(
+    parentUUID: string,
+    childUUID: string,
+    functionID: number,
+    fuctionName: string,
+  ): Promise<void>;
 
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
@@ -651,6 +657,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
       } else {
         throw err;
       }
+    }
+  }
+
+  async recordParentChildRelationship(
+    parentUUID: string,
+    childUUID: string,
+    functionID: number,
+    functionName: string,
+  ): Promise<void> {
+    try {
+      await this.pool.query<operation_outputs>(
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, function_name, child_id) VALUES ($1, $2, $3, $4);`,
+        [parentUUID, functionID, functionName, childUUID],
+      );
+    } catch (error) {
+      throw error;
     }
   }
 
