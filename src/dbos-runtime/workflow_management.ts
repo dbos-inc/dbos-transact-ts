@@ -1,8 +1,8 @@
 import { createLogger } from 'winston';
 import { DBOSConfig, GetWorkflowsInput, StatusString } from '..';
-import { PostgresSystemDatabase, SystemDatabase } from '../system_database';
+import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
-import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
+import { GetQueuedWorkflowsInput } from '../workflow';
 import { HTTPRequest } from '../context';
 import axios from 'axios';
 
@@ -55,24 +55,22 @@ export async function listWorkflowSteps(config: DBOSConfig, workflowUUID: string
   return workflowSteps;
 }
 
-export type WorkflowInformation = Omit<WorkflowStatus, 'request'> & {
-  workflowUUID: string;
+export type WorkflowInformation = Omit<WorkflowStatusInternal, 'request' | 'error'> & {
   input?: unknown[];
-  output?: unknown;
-  error?: unknown;
   request?: HTTPRequest;
+  error?: unknown;
 };
 
-async function getWorkflowInfo(
+export async function getWorkflowInfo(
   systemDatabase: SystemDatabase,
   workflowUUID: string,
   getRequest: boolean,
 ): Promise<WorkflowInformation> {
-  const info = (await systemDatabase.getWorkflowStatus(workflowUUID)) as WorkflowInformation;
-  info.workflowUUID = workflowUUID;
+  const info = (await systemDatabase.getWorkflowStatusInternal(workflowUUID)) as WorkflowInformation;
   if (info === null) {
     return Promise.resolve({} as WorkflowInformation);
   }
+  delete info.error; // Remove error from info, and add it back if needed
   const input = await systemDatabase.getWorkflowInputs(workflowUUID);
   if (input !== null) {
     info.input = input;

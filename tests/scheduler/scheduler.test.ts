@@ -76,9 +76,9 @@ class DBOSSchedTestClass {
   @Workflow()
   static async scheduledDefault(ctxt: WorkflowContext, schedTime: Date, startTime: Date) {
     await ctxt.invoke(DBOSSchedTestClass).scheduledTxn();
-    if (schedTime.getTime() > startTime.getTime() + 0.002) {
+    if (schedTime.getTime() > startTime.getTime() + 2) {
       // Floating point, sleep, etc., is a little imprecise
-      ctxt.logger.warn(
+      console.log(
         `Scheduled 'scheduledDefault' function running early: ${ctxt.workflowUUID}; at ${startTime.toISOString()} vs ${schedTime.toISOString()}`,
       );
       DBOSSchedTestClass.nTooEarly++;

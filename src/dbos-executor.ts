@@ -719,9 +719,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
-      name: wf.name,
-      className: wCtxt.isTempWorkflow ? '' : getRegisteredMethodClassName(wf),
-      configName: params.configuredInstance?.name || '',
+      workflowName: wf.name,
+      workflowClassName: wCtxt.isTempWorkflow ? '' : getRegisteredMethodClassName(wf),
+      workflowConfigName: params.configuredInstance?.name || '',
       queueName: params.queueName,
       authenticatedUser: wCtxt.authenticatedUser,
       output: undefined,
@@ -729,7 +729,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       assumedRole: wCtxt.assumedRole,
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
-      executorID: wCtxt.executorID,
+      executorId: wCtxt.executorID,
       applicationVersion: globalParams.appVersion,
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
@@ -737,8 +737,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     };
 
     if (wCtxt.isTempWorkflow) {
-      internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
-      internalStatus.className = params.tempWfClass ?? '';
+      internalStatus.workflowName = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+      internalStatus.workflowClassName = params.tempWfClass ?? '';
     }
 
     let status: string | undefined = undefined;
@@ -840,7 +840,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           this.logger.error(e);
           e.dbos_already_logged = true;
           if (wCtxt.isTempWorkflow) {
-            internalStatus.name = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+            internalStatus.workflowName = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
           }
           internalStatus.error = DBOSJSON.stringify(serializeError(e));
           internalStatus.status = StatusString.ERROR;

@@ -13,6 +13,10 @@ export interface workflow_status {
   executor_id: string; // Set to "local" for local deployment, set to microVM ID for cloud deployment.
   application_version: string;
   queue_name?: string;
+  created_at: number;
+  updated_at: number;
+  application_id: string;
+  recovery_attempts: number;
 }
 
 export interface notifications {

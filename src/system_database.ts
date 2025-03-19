@@ -60,6 +60,11 @@ export interface SystemDatabase {
   recordOperationError(workflowUUID: string, functionID: number, error: Error, functionName: string): Promise<void>;
 
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
+  getWorkflowStatusInternal(
+    workflowUUID: string,
+    callerUUID?: string,
+    functionID?: number,
+  ): Promise<WorkflowStatusInternal | null>;
   getWorkflowResult<R>(workflowUUID: string): Promise<R>;
   setWorkflowStatus(
     workflowUUID: string,
@@ -129,9 +134,9 @@ export interface SystemDatabase {
 export interface WorkflowStatusInternal {
   workflowUUID: string;
   status: string;
-  name: string;
-  className: string;
-  configName: string;
+  workflowName: string;
+  workflowClassName: string;
+  workflowConfigName: string;
   queueName?: string;
   authenticatedUser: string;
   output: unknown;
@@ -139,11 +144,13 @@ export interface WorkflowStatusInternal {
   assumedRole: string;
   authenticatedRoles: string[];
   request: HTTPRequest;
-  executorID: string;
+  executorId: string;
   applicationVersion: string;
   applicationID: string;
   createdAt: number;
+  updatedAt?: number;
   maxRetries: number;
+  recoveryAttempts?: number;
 }
 
 export interface ExistenceCheck {
@@ -301,16 +308,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
       [
         initStatus.workflowUUID,
         initStatus.status,
-        initStatus.name,
-        initStatus.className,
-        initStatus.configName,
+        initStatus.workflowName,
+        initStatus.workflowClassName,
+        initStatus.workflowConfigName,
         initStatus.queueName,
         initStatus.authenticatedUser,
         initStatus.assumedRole,
         DBOSJSON.stringify(initStatus.authenticatedRoles),
         DBOSJSON.stringify(initStatus.request),
         null,
-        initStatus.executorID,
+        initStatus.executorId,
         initStatus.applicationVersion,
         initStatus.applicationID,
         initStatus.createdAt,
@@ -321,16 +328,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Check the started workflow matches the expected name, class_name, config_name, and queue_name
     // A mismatch indicates a workflow starting with the same UUID but different functions, which should not be allowed.
     const resRow = result.rows[0];
-    initStatus.configName = initStatus.configName || '';
+    initStatus.workflowConfigName = initStatus.workflowConfigName || '';
     resRow.config_name = resRow.config_name || '';
     resRow.queue_name = resRow.queue_name === null ? undefined : resRow.queue_name; // Convert null in SQL to undefined
     let msg = '';
-    if (resRow.name !== initStatus.name) {
-      msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.name}`;
-    } else if (resRow.class_name !== initStatus.className) {
-      msg = `Workflow already exists with a different class name: ${resRow.class_name}, but the provided class name is: ${initStatus.className}`;
-    } else if (resRow.config_name !== initStatus.configName) {
-      msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.configName}`;
+    if (resRow.name !== initStatus.workflowName) {
+      msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
+    } else if (resRow.class_name !== initStatus.workflowClassName) {
+      msg = `Workflow already exists with a different class name: ${resRow.class_name}, but the provided class name is: ${initStatus.workflowClassName}`;
+    } else if (resRow.config_name !== initStatus.workflowConfigName) {
+      msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.workflowConfigName}`;
     } else if (resRow.queue_name !== initStatus.queueName) {
       // This is a warning because a different queue name is not necessarily an error.
       this.logger.warn(
@@ -400,19 +407,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
           values.push(
             workflowUUID,
             status.status,
-            status.name,
+            status.workflowName,
             status.authenticatedUser,
             status.assumedRole,
             DBOSJSON.stringify(status.authenticatedRoles),
             DBOSJSON.stringify(status.request),
             DBOSJSON.stringify(status.output),
-            status.executorID,
+            status.executorId,
             status.applicationVersion,
             status.applicationID,
             status.createdAt,
             Date.now(),
-            status.className,
-            status.configName,
+            status.workflowClassName,
+            status.workflowConfigName,
             status.queueName,
           );
           batchUUIDs.push(workflowUUID);
@@ -472,16 +479,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
       [
         workflowUUID,
         StatusString.ERROR,
-        status.name,
-        status.className,
-        status.configName,
+        status.workflowName,
+        status.workflowClassName,
+        status.workflowConfigName,
         status.queueName,
         status.authenticatedUser,
         status.assumedRole,
         DBOSJSON.stringify(status.authenticatedRoles),
         DBOSJSON.stringify(status.request),
         status.error,
-        status.executorID,
+        status.executorId,
         status.applicationID,
         status.applicationVersion,
         status.createdAt,
@@ -1062,6 +1069,30 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID?: number,
     functionName?: string,
   ): Promise<WorkflowStatus | null> {
+    const internalStatus = await this.getWorkflowStatusInternal(workflowUUID, callerUUID, functionID, functionName);
+    if (internalStatus === null) {
+      return null;
+    }
+    return {
+      status: internalStatus.status,
+      workflowName: internalStatus.workflowName,
+      workflowClassName: internalStatus.workflowClassName,
+      workflowConfigName: internalStatus.workflowConfigName,
+      queueName: internalStatus.queueName,
+      authenticatedUser: internalStatus.authenticatedUser,
+      assumedRole: internalStatus.assumedRole,
+      authenticatedRoles: internalStatus.authenticatedRoles,
+      request: internalStatus.request,
+      executorId: internalStatus.executorId,
+    };
+  }
+
+  async getWorkflowStatusInternal(
+    workflowUUID: string,
+    callerUUID?: string,
+    functionID?: number,
+    functionName?: string,
+  ): Promise<WorkflowStatusInternal | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerUUID !== undefined && functionID !== undefined) {
       const { rows } = await this.pool.query<operation_outputs>(
@@ -1069,19 +1100,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
         [callerUUID, functionID],
       );
       if (rows.length > 0) {
-        return DBOSJSON.parse(rows[0].output) as WorkflowStatus;
+        return DBOSJSON.parse(rows[0].output) as WorkflowStatusInternal;
       }
     }
 
     const { rows } = await this.pool.query<workflow_status>(
-      `SELECT status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name, executor_id FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
+      `SELECT workflow_uuid, status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name, executor_id, created_at, updated_at, application_version, application_id, recovery_attempts FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
       [workflowUUID],
     );
-    let value = null;
+    let value: WorkflowStatusInternal | null = null;
     if (rows.length > 0) {
       value = {
+        workflowUUID: rows[0].workflow_uuid,
         status: rows[0].status,
         workflowName: rows[0].name,
+        output: undefined,
+        error: '',
         workflowClassName: rows[0].class_name || '',
         workflowConfigName: rows[0].config_name || '',
         queueName: rows[0].queue_name || undefined,
@@ -1090,6 +1124,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         authenticatedRoles: DBOSJSON.parse(rows[0].authenticated_roles) as string[],
         request: DBOSJSON.parse(rows[0].request) as HTTPRequest,
         executorId: rows[0].executor_id,
+        createdAt: Number(rows[0].created_at),
+        updatedAt: Number(rows[0].updated_at),
+        applicationVersion: rows[0].application_version,
+        applicationID: rows[0].application_id,
+        recoveryAttempts: Number(rows[0].recovery_attempts),
+        maxRetries: 0,
       };
     }
 

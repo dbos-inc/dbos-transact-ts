@@ -268,6 +268,10 @@ describe('workflow-management-tests', () => {
     expect(info.error).toBeUndefined();
     expect(info.output).toBe('alice');
     expect(info.input).toEqual(['alice']);
+    expect(info.applicationVersion).toBe(globalParams.appVersion);
+    expect(info.createdAt).toBeGreaterThan(0);
+    expect(info.updatedAt).toBeGreaterThan(0);
+    expect(info.executorId).toBe(globalParams.executorID);
 
     info = infos[1];
     expect(info.authenticatedUser).toBe('alice');
@@ -280,6 +284,10 @@ describe('workflow-management-tests', () => {
     expect(error.message).toBe('alice');
     expect(info.output).toBeUndefined();
     expect(info.input).toEqual(['alice']);
+    expect(info.applicationVersion).toBe(globalParams.appVersion);
+    expect(info.createdAt).toBeGreaterThan(0);
+    expect(info.updatedAt).toBeGreaterThan(0);
+    expect(info.executorId).toBe(globalParams.executorID);
 
     const getInfo = await getWorkflow(config, info.workflowUUID, false);
     expect(info).toEqual(getInfo);
