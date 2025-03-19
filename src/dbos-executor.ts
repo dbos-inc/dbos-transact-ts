@@ -2056,14 +2056,21 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.error(`Cannot find transaction info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
-      tempWfType = TempWorkflowType.transaction;
-      tempWfName = getRegisteredMethodName(txnInfo.transaction);
-      tempWfClass = getRegisteredMethodClassName(txnInfo.transaction);
-      temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
-        const ctxtImpl = ctxt as WorkflowContextImpl;
-        return await ctxtImpl.transaction(txnInfo.transaction, clsInst, ...args);
-      };
-      clsinst = clsInst;
+
+      return await this.startTransactionTempWF(
+        txnInfo.transaction,
+        {
+          workflowUUID: workflowStartUUID,
+          parentCtx: parentCtx ?? undefined,
+          configuredInstance: clsInst,
+          queueName: wfStatus.queueName,
+          executeWorkflow: true,
+        },
+        undefined,
+        undefined,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ...inputs,
+      );
     } else if (nameArr[1] === TempWorkflowType.external) {
       const { commInfo, clsInst } = this.getStepInfoByNames(
         wfStatus.workflowClassName,

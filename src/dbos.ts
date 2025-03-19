@@ -678,18 +678,7 @@ export class DBOS {
         } else if (op.txnConfig) {
           const txn = op.registeredFunction as TransactionFunction<unknown[], unknown>;
           proxy[op.name] = (...args: unknown[]) =>
-            DBOSExecutor.globalInstance!.startTransactionTempWF(
-              txn,
-              {
-                ...wfParams,
-                tempWfType: TempWorkflowType.transaction,
-                tempWfName: getRegisteredMethodName(txn),
-                tempWfClass: getRegisteredMethodClassName(txn),
-              },
-              wfctx.workflowUUID,
-              funcId,
-              ...args,
-            );
+            DBOSExecutor.globalInstance!.startTransactionTempWF(txn, wfParams, wfctx.workflowUUID, funcId, ...args);
         } else if (op.stepConfig) {
           const step = op.registeredFunction as StepFunction<unknown[], unknown>;
           const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
