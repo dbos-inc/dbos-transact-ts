@@ -733,49 +733,12 @@ export class DBOS {
           DBOS.executor.workflow(op.registeredFunction as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
       } else if (op.txnConfig) {
         const txn = op.registeredFunction as TransactionFunction<unknown[], unknown>;
-        const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
-          return await DBOSExecutor.globalInstance!.callTransactionFunction(
-            txn,
-            wfParams.configuredInstance ?? null,
-            ctxt as WorkflowContextImpl,
-            ...args,
-          );
-        };
-
         proxy[op.name] = (...args: unknown[]) =>
-          DBOSExecutor.globalInstance!.workflow(
-            temp_workflow as WorkflowFunction<unknown[], unknown>,
-            {
-              ...wfParams,
-              tempWfType: TempWorkflowType.transaction,
-              tempWfName: getRegisteredMethodName(txn),
-              tempWfClass: getRegisteredMethodClassName(txn),
-            },
-            ...args,
-          );
+          DBOSExecutor.globalInstance!.startTransactionTempWF(txn, wfParams, undefined, undefined, ...args);
       } else if (op.stepConfig) {
         const step = op.registeredFunction as StepFunction<unknown[], unknown>;
-        const temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
-          return await DBOSExecutor.globalInstance!.callStepFunction(
-            step,
-            wfParams.configuredInstance ?? null,
-            ctxt as WorkflowContextImpl,
-            ...args,
-          );
-        };
-
-        proxy[op.name] = (...args: unknown[]) => {
-          return DBOSExecutor.globalInstance!.workflow(
-            temp_workflow as WorkflowFunction<unknown[], unknown>,
-            {
-              ...wfParams,
-              tempWfType: TempWorkflowType.external,
-              tempWfName: getRegisteredMethodName(step),
-              tempWfClass: getRegisteredMethodClassName(step),
-            },
-            ...args,
-          );
-        };
+        proxy[op.name] = (...args: unknown[]) =>
+          DBOSExecutor.globalInstance!.startStepTempWF(step, wfParams, undefined, undefined, ...args);
       } else {
         proxy[op.name] = (..._args: unknown[]) => {
           throw new DBOSNotRegisteredError(
