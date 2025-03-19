@@ -55,6 +55,7 @@ import { Application as ExpressApp } from 'express';
 import { INestApplication } from '@nestjs/common';
 import { FastifyInstance } from 'fastify';
 import _fastifyExpress from '@fastify/express'; // This is for fastify.use()
+import { v4 as uuidv4 } from 'uuid';
 
 import { PoolClient } from 'pg';
 import { Knex } from 'knex';
@@ -75,15 +76,19 @@ import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
 import { db_wizard } from './dbos-runtime/db_wizard';
 import { Hono } from 'hono';
+import { Conductor } from './conductor/conductor';
 
-// Declare all the HTTP applications a user can pass to the DBOS object during launch()
-// This allows us to add a DBOS tracing middleware (extract W3C Trace context, set request ID, etc)
-export interface DBOSHttpApps {
+// Declare all the options a user can pass to the DBOS object during launch()
+export interface DBOSLaunchOptions {
+  // HTTP applications to add DBOS tracing middleware to (extract W3C Trace context, set request ID, etc)
   koaApp?: Koa;
   expressApp?: ExpressApp;
   nestApp?: INestApplication;
   fastifyApp?: FastifyInstance;
   honoApp?: Hono;
+  // For DBOS Conductor
+  conductorURL?: string;
+  conductorKey?: string;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -185,6 +190,7 @@ export class DBOS {
   ///////
   static adminServer: Server | undefined = undefined;
   static appServer: Server | undefined = undefined;
+  static conductor: Conductor | undefined = undefined;
 
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
@@ -203,7 +209,7 @@ export class DBOS {
     return await DBOSRuntime.loadClasses(dbosEntrypointFiles);
   }
 
-  static async launch(httpApps?: DBOSHttpApps) {
+  static async launch(options?: DBOSLaunchOptions) {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
@@ -214,6 +220,11 @@ export class DBOS {
         ? DebugMode.TIME_TRAVEL
         : DebugMode.ENABLED
       : DebugMode.DISABLED;
+
+    if (options?.conductorKey) {
+      // Use a generated executor ID.
+      globalParams.executorID = uuidv4();
+    }
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
@@ -244,6 +255,15 @@ export class DBOS {
 
     DBOSExecutor.globalInstance.wfqEnded = wfQueueRunner.dispatchLoop(DBOSExecutor.globalInstance);
 
+    if (options?.conductorKey) {
+      if (!options.conductorURL) {
+        const dbosDomain = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
+        options.conductorURL = `wss://${dbosDomain}/conductor/v1alpha1`;
+      }
+      DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, options.conductorKey, options.conductorURL);
+      DBOS.conductor.dispatchLoop();
+    }
+
     for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
       await evtRcvr.initialize(DBOSExecutor.globalInstance);
     }
@@ -259,31 +279,29 @@ export class DBOS {
       });
     }
 
-    if (httpApps) {
-      if (httpApps.koaApp) {
-        DBOS.logger.info('Setting up Koa tracing middleware');
-        httpApps.koaApp.use(koaTracingMiddleware);
-      }
-      if (httpApps.expressApp) {
-        DBOS.logger.info('Setting up Express tracing middleware');
-        httpApps.expressApp.use(expressTracingMiddleware);
-      }
-      if (httpApps.fastifyApp) {
-        // Fastify can use express or middie under the hood, for middlewares.
-        // Middie happens to have the same semantic than express.
-        // See https://fastify.dev/docs/latest/Reference/Middleware/
-        DBOS.logger.info('Setting up Fastify tracing middleware');
-        httpApps.fastifyApp.use(expressTracingMiddleware);
-      }
-      if (httpApps.nestApp) {
-        // Nest.kj can use express or fastify under the hood. With fastify, Nest.js uses middie.
-        DBOS.logger.info('Setting up NestJS tracing middleware');
-        httpApps.nestApp.use(expressTracingMiddleware);
-      }
-      if (httpApps.honoApp) {
-        DBOS.logger.info('Setting up Hono tracing middleware');
-        httpApps.honoApp.use(honoTracingMiddleware);
-      }
+    if (options?.koaApp) {
+      DBOS.logger.info('Setting up Koa tracing middleware');
+      options.koaApp.use(koaTracingMiddleware);
+    }
+    if (options?.expressApp) {
+      DBOS.logger.info('Setting up Express tracing middleware');
+      options.expressApp.use(expressTracingMiddleware);
+    }
+    if (options?.fastifyApp) {
+      // Fastify can use express or middie under the hood, for middlewares.
+      // Middie happens to have the same semantic than express.
+      // See https://fastify.dev/docs/latest/Reference/Middleware/
+      DBOS.logger.info('Setting up Fastify tracing middleware');
+      options.fastifyApp.use(expressTracingMiddleware);
+    }
+    if (options?.nestApp) {
+      // Nest.kj can use express or fastify under the hood. With fastify, Nest.js uses middie.
+      DBOS.logger.info('Setting up NestJS tracing middleware');
+      options.nestApp.use(expressTracingMiddleware);
+    }
+    if (options?.honoApp) {
+      DBOS.logger.info('Setting up Hono tracing middleware');
+      options.honoApp.use(honoTracingMiddleware);
     }
 
     recordDBOSLaunch();
@@ -310,6 +328,15 @@ export class DBOS {
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
       DBOS.adminServer = undefined;
+    }
+
+    // Stop the conductor
+    if (DBOS.conductor) {
+      DBOS.conductor.stop();
+      while (!DBOS.conductor.isClosed) {
+        await sleepms(500);
+      }
+      DBOS.conductor = undefined;
     }
 
     // Stop the executor
