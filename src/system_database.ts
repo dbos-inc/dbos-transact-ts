@@ -872,7 +872,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       workflowUUID: string;
       functionID: number;
       timeoutFunctionID: number;
-      functionName: string;
     },
   ): Promise<T | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
@@ -963,9 +962,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Record the output if it is inside a workflow.
     if (callerWorkflow) {
-      const funcName = callerWorkflow.functionName || '';
-
-      await this.recordOperationOutput(callerWorkflow.workflowUUID, callerWorkflow.functionID, value, funcName);
+      await this.recordOperationOutput(callerWorkflow.workflowUUID, callerWorkflow.functionID, value, 'DBOS.getEvent');
     }
     return value;
   }
