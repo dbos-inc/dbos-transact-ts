@@ -1086,23 +1086,33 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    return await (await this.startTransactionTempWF(txn, params, undefined, undefined, ...args)).getResult();
+  }
+
+  async startTransactionTempWF<T extends unknown[], R>(
+    txn: Transaction<T, R>,
+    params: InternalWorkflowParams,
+    callerUUID?: string,
+    callerFunctionID?: number,
+    ...args: T
+  ): Promise<WorkflowHandle<R>> {
     // Create a workflow and call transaction.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await ctxtImpl.transaction(txn, params.configuredInstance ?? null, ...args);
+      return await this.callTransactionFunction(txn, params.configuredInstance ?? null, ctxtImpl, ...args);
     };
-    return (
-      await this.workflow(
-        temp_workflow,
-        {
-          ...params,
-          tempWfType: TempWorkflowType.transaction,
-          tempWfName: getRegisteredMethodName(txn),
-          tempWfClass: getRegisteredMethodClassName(txn),
-        },
-        ...args,
-      )
-    ).getResult();
+    return await this.internalWorkflow(
+      temp_workflow,
+      {
+        ...params,
+        tempWfType: TempWorkflowType.transaction,
+        tempWfName: getRegisteredMethodName(txn),
+        tempWfClass: getRegisteredMethodClassName(txn),
+      },
+      callerUUID,
+      callerFunctionID,
+      ...args,
+    );
   }
 
   async callTransactionFunction<T extends unknown[], R>(
