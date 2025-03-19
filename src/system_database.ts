@@ -27,6 +27,8 @@ import {
   workflow_inputs,
   workflow_queue,
   event_dispatch_kv,
+  step_function,
+  workflow_steps,
 } from '../schemas/system_db_schema';
 import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep } from './utils';
 import { HTTPRequest } from './context';
@@ -54,8 +56,8 @@ export interface SystemDatabase {
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
-  recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void>;
-  recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void>;
+  recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R, functionName: string): Promise<void>;
+  recordOperationError(workflowUUID: string, functionID: number, error: Error, functionName: string): Promise<void>;
 
   getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
@@ -592,12 +594,31 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R): Promise<void> {
+  async getWorkflowSteps(workflowUUID: string): Promise<workflow_steps> {
+    const { rows } = await this.pool.query<step_function>(
+      `SELECT function_id, function_name FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
+      [workflowUUID],
+    );
+
+    const workflow_steps: workflow_steps = {
+      workflow_uuid: workflowUUID,
+      steps: rows,
+    };
+
+    return workflow_steps;
+  }
+
+  async recordOperationOutput<R>(
+    workflowUUID: string,
+    functionID: number,
+    output: R,
+    functionName: string,
+  ): Promise<void> {
     const serialOutput = DBOSJSON.stringify(output);
     try {
       await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);`,
-        [workflowUUID, functionID, serialOutput],
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, function_name) VALUES ($1, $2, $3, $4);`,
+        [workflowUUID, functionID, serialOutput, functionName],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
@@ -610,12 +631,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordOperationError(workflowUUID: string, functionID: number, error: Error): Promise<void> {
+  async recordOperationError(
+    workflowUUID: string,
+    functionID: number,
+    error: Error,
+    functionName: string,
+  ): Promise<void> {
     const serialErr = DBOSJSON.stringify(serializeError(error));
     try {
       await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, error) VALUES ($1, $2, $3);`,
-        [workflowUUID, functionID, serialErr],
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, error, function_name) VALUES ($1, $2, $3, $4);`,
+        [workflowUUID, functionID, serialErr, functionName],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
@@ -631,11 +657,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
   /**
    *  Guard the operation, throwing an error if a conflicting execution is detected.
    */
-  async recordNotificationOutput<R>(client: PoolClient, workflowUUID: string, functionID: number, output: R) {
+  async recordNotificationOutput<R>(
+    client: PoolClient,
+    workflowUUID: string,
+    functionID: number,
+    output: R,
+    functionName: string,
+  ) {
     try {
       await client.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3);`,
-        [workflowUUID, functionID, DBOSJSON.stringify(output)],
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, function_name) VALUES ($1, $2, $3, $4);`,
+        [workflowUUID, functionID, DBOSJSON.stringify(output), functionName],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
@@ -663,8 +695,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } else {
       const endTimeMs = Date.now() + durationMS;
       await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output) VALUES ($1, $2, $3) ON CONFLICT DO NOTHING;`,
-        [workflowUUID, functionID, DBOSJSON.stringify(endTimeMs)],
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, function_name) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING;`,
+        [workflowUUID, functionID, DBOSJSON.stringify(endTimeMs), 'DBOS.sleep'],
       );
       return cancellableSleep(Math.max(endTimeMs - Date.now(), 0));
     }
@@ -696,7 +728,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
         [destinationUUID, topic, DBOSJSON.stringify(message)],
       );
-      await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
+      await this.recordNotificationOutput(client, workflowUUID, functionID, undefined, 'DBOS.send');
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -794,7 +826,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (finalRecvRows.length > 0) {
         message = DBOSJSON.parse(finalRecvRows[0].message) as T;
       }
-      await this.recordNotificationOutput(client, workflowUUID, functionID, message);
+      await this.recordNotificationOutput(client, workflowUUID, functionID, message, 'DBOS.recv');
       await client.query(`COMMIT`);
     } catch (e) {
       this.logger.error(e);
@@ -828,7 +860,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
          RETURNING workflow_uuid;`,
         [workflowUUID, key, DBOSJSON.stringify(message)],
       ));
-      await this.recordNotificationOutput(client, workflowUUID, functionID, undefined);
+      await this.recordNotificationOutput(client, workflowUUID, functionID, undefined, 'DBOS.setEvent');
       await client.query('COMMIT');
     } catch (e) {
       this.logger.error(e);
@@ -937,7 +969,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Record the output if it is inside a workflow.
     if (callerWorkflow) {
-      await this.recordOperationOutput(callerWorkflow.workflowUUID, callerWorkflow.functionID, value);
+      await this.recordOperationOutput(callerWorkflow.workflowUUID, callerWorkflow.functionID, value, 'DBOS.getEvent');
     }
     return value;
   }
@@ -1035,8 +1067,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     workflowUUID: string,
     callerUUID?: string,
     functionID?: number,
+    functionName?: string,
   ): Promise<WorkflowStatus | null> {
-    const internalStatus = await this.getWorkflowStatusInternal(workflowUUID, callerUUID, functionID);
+    const internalStatus = await this.getWorkflowStatusInternal(workflowUUID, callerUUID, functionID, functionName);
     if (internalStatus === null) {
       return null;
     }
@@ -1058,6 +1091,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     workflowUUID: string,
     callerUUID?: string,
     functionID?: number,
+    functionName?: string,
   ): Promise<WorkflowStatusInternal | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerUUID !== undefined && functionID !== undefined) {
@@ -1099,9 +1133,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       };
     }
 
+    if (functionName === undefined) {
+      functionName = '';
+    }
+
     // Record the output if it is inside a workflow.
     if (callerUUID !== undefined && functionID !== undefined) {
-      await this.recordOperationOutput(callerUUID, functionID, value);
+      await this.recordOperationOutput(callerUUID, functionID, value, functionName);
     }
     return value;
   }
