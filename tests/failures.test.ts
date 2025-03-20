@@ -260,10 +260,6 @@ class FailureTestClass extends ConfiguredInstance {
     return Promise.resolve(code + 1);
   }
 
-  static async noRegTransaction2(code: number) {
-    return Promise.resolve(code + 1);
-  }
-
   static async noRegWorkflow2(code: number) {
     return Promise.resolve(code + 1);
   }
