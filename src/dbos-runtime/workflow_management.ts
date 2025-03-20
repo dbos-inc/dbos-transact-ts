@@ -16,6 +16,7 @@ export async function listWorkflows(
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
+
   const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs;
   const workflowInfos = await Promise.all(
     workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
@@ -34,12 +35,24 @@ export async function listQueuedWorkflows(
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
+
   const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs;
   const workflowInfos = await Promise.all(
     workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
   );
   await systemDatabase.destroy();
   return workflowInfos;
+}
+
+export async function listWorkflowSteps(config: DBOSConfig, workflowUUID: string) {
+  const systemDatabase = new PostgresSystemDatabase(
+    config.poolConfig,
+    config.system_database,
+    createLogger() as unknown as GlobalLogger,
+  );
+  const workflowSteps = await systemDatabase.getWorkflowSteps(workflowUUID);
+  await systemDatabase.destroy();
+  return workflowSteps;
 }
 
 export type WorkflowInformation = Omit<WorkflowStatusInternal, 'request' | 'error'> & {
@@ -84,12 +97,10 @@ export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getR
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
-  try {
-    const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest);
-    return info;
-  } finally {
-    await systemDatabase.destroy();
-  }
+
+  const info = await getWorkflowInfo(systemDatabase, workflowUUID, getRequest);
+  await systemDatabase.destroy();
+  return info;
 }
 
 export async function cancelWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {

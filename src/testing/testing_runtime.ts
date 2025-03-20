@@ -174,10 +174,16 @@ export class TestingRuntimeImpl implements TestingRuntime {
    */
   async destroy() {
     // Only release once.
-    if (this.#isInitialized) {
-      await this.deactivateEventReceivers();
-      await this.#server?.dbosExec.destroy();
-      this.#isInitialized = false;
+    try {
+      if (this.#isInitialized) {
+        await this.deactivateEventReceivers();
+        await this.#server?.dbosExec.destroy();
+        this.#isInitialized = false;
+      }
+    } catch (err) {
+      const e = err as Error;
+      console.log(`Error destroying testing runtime: ${e.message}`);
+      throw err;
     }
   }
 

@@ -19,13 +19,22 @@ export interface BaseMessage {
   request_id: string;
 }
 
-export class ExecutorInfoResponse implements BaseMessage {
-  type = MessageType.EXECUTOR_INFO;
+export class BaseResponse implements BaseMessage {
+  type: MessageType;
   request_id: string;
+  error_message?: string;
+  constructor(type: MessageType, request_id: string, error_message?: string) {
+    this.type = type;
+    this.request_id = request_id;
+    this.error_message = error_message;
+  }
+}
+
+export class ExecutorInfoResponse extends BaseResponse {
   executor_id: string;
   application_version: string;
-  constructor(request_id: string, executor_id: string, application_version: string) {
-    this.request_id = request_id;
+  constructor(request_id: string, executor_id: string, application_version: string, error_message?: string) {
+    super(MessageType.EXECUTOR_INFO, request_id, error_message);
     this.executor_id = executor_id;
     this.application_version = application_version;
   }
@@ -41,12 +50,10 @@ export class RecoveryRequest implements BaseMessage {
   }
 }
 
-export class RecoveryResponse implements BaseMessage {
-  type = MessageType.RECOVERY;
-  request_id: string;
+export class RecoveryResponse extends BaseResponse {
   success: boolean;
-  constructor(request_id: string, success: boolean) {
-    this.request_id = request_id;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.RECOVERY, request_id, error_message);
     this.success = success;
   }
 }
@@ -61,12 +68,10 @@ export class CancelRequest implements BaseMessage {
   }
 }
 
-export class CancelResponse implements BaseMessage {
-  type = MessageType.CANCEL;
-  request_id: string;
+export class CancelResponse extends BaseResponse {
   success: boolean;
-  constructor(request_id: string, success: boolean) {
-    this.request_id = request_id;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.CANCEL, request_id, error_message);
     this.success = success;
   }
 }
@@ -81,12 +86,10 @@ export class ResumeRequest implements BaseMessage {
   }
 }
 
-export class ResumeResponse implements BaseMessage {
-  type = MessageType.RESUME;
-  request_id: string;
+export class ResumeResponse extends BaseResponse {
   success: boolean;
-  constructor(request_id: string, success: boolean) {
-    this.request_id = request_id;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.RESUME, request_id, error_message);
     this.success = success;
   }
 }
@@ -101,12 +104,10 @@ export class RestartRequest implements BaseMessage {
   }
 }
 
-export class RestartResponse implements BaseMessage {
-  type = MessageType.RESTART;
-  request_id: string;
+export class RestartResponse extends BaseResponse {
   success: boolean;
-  constructor(request_id: string, success: boolean) {
-    this.request_id = request_id;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.RESTART, request_id, error_message);
     this.success = success;
   }
 }
@@ -174,12 +175,10 @@ export class ListWorkflowsRequest implements BaseMessage {
   }
 }
 
-export class ListWorkflowsResponse implements BaseMessage {
-  type = MessageType.LIST_WORKFLOWS;
-  request_id: string;
+export class ListWorkflowsResponse extends BaseResponse {
   output: WorkflowsOutput[];
-  constructor(request_id: string, output: WorkflowsOutput[]) {
-    this.request_id = request_id;
+  constructor(request_id: string, output: WorkflowsOutput[], error_message?: string) {
+    super(MessageType.LIST_WORKFLOWS, request_id, error_message);
     this.output = output;
   }
 }
@@ -205,12 +204,10 @@ export class ListQueuedWorkflowsRequest implements BaseMessage {
   }
 }
 
-export class ListQueuedWorkflowsResponse implements BaseMessage {
-  type = MessageType.LIST_QUEUED_WORKFLOWS;
-  request_id: string;
+export class ListQueuedWorkflowsResponse extends BaseResponse {
   output: WorkflowsOutput[];
-  constructor(request_id: string, output: WorkflowsOutput[]) {
-    this.request_id = request_id;
+  constructor(request_id: string, output: WorkflowsOutput[], error_message?: string) {
+    super(MessageType.LIST_QUEUED_WORKFLOWS, request_id, error_message);
     this.output = output;
   }
 }
@@ -225,12 +222,10 @@ export class GetWorkflowRequest implements BaseMessage {
   }
 }
 
-export class GetWorkflowResponse implements BaseMessage {
-  type = MessageType.GET_WORKFLOW;
-  request_id: string;
+export class GetWorkflowResponse extends BaseResponse {
   output?: WorkflowsOutput;
-  constructor(request_id: string, output?: WorkflowsOutput) {
-    this.request_id = request_id;
+  constructor(request_id: string, output?: WorkflowsOutput, error_message?: string) {
+    super(MessageType.GET_WORKFLOW, request_id, error_message);
     this.output = output;
   }
 }
@@ -247,12 +242,10 @@ export class ExistPendingWorkflowsRequest implements BaseMessage {
   }
 }
 
-export class ExistPendingWorkflowsResponse implements BaseMessage {
-  type = MessageType.EXIST_PENDING_WORKFLOWS;
-  request_id: string;
+export class ExistPendingWorkflowsResponse extends BaseResponse {
   exist: boolean;
-  constructor(request_id: string, exist: boolean) {
-    this.request_id = request_id;
+  constructor(request_id: string, exist: boolean, error_message?: string) {
+    super(MessageType.EXIST_PENDING_WORKFLOWS, request_id, error_message);
     this.exist = exist;
   }
 }

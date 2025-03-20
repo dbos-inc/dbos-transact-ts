@@ -22,6 +22,7 @@ import {
   getWorkflow,
   listWorkflows,
   listQueuedWorkflows,
+  listWorkflowSteps,
 } from '../src/dbos-runtime/workflow_management';
 import { Client } from 'pg';
 import { Knex } from 'knex';
@@ -468,7 +469,7 @@ describe('test-list-queues', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
-  }, 10000);
+  }, 20000);
 
   class TestListQueues {
     static queuedSteps = 5;
@@ -495,6 +496,8 @@ describe('test-list-queues', () => {
   }
 
   test('test-list-queues', async () => {
+    console.log('starting test-list-queues');
+
     const wfid = uuidv4();
 
     // Start the workflow. Wait for all five tasks to start. Verify that they started.
@@ -512,6 +515,7 @@ describe('test-list-queues', () => {
     input = {
       workflowName: 'blockingTask',
     };
+
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
     for (let i = 0; i < TestListQueues.queuedSteps; i++) {
@@ -544,6 +548,7 @@ describe('test-list-queues', () => {
     input = {
       startTime: new Date(Date.now() + 10000).toISOString(),
     };
+
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
 
@@ -556,6 +561,7 @@ describe('test-list-queues', () => {
     input = {
       status: 'SUCCESS',
     };
+
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
 
@@ -565,9 +571,11 @@ describe('test-list-queues', () => {
     };
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
+
     input = {
       queueName: 'no',
     };
+
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(0);
 
@@ -598,5 +606,102 @@ describe('test-list-queues', () => {
 
     input = {};
     await expect(listQueuedWorkflows(config, input, false)).resolves.toEqual([]);
+  });
+});
+
+describe('test-list-steps', () => {
+  let config: DBOSConfig;
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+  });
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+  class TestListSteps {
+    @DBOS.workflow()
+    static async testWorkflow() {
+      await TestListSteps.stepOne();
+      await TestListSteps.stepTwo();
+      await DBOS.sleep(10);
+    }
+    @DBOS.step()
+    // eslint-disable-next-line @typescript-eslint/require-await
+    static async stepOne() {
+      console.log('executed stepOne');
+    }
+    @DBOS.step()
+    // eslint-disable-next-line @typescript-eslint/require-await
+    static async stepTwo() {
+      console.log('executed stepTwo');
+    }
+
+    @DBOS.workflow()
+    static async sendWorkflow(target: string) {
+      await DBOS.send(target, 'message1');
+    }
+
+    @DBOS.workflow()
+    static async recvWorkflow(target: string) {
+      const msg = await DBOS.recv(target, 1);
+      console.log('received message:', msg);
+    }
+
+    @DBOS.workflow()
+    static async setEventWorkflow() {
+      await DBOS.setEvent('key', 'value');
+      await DBOS.getEvent('fakewid', 'key', 1);
+    }
+  }
+  test('test-list-steps', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.workflow_uuid).toBe(wfid);
+    expect(wfsteps.steps.length).toBe(3);
+    expect(wfsteps.steps[0].function_id).toBe(0);
+    expect(wfsteps.steps[0].function_name).toBe('stepOne');
+    expect(wfsteps.steps[1].function_id).toBe(1);
+    expect(wfsteps.steps[1].function_name).toBe('stepTwo');
+    expect(wfsteps.steps[2].function_id).toBe(2);
+    expect(wfsteps.steps[2].function_name).toBe('DBOS.sleep');
+  });
+
+  test('test-send-recv', async () => {
+    const wfid1 = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).recvWorkflow('message1');
+
+    const wfid2 = uuidv4();
+    await DBOS.startWorkflow(TestListSteps, { workflowID: wfid2 }).sendWorkflow(wfid1);
+
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid1);
+    console.log(wfsteps);
+    expect(wfsteps.workflow_uuid).toBe(wfid1);
+    expect(wfsteps.steps.length).toBe(2);
+    expect(wfsteps.steps[0].function_name).toBe('DBOS.sleep');
+    expect(wfsteps.steps[1].function_name).toBe('DBOS.recv');
+
+    const wfsteps2 = await listWorkflowSteps(config, wfid2);
+    console.log(wfsteps2);
+    expect(wfsteps2.steps[0].function_id).toBe(0);
+    expect(wfsteps2.steps[0].function_name).toBe('DBOS.send');
+  });
+
+  test('test-set-getEvent', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).setEventWorkflow();
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    console.log(wfsteps);
+    expect(wfsteps.workflow_uuid).toBe(wfid);
+    expect(wfsteps.steps.length).toBe(3);
+    expect(wfsteps.steps[0].function_name).toBe('DBOS.setEvent');
+    expect(wfsteps.steps[2].function_name).toBe('DBOS.getEvent');
   });
 });
