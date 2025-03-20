@@ -537,7 +537,7 @@ describe('dbos-config', () => {
     });
   });
 
-  +describe('parseDbString', () => {
+  describe('parseDbString', () => {
     test('should correctly parse a full connection string with extra parameters', () => {
       // The parse function we use actually reads the certificate.
       jest.spyOn(fs, 'readFileSync').mockReturnValue('cert');
