@@ -103,8 +103,6 @@ export interface DBOSConfig {
   readonly database_url?: string;
   readonly userDbclient?: UserDatabaseName;
   readonly sysDbName?: string;
-  // readonly sys_db_pool_size?: string;
-  // readonly app_db_pool_size?: string;
   readonly logLevel?: string;
   readonly otlpTracesEndpoints?: string[];
   readonly adminPort?: number;

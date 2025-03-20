@@ -162,9 +162,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     dbos_dblocalsuffix ?? configFile.database.local_suffix ?? databaseConnection.local_suffix ?? false;
 
   let databaseName: string | undefined = configFile.database.app_db_name;
-
   const appName = retrieveApplicationName(configFile);
-
   if (globalParams.appName === '') {
     globalParams.appName = appName;
   }
@@ -416,8 +414,6 @@ export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOS
       },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
-    // sys_db_pool_size: config.sys_db_pool_size || 20,
-    // app_db_pool_size: config.app_db_pool_size || 20,
   };
 
   // The second predicated is just to satisfy TS: we know it is set above
