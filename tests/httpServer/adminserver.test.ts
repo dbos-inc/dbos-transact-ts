@@ -12,22 +12,11 @@ describe('admin-server-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
 
-  beforeAll(async () => {
-    await DBOS.shutdown();
-    // Reset the executor ID
-    process.env.DBOS__VMID = 'test-executor';
-    config = generateDBOSTestConfig();
-  });
+  describe('not-running-admin-server', () => {
+    beforeEach(() => {
+      DBOS.shutdown();
+    });
 
-  afterEach(async () => {
-    await systemDBClient.end();
-  }, 10000);
-
-  afterAll(async () => {
-    await DBOS.shutdown();
-  });
-
-  describe.only('not-running-admin-server', () => {
     test('test-admin-server-not-running', async () => {
       // This is now ignored
       const runtimeConfig: DBOSRuntimeConfig = {
@@ -41,21 +30,23 @@ describe('admin-server-tests', () => {
       config = generatePublicDBOSTestConfig({ runAdminServer: false });
       DBOS.setConfig(config, runtimeConfig);
       const [translatedConfig, _] = translatePublicDBOSconfig(config);
-      console.log(translatedConfig);
       await setUpDBOSTestDb(translatedConfig);
       await DBOS.launch();
 
       await expect(async () => {
-        const res = await fetch(`http://localhost:3001${HealthUrl}`, {
+        await fetch(`http://localhost:3001${HealthUrl}`, {
           method: 'GET',
         });
-        console.log(res);
       }).rejects.toThrow();
     });
   });
 
   describe('running-admin-server', () => {
     beforeAll(async () => {
+      // Reset the executor ID
+      process.env.DBOS__VMID = 'test-executor';
+      await DBOS.shutdown();
+      config = generateDBOSTestConfig();
       const runtimeConfig: DBOSRuntimeConfig = {
         entrypoints: [],
         port: 3000,
@@ -80,6 +71,14 @@ describe('admin-server-tests', () => {
       });
       await systemDBClient.connect();
       testAdminWorkflow.counter = 0;
+    });
+
+    afterEach(async () => {
+      await systemDBClient.end();
+    }, 10000);
+
+    afterAll(async () => {
+      await DBOS.shutdown();
     });
 
     const testQueueOne = new WorkflowQueue('test-queue-1');
