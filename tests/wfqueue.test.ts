@@ -750,10 +750,10 @@ class InterProcessWorkflow {
 
       // Now check the global concurrency is met
       const systemDBClient = new Client({
-        user: config.poolConfig.user,
-        port: config.poolConfig.port,
-        host: config.poolConfig.host,
-        password: config.poolConfig.password,
+        user: config.poolConfig!.user,
+        port: config.poolConfig!.port,
+        host: config.poolConfig!.host,
+        password: config.poolConfig!.password,
         database: config.system_database,
       });
       await systemDBClient.connect();

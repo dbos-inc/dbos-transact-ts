@@ -537,7 +537,7 @@ describe('dbos-config', () => {
     });
   });
 
-  describe.only('translatePublicDBOSconfig', () => {
+  describe('translatePublicDBOSconfig', () => {
     test('translate with full input', () => {
       const originalReadFileSync = fs.readFileSync;
       const certdata = 'abc';

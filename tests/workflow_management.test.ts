@@ -49,10 +49,10 @@ describe('workflow-management-tests', () => {
     await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
 
     systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
+      user: config.poolConfig!.user,
+      port: config.poolConfig!.port,
+      host: config.poolConfig!.host,
+      password: config.poolConfig!.password,
       database: config.system_database,
     });
     await systemDBClient.connect();
