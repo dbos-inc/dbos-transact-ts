@@ -1113,8 +1113,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const wfctx = getCurrentDBOSContext() as WorkflowContextImpl;
 
     let newfunctionId = undefined;
-
-    // if (callerUUID !== undefined && functionID !== undefined) {
     if (callerUUID !== undefined && wfctx !== undefined) {
       newfunctionId = wfctx.functionIDGetIncrement();
       const { rows } = await this.pool.query<operation_outputs>(
@@ -1122,7 +1120,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         [callerUUID, newfunctionId, 'getStatus'],
       );
       if (rows.length > 0) {
-        console.log(DBOSJSON.parse(rows[0].output) as WorkflowStatusInternal);
         return DBOSJSON.parse(rows[0].output) as WorkflowStatusInternal;
       }
     }
@@ -1132,7 +1129,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       [workflowUUID],
     );
 
-    // console.log('workflow status', rows);
     let value: WorkflowStatusInternal | null = null;
     if (rows.length > 0) {
       value = {
