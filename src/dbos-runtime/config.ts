@@ -39,6 +39,7 @@ export interface ConfigFile {
   name?: string;
   language?: string;
   database: DBConfig;
+  database_url?: string;
   http?: {
     cors_middleware?: boolean;
     credentials?: boolean;
@@ -263,6 +264,9 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   /* Handle user database config */
   /*******************************/
 
+  if (configFile.database_url) {
+    configFile.database = parseDbString(configFile.database_url);
+  }
   const poolConfig = constructPoolConfig(configFile, cliOptions);
 
   if (!isValidDBname(poolConfig.database!)) {

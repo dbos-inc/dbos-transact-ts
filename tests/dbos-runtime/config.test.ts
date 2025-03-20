@@ -148,6 +148,27 @@ describe('dbos-config', () => {
       expect(dbosConfig.poolConfig!.database).toEqual('some_app');
     });
 
+    test('parseConfigFile prioritizes database_url over database field', () => {
+      const localMockDBOSConfigYamlString = `
+            name: some-app
+            database_url: 'postgres://some_user:some_password@some_host:1234/some_db'
+            database:
+                hostname: 'localhost'
+                port: 5432
+                username: 'postgres'
+                password: \${PGPASSWORD}
+                app_db_name: 'some_db'
+            `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
+      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('SQL STATEMENTS');
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      expect(dbosConfig.poolConfig!.host).toEqual('some_host');
+      expect(dbosConfig.poolConfig!.port).toEqual(1234);
+      expect(dbosConfig.poolConfig!.user).toEqual('some_user');
+      expect(dbosConfig.poolConfig!.password).toEqual('some_password');
+      expect(dbosConfig.poolConfig!.database).toEqual('some_db');
+    });
+
     test('config file loads mixed params', () => {
       const localMockDBOSConfigYamlString = `
         name: some-app
