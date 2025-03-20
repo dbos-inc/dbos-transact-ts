@@ -100,40 +100,40 @@ class WorkflowsEnqueue {
   }
 
   @DBOS.workflow()
-  static async runAsWFIDs() {
+  static async runAsWFIDs(base: string = 'wwfstq') {
     expect(
       await (
-        await DBOS.startWorkflow(StaticStepTx, { workflowID: 'wwfstq1', queueName: serialqueue.name }).testTx(
+        await DBOS.startWorkflow(StaticStepTx, { workflowID: `${base}1`, queueName: serialqueue.name }).testTx(
           'a',
           '1',
-          'wwfstq1',
+          `${base}1`,
         )
       ).getResult(),
     ).toBe('1');
     expect(
       await (
-        await DBOS.startWorkflow(StaticStepTx, { workflowID: 'wwfstq2', queueName: serialqueue.name }).testStep(
+        await DBOS.startWorkflow(StaticStepTx, { workflowID: `${base}2`, queueName: serialqueue.name }).testStep(
           'a',
           '1',
-          'wwfstq2',
+          `${base}2`,
         )
       ).getResult(),
     ).toBe('1');
     expect(
       await (
-        await DBOS.startWorkflow(inst, { workflowID: 'wwfstq3', queueName: serialqueue.name }).testTx(
+        await DBOS.startWorkflow(inst, { workflowID: `${base}3`, queueName: serialqueue.name }).testTx(
           'a',
           '1',
-          'wwfstq3',
+          `${base}3`,
         )
       ).getResult(),
     ).toBe('1');
     expect(
       await (
-        await DBOS.startWorkflow(inst, { workflowID: 'wwfstq4', queueName: serialqueue.name }).testStep(
+        await DBOS.startWorkflow(inst, { workflowID: `${base}4`, queueName: serialqueue.name }).testStep(
           'a',
           '1',
-          'wwfstq4',
+          `${base}4`,
         )
       ).getResult(),
     ).toBe('1');
@@ -294,4 +294,20 @@ describe('queued-wf-tests-simple', () => {
     expect(InstanceStepTx.stepCnt).toBe(1);
     expect(InstanceStepTx.txCnt).toBe(1);
   }, 30000);
+
+  // Test that functions run (from wf)
+  test('run-step-tx-wf-onq', async () => {
+    const wfh1 = await DBOS.startWorkflow(WorkflowsEnqueue, { queueName: queue.name }).runFuncs();
+    const wfh2 = await DBOS.startWorkflow(WorkflowsEnqueue, { queueName: queue.name }).runAsWFs();
+    const wfh3 = await DBOS.startWorkflow(WorkflowsEnqueue, { queueName: queue.name }).runAsWFIDs('qwfsfromwfs');
+
+    await wfh1.getResult();
+    await wfh2.getResult();
+    await wfh3.getResult();
+
+    expect(StaticStepTx.stepCnt).toBe(3);
+    expect(StaticStepTx.txCnt).toBe(3);
+    expect(InstanceStepTx.stepCnt).toBe(3);
+    expect(InstanceStepTx.txCnt).toBe(3);
+  }, 10000);
 });
