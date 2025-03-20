@@ -58,6 +58,7 @@ export interface SystemDatabase {
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
+  checkOperation(workflowUUID: string, functionID: number): Promise<boolean>;
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R, functionName: string): Promise<void>;
   recordOperationError(workflowUUID: string, functionID: number, error: Error, functionName: string): Promise<void>;
   recordParentChildRelationship(
@@ -599,6 +600,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
       throw deserializeError(DBOSJSON.parse(rows[0].error));
     } else {
       return DBOSJSON.parse(rows[0].output) as R;
+    }
+  }
+
+  async checkOperation(workflowUUID: string, functionID: number): Promise<boolean> {
+    const { rows } = await this.pool.query<operation_outputs>(
+      `SELECT 1 FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
+      [workflowUUID, functionID],
+    );
+    if (rows.length > 0) {
+      return true;
+    } else {
+      throw false;
     }
   }
 

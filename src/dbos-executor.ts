@@ -771,6 +771,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
         status = ires.status;
         await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
         if (callerFunctionID !== undefined && callerUUID !== undefined) {
+          const hasStarted = await this.systemDatabase.checkOperation(workflowUUID, callerFunctionID);
+          if (!hasStarted) {
+            return new RetrievedHandle(this.systemDatabase, workflowUUID, callerUUID, callerFunctionID);
+          }
+
           await this.systemDatabase.recordParentChildRelationship(callerUUID, workflowUUID, callerFunctionID, wf.name);
         }
       }
