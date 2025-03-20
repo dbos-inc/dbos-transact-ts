@@ -447,8 +447,6 @@ export class DBOS {
     return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
   }
 
-  // TODO CTX parent workflow ID
-
   // sql session (various forms)
   static get sqlClient(): UserDatabaseClient {
     if (!DBOS.isInTransaction())
@@ -495,6 +493,10 @@ export class DBOS {
     if (ctx) return ctx.getConfig<T>(key);
     if (DBOS.executor) return DBOS.executor.getConfig(key, defaultValue);
     return defaultValue;
+  }
+
+  static async queryUserDB(sql: string, params?: unknown[]): Promise<unknown[]> {
+    return DBOS.executor.queryUserDB(sql, params);
   }
 
   //////
