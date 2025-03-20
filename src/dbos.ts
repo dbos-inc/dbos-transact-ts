@@ -221,6 +221,7 @@ export class DBOS {
 
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, { debugMode });
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
+    DBOS.globalLogger = executor.logger;
     await executor.init();
 
     if (debugWorkflowId) {
@@ -709,6 +710,32 @@ export class DBOS {
   static invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
   static invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
     if (!DBOS.isWithinWorkflow()) {
+      const pctx = getCurrentContextStore();
+      let span = pctx?.span;
+      if (!span) {
+        span = DBOS.executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+          operationType: pctx?.operationType,
+          authenticatedUser: pctx?.authenticatedUser,
+          assumedRole: pctx?.assumedRole,
+          authenticatedRoles: pctx?.authenticatedRoles,
+        });
+      }
+
+      let parentCtx: DBOSContextImpl | undefined = undefined;
+      if (pctx) {
+        parentCtx = pctx.ctx as DBOSContextImpl;
+      }
+      if (!parentCtx) {
+        parentCtx = new DBOSContextImpl(pctx?.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
+        parentCtx.request = pctx?.request || {};
+        parentCtx.authenticatedUser = pctx?.authenticatedUser || '';
+        parentCtx.assumedRole = pctx?.assumedRole || '';
+        parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
+      }
+      const wfParams: WorkflowParams = {
+        parentCtx,
+      };
+
       // Run the temp workflow way...
       if (typeof object === 'function') {
         const ops = getRegisteredOperations(object);
@@ -719,21 +746,21 @@ export class DBOS {
             ? (...args: unknown[]) =>
                 DBOSExecutor.globalInstance!.transaction(
                   op.registeredFunction as TransactionFunction<unknown[], unknown>,
-                  {},
+                  wfParams,
                   ...args,
                 )
             : op.stepConfig
               ? (...args: unknown[]) =>
                   DBOSExecutor.globalInstance!.external(
                     op.registeredFunction as StepFunction<unknown[], unknown>,
-                    {},
+                    wfParams,
                     ...args,
                   )
               : op.procConfig
                 ? (...args: unknown[]) =>
                     DBOSExecutor.globalInstance!.procedure<unknown[], unknown>(
                       op.registeredFunction as StoredProcedure<unknown[], unknown>,
-                      {},
+                      wfParams,
                       ...args,
                     )
                 : undefined;
@@ -749,14 +776,14 @@ export class DBOS {
             ? (...args: unknown[]) =>
                 DBOSExecutor.globalInstance!.transaction(
                   op.registeredFunction as TransactionFunction<unknown[], unknown>,
-                  { configuredInstance: targetInst },
+                  { ...wfParams, configuredInstance: targetInst },
                   ...args,
                 )
             : op.stepConfig
               ? (...args: unknown[]) =>
                   DBOSExecutor.globalInstance!.external(
                     op.registeredFunction as StepFunction<unknown[], unknown>,
-                    { configuredInstance: targetInst },
+                    { ...wfParams, configuredInstance: targetInst },
                     ...args,
                   )
               : undefined;
