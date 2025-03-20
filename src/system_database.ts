@@ -67,7 +67,7 @@ export interface SystemDatabase {
     fuctionName: string,
   ): Promise<void>;
 
-  getWorkflowStatus(workflowUUID: string, callerUUID?: string, functionID?: number): Promise<WorkflowStatus | null>;
+  getWorkflowStatus(workflowUUID: string, callerUUID?: string): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
     workflowUUID: string,
     callerUUID?: string,
@@ -669,12 +669,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionName: string,
   ): Promise<void> {
     try {
-      console.log('recordParentChildRelationship', parentUUID, childUUID, functionID, functionName);
       await this.pool.query<operation_outputs>(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, function_name, child_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING;`,
         [parentUUID, functionID, functionName, childUUID],
       );
     } catch (error) {
+      this.logger.error(error);
       throw error;
     }
   }
@@ -1088,13 +1088,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async getWorkflowStatus(
-    workflowUUID: string,
-    callerUUID?: string,
-    functionID?: number,
-    functionName?: string,
-  ): Promise<WorkflowStatus | null> {
-    const internalStatus = await this.getWorkflowStatusInternal(workflowUUID, callerUUID, functionID, functionName);
+  async getWorkflowStatus(workflowUUID: string, callerUUID?: string): Promise<WorkflowStatus | null> {
+    const internalStatus = await this.getWorkflowStatusInternal(workflowUUID, callerUUID);
     if (internalStatus === null) {
       return null;
     }
@@ -1112,14 +1107,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  async getWorkflowStatusInternal(
-    workflowUUID: string,
-    callerUUID?: string,
-    functionID?: number,
-    functionName?: string,
-  ): Promise<WorkflowStatusInternal | null> {
+  async getWorkflowStatusInternal(workflowUUID: string, callerUUID?: string): Promise<WorkflowStatusInternal | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
-    console.log('getWorkflowStatusInternal', workflowUUID, callerUUID, functionID, functionName);
 
     const wfctx = getCurrentDBOSContext() as WorkflowContextImpl;
 
@@ -1132,7 +1121,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2 AND function_name=$3`,
         [callerUUID, newfunctionId, 'getStatus'],
       );
-      console.log('transaction outputs', rows);
       if (rows.length > 0) {
         console.log(DBOSJSON.parse(rows[0].output) as WorkflowStatusInternal);
         return DBOSJSON.parse(rows[0].output) as WorkflowStatusInternal;
@@ -1168,10 +1156,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         recoveryAttempts: Number(rows[0].recovery_attempts),
         maxRetries: 0,
       };
-    }
-
-    if (functionName === undefined) {
-      functionName = '';
     }
 
     // Record the output if it is inside a workflow.
