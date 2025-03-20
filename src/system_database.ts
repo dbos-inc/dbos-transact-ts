@@ -17,6 +17,8 @@ import {
   GetWorkflowsInput,
   GetWorkflowsOutput,
   StatusString,
+  WorkflowContext,
+  WorkflowContextImpl,
   WorkflowStatus,
 } from './workflow';
 import {
@@ -37,6 +39,7 @@ import knex, { Knex } from 'knex';
 import path from 'path';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSEventReceiverQuery, DBOSEventReceiverState } from './eventreceiver';
+import { getCurrentDBOSContext } from './context';
 
 export interface SystemDatabase {
   init(): Promise<void>;
@@ -667,8 +670,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionName: string,
   ): Promise<void> {
     try {
+      console.log('recordParentChildRelationship', parentUUID, childUUID, functionID, functionName);
       await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, function_name, child_id) VALUES ($1, $2, $3, $4);`,
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, function_name, child_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING;`,
         [parentUUID, functionID, functionName, childUUID],
       );
     } catch (error) {
@@ -1116,12 +1120,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionName?: string,
   ): Promise<WorkflowStatusInternal | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
-    if (callerUUID !== undefined && functionID !== undefined) {
+    console.log('getWorkflowStatusInternal', workflowUUID, callerUUID, functionID, functionName);
+
+    const wfctx = getCurrentDBOSContext() as WorkflowContextImpl;
+
+    let newfunctionId = undefined;
+
+    // if (callerUUID !== undefined && functionID !== undefined) {
+    if (callerUUID !== undefined && wfctx !== undefined) {
+      newfunctionId = wfctx.functionIDGetIncrement();
       const { rows } = await this.pool.query<operation_outputs>(
-        `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
-        [callerUUID, functionID],
+        `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2 AND function_name=$3`,
+        [callerUUID, newfunctionId, 'getStatus'],
       );
+      console.log('transaction outputs', rows);
       if (rows.length > 0) {
+        console.log(DBOSJSON.parse(rows[0].output) as WorkflowStatusInternal);
         return DBOSJSON.parse(rows[0].output) as WorkflowStatusInternal;
       }
     }
@@ -1130,6 +1144,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `SELECT workflow_uuid, status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name, executor_id, created_at, updated_at, application_version, application_id, recovery_attempts FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
       [workflowUUID],
     );
+
+    // console.log('workflow status', rows);
     let value: WorkflowStatusInternal | null = null;
     if (rows.length > 0) {
       value = {
@@ -1160,9 +1176,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Record the output if it is inside a workflow.
-    if (callerUUID !== undefined && functionID !== undefined) {
-      await this.recordOperationOutput(callerUUID, functionID, value, functionName);
+    // if (callerUUID !== undefined && functionID !== undefined) {
+    if (callerUUID !== undefined && newfunctionId !== undefined) {
+      await this.recordOperationOutput(callerUUID, newfunctionId, value, 'getStatus');
     }
+
     return value;
   }
 

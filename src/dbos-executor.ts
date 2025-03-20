@@ -716,8 +716,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       params.tempWfName,
     );
 
-    console.log('Workflow Id for this workflow is: ', workflowUUID);
-    console.log('Workflow id for the parent workflow is: ', params.parentCtx?.workflowUUID);
+    // console.log('Workflow Id for this workflow is: ', workflowUUID);
+    // console.log('Workflow id for the parent workflow is: ', params.parentCtx?.workflowUUID);
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,

@@ -662,7 +662,8 @@ describe('test-list-steps', () => {
     @DBOS.workflow()
     static async callChildWorkflow() {
       // await DBOS.startWorkflow(TestListSteps).testWorkflow();
-      await DBOS.startWorkflow(TestListSteps).testWorkflow();
+      const handle = await DBOS.startWorkflow(TestListSteps).testWorkflow();
+      await handle.getStatus();
       await TestListSteps.stepOne();
       await TestListSteps.stepTwo();
     }
@@ -726,6 +727,7 @@ describe('test-list-steps', () => {
   test('test-call-child-workflow', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflow();
+    await handle.getStatus();
     await handle.getResult();
     console.log(await listWorkflowSteps(config, wfid));
   });

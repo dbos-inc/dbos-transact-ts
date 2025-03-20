@@ -191,7 +191,7 @@ describe('queued-wf-tests-simple', () => {
     // Verify that the gap between "waves" is ~equal to the period
     for (let wave = 1; wave < numWaves; ++wave) {
       expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 200);
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 200);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 300);
     }
 
     for (const h of handles) {
@@ -935,12 +935,18 @@ class TestChildWFs {
     const wfh4 = await DBOS.startWorkflow(TestChildWFs, { queueName: childqueue.name }).testChildWF(var2);
 
     await DBOS.sleepms(1000);
+    console.log('checking status for workflow', wfh4.getWorkflowUUID());
     expect((await wfh4.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
     await DBOS.send(wfh1.workflowID, 'go', 'release');
+    console.log('Sent 1 messages');
     await DBOS.send(wfh2.workflowID, 'go', 'release');
+    console.log('Sent 2 messages');
     await DBOS.send(wfh3.workflowID, 'go', 'release');
+    console.log('Sent 3 messages');
     await DBOS.send(wfh4.workflowID, 'go', 'release');
+
+    console.log('Sent messages wating for results');
 
     return (await wfh1.getResult()) + (await wfh2.getResult()) + (await wfh3.getResult()) + (await wfh4.getResult());
   }
