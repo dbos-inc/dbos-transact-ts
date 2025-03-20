@@ -1,6 +1,6 @@
 import { DBOS, ConfiguredInstance, InitContext } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestDb } from './helpers';
 import { WorkflowQueue } from '../src';
 
 const queue = new WorkflowQueue('testQ');
@@ -246,6 +246,8 @@ describe('queued-wf-tests-simple', () => {
     const wfh4 = DBOS.retrieveWorkflow('wfstq4');
     expect((await wfh4.getStatus())?.queueName).toBe(queue.name);
 
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+
     expect(StaticStepTx.stepCnt).toBe(1);
     expect(StaticStepTx.txCnt).toBe(1);
     expect(InstanceStepTx.stepCnt).toBe(1);
@@ -284,6 +286,8 @@ describe('queued-wf-tests-simple', () => {
     expect((await wfh3.getStatus())?.queueName).toBe(serialqueue.name);
     const wfh4 = DBOS.retrieveWorkflow('wwfstq4');
     expect((await wfh4.getStatus())?.queueName).toBe(serialqueue.name);
+
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
 
     expect(StaticStepTx.stepCnt).toBe(1);
     expect(StaticStepTx.txCnt).toBe(1);
