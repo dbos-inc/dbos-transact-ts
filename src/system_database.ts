@@ -608,11 +608,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `SELECT 1 FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
       [workflowUUID, functionID],
     );
-    if (rows.length > 0) {
-      return true;
-    } else {
-      throw false;
-    }
+    return rows.length > 0;
   }
 
   async getWorkflowSteps(workflowUUID: string): Promise<workflow_steps> {

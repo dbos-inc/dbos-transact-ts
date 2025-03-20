@@ -704,7 +704,21 @@ describe('test-list-steps', () => {
       const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).testWorkflow();
       await handle.getStatus();
     }
+
+    @DBOS.workflow()
+    static async childWorkflowWithCounter() {
+      console.log('childWorkflowWithCounter increasing counter');
+      callcount++;
+    }
+
+    @DBOS.workflow()
+    static async CounterParent() {
+      const handle = await DBOS.startWorkflow(TestListSteps).childWorkflowWithCounter();
+      await handle.getStatus();
+    }
   }
+
+  let callcount = 0;
   test('test-list-steps', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
@@ -835,5 +849,23 @@ describe('test-list-steps', () => {
     expect(wfsteps.steps[1].function_name).toBe('stepTwo');
     expect(wfsteps.steps[2].function_name).toBe('testWorkflow');
     expect(wfsteps.steps[3].function_name).toBe('getStatus');
+  });
+
+  test('test-child-rerun', async () => {
+    const wfid = uuidv4();
+    let handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
+    await handle.getResult();
+
+    handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
+    await handle.getResult();
+
+    expect(callcount).toBe(1);
+
+    const wfid1 = uuidv4();
+
+    handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).CounterParent();
+    await handle.getResult();
+
+    expect(callcount).toBe(2);
   });
 });
