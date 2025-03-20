@@ -17,7 +17,6 @@ import {
   GetWorkflowsInput,
   GetWorkflowsOutput,
   StatusString,
-  WorkflowContext,
   WorkflowContextImpl,
   WorkflowStatus,
 } from './workflow';
