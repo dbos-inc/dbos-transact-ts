@@ -4,7 +4,7 @@ import { DBOSConfig } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
 import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
-import { UserDatabaseName, isValidUserDatabaseName } from '../user_database';
+import { UserDatabaseName } from '../user_database';
 import { TelemetryConfig } from '../telemetry';
 import { writeFileSync } from 'fs';
 import Ajv, { ValidateFunction } from 'ajv';
@@ -74,6 +74,11 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
     const configFile = YAML.parse(interpolatedConfig) as ConfigFile;
     if (!configFile.database) {
       configFile.database = {}; // Create an empty database object if it doesn't exist
+    }
+    const schemaValidator = ajv.compile(dbosConfigSchema);
+    if (!schemaValidator(configFile)) {
+      const errorMessages = prettyPrintAjvErrors(schemaValidator);
+      throw new DBOSInitializationError(`${configFilePath} failed schema validation. ${errorMessages}`);
     }
     return configFile;
   } catch (e) {
@@ -250,12 +255,6 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
     );
   }
 
-  const schemaValidator = ajv.compile(dbosConfigSchema);
-  if (!schemaValidator(configFile)) {
-    const errorMessages = prettyPrintAjvErrors(schemaValidator);
-    throw new DBOSInitializationError(`${configFilePath} failed schema validation. ${errorMessages}`);
-  }
-
   if (configFile.language && configFile.language !== 'node') {
     throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`);
   }
@@ -357,20 +356,25 @@ function isValidDBname(dbName: string): boolean {
 
 */
 export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOSRuntimeConfig] {
+  const logger = new GlobalLogger();
   // Check there is no discrepancy between provided name and dbos-config.yaml
-  // Opportunistically grabbing the name from dbos-config.yaml if present and none is provided
   let appName = config.name;
   try {
     const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
     if (!configFile) {
-      throw new DBOSInitializationError(`DBOS configuration file ${dbosConfigFilePath} is empty`);
-    }
-    if (appName && configFile.name && appName !== configFile.name) {
-      throw new DBOSInitializationError(
-        `Provided app name '${config.name}' does not match the app name '${configFile.name}' in {dbosConfigFilePath}.`,
-      );
-    } else if (!appName && configFile.name) {
-      appName = configFile.name;
+      logger.warn(`DBOS configuration file ${dbosConfigFilePath} is empty`);
+    } else {
+      if (configFile.name) {
+        // Opportunistically grab the name from the config file if none was provided
+        if (!appName) {
+          appName = configFile.name;
+          // But throw if it was provided and is different from the one in config file
+        } else if (appName !== configFile.name) {
+          throw new DBOSInitializationError(
+            `Provided app name '${config.name}' does not match the app name '${configFile.name}' in {dbosConfigFilePath}.`,
+          );
+        }
+      }
     }
   } catch (e) {
     // Ignore file not found errors
@@ -397,17 +401,14 @@ export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOS
     { silent: true },
   );
 
-  if (config.userDbclient && !isValidUserDatabaseName(config.userDbclient)) {
-    throw new DBOSInitializationError(`Invalid user database client ${config.userDbclient as string}`);
-  }
-
   const translatedConfig: DBOSConfig = {
+    name: appName,
     poolConfig: poolConfig,
     userDbclient: config.userDbclient || UserDatabaseName.KNEX,
     telemetry: {
       logs: {
         logLevel: config.logLevel || 'info',
-        forceConsole: false,
+        forceConsole: false, // TODO: chat with @devhawk
       },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
@@ -422,17 +423,16 @@ export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOS
     };
   }
 
-  // FIXME: can we make unused fields optional
   const runtimeConfig: DBOSRuntimeConfig = {
-    port: 3000, // This should never be used
+    port: 3000, // unused forward
     admin_port: config.adminPort || 3001,
-    runAdminServer: config.runAdminServer || true,
-    entrypoints: [], // unused
-    start: [], // unused
-    setup: [], // unused
+    runAdminServer: config.runAdminServer === undefined ? true : config.runAdminServer,
+    entrypoints: [], // unused forward
+    start: [], // unused forward
+    setup: [], // unused forward
   };
 
-  return [config, runtimeConfig];
+  return [translatedConfig, runtimeConfig];
 }
 
 export function parseDbString(dbString: string): DBConfig {

@@ -93,9 +93,6 @@ export const UserDatabaseName = {
   DRIZZLE: 'drizzle',
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
-export function isValidUserDatabaseName(value: unknown): value is UserDatabaseName {
-  return Object.values(UserDatabaseName).includes(value as UserDatabaseName);
-}
 
 export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
 export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_outputs')`;

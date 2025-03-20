@@ -3,6 +3,7 @@ import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
+import { translatePublicDBOSconfig } from '../src/dbos-runtime/config';
 
 /* DB management helpers */
 export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
@@ -38,7 +39,20 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
   return dbosTestConfig;
 }
 
-export async function setUpDBOSTestDb(config: DBOSConfig) {
+export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
+  return {
+    name: 'dbostest', // Passing a name is kind of required because otherwise, we'll take in the name of the framework package.json, which is not a valid DB name
+    database_url: `postgres://postgres:${process.env.PGPASSWORD}@localhost:5432/dbostest`,
+    userDbclient: UserDatabaseName.PGNODE,
+    ...kwargs,
+  };
+}
+
+export async function setUpDBOSTestDb(cfg: DBOSConfig) {
+  if (!cfg.name) {
+    cfg.name = 'dbostest';
+  }
+  const [config, _] = translatePublicDBOSconfig(cfg);
   const pgSystemClient = new Client({
     user: config.poolConfig!.user,
     port: config.poolConfig!.port,

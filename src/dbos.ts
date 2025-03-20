@@ -9,7 +9,7 @@ import {
   DBOSContextImpl,
   getNextWFID,
 } from './context';
-import { DBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
+import { DBOSConfig, isDeprecatedDBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
 import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
@@ -70,7 +70,6 @@ import { ConfiguredInstance } from '.';
 import { StoredProcedure, StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
-import { set } from 'lodash';
 import { db_wizard } from './dbos-runtime/db_wizard';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
@@ -194,13 +193,6 @@ export class DBOS {
     DBOS.runtimeConfig = runtimeConfig;
   }
 
-  // For unit testing purposes only
-  static setAppConfig<T>(key: string, newValue: T): void {
-    const conf = DBOS.dbosConfig?.application;
-    if (!conf) throw new DBOSExecutorNotInitializedError();
-    set(conf, key, newValue);
-  }
-
   // Load files with DBOS classes (running their decorators)
   static async loadClasses(dbosEntrypointFiles: string[]) {
     return await DBOSRuntime.loadClasses(dbosEntrypointFiles);
@@ -231,7 +223,7 @@ export class DBOS {
       }
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
-    } else {
+    } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
       const [dbosConfig, runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig);
       if (!isDebugging && dbosConfig.poolConfig) {
         dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);

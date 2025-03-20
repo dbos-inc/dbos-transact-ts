@@ -123,6 +123,17 @@ export interface DBOSConfig {
   };
 }
 
+export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
+  return (
+    config.poolConfig !== undefined ||
+    config.telemetry !== undefined ||
+    config.system_database !== undefined ||
+    config.env !== undefined ||
+    config.application !== undefined ||
+    config.http !== undefined
+  );
+}
+
 export enum DebugMode {
   DISABLED,
   ENABLED,
