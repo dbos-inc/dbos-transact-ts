@@ -31,7 +31,7 @@ export class Conductor {
     try {
       this.dbosExec.logger.debug(`Connecting to conductor at ${this.url}`);
       // Start a new websocket connection
-      this.websocket = new WebSocket(this.url);
+      this.websocket = new WebSocket(this.url, { handshakeTimeout: 5000 });
       this.websocket.on('open', () => {
         this.dbosExec.logger.debug('Opened connection to DBOS conductor');
       });
@@ -40,6 +40,7 @@ export class Conductor {
         this.dbosExec.logger.debug(`Received message from conductor: ${data}`);
         const baseMsg = DBOSJSON.parse(data) as protocol.BaseMessage;
         const msgType = baseMsg.type;
+        let errorMsg: string | undefined = undefined;
         switch (msgType) {
           case protocol.MessageType.EXECUTOR_INFO:
             const infoResp = new protocol.ExecutorInfoResponse(
@@ -56,10 +57,11 @@ export class Conductor {
             try {
               await this.dbosExec.recoverPendingWorkflows(recoveryMsg.executor_ids);
             } catch (e) {
-              this.dbosExec.logger.error(`Exception encountered when recovering workflows: ${(e as Error).message}`);
+              errorMsg = `Exception encountered when recovering workflows: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
               success = false;
             }
-            const recoveryResp = new protocol.RecoveryResponse(baseMsg.request_id, success);
+            const recoveryResp = new protocol.RecoveryResponse(baseMsg.request_id, success, errorMsg);
             this.websocket!.send(DBOSJSON.stringify(recoveryResp));
             break;
           case protocol.MessageType.CANCEL:
@@ -68,12 +70,11 @@ export class Conductor {
             try {
               await this.dbosExec.cancelWorkflow(cancelMsg.workflow_id);
             } catch (e) {
-              this.dbosExec.logger.error(
-                `Exception encountered when cancelling workflow ${cancelMsg.workflow_id}: ${(e as Error).message}`,
-              );
+              errorMsg = `Exception encountered when cancelling workflow ${cancelMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
               cancelSuccess = false;
             }
-            const cancelResp = new protocol.CancelResponse(baseMsg.request_id, cancelSuccess);
+            const cancelResp = new protocol.CancelResponse(baseMsg.request_id, cancelSuccess, errorMsg);
             this.websocket!.send(DBOSJSON.stringify(cancelResp));
             break;
           case protocol.MessageType.RESUME:
@@ -82,12 +83,11 @@ export class Conductor {
             try {
               await this.dbosExec.resumeWorkflow(resumeMsg.workflow_id);
             } catch (e) {
-              this.dbosExec.logger.error(
-                `Exception encountered when resuming workflow ${resumeMsg.workflow_id}: ${(e as Error).message}`,
-              );
+              errorMsg = `Exception encountered when resuming workflow ${resumeMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
               resumeSuccess = false;
             }
-            const resumeResp = new protocol.ResumeResponse(baseMsg.request_id, resumeSuccess);
+            const resumeResp = new protocol.ResumeResponse(baseMsg.request_id, resumeSuccess, errorMsg);
             this.websocket!.send(DBOSJSON.stringify(resumeResp));
             break;
           case protocol.MessageType.RESTART:
@@ -96,12 +96,11 @@ export class Conductor {
             try {
               await this.dbosExec.executeWorkflowUUID(restartMsg.workflow_id, true);
             } catch (e) {
-              this.dbosExec.logger.error(
-                `Exception encountered when restarting workflow ${restartMsg.workflow_id}: ${(e as Error).message}`,
-              );
+              errorMsg = `Exception encountered when restarting workflow ${restartMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
               restartSuccess = false;
             }
-            const restartResp = new protocol.RestartResponse(baseMsg.request_id, restartSuccess);
+            const restartResp = new protocol.RestartResponse(baseMsg.request_id, restartSuccess, errorMsg);
             this.websocket!.send(DBOSJSON.stringify(restartResp));
             break;
           case protocol.MessageType.LIST_WORKFLOWS:
@@ -119,14 +118,20 @@ export class Conductor {
               offset: body.offset,
               sortDesc: body.sort_desc,
             };
-            const wfIDs = (await this.dbosExec.systemDatabase.getWorkflows(listWFReq)).workflowUUIDs;
-            const workflowsOutput = await Promise.all(
-              wfIDs.map(async (i) => {
-                const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, i, false);
-                return new protocol.WorkflowsOutput(wfInfo);
-              }),
-            );
-            const wfsResp = new protocol.ListWorkflowsResponse(listWFMsg.request_id, workflowsOutput);
+            let workflowsOutput: protocol.WorkflowsOutput[] = [];
+            try {
+              const wfIDs = (await this.dbosExec.systemDatabase.getWorkflows(listWFReq)).workflowUUIDs;
+              workflowsOutput = await Promise.all(
+                wfIDs.map(async (i) => {
+                  const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, i, false);
+                  return new protocol.WorkflowsOutput(wfInfo);
+                }),
+              );
+            } catch (e) {
+              errorMsg = `Exception encountered when listing workflows: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const wfsResp = new protocol.ListWorkflowsResponse(listWFMsg.request_id, workflowsOutput, errorMsg);
             this.websocket!.send(DBOSJSON.stringify(wfsResp));
             break;
           case protocol.MessageType.LIST_QUEUED_WORKFLOWS:
@@ -142,37 +147,67 @@ export class Conductor {
               offset: bodyQueued.offset,
               sortDesc: bodyQueued.sort_desc,
             };
-            const queuedWFIDs = (await this.dbosExec.systemDatabase.getQueuedWorkflows(listQueuedWFReq)).workflowUUIDs;
-            const queuedWFOutput = await Promise.all(
-              queuedWFIDs.map(async (i) => {
-                const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, i, false);
-                return new protocol.WorkflowsOutput(wfInfo);
-              }),
+            let queuedWFOutput: protocol.WorkflowsOutput[] = [];
+            try {
+              const queuedWFIDs = (await this.dbosExec.systemDatabase.getQueuedWorkflows(listQueuedWFReq))
+                .workflowUUIDs;
+              queuedWFOutput = await Promise.all(
+                queuedWFIDs.map(async (i) => {
+                  const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, i, false);
+                  return new protocol.WorkflowsOutput(wfInfo);
+                }),
+              );
+            } catch (e) {
+              errorMsg = `Exception encountered when listing queued workflows: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const queuedWfsResp = new protocol.ListQueuedWorkflowsResponse(
+              listQueuedWFMsg.request_id,
+              queuedWFOutput,
+              errorMsg,
             );
-            const queuedWfsResp = new protocol.ListQueuedWorkflowsResponse(listQueuedWFMsg.request_id, queuedWFOutput);
             this.websocket!.send(DBOSJSON.stringify(queuedWfsResp));
             break;
           case protocol.MessageType.GET_WORKFLOW:
             const getWFMsg = baseMsg as protocol.GetWorkflowRequest;
-            const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, getWFMsg.workflow_id, false);
-            const wfOutput = wfInfo.workflowUUID ? new protocol.WorkflowsOutput(wfInfo) : undefined;
-            const getWFResp = new protocol.GetWorkflowResponse(getWFMsg.request_id, wfOutput);
+            let wfOutput: protocol.WorkflowsOutput | undefined = undefined;
+            try {
+              const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, getWFMsg.workflow_id, false);
+              if (wfInfo.workflowUUID) {
+                wfOutput = new protocol.WorkflowsOutput(wfInfo);
+              }
+            } catch (e) {
+              errorMsg = `Exception encountered when getting workflow ${getWFMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const getWFResp = new protocol.GetWorkflowResponse(getWFMsg.request_id, wfOutput, errorMsg);
             this.websocket!.send(DBOSJSON.stringify(getWFResp));
             break;
           case protocol.MessageType.EXIST_PENDING_WORKFLOWS:
             const existPendingMsg = baseMsg as protocol.ExistPendingWorkflowsRequest;
-            const pendingWFs = await this.dbosExec.systemDatabase.getPendingWorkflows(
-              existPendingMsg.executor_id,
-              existPendingMsg.application_version,
-            );
+            let hasPendingWFs = false;
+            try {
+              const pendingWFs = await this.dbosExec.systemDatabase.getPendingWorkflows(
+                existPendingMsg.executor_id,
+                existPendingMsg.application_version,
+              );
+              hasPendingWFs = pendingWFs.length > 0;
+            } catch (e) {
+              errorMsg = `Exception encountered when checking for pending workflows: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
             const existPendingResp = new protocol.ExistPendingWorkflowsResponse(
               baseMsg.request_id,
-              pendingWFs.length > 0,
+              hasPendingWFs,
+              errorMsg,
             );
             this.websocket!.send(DBOSJSON.stringify(existPendingResp));
             break;
           default:
-            this.dbosExec.logger.error(`Unknown message type: ${baseMsg.type}`);
+            this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
+            // Still need to send a response to the conductor
+            const unknownResp = new protocol.BaseResponse(baseMsg.type, baseMsg.request_id, 'Unknown message type');
+            this.websocket!.send(DBOSJSON.stringify(unknownResp));
         }
       });
 
