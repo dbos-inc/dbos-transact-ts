@@ -387,7 +387,7 @@ describe('queued-wf-tests-simple', () => {
 
     @DBOS.workflow()
     static async testWorkflow() {
-      const handles = [];
+      const handles: WorkflowHandle<number>[] = [];
       for (let i = 0; i < TestQueueRecovery.queuedSteps; i++) {
         const h = await DBOS.startWorkflow(TestQueueRecovery, { queueName: TestQueueRecovery.queue.name }).blockingTask(
           i,
