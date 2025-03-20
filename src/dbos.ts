@@ -24,7 +24,7 @@ import { DLogger, GlobalLogger } from './telemetry/logs';
 import { DBOSError, DBOSExecutorNotInitializedError, DBOSInvalidWorkflowTransitionError } from './error';
 import { parseConfigFile } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
-import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
+import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
 import {
   configureInstance,
   getOrCreateClassRegistration,
@@ -52,7 +52,6 @@ import { v4 as uuidv4 } from 'uuid';
 import { PoolClient } from 'pg';
 import { Knex } from 'knex';
 import { StepConfig, StepFunction } from './step';
-import { wfQueueRunner } from './wfqueue';
 import {
   HandlerContext,
   StepContext,
@@ -69,6 +68,7 @@ import { set } from 'lodash';
 import { db_wizard } from './dbos-runtime/db_wizard';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
+import { PostgresSystemDatabase } from './system_database';
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -173,6 +173,20 @@ export class DBOS {
     set(conf, key, newValue);
   }
 
+  static async dropSystemDB(): Promise<void> {
+    return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig ?? parseConfigFile()[0]);
+  }
+
+  /** Only relevant for TypeORM, and for testing purposes only, not production */
+  static async createUserSchema() {
+    return DBOSExecutor.globalInstance?.userDatabase.createSchema();
+  }
+
+  /** Only relevant for TypeORM, and for testing purposes only, not production */
+  dropUserSchema() {
+    return DBOSExecutor.globalInstance?.userDatabase.dropSchema();
+  }
+
   // Load files with DBOS classes (running their decorators)
   static async loadClasses(dbosEntrypointFiles: string[]) {
     return await DBOSRuntime.loadClasses(dbosEntrypointFiles);
@@ -219,10 +233,7 @@ export class DBOS {
       return; // return for cases where process.exit is mocked
     }
 
-    DBOSExecutor.globalInstance.scheduler = new DBOSScheduler(DBOSExecutor.globalInstance);
-    DBOSExecutor.globalInstance.scheduler.initScheduler();
-
-    DBOSExecutor.globalInstance.wfqEnded = wfQueueRunner.dispatchLoop(DBOSExecutor.globalInstance);
+    await DBOSExecutor.globalInstance.initEventReceivers();
 
     if (options?.conductorKey) {
       if (!options.conductorURL) {
@@ -231,10 +242,6 @@ export class DBOS {
       }
       DBOS.conductor = new Conductor(DBOSExecutor.globalInstance, options.conductorKey, options.conductorURL);
       DBOS.conductor.dispatchLoop();
-    }
-
-    for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
-      await evtRcvr.initialize(DBOSExecutor.globalInstance);
     }
 
     // Start the DBOS admin server
@@ -314,6 +321,14 @@ export class DBOS {
     recordDBOSShutdown();
   }
 
+  static async deactivateEventReceivers() {
+    return DBOSExecutor.globalInstance?.deactivateEventReceivers();
+  }
+
+  static async initEventReceivers() {
+    return DBOSExecutor.globalInstance?.initEventReceivers();
+  }
+
   static get executor() {
     if (!DBOSExecutor.globalInstance) {
       throw new DBOSExecutorNotInitializedError();
@@ -349,6 +364,13 @@ export class DBOS {
       return undefined;
     }
     return DBOSHttpServer.instance.app.callback();
+  }
+
+  static getAdminCallback() {
+    if (!DBOSHttpServer.instance) {
+      return undefined;
+    }
+    return DBOSHttpServer.instance.adminApp.callback();
   }
 
   //////
@@ -1314,7 +1336,4 @@ export class DBOS {
     }
     return DBOSExecutor.globalInstance.recoverPendingWorkflows(executorIDs);
   }
-
-  // TODO CTX
-  // Initializers?  Deploy?  ORM Entities?
 }

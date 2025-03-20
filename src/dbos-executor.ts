@@ -1982,6 +1982,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return handlerArray;
   }
 
+  async initEventReceivers() {
+    this.scheduler = new DBOSScheduler(this);
+
+    this.scheduler.initScheduler();
+
+    this.wfqEnded = wfQueueRunner.dispatchLoop(this);
+
+    for (const evtRcvr of this.eventReceivers) {
+      await evtRcvr.initialize(this);
+    }
+  }
+
   async deactivateEventReceivers() {
     this.logger.info('Deactivating event receivers');
     for (const evtRcvr of this.eventReceivers || []) {
