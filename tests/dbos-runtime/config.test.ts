@@ -1,9 +1,10 @@
 /* eslint-disable */
 
+import fs from 'fs';
 import * as utils from '../../src/utils';
 import { UserDatabaseName } from '../../src/user_database';
 import { PoolConfig } from 'pg';
-import { parseConfigFile } from '../../src/dbos-runtime/config';
+import { parseConfigFile, parseDbString } from '../../src/dbos-runtime/config';
 import { DBOSRuntimeConfig, defaultEntryPoint } from '../../src/dbos-runtime/runtime';
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error';
 import { DBOSExecutor, DBOSConfig } from '../../src/dbos-executor';
@@ -533,6 +534,110 @@ describe('dbos-config', () => {
         jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
         expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
       }
+    });
+  });
+
+  +describe('parseDbString', () => {
+    test('should correctly parse a full connection string with extra parameters', () => {
+      // The parse function we use actually reads the certificate.
+      jest.spyOn(fs, 'readFileSync').mockReturnValue('cert');
+      const dbString =
+        'postgres://user:password@localhost:5432/mydatabase?sslmode=require&sslcert=my_cert.pem&connect_timeout=5&extra_param=ignore_me';
+
+      const result = parseDbString(dbString);
+
+      expect(result).toEqual({
+        hostname: 'localhost',
+        port: 5432,
+        username: 'user',
+        password: 'password',
+        app_db_name: 'mydatabase',
+        ssl: true,
+        ssl_ca: 'my_cert.pem',
+        connectionTimeoutMillis: 5000,
+      });
+      jest.restoreAllMocks();
+    });
+
+    test('should parse a connection string with no parameters', () => {
+      const dbString = 'postgres://user:password@localhost:5432/mydatabase';
+
+      const result = parseDbString(dbString);
+
+      expect(result).toEqual({
+        hostname: 'localhost',
+        port: 5432,
+        username: 'user',
+        password: 'password',
+        app_db_name: 'mydatabase',
+        ssl: false,
+        ssl_ca: undefined,
+        connectionTimeoutMillis: undefined,
+      });
+    });
+
+    test('should parse a connection string with only some parameters', () => {
+      const dbString = 'postgres://user@localhost:5432/mydatabase?sslmode=require';
+
+      const result = parseDbString(dbString);
+
+      expect(result).toEqual({
+        hostname: 'localhost',
+        port: 5432,
+        username: 'user',
+        password: undefined,
+        app_db_name: 'mydatabase',
+        ssl: true, // Since sslmode=require is present
+        ssl_ca: undefined,
+        connectionTimeoutMillis: undefined,
+      });
+    });
+
+    test('should parse a connection string missing port', () => {
+      const dbString = 'postgres://user:password@localhost/mydatabase';
+
+      const result = parseDbString(dbString);
+
+      expect(result).toEqual({
+        hostname: 'localhost',
+        port: undefined, // No port provided
+        username: 'user',
+        password: 'password',
+        app_db_name: 'mydatabase',
+        ssl: false,
+        ssl_ca: undefined,
+        connectionTimeoutMillis: undefined,
+      });
+    });
+
+    test('should parse a connection string missing username and password', () => {
+      const dbString = 'postgres://localhost:5432/mydatabase';
+
+      const result = parseDbString(dbString);
+
+      expect(result).toEqual({
+        hostname: 'localhost',
+        port: 5432,
+        username: undefined,
+        password: undefined,
+        app_db_name: 'mydatabase',
+        ssl: false,
+        ssl_ca: undefined,
+        connectionTimeoutMillis: undefined,
+      });
+    });
+
+    test('should handle an empty connection string (invalid case)', () => {
+      expect(() => parseDbString('')).toThrow();
+    });
+
+    test('should handle an invalid connection string format', () => {
+      expect(() => parseDbString('not-a-valid-db-string')).toThrow();
+    });
+
+    test('should handle a connection string missing hostname', () => {
+      const dbString = 'postgres://user:password@:5432/mydatabase';
+      expect(() => parseDbString(dbString)).toThrow();
     });
   });
 });

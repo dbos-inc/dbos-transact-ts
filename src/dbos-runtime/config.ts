@@ -4,10 +4,11 @@ import { DBOSConfig } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
 import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
-import { UserDatabaseName } from '../user_database';
+import { UserDatabaseName, isValidUserDatabaseName } from '../user_database';
 import { TelemetryConfig } from '../telemetry';
 import { writeFileSync } from 'fs';
 import Ajv, { ValidateFunction } from 'ajv';
+import { parse } from 'pg-connection-string';
 import path from 'path';
 import validator from 'validator';
 import fs from 'fs';
@@ -18,24 +19,26 @@ import dbosConfigSchema from '../../dbos-config.schema.json';
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true });
 
+interface DBConfig {
+  hostname?: string;
+  port?: number;
+  username?: string;
+  password?: string;
+  connectionTimeoutMillis?: number;
+  app_db_name?: string;
+  sys_db_name?: string;
+  ssl?: boolean;
+  ssl_ca?: string;
+  app_db_client?: UserDatabaseName;
+  migrate?: string[];
+  rollback?: string[];
+  local_suffix?: boolean;
+}
+
 export interface ConfigFile {
   name?: string;
   language?: string;
-  database: {
-    hostname?: string;
-    port?: number;
-    username?: string;
-    password?: string;
-    connectionTimeoutMillis?: number;
-    app_db_name?: string;
-    sys_db_name?: string;
-    ssl?: boolean;
-    ssl_ca?: string;
-    app_db_client?: UserDatabaseName;
-    migrate?: string[];
-    rollback?: string[];
-    local_suffix?: boolean;
-  };
+  database: DBConfig;
   http?: {
     cors_middleware?: boolean;
     credentials?: boolean;
@@ -75,6 +78,10 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
     return configFile;
   } catch (e) {
     if (e instanceof Error) {
+      const nodeError = e as NodeJS.ErrnoException;
+      if (nodeError.code === 'ENOENT') {
+        throw new DBOSInitializationError(`Failed to load config from ${configFilePath}: file not found`);
+      }
       throw new DBOSInitializationError(`Failed to load config from ${configFilePath}: ${e.message}`);
     } else {
       throw e;
@@ -100,7 +107,7 @@ export function writeConfigFile(configFile: YAML.Document, configFilePath: strin
   }
 }
 
-export function retrieveApplicationName(configFile: ConfigFile): string {
+function retrieveApplicationName(configFile: ConfigFile): string {
   let appName = configFile.name;
   if (appName !== undefined) {
     return appName;
@@ -117,7 +124,7 @@ export function retrieveApplicationName(configFile: ConfigFile): string {
   return appName;
 }
 
-export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions) {
+export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions): PoolConfig {
   // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
   const databaseConnection = loadDatabaseConnection();
   if (!cliOptions?.silent) {
@@ -149,7 +156,9 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     dbos_dblocalsuffix ?? configFile.database.local_suffix ?? databaseConnection.local_suffix ?? false;
 
   let databaseName: string | undefined = configFile.database.app_db_name;
+
   const appName = retrieveApplicationName(configFile);
+
   if (globalParams.appName === '') {
     globalParams.appName = appName;
   }
@@ -309,6 +318,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   const runtimeConfig: DBOSRuntimeConfig = {
     entrypoints: [...entrypoints],
     port: appPort,
+    runAdminServer: true,
     admin_port: Number(configFile.runtimeConfig?.admin_port) || appPort + 1,
     start: configFile.runtimeConfig?.start || [],
     setup: configFile.runtimeConfig?.setup || [],
@@ -336,4 +346,110 @@ function isValidDBname(dbName: string): boolean {
     return false;
   }
   return validator.matches(dbName, '^[a-z0-9_]+$');
+}
+
+/*
+ This function takes a DBOSConfig and ensure that 'public' fields take precedence over 'internal' fields.
+ It assumes that the DBOSConfig was passed programmatically and thus does not need to consider CLI options.
+
+ - Application Name: check there is no inconsistency between the provided name and the one in dbos-config.yaml, if any
+ - Database configuration: Ignore provided poolConfig and reconstructs it from the database_url field and constructPoolConfig()
+
+*/
+export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOSRuntimeConfig] {
+  // Check there is no discrepancy between provided name and dbos-config.yaml
+  // Opportunistically grabbing the name from dbos-config.yaml if present and none is provided
+  let appName = config.name;
+  try {
+    const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
+    if (!configFile) {
+      throw new DBOSInitializationError(`DBOS configuration file ${dbosConfigFilePath} is empty`);
+    }
+    if (appName && configFile.name && appName !== configFile.name) {
+      throw new DBOSInitializationError(
+        `Provided app name '${config.name}' does not match the app name '${configFile.name}' in {dbosConfigFilePath}.`,
+      );
+    } else if (!appName && configFile.name) {
+      appName = configFile.name;
+    }
+  } catch (e) {
+    // Ignore file not found errors
+    if (e instanceof DBOSInitializationError) {
+      if (!e.message.includes('file not found')) {
+        throw e;
+      }
+    }
+  }
+
+  // Resolve database configuration
+  let dburlConfig: DBConfig = {};
+  if (config.database_url) {
+    dburlConfig = parseDbString(config.database_url);
+  }
+
+  const poolConfig = constructPoolConfig(
+    {
+      name: appName,
+      database: dburlConfig,
+      application: {},
+      env: {},
+    },
+    { silent: true },
+  );
+
+  if (config.userDbclient && !isValidUserDatabaseName(config.userDbclient)) {
+    throw new DBOSInitializationError(`Invalid user database client ${config.userDbclient as string}`);
+  }
+
+  const translatedConfig: DBOSConfig = {
+    poolConfig: poolConfig,
+    userDbclient: config.userDbclient || UserDatabaseName.KNEX,
+    telemetry: {
+      logs: {
+        logLevel: config.logLevel || 'info',
+        forceConsole: false,
+      },
+    },
+    system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
+    // sys_db_pool_size: config.sys_db_pool_size || 20,
+    // app_db_pool_size: config.app_db_pool_size || 20,
+  };
+
+  // The second predicated is just to satisfy TS: we know it is set above
+  if (config.otlpTracesEndpoints && config.otlpTracesEndpoints.length > 0 && translatedConfig.telemetry) {
+    translatedConfig.telemetry.OTLPExporter = {
+      tracesEndpoint: config.otlpTracesEndpoints[0],
+    };
+  }
+
+  // FIXME: can we make unused fields optional
+  const runtimeConfig: DBOSRuntimeConfig = {
+    port: 3000, // This should never be used
+    admin_port: config.adminPort || 3001,
+    runAdminServer: config.runAdminServer || true,
+    entrypoints: [], // unused
+    start: [], // unused
+    setup: [], // unused
+  };
+
+  return [config, runtimeConfig];
+}
+
+export function parseDbString(dbString: string): DBConfig {
+  const parsed = parse(dbString);
+  // pg-connection-string doesn't parse query parameters, so we resort to the more generic URL() to do so
+  const url = new URL(dbString);
+  const queryParams = Object.fromEntries(url.searchParams.entries());
+  return {
+    hostname: parsed.host || undefined,
+    port: parsed.port ? parseInt(parsed.port, 10) : undefined,
+    username: parsed.user || undefined,
+    password: parsed.password || undefined,
+    app_db_name: parsed.database || undefined,
+    ssl: 'sslmode' in parsed && parsed.sslmode === 'require',
+    ssl_ca: queryParams['sslrootcert'] || undefined,
+    connectionTimeoutMillis: queryParams['connect_timeout']
+      ? parseInt(queryParams['connect_timeout'], 10) * 1000
+      : undefined,
+  };
 }

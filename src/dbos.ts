@@ -27,7 +27,7 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
 } from './error';
-import { parseConfigFile } from './dbos-runtime/config';
+import { parseConfigFile, translatePublicDBOSconfig } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
 import {
@@ -226,11 +226,22 @@ export class DBOS {
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
-      if (!isDebugging) {
+      if (!isDebugging && dbosConfig.poolConfig) {
         dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
       }
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
+    } else {
+      const [dbosConfig, runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig);
+      if (!isDebugging && dbosConfig.poolConfig) {
+        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
+      }
+      DBOS.dbosConfig = dbosConfig;
+      DBOS.runtimeConfig = runtimeConfig;
+    }
+
+    if (!DBOS.dbosConfig) {
+      throw new DBOSError('DBOS configuration not set');
     }
 
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, { debugMode });
@@ -267,7 +278,7 @@ export class DBOS {
 
     // Start the DBOS admin server
     const logger = DBOS.logger;
-    if (DBOS.runtimeConfig) {
+    if (DBOS.runtimeConfig && DBOS.runtimeConfig.runAdminServer) {
       const adminApp = DBOSHttpServer.setupAdminApp(executor);
       await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
 

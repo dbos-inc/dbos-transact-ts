@@ -98,10 +98,22 @@ export const dbosNull: DBOSNull = {};
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
-  poolConfig: PoolConfig;
+  // Public fields
+  name?: string;
+  readonly database_url?: string;
   readonly userDbclient?: UserDatabaseName;
+  readonly sysDbName?: string;
+  // readonly sys_db_pool_size?: string;
+  // readonly app_db_pool_size?: string;
+  readonly logLevel?: string;
+  readonly otlpTracesEndpoints?: string[];
+  readonly adminPort?: number;
+  readonly runAdminServer?: boolean;
+
+  // Internal fields
+  poolConfig?: PoolConfig;
   readonly telemetry?: TelemetryConfig;
-  readonly system_database: string;
+  readonly system_database?: string;
   readonly env?: Record<string, string>;
   readonly application?: object;
   readonly http?: {
@@ -254,6 +266,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
   ) {
     this.debugMode = debugMode ?? DebugMode.DISABLED;
 
+    // Do a few checks on config properties we expect to be set
+    if (!config.poolConfig) {
+      throw new DBOSInitializationError('No pool configuration provided');
+    }
+    if (!config.system_database) {
+      throw new DBOSInitializationError('No system database name provided');
+    }
+
     // Set configured environment variables
     if (config.env) {
       for (const [key, value] of Object.entries(config.env)) {
@@ -287,8 +307,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       this.logger.debug('Using Postgres system database');
       this.systemDatabase = new PostgresSystemDatabase(
-        this.config.poolConfig,
-        this.config.system_database,
+        this.config.poolConfig as PoolConfig, // we checked definition above
+        this.config.system_database as string, // we checked definition above
         this.logger,
       );
     }
@@ -306,6 +326,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   configureDbClient() {
+    if (!this.config.poolConfig) {
+      throw new DBOSInitializationError('No pool configuration provided');
+    }
     const userDbClient = this.config.userDbclient;
     const userDBConfig = this.config.poolConfig;
     if (userDbClient === UserDatabaseName.PRISMA) {
@@ -408,6 +431,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (this.initialized) {
       this.logger.error('Workflow executor already initialized!');
       return;
+    }
+
+    if (!this.config.poolConfig) {
+      throw new DBOSInitializationError('No pool configuration provided');
     }
 
     if (!classes || !classes.length) {
