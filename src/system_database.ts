@@ -341,7 +341,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } else if (resRow.queue_name !== initStatus.queueName) {
       // This is a warning because a different queue name is not necessarily an error.
       this.logger.warn(
-        `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated.`,
+        `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated. ${new Error().stack}`,
       );
     }
     if (msg !== '') {

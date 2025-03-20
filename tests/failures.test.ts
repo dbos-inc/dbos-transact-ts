@@ -7,12 +7,15 @@ import {
   Transaction,
   ArgOptional,
   TestingRuntime,
+  DBOS,
+  ConfiguredInstance,
+  InitContext,
 } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import { DatabaseError, PoolClient } from 'pg';
 import { v1 as uuidv1 } from 'uuid';
 import { StatusString } from '../src/workflow';
-import { DBOSError, DBOSMaxStepRetriesError } from '../src/error';
+import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError } from '../src/error';
 import { DBOSConfig } from '../src/dbos-executor';
 import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 
@@ -162,9 +165,29 @@ describe('failures-tests', () => {
     // Invoke an unregistered step in a workflow.
     await expect(testRuntime.invokeWorkflow(FailureTestClass).testCommWorkflow()).rejects.toThrow();
   });
+
+  test('no-registration', async () => {
+    // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of NotRegisteredError.
+
+    // Invoke an unregistered workflow.
+    expect(() => DBOS.startWorkflow(FailureTestClass).noRegWorkflow2(10)).toThrow(DBOSNotRegisteredError);
+
+    // Invoke an unregistered transaction.
+    expect(() => DBOS.startWorkflow(new FailureTestClass()).noRegFunction(10)).toThrow(DBOSNotRegisteredError);
+
+    return Promise.resolve();
+  });
 });
 
-class FailureTestClass {
+class FailureTestClass extends ConfiguredInstance {
+  initialize(_ctx: InitContext): Promise<void> {
+    return Promise.resolve();
+  }
+
+  constructor() {
+    super('name');
+  }
+
   static cnt = 0;
   static success: string = '';
 
@@ -234,6 +257,14 @@ class FailureTestClass {
   }
 
   static async noRegWorkflow(_ctxt: WorkflowContext, code: number) {
+    return Promise.resolve(code + 1);
+  }
+
+  static async noRegWorkflow2(code: number) {
+    return Promise.resolve(code + 1);
+  }
+
+  async noRegFunction(code: number) {
     return Promise.resolve(code + 1);
   }
 

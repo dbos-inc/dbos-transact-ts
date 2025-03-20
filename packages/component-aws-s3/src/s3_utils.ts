@@ -19,7 +19,7 @@ import {
   getConfigForAWSService,
   loadAWSConfigByName,
 } from '@dbos-inc/aws-config';
-import { DBOSError } from '@dbos-inc/dbos-sdk/dist/src/error';
+import { Error as DBOSError } from '@dbos-inc/dbos-sdk';
 
 export interface FileRecord {
   key: string;
@@ -221,7 +221,7 @@ export class DBOS_S3 extends ConfiguredInstance {
       return await DBOS_S3.postS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs, contentOptions);
     } catch (e) {
       DBOS.logger.error(e);
-      throw new DBOSError(`Unable to presign post: ${(e as Error).message}`, 500);
+      throw new DBOSError.DBOSError(`Unable to presign post: ${(e as Error).message}`, 500);
     }
   }
 
@@ -502,7 +502,7 @@ export class S3Ops extends ConfiguredInstance {
       return await S3Ops.postS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs, contentOptions);
     } catch (e) {
       ctx.logger.error(e);
-      throw new DBOSError(`Unable to presign post: ${(e as Error).message}`, 500);
+      throw new DBOSError.DBOSError(`Unable to presign post: ${(e as Error).message}`, 500);
     }
   }
 

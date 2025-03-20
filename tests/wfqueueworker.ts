@@ -1,6 +1,5 @@
 import { DBOS, WorkflowQueue } from '../src';
-import { generateDBOSTestConfig, Event } from '../tests/helpers';
-import { sleepms } from '../src/utils';
+import { generateDBOSTestConfig, Event, queueEntriesAreCleanedUp } from '../tests/helpers';
 
 // Extract worker arguments from command-line input
 const workerId = process.env.DBOS__VMID;
@@ -50,17 +49,6 @@ class InterProcessWorkflowTask {
     await InterProcessWorkflowTask.end_event.wait();
     return Promise.resolve();
   }
-}
-
-async function queueEntriesAreCleanedUp() {
-  let maxTries = 10;
-  while (maxTries > 0) {
-    const r = await DBOS.getWorkflowQueue({});
-    if (r.workflows.length === 0) return true;
-    await sleepms(1000);
-    --maxTries;
-  }
-  return false;
 }
 
 async function main() {
