@@ -40,16 +40,16 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
 
 export async function setUpDBOSTestDb(config: DBOSConfig) {
   const pgSystemClient = new Client({
-    user: config.poolConfig.user,
-    port: config.poolConfig.port,
-    host: config.poolConfig.host,
-    password: config.poolConfig.password,
+    user: config.poolConfig!.user,
+    port: config.poolConfig!.port,
+    host: config.poolConfig!.host,
+    password: config.poolConfig!.password,
     database: 'postgres',
   });
   try {
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
-    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig!.database};`);
+    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig!.database};`);
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
     await pgSystemClient.end();
   } catch (e) {

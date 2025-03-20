@@ -266,7 +266,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   ) {
     this.debugMode = debugMode ?? DebugMode.DISABLED;
 
-    // Do a few checks on config properties we expect to be set
+    // poolConfig and system_database should always be set, but its better to explicitly throw rather than ignoring with '!'
     if (!config.poolConfig) {
       throw new DBOSInitializationError('No pool configuration provided');
     }
