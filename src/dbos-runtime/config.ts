@@ -77,13 +77,13 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
     if (!configFile) {
       throw new Error(`${configFilePath} is empty `);
     }
-    if (typeof configFile === 'object' && !configFile.database) {
-      configFile.database = {}; // Create an empty database object if it doesn't exist
-    }
     const schemaValidator = ajv.compile(dbosConfigSchema);
     if (!schemaValidator(configFile)) {
       const errorMessages = prettyPrintAjvErrors(schemaValidator);
       throw new Error(`${configFilePath} failed schema validation. ${errorMessages}`);
+    }
+    if (!configFile.database) {
+      configFile.database = {}; // Create an empty database object if it doesn't exist
     }
     return configFile;
   } catch (e) {
