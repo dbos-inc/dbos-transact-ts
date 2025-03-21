@@ -74,27 +74,33 @@ describe('oaoo-tests', () => {
   class WorkflowOAOO {
     @Transaction()
     static async testInsertTx(txnCtxt: TestTransactionContext, name: string) {
+      console.log('Invoking 2nd child testInsertTx');
       expect(txnCtxt.getConfig<number>('counter')).toBe(3);
       const { rows } = await txnCtxt.client.query<TestKvTable>(
         `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
         [name],
       );
+      console.log('Exiting 2nd child testInsertTx');
       return Number(rows[0].id);
     }
 
     @Transaction({ readOnly: true })
     static async testReadTx(txnCtxt: TestTransactionContext, id: number) {
+      console.log('Invoking 2nd child testReadTx');
       const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
       if (rows.length > 0) {
+        console.log('Invoking 2nd child testReadTx');
         return Number(rows[0].id);
       } else {
         // Cannot find, return a negative number.
+        console.log('Invoking 2nd child testReadTx');
         return -1;
       }
     }
 
     @Workflow()
     static async testTxWorkflow(wfCtxt: WorkflowContext, name: string) {
+      console.log('Invoking 1st child testTxWorkflow');
       expect(wfCtxt.getConfig<number>('counter')).toBe(3);
       const funcResult: number = await wfCtxt.invoke(WorkflowOAOO).testInsertTx(name);
       const checkResult: number = await wfCtxt.invoke(WorkflowOAOO).testReadTx(funcResult);
@@ -103,6 +109,7 @@ describe('oaoo-tests', () => {
 
     @Workflow()
     static async nestedWorkflow(wfCtxt: WorkflowContext, name: string) {
+      console.log('Invoking child workflow');
       return await wfCtxt.invokeWorkflow(WorkflowOAOO).testTxWorkflow(name);
     }
 
@@ -207,6 +214,7 @@ describe('oaoo-tests', () => {
 
     const workflowUUID = uuidv1();
     await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).nestedWorkflow(username)).resolves.toBe(1);
+    await dbosExec.flushWorkflowBuffers();
     await expect(testRuntime.invokeWorkflow(WorkflowOAOO, workflowUUID).nestedWorkflow(username)).resolves.toBe(1);
 
     // Retrieve output of the child workflow.
