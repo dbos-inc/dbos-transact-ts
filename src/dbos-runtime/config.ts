@@ -75,15 +75,15 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
     const interpolatedConfig = substituteEnvVars(configFileContent);
     const configFile = YAML.parse(interpolatedConfig) as ConfigFile;
     if (!configFile) {
-      throw new DBOSInitializationError(`Failed to load config from ${configFilePath}: empty file`);
+      throw new Error(`${configFilePath} is empty `);
     }
-    if (!configFile.database) {
+    if (typeof configFile === 'object' && !configFile.database) {
       configFile.database = {}; // Create an empty database object if it doesn't exist
     }
     const schemaValidator = ajv.compile(dbosConfigSchema);
     if (!schemaValidator(configFile)) {
       const errorMessages = prettyPrintAjvErrors(schemaValidator);
-      throw new DBOSInitializationError(`${configFilePath} failed schema validation. ${errorMessages}`);
+      throw new Error(`${configFilePath} failed schema validation. ${errorMessages}`);
     }
     return configFile;
   } catch (e) {
@@ -469,11 +469,10 @@ export function overwrite_config(
   try {
     configFile = loadConfigFile(dbosConfigFilePath);
   } catch (e) {
-    if (
-      e instanceof Error &&
-      (e.message.includes('ENOENT: no such file or directory') || e.message.includes('empty file'))
-    ) {
+    if ((e as Error).message.includes('ENOENT: no such file or directory')) {
       return [providedDBOSConfig, providedRuntimeConfig];
+    } else {
+      throw e;
     }
   }
 

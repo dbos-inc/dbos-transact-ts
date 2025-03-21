@@ -900,9 +900,7 @@ describe('dbos-config', () => {
   });
 
   describe('overwrite_config', () => {
-    test('should return provided configs when config file is empty', () => {
-      jest.spyOn(utils, 'readFileSync').mockReturnValue('');
-
+    test('should return the original configs when config file is not found', () => {
       const providedDBOSConfig: DBOSConfig = {
         name: 'test-app',
         poolConfig: {
@@ -929,6 +927,64 @@ describe('dbos-config', () => {
       // Should return the original configs unchanged
       expect(resultDBOSConfig).toEqual(providedDBOSConfig);
       expect(resultRuntimeConfig).toEqual(providedRuntimeConfig);
+    });
+
+    test('should throw when config file is empty', () => {
+      jest.spyOn(utils, 'readFileSync').mockReturnValue('');
+
+      const providedDBOSConfig: DBOSConfig = {
+        name: 'test-app',
+        poolConfig: {
+          host: 'localhost',
+          port: 5432,
+          user: 'postgres',
+          password: 'password',
+          database: 'test_db',
+        },
+        userDbclient: UserDatabaseName.KNEX,
+      };
+
+      const providedRuntimeConfig: DBOSRuntimeConfig = {
+        port: 3000,
+        admin_port: 400,
+        runAdminServer: false,
+        entrypoints: ['app.js'],
+        start: [],
+        setup: [],
+      };
+
+      expect(() => overwrite_config(providedDBOSConfig, providedRuntimeConfig)).toThrow(
+        expect.objectContaining({
+          message: expect.stringContaining('dbos-config.yaml is empty'),
+        }),
+      );
+    });
+
+    test('should throw when config file is invalid', () => {
+      jest.spyOn(utils, 'readFileSync').mockReturnValue('{');
+
+      const providedDBOSConfig: DBOSConfig = {
+        name: 'test-app',
+        poolConfig: {
+          host: 'localhost',
+          port: 5432,
+          user: 'postgres',
+          password: 'password',
+          database: 'test_db',
+        },
+        userDbclient: UserDatabaseName.KNEX,
+      };
+
+      const providedRuntimeConfig: DBOSRuntimeConfig = {
+        port: 3000,
+        admin_port: 400,
+        runAdminServer: false,
+        entrypoints: ['app.js'],
+        start: [],
+        setup: [],
+      };
+
+      expect(() => overwrite_config(providedDBOSConfig, providedRuntimeConfig)).toThrow();
     });
 
     test('should overwrite parameters with config file content', () => {
