@@ -684,7 +684,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const txnInfo: TransactionRegInfo | undefined = this.transactionInfoMap.get(tfname);
 
     if (!txnInfo) {
-      throw new DBOSNotRegisteredError(`Transaction function name '${tfname}' is not registered.`);
+      throw new DBOSNotRegisteredError(tfname, `Transaction function name '${tfname}' is not registered.`);
     }
 
     return { txnInfo, clsInst: getConfiguredInstance(className, cfgName) };
@@ -699,7 +699,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const stepInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
 
     if (!stepInfo) {
-      throw new DBOSNotRegisteredError(`Step function name '${cfname}' is not registered.`);
+      throw new DBOSNotRegisteredError(cfname, `Step function name '${cfname}' is not registered.`);
     }
 
     return { commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName) };
@@ -802,6 +802,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
         status = wfStatus.status;
       } else {
         // TODO: Make this transactional (and with the queue step below)
+        if (callerFunctionID !== undefined && callerUUID !== undefined) {
+          const child_id = await this.systemDatabase.checkChildWorkflow(callerUUID, callerFunctionID);
+          if (child_id !== null) {
+            return new RetrievedHandle(this.systemDatabase, child_id, callerUUID, callerFunctionID);
+          }
+
+          await this.systemDatabase.recordChildWorkflow(callerUUID, workflowUUID, callerFunctionID, wf.name);
+        }
         const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
         args = ires.args;
         status = ires.status;
@@ -946,7 +954,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   #getQueueByName(name: string): WorkflowQueue {
     const q = wfQueueRunner.wfQueuesByName.get(name);
-    if (!q) throw new DBOSNotRegisteredError(`Workflow queue '${name}' does is not defined.`);
+    if (!q) throw new DBOSNotRegisteredError(name, `Workflow queue '${name}' is not defined.`);
     return q;
   }
 
@@ -2036,6 +2044,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
     return handlerArray;
+  }
+
+  async initEventReceivers() {
+    this.scheduler = new DBOSScheduler(this);
+
+    this.scheduler.initScheduler();
+
+    this.wfqEnded = wfQueueRunner.dispatchLoop(this);
+
+    for (const evtRcvr of this.eventReceivers) {
+      await evtRcvr.initialize(this);
+    }
   }
 
   async deactivateEventReceivers() {

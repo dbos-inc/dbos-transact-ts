@@ -5,7 +5,7 @@ import { WorkflowQueue } from '../src';
 import { v4 as uuidv4 } from 'uuid';
 
 const queue = new WorkflowQueue('testQ');
-const serialqueue = new WorkflowQueue('serialQ', {concurrency: 1});
+const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1 });
 
 class InstanceStepTx extends ConfiguredInstance {
   constructor() {

@@ -6,7 +6,6 @@ import {
   Workflow,
   Transaction,
   ArgOptional,
-  TestingRuntime,
   DBOS,
   ConfiguredInstance,
   InitContext,
@@ -17,39 +16,40 @@ import { v1 as uuidv1 } from 'uuid';
 import { StatusString } from '../src/workflow';
 import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError } from '../src/error';
 import { DBOSConfig } from '../src/dbos-executor';
-import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 
 const testTableName = 'dbos_failure_test_kv';
 type TestTransactionContext = TransactionContext<PoolClient>;
 
 describe('failures-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
+    await DBOS.launch();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     FailureTestClass.cnt = 0;
     FailureTestClass.success = '';
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   test('dbos-error', async () => {
     const wfUUID1 = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID1).testStep(11)).rejects.toThrow(
-      new DBOSError('test dbos error with code.', 11),
+    await DBOS.withNextWorkflowID(
+      wfUUID1,
+      async () =>
+        await expect(FailureTestClass.testStep(11)).rejects.toThrow(new DBOSError('test dbos error with code.', 11)),
     );
 
-    const retrievedHandle = testRuntime.retrieveWorkflow<string>(wfUUID1);
+    const retrievedHandle = DBOS.retrieveWorkflow<string>(wfUUID1);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
@@ -57,27 +57,26 @@ describe('failures-tests', () => {
     await expect(retrievedHandle.getResult()).rejects.toThrow(new DBOSError('test dbos error with code.', 11));
 
     // Test without code.
-    const wfUUID = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, wfUUID).testStep()).rejects.toThrow(
-      new DBOSError('test dbos error without code.'),
-    );
+    await expect(FailureTestClass.testStep()).rejects.toThrow(new DBOSError('test dbos error without code.'));
   });
 
   test('readonly-error', async () => {
     const testUUID = uuidv1();
-    await expect(testRuntime.invoke(FailureTestClass, testUUID).testReadonlyError()).rejects.toThrow(
-      new Error('test error'),
+    await DBOS.withNextWorkflowID(
+      testUUID,
+      async () => await expect(FailureTestClass.testReadonlyError()).rejects.toThrow(new Error('test error')),
     );
     expect(FailureTestClass.cnt).toBe(1);
 
     // The error should be recorded in the database, so the function shouldn't run again.
-    await expect(testRuntime.invoke(FailureTestClass, testUUID).testReadonlyError()).rejects.toThrow(
-      new Error('test error'),
+    await DBOS.withNextWorkflowID(
+      testUUID,
+      async () => await expect(FailureTestClass.testReadonlyError()).rejects.toThrow(new Error('test error')),
     );
     expect(FailureTestClass.cnt).toBe(1);
 
     // A run with a generated UUID should fail normally
-    await expect(testRuntime.invoke(FailureTestClass).testReadonlyError()).rejects.toThrow(new Error('test error'));
+    await expect(DBOS.invoke(FailureTestClass).testReadonlyError()).rejects.toThrow(new Error('test error'));
     expect(FailureTestClass.cnt).toBe(2);
   });
 
@@ -87,8 +86,12 @@ describe('failures-tests', () => {
 
     // Start two concurrent transactions.
     const results = await Promise.allSettled([
-      testRuntime.invoke(FailureTestClass, workflowUUID1).testKeyConflict(10, workflowUUID1),
-      testRuntime.invoke(FailureTestClass, workflowUUID2).testKeyConflict(10, workflowUUID2),
+      (
+        await DBOS.startWorkflow(FailureTestClass, { workflowID: workflowUUID1 }).testKeyConflict(10, workflowUUID1)
+      ).getResult(),
+      (
+        await DBOS.startWorkflow(FailureTestClass, { workflowID: workflowUUID2 }).testKeyConflict(10, workflowUUID2)
+      ).getResult(),
     ]);
     const errorResult = results.find((result) => result.status === 'rejected');
     const err: DatabaseError = (errorResult as PromiseRejectedResult).reason as DatabaseError;
@@ -100,32 +103,34 @@ describe('failures-tests', () => {
     // Retry with the same failed UUID, should throw the same error.
     const failUUID = FailureTestClass.success === workflowUUID1 ? workflowUUID2 : workflowUUID1;
     try {
-      await testRuntime.invoke(FailureTestClass, failUUID).testKeyConflict(10, failUUID);
+      await DBOS.withNextWorkflowID(failUUID, async () => await FailureTestClass.testKeyConflict(10, failUUID));
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       expect(err.code).toBe('23505');
       expect(err.table?.toLowerCase()).toBe(testTableName.toLowerCase());
     }
     // Retry with the succeed UUID, should return the expected result.
-    await expect(
-      testRuntime.invoke(FailureTestClass, FailureTestClass.success).testKeyConflict(10, FailureTestClass.success),
-    ).resolves.toStrictEqual({ id: 10 });
+    await DBOS.withNextWorkflowID(
+      FailureTestClass.success,
+      async () =>
+        await expect(FailureTestClass.testKeyConflict(10, FailureTestClass.success)).resolves.toStrictEqual({ id: 10 }),
+    );
   });
 
   test('serialization-error', async () => {
     // Should succeed after retrying 10 times.
-    await expect(testRuntime.invokeWorkflow(FailureTestClass).testSerialWorkflow(10)).resolves.toBe(10);
+    await expect(DBOS.invoke(FailureTestClass).testSerialWorkflow(10)).resolves.toBe(10);
     expect(FailureTestClass.cnt).toBe(10);
   });
 
   test('failing-step', async () => {
     let startTime = Date.now();
-    await expect(testRuntime.invoke(FailureTestClass).testFailStep()).resolves.toBe(2);
+    await expect(DBOS.invoke(FailureTestClass).testFailStep()).resolves.toBe(2);
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
 
     startTime = Date.now();
     try {
-      await testRuntime.invoke(FailureTestClass).testFailStep();
+      await DBOS.invoke(FailureTestClass).testFailStep();
       expect(true).toBe(false); // An exception should be thrown first
     } catch (error) {
       const e = error as DBOSMaxStepRetriesError;
@@ -141,32 +146,32 @@ describe('failures-tests', () => {
     const workflowUUID = uuidv1();
 
     // Should throw an error.
-    await expect(testRuntime.invoke(FailureTestClass, workflowUUID).testNoRetry()).rejects.toThrow(
-      new Error('failed no retry'),
-    );
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(FailureTestClass.testNoRetry()).rejects.toThrow(new Error('failed no retry'));
+    });
     expect(FailureTestClass.cnt).toBe(1);
 
     // If we retry again, we should get the same error, but numRun should still be 1 (OAOO).
-    await expect(testRuntime.invoke(FailureTestClass, workflowUUID).testNoRetry()).rejects.toThrow(
-      new Error('failed no retry'),
-    );
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(FailureTestClass.testNoRetry()).rejects.toThrow(new Error('failed no retry'));
+    });
     expect(FailureTestClass.cnt).toBe(1);
   });
 
-  test('no-registration', async () => {
+  test('no-registration-invoke', async () => {
     // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of NotRegisteredError.
 
     // Invoke an unregistered workflow.
-    expect(() => testRuntime.invoke(FailureTestClass).noRegWorkflow(10)).toThrow();
+    expect(() => DBOS.invoke(FailureTestClass).noRegWorkflow(10)).toThrow(DBOSNotRegisteredError);
 
     // Invoke an unregistered transaction.
-    expect(() => testRuntime.invoke(FailureTestClass).noRegTransaction(10)).toThrow();
+    expect(() => DBOS.invoke(FailureTestClass).noRegTransaction(10)).toThrow(DBOSNotRegisteredError);
 
     // Invoke an unregistered step in a workflow.
-    await expect(testRuntime.invokeWorkflow(FailureTestClass).testCommWorkflow()).rejects.toThrow();
+    await expect(DBOS.invoke(FailureTestClass).testCommWorkflow()).rejects.toThrow();
   });
 
-  test('no-registration', async () => {
+  test('no-registration-startwf', async () => {
     // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of NotRegisteredError.
 
     // Invoke an unregistered workflow.
@@ -191,23 +196,23 @@ class FailureTestClass extends ConfiguredInstance {
   static cnt = 0;
   static success: string = '';
 
-  @Step({ retriesAllowed: false })
-  static async testStep(_ctxt: StepContext, @ArgOptional code?: number) {
+  @DBOS.step({ retriesAllowed: false })
+  static async testStep(@ArgOptional code?: number) {
     const err = code
       ? new DBOSError('test dbos error with code.', code)
       : new DBOSError('test dbos error without code.');
     return Promise.reject(err);
   }
 
-  @Transaction({ readOnly: true })
-  static async testReadonlyError(_txnCtxt: TestTransactionContext) {
+  @DBOS.transaction({ readOnly: true })
+  static async testReadonlyError() {
     FailureTestClass.cnt++;
     return Promise.reject(new Error('test error'));
   }
 
-  @Transaction()
-  static async testKeyConflict(txnCtxt: TestTransactionContext, id: number, name: string) {
-    const { rows } = await txnCtxt.client.query<TestKvTable>(
+  @DBOS.transaction()
+  static async testKeyConflict(id: number, name: string) {
+    const { rows } = await DBOS.pgClient.query<TestKvTable>(
       `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`,
       [id, name],
     );
@@ -241,8 +246,8 @@ class FailureTestClass extends ConfiguredInstance {
     return Promise.resolve(FailureTestClass.cnt);
   }
 
-  @Step({ retriesAllowed: false })
-  static async testNoRetry(_ctxt: StepContext) {
+  @DBOS.step({ retriesAllowed: false })
+  static async testNoRetry() {
     FailureTestClass.cnt++;
     return Promise.reject(new Error('failed no retry'));
   }

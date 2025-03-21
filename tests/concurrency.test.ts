@@ -1,33 +1,30 @@
-import { StepContext, Step, TestingRuntime, Transaction, Workflow, TransactionContext, WorkflowContext } from '../src';
+import { DBOS } from '../src';
 import { v1 as uuidv1 } from 'uuid';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSConfig } from '../src/dbos-executor';
-import { PoolClient } from 'pg';
-import { TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 
-type TestTransactionContext = TransactionContext<PoolClient>;
 const testTableName = 'dbos_concurrency_test_kv';
 
 describe('concurrency-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
+    await DBOS.launch();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     ConcurrTestClass.cnt = 0;
     ConcurrTestClass.wfCnt = 0;
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   test('duplicate-transaction', async () => {
@@ -35,8 +32,8 @@ describe('concurrency-tests', () => {
     // Both should return the correct result but only one should execute.
     const workflowUUID = uuidv1();
     const results = await Promise.allSettled([
-      testRuntime.invoke(ConcurrTestClass, workflowUUID).testReadWriteFunction(10),
-      testRuntime.invoke(ConcurrTestClass, workflowUUID).testReadWriteFunction(10),
+      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteFunction(10)).getResult(),
+      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteFunction(10)).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
@@ -47,11 +44,11 @@ describe('concurrency-tests', () => {
     // Invoke testWorkflow twice with the same UUID and flush workflow output buffer right before the second transaction starts.
     // The second transaction should get the correct recorded execution without being executed.
     const uuid = uuidv1();
-    await testRuntime.invokeWorkflow(ConcurrTestClass, uuid).testWorkflow();
-    const handle = await testRuntime.invoke(ConcurrTestClass, uuid).testWorkflow();
+    await (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow()).getResult();
+    const handle = await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow();
     await ConcurrTestClass.promise2;
 
-    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+    const dbosExec = DBOSExecutor.globalInstance!;
     await dbosExec.flushWorkflowBuffers();
     ConcurrTestClass.resolve();
     await handle.getResult();
@@ -65,8 +62,8 @@ describe('concurrency-tests', () => {
     // Since we only record the output after the function, it may cause more than once executions.
     const workflowUUID = uuidv1();
     const results = await Promise.allSettled([
-      testRuntime.invoke(ConcurrTestClass, workflowUUID).testStep(11),
-      testRuntime.invoke(ConcurrTestClass, workflowUUID).testStep(11),
+      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testStep(11)).getResult(),
+      (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testStep(11)).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(11);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(11);
@@ -79,20 +76,24 @@ describe('concurrency-tests', () => {
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
     const recvUUID = uuidv1();
     const recvResPromise = Promise.allSettled([
-      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow('testTopic', 2),
-      testRuntime.invokeWorkflow(ConcurrTestClass, recvUUID).receiveWorkflow('testTopic', 2),
+      (
+        await DBOS.startWorkflow(ConcurrTestClass, { workflowID: recvUUID }).receiveWorkflow('testTopic', 2)
+      ).getResult(),
+      (
+        await DBOS.startWorkflow(ConcurrTestClass, { workflowID: recvUUID }).receiveWorkflow('testTopic', 2)
+      ).getResult(),
     ]);
 
     // Send would trigger both to receive, but only one can succeed.
     await sleepms(10); // Both would be listening to the notification.
 
-    await expect(testRuntime.send(recvUUID, 'testmsg', 'testTopic')).resolves.toBeFalsy();
+    await expect(DBOS.send(recvUUID, 'testmsg', 'testTopic')).resolves.toBeFalsy();
 
     const recvRes = await recvResPromise;
     expect((recvRes[0] as PromiseFulfilledResult<string | null>).value).toBe('testmsg');
     expect((recvRes[1] as PromiseFulfilledResult<string | null>).value).toBe('testmsg');
 
-    const recvHandle = testRuntime.retrieveWorkflow(recvUUID);
+    const recvHandle = DBOS.retrieveWorkflow(recvUUID);
     await expect(recvHandle.getResult()).resolves.toBe('testmsg');
   });
 });
@@ -110,30 +111,30 @@ class ConcurrTestClass {
     ConcurrTestClass.resolve2 = r;
   });
 
-  @Transaction()
-  static async testReadWriteFunction(txnCtxt: TestTransactionContext, id: number) {
-    await txnCtxt.client.query(`INSERT INTO ${testTableName}(id, value) VALUES ($1, $2)`, [1, id]);
+  @DBOS.transaction()
+  static async testReadWriteFunction(id: number) {
+    await DBOS.pgClient.query(`INSERT INTO ${testTableName}(id, value) VALUES ($1, $2)`, [1, id]);
     ConcurrTestClass.cnt++;
     return id;
   }
 
-  @Workflow()
-  static async testWorkflow(ctxt: WorkflowContext) {
+  @DBOS.workflow()
+  static async testWorkflow() {
     if (ConcurrTestClass.wfCnt++ === 1) {
       ConcurrTestClass.resolve2();
       await ConcurrTestClass.promise;
     }
-    await ctxt.invoke(ConcurrTestClass).testReadWriteFunction(1);
+    await ConcurrTestClass.testReadWriteFunction(1);
   }
 
-  @Step()
-  static async testStep(_ctxt: StepContext, id: number) {
+  @DBOS.step()
+  static async testStep(id: number) {
     ConcurrTestClass.cnt++;
     return Promise.resolve(id);
   }
 
-  @Workflow()
-  static async receiveWorkflow(ctxt: WorkflowContext, topic: string, timeout: number) {
-    return ctxt.recv<string>(topic, timeout);
+  @DBOS.workflow()
+  static async receiveWorkflow(topic: string, timeout: number) {
+    return DBOS.recv<string>(topic, timeout);
   }
 }

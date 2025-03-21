@@ -462,8 +462,8 @@ async function main7() {
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
-  await DBOS.executor.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-  await DBOS.executor.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+  await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+  await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
 
   await expect(async () => {
     await TestSec.testWorkflow('unauthorized');
