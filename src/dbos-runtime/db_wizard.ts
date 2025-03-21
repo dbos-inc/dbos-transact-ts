@@ -8,7 +8,6 @@ import { promisify } from 'util';
 import { password } from '@inquirer/prompts';
 import { exec } from 'child_process';
 import { DatabaseConnection, saveDatabaseConnection } from './db_connection';
-import { dbosConfigFilePath, loadConfigFile } from './config';
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
   const logger = getLogger();

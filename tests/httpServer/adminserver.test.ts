@@ -13,8 +13,8 @@ describe('admin-server-tests', () => {
   let systemDBClient: Client;
 
   describe('not-running-admin-server', () => {
-    beforeEach(() => {
-      DBOS.shutdown();
+    beforeEach(async () => {
+      await DBOS.shutdown();
     });
 
     test('test-admin-server-not-running', async () => {

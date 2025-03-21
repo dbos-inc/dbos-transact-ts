@@ -1,7 +1,7 @@
 import { DBOSConfig, isDeprecatedDBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
-import { configureInstance, DBOS } from '../src';
+import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
 import { translatePublicDBOSconfig } from '../src/dbos-runtime/config';
 
