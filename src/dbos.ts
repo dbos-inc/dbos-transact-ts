@@ -221,7 +221,7 @@ export class DBOS {
   }
 
   /** Only relevant for TypeORM, and for testing purposes only, not production */
-  dropUserSchema() {
+  static async dropUserSchema() {
     return DBOSExecutor.globalInstance?.userDatabase.dropSchema();
   }
 
