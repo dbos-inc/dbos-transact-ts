@@ -36,6 +36,7 @@ export interface operation_outputs {
   function_id: number;
   output: string;
   error: string;
+  child_id: string;
 }
 
 export interface workflow_inputs {

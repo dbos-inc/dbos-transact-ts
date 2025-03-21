@@ -58,15 +58,10 @@ export interface SystemDatabase {
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
-  checkOperation(workflowUUID: string, functionID: number): Promise<boolean>;
+  checkChildWorkflow(workflowUUID: string, functionID: number): Promise<string | null>;
   recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R, functionName: string): Promise<void>;
   recordOperationError(workflowUUID: string, functionID: number, error: Error, functionName: string): Promise<void>;
-  recordParentChildRelationship(
-    parentUUID: string,
-    childUUID: string,
-    functionID: number,
-    fuctionName: string,
-  ): Promise<void>;
+  recordChildWorkflow(parentUUID: string, childUUID: string, functionID: number, fuctionName: string): Promise<void>;
 
   getWorkflowStatus(workflowUUID: string, callerUUID?: string): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
@@ -603,12 +598,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async checkOperation(workflowUUID: string, functionID: number): Promise<boolean> {
+  async checkChildWorkflow(workflowUUID: string, functionID: number): Promise<string | null> {
     const { rows } = await this.pool.query<operation_outputs>(
-      `SELECT 1 FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
+      `SELECT child_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
       [workflowUUID, functionID],
     );
-    return rows.length > 0;
+
+    if (rows.length > 0) {
+      return rows[0].child_id;
+    } else {
+      return null;
+    }
   }
 
   async getWorkflowSteps(workflowUUID: string): Promise<workflow_steps> {
@@ -671,7 +671,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordParentChildRelationship(
+  async recordChildWorkflow(
     parentUUID: string,
     childUUID: string,
     functionID: number,

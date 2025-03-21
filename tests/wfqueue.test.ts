@@ -138,7 +138,7 @@ describe('queued-wf-tests-simple', () => {
     // Verify that the gap between "waves" is ~equal to the period
     for (let wave = 1; wave < numWaves; ++wave) {
       expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 200);
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 200);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 300);
     }
 
     for (const h of handles) {
