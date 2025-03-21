@@ -70,6 +70,7 @@ import { ConfiguredInstance } from '.';
 import { StoredProcedure, StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
+import { set } from 'lodash';
 import { db_wizard } from './dbos-runtime/db_wizard';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
@@ -191,6 +192,13 @@ export class DBOS {
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
     DBOS.runtimeConfig = runtimeConfig;
+  }
+
+  // For unit testing purposes only
+  static setAppConfig<T>(key: string, newValue: T): void {
+    const conf = DBOS.dbosConfig?.application;
+    if (!conf) throw new DBOSExecutorNotInitializedError();
+    set(conf, key, newValue);
   }
 
   // Load files with DBOS classes (running their decorators)

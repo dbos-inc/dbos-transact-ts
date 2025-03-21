@@ -356,7 +356,6 @@ function isValidDBname(dbName: string): boolean {
 
  - Application Name: check there is no inconsistency between the provided name and the one in dbos-config.yaml, if any
  - Database configuration: Ignore provided poolConfig and reconstructs it from the database_url field and constructPoolConfig()
-
 */
 export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOSRuntimeConfig] {
   const logger = new GlobalLogger();
@@ -411,13 +410,13 @@ export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOS
     telemetry: {
       logs: {
         logLevel: config.logLevel || 'info',
-        forceConsole: false, // TODO: chat with @devhawk
+        forceConsole: false,
       },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
   };
 
-  // The second predicated is just to satisfy TS: we know it is set above
+  // The third predicate is just to satisfy TS: we know it is set above
   if (config.otlpTracesEndpoints && config.otlpTracesEndpoints.length > 0 && translatedConfig.telemetry) {
     translatedConfig.telemetry.OTLPExporter = {
       tracesEndpoint: config.otlpTracesEndpoints[0],

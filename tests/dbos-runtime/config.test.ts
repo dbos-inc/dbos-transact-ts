@@ -575,8 +575,6 @@ describe('dbos-config', () => {
         database_url: 'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
         userDbclient: UserDatabaseName.PRISMA,
         sysDbName: 'systemdbname',
-        // app db pool size
-        // sys db pool size
         logLevel: 'DEBUG',
         otlpTracesEndpoints: ['http://localhost:4317', 'unused.com'],
         adminPort: 666,
@@ -616,7 +614,7 @@ describe('dbos-config', () => {
       };
       const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig);
       expect(translatedDBOSConfig).toEqual({
-        name: 'dbostest',
+        name: dbosConfig.name,
         poolConfig: {
           host: 'mother',
           port: 2345,
@@ -629,18 +627,18 @@ describe('dbos-config', () => {
         userDbclient: UserDatabaseName.PRISMA,
         telemetry: {
           logs: {
-            logLevel: 'DEBUG',
+            logLevel: dbosConfig.logLevel,
             forceConsole: false,
           },
           OTLPExporter: {
-            tracesEndpoint: 'http://localhost:4317',
+            tracesEndpoint: dbosConfig.otlpTracesEndpoints[0],
           },
         },
-        system_database: 'systemdbname',
+        system_database: dbosConfig.sysDbName,
       });
       expect(translatedRuntimeConfig).toEqual({
         port: 3000,
-        admin_port: 666,
+        admin_port: dbosConfig.adminPort,
         runAdminServer: false,
         entrypoints: [],
         start: [],
@@ -687,13 +685,6 @@ describe('dbos-config', () => {
 
     // name tests: no config file found, name in config & provided name differ, name is not provided but found in config, name is provided but no config file found
   });
-
-  // TODO: I kind of want to pull out all the constructPoolConfig tests into their own suite, to rigourously test all paths
-  //describe('constructPoolConfig', () => {
-  //  test('no params', full default)
-  // test mixed params
-  // test env vars take precedence
-  // });
 
   describe('parseDbString', () => {
     test('should correctly parse a full connection string with extra parameters', () => {

@@ -64,7 +64,6 @@ export async function setUpDBOSTestDb(cfg: DBOSConfig) {
     database: 'postgres',
   });
   try {
-    console.log(`drop ${config.poolConfig!.database}`);
     await pgSystemClient.connect();
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig!.database};`);
     await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig!.database};`);
