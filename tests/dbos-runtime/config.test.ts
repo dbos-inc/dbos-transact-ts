@@ -871,7 +871,7 @@ describe('dbos-config', () => {
             logs:
                 logLevel: warning
         `;
-      jest(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
 
       const providedDBOSConfig: DBOSConfig = {
         name: 'test-app',
