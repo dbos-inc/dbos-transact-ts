@@ -20,7 +20,7 @@ describe('operations-test', () => {
     expect(res).toMatch('Hello, dbos! We have made');
 
     // Check the greet count.
-    const rows = await DBOS.executor.queryUserDB('SELECT * FROM dbos_hello WHERE greet_count=1');
+    const rows = await DBOS.queryUserDB('SELECT * FROM dbos_hello WHERE greet_count=1');
     expect(rows.length).toEqual(1);
   });
 

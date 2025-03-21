@@ -1,17 +1,16 @@
 import {
   DBNotification,
+  DBOS,
   DBOSConfig,
   DBOSContext,
   DBOSEventReceiver,
   DBOSExecutorContext,
-  TestingRuntime,
   Workflow,
   WorkflowContext,
   WorkflowFunction,
   associateClassWithEventReceiver,
   associateMethodWithEventReceiver,
 } from '../src';
-import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 export interface ERDefaults {
@@ -106,19 +105,19 @@ class MyEventReceiver {
 
 describe('event-receiver-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, generateDBOSTestConfig());
+    await DBOS.launch();
   }, 30000);
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   }, 30000);
 
   test('wf-event', async () => {

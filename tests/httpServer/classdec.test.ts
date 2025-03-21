@@ -7,7 +7,6 @@ import {
   Workflow,
   TransactionContext,
   WorkflowContext,
-  TestingRuntime,
   DBOS,
 } from '../../src';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
@@ -18,75 +17,74 @@ import { Middleware } from 'koa';
 import { DBOSNotAuthorizedError } from '../../src/error';
 import { DBOSConfig } from '../../src/dbos-executor';
 import { PoolClient } from 'pg';
-import { createInternalTestRuntime } from '../../src/testing/testing_runtime';
 
 describe('httpserver-defsec-tests', () => {
   const testTableName = 'dbos_test_kv';
 
-  let testRuntime: TestingRuntime;
   let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([TestEndpointDefSec, SecondClass], config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    const _classes = [TestEndpointDefSec, SecondClass];
+    await DBOS.launch();
+    DBOS.setUpHandlerCallback();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     middlewareCounter = 0;
     middlewareCounter2 = 0;
     middlewareCounterG = 0;
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
     jest.restoreAllMocks();
   });
 
   test('get-hello', async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get('/hello');
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
     expect(response.statusCode).toBe(200);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(response.body.message).toBe('hello!');
     expect(middlewareCounter).toBe(1);
     expect(middlewareCounter2).toBe(2); // Middleware runs from left to right.
     expect(middlewareCounterG).toBe(1);
-    await request(testRuntime.getHandlersCallback()).get('/goodbye');
+    await request(DBOS.getHTTPHandlersCallback()!).get('/goodbye');
     expect(middlewareCounterG).toBe(2);
-    await request(testRuntime.getHandlersCallback()).get('/nosuchendpoint');
+    await request(DBOS.getHTTPHandlersCallback()!).get('/nosuchendpoint');
     expect(middlewareCounterG).toBe(3);
   });
 
   test('not-authenticated', async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get('/requireduser?name=alice');
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice');
     expect(response.statusCode).toBe(401);
   });
 
   test('not-you', async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get('/requireduser?name=alice&userid=go_away');
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice&userid=go_away');
     expect(response.statusCode).toBe(401);
   });
 
   test('not-authorized', async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get('/requireduser?name=alice&userid=bob');
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice&userid=bob');
     expect(response.statusCode).toBe(403);
   });
 
   test('authorized', async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get(
-      '/requireduser?name=alice&userid=a_real_user',
-    );
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice&userid=a_real_user');
     expect(response.statusCode).toBe(200);
   });
 
   // The handler is authorized, then its child workflow and transaction should also be authroized.
   test('cascade-authorized', async () => {
-    const response = await request(testRuntime.getHandlersCallback()).get('/workflow?name=alice&userid=a_real_user');
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/workflow?name=alice&userid=a_real_user');
     expect(response.statusCode).toBe(200);
 
-    const txnResponse = await request(testRuntime.getHandlersCallback()).get(
+    const txnResponse = await request(DBOS.getHTTPHandlersCallback()!).get(
       '/transaction?name=alice&userid=a_real_user',
     );
     expect(txnResponse.statusCode).toBe(200);
@@ -94,13 +92,13 @@ describe('httpserver-defsec-tests', () => {
 
   // We can directly test a transaction with passed in authorizedRoles.
   test('direct-transaction-test', async () => {
-    const res = await testRuntime
-      .invoke(TestEndpointDefSec, undefined, { authenticatedRoles: ['user'] })
-      .testTranscation('alice');
-    expect(res).toBe('hello 1');
+    await DBOS.withAuthedContext('user', ['user'], async () => {
+      const res = await DBOS.invoke(TestEndpointDefSec).testTranscation('alice');
+      expect(res).toBe('hello 1');
+    });
 
     // Unauthorized.
-    await expect(testRuntime.invoke(TestEndpointDefSec).testTranscation('alice')).rejects.toThrow(
+    await expect(DBOS.invoke(TestEndpointDefSec).testTranscation('alice')).rejects.toThrow(
       new DBOSNotAuthorizedError('User does not have a role with permission to call testTranscation', 403),
     );
   });

@@ -2,7 +2,7 @@ import { ConfiguredInstance, DBOS, StepContext, TransactionContext, WorkflowCont
 import { Step, Transaction, Workflow } from '../src';
 import { PoolClient } from 'pg';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { TestingRuntime } from '../src';
+import { TestingRuntime } from '../src'; // Use of TestingRuntime is intentional for this compatibility test
 import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 
 class TestFunctions {

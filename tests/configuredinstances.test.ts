@@ -1,24 +1,19 @@
 import {
+  DBOS,
   Step,
   StepContext,
   ConfiguredInstance,
   GetApi,
   HandlerContext,
   InitContext,
-  Transaction,
-  TransactionContext,
   Workflow,
   WorkflowContext,
   configureInstance,
 } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSConfig } from '../src/dbos-executor';
-import { Client, PoolClient } from 'pg';
-import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import request from 'supertest';
 import { v1 as uuidv1 } from 'uuid';
-
-type TestTransactionContext = TransactionContext<PoolClient>;
 
 class ConfigTracker {
   name: string = '';
@@ -58,8 +53,8 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     return Promise.resolve();
   }
 
-  @Transaction()
-  testTransaction1(_txnCtxt: TestTransactionContext) {
+  @DBOS.transaction()
+  testTransaction1() {
     const arg = this.tracker;
     expect(DBOSTestConfiguredClass.configs.has(this.name)).toBeTruthy();
     expect(arg).toBe(DBOSTestConfiguredClass.configs.get(this.name));
@@ -135,12 +130,11 @@ const configA = configureInstance(DBOSTestConfiguredClass, 'configA', 2); // The
 
 describe('dbos-configclass-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
-  let systemDBClient: Client;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
@@ -148,34 +142,26 @@ describe('dbos-configclass-tests', () => {
     config1.tracker.reset();
     configA.tracker.reset();
 
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
-      database: config.system_database,
-    });
-    await systemDBClient.connect();
+    await DBOS.launch();
+    DBOS.setUpHandlerCallback();
   });
 
   afterEach(async () => {
-    await systemDBClient.end();
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   test('simple-functions', async () => {
     try {
-      await testRuntime.invoke(config1).testStep();
+      await DBOS.invoke(config1).testStep();
     } catch (e) {
       console.log(e);
       throw e;
     }
-    await testRuntime.invoke(configA).testStep();
+    await DBOS.invoke(configA).testStep();
     const wfUUID1 = uuidv1();
     const wfUUID2 = uuidv1();
-    await testRuntime.invoke(config1, wfUUID1).testTransaction1();
-    await testRuntime.invoke(configA, wfUUID2).testTransaction1();
+    await DBOS.withNextWorkflowID(wfUUID1, async () => await config1.testTransaction1());
+    await DBOS.withNextWorkflowID(wfUUID2, async () => await configA.testTransaction1());
 
     expect(config1.tracker.nInit).toBe(1);
     expect(configA.tracker.nInit).toBe(1);
@@ -186,36 +172,29 @@ describe('dbos-configclass-tests', () => {
     expect(config1.tracker.nTrans).toBe(1);
     expect(configA.tracker.nTrans).toBe(1);
 
-    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
     // Make sure we correctly record the function's class name and config name
-    await dbosExec.flushWorkflowBuffers();
-    let result = await systemDBClient.query<{ status: string; name: string; class_name: string; config_name: string }>(
-      `SELECT status, name, class_name, config_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [wfUUID1],
-    );
-    expect(result.rows[0].class_name).toBe('DBOSTestConfiguredClass');
-    expect(result.rows[0].name).toContain('testTransaction1');
-    expect(result.rows[0].config_name).toBe('config1');
-    expect(result.rows[0].status).toBe('SUCCESS');
+    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
+    let stat = await DBOS.getWorkflowStatus(wfUUID1);
+    expect(stat?.workflowClassName).toBe('DBOSTestConfiguredClass');
+    expect(stat?.workflowName).toContain('testTransaction1');
+    expect(stat?.workflowConfigName).toBe('config1');
+    expect(stat?.status).toBe('SUCCESS');
 
-    result = await systemDBClient.query<{ status: string; name: string; class_name: string; config_name: string }>(
-      `SELECT status, name, class_name, config_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [wfUUID2],
-    );
-    expect(result.rows[0].class_name).toBe('DBOSTestConfiguredClass');
-    expect(result.rows[0].name).toContain('testTransaction1');
-    expect(result.rows[0].config_name).toBe('configA');
-    expect(result.rows[0].status).toBe('SUCCESS');
+    stat = await DBOS.getWorkflowStatus(wfUUID2);
+    expect(stat?.workflowClassName).toBe('DBOSTestConfiguredClass');
+    expect(stat?.workflowName).toContain('testTransaction1');
+    expect(stat?.workflowConfigName).toBe('configA');
+    expect(stat?.status).toBe('SUCCESS');
   });
 
   test('simplewf', async () => {
-    await testRuntime.invokeWorkflow(config1).testBasicWorkflow('please');
+    await DBOS.invoke(config1).testBasicWorkflow('please');
     expect(config1.tracker.nTrans).toBe(1);
     expect(config1.tracker.nComm).toBe(1);
     expect(config1.tracker.nWF).toBe(1);
     expect(config1.tracker.nByName).toBe(3);
 
-    await (await testRuntime.startWorkflow(configA).testBasicWorkflow('please')).getResult();
+    await DBOS.invoke(configA).testBasicWorkflow('please');
     expect(configA.tracker.nTrans).toBe(1);
     expect(configA.tracker.nComm).toBe(1);
     expect(configA.tracker.nWF).toBe(1);
@@ -223,7 +202,7 @@ describe('dbos-configclass-tests', () => {
   });
 
   test('childwf', async () => {
-    await testRuntime.invokeWorkflow(config1).testChildWorkflow();
+    await DBOS.invoke(config1).testChildWorkflow();
     expect(config1.tracker.nTrans).toBe(2);
     expect(config1.tracker.nComm).toBe(2);
     expect(config1.tracker.nWF).toBe(3);
@@ -231,17 +210,17 @@ describe('dbos-configclass-tests', () => {
   });
 
   test('badhandler', async () => {
-    const response1 = await request(testRuntime.getHandlersCallback()).get('/bad');
+    const response1 = await request(DBOS.getHTTPHandlersCallback()!).get('/bad');
     expect(response1.statusCode).toBe(200);
 
-    const response2 = await request(testRuntime.getHandlersCallback()).get('/instance');
+    const response2 = await request(DBOS.getHTTPHandlersCallback()!).get('/instance');
     expect(response2.statusCode).toBe(404);
   });
 
   test('badwfinvoke', async () => {
     let threw = false;
     try {
-      await testRuntime.invokeWorkflow(configA).bogusChildWorkflow();
+      await DBOS.invoke(configA).bogusChildWorkflow();
     } catch (e) {
       threw = true;
     }

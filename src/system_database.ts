@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError, serializeError } from 'serialize-error';
-import { DBOSExecutor, dbosNull, DBOSNull } from './dbos-executor';
+import { DBOSConfig, DBOSExecutor, dbosNull, DBOSNull } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
   DBOSWorkflowConflictUUIDError,
@@ -258,6 +258,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.pool.end();
   }
 
+  static async dropSystemDB(dbosConfig: DBOSConfig) {
+    // Drop system database, for testing.
+    const pgSystemClient = new Client({
+      user: dbosConfig.poolConfig.user,
+      port: dbosConfig.poolConfig.port,
+      host: dbosConfig.poolConfig.host,
+      password: dbosConfig.poolConfig.password,
+      database: dbosConfig.poolConfig.database,
+    });
+    await pgSystemClient.connect();
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
+    await pgSystemClient.end();
+  }
+
   async checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R> {
     const { rows } = await this.pool.query<workflow_status>(
       `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
@@ -345,7 +359,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } else if (resRow.queue_name !== initStatus.queueName) {
       // This is a warning because a different queue name is not necessarily an error.
       this.logger.warn(
-        `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated.`,
+        `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated. ${new Error().stack}`,
       );
     }
     if (msg !== '') {
