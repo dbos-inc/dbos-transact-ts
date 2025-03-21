@@ -435,7 +435,8 @@ export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOS
 
 export function parseDbString(dbString: string): DBConfig {
   const parsed = parse(dbString);
-  // pg-connection-string doesn't parse query parameters, so we resort to the more generic URL() to do so
+  // pg-connection-string parse query parameters in a way that doesn't match ConnectionOptions (parse return type)
+  // so we resort to the more generic URL() to parse query parameters
   const url = new URL(dbString);
   const queryParams = Object.fromEntries(url.searchParams.entries());
   return {
