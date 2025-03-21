@@ -33,10 +33,18 @@ export class BaseResponse implements BaseMessage {
 export class ExecutorInfoResponse extends BaseResponse {
   executor_id: string;
   application_version: string;
-  constructor(request_id: string, executor_id: string, application_version: string, error_message?: string) {
+  hostname: string;
+  constructor(
+    request_id: string,
+    executor_id: string,
+    application_version: string,
+    hostname: string,
+    error_message?: string,
+  ) {
     super(MessageType.EXECUTOR_INFO, request_id, error_message);
     this.executor_id = executor_id;
     this.application_version = application_version;
+    this.hostname = hostname;
   }
 }
 

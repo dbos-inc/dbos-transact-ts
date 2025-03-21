@@ -5,6 +5,7 @@ import * as protocol from './protocol';
 import { GetWorkflowsInput, StatusString } from '..';
 import { getWorkflowInfo } from '../dbos-runtime/workflow_management';
 import { GetQueuedWorkflowsInput } from '../workflow';
+import { hostname } from 'node:os';
 
 export class Conductor {
   url: string;
@@ -47,6 +48,7 @@ export class Conductor {
               baseMsg.request_id,
               globalParams.executorID,
               globalParams.appVersion,
+              hostname(),
             );
             this.websocket!.send(DBOSJSON.stringify(infoResp));
             this.dbosExec.logger.info('Connected to DBOS conductor');
