@@ -592,7 +592,7 @@ export class DBOS {
   }
 
   static async resumeWorkflow(wfid: string) {
-    await DBOS.executor.resumeWorkflow(wfid);
+    return await DBOS.executor.resumeWorkflow(wfid);
   }
 
   static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
