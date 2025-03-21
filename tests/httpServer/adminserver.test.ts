@@ -15,18 +15,9 @@ describe('not-running-admin-server', () => {
   });
 
   test('test-admin-server-not-running', async () => {
-    // This is now ignored
-    const runtimeConfig: DBOSRuntimeConfig = {
-      entrypoints: [],
-      port: 3000,
-      admin_port: 3001,
-      runAdminServer: false,
-      start: [],
-      setup: [],
-    };
     config = generatePublicDBOSTestConfig({ runAdminServer: false });
-    DBOS.setConfig(config, runtimeConfig);
-    const [translatedConfig, _] = translatePublicDBOSconfig(config);
+    DBOS.setConfig(config);
+    const [translatedConfig] = translatePublicDBOSconfig(config);
     await setUpDBOSTestDb(translatedConfig);
     await DBOS.launch();
 
