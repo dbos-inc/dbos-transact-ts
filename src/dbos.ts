@@ -536,6 +536,12 @@ export class DBOS {
   }
 
   static async queryUserDB(sql: string, params?: unknown[]): Promise<unknown[]> {
+    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Invalid call to `queryUserDB` inside a `workflow`, without being in a `step`',
+      );
+    }
+
     return DBOS.executor.queryUserDB(sql, params);
   }
 
@@ -543,18 +549,41 @@ export class DBOS {
   // Workflow and other operations
   //////
   static getWorkflowStatus(workflowID: string) {
+    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Invalid call to `getWorkflowStatus` inside a `workflow`, without being in a `step`',
+      );
+    }
     return DBOS.executor.getWorkflowStatus(workflowID);
   }
 
   static retrieveWorkflow(workflowID: string) {
+    if (DBOS.isWithinWorkflow()) {
+      if (!DBOS.isInWorkflow()) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `retrieveWorkflow` inside a `transaction` or `step`',
+        );
+      }
+      return (getCurrentDBOSContext()! as WorkflowContext).retrieveWorkflow(workflowID);
+    }
     return DBOS.executor.retrieveWorkflow(workflowID);
   }
 
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Invalid call to `getWorkflows` inside a `workflow`, without being in a `step`',
+      );
+    }
     return await DBOS.executor.getWorkflows(input);
   }
 
   static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
+    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Invalid call to `getWorkflows` inside a `workflow`, without being in a `step`',
+      );
+    }
     return await DBOS.executor.getWorkflowQueue(input);
   }
 
