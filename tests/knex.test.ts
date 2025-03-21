@@ -1,18 +1,6 @@
 import request from 'supertest';
 
-import {
-  TestingRuntime,
-  Transaction,
-  Workflow,
-  TransactionContext,
-  WorkflowContext,
-  GetApi,
-  PostApi,
-  HandlerContext,
-  RequiredRole,
-  Authentication,
-  MiddlewareContext,
-} from '../src';
+import { DBOS, Authentication, MiddlewareContext } from '../src';
 import { DBOSNotAuthorizedError } from '../src/error';
 import { DBOSConfig } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
@@ -20,80 +8,78 @@ import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers'
 import { v1 as uuidv1 } from 'uuid';
 import { Knex } from 'knex';
 import { DatabaseError } from 'pg';
-import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 
-type KnexTransactionContext = TransactionContext<Knex>;
 const testTableName = 'dbos_test_kv';
 
 let insertCount = 0;
 
 class TestClass {
-  @Transaction()
-  static async testInsert(txnCtxt: KnexTransactionContext, value: string) {
+  @DBOS.transaction()
+  static async testInsert(value: string) {
     insertCount++;
-    const result = await txnCtxt.client<TestKvTable>(testTableName).insert({ value: value }).returning('id');
+    const result = await DBOS.knexClient<TestKvTable>(testTableName).insert({ value: value }).returning('id');
     return result[0].id!;
   }
 
-  @Transaction()
-  static async testSelect(txnCtxt: KnexTransactionContext, id: number) {
-    const result = await txnCtxt.client<TestKvTable>(testTableName).select('value').where({ id: id });
+  @DBOS.transaction()
+  static async testSelect(id: number) {
+    const result = await DBOS.knexClient<TestKvTable>(testTableName).select('value').where({ id: id });
     return result[0].value!;
   }
 
-  @Workflow()
-  static async testWf(ctxt: WorkflowContext, value: string) {
-    const id = await ctxt.invoke(TestClass).testInsert(value);
-    const result = await ctxt.invoke(TestClass).testSelect(id);
+  @DBOS.workflow()
+  static async testWf(value: string) {
+    const id = await TestClass.testInsert(value);
+    const result = await TestClass.testSelect(id);
     return result;
   }
 
-  @Transaction()
-  static async returnVoid(_ctxt: KnexTransactionContext) {}
+  @DBOS.transaction()
+  static async returnVoid() {}
 
-  @Transaction()
-  static async unsafeInsert(txnCtxt: KnexTransactionContext, key: number, value: string) {
+  @DBOS.transaction()
+  static async unsafeInsert(key: number, value: string) {
     insertCount++;
-    const result = await txnCtxt.client<TestKvTable>(testTableName).insert({ id: key, value: value }).returning('id');
+    const result = await DBOS.knexClient<TestKvTable>(testTableName).insert({ id: key, value: value }).returning('id');
     return result[0].id!;
   }
 }
 
 describe('knex-tests', () => {
-  let testRuntime: TestingRuntime;
   let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.KNEX);
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    await DBOS.launch();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     insertCount = 0;
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   test('simple-knex', async () => {
-    await expect(testRuntime.invoke(TestClass).testInsert('test-one')).resolves.toBe(1);
-    await expect(testRuntime.invoke(TestClass).testSelect(1)).resolves.toBe('test-one');
-    await expect(testRuntime.invokeWorkflow(TestClass).testWf('test-two')).resolves.toBe('test-two');
+    await expect(TestClass.testInsert('test-one')).resolves.toBe(1);
+    await expect(TestClass.testSelect(1)).resolves.toBe('test-one');
+    await expect(TestClass.testWf('test-two')).resolves.toBe('test-two');
   });
 
   test('knex-return-void', async () => {
-    await expect(testRuntime.invoke(TestClass).returnVoid()).resolves.not.toThrow();
+    await expect(TestClass.returnVoid()).resolves.not.toThrow();
   });
 
   test('knex-duplicate-workflows', async () => {
     const uuid = uuidv1();
     const results = await Promise.allSettled([
-      testRuntime.invokeWorkflow(TestClass, uuid).testWf('test-one'),
-      testRuntime.invokeWorkflow(TestClass, uuid).testWf('test-one'),
+      (await DBOS.startWorkflow(TestClass, { workflowID: uuid }).testWf('test-one')).getResult(),
+      (await DBOS.startWorkflow(TestClass, { workflowID: uuid }).testWf('test-one')).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe('test-one');
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe('test-one');
@@ -101,9 +87,9 @@ describe('knex-tests', () => {
   });
 
   test('knex-key-conflict', async () => {
-    await testRuntime.invoke(TestClass).unsafeInsert(1, 'test-one');
+    await TestClass.unsafeInsert(1, 'test-one');
     try {
-      await testRuntime.invoke(TestClass).unsafeInsert(1, 'test-two');
+      await TestClass.unsafeInsert(1, 'test-two');
       expect(true).toBe(false); // Fail if no error is thrown.
     } catch (e) {
       const err: DatabaseError = e as DatabaseError;
@@ -120,17 +106,17 @@ interface UserTable {
 
 @Authentication(KUserManager.authMiddlware)
 class KUserManager {
-  @Transaction()
-  @PostApi('/register')
-  static async createUser(txnCtxt: KnexTransactionContext, uname: string) {
-    const result = await txnCtxt.client<UserTable>(userTableName).insert({ username: uname }).returning('id');
+  @DBOS.transaction()
+  @DBOS.postApi('/register')
+  static async createUser(uname: string) {
+    const result = await DBOS.knexClient<UserTable>(userTableName).insert({ username: uname }).returning('id');
     return result;
   }
 
-  @GetApi('/hello')
-  @RequiredRole(['user'])
-  static async hello(hCtxt: HandlerContext) {
-    return Promise.resolve({ messge: 'hello ' + hCtxt.authenticatedUser });
+  @DBOS.getApi('/hello')
+  @DBOS.requiredRole(['user'])
+  static async hello() {
+    return Promise.resolve({ messge: 'hello ' + DBOS.authenticatedUser });
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
@@ -158,39 +144,38 @@ class KUserManager {
 
 describe('knex-auth-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.KNEX);
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
-    await testRuntime.queryUserDB(
-      `CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`,
-    );
+    await DBOS.launch();
+    DBOS.setUpHandlerCallback();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`);
   });
 
   afterEach(async () => {
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
-    await testRuntime.destroy();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
+    await DBOS.shutdown();
   });
 
   test('simple-knex-auth', async () => {
     // No user name
-    const response1 = await request(testRuntime.getHandlersCallback()).get('/hello');
+    const response1 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
     expect(response1.statusCode).toBe(401);
 
     // User name doesn't exist
-    const response2 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
+    const response2 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response2.statusCode).toBe(403);
 
-    const response3 = await request(testRuntime.getHandlersCallback()).post('/register').send({ uname: 'paul' });
+    const response3 = await request(DBOS.getHTTPHandlersCallback()!).post('/register').send({ uname: 'paul' });
     expect(response3.statusCode).toBe(200);
 
-    const response4 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
+    const response4 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response4.statusCode).toBe(200);
   });
 });

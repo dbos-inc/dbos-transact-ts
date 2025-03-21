@@ -4,22 +4,10 @@ import { Entity, Column, PrimaryColumn, PrimaryGeneratedColumn } from 'typeorm';
 import { EntityManager, Unique } from 'typeorm';
 
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import {
-  TestingRuntime,
-  Transaction,
-  OrmEntities,
-  TransactionContext,
-  Authentication,
-  MiddlewareContext,
-  GetApi,
-  HandlerContext,
-  RequiredRole,
-  PostApi,
-} from '../src';
+import { OrmEntities, Authentication, MiddlewareContext, DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { v1 as uuidv1 } from 'uuid';
 import { UserDatabaseName } from '../src/user_database';
-import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 import { DBOSNotAuthorizedError } from '../src/error';
 
 /**
@@ -36,55 +24,51 @@ export class KV {
 
 let globalCnt = 0;
 
-type TestTransactionContext = TransactionContext<EntityManager>;
-
 @OrmEntities()
 export class NoEntities {}
 
 @OrmEntities([KV])
 class KVController {
-  @Transaction()
-  static async testTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
+  @DBOS.transaction()
+  static async testTxn(id: string, value: string) {
     const kv: KV = new KV();
     kv.id = id;
     kv.value = value;
-    const res = await txnCtxt.client.save(kv);
+    const res = await (DBOS.typeORMClient as EntityManager).save(kv);
     globalCnt += 1;
     return res.id;
   }
 
-  @Transaction({ readOnly: true })
-  static async readTxn(txnCtxt: TestTransactionContext, id: string) {
+  @DBOS.transaction({ readOnly: true })
+  static async readTxn(id: string) {
     globalCnt += 1;
-    const kvp = await txnCtxt.client.findOneBy(KV, { id: id });
+    const kvp = await (DBOS.typeORMClient as EntityManager).findOneBy(KV, { id: id });
     return Promise.resolve(kvp?.value || '<Not Found>');
   }
 }
 
 describe('typeorm-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.TYPEORM);
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
     globalCnt = 0;
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    await testRuntime.dropUserSchema();
-    await testRuntime.createUserSchema();
+    await DBOS.launch();
+    await DBOS.dropUserSchema();
+    await DBOS.createUserSchema();
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   test('simple-typeorm', async () => {
-    const workUUID = uuidv1();
-    await expect(testRuntime.invoke(KVController, workUUID).testTxn('test', 'value')).resolves.toBe('test');
-    await expect(testRuntime.invoke(KVController, workUUID).testTxn('test', 'value')).resolves.toBe('test');
+    await expect(KVController.testTxn('test', 'value')).resolves.toBe('test');
   });
 
   test('typeorm-duplicate-transaction', async () => {
@@ -92,8 +76,8 @@ describe('typeorm-tests', () => {
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
     let results = await Promise.allSettled([
-      testRuntime.invoke(KVController, workUUID).testTxn('oaootest', 'oaoovalue'),
-      testRuntime.invoke(KVController, workUUID).testTxn('oaootest', 'oaoovalue'),
+      (await DBOS.startWorkflow(KVController, { workflowID: workUUID }).testTxn('oaootest', 'oaoovalue')).getResult(),
+      (await DBOS.startWorkflow(KVController, { workflowID: workUUID }).testTxn('oaootest', 'oaoovalue')).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe('oaootest');
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe('oaootest');
@@ -103,8 +87,8 @@ describe('typeorm-tests', () => {
     globalCnt = 0;
     const readUUID = uuidv1();
     results = await Promise.allSettled([
-      testRuntime.invoke(KVController, readUUID).readTxn('oaootest'),
-      testRuntime.invoke(KVController, readUUID).readTxn('oaootest'),
+      (await DBOS.startWorkflow(KVController, { workflowID: readUUID }).readTxn('oaootest')).getResult(),
+      (await DBOS.startWorkflow(KVController, { workflowID: readUUID }).readTxn('oaootest')).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe('oaoovalue');
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe('oaoovalue');
@@ -125,19 +109,19 @@ export class User {
 @OrmEntities([User])
 @Authentication(UserManager.authMiddlware)
 class UserManager {
-  @Transaction()
-  @PostApi('/register')
-  static async createUser(txnCtxt: TestTransactionContext, uname: string) {
+  @DBOS.transaction()
+  @DBOS.postApi('/register')
+  static async createUser(uname: string) {
     const u: User = new User();
     u.username = uname;
-    const res = await txnCtxt.client.save(u);
+    const res = await (DBOS.typeORMClient as EntityManager).save(u);
     return res;
   }
 
-  @GetApi('/hello')
-  @RequiredRole(['user'])
-  static async hello(hCtxt: HandlerContext) {
-    return Promise.resolve({ messge: 'hello ' + hCtxt.authenticatedUser });
+  @DBOS.getApi('/hello')
+  @DBOS.requiredRole(['user'])
+  static async hello() {
+    return Promise.resolve({ messge: 'hello ' + DBOS.authenticatedUser });
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
@@ -169,37 +153,38 @@ class UserManager {
 
 describe('typeorm-auth-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.TYPEORM);
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
     globalCnt = 0;
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    await testRuntime.dropUserSchema();
-    await testRuntime.createUserSchema();
+    await DBOS.launch();
+    DBOS.setUpHandlerCallback();
+    await DBOS.dropUserSchema();
+    await DBOS.createUserSchema();
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   test('auth-typeorm', async () => {
     // No user name
-    const response1 = await request(testRuntime.getHandlersCallback()).get('/hello');
+    const response1 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
     expect(response1.statusCode).toBe(401);
 
     // User name doesn't exist
-    const response2 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
+    const response2 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response2.statusCode).toBe(403);
 
-    const response3 = await request(testRuntime.getHandlersCallback()).post('/register').send({ uname: 'paul' });
+    const response3 = await request(DBOS.getHTTPHandlersCallback()!).post('/register').send({ uname: 'paul' });
     expect(response3.statusCode).toBe(200);
 
-    const response4 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
+    const response4 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response4.statusCode).toBe(200);
   });
 });

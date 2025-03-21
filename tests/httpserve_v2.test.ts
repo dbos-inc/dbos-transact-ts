@@ -226,8 +226,8 @@ describe('dbos-v2api-tests-http', () => {
   });
 
   beforeEach(async () => {
-    await DBOS.executor.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.executor.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
   });
 
   afterAll(async () => {

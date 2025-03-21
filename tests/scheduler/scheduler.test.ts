@@ -1,8 +1,8 @@
 import { PoolClient } from 'pg';
 import {
+  DBOS,
   Scheduled,
   SchedulerMode,
-  TestingRuntime,
   Transaction,
   TransactionContext,
   Workflow,
@@ -10,7 +10,6 @@ import {
   WorkflowQueue,
 } from '../../src';
 import { DBOSConfig } from '../../src/dbos-executor';
-import { createInternalTestRuntime } from '../../src/testing/testing_runtime';
 import { sleepms } from '../../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 
@@ -18,20 +17,21 @@ type TestTransactionContext = TransactionContext<PoolClient>;
 
 describe('scheduled-wf-tests-simple', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+    await DBOS.dropSystemDB();
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, config);
+    await DBOS.launch();
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   }, 10000);
 
   test('wf-scheduled', async () => {
@@ -42,7 +42,7 @@ describe('scheduled-wf-tests-simple', () => {
     expect(DBOSSchedTestClass.nTooEarly).toBe(0);
     expect(DBOSSchedTestClass.nTooLate).toBe(0);
 
-    await testRuntime.deactivateEventReceivers();
+    await DBOS.deactivateEventReceivers();
 
     await sleepms(1000);
     expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(3);
@@ -139,11 +139,11 @@ class DBOSSchedTestClassOAOO {
 
 describe('scheduled-wf-tests-oaoo', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {});
@@ -152,7 +152,7 @@ describe('scheduled-wf-tests-oaoo', () => {
 
   test('wf-scheduled-recover', async () => {
     DBOSSchedTestClassOAOO.reset();
-    testRuntime = await createInternalTestRuntime(undefined, config);
+    await DBOS.launch();
     let startDownTime: number[] = [];
     try {
       await sleepms(3000);
@@ -160,11 +160,11 @@ describe('scheduled-wf-tests-oaoo', () => {
       expect(DBOSSchedTestClassOAOO.nCalls).toBeLessThanOrEqual(4);
       startDownTime = process.hrtime();
     } finally {
-      await testRuntime.destroy();
+      await DBOS.shutdown();
     }
     await sleepms(5000);
     DBOSSchedTestClassOAOO.reset();
-    testRuntime = await createInternalTestRuntime(undefined, config);
+    await DBOS.launch();
     try {
       await sleepms(3000);
       expect(DBOSSchedTestClassOAOO.nCalls).toBeGreaterThanOrEqual(7); // 3 new ones, 5 recovered ones, +/-
@@ -172,18 +172,18 @@ describe('scheduled-wf-tests-oaoo', () => {
       const nShouldHaveHappened = endDownTime[0] - startDownTime[0] + 2;
       expect(DBOSSchedTestClassOAOO.nCalls).toBeLessThanOrEqual(nShouldHaveHappened);
     } finally {
-      await testRuntime.destroy();
+      await DBOS.shutdown();
     }
   }, 15000);
 });
 
 describe('scheduled-wf-tests-when-active', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {});
@@ -192,35 +192,35 @@ describe('scheduled-wf-tests-when-active', () => {
 
   test('wf-scheduled-recover', async () => {
     DBOSSchedTestClass.reset(false);
-    testRuntime = await createInternalTestRuntime(undefined, config);
+    await DBOS.launch();
     try {
       await sleepms(3000);
       expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(2);
       expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(4);
       expect(DBOSSchedTestClass.nQCalls).toBeGreaterThanOrEqual(1); // This has some delay, potentially...
 
-      const wfs = await testRuntime.getWorkflows({
+      const wfs = await DBOS.getWorkflows({
         workflowName: 'scheduledDefaultQ',
       });
 
       let foundQ = false;
       for (const wfid of wfs.workflowUUIDs) {
-        const stat = await testRuntime.retrieveWorkflow(wfid).getStatus();
+        const stat = await DBOS.retrieveWorkflow(wfid).getStatus();
         if (stat?.queueName === q.name) foundQ = true;
       }
       expect(foundQ).toBeTruthy();
     } finally {
-      await testRuntime.destroy();
+      await DBOS.shutdown();
     }
     await sleepms(5000);
     DBOSSchedTestClass.reset(false);
-    testRuntime = await createInternalTestRuntime(undefined, config);
+    await DBOS.launch();
     try {
       await sleepms(3000);
       expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(2); // 3 new ones, +/- 1
       expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(4); // No old ones from recovery or sleep interval
     } finally {
-      await testRuntime.destroy();
+      await DBOS.shutdown();
     }
   }, 15000);
 });

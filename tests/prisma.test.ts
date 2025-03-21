@@ -3,7 +3,6 @@ import request from 'supertest';
 import { PrismaClient, testkv } from '@prisma/client';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import {
-  TestingRuntime,
   Transaction,
   TransactionContext,
   Authentication,
@@ -12,6 +11,7 @@ import {
   HandlerContext,
   RequiredRole,
   PostApi,
+  DBOS,
 } from '../src';
 import { DBOSNotAuthorizedError } from '../src/error';
 
@@ -20,7 +20,6 @@ import { sleepms } from '../src/utils';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOSConfig } from '../src/dbos-executor';
-import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 
 interface PrismaPGError {
   code: string;
@@ -39,9 +38,9 @@ let globalCnt = 0;
 const testTableName = 'testkv';
 
 class PrismaTestClass {
-  @Transaction()
-  static async testTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
-    const res = await txnCtxt.client.testkv.create({
+  @DBOS.transaction()
+  static async testTxn(id: string, value: string) {
+    const res = await (DBOS.prismaClient as PrismaClient).testkv.create({
       data: {
         id: id,
         value: value,
@@ -51,44 +50,52 @@ class PrismaTestClass {
     return res.id;
   }
 
-  @Transaction({ readOnly: true })
-  static async readTxn(_txnCtxt: TestTransactionContext, id: string) {
+  @DBOS.transaction({ readOnly: true })
+  static async readTxn(id: string) {
     await sleepms(1);
     globalCnt += 1;
     return id;
   }
 
-  @Transaction()
-  static async conflictTxn(txnCtxt: TestTransactionContext, id: string, value: string) {
-    const res = await txnCtxt.client.$queryRawUnsafe<testkv>(`INSERT INTO ${testTableName} VALUES ($1, $2)`, id, value);
+  @DBOS.transaction()
+  static async conflictTxn(id: string, value: string) {
+    const res = await (DBOS.prismaClient as PrismaClient).$queryRawUnsafe<testkv>(
+      `INSERT INTO ${testTableName} VALUES ($1, $2)`,
+      id,
+      value,
+    );
     return res.id;
   }
 }
 
 describe('prisma-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.PRISMA);
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
     globalCnt = 0;
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT PRIMARY KEY, value TEXT);`);
+    await DBOS.launch();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id TEXT PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   test('simple-prisma', async () => {
     const workUUID = uuidv1();
-    await expect(testRuntime.invoke(PrismaTestClass, workUUID).testTxn('test', 'value')).resolves.toBe('test');
-    await expect(testRuntime.invoke(PrismaTestClass, workUUID).testTxn('test', 'value')).resolves.toBe('test');
+    await expect(
+      (await DBOS.startWorkflow(PrismaTestClass, { workflowID: workUUID }).testTxn('test', 'value')).getResult(),
+    ).resolves.toBe('test');
+    await expect(
+      (await DBOS.startWorkflow(PrismaTestClass, { workflowID: workUUID }).testTxn('test', 'value')).getResult(),
+    ).resolves.toBe('test');
   });
 
   test('prisma-duplicate-transaction', async () => {
@@ -96,8 +103,12 @@ describe('prisma-tests', () => {
     // Both should return the correct result but only one should execute.
     const workUUID = uuidv1();
     let results = await Promise.allSettled([
-      testRuntime.invoke(PrismaTestClass, workUUID).testTxn('oaootest', 'oaoovalue'),
-      testRuntime.invoke(PrismaTestClass, workUUID).testTxn('oaootest', 'oaoovalue'),
+      (
+        await DBOS.startWorkflow(PrismaTestClass, { workflowID: workUUID }).testTxn('oaootest', 'oaoovalue')
+      ).getResult(),
+      (
+        await DBOS.startWorkflow(PrismaTestClass, { workflowID: workUUID }).testTxn('oaootest', 'oaoovalue')
+      ).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe('oaootest');
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe('oaootest');
@@ -107,8 +118,8 @@ describe('prisma-tests', () => {
     globalCnt = 0;
     const readUUID = uuidv1();
     results = await Promise.allSettled([
-      testRuntime.invoke(PrismaTestClass, readUUID).readTxn('oaootestread'),
-      testRuntime.invoke(PrismaTestClass, readUUID).readTxn('oaootestread'),
+      (await DBOS.startWorkflow(PrismaTestClass, { workflowID: readUUID }).readTxn('oaootestread')).getResult(),
+      (await DBOS.startWorkflow(PrismaTestClass, { workflowID: readUUID }).readTxn('oaootestread')).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe('oaootestread');
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe('oaootestread');
@@ -121,8 +132,12 @@ describe('prisma-tests', () => {
     const workflowUUID1 = uuidv1();
     const workflowUUID2 = uuidv1();
     const results = await Promise.allSettled([
-      testRuntime.invoke(PrismaTestClass, workflowUUID1).conflictTxn('conflictkey', 'test1'),
-      testRuntime.invoke(PrismaTestClass, workflowUUID2).conflictTxn('conflictkey', 'test2'),
+      (
+        await DBOS.startWorkflow(PrismaTestClass, { workflowID: workflowUUID1 }).conflictTxn('conflictkey', 'test1')
+      ).getResult(),
+      (
+        await DBOS.startWorkflow(PrismaTestClass, { workflowID: workflowUUID2 }).conflictTxn('conflictkey', 'test2')
+      ).getResult(),
     ]);
     const errorResult = results.find((result) => result.status === 'rejected');
     const err: PrismaClientKnownRequestError = (errorResult as PromiseRejectedResult)
@@ -186,39 +201,38 @@ class PUserManager {
 
 describe('prisma-auth-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.PRISMA);
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime([PUserManager], config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
-    await testRuntime.queryUserDB(
-      `CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`,
-    );
+    await DBOS.launch();
+    DBOS.setUpHandlerCallback();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`);
   });
 
   afterEach(async () => {
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
-    await testRuntime.destroy();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
+    await DBOS.shutdown();
   });
 
   test('auth-prisma', async () => {
     // No user name
-    const response1 = await request(testRuntime.getHandlersCallback()).get('/hello');
+    const response1 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
     expect(response1.statusCode).toBe(401);
 
     // User name doesn't exist
-    const response2 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
+    const response2 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response2.statusCode).toBe(403);
 
-    const response3 = await request(testRuntime.getHandlersCallback()).post('/register').send({ uname: 'paul' });
+    const response3 = await request(DBOS.getHTTPHandlersCallback()!).post('/register').send({ uname: 'paul' });
     expect(response3.statusCode).toBe(200);
 
-    const response4 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
+    const response4 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response4.statusCode).toBe(200);
   });
 });
