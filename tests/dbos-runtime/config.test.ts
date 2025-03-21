@@ -617,7 +617,7 @@ describe('dbos-config', () => {
           allowed_origin: ['origin'],
         },
       };
-      const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig);
+      const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig, true);
       expect(translatedDBOSConfig).toEqual({
         name: dbosConfig.name, // provided name -- no config file was found
         poolConfig: {
@@ -633,7 +633,7 @@ describe('dbos-config', () => {
         telemetry: {
           logs: {
             logLevel: dbosConfig.logLevel,
-            forceConsole: false,
+            forceConsole: true,
           },
           OTLPExporter: {
             tracesEndpoint: dbosConfig.otlpTracesEndpoints[0],

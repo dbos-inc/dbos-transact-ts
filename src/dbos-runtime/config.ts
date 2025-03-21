@@ -356,7 +356,7 @@ function isValidDBname(dbName: string): boolean {
  - Application Name: check there is no inconsistency between the provided name and the one in dbos-config.yaml, if any
  - Database configuration: Ignore provided poolConfig and reconstructs it from the database_url field and constructPoolConfig()
 */
-export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOSRuntimeConfig] {
+export function translatePublicDBOSconfig(config: DBOSConfig, isDebugging?: boolean): [DBOSConfig, DBOSRuntimeConfig] {
   const logger = new GlobalLogger();
   // Check there is no discrepancy between provided name and dbos-config.yaml
   let appName = config.name;
@@ -408,7 +408,7 @@ export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOS
     telemetry: {
       logs: {
         logLevel: config.logLevel || 'info',
-        forceConsole: false,
+        forceConsole: isDebugging ? true : false,
       },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,

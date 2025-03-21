@@ -232,7 +232,7 @@ export class DBOS {
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
     } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
-      let [dbosConfig, runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig);
+      let [dbosConfig, runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
       if (process.env.DBOS__CLOUD === 'true') {
         [dbosConfig, runtimeConfig] = overwrite_config(dbosConfig, runtimeConfig);
       }
