@@ -454,12 +454,10 @@ export function overwrite_config(
   providedRuntimeConfig: DBOSRuntimeConfig,
 ): [DBOSConfig, DBOSRuntimeConfig] {
   // Load the DBOS configuration file and force the use of:
-  // 1. The database connection parameters (sub the file data to the provided config)
-  // 2. OTLP traces endpoints (add the config data to the provided config)
-  // 3. Use the application name from the file. This is a defensive measure to ensure the application name is whatever it was registered with in the cloud
+  // 1. Use the application name from the file. This is a defensive measure to ensure the application name is whatever it was registered with in the cloud
+  // 2. The database connection parameters (sub the file data to the provided config)
+  // 3. OTLP traces endpoints (add the config data to the provided config)
   // 4. Force admin_port and runAdminServer
-  // 5. Discard env vars if provided in code
-  // Optimistically assume that expected fields in config_from_file are present
 
   let configFile: ConfigFile;
   try {
