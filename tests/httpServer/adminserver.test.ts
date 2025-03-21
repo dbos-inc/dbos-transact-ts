@@ -10,7 +10,6 @@ import { translatePublicDBOSconfig } from '../../src/dbos-runtime/config';
 
 describe('not-running-admin-server', () => {
   let config: DBOSConfig;
-  let systemDBClient: Client;
   beforeEach(async () => {
     await DBOS.shutdown();
   });
