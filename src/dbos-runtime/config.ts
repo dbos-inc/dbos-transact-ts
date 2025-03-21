@@ -357,15 +357,11 @@ function isValidDBname(dbName: string): boolean {
  - Database configuration: Ignore provided poolConfig and reconstructs it from the database_url field and constructPoolConfig()
 */
 export function translatePublicDBOSconfig(config: DBOSConfig, isDebugging?: boolean): [DBOSConfig, DBOSRuntimeConfig] {
-  const logger = new GlobalLogger();
   // Check there is no discrepancy between provided name and dbos-config.yaml
   let appName = config.name;
   try {
     const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
-    if (!configFile) {
-      // Unreachable loadConfigFile should throw
-      logger.warn(`DBOS configuration file ${dbosConfigFilePath} is empty`);
-    } else if (!configFile.name) {
+    if (!configFile.name) {
       throw new DBOSInitializationError(`Failed to load config from ${dbosConfigFilePath}: missing name field`);
     } else {
       // Opportunistically grab the name from the config file if none was provided
