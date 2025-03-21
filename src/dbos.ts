@@ -119,20 +119,29 @@ type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type StepFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
+type WorkflowFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
 
 // Utility type that only includes transaction/step/proc functions + converts the method signature to exclude the context parameter
 type InvokeFuncs<T> = T extends ConfiguredInstance
   ? never
   : {
-      [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc ? P : never]: T[P] extends TxFunc | StepFunc | ProcFunc
+      [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc | WorkflowFunc ? P : never]: T[P] extends
+        | TxFunc
+        | StepFunc
+        | ProcFunc
+        | WorkflowFunc
         ? (...args: TailParameters<T[P]>) => ReturnType<T[P]>
         : never;
     };
 
 type InvokeFuncsInst<T> = T extends ConfiguredInstance
   ? {
-      [P in keyof T as T[P] extends TxFunc | StepFunc ? P : never]: T[P] extends TxFunc | StepFunc
+      [P in keyof T as T[P] extends TxFunc | StepFunc | WorkflowFunc ? P : never]: T[P] extends
+        | TxFunc
+        | StepFunc
+        | WorkflowFunc
         ? (...args: TailParameters<T[P]>) => ReturnType<T[P]>
         : never;
     }
@@ -862,11 +871,20 @@ export class DBOS {
                       wfParams,
                       ...args,
                     )
-                : (..._args: unknown[]) => {
-                    throw new DBOSNotRegisteredError(
-                      `${op.name} is not a registered DBOS step, transaction, or procedure`,
-                    );
-                  };
+                : op.workflowConfig
+                  ? async (...args: unknown[]) =>
+                      (
+                        await DBOSExecutor.globalInstance!.workflow<unknown[], unknown>(
+                          op.registeredFunction as WorkflowFunction<unknown[], unknown>,
+                          wfParams,
+                          ...args,
+                        )
+                      ).getResult()
+                  : (..._args: unknown[]) => {
+                      throw new DBOSNotRegisteredError(
+                        `${op.name} is not a registered DBOS step, transaction, or procedure`,
+                      );
+                    };
         }
 
         augmentProxy(object, proxy);
@@ -892,9 +910,18 @@ export class DBOS {
                     { ...wfParams, configuredInstance: targetInst },
                     ...args,
                   )
-              : (..._args: unknown[]) => {
-                  throw new DBOSNotRegisteredError(`${op.name} is not a registered DBOS step or transaction`);
-                };
+              : op.workflowConfig
+                ? async (...args: unknown[]) =>
+                    (
+                      await DBOSExecutor.globalInstance!.workflow(
+                        op.registeredFunction as WorkflowFunction<unknown[], unknown>,
+                        { ...wfParams, configuredInstance: targetInst },
+                        ...args,
+                      )
+                    ).getResult()
+                : (..._args: unknown[]) => {
+                    throw new DBOSNotRegisteredError(`${op.name} is not a registered DBOS step or transaction`);
+                  };
         }
 
         augmentProxy(targetInst, proxy);
