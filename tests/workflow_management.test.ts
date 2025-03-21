@@ -705,8 +705,8 @@ describe('test-list-steps', () => {
       await handle.getStatus();
     }
 
-    // eslint-disable-next-line @typescript-eslint/require-await
     @DBOS.workflow()
+    // eslint-disable-next-line  @typescript-eslint/require-await
     static async childWorkflowWithCounter() {
       console.log('childWorkflowWithCounter increasing counter');
       callcount++;
@@ -714,7 +714,8 @@ describe('test-list-steps', () => {
 
     @DBOS.workflow()
     static async CounterParent() {
-      const handle = await DBOS.startWorkflow(TestListSteps).childWorkflowWithCounter();
+      const childwfid = uuidv4();
+      const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: childwfid }).childWorkflowWithCounter();
       await handle.getStatus();
     }
   }
@@ -856,14 +857,14 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     let handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
     await handle.getResult();
-
+    // call again with same wfid
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
     await handle.getResult();
 
     expect(callcount).toBe(1);
 
     const wfid1 = uuidv4();
-
+    // call with different wfid counter should be incremented
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).CounterParent();
     await handle.getResult();
 
