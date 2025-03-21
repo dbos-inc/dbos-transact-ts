@@ -27,7 +27,7 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
 } from './error';
-import { parseConfigFile, translatePublicDBOSconfig } from './dbos-runtime/config';
+import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
 import { DBOSScheduler, ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
 import {
@@ -224,7 +224,10 @@ export class DBOS {
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
     } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
-      const [dbosConfig, runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig);
+      let [dbosConfig, runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig);
+      if (process.env.DBOS__CLOUD === 'true') {
+        [dbosConfig, runtimeConfig] = overwrite_config(dbosConfig, runtimeConfig);
+      }
       if (!isDebugging && dbosConfig.poolConfig) {
         dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
       }

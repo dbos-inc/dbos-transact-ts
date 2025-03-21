@@ -15,6 +15,7 @@ import fs from 'fs';
 import { loadDatabaseConnection } from './db_connection';
 import { GlobalLogger } from '../telemetry/logs';
 import dbosConfigSchema from '../../dbos-config.schema.json';
+import { OTLPExporterConfig } from '../telemetry/exporters';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true });
@@ -452,4 +453,49 @@ export function parseDbString(dbString: string): DBConfig {
       ? parseInt(queryParams['connect_timeout'], 10) * 1000
       : undefined,
   };
+}
+
+export function overwrite_config(
+  providedDBOSConfig: DBOSConfig,
+  providedRuntimeConfig: DBOSRuntimeConfig,
+): [DBOSConfig, DBOSRuntimeConfig] {
+  // Load the DBOS configuration file and force the use of:
+  // 1. The database connection parameters (sub the file data to the provided config)
+  // 2. OTLP traces endpoints (add the config data to the provided config)
+  // 3. Use the application name from the file. This is a defensive measure to ensure the application name is whatever it was registered with in the cloud
+  // 4. Force admin_port and runAdminServer
+  // 5. Discard env vars if provided in code
+  // Optimistically assume that expected fields in config_from_file are present
+
+  const configFile = loadConfigFile(dbosConfigFilePath);
+  if (!configFile) {
+    return [providedDBOSConfig, providedRuntimeConfig];
+  }
+
+  const appName = configFile.name || providedDBOSConfig.name;
+
+  const poolConfig = constructPoolConfig(configFile);
+
+  const OTLPExporterConfig: OTLPExporterConfig = providedDBOSConfig.telemetry?.OTLPExporter || {};
+  if (configFile.telemetry?.OTLPExporter?.tracesEndpoint) {
+    OTLPExporterConfig.tracesEndpoint = configFile.telemetry.OTLPExporter.tracesEndpoint;
+  }
+
+  const overwritenDBOSConfig = {
+    name: appName,
+    poolConfig: poolConfig,
+    telemetry: providedDBOSConfig.telemetry,
+    system_database: configFile.database.sys_db_name,
+  };
+
+  const overwriteDBOSRuntimeConfig = {
+    admin_port: 3001,
+    runAdminServer: true,
+    entrypoints: providedRuntimeConfig.entrypoints,
+    port: providedRuntimeConfig.port,
+    start: providedRuntimeConfig.start,
+    setup: providedRuntimeConfig.setup,
+  };
+
+  return [overwritenDBOSConfig, overwriteDBOSRuntimeConfig];
 }
