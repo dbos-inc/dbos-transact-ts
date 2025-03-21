@@ -150,6 +150,7 @@ export class WorkflowsOutput {
   UpdatedAt?: string;
   QueueName?: string;
   ApplicationVersion?: string;
+  ExecutorID?: string;
 
   constructor(info: WorkflowInformation) {
     // Mark empty fields as undefined
@@ -170,6 +171,7 @@ export class WorkflowsOutput {
     this.UpdatedAt = info.updatedAt ? String(info.updatedAt) : undefined;
     this.QueueName = info.queueName ? info.queueName : undefined;
     this.ApplicationVersion = info.applicationVersion;
+    this.ExecutorID = info.executorId;
   }
 }
 
