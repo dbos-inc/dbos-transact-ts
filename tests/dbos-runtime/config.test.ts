@@ -688,6 +688,73 @@ describe('dbos-config', () => {
       jest.restoreAllMocks();
     });
 
+    test('translate with only deprecated, internal fields', () => {
+      const mockPackageJsoString = `{name: 'appname'}`;
+      jest.spyOn(fs, 'readFileSync').mockReturnValue(mockPackageJsoString);
+      const dbosConfig = {
+        poolConfig: {
+          host: 'h',
+          port: 123,
+          user: 'u',
+          password: 'p',
+          database: 'd',
+          connectionTimeoutMillis: 456,
+        },
+        telemetry: {
+          logs: {
+            logLevel: 'WARN',
+          },
+          OTLPLogExporter: {
+            logsEndPoint: 'youhou',
+            tracesEndpoint: 'yadiyada',
+          },
+        },
+        system_database: 'unused',
+        env: {
+          KEY: 'VALUE',
+        },
+        application: {
+          counter: 3,
+          shouldExist: 'exists',
+        },
+        http: {
+          cors_middleware: true,
+          credentials: false,
+          allowed_origin: ['origin'],
+        },
+      };
+      const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig);
+      expect(translatedDBOSConfig).toEqual({
+        name: 'appname',
+        poolConfig: {
+          host: 'localhost',
+          port: 5432,
+          user: 'postgres',
+          password: process.env.PGPASSWORD || 'dbos',
+          database: 'appname',
+          connectionTimeoutMillis: 3000,
+          ssl: false,
+        },
+        userDbclient: UserDatabaseName.KNEX,
+        telemetry: {
+          logs: {
+            logLevel: 'info',
+            forceConsole: false,
+          },
+        },
+        system_database: 'appname_dbos_sys',
+      });
+      expect(translatedRuntimeConfig).toEqual({
+        port: 3000,
+        admin_port: 3001,
+        runAdminServer: true,
+        entrypoints: [],
+        start: [],
+        setup: [],
+      });
+      jest.restoreAllMocks();
+    });
+
     test('fails when provided name conflicts with config file', () => {
       const mockPackageJsoString = `{name: 'appname'}`;
       jest.spyOn(fs, 'readFileSync').mockReturnValue(mockPackageJsoString);
