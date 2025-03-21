@@ -766,6 +766,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
         status = wfStatus.status;
       } else {
         // TODO: Make this transactional (and with the queue step below)
+        if (callerFunctionID !== undefined && callerUUID !== undefined) {
+          const child_id = await this.systemDatabase.checkChildWorkflow(callerUUID, callerFunctionID);
+          if (child_id !== null) {
+            return new RetrievedHandle(this.systemDatabase, child_id, callerUUID, callerFunctionID);
+          }
+
+          await this.systemDatabase.recordChildWorkflow(callerUUID, workflowUUID, callerFunctionID, wf.name);
+        }
         const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
         args = ires.args;
         status = ires.status;

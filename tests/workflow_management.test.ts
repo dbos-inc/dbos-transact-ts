@@ -603,12 +603,13 @@ describe('test-list-queues', () => {
 
 describe('test-list-steps', () => {
   let config: DBOSConfig;
-  beforeAll(async () => {
+  const queue = new WorkflowQueue('child_queue');
+  beforeAll(() => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
   beforeEach(async () => {
+    await setUpDBOSTestDb(config);
     await DBOS.launch();
   });
   afterEach(async () => {
@@ -621,6 +622,7 @@ describe('test-list-steps', () => {
       await TestListSteps.stepTwo();
       await DBOS.sleep(10);
     }
+
     @DBOS.step()
     // eslint-disable-next-line @typescript-eslint/require-await
     static async stepOne() {
@@ -648,7 +650,69 @@ describe('test-list-steps', () => {
       await DBOS.setEvent('key', 'value');
       await DBOS.getEvent('fakewid', 'key', 1);
     }
+
+    @DBOS.workflow()
+    static async callChildWorkflowfirst() {
+      const handle = await DBOS.startWorkflow(TestListSteps).testWorkflow();
+      await handle.getStatus();
+      await TestListSteps.stepOne();
+      await TestListSteps.stepTwo();
+    }
+    @DBOS.workflow()
+    static async callChildWorkflowMiddle() {
+      await TestListSteps.stepOne();
+      const handle = await DBOS.startWorkflow(TestListSteps).testWorkflow();
+      await handle.getStatus();
+      await TestListSteps.stepTwo();
+    }
+    @DBOS.workflow()
+    static async callChildWorkflowLast() {
+      await TestListSteps.stepOne();
+      await TestListSteps.stepTwo();
+      const handle = await DBOS.startWorkflow(TestListSteps).testWorkflow();
+      await handle.getStatus();
+    }
+
+    @DBOS.workflow()
+    static async enqueueChildWorkflowFirst() {
+      const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).testWorkflow();
+      await handle.getStatus();
+      await TestListSteps.stepOne();
+      await TestListSteps.stepTwo();
+    }
+
+    @DBOS.workflow()
+    static async enqueueChildWorkflowMiddle() {
+      await TestListSteps.stepOne();
+      const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).testWorkflow();
+      await handle.getStatus();
+      await TestListSteps.stepTwo();
+    }
+
+    @DBOS.workflow()
+    static async enqueueChildWorkflowLast() {
+      await TestListSteps.stepOne();
+      await TestListSteps.stepTwo();
+      const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).testWorkflow();
+      await handle.getStatus();
+    }
+
+    @DBOS.workflow()
+    // eslint-disable-next-line  @typescript-eslint/require-await
+    static async childWorkflowWithCounter(id: string) {
+      return id;
+    }
+
+    @DBOS.workflow()
+    static async CounterParent() {
+      const childwfid = uuidv4();
+      const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: childwfid }).childWorkflowWithCounter(
+        childwfid,
+      );
+      return await handle.getResult();
+    }
   }
+
   test('test-list-steps', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
@@ -695,5 +759,103 @@ describe('test-list-steps', () => {
     expect(wfsteps.steps.length).toBe(3);
     expect(wfsteps.steps[0].function_name).toBe('DBOS.setEvent');
     expect(wfsteps.steps[2].function_name).toBe('DBOS.getEvent');
+  });
+
+  test('test-call-child-workflow-first', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowfirst();
+    await handle.getStatus();
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.steps.length).toBe(4);
+    expect(wfsteps.steps[0].function_name).toBe('testWorkflow');
+    expect(wfsteps.steps[1].function_name).toBe('getStatus');
+    expect(wfsteps.steps[2].function_name).toBe('stepOne');
+    expect(wfsteps.steps[3].function_name).toBe('stepTwo');
+  });
+
+  test('test-call-child-workflow-middle', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowMiddle();
+    await handle.getStatus();
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.steps.length).toBe(4);
+    expect(wfsteps.steps[0].function_name).toBe('stepOne');
+    expect(wfsteps.steps[1].function_name).toBe('testWorkflow');
+    expect(wfsteps.steps[2].function_name).toBe('getStatus');
+    expect(wfsteps.steps[3].function_name).toBe('stepTwo');
+  });
+
+  test('test-call-child-workflow-last', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowLast();
+    await handle.getStatus();
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.steps.length).toBe(4);
+    expect(wfsteps.steps[0].function_name).toBe('stepOne');
+    expect(wfsteps.steps[1].function_name).toBe('stepTwo');
+    expect(wfsteps.steps[2].function_name).toBe('testWorkflow');
+    expect(wfsteps.steps[3].function_name).toBe('getStatus');
+  });
+
+  test('test-queue-child-workflow-first', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowFirst();
+    await handle.getStatus();
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.steps.length).toBe(4);
+    expect(wfsteps.steps[0].function_name).toBe('testWorkflow');
+    expect(wfsteps.steps[1].function_name).toBe('getStatus');
+    expect(wfsteps.steps[2].function_name).toBe('stepOne');
+    expect(wfsteps.steps[3].function_name).toBe('stepTwo');
+  });
+
+  test('test-queue-child-workflow-middle', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowMiddle();
+    await handle.getStatus();
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.steps.length).toBe(4);
+    expect(wfsteps.steps[0].function_name).toBe('stepOne');
+    expect(wfsteps.steps[1].function_name).toBe('testWorkflow');
+    expect(wfsteps.steps[2].function_name).toBe('getStatus');
+    expect(wfsteps.steps[3].function_name).toBe('stepTwo');
+  });
+
+  test('test-queue-child-workflow-last', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowLast();
+    await handle.getStatus();
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.steps.length).toBe(4);
+    expect(wfsteps.steps[0].function_name).toBe('stepOne');
+    expect(wfsteps.steps[1].function_name).toBe('stepTwo');
+    expect(wfsteps.steps[2].function_name).toBe('testWorkflow');
+    expect(wfsteps.steps[3].function_name).toBe('getStatus');
+  });
+
+  test('test-child-rerun', async () => {
+    const wfid = uuidv4();
+    let handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
+    const result1 = await handle.getResult();
+    // call again with same wfid
+    handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
+    const result2 = await handle.getResult();
+    expect(result1).toEqual(result2);
+
+    const wfs = await listWorkflows(config, {}, false);
+    expect(wfs.length).toBe(2);
+
+    const wfid1 = uuidv4();
+    // call with different wfid we should get different result
+    handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).CounterParent();
+    const result3 = await handle.getResult();
+
+    expect(result3).not.toEqual(result1);
   });
 });

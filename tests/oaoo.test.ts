@@ -225,6 +225,8 @@ describe('oaoo-tests', () => {
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.nestedWorkflow(username)).resolves.toBe(1);
     });
+
+    await dbosExec.flushWorkflowBuffers();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.nestedWorkflow(username)).resolves.toBe(1);
     });
