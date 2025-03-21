@@ -587,6 +587,14 @@ export class DBOS {
     return await DBOS.executor.getWorkflows(input);
   }
 
+  static async cancelWorkflow(wfid: string) {
+    await DBOS.executor.cancelWorkflow(wfid);
+  }
+
+  static async resumeWorkflow(wfid: string) {
+    await DBOS.executor.resumeWorkflow(wfid);
+  }
+
   static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       throw new DBOSInvalidWorkflowTransitionError(
