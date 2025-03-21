@@ -862,8 +862,11 @@ describe('test-list-steps', () => {
     // call again with same wfid
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
     let result2 = await handle.getResult();
-
     expect(result1).toEqual(result2);
+
+    let wfs = await listWorkflows(config, {}, false);
+    console.log(wfs);
+    expect(wfs.length).toBe(2);
 
     const wfid1 = uuidv4();
     // call with different wfid counter should be incremented
