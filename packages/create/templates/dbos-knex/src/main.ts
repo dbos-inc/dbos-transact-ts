@@ -82,6 +82,10 @@ app.get('/greeting/:name', (req: Request, res: Response) => {
 
 // Finally, launch DBOS and start the server
 async function main() {
+  DBOS.setConfig({
+    name: 'dbos-knex',
+    database_url: process.env.DBOS_DATABASE_URL,
+  });
   await DBOS.launch({ expressApp: app });
   const PORT = 3000;
   const ENV = process.env.NODE_ENV || 'development';
