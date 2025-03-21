@@ -766,10 +766,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         status = wfStatus.status;
       } else {
         // TODO: Make this transactional (and with the queue step below)
-        const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
-        args = ires.args;
-        status = ires.status;
-        await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
         if (callerFunctionID !== undefined && callerUUID !== undefined) {
           const child_id = await this.systemDatabase.checkChildWorkflow(callerUUID, callerFunctionID);
           if (child_id !== null) {
@@ -778,6 +774,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
           await this.systemDatabase.recordChildWorkflow(callerUUID, workflowUUID, callerFunctionID, wf.name);
         }
+        const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+        args = ires.args;
+        status = ires.status;
+        await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
       }
     }
 
