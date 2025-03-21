@@ -616,10 +616,10 @@ describe('test-list-steps', () => {
   const queue = new WorkflowQueue('child_queue');
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
   beforeEach(async () => {
+    await setUpDBOSTestDb(config);
     await DBOS.launch();
   });
   afterEach(async () => {

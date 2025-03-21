@@ -600,12 +600,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async checkChildWorkflow(workflowUUID: string, functionID: number): Promise<string | null> {
     const { rows } = await this.pool.query<operation_outputs>(
-      `SELECT child_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
+      `SELECT child_workflow_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
       [workflowUUID, functionID],
     );
 
     if (rows.length > 0) {
-      return rows[0].child_id;
+      return rows[0].child_workflow_id;
     } else {
       return null;
     }
@@ -679,12 +679,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<void> {
     try {
       await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, function_name, child_id) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING;`,
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, function_name, child_workflow_id) VALUES ($1, $2, $3, $4);`,
         [parentUUID, functionID, functionName, childUUID],
       );
     } catch (error) {
-      this.logger.error(error);
-      throw error;
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '40001' || err.code === '23505') {
+        // Serialization and primary key conflict (Postgres).
+        throw new DBOSWorkflowConflictUUIDError(parentUUID);
+      } else {
+        throw err;
+      }
     }
   }
 

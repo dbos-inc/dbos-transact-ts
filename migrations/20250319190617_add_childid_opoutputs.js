@@ -4,7 +4,7 @@
  */
 exports.up = function (knex) {
   return knex.schema.withSchema('dbos').table('operation_outputs', function (table) {
-    table.text('child_id');
+    table.text('child_workflow_id');
   });
 };
 
@@ -14,6 +14,6 @@ exports.up = function (knex) {
  */
 exports.down = function (knex) {
   return knex.schema.withSchema('dbos').table('operation_outputs', function (table) {
-    table.dropColumn('child_id');
+    table.dropColumn('child_workflow_id');
   });
 };
