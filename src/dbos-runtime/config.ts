@@ -363,19 +363,19 @@ export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOS
   try {
     const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
     if (!configFile) {
-      // Unreachable
+      // Unreachable loadConfigFile should throw
       logger.warn(`DBOS configuration file ${dbosConfigFilePath} is empty`);
+    } else if (!configFile.name) {
+      throw new DBOSInitializationError(`Failed to load config from ${dbosConfigFilePath}: missing name field`);
     } else {
-      if (configFile.name) {
-        // Opportunistically grab the name from the config file if none was provided
-        if (!appName) {
-          appName = configFile.name;
-          // But throw if it was provided and is different from the one in config file
-        } else if (appName !== configFile.name) {
-          throw new DBOSInitializationError(
-            `Provided app name '${config.name}' does not match the app name '${configFile.name}' in ${dbosConfigFilePath}`,
-          );
-        }
+      // Opportunistically grab the name from the config file if none was provided
+      if (!appName) {
+        appName = configFile.name;
+        // But throw if it was provided and is different from the one in config file
+      } else if (appName !== configFile.name) {
+        throw new DBOSInitializationError(
+          `Provided app name '${config.name}' does not match the app name '${configFile.name}' in ${dbosConfigFilePath}`,
+        );
       }
     }
   } catch (e) {

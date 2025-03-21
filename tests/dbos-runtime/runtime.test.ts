@@ -120,6 +120,7 @@ describe('runtime-tests-knex', () => {
     const command = spawn('node', ['dist/main.js'], {
       env: process.env,
     });
+    // Note the request will still fail because we didn't run user migrations.
     await waitForMessageTest(command, '3000', '3001', false);
   });
 });

@@ -699,6 +699,16 @@ describe('dbos-config', () => {
       );
       jest.restoreAllMocks();
     });
+
+    test('fails when config file is missing name field', () => {
+      const mockPackageJsoString = `{}`;
+      jest.spyOn(fs, 'readFileSync').mockReturnValue(mockPackageJsoString);
+      const dbosConfig = {};
+      expect(() => translatePublicDBOSconfig(dbosConfig)).toThrow(
+        new DBOSInitializationError('Failed to load config from dbos-config.yaml: missing name field'),
+      );
+      jest.restoreAllMocks();
+    });
   });
 
   describe('parseDbString', () => {
@@ -822,7 +832,7 @@ describe('dbos-config', () => {
     });
   });
 
-  describe.only('overwrite_config', () => {
+  describe('overwrite_config', () => {
     test('should return provided configs when config file is empty', () => {
       jest.spyOn(utils, 'readFileSync').mockReturnValue('');
 
