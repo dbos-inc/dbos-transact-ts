@@ -614,7 +614,7 @@ describe('dbos-config', () => {
       };
       const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig);
       expect(translatedDBOSConfig).toEqual({
-        name: dbosConfig.name,
+        name: dbosConfig.name, // provided name -- no config file was found
         poolConfig: {
           host: 'mother',
           port: 2345,
@@ -653,7 +653,7 @@ describe('dbos-config', () => {
       const dbosConfig = {};
       const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig);
       expect(translatedDBOSConfig).toEqual({
-        name: 'appname',
+        name: 'appname', // Found from config file
         poolConfig: {
           host: 'localhost',
           port: 5432,
@@ -683,7 +683,17 @@ describe('dbos-config', () => {
       jest.restoreAllMocks();
     });
 
-    // name tests: no config file found, name in config & provided name differ, name is not provided but found in config, name is provided but no config file found
+    test('fails when provided name conflicts with config file', () => {
+      const mockPackageJsoString = `{name: 'appname'}`;
+      jest.spyOn(fs, 'readFileSync').mockReturnValue(mockPackageJsoString);
+      const dbosConfig = { name: 'differentappname' };
+      expect(() => translatePublicDBOSconfig(dbosConfig)).toThrow(
+        new DBOSInitializationError(
+          "Provided app name 'differentappname' does not match the app name 'appname' in dbos-config.yaml",
+        ),
+      );
+      jest.restoreAllMocks();
+    });
   });
 
   describe('parseDbString', () => {

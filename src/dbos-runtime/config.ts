@@ -85,10 +85,6 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
     return configFile;
   } catch (e) {
     if (e instanceof Error) {
-      const nodeError = e as NodeJS.ErrnoException;
-      if (nodeError.code === 'ENOENT') {
-        throw new DBOSInitializationError(`Failed to load config from ${configFilePath}: file not found`);
-      }
       throw new DBOSInitializationError(`Failed to load config from ${configFilePath}: ${e.message}`);
     } else {
       throw e;
@@ -364,6 +360,7 @@ export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOS
   try {
     const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
     if (!configFile) {
+      // Unreachable
       logger.warn(`DBOS configuration file ${dbosConfigFilePath} is empty`);
     } else {
       if (configFile.name) {
@@ -373,17 +370,15 @@ export function translatePublicDBOSconfig(config: DBOSConfig): [DBOSConfig, DBOS
           // But throw if it was provided and is different from the one in config file
         } else if (appName !== configFile.name) {
           throw new DBOSInitializationError(
-            `Provided app name '${config.name}' does not match the app name '${configFile.name}' in {dbosConfigFilePath}.`,
+            `Provided app name '${config.name}' does not match the app name '${configFile.name}' in ${dbosConfigFilePath}`,
           );
         }
       }
     }
   } catch (e) {
     // Ignore file not found errors
-    if (e instanceof DBOSInitializationError) {
-      if (!e.message.includes('file not found')) {
-        throw e;
-      }
+    if (!(e as Error).message.includes('ENOENT: no such file or directory')) {
+      throw e;
     }
   }
 
