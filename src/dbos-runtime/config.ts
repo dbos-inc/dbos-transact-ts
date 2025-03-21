@@ -356,7 +356,11 @@ function isValidDBname(dbName: string): boolean {
  - Application Name: check there is no inconsistency between the provided name and the one in dbos-config.yaml, if any
  - Database configuration: Ignore provided poolConfig and reconstructs it from the database_url field and constructPoolConfig()
 */
-export function translatePublicDBOSconfig(config: DBOSConfig, isDebugging?: boolean): [DBOSConfig, DBOSRuntimeConfig] {
+export function translatePublicDBOSconfig(
+  config: DBOSConfig,
+  runtimeConfig?: DBOSRuntimeConfig,
+  isDebugging?: boolean,
+): [DBOSConfig, DBOSRuntimeConfig] {
   // Check there is no discrepancy between provided name and dbos-config.yaml
   let appName = config.name;
   try {
@@ -417,16 +421,16 @@ export function translatePublicDBOSconfig(config: DBOSConfig, isDebugging?: bool
     };
   }
 
-  const runtimeConfig: DBOSRuntimeConfig = {
-    port: 3000, // unused forward
+  const translatedRuntimeConfig: DBOSRuntimeConfig = {
+    port: runtimeConfig?.port || 3000,
     admin_port: config.adminPort || 3001,
     runAdminServer: config.runAdminServer === undefined ? true : config.runAdminServer,
-    entrypoints: [], // unused forward
-    start: [], // unused forward
-    setup: [], // unused forward
+    entrypoints: runtimeConfig?.entrypoints || [], // unused forward
+    start: runtimeConfig?.start || [], // unused forward
+    setup: runtimeConfig?.setup || [], // unused forward
   };
 
-  return [translatedConfig, runtimeConfig];
+  return [translatedConfig, translatedRuntimeConfig];
 }
 
 export function parseDbString(dbString: string): DBConfig {

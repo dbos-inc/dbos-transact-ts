@@ -617,7 +617,7 @@ describe('dbos-config', () => {
           allowed_origin: ['origin'],
         },
       };
-      const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig, true);
+      const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig, undefined, true);
       expect(translatedDBOSConfig).toEqual({
         name: dbosConfig.name, // provided name -- no config file was found
         poolConfig: {
