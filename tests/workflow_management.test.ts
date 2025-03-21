@@ -29,6 +29,8 @@ import { Knex } from 'knex';
 import { v4 as uuidv4 } from 'uuid';
 import { GetQueuedWorkflowsInput } from '../src/workflow';
 import { globalParams } from '../src/utils';
+import { child } from 'winston';
+import { notEqual } from 'assert';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -707,20 +709,20 @@ describe('test-list-steps', () => {
 
     @DBOS.workflow()
     // eslint-disable-next-line  @typescript-eslint/require-await
-    static async childWorkflowWithCounter() {
-      console.log('childWorkflowWithCounter increasing counter');
-      callcount++;
+    static async childWorkflowWithCounter(id: string) {
+      return id;
     }
 
     @DBOS.workflow()
     static async CounterParent() {
       const childwfid = uuidv4();
-      const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: childwfid }).childWorkflowWithCounter();
-      await handle.getStatus();
+      const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: childwfid }).childWorkflowWithCounter(
+        childwfid,
+      );
+      return await handle.getResult();
     }
   }
 
-  let callcount = 0;
   test('test-list-steps', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
@@ -856,18 +858,18 @@ describe('test-list-steps', () => {
   test('test-child-rerun', async () => {
     const wfid = uuidv4();
     let handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
-    await handle.getResult();
+    let result1 = await handle.getResult();
     // call again with same wfid
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
-    await handle.getResult();
+    let result2 = await handle.getResult();
 
-    expect(callcount).toBe(1);
+    expect(result1).toEqual(result2);
 
     const wfid1 = uuidv4();
     // call with different wfid counter should be incremented
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).CounterParent();
-    await handle.getResult();
+    let result3 = await handle.getResult();
 
-    expect(callcount).toBe(2);
+    expect(result3).not.toEqual(result1);
   });
 });
