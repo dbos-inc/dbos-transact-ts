@@ -544,14 +544,14 @@ export class DBOS {
     return defaultValue;
   }
 
-  static async queryUserDB(sql: string, params?: unknown[]): Promise<unknown[]> {
+  static async queryUserDB<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       throw new DBOSInvalidWorkflowTransitionError(
         'Invalid call to `queryUserDB` inside a `workflow`, without being in a `step`',
       );
     }
 
-    return DBOS.executor.queryUserDB(sql, params);
+    return DBOS.executor.queryUserDB(sql, params) as Promise<T[]>;
   }
 
   //////
@@ -566,7 +566,7 @@ export class DBOS {
     return DBOS.executor.getWorkflowStatus(workflowID);
   }
 
-  static retrieveWorkflow(workflowID: string) {
+  static retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<T> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError(

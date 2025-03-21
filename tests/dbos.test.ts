@@ -1,50 +1,36 @@
-import {
-  WorkflowContext,
-  TransactionContext,
-  StepContext,
-  WorkflowHandle,
-  Transaction,
-  Workflow,
-  Step,
-  DBOSInitializer,
-  InitContext,
-} from '../src/';
+import { WorkflowHandle, DBOSInitializer, InitContext, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { PoolClient, Client } from 'pg';
-import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../src/testing/testing_runtime';
+import { Client } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import { DBOSFailedSqlTransactionError } from '../src/error';
 
-type TestTransactionContext = TransactionContext<PoolClient>;
 const testTableName = 'dbos_test_kv';
 
 describe('dbos-tests', () => {
   let username: string;
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, config);
+    await DBOS.launch();
     DBOSTestClass.cnt = 0;
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   test('simple-function', async () => {
-    const workflowHandle: WorkflowHandle<string> = await testRuntime
-      .startWorkflow(DBOSTestClass)
-      .testWorkflow(username);
+    const workflowHandle: WorkflowHandle<string> = await DBOS.startWorkflow(DBOSTestClass).testWorkflow(username);
     const workflowResult: string = await workflowHandle.getResult();
     expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
   });
@@ -59,9 +45,9 @@ describe('dbos-tests', () => {
     });
     try {
       await systemDBClient.connect();
-      const handle = await testRuntime.startWorkflow(DBOSTestClass).noopWorkflow();
+      const handle = await DBOS.startWorkflow(DBOSTestClass).noopWorkflow();
       for (let i = 0; i < 10; i++) {
-        await testRuntime.startWorkflow(DBOSTestClass, handle.getWorkflowUUID()).noopWorkflow();
+        await DBOS.startWorkflow(DBOSTestClass, { workflowID: handle.workflowID }).noopWorkflow();
         const result = await systemDBClient.query<{ status: string; attempts: number }>(
           `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
           [handle.getWorkflowUUID()],
@@ -75,91 +61,99 @@ describe('dbos-tests', () => {
 
   test('return-void', async () => {
     const workflowUUID = uuidv1();
-    await testRuntime.invoke(DBOSTestClass, workflowUUID).testVoidFunction();
-    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
-    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testVoidFunction()).resolves.toBeFalsy();
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await DBOSTestClass.testVoidFunction();
+    });
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(DBOSTestClass.testVoidFunction()).resolves.toBeFalsy();
+    });
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(DBOSTestClass.testVoidFunction()).resolves.toBeFalsy();
+    });
   });
 
   test('tight-loop', async () => {
     for (let i = 0; i < 100; i++) {
-      await expect(testRuntime.invokeWorkflow(DBOSTestClass).testNameWorkflow(username)).resolves.toBe(username);
+      await expect(DBOSTestClass.testNameWorkflow(username)).resolves.toBe(username);
     }
   });
 
   test('abort-function', async () => {
     for (let i = 0; i < 10; i++) {
-      await expect(testRuntime.invokeWorkflow(DBOSTestClass).testFailWorkflow(username)).resolves.toBe(i + 1);
+      expect(await DBOSTestClass.testFailWorkflow(username)).toBe(i + 1);
     }
 
     // Should not appear in the database.
-    await expect(testRuntime.invokeWorkflow(DBOSTestClass).testFailWorkflow('fail')).rejects.toThrow('fail');
+    await expect(DBOSTestClass.testFailWorkflow('fail')).rejects.toThrow('fail');
   });
 
   test('simple-step', async () => {
     const workflowUUID: string = uuidv1();
-    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).testStep()).resolves.toBe(0);
-    await expect(testRuntime.invoke(DBOSTestClass).testStep()).resolves.toBe(1);
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(DBOSTestClass.testStep()).resolves.toBe(0);
+    });
+    await expect(DBOSTestClass.testStep()).resolves.toBe(1);
   });
 
   test('simple-workflow-notifications', async () => {
     // Send to non-existent workflow should fail
-    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow('1234567')).rejects.toThrow(
+    await expect(DBOSTestClass.sendWorkflow('1234567')).rejects.toThrow(
       'Sent to non-existent destination workflow UUID',
     );
 
     const workflowUUID = uuidv1();
-    const handle = await testRuntime.startWorkflow(DBOSTestClass, workflowUUID).receiveWorkflow();
-    await expect(testRuntime.invokeWorkflow(DBOSTestClass).sendWorkflow(handle.workflowID)).resolves.toBeFalsy(); // return void.
+    const handle = await DBOS.startWorkflow(DBOSTestClass, { workflowID: workflowUUID }).receiveWorkflow();
+    await expect(DBOSTestClass.sendWorkflow(handle.workflowID)).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
   });
 
   test('simple-workflow-events', async () => {
-    const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventWorkflow();
+    const handle: WorkflowHandle<number> = await DBOS.startWorkflow(DBOSTestClass).setEventWorkflow();
     const workflowUUID = handle.workflowID;
     await handle.getResult();
-    await expect(testRuntime.getEvent(workflowUUID, 'key1')).resolves.toBe('value1');
-    await expect(testRuntime.getEvent(workflowUUID, 'key2')).resolves.toBe('value2');
-    await expect(testRuntime.getEvent(workflowUUID, 'fail', 0)).resolves.toBe(null);
+    await expect(DBOS.getEvent(workflowUUID, 'key1')).resolves.toBe('value1');
+    await expect(DBOS.getEvent(workflowUUID, 'key2')).resolves.toBe('value2');
+    await expect(DBOS.getEvent(workflowUUID, 'fail', 0)).resolves.toBe(null);
   });
 
   test('simple-workflow-events-multiple', async () => {
-    const handle: WorkflowHandle<number> = await testRuntime.startWorkflow(DBOSTestClass).setEventMultipleWorkflow();
+    const handle: WorkflowHandle<number> = await DBOS.startWorkflow(DBOSTestClass).setEventMultipleWorkflow();
     const workflowUUID = handle.workflowID;
     await handle.getResult();
-    await expect(testRuntime.getEvent(workflowUUID, 'key1')).resolves.toBe('value1b');
-    await expect(testRuntime.getEvent(workflowUUID, 'key2')).resolves.toBe('value2');
-    await expect(testRuntime.getEvent(workflowUUID, 'fail', 0)).resolves.toBe(null);
+    await expect(DBOS.getEvent(workflowUUID, 'key1')).resolves.toBe('value1b');
+    await expect(DBOS.getEvent(workflowUUID, 'key2')).resolves.toBe('value2');
+    await expect(DBOS.getEvent(workflowUUID, 'fail', 0)).resolves.toBe(null);
   });
 
   class ReadRecording {
     static cnt: number = 0;
     static wfCnt: number = 0;
 
-    @Transaction({ readOnly: true })
-    static async testReadFunction(txnCtxt: TestTransactionContext, id: number) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
+    @DBOS.transaction({ readOnly: true })
+    static async testReadFunction(id: number) {
+      const { rows } = await DBOS.pgClient.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
       ReadRecording.cnt++;
-      await txnCtxt.client.query(`SELECT pg_current_xact_id()`); // Increase transaction ID, testing if we can capture xid and snapshot correctly.
+      await DBOS.pgClient.query(`SELECT pg_current_xact_id()`); // Increase transaction ID, testing if we can capture xid and snapshot correctly.
       if (rows.length === 0) {
         return null;
       }
       return rows[0].value;
     }
 
-    @Transaction()
-    static async updateFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(
+    @DBOS.transaction()
+    static async updateFunction(id: number, name: string) {
+      const { rows } = await DBOS.pgClient.query<TestKvTable>(
         `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`,
         [id, name],
       );
       return rows[0].value;
     }
 
-    @Workflow()
-    static async testRecordingWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
-      await workflowCtxt.invoke(ReadRecording).testReadFunction(id);
+    @DBOS.workflow()
+    static async testRecordingWorkflow(id: number, name: string) {
+      await ReadRecording.testReadFunction(id);
       ReadRecording.wfCnt++;
-      await workflowCtxt.invoke(ReadRecording).updateFunction(id, name);
+      await ReadRecording.updateFunction(id, name);
       ReadRecording.wfCnt++;
       // Make sure the workflow actually runs.
       throw Error('dumb test error');
@@ -169,17 +163,17 @@ describe('dbos-tests', () => {
   test('readonly-recording', async () => {
     const workflowUUID = uuidv1();
     // Invoke the workflow, should get the error
-    await expect(
-      testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, 'test'),
-    ).rejects.toThrow(new Error('dumb test error'));
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(ReadRecording.testRecordingWorkflow(123, 'test')).rejects.toThrow(new Error('dumb test error'));
+    });
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(2);
 
     // Invoke it again, should return the recorded error and re-execute the workflow function but not the transactions
     await DBOSExecutor.globalInstance!.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
-    await expect(
-      testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, 'test'),
-    ).rejects.toThrow(new Error('dumb test error'));
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(ReadRecording.testRecordingWorkflow(123, 'test')).rejects.toThrow(new Error('dumb test error'));
+    });
     expect(ReadRecording.cnt).toBe(1);
     expect(ReadRecording.wfCnt).toBe(4);
   });
@@ -188,23 +182,21 @@ describe('dbos-tests', () => {
     // Test the recording of transaction snapshot information in our transaction_outputs table.
     const workflowUUID = uuidv1();
     // Invoke the workflow, should get the error.
-    await expect(
-      testRuntime.invokeWorkflow(ReadRecording, workflowUUID).testRecordingWorkflow(123, 'test'),
-    ).rejects.toThrow(new Error('dumb test error'));
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(ReadRecording.testRecordingWorkflow(123, 'test')).rejects.toThrow(new Error('dumb test error'));
+    });
 
     // Check the transaction output table and make sure we record transaction information correctly.
-    const readRec = await testRuntime.queryUserDB<transaction_outputs>(
+    const readRec = await DBOS.queryUserDB<transaction_outputs>(
       'SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2',
-      workflowUUID,
-      0,
+      [workflowUUID, 0],
     );
     expect(readRec[0].txn_id).toBeFalsy();
     expect(readRec[0].txn_snapshot).toBeTruthy();
 
-    const writeRec = await testRuntime.queryUserDB<transaction_outputs>(
+    const writeRec = await DBOS.queryUserDB<transaction_outputs>(
       'SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2',
-      workflowUUID,
-      1,
+      [workflowUUID, 1],
     );
     expect(writeRec[0].txn_id).toBeTruthy();
     expect(writeRec[0].txn_snapshot).toBeTruthy();
@@ -230,19 +222,19 @@ describe('dbos-tests', () => {
       RetrieveWorkflowStatus.resolve3 = resolve;
     });
 
-    @Transaction()
-    static async testWriteFunction(txnCtxt: TestTransactionContext, id: number, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(
+    @DBOS.transaction()
+    static async testWriteFunction(id: number, name: string) {
+      const { rows } = await DBOS.pgClient.query<TestKvTable>(
         `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`,
         [id, name],
       );
       return rows[0].value;
     }
 
-    @Workflow()
-    static async testStatusWorkflow(workflowCtxt: WorkflowContext, id: number, name: string) {
+    @DBOS.workflow()
+    static async testStatusWorkflow(id: number, name: string) {
       await RetrieveWorkflowStatus.promise1;
-      const value = await workflowCtxt.invoke(RetrieveWorkflowStatus).testWriteFunction(id, name);
+      const value = await RetrieveWorkflowStatus.testWriteFunction(id, name);
       RetrieveWorkflowStatus.resolve3(); // Signal the execution has done.
       await RetrieveWorkflowStatus.promise2;
       return value;
@@ -252,9 +244,9 @@ describe('dbos-tests', () => {
   test('retrieve-workflowstatus', async () => {
     const workflowUUID = uuidv1();
 
-    const workflowHandle = await testRuntime
-      .startWorkflow(RetrieveWorkflowStatus, workflowUUID)
-      .testStatusWorkflow(123, 'hello');
+    const workflowHandle = await DBOS.startWorkflow(RetrieveWorkflowStatus, {
+      workflowID: workflowUUID,
+    }).testStatusWorkflow(123, 'hello');
 
     expect(workflowHandle.workflowID).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
@@ -267,7 +259,7 @@ describe('dbos-tests', () => {
     await RetrieveWorkflowStatus.promise3;
 
     // Retrieve handle, should get the pending status.
-    await expect(testRuntime.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({
+    await expect(DBOS.retrieveWorkflow<string>(workflowUUID).getStatus()).resolves.toMatchObject({
       status: StatusString.PENDING,
       workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
     });
@@ -277,9 +269,8 @@ describe('dbos-tests', () => {
     await expect(workflowHandle.getResult()).resolves.toBe('hello');
 
     // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
-    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
-    await dbosExec.flushWorkflowBuffers();
-    const retrievedHandle = testRuntime.retrieveWorkflow<string>(workflowUUID);
+    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
+    const retrievedHandle = DBOS.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     expect(retrievedHandle.workflowID).toBe(workflowUUID);
     await expect(retrievedHandle.getResult()).resolves.toBe('hello');
@@ -293,9 +284,11 @@ describe('dbos-tests', () => {
 
   test('aborted-transaction', async () => {
     const workflowUUID: string = uuidv1();
-    await expect(testRuntime.invoke(DBOSTestClass, workflowUUID).attemptToCatchAbortingStoredProc()).rejects.toThrow(
-      new DBOSFailedSqlTransactionError(workflowUUID, 'attemptToCatchAbortingStoredProc'),
-    );
+    await DBOS.withNextWorkflowID(workflowUUID, async () => {
+      await expect(DBOSTestClass.attemptToCatchAbortingStoredProc()).rejects.toThrow(
+        new DBOSFailedSqlTransactionError(workflowUUID, 'attemptToCatchAbortingStoredProc'),
+      );
+    });
   });
 });
 
@@ -304,51 +297,51 @@ class DBOSTestClass {
   static cnt: number = 0;
 
   @DBOSInitializer()
-  static async init(_ctx: InitContext) {
+  static async init(ctx: InitContext) {
     DBOSTestClass.initialized = true;
-    expect(_ctx.getConfig('counter')).toBe(3);
-    await _ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await _ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
-    await _ctx.queryUserDB(`CREATE OR REPLACE FUNCTION test_proc_raise() returns void as $$
+    expect(ctx.getConfig('counter')).toBe(3);
+    await ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    await ctx.queryUserDB(`CREATE OR REPLACE FUNCTION test_proc_raise() returns void as $$
     BEGIN
       raise 'something bad happened';
     END
     $$ language plpgsql;`);
   }
 
-  @Transaction()
-  static async testFunction(txnCtxt: TestTransactionContext, name: string) {
-    expect(txnCtxt.getConfig<number>('counter')).toBe(3);
-    const { rows } = await txnCtxt.client.query(`select current_user from current_user where current_user=$1;`, [name]);
+  @DBOS.transaction()
+  static async testFunction(name: string) {
+    expect(DBOS.getConfig<number>('counter')).toBe(3);
+    const { rows } = await DBOS.pgClient.query(`select current_user from current_user where current_user=$1;`, [name]);
     return JSON.stringify(rows[0]);
   }
 
-  @Workflow()
-  static async testWorkflow(ctxt: WorkflowContext, name: string) {
+  @DBOS.workflow()
+  static async testWorkflow(name: string) {
     expect(DBOSTestClass.initialized).toBe(true);
-    expect(ctxt.getConfig<number>('counter')).toBe(3);
-    const funcResult = await ctxt.invoke(DBOSTestClass).testFunction(name);
+    expect(DBOS.getConfig<number>('counter')).toBe(3);
+    const funcResult = await DBOSTestClass.testFunction(name);
     return funcResult;
   }
 
-  @Transaction()
-  static async testVoidFunction(_txnCtxt: TestTransactionContext) {
+  @DBOS.transaction()
+  static async testVoidFunction() {
     return Promise.resolve();
   }
 
-  @Transaction()
-  static async testNameFunction(_txnCtxt: TestTransactionContext, name: string) {
+  @DBOS.transaction()
+  static async testNameFunction(name: string) {
     return Promise.resolve(name);
   }
 
-  @Workflow()
-  static async testNameWorkflow(ctxt: WorkflowContext, name: string) {
-    return ctxt.invoke(DBOSTestClass).testNameFunction(name);
+  @DBOS.workflow()
+  static async testNameWorkflow(name: string) {
+    return DBOSTestClass.testNameFunction(name); // Missing await is intentional
   }
 
-  @Transaction()
-  static async testFailFunction(txnCtxt: TestTransactionContext, name: string) {
-    const { rows } = await txnCtxt.client.query<TestKvTable>(
+  @DBOS.transaction()
+  static async testFailFunction(name: string) {
+    const { rows } = await DBOS.pgClient.query<TestKvTable>(
       `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
       [name],
     );
@@ -358,9 +351,9 @@ class DBOSTestClass {
     return Number(rows[0].id);
   }
 
-  @Transaction({ readOnly: true })
-  static async testKvFunctionRead(txnCtxt: TestTransactionContext, id: number) {
-    const { rows } = await txnCtxt.client.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
+  @DBOS.transaction({ readOnly: true })
+  static async testKvFunctionRead(id: number) {
+    const { rows } = await DBOS.pgClient.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
     if (rows.length > 0) {
       return Number(rows[0].id);
     } else {
@@ -369,61 +362,61 @@ class DBOSTestClass {
     }
   }
 
-  @Transaction()
-  static async attemptToCatchAbortingStoredProc(txnCtxt: TestTransactionContext) {
+  @DBOS.transaction()
+  static async attemptToCatchAbortingStoredProc() {
     try {
-      return await txnCtxt.client.query('select xx()');
+      return await DBOS.pgClient.query('select xx()');
     } catch (e) {
       return 'all good';
     }
   }
 
-  @Workflow()
-  static async testFailWorkflow(workflowCtxt: WorkflowContext, name: string) {
+  @DBOS.workflow()
+  static async testFailWorkflow(name: string) {
     expect(DBOSTestClass.initialized).toBe(true);
-    const funcResult: number = await workflowCtxt.invoke(DBOSTestClass).testFailFunction(name);
-    const checkResult: number = await workflowCtxt.invoke(DBOSTestClass).testKvFunctionRead(funcResult);
+    const funcResult: number = await DBOSTestClass.testFailFunction(name);
+    const checkResult: number = await DBOSTestClass.testKvFunctionRead(funcResult);
     return checkResult;
   }
 
-  @Step()
-  static async testStep(ctxt: StepContext) {
-    expect(ctxt.getConfig<number>('counter')).toBe(3);
+  @DBOS.step()
+  static async testStep() {
+    expect(DBOS.getConfig<number>('counter')).toBe(3);
     return Promise.resolve(DBOSTestClass.cnt++);
   }
 
-  @Workflow()
-  static async receiveWorkflow(ctxt: WorkflowContext) {
+  @DBOS.workflow()
+  static async receiveWorkflow() {
     expect(DBOSTestClass.initialized).toBe(true);
-    const message1 = await ctxt.recv<string>();
-    const message2 = await ctxt.recv<string>();
-    const fail = await ctxt.recv('fail', 0);
+    const message1 = await DBOS.recv<string>();
+    const message2 = await DBOS.recv<string>();
+    const fail = await DBOS.recv('fail', 0);
     return message1 === 'message1' && message2 === 'message2' && fail === null;
   }
 
-  @Workflow()
-  static async sendWorkflow(ctxt: WorkflowContext, destinationUUID: string) {
-    await ctxt.send(destinationUUID, 'message1');
-    await ctxt.send(destinationUUID, 'message2');
+  @DBOS.workflow()
+  static async sendWorkflow(destinationUUID: string) {
+    await DBOS.send(destinationUUID, 'message1');
+    await DBOS.send(destinationUUID, 'message2');
   }
 
-  @Workflow()
-  static async setEventWorkflow(ctxt: WorkflowContext) {
-    await ctxt.setEvent('key1', 'value1');
-    await ctxt.setEvent('key2', 'value2');
+  @DBOS.workflow()
+  static async setEventWorkflow() {
+    await DBOS.setEvent('key1', 'value1');
+    await DBOS.setEvent('key2', 'value2');
     return 0;
   }
 
-  @Workflow()
-  static async setEventMultipleWorkflow(ctxt: WorkflowContext) {
-    await ctxt.setEvent('key1', 'value1');
-    await ctxt.setEvent('key2', 'value2');
-    await ctxt.setEvent('key1', 'value1b');
+  @DBOS.workflow()
+  static async setEventMultipleWorkflow() {
+    await DBOS.setEvent('key1', 'value1');
+    await DBOS.setEvent('key2', 'value2');
+    await DBOS.setEvent('key1', 'value1b');
     return 0;
   }
 
-  @Workflow()
-  static async noopWorkflow(_: WorkflowContext) {
+  @DBOS.workflow()
+  static async noopWorkflow() {
     return Promise.resolve();
   }
 }
