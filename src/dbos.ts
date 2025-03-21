@@ -176,7 +176,7 @@ function augmentProxy(target: object, proxy: Record<string, unknown>) {
         if (typeof (target as any)[k] !== 'function') continue;
         if (!Object.hasOwn(proxy, k)) {
           proxy[k] = (..._args: unknown[]) => {
-            throw new DBOSNotRegisteredError(`${k} is not a registered DBOS function`);
+            throw new DBOSNotRegisteredError(k, `${k} is not a registered DBOS function`);
           };
         }
       } catch (e) {}
@@ -756,6 +756,7 @@ export class DBOS {
         } else {
           proxy[op.name] = (..._args: unknown[]) => {
             throw new DBOSNotRegisteredError(
+              op.name,
               `${op.name} is not a registered DBOS workflow, step, or transaction function`,
             );
           };
@@ -811,6 +812,7 @@ export class DBOS {
       } else {
         proxy[op.name] = (..._args: unknown[]) => {
           throw new DBOSNotRegisteredError(
+            op.name,
             `${op.name} is not a registered DBOS workflow, step, or transaction function`,
           );
         };
@@ -890,6 +892,7 @@ export class DBOS {
                       ).getResult()
                   : (..._args: unknown[]) => {
                       throw new DBOSNotRegisteredError(
+                        op.name,
                         `${op.name} is not a registered DBOS step, transaction, or procedure`,
                       );
                     };
@@ -928,7 +931,10 @@ export class DBOS {
                       )
                     ).getResult()
                 : (..._args: unknown[]) => {
-                    throw new DBOSNotRegisteredError(`${op.name} is not a registered DBOS step or transaction`);
+                    throw new DBOSNotRegisteredError(
+                      op.name,
+                      `${op.name} is not a registered DBOS step or transaction`,
+                    );
                   };
         }
 
@@ -968,6 +974,7 @@ export class DBOS {
                   )
               : (..._args: unknown[]) => {
                   throw new DBOSNotRegisteredError(
+                    op.name,
                     `${op.name} is not a registered DBOS step, transaction, or procedure`,
                   );
                 };

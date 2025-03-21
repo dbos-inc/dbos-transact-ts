@@ -5,7 +5,7 @@ import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { UserDatabase, UserDatabaseClient } from './user_database';
 import { DBOSExecutor } from './dbos-executor';
-import { DBOSConfigKeyTypeError, DBOSNotRegisteredError } from './error';
+import { DBOSConfigKeyTypeError } from './error';
 import { AsyncLocalStorage } from 'async_hooks';
 import { WorkflowContext, WorkflowContextImpl } from './workflow';
 import { TransactionContextImpl } from './transaction';
@@ -71,7 +71,7 @@ export function getCurrentDBOSContext(): DBOSContext | undefined {
 
 export function assertCurrentDBOSContext(): DBOSContext {
   const ctx = asyncLocalCtx.getStore()?.ctx;
-  if (!ctx) throw new DBOSNotRegisteredError('No current DBOS Context');
+  if (!ctx) throw new DBOSInvalidWorkflowTransitionError('No current DBOS Context');
   return ctx;
 }
 
