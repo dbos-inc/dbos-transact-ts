@@ -705,6 +705,7 @@ describe('test-list-steps', () => {
       await handle.getStatus();
     }
 
+    // eslint-disable-next-line @typescript-eslint/require-await
     @DBOS.workflow()
     static async childWorkflowWithCounter() {
       console.log('childWorkflowWithCounter increasing counter');
