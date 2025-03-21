@@ -1164,7 +1164,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Record the output if it is inside a workflow.
-    // if (callerUUID !== undefined && functionID !== undefined) {
     if (callerUUID !== undefined && newfunctionId !== undefined) {
       await this.recordOperationOutput(callerUUID, newfunctionId, value, 'getStatus');
     }
