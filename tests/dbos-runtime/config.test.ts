@@ -4,12 +4,17 @@ import fs from 'fs';
 import * as utils from '../../src/utils';
 import { UserDatabaseName } from '../../src/user_database';
 import { PoolConfig } from 'pg';
-import { parseConfigFile, parseDbString, translatePublicDBOSconfig } from '../../src/dbos-runtime/config';
+import {
+  parseConfigFile,
+  parseDbString,
+  translatePublicDBOSconfig,
+  overwrite_config,
+} from '../../src/dbos-runtime/config';
 import { DBOSRuntimeConfig, defaultEntryPoint } from '../../src/dbos-runtime/runtime';
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error';
 import { DBOSExecutor, DBOSConfig } from '../../src/dbos-executor';
 import { WorkflowContextImpl } from '../../src/workflow';
-import { get } from 'lodash';
+import { get, result } from 'lodash';
 import { db_wizard } from '../../src/dbos-runtime/db_wizard';
 
 describe('dbos-config', () => {
@@ -814,6 +819,209 @@ describe('dbos-config', () => {
     test('should handle a connection string missing hostname', () => {
       const dbString = 'postgres://user:password@:5432/mydatabase';
       expect(() => parseDbString(dbString)).toThrow();
+    });
+  });
+
+  describe.only('overwrite_config', () => {
+    test('should return provided configs when config file is empty', () => {
+      jest.spyOn(utils, 'readFileSync').mockReturnValue('');
+
+      const providedDBOSConfig: DBOSConfig = {
+        name: 'test-app',
+        poolConfig: {
+          host: 'localhost',
+          port: 5432,
+          user: 'postgres',
+          password: 'password',
+          database: 'test_db',
+        },
+        userDbclient: UserDatabaseName.KNEX,
+      };
+
+      const providedRuntimeConfig: DBOSRuntimeConfig = {
+        port: 3000,
+        admin_port: 400,
+        runAdminServer: false,
+        entrypoints: ['app.js'],
+        start: [],
+        setup: [],
+      };
+
+      const [resultDBOSConfig, resultRuntimeConfig] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
+
+      // Should return the original configs unchanged
+      expect(resultDBOSConfig).toEqual(providedDBOSConfig);
+      expect(resultRuntimeConfig).toEqual(providedRuntimeConfig);
+    });
+
+    test('should overwrite parameters with config file content', () => {
+      // Mock the config file content with database settings
+      const mockDBOSConfigYamlString = `
+          name: app-from-file
+          database:
+            hostname: db-host-from-file
+            port: 1234
+            username: user-from-file
+            password: password-from-file
+            app_db_name: db_from_file
+            sys_db_name: sys_db_from_file
+          telemetry:
+            OTLPExporter:
+                tracesEndpoint: http://otel-collector:4317/from-file
+            logs:
+                logLevel: warning
+        `;
+      jest(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
+
+      const providedDBOSConfig: DBOSConfig = {
+        name: 'test-app',
+        poolConfig: {
+          host: 'localhost',
+          port: 5432,
+          user: 'postgres',
+          password: 'password',
+          database: 'test_db',
+        },
+        userDbclient: UserDatabaseName.KNEX,
+        telemetry: {
+          logs: {
+            logLevel: 'debug',
+            forceConsole: false,
+          },
+          OTLPExporter: {
+            tracesEndpoint: 'http://otel-collector:4317/original',
+          },
+        },
+      };
+
+      const providedRuntimeConfig: DBOSRuntimeConfig = {
+        port: 3000,
+        admin_port: 4000,
+        runAdminServer: false,
+        entrypoints: ['app.js'],
+        start: ['start.js'],
+        setup: ['setup.js'],
+      };
+
+      const [resultDBOSConfig, resultRuntimeConfig] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
+
+      // App name should be from file
+      expect(resultDBOSConfig.name).toEqual('app-from-file');
+
+      // Database settings should reflect what's in the file
+      expect(resultDBOSConfig.poolConfig?.host).toEqual('db-host-from-file');
+      expect(resultDBOSConfig.poolConfig?.port).toEqual(1234);
+      expect(resultDBOSConfig.poolConfig?.user).toEqual('user-from-file');
+      expect(resultDBOSConfig.poolConfig?.password).toEqual('password-from-file');
+      expect(resultDBOSConfig.poolConfig?.database).toEqual('db_from_file');
+
+      // System database name should be from file
+      expect(resultDBOSConfig.system_database).toEqual('sys_db_from_file');
+
+      // Base telemetry config should be preserved from provided config
+      expect(resultDBOSConfig.telemetry?.logs).toEqual(providedDBOSConfig.telemetry?.logs);
+      // OTLP traces endpoint should be overwritten from the file
+      // Note: Based on the implementation, if this doesn't pass, it indicates that the
+      // function is not actually overwriting the OTLP traces endpoint as the comments suggest
+      expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual('http://otel-collector:4317/from-file');
+
+      // Runtime admin_port and runAdminServer should be overwritten
+      expect(resultRuntimeConfig.admin_port).toEqual(3001);
+      expect(resultRuntimeConfig.runAdminServer).toBe(true);
+
+      // Other runtime settings should be preserved
+      expect(resultRuntimeConfig.port).toEqual(providedRuntimeConfig.port);
+      expect(resultRuntimeConfig.entrypoints).toEqual(providedRuntimeConfig.entrypoints);
+      expect(resultRuntimeConfig.start).toEqual(providedRuntimeConfig.start);
+      expect(resultRuntimeConfig.setup).toEqual(providedRuntimeConfig.setup);
+    });
+
+    test('should use provided config when parameters are missing from config file', () => {
+      // Mock the config file without telemetry settings
+      const mockDBOSConfigYamlString = `
+          database:
+            hostname: db-host-from-file
+            port: 1234
+            username: user-from-file
+            password: password-from-file
+            app_db_name: db_from_file
+            sys_db_name: sys_db_from_file
+        `;
+
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
+
+      const providedDBOSConfig: DBOSConfig = {
+        name: 'test-app',
+        poolConfig: {
+          host: 'localhost',
+          port: 5432,
+          user: 'postgres',
+          password: 'password',
+          database: 'test_db',
+        },
+        userDbclient: UserDatabaseName.KNEX,
+        telemetry: {
+          logs: {
+            logLevel: 'info',
+            forceConsole: false,
+          },
+          OTLPExporter: {
+            tracesEndpoint: 'http://otel-collector:4317/original',
+          },
+        },
+      };
+
+      const providedRuntimeConfig: DBOSRuntimeConfig = {
+        port: 3000,
+        admin_port: 4000,
+        runAdminServer: false,
+        entrypoints: ['app.js'],
+        start: [],
+        setup: [],
+      };
+
+      const [resultDBOSConfig, _] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
+      expect(resultDBOSConfig.telemetry).toEqual(providedDBOSConfig.telemetry);
+      expect(resultDBOSConfig.name).toEqual('test-app');
+    });
+
+    test('use constructPoolConfig default sys db name when missing from config file', () => {
+      // Mock config file without sys_db_name
+      const mockDBOSConfigYamlString = `
+      name: app-from-file
+      database:
+        hostname: db-host-from-file
+        port: 1234
+        username: user-from-file
+        password: password-from-file
+        app_db_name: db_from_file
+    `;
+
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
+
+      const providedDBOSConfig: DBOSConfig = {
+        name: 'test-app',
+        poolConfig: {
+          host: 'localhost',
+          port: 5432,
+          user: 'postgres',
+          password: 'password',
+          database: 'test_db',
+        },
+        system_database: 'original_sys_db',
+      };
+
+      const providedRuntimeConfig: DBOSRuntimeConfig = {
+        port: 3000,
+        admin_port: 3001,
+        runAdminServer: true,
+        entrypoints: [],
+        start: [],
+        setup: [],
+      };
+
+      const [resultDBOSConfig, _] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
+      expect(resultDBOSConfig.system_database).toEqual(`${resultDBOSConfig.poolConfig?.database}_dbos_sys`);
     });
   });
 });

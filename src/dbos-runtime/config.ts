@@ -74,6 +74,9 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
     const configFileContent = readFileSync(configFilePath);
     const interpolatedConfig = substituteEnvVars(configFileContent);
     const configFile = YAML.parse(interpolatedConfig) as ConfigFile;
+    if (!configFile) {
+      throw new DBOSInitializationError(`Failed to load config from ${configFilePath}: empty file`);
+    }
     if (!configFile.database) {
       configFile.database = {}; // Create an empty database object if it doesn't exist
     }
@@ -461,25 +464,32 @@ export function overwrite_config(
   // 5. Discard env vars if provided in code
   // Optimistically assume that expected fields in config_from_file are present
 
-  const configFile = loadConfigFile(dbosConfigFilePath);
-  if (!configFile) {
-    return [providedDBOSConfig, providedRuntimeConfig];
+  let configFile: ConfigFile;
+  try {
+    configFile = loadConfigFile(dbosConfigFilePath);
+  } catch (e) {
+    if (
+      e instanceof Error &&
+      (e.message.includes('ENOENT: no such file or directory') || e.message.includes('empty file'))
+    ) {
+      return [providedDBOSConfig, providedRuntimeConfig];
+    }
   }
 
-  const appName = configFile.name || providedDBOSConfig.name;
+  const appName = configFile!.name || providedDBOSConfig.name;
 
-  const poolConfig = constructPoolConfig(configFile);
+  const poolConfig = constructPoolConfig(configFile!);
 
   const OTLPExporterConfig: OTLPExporterConfig = providedDBOSConfig.telemetry?.OTLPExporter || {};
-  if (configFile.telemetry?.OTLPExporter?.tracesEndpoint) {
-    OTLPExporterConfig.tracesEndpoint = configFile.telemetry.OTLPExporter.tracesEndpoint;
+  if (configFile!.telemetry?.OTLPExporter?.tracesEndpoint) {
+    OTLPExporterConfig.tracesEndpoint = configFile!.telemetry.OTLPExporter.tracesEndpoint;
   }
 
   const overwritenDBOSConfig = {
     name: appName,
     poolConfig: poolConfig,
     telemetry: providedDBOSConfig.telemetry,
-    system_database: configFile.database.sys_db_name,
+    system_database: configFile!.database.sys_db_name || poolConfig.database + '_dbos_sys', // Unexepected, but possible
   };
 
   const overwriteDBOSRuntimeConfig = {
