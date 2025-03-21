@@ -29,8 +29,6 @@ import { Knex } from 'knex';
 import { v4 as uuidv4 } from 'uuid';
 import { GetQueuedWorkflowsInput } from '../src/workflow';
 import { globalParams } from '../src/utils';
-import { child } from 'winston';
-import { notEqual } from 'assert';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -614,7 +612,7 @@ describe('test-list-queues', () => {
 describe('test-list-steps', () => {
   let config: DBOSConfig;
   const queue = new WorkflowQueue('child_queue');
-  beforeAll(async () => {
+  beforeAll(() => {
     config = generateDBOSTestConfig();
     DBOS.setConfig(config);
   });
@@ -777,7 +775,6 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    console.log(wfsteps);
     expect(wfsteps.steps.length).toBe(4);
     expect(wfsteps.steps[0].function_name).toBe('testWorkflow');
     expect(wfsteps.steps[1].function_name).toBe('getStatus');
@@ -791,7 +788,6 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    console.log(wfsteps);
     expect(wfsteps.steps.length).toBe(4);
     expect(wfsteps.steps[0].function_name).toBe('stepOne');
     expect(wfsteps.steps[1].function_name).toBe('testWorkflow');
@@ -805,7 +801,6 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    console.log(wfsteps);
     expect(wfsteps.steps.length).toBe(4);
     expect(wfsteps.steps[0].function_name).toBe('stepOne');
     expect(wfsteps.steps[1].function_name).toBe('stepTwo');
@@ -819,7 +814,6 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    console.log(wfsteps);
     expect(wfsteps.steps.length).toBe(4);
     expect(wfsteps.steps[0].function_name).toBe('testWorkflow');
     expect(wfsteps.steps[1].function_name).toBe('getStatus');
@@ -833,7 +827,6 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    console.log(wfsteps);
     expect(wfsteps.steps.length).toBe(4);
     expect(wfsteps.steps[0].function_name).toBe('stepOne');
     expect(wfsteps.steps[1].function_name).toBe('testWorkflow');
@@ -847,7 +840,6 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    console.log(wfsteps);
     expect(wfsteps.steps.length).toBe(4);
     expect(wfsteps.steps[0].function_name).toBe('stepOne');
     expect(wfsteps.steps[1].function_name).toBe('stepTwo');
@@ -858,20 +850,19 @@ describe('test-list-steps', () => {
   test('test-child-rerun', async () => {
     const wfid = uuidv4();
     let handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
-    let result1 = await handle.getResult();
+    const result1 = await handle.getResult();
     // call again with same wfid
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).CounterParent();
-    let result2 = await handle.getResult();
+    const result2 = await handle.getResult();
     expect(result1).toEqual(result2);
 
-    let wfs = await listWorkflows(config, {}, false);
-    console.log(wfs);
+    const wfs = await listWorkflows(config, {}, false);
     expect(wfs.length).toBe(2);
 
     const wfid1 = uuidv4();
-    // call with different wfid counter should be incremented
+    // call with different wfid we should get different result
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).CounterParent();
-    let result3 = await handle.getResult();
+    const result3 = await handle.getResult();
 
     expect(result3).not.toEqual(result1);
   });
