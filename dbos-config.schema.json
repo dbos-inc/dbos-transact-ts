@@ -13,6 +13,10 @@
       "description": "The language used in your application",
       "enum": ["node", "python"]
     },
+    "database_url": {
+      "type": ["string", "null"],
+      "description": "The URL of the application database"
+    },
     "database": {
       "type": "object",
       "additionalProperties": false,

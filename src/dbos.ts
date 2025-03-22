@@ -9,7 +9,7 @@ import {
   DBOSContextImpl,
   getNextWFID,
 } from './context';
-import { DBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
+import { DBOSConfig, isDeprecatedDBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
 import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
@@ -27,7 +27,7 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
 } from './error';
-import { parseConfigFile } from './dbos-runtime/config';
+import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
 import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
 import {
@@ -251,10 +251,24 @@ export class DBOS {
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
       if (!isDebugging) {
+        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig!);
+      }
+      DBOS.dbosConfig = dbosConfig;
+      DBOS.runtimeConfig = runtimeConfig;
+    } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
+      let [dbosConfig, runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, DBOS.runtimeConfig, isDebugging);
+      if (process.env.DBOS__CLOUD === 'true') {
+        [dbosConfig, runtimeConfig] = overwrite_config(dbosConfig, runtimeConfig);
+      }
+      if (!isDebugging && dbosConfig.poolConfig) {
         dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
       }
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
+    }
+
+    if (!DBOS.dbosConfig) {
+      throw new DBOSError('DBOS configuration not set');
     }
 
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, { debugMode });
@@ -285,7 +299,7 @@ export class DBOS {
 
     // Start the DBOS admin server
     const logger = DBOS.logger;
-    if (DBOS.runtimeConfig) {
+    if (DBOS.runtimeConfig && DBOS.runtimeConfig.runAdminServer) {
       const adminApp = DBOSHttpServer.setupAdminApp(executor);
       await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
 

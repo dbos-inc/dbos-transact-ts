@@ -79,6 +79,7 @@
     "koa": "^2.15.4",
     "lodash": "4.17.21",
     "pg": "8.11.3",
+    "pg-connection-string": "^2.7.0",
     "pg-protocol": "^1.6.1",
     "reflect-metadata": "^0.2.2",
     "serialize-error": "8.1.0",

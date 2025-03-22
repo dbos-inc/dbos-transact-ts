@@ -12,8 +12,8 @@ export async function listWorkflows(
   getRequest: boolean,
 ): Promise<WorkflowInformation[]> {
   const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig,
-    config.system_database,
+    config.poolConfig!,
+    config.system_database!,
     createLogger() as unknown as GlobalLogger,
   );
 
@@ -31,8 +31,8 @@ export async function listQueuedWorkflows(
   getRequest: boolean,
 ): Promise<WorkflowInformation[]> {
   const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig,
-    config.system_database,
+    config.poolConfig!,
+    config.system_database!,
     createLogger() as unknown as GlobalLogger,
   );
 
@@ -46,8 +46,8 @@ export async function listQueuedWorkflows(
 
 export async function listWorkflowSteps(config: DBOSConfig, workflowUUID: string) {
   const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig,
-    config.system_database,
+    config.poolConfig!,
+    config.system_database!,
     createLogger() as unknown as GlobalLogger,
   );
   const workflowSteps = await systemDatabase.getWorkflowSteps(workflowUUID);
@@ -93,8 +93,8 @@ export async function getWorkflowInfo(
 
 export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig,
-    config.system_database,
+    config.poolConfig!,
+    config.system_database!,
     createLogger() as unknown as GlobalLogger,
   );
 

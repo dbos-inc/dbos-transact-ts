@@ -62,13 +62,13 @@ async function waitForMessageTest(
 
 async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
-  config.poolConfig.database = 'hello';
+  config.poolConfig!.database = 'hello';
   await setUpDBOSTestDb(config);
   const pgSystemClient = new Client({
-    user: config.poolConfig.user,
-    port: config.poolConfig.port,
-    host: config.poolConfig.host,
-    password: config.poolConfig.password,
+    user: config.poolConfig!.user,
+    port: config.poolConfig!.port,
+    host: config.poolConfig!.host,
+    password: config.poolConfig!.password,
     database: 'postgres',
   });
   await pgSystemClient.connect();
@@ -120,6 +120,7 @@ describe('runtime-tests-knex', () => {
     const command = spawn('node', ['dist/main.js'], {
       env: process.env,
     });
+    // Note the request will still fail because we didn't run user migrations.
     await waitForMessageTest(command, '3000', '3001', false);
   });
 });

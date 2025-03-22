@@ -137,7 +137,7 @@ program
       const compileResult = compile(tsconfigPath, options.suppressWarnings);
       if (compileResult) {
         const [dbosConfig] = parseConfigFile(options);
-        await deployToDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
+        await deployToDatabase(dbosConfig.poolConfig!, compileResult, options.appVersion);
       }
     }
   });
@@ -156,7 +156,7 @@ program
       const compileResult = compile(tsconfigPath, options.suppressWarnings);
       if (compileResult) {
         const [dbosConfig] = parseConfigFile(options);
-        await dropFromDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
+        await dropFromDatabase(dbosConfig.poolConfig!, compileResult, options.appVersion);
       }
     }
   });

@@ -1,13 +1,35 @@
 import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
 import { DBOSConfig, DBOSExecutor } from '../../src/dbos-executor';
 import { WorkflowQueue } from '../../src';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { QueueMetadataResponse } from '../../src/httpServer/server';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../../src/httpServer/server';
 import { globalParams, sleepms } from '../../src/utils';
 import { Client } from 'pg';
+import { translatePublicDBOSconfig } from '../../src/dbos-runtime/config';
 
-describe('admin-server-tests', () => {
+describe('not-running-admin-server', () => {
+  let config: DBOSConfig;
+  beforeEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('test-admin-server-not-running', async () => {
+    config = generatePublicDBOSTestConfig({ runAdminServer: false });
+    DBOS.setConfig(config);
+    const [translatedConfig] = translatePublicDBOSconfig(config);
+    await setUpDBOSTestDb(translatedConfig);
+    await DBOS.launch();
+
+    await expect(async () => {
+      await fetch(`http://localhost:3001${HealthUrl}`, {
+        method: 'GET',
+      });
+    }).rejects.toThrow();
+  });
+});
+
+describe('running-admin-server-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
 
@@ -20,6 +42,7 @@ describe('admin-server-tests', () => {
       entrypoints: [],
       port: 3000,
       admin_port: 3001,
+      runAdminServer: true,
       start: [],
       setup: [],
     };
@@ -31,10 +54,10 @@ describe('admin-server-tests', () => {
 
   beforeEach(async () => {
     systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
+      user: config.poolConfig!.user,
+      port: config.poolConfig!.port,
+      host: config.poolConfig!.host,
+      password: config.poolConfig!.password,
       database: config.system_database,
     });
     await systemDBClient.connect();

@@ -11,7 +11,7 @@ describe('oaoo-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    username = config.poolConfig.user || 'postgres';
+    username = config.poolConfig?.user || 'postgres';
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
