@@ -398,38 +398,45 @@ describe('debugger-test', () => {
     await DBOS.shutdown();
   });
 
-  /*
   test('debug-step', async () => {
     const wfUUID = uuidv1();
 
+    // Execute the step and destroy the runtime
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
     // Execute the workflow and destroy the runtime
-    await expect(testRuntime.invoke(DebuggerTest, wfUUID).testStep()).resolves.toBe(1);
-    await testRuntime.destroy();
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      await expect(DebuggerTest.testStep()).resolves.toBe(1);
+    });
+    await DBOS.shutdown();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testStep()).resolves.toBe(1);
+    DBOS.setConfig(debugConfig);
+    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      await expect(DebuggerTest.testStep()).resolves.toBe(1);
+    });
 
     // Execute again with the provided UUID.
-    await expect(
-      (debugRuntime as TestingRuntimeImpl)
-        .getDBOSExec()
-        .executeWorkflowUUID(wfUUID)
-        .then((x) => x.getResult()),
-    ).resolves.toBe(1);
+    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testStep()).rejects.toThrow(
-      `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
-    );
+    await DBOS.withNextWorkflowID(wfUUID2, async () => {
+      await expect(DebuggerTest.testStep()).rejects.toThrow(
+        `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
+      );
+    });
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testStep()).rejects.toThrow(
+    await expect(DebuggerTest.testStep()).rejects.toThrow(
       /DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
     );
 
     // Make sure we correctly record the function's class name
     await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
+    await DBOS.shutdown();
     const result = await systemDBClient.query<{ status: string; name: string; class_name: string }>(
       `SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [wfUUID],
@@ -439,6 +446,7 @@ describe('debugger-test', () => {
     expect(result.rows[0].status).toBe('SUCCESS');
   });
 
+  /*
   test('debug-workflow-notifications', async () => {
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
