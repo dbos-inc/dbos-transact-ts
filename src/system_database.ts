@@ -81,7 +81,7 @@ export interface SystemDatabase {
   enqueueWorkflow(workflowId: string, queue: string | WorkflowQueue): Promise<void>;
   clearQueueAssignment(workflowId: string): Promise<boolean>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
-  findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
+  findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
   durableSleepms(
     workflowUUID: string,
@@ -1536,7 +1536,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]> {
+  async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]> {
     const startTimeMs = new Date().getTime();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
@@ -1621,8 +1621,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
           const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
             .where('workflow_uuid', id)
             .andWhere('status', StatusString.ENQUEUED)
-            .update('status', StatusString.PENDING)
-            .update('executor_id', executorID);
+            .andWhere((b) => {
+              b.whereNull('application_version').orWhere('application_version', appVersion);
+            })
+            .update({
+              status: StatusString.PENDING,
+              executor_id: executorID,
+              application_version: appVersion,
+            });
 
           if (res > 0) {
             claimedIDs.push(id);

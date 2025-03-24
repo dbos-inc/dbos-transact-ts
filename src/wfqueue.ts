@@ -1,6 +1,7 @@
 import { DBOSExecutor } from './dbos-executor';
 import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
 import { DBOSInitializationError } from './error';
+import { globalParams } from './utils';
 
 /**
  Limit the maximum number of functions from this queue
@@ -89,7 +90,7 @@ class WFQueueRunner {
       for (const [_qn, q] of this.wfQueuesByName) {
         let wfids: string[];
         try {
-          wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q, exec.executorID);
+          wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q, exec.executorID, globalParams.appVersion);
         } catch (e) {
           const err = e as Error;
           // Silence row lock acquisition errors
