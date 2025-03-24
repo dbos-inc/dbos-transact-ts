@@ -50,7 +50,7 @@ jobs:
           --health-timeout 5s
           --health-retries 5
         env:
-          KAFKA_CFG_PROCESS_ROLES: broker
+          KAFKA_CFG_PROCESS_ROLES: broker,controller
           KAFKA_CFG_NODE_ID: 1
           KAFKA_CFG_ZOOKEEPER_CONNECT: zookeeper:2181
           ALLOW_PLAINTEXT_LISTENER: yes
