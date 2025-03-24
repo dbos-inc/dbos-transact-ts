@@ -87,6 +87,7 @@ export interface DBOSLaunchOptions {
   // For DBOS Conductor
   conductorURL?: string;
   conductorKey?: string;
+  debugMode?: DebugMode;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -257,7 +258,10 @@ export class DBOS {
       DBOS.runtimeConfig = runtimeConfig;
     }
 
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, { debugMode });
+    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, {
+      debugMode: options?.debugMode ?? debugMode,
+    });
+
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     DBOS.globalLogger = executor.logger;
     await executor.init();
