@@ -446,38 +446,61 @@ describe('debugger-test', () => {
     expect(result.rows[0].status).toBe('SUCCESS');
   });
 
-  /*
   test('debug-workflow-notifications', async () => {
     const recvUUID = uuidv1();
     const sendUUID = uuidv1();
+
     // Execute the workflow and destroy the runtime
-    const handle = await testRuntime.invoke(DebuggerTest, recvUUID).receiveWorkflow();
-    await expect(testRuntime.invokeWorkflow(DebuggerTest, sendUUID).sendWorkflow(recvUUID)).resolves.toBeFalsy(); // return void.
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    const handle = await DBOS.startWorkflow(DebuggerTest, { workflowID: recvUUID }).receiveWorkflow();
+    await DBOS.withNextWorkflowID(sendUUID, async () => {
+      await expect(DebuggerTest.sendWorkflow(recvUUID)).resolves.toBeFalsy(); // return void.
+    });
     expect(await handle.getResult()).toBe(true);
-    await testRuntime.destroy();
+    await DBOS.shutdown();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invokeWorkflow(DebuggerTest, recvUUID).receiveWorkflow()).resolves.toBe(true);
-    await expect(debugRuntime.invokeWorkflow(DebuggerTest, sendUUID).sendWorkflow(recvUUID)).resolves.toBeFalsy();
+    /*
+    DBOS.setConfig(debugConfig);
+    await DBOS.launch({debugMode: DebugMode.ENABLED});
+    await DBOS.withNextWorkflowID(recvUUID, async () => {
+      await expect(DebuggerTest.receiveWorkflow()).resolves.toBeFalsy(); // return void.
+    });
+    await DBOS.withNextWorkflowID(sendUUID, async () => {
+      await expect(DebuggerTest.sendWorkflow(recvUUID)).resolves.toBeFalsy(); // return void.
+    });
+    await DBOS.shutdown();
+    */
   });
 
   test('debug-workflow-events', async () => {
     const getUUID = uuidv1();
     const setUUID = uuidv1();
     // Execute the workflow and destroy the runtime
-    await expect(testRuntime.invokeWorkflow(DebuggerTest, setUUID).setEventWorkflow()).resolves.toBe(0);
-    await expect(testRuntime.invokeWorkflow(DebuggerTest, getUUID).getEventWorkflow(setUUID)).resolves.toBe(
-      'value1-value2',
-    );
-    await testRuntime.destroy();
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await DBOS.withNextWorkflowID(setUUID, async () => {
+      await expect(DebuggerTest.setEventWorkflow()).resolves.toBe(0);
+    });
+    await DBOS.withNextWorkflowID(getUUID, async () => {
+      await expect(DebuggerTest.getEventWorkflow(setUUID)).resolves.toBe('value1-value2');
+    });
+    await DBOS.shutdown();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invokeWorkflow(DebuggerTest, setUUID).setEventWorkflow()).resolves.toBe(0);
-    await expect(debugRuntime.invokeWorkflow(DebuggerTest, getUUID).getEventWorkflow(setUUID)).resolves.toBe(
-      'value1-value2',
-    );
+    DBOS.setConfig(debugConfig);
+    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.withNextWorkflowID(setUUID, async () => {
+      await expect(DebuggerTest.setEventWorkflow()).resolves.toBe(0);
+    });
+    await DBOS.withNextWorkflowID(getUUID, async () => {
+      await expect(DebuggerTest.getEventWorkflow(setUUID)).resolves.toBe('value1-value2');
+    });
+    await DBOS.shutdown();
   });
 
+  /*
   test('debug-workflow-input-output', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
