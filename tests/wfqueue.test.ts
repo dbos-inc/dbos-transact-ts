@@ -664,6 +664,7 @@ export class InterProcessWorkflowTask {
 const IPWQueue = new WorkflowQueue('IPWQueue', {
   rateLimit: { limitPerPeriod: 0, periodSec: 30 },
 });
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class InterProcessWorkflow {
   static localConcurrencyLimit = 5;
   static globalConcurrencyLimit = InterProcessWorkflow.localConcurrencyLimit * 2;

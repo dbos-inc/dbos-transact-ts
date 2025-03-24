@@ -4,7 +4,7 @@ import { globalParams, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { Client } from 'pg';
 
-const queue = new WorkflowQueue('testQueue');
+const _queue = new WorkflowQueue('testQueue');
 
 class ClientTest {
   @DBOS.workflow()
@@ -13,7 +13,7 @@ class ClientTest {
     strVal: string,
     objVal: { first: string; last: string; age: number },
   ): Promise<string> {
-    return `${numVal}-${strVal}-${JSON.stringify(objVal)}`;
+    return Promise.resolve(`${numVal}-${strVal}-${JSON.stringify(objVal)}`);
   }
 
   @DBOS.workflow()
