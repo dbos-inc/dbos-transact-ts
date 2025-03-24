@@ -149,7 +149,7 @@ export interface WorkflowStatusInternal {
   authenticatedRoles: string[];
   request: HTTPRequest;
   executorId: string;
-  applicationVersion: string;
+  applicationVersion?: string;
   applicationID: string;
   createdAt: number;
   updatedAt?: number;

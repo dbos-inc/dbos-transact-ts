@@ -32,10 +32,9 @@ export class DBOSClient {
   }
 
   async enqueue<T extends unknown[]>(options: EnqueueOptions, ...args: T): Promise<void> {
-    const { workflowName, workflowClassName, queueName } = options;
+    const { workflowName, workflowClassName, queueName, appVersion } = options;
     const workflowUUID = options.workflowUUID ?? uuidv4();
     const maxRetries = options.maxRetries ?? 50;
-    const appVersion = options.appVersion ?? '';
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
