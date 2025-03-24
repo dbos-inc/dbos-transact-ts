@@ -838,7 +838,7 @@ describe('queued-wf-tests-concurrent-workers', () => {
     const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency(config);
     await wfh.getResult();
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }, 120000);
+  }, 60000);
 });
 
 class TestWFs {
