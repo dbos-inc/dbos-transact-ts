@@ -461,17 +461,15 @@ describe('debugger-test', () => {
     await DBOS.shutdown();
 
     // Execute again in debug mode.
-    /*
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({debugMode: DebugMode.ENABLED});
+    await DBOS.launch({ debugMode: DebugMode.ENABLED });
     await DBOS.withNextWorkflowID(recvUUID, async () => {
-      await expect(DebuggerTest.receiveWorkflow()).resolves.toBeFalsy(); // return void.
+      await expect(DebuggerTest.receiveWorkflow()).resolves.toBeTruthy();
     });
     await DBOS.withNextWorkflowID(sendUUID, async () => {
-      await expect(DebuggerTest.sendWorkflow(recvUUID)).resolves.toBeFalsy(); // return void.
+      await expect(DebuggerTest.sendWorkflow(recvUUID)).resolves.toBeFalsy();
     });
     await DBOS.shutdown();
-    */
   });
 
   test('debug-workflow-events', async () => {
