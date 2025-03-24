@@ -1,7 +1,7 @@
 import { DBOSInitializer, InitContext, DBOS } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor, DebugMode } from '../../src/dbos-executor';
 import { Client } from 'pg';
 
 const testTableName = 'debugger_test_kv';
@@ -235,49 +235,74 @@ describe('debugger-test', () => {
     await DBOS.shutdown();
   });
 
-  /*
   test('debug-sleep-workflow', async () => {
     const wfUUID = uuidv1();
+    DBOS.setConfig(config);
     // Execute the workflow and destroy the runtime
-    const res = await testRuntime.invokeWorkflow(DebuggerTest, wfUUID).sleepWorkflow(2);
-    expect(res).toBe(3);
-    await testRuntime.destroy();
+    await DBOS.launch();
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      const res = await DebuggerTest.sleepWorkflow(2);
+      expect(res).toBe(3);
+    });
+    await DBOS.shutdown();
 
     // Execute again in debug mode, should return the correct value
-    const debugRes = await debugRuntime.invokeWorkflow(DebuggerTest, wfUUID).sleepWorkflow(2);
-    expect(debugRes).toBe(3);
+    DBOS.setConfig(debugConfig);
+    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      const res = await DebuggerTest.sleepWorkflow(2);
+      expect(res).toBe(3);
+    });
+    await DBOS.shutdown();
 
     // Proxy mode should return the same result
-    const debugProxyRes = await timeTravelRuntime.invokeWorkflow(DebuggerTest, wfUUID).sleepWorkflow(2);
-    expect(debugProxyRes).toBe(3);
+    DBOS.setConfig(debugProxyConfig);
+    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      const res = await DebuggerTest.sleepWorkflow(2);
+      expect(res).toBe(3);
+    });
+    await DBOS.shutdown();
   });
 
   test('debug-void-transaction', async () => {
     const wfUUID = uuidv1();
-    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
+
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
     // Execute the workflow and destroy the runtime
-    await expect(testRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeUndefined();
-    expect(DebuggerTest.count).toBe(1);
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      await expect(DebuggerTest.voidFunction()).resolves.toBeUndefined();
+      expect(DebuggerTest.count).toBe(1);
+    });
 
     // Duplicated function name should not affect the execution
-    await expect(testRuntime.invoke(DebuggerTestDup).voidFunction()).resolves.toBeUndefined();
-    await testRuntime.destroy();
+    await expect(DebuggerTestDup.voidFunction()).resolves.toBeUndefined();
+    // Dup wf function invocation
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      await expect(DebuggerTest.voidFunction()).resolves.toBeFalsy();
+      expect(DebuggerTest.count).toBe(1);
+    });
+
+    await DBOS.shutdown();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).voidFunction()).resolves.toBeFalsy();
+    DBOS.setConfig(debugConfig);
+    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      await expect(DebuggerTest.voidFunction()).resolves.toBeFalsy();
+      expect(DebuggerTest.count).toBe(1);
+    });
     expect(DebuggerTest.count).toBe(1);
 
     // Execute again with the provided UUID.
-    await expect(
-      (debugRuntime as TestingRuntimeImpl)
-        .getDBOSExec()
-        .executeWorkflowUUID(wfUUID)
-        .then((x) => x.getResult()),
-    ).resolves.toBeFalsy();
+    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBeFalsy();
     expect(DebuggerTest.count).toBe(1);
+    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
+    await DBOS.shutdown();
 
     // Make sure we correctly record the function's class name
-    await dbosExec.flushWorkflowBuffers();
     const result = await systemDBClient.query<{ status: string; name: string; class_name: string }>(
       `SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [wfUUID],
@@ -287,6 +312,7 @@ describe('debugger-test', () => {
     expect(result.rows[0].status).toBe('SUCCESS');
   });
 
+  /*
   test('debug-transaction', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
@@ -363,7 +389,6 @@ describe('debugger-test', () => {
 
   test('debug-step', async () => {
     const wfUUID = uuidv1();
-    const dbosExec = (testRuntime as TestingRuntimeImpl).getDBOSExec();
 
     // Execute the workflow and destroy the runtime
     await expect(testRuntime.invoke(DebuggerTest, wfUUID).testStep()).resolves.toBe(1);
@@ -392,7 +417,7 @@ describe('debugger-test', () => {
     );
 
     // Make sure we correctly record the function's class name
-    await dbosExec.flushWorkflowBuffers();
+    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     const result = await systemDBClient.query<{ status: string; name: string; class_name: string }>(
       `SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [wfUUID],
