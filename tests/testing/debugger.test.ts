@@ -498,27 +498,29 @@ describe('debugger-test', () => {
     await DBOS.shutdown();
   });
 
-  /*
   test('debug-workflow-input-output', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
-    const res = await testRuntime.invokeWorkflow(DebuggerTest, wfUUID).diffWorkflow(1);
-    expect(res).toBe(1);
-    await testRuntime.destroy();
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      const res = await DebuggerTest.diffWorkflow(1);
+      expect(res).toBe(1);
+    });
+    await DBOS.shutdown();
 
     // Execute again with the provided UUID, should still get the same output.
-    await expect(
-      (debugRuntime as TestingRuntimeImpl)
-        .getDBOSExec()
-        .executeWorkflowUUID(wfUUID)
-        .then((x) => x.getResult()),
-    ).resolves.toBe(1);
+    DBOS.setConfig(debugConfig);
+    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
     expect(DebuggerTest.count).toBe(2);
 
     // Execute again with different input, should still get the same output.
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).diffWorkflow(2)).rejects.toThrow(
-      /DEBUGGER: Detected different inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.\s*Received: \[2\]\s*Original: \[1\]/gm,
-    );
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      await expect(DebuggerTest.diffWorkflow(2)).rejects.toThrow(
+        /DEBUGGER: Detected different inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.\s*Received: \[2\]\s*Original: \[1\]/gm,
+      );
+    });
+    await DBOS.shutdown();
   });
-  */
 });
