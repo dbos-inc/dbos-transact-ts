@@ -201,26 +201,41 @@ describe('debugger-test', () => {
     await DBOS.shutdown();
   });
 
-  /*
   test('tt-debug-workflow', async () => {
     DebuggerTest.debugCount = 0;
     const wfUUID = uuidv1();
-    // Execute the workflow and destroy the runtime
-    const res = await testRuntime.invokeWorkflow(DebuggerTest, wfUUID).debugWF(100);
-    expect(res).toBe(1000);
-    expect(DebuggerTest.debugCount).toBe(1);
-    await testRuntime.destroy();
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      // Execute the workflow and destroy the runtime
+      const res = await DebuggerTest.debugWF(100);
+      expect(res).toBe(1000);
+      expect(DebuggerTest.debugCount).toBe(1);
+    });
+    await DBOS.shutdown();
 
     // Execute again in debug mode.
-    const debugRes = await debugRuntime.invokeWorkflow(DebuggerTest, wfUUID).debugWF(100);
-    expect(DebuggerTest.debugCount).toBe(1);
-    expect(debugRes).toBe(1000);
+    DBOS.setConfig(debugConfig);
+    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      const debugRes = await DebuggerTest.debugWF(100);
+      expect(DebuggerTest.debugCount).toBe(1);
+      expect(debugRes).toBe(1000);
+    });
+    await DBOS.shutdown();
 
-    const ttdbgRes = await timeTravelRuntime.invokeWorkflow(DebuggerTest, wfUUID).debugWF(100);
-    expect(DebuggerTest.debugCount).toBe(2);
-    expect(ttdbgRes).toBe(1000);
+    // And as time travel
+    DBOS.setConfig(debugProxyConfig);
+    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      const ttdbgRes = await DebuggerTest.debugWF(100);
+      expect(DebuggerTest.debugCount).toBe(2);
+      expect(ttdbgRes).toBe(1000);
+    });
+    await DBOS.shutdown();
   });
 
+  /*
   test('debug-sleep-workflow', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
