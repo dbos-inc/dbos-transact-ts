@@ -664,7 +664,6 @@ export class InterProcessWorkflowTask {
 const IPWQueue = new WorkflowQueue('IPWQueue', {
   rateLimit: { limitPerPeriod: 0, periodSec: 30 },
 });
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class InterProcessWorkflow {
   static localConcurrencyLimit = 5;
   static globalConcurrencyLimit = InterProcessWorkflow.localConcurrencyLimit * 2;
@@ -818,29 +817,29 @@ class InterProcessWorkflow {
   }
 }
 
-// describe('queued-wf-tests-concurrent-workers', () => {
-//   let config: DBOSConfig;
+describe('queued-wf-tests-concurrent-workers', () => {
+  let config: DBOSConfig;
 
-//   beforeAll(async () => {
-//     config = generateDBOSTestConfig();
-//     await setUpDBOSTestDb(config);
-//     DBOS.setConfig(config);
-//   });
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+  });
 
-//   beforeEach(async () => {
-//     await DBOS.launch();
-//   });
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
 
-//   afterEach(async () => {
-//     await DBOS.shutdown();
-//   });
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
 
-//   test('test_global_and_local_concurrency', async () => {
-//     const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency(config);
-//     await wfh.getResult();
-//     expect(await queueEntriesAreCleanedUp()).toBe(true);
-//   }, 60000);
-// });
+  test('test_global_and_local_concurrency', async () => {
+    const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency(config);
+    await wfh.getResult();
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 120000);
+});
 
 class TestWFs {
   static wfCounter = 0;
