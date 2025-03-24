@@ -106,8 +106,8 @@ export class DBOSWorkflowConflictUUIDError extends DBOSError {
 
 const NotRegisteredError = 6;
 export class DBOSNotRegisteredError extends DBOSError {
-  constructor(name: string) {
-    const msg = `Operation (Name: ${name}) not registered`;
+  constructor(name: string, fullmsg?: string) {
+    const msg = fullmsg ?? `Operation (Name: ${name}) not registered`;
     super(msg, NotRegisteredError);
   }
 }

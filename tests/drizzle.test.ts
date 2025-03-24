@@ -2,22 +2,19 @@ import request from 'supertest';
 
 import {
   Authentication,
+  DBOS,
   GetApi,
   HandlerContext,
   MiddlewareContext,
   OrmEntities,
   PostApi,
   RequiredRole,
-  TestingRuntime,
   Transaction,
   TransactionContext,
-  Workflow,
-  WorkflowContext,
 } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { createInternalTestRuntime } from '../src/testing/testing_runtime';
 import { pgTable, serial, text } from 'drizzle-orm/pg-core';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
@@ -58,10 +55,10 @@ class TestClass {
     return result[0].value;
   }
 
-  @Workflow()
-  static async testWf(ctxt: WorkflowContext, value: string) {
-    const id = await ctxt.invoke(TestClass).testInsert(value);
-    const result = await ctxt.invoke(TestClass).testSelect(id);
+  @DBOS.workflow()
+  static async testWf(value: string) {
+    const id = await DBOS.invoke(TestClass).testInsert(value);
+    const result = await DBOS.invoke(TestClass).testSelect(id);
     return result;
   }
 
@@ -77,43 +74,43 @@ class TestClass {
 }
 
 describe('drizzle-tests', () => {
-  let testRuntime: TestingRuntime;
   let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.DRIZZLE);
     await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    await DBOS.launch();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     insertCount = 0;
   });
 
   afterEach(async () => {
-    await testRuntime.destroy();
+    await DBOS.shutdown();
   });
 
   test('simple-drizzle', async () => {
-    await expect(testRuntime.invoke(TestClass).testInsert('test-one')).resolves.toBe(1);
+    await expect(DBOS.invoke(TestClass).testInsert('test-one')).resolves.toBe(1);
   });
 
   test('drizzle-query', async () => {
-    await testRuntime.invoke(TestClass).testInsert('test-query');
-    await expect(testRuntime.invoke(TestClass).testQuery()).resolves.toBe('test-query');
+    await DBOS.invoke(TestClass).testInsert('test-query');
+    await expect(DBOS.invoke(TestClass).testQuery()).resolves.toBe('test-query');
   });
 
   test('drizzle-return-void', async () => {
-    await expect(testRuntime.invoke(TestClass).returnVoid()).resolves.not.toThrow();
+    await expect(DBOS.invoke(TestClass).returnVoid()).resolves.not.toThrow();
   });
 
   test('drizzle-duplicate-workflows', async () => {
     const uuid = uuidv1();
     const results = await Promise.allSettled([
-      testRuntime.invokeWorkflow(TestClass, uuid).testWf('test-one'),
-      testRuntime.invokeWorkflow(TestClass, uuid).testWf('test-one'),
+      (await DBOS.startWorkflow(TestClass, { workflowID: uuid }).testWf('test-one')).getResult(),
+      (await DBOS.startWorkflow(TestClass, { workflowID: uuid }).testWf('test-one')).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<string>).value).toBe('test-one');
     expect((results[1] as PromiseFulfilledResult<string>).value).toBe('test-one');
@@ -121,9 +118,9 @@ describe('drizzle-tests', () => {
   });
 
   test('drizzle-key-conflict', async () => {
-    await testRuntime.invoke(TestClass).unsafeInsert(1, 'test-one');
+    await DBOS.invoke(TestClass).unsafeInsert(1, 'test-one');
     try {
-      await testRuntime.invoke(TestClass).unsafeInsert(1, 'test-two');
+      await DBOS.invoke(TestClass).unsafeInsert(1, 'test-two');
       expect(true).toBe(false); // Fail if no error is thrown.
     } catch (e) {
       const err: DatabaseError = e as DatabaseError;
@@ -178,7 +175,6 @@ export class DUserManager {
 
 describe('drizzle-auth-tests', () => {
   let config: DBOSConfig;
-  let testRuntime: TestingRuntime;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig(UserDatabaseName.DRIZZLE);
@@ -186,31 +182,30 @@ describe('drizzle-auth-tests', () => {
   });
 
   beforeEach(async () => {
-    testRuntime = await createInternalTestRuntime(undefined, config);
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
-    await testRuntime.queryUserDB(
-      `CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`,
-    );
+    await DBOS.launch();
+    DBOS.setUpHandlerCallback();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`);
   });
 
   afterEach(async () => {
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
-    await testRuntime.destroy();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
+    await DBOS.shutdown();
   });
 
   test('simple-drizzle-auth', async () => {
     // No user name
-    const response1 = await request(testRuntime.getHandlersCallback()).get('/hello');
+    const response1 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
     expect(response1.statusCode).toBe(401);
 
     // User name doesn't exist
-    const response2 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
+    const response2 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response2.statusCode).toBe(403);
 
-    const response3 = await request(testRuntime.getHandlersCallback()).post('/register').send({ uname: 'paul' });
+    const response3 = await request(DBOS.getHTTPHandlersCallback()!).post('/register').send({ uname: 'paul' });
     expect(response3.statusCode).toBe(200);
 
-    const response4 = await request(testRuntime.getHandlersCallback()).get('/hello?user=paul');
+    const response4 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response4.statusCode).toBe(200);
   });
 });

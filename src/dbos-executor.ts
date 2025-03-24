@@ -157,7 +157,7 @@ export const OperationType = {
   PROCEDURE: 'procedure',
 } as const;
 
-const TempWorkflowType = {
+export const TempWorkflowType = {
   transaction: 'transaction',
   procedure: 'procedure',
   external: 'external',
@@ -648,7 +648,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const txnInfo: TransactionRegInfo | undefined = this.transactionInfoMap.get(tfname);
 
     if (!txnInfo) {
-      throw new DBOSNotRegisteredError(`Transaction function name '${tfname}' is not registered.`);
+      throw new DBOSNotRegisteredError(tfname, `Transaction function name '${tfname}' is not registered.`);
     }
 
     return { txnInfo, clsInst: getConfiguredInstance(className, cfgName) };
@@ -663,7 +663,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const stepInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
 
     if (!stepInfo) {
-      throw new DBOSNotRegisteredError(`Step function name '${cfname}' is not registered.`);
+      throw new DBOSNotRegisteredError(cfname, `Step function name '${cfname}' is not registered.`);
     }
 
     return { commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName) };
@@ -766,6 +766,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
         status = wfStatus.status;
       } else {
         // TODO: Make this transactional (and with the queue step below)
+        if (callerFunctionID !== undefined && callerUUID !== undefined) {
+          const child_id = await this.systemDatabase.checkChildWorkflow(callerUUID, callerFunctionID);
+          if (child_id !== null) {
+            return new RetrievedHandle(this.systemDatabase, child_id, callerUUID, callerFunctionID);
+          }
+
+          await this.systemDatabase.recordChildWorkflow(callerUUID, workflowUUID, callerFunctionID, wf.name);
+        }
         const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
         args = ires.args;
         status = ires.status;
@@ -910,7 +918,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   #getQueueByName(name: string): WorkflowQueue {
     const q = wfQueueRunner.wfQueuesByName.get(name);
-    if (!q) throw new DBOSNotRegisteredError(`Workflow queue '${name}' does is not defined.`);
+    if (!q) throw new DBOSNotRegisteredError(name, `Workflow queue '${name}' is not defined.`);
     return q;
   }
 
@@ -1092,23 +1100,33 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+    return await (await this.startTransactionTempWF(txn, params, undefined, undefined, ...args)).getResult();
+  }
+
+  async startTransactionTempWF<T extends unknown[], R>(
+    txn: Transaction<T, R>,
+    params: InternalWorkflowParams,
+    callerUUID?: string,
+    callerFunctionID?: number,
+    ...args: T
+  ): Promise<WorkflowHandle<R>> {
     // Create a workflow and call transaction.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await ctxtImpl.transaction(txn, params.configuredInstance ?? null, ...args);
+      return await this.callTransactionFunction(txn, params.configuredInstance ?? null, ctxtImpl, ...args);
     };
-    return (
-      await this.workflow(
-        temp_workflow,
-        {
-          ...params,
-          tempWfType: TempWorkflowType.transaction,
-          tempWfName: getRegisteredMethodName(txn),
-          tempWfClass: getRegisteredMethodClassName(txn),
-        },
-        ...args,
-      )
-    ).getResult();
+    return await this.internalWorkflow(
+      temp_workflow,
+      {
+        ...params,
+        tempWfType: TempWorkflowType.transaction,
+        tempWfName: getRegisteredMethodName(txn),
+        tempWfClass: getRegisteredMethodClassName(txn),
+      },
+      callerUUID,
+      callerFunctionID,
+      ...args,
+    );
   }
 
   async callTransactionFunction<T extends unknown[], R>(
@@ -1671,24 +1689,34 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
-    // Create a workflow and call external.
+    return await (await this.startStepTempWF(stepFn, params, undefined, undefined, ...args)).getResult();
+  }
 
+  async startStepTempWF<T extends unknown[], R>(
+    stepFn: StepFunction<T, R>,
+    params: InternalWorkflowParams,
+    callerUUID?: string,
+    callerFunctionID?: number,
+    ...args: T
+  ): Promise<WorkflowHandle<R>> {
+    // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await ctxtImpl.external(stepFn, params.configuredInstance ?? null, ...args);
+      return await this.callStepFunction(stepFn, params.configuredInstance ?? null, ctxtImpl, ...args);
     };
-    return (
-      await this.workflow(
-        temp_workflow,
-        {
-          ...params,
-          tempWfType: TempWorkflowType.external,
-          tempWfName: getRegisteredMethodName(stepFn),
-          tempWfClass: getRegisteredMethodClassName(stepFn),
-        },
-        ...args,
-      )
-    ).getResult();
+
+    return await this.internalWorkflow(
+      temp_workflow,
+      {
+        ...params,
+        tempWfType: TempWorkflowType.external,
+        tempWfName: getRegisteredMethodName(stepFn),
+        tempWfClass: getRegisteredMethodClassName(stepFn),
+      },
+      callerUUID,
+      callerFunctionID,
+      ...args,
+    );
   }
 
   /**
@@ -1982,6 +2010,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return handlerArray;
   }
 
+  async initEventReceivers() {
+    this.scheduler = new DBOSScheduler(this);
+
+    this.scheduler.initScheduler();
+
+    this.wfqEnded = wfQueueRunner.dispatchLoop(this);
+
+    for (const evtRcvr of this.eventReceivers) {
+      await evtRcvr.initialize(this);
+    }
+  }
+
   async deactivateEventReceivers() {
     this.logger.info('Deactivating event receivers');
     for (const evtRcvr of this.eventReceivers || []) {
@@ -2048,10 +2088,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     let temp_workflow: Workflow<unknown[], unknown>;
-    let clsinst: ConfiguredInstance | null = null;
-    let tempWfType: string;
-    let tempWfName: string | undefined;
-    let tempWfClass: string | undefined;
     if (nameArr[1] === TempWorkflowType.transaction) {
       const { txnInfo, clsInst } = this.getTransactionInfoByNames(
         wfStatus.workflowClassName,
@@ -2062,14 +2098,21 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.error(`Cannot find transaction info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
-      tempWfType = TempWorkflowType.transaction;
-      tempWfName = getRegisteredMethodName(txnInfo.transaction);
-      tempWfClass = getRegisteredMethodClassName(txnInfo.transaction);
-      temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
-        const ctxtImpl = ctxt as WorkflowContextImpl;
-        return await ctxtImpl.transaction(txnInfo.transaction, clsInst, ...args);
-      };
-      clsinst = clsInst;
+
+      return await this.startTransactionTempWF(
+        txnInfo.transaction,
+        {
+          workflowUUID: workflowStartUUID,
+          parentCtx: parentCtx ?? undefined,
+          configuredInstance: clsInst,
+          queueName: wfStatus.queueName,
+          executeWorkflow: true,
+        },
+        undefined,
+        undefined,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ...inputs,
+      );
     } else if (nameArr[1] === TempWorkflowType.external) {
       const { commInfo, clsInst } = this.getStepInfoByNames(
         wfStatus.workflowClassName,
@@ -2080,38 +2123,40 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.error(`Cannot find step info for UUID ${workflowUUID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
-      tempWfType = TempWorkflowType.external;
-      tempWfName = getRegisteredMethodName(commInfo.step);
-      tempWfClass = getRegisteredMethodClassName(commInfo.step);
-      temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
-        const ctxtImpl = ctxt as WorkflowContextImpl;
-        return await ctxtImpl.external(commInfo.step, clsInst, ...args);
-      };
-      clsinst = clsInst;
+      return await this.startStepTempWF(
+        commInfo.step,
+        {
+          workflowUUID: workflowStartUUID,
+          parentCtx: parentCtx ?? undefined,
+          configuredInstance: clsInst,
+          queueName: wfStatus.queueName, // Probably null
+          executeWorkflow: true,
+        },
+        undefined,
+        undefined,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ...inputs,
+      );
     } else if (nameArr[1] === TempWorkflowType.send) {
-      tempWfType = TempWorkflowType.send;
       temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
         return await ctxt.send<unknown>(args[0] as string, args[1], args[2] as string); // id, value, topic
       };
-      clsinst = null;
+      return this.workflow(
+        temp_workflow,
+        {
+          workflowUUID: workflowStartUUID,
+          parentCtx: parentCtx ?? undefined,
+          tempWfType: TempWorkflowType.send,
+          queueName: wfStatus.queueName,
+          executeWorkflow: true,
+        },
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        ...inputs,
+      );
     } else {
       this.logger.error(`Unrecognized temporary workflow! UUID ${workflowUUID}, name ${wfName}`);
       throw new DBOSNotRegisteredError(wfName);
     }
-
-    return this.workflow(
-      temp_workflow,
-      {
-        workflowUUID: workflowStartUUID,
-        parentCtx: parentCtx ?? undefined,
-        configuredInstance: clsinst,
-        tempWfType,
-        tempWfClass,
-        tempWfName,
-      },
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      ...inputs,
-    );
   }
 
   async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {

@@ -1,6 +1,8 @@
 import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
+import { DBOS } from '../src';
+import { sleepms } from '../src/utils';
 
 /* DB management helpers */
 export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
@@ -99,4 +101,19 @@ export class Event {
       this._resolve = resolve;
     });
   }
+}
+
+export async function queueEntriesAreCleanedUp() {
+  let maxTries = 10;
+  let success = false;
+  while (maxTries > 0) {
+    const r = await DBOS.getWorkflowQueue({});
+    if (r.workflows.length === 0) {
+      success = true;
+      break;
+    }
+    await sleepms(1000);
+    --maxTries;
+  }
+  return success;
 }
