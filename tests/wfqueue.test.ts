@@ -793,7 +793,7 @@ class InterProcessWorkflow {
           ],
           {
             cwd: process.cwd(),
-            env: { ...process.env, DBOS__VMID: workerId },
+            env: { ...process.env, DBOS__VMID: workerId, DBOS__APPVERSION: globalParams.appVersion },
             stdio: 'inherit', // Allows direct streaming
           },
         );
