@@ -312,44 +312,50 @@ describe('debugger-test', () => {
     expect(result.rows[0].status).toBe('SUCCESS');
   });
 
-  /*
   test('debug-transaction', async () => {
     const wfUUID = uuidv1();
+
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
     // Execute the workflow and destroy the runtime
-    await expect(testRuntime.invoke(DebuggerTest, wfUUID).testFunction(username)).resolves.toBe(1);
-    await testRuntime.destroy();
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      await expect(DebuggerTest.testFunction(username)).resolves.toBe(1);
+    });
+    await DBOS.shutdown();
 
     // Execute again in debug mode.
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID).testFunction(username)).resolves.toBe(1);
+    DBOS.setConfig(debugConfig);
+    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      await expect(DebuggerTest.testFunction(username)).resolves.toBe(1);
+    });
 
     // Execute again with the provided UUID.
-    await expect(
-      (debugRuntime as TestingRuntimeImpl)
-        .getDBOSExec()
-        .executeWorkflowUUID(wfUUID)
-        .then((x) => x.getResult()),
-    ).resolves.toBe(1);
-
-    // Proxy mode should return the same result.
-    await expect(
-      (timeTravelRuntime as TestingRuntimeImpl)
-        .getDBOSExec()
-        .executeWorkflowUUID(wfUUID)
-        .then((x) => x.getResult()),
-    ).resolves.toBe(1);
+    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = uuidv1();
-    await expect(debugRuntime.invoke(DebuggerTest, wfUUID2).testFunction(username)).rejects.toThrow(
-      `DEBUGGER: Failed to find the recorded output for the transaction: workflow UUID ${wfUUID2}, step number 0`,
-    );
+    await DBOS.withNextWorkflowID(wfUUID2, async () => {
+      await expect(DebuggerTest.testFunction(username)).rejects.toThrow(
+        `DEBUGGER: Failed to find the recorded output for the transaction: workflow UUID ${wfUUID2}, step number 0`,
+      );
+    });
 
     // Execute a workflow without specifying the UUID should fail.
-    await expect(debugRuntime.invoke(DebuggerTest).testFunction(username)).rejects.toThrow(
+    await expect(DebuggerTest.testFunction(username)).rejects.toThrow(
       /DEBUGGER: Failed to find the recorded output for the transaction: workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
     );
+    await DBOS.shutdown();
+
+    // Proxy mode should return the same result.
+    DBOS.setConfig(debugProxyConfig);
+    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
+    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await DBOS.shutdown();
   });
 
+  /*
   test('debug-read-only-transaction', async () => {
     const wfUUID = uuidv1();
     // Execute the workflow and destroy the runtime
