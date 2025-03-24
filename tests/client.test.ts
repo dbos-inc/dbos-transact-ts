@@ -8,12 +8,17 @@ const queue = new WorkflowQueue('testQueue');
 
 class ClientTest {
   @DBOS.workflow()
-  static async invokeTest(
+  static async enqueueTest(
     numVal: number,
     strVal: string,
     objVal: { first: string; last: string; age: number },
   ): Promise<string> {
     return `${numVal}-${strVal}-${JSON.stringify(objVal)}`;
+  }
+
+  @DBOS.workflow()
+  static async sendTest(topic?: string) {
+    return await DBOS.recv<string>(topic, 60);
   }
 }
 
@@ -34,17 +39,17 @@ describe('DBOSClient', () => {
     await DBOS.shutdown();
   });
 
-  test('DBOSClient.enqueue (app ver not set)', async () => {
+  test('DBOSClient-enqueue-appVer-notSet)', async () => {
     const client = new DBOSClient(config.poolConfig, config.system_database);
     const wfid = `client-enqueue-${Date.now()}`;
 
     try {
-      type InvokeTest = typeof ClientTest.invokeTest;
+      type InvokeTest = typeof ClientTest.enqueueTest;
 
       await client.init();
       await client.enqueue<Parameters<InvokeTest>>(
         {
-          workflowName: 'invokeTest',
+          workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
           queueName: 'testQueue',
           workflowUUID: wfid,
@@ -77,17 +82,17 @@ describe('DBOSClient', () => {
     }
   }, 10000);
 
-  test('DBOSClient.enqueue (app ver set)', async () => {
+  test('DBOSClient-enqueue-appVer-set', async () => {
     const client = new DBOSClient(config.poolConfig, config.system_database);
     const wfid = `client-enqueue-${Date.now()}`;
 
     try {
-      type InvokeTest = typeof ClientTest.invokeTest;
+      type InvokeTest = typeof ClientTest.enqueueTest;
 
       await client.init();
       await client.enqueue<Parameters<InvokeTest>>(
         {
-          workflowName: 'invokeTest',
+          workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
           queueName: 'testQueue',
           workflowUUID: wfid,
@@ -121,17 +126,16 @@ describe('DBOSClient', () => {
     }
   }, 10000);
 
-  test('DBOSClient.enqueue (incorrect app ver set)', async () => {
+  test('DBOSClient-enqueue-wrong-appVer', async () => {
     const client = new DBOSClient(config.poolConfig, config.system_database);
-    const wfid = `client-enqueue-${Date.now()}`;
 
     try {
-      type InvokeTest = typeof ClientTest.invokeTest;
+      type InvokeTest = typeof ClientTest.enqueueTest;
 
       await client.init();
       await client.enqueue<Parameters<InvokeTest>>(
         {
-          workflowName: 'invokeTest',
+          workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
           queueName: 'testQueue',
           appVersion: '1234567890ABCDEF',
@@ -160,4 +164,39 @@ describe('DBOSClient', () => {
       await dbClient.end();
     }
   }, 20000);
+
+  test('DBOSClient-send-topic', async () => {
+    const workflowID = `client-send-${Date.now()}`;
+    const topic = 'test-topic';
+    const message = `Hello, DBOS! (${Date.now()})`;
+
+    const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
+
+    const client = new DBOSClient(config.poolConfig, config.system_database);
+    try {
+      await client.send<string>(workflowID, message, topic);
+    } finally {
+      await client.destroy();
+    }
+
+    const result = await handle.getResult();
+    expect(result).toBe(message);
+  }, 10000);
+
+  test('DBOSClient-send-no-topic', async () => {
+    const workflowID = `client-send-${Date.now()}`;
+    const message = `Hello, DBOS! (${Date.now()})`;
+
+    const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest();
+
+    const client = new DBOSClient(config.poolConfig, config.system_database);
+    try {
+      await client.send<string>(workflowID, message);
+    } finally {
+      await client.destroy();
+    }
+
+    const result = await handle.getResult();
+    expect(result).toBe(message);
+  }, 10000);
 });

@@ -59,4 +59,27 @@ export class DBOSClient {
     await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName);
   }
+
+  async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+    idempotencyKey ??= uuidv4();
+    const internalStatus: WorkflowStatusInternal = {
+      workflowUUID: `${destinationID}-${idempotencyKey}`,
+      status: StatusString.SUCCESS,
+      workflowName: 'temp_workflow-send-client',
+      workflowClassName: '',
+      workflowConfigName: '',
+      authenticatedUser: '',
+      output: undefined,
+      error: '',
+      assumedRole: '',
+      authenticatedRoles: [],
+      request: {},
+      executorId: '',
+      applicationID: '',
+      createdAt: Date.now(),
+      maxRetries: 50,
+    };
+    await this.systemDatabase.initWorkflowStatus(internalStatus, [destinationID, message, topic]);
+    await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, message, topic);
+  }
 }
