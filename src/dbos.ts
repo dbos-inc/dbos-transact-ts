@@ -260,13 +260,12 @@ export class DBOS {
     if (DBOSExecutor.globalInstance) return;
 
     const debugMode = this.getDebugMode();
+    const isDebugging = debugMode !== DebugMode.DISABLED;
 
     if (options?.conductorKey) {
       // Use a generated executor ID.
       globalParams.executorID = uuidv4();
     }
-
-    const isDebugging = DBOS.getDebugMode() !== DebugMode.DISABLED;
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
