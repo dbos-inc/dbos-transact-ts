@@ -215,7 +215,7 @@ export class DBOS {
     DBOS.translateConfig();
   }
 
-  private static async translateConfig() {
+  private static translateConfig() {
     if (DBOS.dbosConfig && !isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
       const isDebugging = DBOS.getDebugMode() !== DebugMode.DISABLED;
       [DBOS.dbosConfig, DBOS.runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
@@ -276,7 +276,7 @@ export class DBOS {
       }
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
-    } else {
+    } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
       DBOS.translateConfig();
       if (!isDebugging && DBOS.dbosConfig.poolConfig) {
         DBOS.dbosConfig.poolConfig = await db_wizard(DBOS.dbosConfig.poolConfig);
