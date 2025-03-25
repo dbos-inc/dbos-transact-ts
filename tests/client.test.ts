@@ -291,4 +291,44 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
   }, 30000);
+
+  test('DBOSClient-retrieve-workflow', async () => {
+    const wfid = `client-retrieve-${Date.now()}`;
+    await DBOS.startWorkflow(ClientTest, { workflowID: wfid }).enqueueTest(42, 'test', {
+      first: 'John',
+      last: 'Doe',
+      age: 30,
+    });
+
+    const client = new DBOSClient(config.poolConfig, config.system_database);
+    try {
+      await client.init();
+      const handle = client.retrieveWorkflow<string>(wfid);
+      const result = await handle.getResult();
+      expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('DBOSClient-retrieve-workflow-done', async () => {
+    const wfid = `client-retrieve-done-${Date.now()}`;
+    const handle = await DBOS.startWorkflow(ClientTest, { workflowID: wfid }).enqueueTest(42, 'test', {
+      first: 'John',
+      last: 'Doe',
+      age: 30,
+    });
+    const result1 = await handle.getResult();
+    expect(result1).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+
+    const client = new DBOSClient(config.poolConfig, config.system_database);
+    try {
+      await client.init();
+      const handle = client.retrieveWorkflow<string>(wfid);
+      const result = await handle.getResult();
+      expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await client.destroy();
+    }
+  }, 30000);
 });

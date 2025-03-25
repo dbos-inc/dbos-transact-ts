@@ -2,7 +2,7 @@ import { PoolConfig } from 'pg';
 import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { v4 as uuidv4 } from 'uuid';
-import { StatusString } from './workflow';
+import { RetrievedHandle, StatusString, WorkflowHandle } from './workflow';
 
 interface EnqueueOptions {
   queueName: string;
@@ -85,5 +85,9 @@ export class DBOSClient {
 
   async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
     return await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
+  }
+
+  retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<T> {
+    return new RetrievedHandle(this.systemDatabase, workflowID);
   }
 }
