@@ -199,9 +199,30 @@ export class DBOS {
   static appServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
 
+  static getDebugMode(): DebugMode {
+    const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
+    const isDebugging = debugWorkflowId !== undefined;
+    return isDebugging
+      ? process.env.DBOS_DEBUG_TIME_TRAVEL === 'true'
+        ? DebugMode.TIME_TRAVEL
+        : DebugMode.ENABLED
+      : DebugMode.DISABLED;
+  }
+
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
     DBOS.runtimeConfig = runtimeConfig;
+    DBOS.translateConfig();
+  }
+
+  private static async translateConfig() {
+    if (DBOS.dbosConfig && !isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
+      const isDebugging = DBOS.getDebugMode() !== DebugMode.DISABLED;
+      [DBOS.dbosConfig, DBOS.runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
+      if (process.env.DBOS__CLOUD === 'true') {
+        [DBOS.dbosConfig, DBOS.runtimeConfig] = overwrite_config(DBOS.dbosConfig, DBOS.runtimeConfig);
+      }
+    }
   }
 
   // For unit testing purposes only
@@ -212,7 +233,11 @@ export class DBOS {
   }
 
   static async dropSystemDB(): Promise<void> {
-    return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig ?? parseConfigFile()[0]);
+    if (!DBOS.dbosConfig) {
+      DBOS.dbosConfig = parseConfigFile()[0];
+    }
+    this.translateConfig();
+    return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig);
   }
 
   /** Only relevant for TypeORM, and for testing purposes only, not production */
@@ -234,18 +259,14 @@ export class DBOS {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
-    const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
-    const isDebugging = debugWorkflowId !== undefined;
-    const debugMode = isDebugging
-      ? process.env.DBOS_DEBUG_TIME_TRAVEL === 'true'
-        ? DebugMode.TIME_TRAVEL
-        : DebugMode.ENABLED
-      : DebugMode.DISABLED;
+    const debugMode = this.getDebugMode();
 
     if (options?.conductorKey) {
       // Use a generated executor ID.
       globalParams.executorID = uuidv4();
     }
+
+    const isDebugging = DBOS.getDebugMode() !== DebugMode.DISABLED;
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
@@ -255,16 +276,11 @@ export class DBOS {
       }
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
-    } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
-      let [dbosConfig, runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
-      if (process.env.DBOS__CLOUD === 'true') {
-        [dbosConfig, runtimeConfig] = overwrite_config(dbosConfig, runtimeConfig);
+    } else {
+      DBOS.translateConfig();
+      if (!isDebugging && DBOS.dbosConfig.poolConfig) {
+        DBOS.dbosConfig.poolConfig = await db_wizard(DBOS.dbosConfig.poolConfig);
       }
-      if (!isDebugging && dbosConfig.poolConfig) {
-        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
-      }
-      DBOS.dbosConfig = dbosConfig;
-      DBOS.runtimeConfig = runtimeConfig;
     }
 
     if (!DBOS.dbosConfig) {
@@ -276,6 +292,7 @@ export class DBOS {
     DBOS.globalLogger = executor.logger;
     await executor.init();
 
+    const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     if (debugWorkflowId) {
       DBOS.logger.info(`Debugging workflow "${debugWorkflowId}"`);
       const handle = await executor.executeWorkflowUUID(debugWorkflowId);
