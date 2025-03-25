@@ -20,6 +20,16 @@ class ClientTest {
   static async sendTest(topic?: string) {
     return await DBOS.recv<string>(topic, 60);
   }
+
+  @DBOS.workflow()
+  static async eventTest(key: string, value: string, update: boolean = false) {
+    await DBOS.setEvent(key, value);
+    await DBOS.sleepSeconds(5);
+    if (update) {
+      await DBOS.setEvent(key, `updated-${value}`);
+    }
+    return `${key}-${value}`;
+  }
 }
 
 describe('DBOSClient', () => {
@@ -166,9 +176,10 @@ describe('DBOSClient', () => {
   }, 20000);
 
   test('DBOSClient-send-topic', async () => {
-    const workflowID = `client-send-${Date.now()}`;
-    const topic = 'test-topic';
-    const message = `Hello, DBOS! (${Date.now()})`;
+    const now = Date.now();
+    const workflowID = `client-send-${now}`;
+    const topic = `test-topic-${now}`;
+    const message = `Hello, DBOS! (${now})`;
 
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
 
@@ -184,8 +195,9 @@ describe('DBOSClient', () => {
   }, 10000);
 
   test('DBOSClient-send-no-topic', async () => {
-    const workflowID = `client-send-${Date.now()}`;
-    const message = `Hello, DBOS! (${Date.now()})`;
+    const now = Date.now();
+    const workflowID = `client-send-${now}`;
+    const message = `Hello, DBOS! (${now})`;
 
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest();
 
@@ -199,4 +211,84 @@ describe('DBOSClient', () => {
     const result = await handle.getResult();
     expect(result).toBe(message);
   }, 10000);
+
+  test('DBOSClient-getEvent-while-running', async () => {
+    const now = Date.now();
+
+    const workflowID = `client-event-${now}`;
+    const key = `event-key-${now}`;
+    const value = `event-value-${now}`;
+
+    const client = new DBOSClient(config.poolConfig, config.system_database);
+    try {
+      const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
+      const eventValue = await client.getEvent<string>(workflowID, key, 10);
+      expect(eventValue).toBe(value);
+      const result = await handle.getResult();
+      expect(result).toBe(`${key}-${value}`);
+    } finally {
+      await client.destroy();
+    }
+  }, 30000);
+
+  test('DBOSClient-getEvent-when-finished', async () => {
+    const now = Date.now();
+
+    const workflowID = `client-event-${now}`;
+    const key = `event-key-${now}`;
+    const value = `event-value-${now}`;
+
+    const client = new DBOSClient(config.poolConfig, config.system_database);
+    try {
+      const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
+      const result = await handle.getResult();
+      expect(result).toBe(`${key}-${value}`);
+
+      const eventValue = await client.getEvent<string>(workflowID, key, 10);
+      expect(eventValue).toBe(value);
+    } finally {
+      await client.destroy();
+    }
+  }, 30000);
+
+  test('DBOSClient-getEvent-update-while-running', async () => {
+    const now = Date.now();
+
+    const workflowID = `client-event-${now}`;
+    const key = `event-key-${now}`;
+    const value = `event-value-${now}`;
+
+    const client = new DBOSClient(config.poolConfig, config.system_database);
+    try {
+      const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
+      let eventValue = await client.getEvent<string>(workflowID, key, 1);
+      expect(eventValue).toBe(value);
+      const result = await handle.getResult();
+      expect(result).toBe(`${key}-${value}`);
+      eventValue = await client.getEvent<string>(workflowID, key, 10);
+      expect(eventValue).toBe(`updated-${value}`);
+    } finally {
+      await client.destroy();
+    }
+  }, 30000);
+
+  test('DBOSClient-getEvent-update-when-finished', async () => {
+    const now = Date.now();
+
+    const workflowID = `client-event-${now}`;
+    const key = `event-key-${now}`;
+    const value = `event-value-${now}`;
+
+    const client = new DBOSClient(config.poolConfig, config.system_database);
+    try {
+      const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
+      const result = await handle.getResult();
+      expect(result).toBe(`${key}-${value}`);
+
+      const eventValue = await client.getEvent<string>(workflowID, key, 10);
+      expect(eventValue).toBe(`updated-${value}`);
+    } finally {
+      await client.destroy();
+    }
+  }, 30000);
 });

@@ -82,4 +82,8 @@ export class DBOSClient {
     await this.systemDatabase.initWorkflowStatus(internalStatus, [destinationID, message, topic]);
     await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, message, topic);
   }
+
+  async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
+    return await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
+  }
 }
