@@ -404,7 +404,7 @@ export function translatePublicDBOSconfig(config: DBOSConfig, isDebugging?: bool
     telemetry: {
       logs: {
         logLevel: config.logLevel || 'info',
-        forceConsole: isDebugging ? true : false,
+        forceConsole: isDebugging === undefined ? false : isDebugging,
       },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
@@ -418,12 +418,12 @@ export function translatePublicDBOSconfig(config: DBOSConfig, isDebugging?: bool
   }
 
   const runtimeConfig: DBOSRuntimeConfig = {
-    port: 3000, // unused forward
+    port: 3000,
     admin_port: config.adminPort || 3001,
     runAdminServer: config.runAdminServer === undefined ? true : config.runAdminServer,
-    entrypoints: [], // unused forward
-    start: [], // unused forward
-    setup: [], // unused forward
+    entrypoints: [],
+    start: [],
+    setup: [],
   };
 
   return [translatedConfig, runtimeConfig];
