@@ -12,9 +12,9 @@ import {
 } from '../../src/dbos-runtime/config';
 import { DBOSRuntimeConfig, defaultEntryPoint } from '../../src/dbos-runtime/runtime';
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error';
-import { DBOSExecutor, DBOSConfig } from '../../src/dbos-executor';
+import { DBOSExecutor, DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { WorkflowContextImpl } from '../../src/workflow';
-import { get, result } from 'lodash';
+import { get } from 'lodash';
 import { db_wizard } from '../../src/dbos-runtime/db_wizard';
 
 describe('dbos-config', () => {
@@ -286,7 +286,7 @@ describe('dbos-config', () => {
 
     test('getConfig returns the expected values', async () => {
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
+      const dbosExec = new DBOSExecutor(dbosConfig as DBOSConfigInternal);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(
         dbosExec,
         undefined,
@@ -321,7 +321,7 @@ describe('dbos-config', () => {
       jest.restoreAllMocks();
       jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
+      const dbosExec = new DBOSExecutor(dbosConfig as DBOSConfigInternal);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(
         dbosExec,
         undefined,
@@ -354,7 +354,7 @@ describe('dbos-config', () => {
       jest.restoreAllMocks();
       jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
+      const dbosExec = new DBOSExecutor(dbosConfig as DBOSConfigInternal);
       expect(process.env.FOOFOO).toBe('barbar');
       expect(process.env.RANDENV).toBe(''); // Empty string
       // We didn't init, so do some manual cleanup only
@@ -490,7 +490,7 @@ describe('dbos-config', () => {
 
     test('getConfig throws when it finds a value of different type than the default', async () => {
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
+      const dbosExec = new DBOSExecutor(dbosConfig as DBOSConfigInternal);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(
         dbosExec,
         undefined,

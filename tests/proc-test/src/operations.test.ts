@@ -6,6 +6,7 @@ import { workflow_status } from '@dbos-inc/dbos-sdk/schemas/system_db_schema';
 import { transaction_outputs } from '@dbos-inc/dbos-sdk/schemas/user_db_schema';
 import { TestingRuntimeImpl, createInternalTestRuntime } from '@dbos-inc/dbos-sdk/dist/src/testing/testing_runtime';
 import { DBOSConfig } from '@dbos-inc/dbos-sdk';
+import { DBOSConfigInternal } from '@dbos-inc/dbos-sdk/dist/src/dbos-executor';
 import { Client, ClientConfig } from 'pg';
 import { runWithTopContext } from '../../../dist/src/context';
 
@@ -34,7 +35,7 @@ describe('stored-proc-v2-test', () => {
 
   beforeAll(async () => {
     [config] = parseConfigFile();
-    const testRuntime = await createInternalTestRuntime([StoredProcTest], config);
+    const testRuntime = await createInternalTestRuntime([StoredProcTest], config as DBOSConfigInternal);
     try {
       await dropLocalProcs(testRuntime);
     } finally {
@@ -131,7 +132,7 @@ describe('stored-proc-test', () => {
 
   beforeAll(async () => {
     [config] = parseConfigFile();
-    testRuntime = await createInternalTestRuntime([StoredProcTest], config);
+    const testRuntime = await createInternalTestRuntime([StoredProcTest], config as DBOSConfigInternal);
     await dropLocalProcs(testRuntime);
   });
 

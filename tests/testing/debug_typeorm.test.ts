@@ -1,7 +1,7 @@
 import { TransactionContext, Transaction, OrmEntities } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfigInternal, DebugMode } from '../../src/dbos-executor';
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../../src/testing/testing_runtime';
 import { Column, Entity, EntityManager, PrimaryColumn } from 'typeorm';
 import { UserDatabaseName } from '../../src/user_database';
@@ -9,8 +9,8 @@ import { UserDatabaseName } from '../../src/user_database';
 type TestTransactionContext = TransactionContext<EntityManager>;
 
 describe('typeorm-debugger-test', () => {
-  let config: DBOSConfig;
-  let debugConfig: DBOSConfig;
+  let config: DBOSConfigInternal;
+  let debugConfig: DBOSConfigInternal;
   let testRuntime: TestingRuntime;
   let debugRuntime: TestingRuntime;
 

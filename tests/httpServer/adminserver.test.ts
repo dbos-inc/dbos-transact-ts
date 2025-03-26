@@ -1,5 +1,5 @@
 import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
-import { DBOSConfigInternal, DBOSExecutor } from '../../src/dbos-executor';
+import { DBOSConfig, DBOSConfigInternal, DBOSExecutor } from '../../src/dbos-executor';
 import { WorkflowQueue } from '../../src';
 import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { QueueMetadataResponse } from '../../src/httpServer/server';
@@ -9,7 +9,7 @@ import { Client } from 'pg';
 import { translatePublicDBOSconfig } from '../../src/dbos-runtime/config';
 
 describe('not-running-admin-server', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
   beforeEach(async () => {
     await DBOS.shutdown();
   });
