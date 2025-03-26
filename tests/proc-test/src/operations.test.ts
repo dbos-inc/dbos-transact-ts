@@ -5,7 +5,6 @@ import { v1 as uuidv1 } from 'uuid';
 import { workflow_status } from '@dbos-inc/dbos-sdk/schemas/system_db_schema';
 import { transaction_outputs } from '@dbos-inc/dbos-sdk/schemas/user_db_schema';
 import { DBOSConfig } from '@dbos-inc/dbos-sdk';
-import { DBOSConfigInternal } from '@dbos-inc/dbos-sdk/dist/src/dbos-executor';
 import { Client, ClientConfig } from 'pg';
 import { runWithTopContext } from '../../../dist/src/context';
 import { DebugMode } from '../../../src/dbos-executor';
