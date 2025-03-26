@@ -132,7 +132,7 @@ describe('stored-proc-test', () => {
 
   beforeAll(async () => {
     [config] = parseConfigFile();
-    const testRuntime = await createInternalTestRuntime([StoredProcTest], config as DBOSConfigInternal);
+    testRuntime = await createInternalTestRuntime([StoredProcTest], config as DBOSConfigInternal);
     await dropLocalProcs(testRuntime);
   });
 
@@ -211,7 +211,7 @@ describe('stored-proc-test', () => {
     expect(res.rowCount).toBeGreaterThan(0);
 
     const debugConfig = { ...config, debugMode: true };
-    const debugRuntime = await createInternalTestRuntime([StoredProcTest], debugConfig);
+    const debugRuntime = await createInternalTestRuntime([StoredProcTest], debugConfig as DBOSConfigInternal);
     try {
       expect(debugRuntime).toBeDefined();
       await expect(debugRuntime.invokeWorkflow(StoredProcTest, wfUUID).procGreetingWorkflow(user)).resolves.toEqual(

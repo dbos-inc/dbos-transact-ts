@@ -220,8 +220,8 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--request', 'Retrieve workflow request information')
   .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
-    const [dbosConfig, _] = parseConfigFile(options) as [DBOSConfigInternal, DBOSRuntimeConfig];
-    const output = await getWorkflow(dbosConfig, uuid, options.request);
+    const [dbosConfig] = parseConfigFile(options);
+    const output = await getWorkflow(dbosConfig as DBOSConfigInternal, uuid, options.request);
     console.log(JSON.stringify(output));
   });
 
@@ -231,8 +231,8 @@ workflowCommands
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
-    const [dbosConfig, _] = parseConfigFile(options) as [DBOSConfigInternal, DBOSRuntimeConfig];
-    const output = await listWorkflowSteps(dbosConfig, uuid);
+    const [dbosConfig] = parseConfigFile(options);
+    const output = await listWorkflowSteps(dbosConfig as DBOSConfigInternal, uuid);
     console.log(JSON.stringify(output));
   });
 
