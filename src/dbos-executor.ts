@@ -561,18 +561,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async destroy(waitForPendingWorkflows = true): Promise<void> {
+  async destroy() {
     try {
-      if (this.pendingWorkflowMap.size > 0 && waitForPendingWorkflows) {
+      if (this.pendingWorkflowMap.size > 0) {
         this.logger.info('Waiting for pending workflows to finish.');
         await Promise.allSettled(this.pendingWorkflowMap.values());
       }
       clearInterval(this.flushBufferID);
-      if (!this.isDebugging && !this.isFlushingBuffers && waitForPendingWorkflows) {
+      if (!this.isDebugging && !this.isFlushingBuffers) {
         // Don't flush the buffers if we're already flushing them in the background.
         await this.flushWorkflowBuffers();
       }
-      while (waitForPendingWorkflows && this.isFlushingBuffers) {
+      while (this.isFlushingBuffers) {
         this.logger.info('Waiting for result buffers to be exported.');
         await sleepms(1000);
       }
