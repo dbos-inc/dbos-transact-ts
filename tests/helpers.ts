@@ -1,4 +1,4 @@
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
@@ -116,4 +116,10 @@ export async function queueEntriesAreCleanedUp() {
     --maxTries;
   }
   return success;
+}
+
+export async function destroyExecutorGlobalInstance(waitForPendingWorkflows = false) {
+  await DBOSExecutor.globalInstance?.deactivateEventReceivers();
+  await DBOSExecutor.globalInstance?.destroy(waitForPendingWorkflows);
+  DBOSExecutor.globalInstance = undefined;
 }
