@@ -47,6 +47,9 @@ export class DBOSRuntime {
    */
   async initAndStart() {
     try {
+      if (!this.dbosConfig.poolConfig) {
+        throw new Error('DBOS pool configuration is not initialized');
+      }
       this.dbosConfig.poolConfig = await db_wizard(this.dbosConfig.poolConfig);
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       DBOS.globalLogger = this.dbosExec.logger;

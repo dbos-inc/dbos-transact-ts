@@ -14,7 +14,7 @@ import { DBOSRuntimeConfig, defaultEntryPoint } from '../../src/dbos-runtime/run
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error';
 import { DBOSExecutor, DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { WorkflowContextImpl } from '../../src/workflow';
-import { get } from 'lodash';
+import { get, result } from 'lodash';
 import { db_wizard } from '../../src/dbos-runtime/db_wizard';
 
 describe('dbos-config', () => {

@@ -31,7 +31,7 @@ describe('debugger-test', () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined);
     debugProxyConfig = generateDBOSTestConfig(undefined);
-    username = config.poolConfig.user || 'postgres';
+    username = config.poolConfig!.user || 'postgres';
     await setUpDBOSTestDb(config);
   });
 
@@ -43,10 +43,10 @@ describe('debugger-test', () => {
     });
     DebuggerTest.count = 0;
     systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
+      user: config.poolConfig!.user,
+      port: config.poolConfig!.port,
+      host: config.poolConfig!.host,
+      password: config.poolConfig!.password,
       database: config.system_database,
     });
     await systemDBClient.connect();

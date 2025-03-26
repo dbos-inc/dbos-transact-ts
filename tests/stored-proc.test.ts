@@ -22,9 +22,9 @@ describe('stored-proc-tests', () => {
 
     const [config] = parseConfigFile() as [DBOSConfigInternal, DBOSRuntimeConfig];
     await runSql({ ...config.poolConfig, database: 'postgres' }, async (client) => {
-      await client.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
+      await client.query(`DROP DATABASE IF EXISTS ${config.poolConfig!.database};`);
       await client.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
-      await client.query(`CREATE DATABASE ${config.poolConfig.database};`);
+      await client.query(`CREATE DATABASE ${config.poolConfig!.database};`);
     });
 
     execSync('npm install');

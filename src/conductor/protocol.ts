@@ -33,10 +33,18 @@ export class BaseResponse implements BaseMessage {
 export class ExecutorInfoResponse extends BaseResponse {
   executor_id: string;
   application_version: string;
-  constructor(request_id: string, executor_id: string, application_version: string, error_message?: string) {
+  hostname: string;
+  constructor(
+    request_id: string,
+    executor_id: string,
+    application_version: string,
+    hostname: string,
+    error_message?: string,
+  ) {
     super(MessageType.EXECUTOR_INFO, request_id, error_message);
     this.executor_id = executor_id;
     this.application_version = application_version;
+    this.hostname = hostname;
   }
 }
 
@@ -142,6 +150,7 @@ export class WorkflowsOutput {
   UpdatedAt?: string;
   QueueName?: string;
   ApplicationVersion?: string;
+  ExecutorID?: string;
 
   constructor(info: WorkflowInformation) {
     // Mark empty fields as undefined
@@ -162,6 +171,7 @@ export class WorkflowsOutput {
     this.UpdatedAt = info.updatedAt ? String(info.updatedAt) : undefined;
     this.QueueName = info.queueName ? info.queueName : undefined;
     this.ApplicationVersion = info.applicationVersion;
+    this.ExecutorID = info.executorId;
   }
 }
 
