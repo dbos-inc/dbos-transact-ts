@@ -200,7 +200,7 @@ export class DBOS {
   static appServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
 
-  static getDebugMode(): DebugMode {
+  private static getDebugModeFromEnv(): DebugMode {
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     const isDebugging = debugWorkflowId !== undefined;
     return isDebugging
@@ -218,7 +218,7 @@ export class DBOS {
 
   private static translateConfig() {
     if (DBOS.dbosConfig && !isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
-      const isDebugging = DBOS.getDebugMode() !== DebugMode.DISABLED;
+      const isDebugging = DBOS.getDebugModeFromEnv() !== DebugMode.DISABLED;
       [DBOS.dbosConfig, DBOS.runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
       if (process.env.DBOS__CLOUD === 'true') {
         [DBOS.dbosConfig, DBOS.runtimeConfig] = overwrite_config(DBOS.dbosConfig, DBOS.runtimeConfig);
@@ -237,7 +237,7 @@ export class DBOS {
     if (!DBOS.dbosConfig) {
       DBOS.dbosConfig = parseConfigFile()[0];
     }
-    this.translateConfig();
+    DBOS.translateConfig();
     return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig);
   }
 
@@ -260,7 +260,7 @@ export class DBOS {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
-    const debugMode = this.getDebugMode();
+    const debugMode = options?.debugMode ?? DBOS.getDebugModeFromEnv();
     const isDebugging = debugMode !== DebugMode.DISABLED;
 
     if (options?.conductorKey) {
@@ -288,7 +288,7 @@ export class DBOS {
     }
 
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, {
-      debugMode: options?.debugMode ?? debugMode,
+      debugMode,
     });
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
@@ -324,7 +324,7 @@ export class DBOS {
       await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
 
       DBOS.adminServer = adminApp.listen(DBOS.runtimeConfig.admin_port, () => {
-        this.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
+        DBOS.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
       });
     }
 
@@ -431,7 +431,7 @@ export class DBOS {
   }
 
   static async launchAppHTTPServer() {
-    const server = this.setUpHandlerCallback();
+    const server = DBOS.setUpHandlerCallback();
     if (DBOS.runtimeConfig) {
       // This will not listen if there's no decorated endpoint
       DBOS.appServer = await server.appListen(DBOS.runtimeConfig.port);
@@ -649,10 +649,10 @@ export class DBOS {
     await sleepms(durationMS);
   }
   static async sleepSeconds(durationSec: number): Promise<void> {
-    return this.sleepms(durationSec * 1000);
+    return DBOS.sleepms(durationSec * 1000);
   }
   static async sleep(durationMS: number): Promise<void> {
-    return this.sleepms(durationMS);
+    return DBOS.sleepms(durationMS);
   }
 
   static async withNextWorkflowID<R>(wfid: string, callback: () => Promise<R>): Promise<R> {
