@@ -30,27 +30,6 @@ describe('not-running-admin-server', () => {
 });
 
 describe('running-admin-server-tests', () => {
-  let config: DBOSConfig;
-  beforeEach(async () => {
-    await DBOS.shutdown();
-  });
-
-  test('test-admin-server-not-running', async () => {
-    config = generatePublicDBOSTestConfig({ runAdminServer: false });
-    DBOS.setConfig(config);
-    const [translatedConfig] = translatePublicDBOSconfig(config);
-    await setUpDBOSTestDb(translatedConfig);
-    await DBOS.launch();
-
-    await expect(async () => {
-      await fetch(`http://localhost:3001${HealthUrl}`, {
-        method: 'GET',
-      });
-    }).rejects.toThrow();
-  });
-});
-
-describe('running-admin-server-tests', () => {
   let config: DBOSConfigInternal;
   let systemDBClient: Client;
 
