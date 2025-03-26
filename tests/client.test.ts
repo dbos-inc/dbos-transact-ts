@@ -1,11 +1,8 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS, DBOSConfig, DBOSClient, WorkflowQueue } from '../src';
-import { DBOSExecutor } from '../src/dbos-executor';
-import { PostgresSystemDatabase } from '../src/system_database';
-import { GlobalLogger } from '../src/telemetry/logs';
 import { globalParams, sleepms } from '../src/utils';
 import { destroyExecutorGlobalInstance, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { Client } from 'pg';
+import { Client, PoolConfig } from 'pg';
 
 const _queue = new WorkflowQueue('testQueue');
 
@@ -45,9 +42,13 @@ type EnqueueTest = typeof ClientTest.enqueueTest;
 
 describe('DBOSClient', () => {
   let config: DBOSConfig;
+  let poolConfig: PoolConfig;
+  let system_database: string;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
+    poolConfig = config.poolConfig!;
+    system_database = config.system_database!;
     await setUpDBOSTestDb(config);
   });
 
@@ -61,7 +62,7 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-enqueue-appVer-notSet)', async () => {
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     const wfid = `client-enqueue-${Date.now()}`;
 
     try {
@@ -85,7 +86,7 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
-    const dbClient = new Client({ ...config.poolConfig, database: config.system_database });
+    const dbClient = new Client({ ...poolConfig, database: system_database });
     try {
       await dbClient.connect();
       const result = await dbClient.query<workflow_status>(
@@ -102,7 +103,7 @@ describe('DBOSClient', () => {
   }, 10000);
 
   test('DBOSClient-enqueue-appVer-set', async () => {
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     const wfid = `client-enqueue-${Date.now()}`;
 
     try {
@@ -127,7 +128,7 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
-    const dbClient = new Client({ ...config.poolConfig, database: config.system_database });
+    const dbClient = new Client({ ...poolConfig, database: system_database });
     try {
       await dbClient.connect();
       const result = await dbClient.query<workflow_status>(
@@ -144,7 +145,7 @@ describe('DBOSClient', () => {
   }, 10000);
 
   test('DBOSClient-enqueue-wrong-appVer', async () => {
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
 
     try {
       await client.init();
@@ -165,7 +166,7 @@ describe('DBOSClient', () => {
 
     await sleepms(10000);
 
-    const dbClient = new Client({ ...config.poolConfig, database: config.system_database });
+    const dbClient = new Client({ ...poolConfig, database: system_database });
     try {
       await dbClient.connect();
       const result = await dbClient.query<workflow_status>(
@@ -188,7 +189,7 @@ describe('DBOSClient', () => {
 
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     try {
       await client.send<string>(workflowID, message, topic);
     } finally {
@@ -206,7 +207,7 @@ describe('DBOSClient', () => {
 
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest();
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     try {
       await client.send<string>(workflowID, message);
     } finally {
@@ -229,8 +230,8 @@ describe('DBOSClient', () => {
     await destroyExecutorGlobalInstance();
     await DBOS.shutdown();
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
-    const dbClient = new Client({ ...config.poolConfig, database: config.system_database });
+    const client = new DBOSClient(poolConfig, system_database);
+    const dbClient = new Client({ ...poolConfig, database: system_database });
     try {
       await dbClient.connect();
       await client.send<string>(workflowID, message, topic, idempotencyKey);
@@ -268,7 +269,7 @@ describe('DBOSClient', () => {
     await destroyExecutorGlobalInstance();
     await DBOS.shutdown();
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     try {
       await client.send<string>(workflowID, message, topic, idempotencyKey);
       await client.send<string>(workflowID, message, topic, idempotencyKey);
@@ -276,7 +277,7 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
-    const dbClient = new Client({ ...config.poolConfig, database: config.system_database });
+    const dbClient = new Client({ ...poolConfig, database: system_database });
     try {
       await dbClient.connect();
       const res = await dbClient.query('SELECT * FROM dbos.notifications WHERE destination_uuid = $1', [workflowID]);
@@ -298,7 +299,7 @@ describe('DBOSClient', () => {
     const key = `event-key-${now}`;
     const value = `event-value-${now}`;
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
       const eventValue = await client.getEvent<string>(workflowID, key, 10);
@@ -317,7 +318,7 @@ describe('DBOSClient', () => {
     const key = `event-key-${now}`;
     const value = `event-value-${now}`;
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
       const result = await handle.getResult();
@@ -337,7 +338,7 @@ describe('DBOSClient', () => {
     const key = `event-key-${now}`;
     const value = `event-value-${now}`;
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
       let eventValue = await client.getEvent<string>(workflowID, key, 1);
@@ -358,7 +359,7 @@ describe('DBOSClient', () => {
     const key = `event-key-${now}`;
     const value = `event-value-${now}`;
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
       const result = await handle.getResult();
@@ -379,7 +380,7 @@ describe('DBOSClient', () => {
       age: 30,
     });
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     try {
       await client.init();
       const handle = client.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
@@ -400,7 +401,7 @@ describe('DBOSClient', () => {
     const result1 = await handle.getResult();
     expect(result1).toBe('42-test-{"first":"John","last":"Doe","age":30}');
 
-    const client = new DBOSClient(config.poolConfig, config.system_database);
+    const client = new DBOSClient(poolConfig, system_database);
     try {
       await client.init();
       const handle = client.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
