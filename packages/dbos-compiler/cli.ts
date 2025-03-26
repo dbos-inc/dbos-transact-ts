@@ -6,7 +6,6 @@ import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { generateCreate, generateDrop } from './generator.js';
 import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config.js';
-import { DBOSConfigInternal } from '@dbos-inc/dbos-sdk/dist/src/dbos-executor';
 import { Client, ClientConfig } from 'pg';
 import { type CompileResult, compile } from './compiler.js';
 
@@ -137,7 +136,7 @@ program
     if (tsconfigPath) {
       const compileResult = compile(tsconfigPath, options.suppressWarnings);
       if (compileResult) {
-        const [dbosConfig] = parseConfigFile(options) as [DBOSConfigInternal, unknown];
+        const [dbosConfig] = parseConfigFile(options);
         await deployToDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
       }
     }
@@ -156,7 +155,7 @@ program
     if (tsconfigPath) {
       const compileResult = compile(tsconfigPath, options.suppressWarnings);
       if (compileResult) {
-        const [dbosConfig] = parseConfigFile(options) as [DBOSConfigInternal, unknown];
+        const [dbosConfig] = parseConfigFile(options);
         await dropFromDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
       }
     }

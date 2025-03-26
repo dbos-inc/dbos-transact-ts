@@ -12,7 +12,6 @@ import {
 
 import { KafkaConfig, Kafka, KafkaConsume, logLevel, KafkaProduceStep, KafkaMessage, Partitioners } from './index';
 import { setUpDBOSTestDb } from '@dbos-inc/dbos-sdk/tests/helpers';
-import { DBOSConfigInternal } from '@dbos-inc/dbos-sdk/dist/src/dbos-executor';
 
 import { Knex } from 'knex';
 
@@ -79,10 +78,7 @@ describe('kafka-tests', () => {
     // Check if Kafka is available, skip the test if it's not
     if (process.env['KAFKA_BROKER']) {
       kafkaIsAvailable = true;
-      const [config] = parseConfigFile({ configfile: 'kafkajs-test-dbos-config.yaml' }) as [
-        DBOSConfigInternal,
-        unknown,
-      ];
+      const [config] = parseConfigFile({ configfile: 'kafkajs-test-dbos-config.yaml' });
       await setUpDBOSTestDb(config);
     } else {
       kafkaIsAvailable = false;

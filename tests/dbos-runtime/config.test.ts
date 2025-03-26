@@ -285,8 +285,8 @@ describe('dbos-config', () => {
     });
 
     test('getConfig returns the expected values', async () => {
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig as DBOSConfigInternal);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const dbosExec = new DBOSExecutor(dbosConfig);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(
         dbosExec,
         undefined,
@@ -320,8 +320,8 @@ describe('dbos-config', () => {
       `;
       jest.restoreAllMocks();
       jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig as DBOSConfigInternal);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const dbosExec = new DBOSExecutor(dbosConfig);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(
         dbosExec,
         undefined,
@@ -353,8 +353,8 @@ describe('dbos-config', () => {
       `;
       jest.restoreAllMocks();
       jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig as DBOSConfigInternal);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const dbosExec = new DBOSExecutor(dbosConfig);
       expect(process.env.FOOFOO).toBe('barbar');
       expect(process.env.RANDENV).toBe(''); // Empty string
       // We didn't init, so do some manual cleanup only
@@ -489,8 +489,8 @@ describe('dbos-config', () => {
     });
 
     test('getConfig throws when it finds a value of different type than the default', async () => {
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig as DBOSConfigInternal);
+      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const dbosExec = new DBOSExecutor(dbosConfig);
       const ctx: WorkflowContextImpl = new WorkflowContextImpl(
         dbosExec,
         undefined,
