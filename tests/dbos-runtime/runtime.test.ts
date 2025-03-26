@@ -62,13 +62,13 @@ async function waitForMessageTest(
 
 async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
-  config.poolConfig!.database = 'hello';
+  config.poolConfig.database = 'hello';
   await setUpDBOSTestDb(config);
   const pgSystemClient = new Client({
-    user: config.poolConfig!.user,
-    port: config.poolConfig!.port,
-    host: config.poolConfig!.host,
-    password: config.poolConfig!.password,
+    user: config.poolConfig.user,
+    port: config.poolConfig.port,
+    host: config.poolConfig.host,
+    password: config.poolConfig.password,
     database: 'postgres',
   });
   await pgSystemClient.connect();

@@ -9,7 +9,14 @@ import {
   DBOSContextImpl,
   getNextWFID,
 } from './context';
-import { DBOSConfig, isDeprecatedDBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
+import {
+  DBOSConfig,
+  DBOSConfigInternal,
+  isDeprecatedDBOSConfig,
+  DBOSExecutor,
+  DebugMode,
+  InternalWorkflowParams,
+} from './dbos-executor';
 import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
@@ -243,8 +250,9 @@ export class DBOS {
     if (!DBOS.dbosConfig) {
       DBOS.dbosConfig = parseConfigFile()[0];
     }
+
     DBOS.translateConfig();
-    return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig);
+    return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig as DBOSConfigInternal);
   }
 
   /** Only relevant for TypeORM, and for testing purposes only, not production */
@@ -278,14 +286,14 @@ export class DBOS {
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
       if (!isDebugging) {
-        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig!);
+        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
       }
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
     } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
       DBOS.translateConfig();
-      if (!isDebugging && DBOS.dbosConfig.poolConfig) {
-        DBOS.dbosConfig.poolConfig = await db_wizard(DBOS.dbosConfig.poolConfig);
+      if (!isDebugging) {
+        DBOS.dbosConfig.poolConfig = await db_wizard((DBOS.dbosConfig as DBOSConfigInternal).poolConfig);
       }
     }
 
@@ -293,7 +301,7 @@ export class DBOS {
       throw new DBOSError('DBOS configuration not set');
     }
 
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, {
+    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig as DBOSConfigInternal, {
       debugMode,
     });
 

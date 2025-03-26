@@ -1,10 +1,10 @@
-import { DBOSConfig, DBOSExecutor, DebugMode } from '../dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor, DebugMode } from '../dbos-executor';
 import { DBOSFailLoadOperationsError, DBOSInitializationError, DBOSNotRegisteredError } from '../error';
 import { GlobalLogger } from '../telemetry/logs';
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
 
 export async function debugWorkflow(
-  dbosConfig: DBOSConfig,
+  dbosConfig: DBOSConfigInternal,
   runtimeConfig: DBOSRuntimeConfig,
   workflowUUID: string,
   timeTravelMode: boolean,

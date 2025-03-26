@@ -2,7 +2,7 @@
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
 import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from './config';
 import { Command } from 'commander';
-import { DBOSConfig } from '../dbos-executor';
+import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
 import { migrate, rollbackMigration } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
@@ -72,7 +72,7 @@ program
       console.warn('\x1b[33m%s\x1b[0m', 'The --configfile option is deprecated. Please use --appDir instead.');
     }
     options.silent = true;
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
+    const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(options);
     // If no start commands are provided, start the DBOS runtime
     if (runtimeConfig.start.length === 0) {
       const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
@@ -105,7 +105,7 @@ program
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .option('--time-travel', 'enable time-travel debugging mode')
   .action(async (options: DBOSDebugOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile({
+    const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile({
       ...options,
       forceConsole: true,
     });
@@ -361,7 +361,7 @@ export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalL
   terminate(returnCode);
 }
 
-function getGlobalLogger(configFile: DBOSConfig): GlobalLogger {
+function getGlobalLogger(configFile: DBOSConfigInternal): GlobalLogger {
   if (configFile.telemetry?.OTLPExporter) {
     return new GlobalLogger(
       new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),

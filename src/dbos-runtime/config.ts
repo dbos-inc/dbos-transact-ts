@@ -1,6 +1,6 @@
 import { DBOSInitializationError } from '../error';
 import { DBOSJSON, globalParams, readFileSync } from '../utils';
-import { DBOSConfig } from '../dbos-executor';
+import { DBOSConfig, DBOSConfigInternal } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
 import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
@@ -238,7 +238,7 @@ export interface ParseOptions {
  * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
  * */
-export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRuntimeConfig] {
+export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfigInternal, DBOSRuntimeConfig] {
   if (cliOptions?.appDir) {
     process.chdir(cliOptions.appDir);
   }
@@ -295,7 +295,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   /* Build final DBOS configuration */
   /************************************/
   globalParams.appVersion = getAppVersion(cliOptions?.appVersion);
-  const dbosConfig: DBOSConfig = {
+  const dbosConfig: DBOSConfigInternal = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,
@@ -354,9 +354,12 @@ function isValidDBname(dbName: string): boolean {
  It assumes that the DBOSConfig was passed programmatically and thus does not need to consider CLI options.
 
  - Application Name: check there is no inconsistency between the provided name and the one in dbos-config.yaml, if any
- - Database configuration: Ignore provided poolConfig and reconstructs it from the database_url field and constructPoolConfig()
+ - Database configuration: Ignore provided poolConfig and reconstructs it from the databaseUrl field and constructPoolConfig()
 */
-export function translatePublicDBOSconfig(config: DBOSConfig, isDebugging?: boolean): [DBOSConfig, DBOSRuntimeConfig] {
+export function translatePublicDBOSconfig(
+  config: DBOSConfig,
+  isDebugging?: boolean,
+): [DBOSConfigInternal, DBOSRuntimeConfig] {
   // Check there is no discrepancy between provided name and dbos-config.yaml
   let appName = config.name;
   try {
@@ -383,8 +386,8 @@ export function translatePublicDBOSconfig(config: DBOSConfig, isDebugging?: bool
 
   // Resolve database configuration
   let dburlConfig: DBConfig = {};
-  if (config.database_url) {
-    dburlConfig = parseDbString(config.database_url);
+  if (config.databaseUrl) {
+    dburlConfig = parseDbString(config.databaseUrl);
   }
 
   const poolConfig = constructPoolConfig(
@@ -397,7 +400,7 @@ export function translatePublicDBOSconfig(config: DBOSConfig, isDebugging?: bool
     { silent: true },
   );
 
-  const translatedConfig: DBOSConfig = {
+  const translatedConfig: DBOSConfigInternal = {
     name: appName,
     poolConfig: poolConfig,
     userDbclient: config.userDbclient || UserDatabaseName.KNEX,

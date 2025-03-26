@@ -1,23 +1,23 @@
 import { DBOSInitializer, InitContext, DBOS } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfig, DBOSExecutor, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor, DebugMode } from '../../src/dbos-executor';
 import { Client } from 'pg';
 
 const testTableName = 'debugger_test_kv';
 
 describe('debugger-test', () => {
   let username: string;
-  let config: DBOSConfig;
-  let debugConfig: DBOSConfig;
-  let debugProxyConfig: DBOSConfig;
+  let config: DBOSConfigInternal;
+  let debugConfig: DBOSConfigInternal;
+  let debugProxyConfig: DBOSConfigInternal;
   let systemDBClient: Client;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined);
     debugProxyConfig = generateDBOSTestConfig(undefined);
-    username = config.poolConfig!.user || 'postgres';
+    username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
   });
 
@@ -27,10 +27,10 @@ describe('debugger-test', () => {
     await DBOS.launch();
     await DBOS.shutdown();
     systemDBClient = new Client({
-      user: config.poolConfig!.user,
-      port: config.poolConfig!.port,
-      host: config.poolConfig!.host,
-      password: config.poolConfig!.password,
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
       database: config.system_database,
     });
     await systemDBClient.connect();
