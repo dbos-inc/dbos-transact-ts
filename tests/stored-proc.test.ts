@@ -1,7 +1,6 @@
 import { execSync } from 'child_process';
-import { DBOSRuntimeConfig, parseConfigFile } from '../src';
+import { parseConfigFile } from '../src';
 import { Client, ClientConfig } from 'pg';
-import { DBOSConfigInternal } from '../src/dbos-executor';
 
 async function runSql(config: ClientConfig, func: (client: Client) => Promise<void>) {
   const client = new Client(config);
@@ -20,7 +19,7 @@ describe('stored-proc-tests', () => {
     cwd = process.cwd();
     process.chdir('tests/proc-test');
 
-    const [config] = parseConfigFile() as [DBOSConfigInternal, DBOSRuntimeConfig];
+    const [config] = parseConfigFile();
     await runSql({ ...config.poolConfig, database: 'postgres' }, async (client) => {
       await client.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
       await client.query(`DROP DATABASE IF EXISTS ${config.system_database};`);

@@ -238,7 +238,7 @@ export interface ParseOptions {
  * Parse `dbosConfigFilePath` and return DBOSConfig and DBOSRuntimeConfig
  * Considers DBOSCLIStartOptions if provided, which takes precedence over config file
  * */
-export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRuntimeConfig] {
+export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfigInternal, DBOSRuntimeConfig] {
   if (cliOptions?.appDir) {
     process.chdir(cliOptions.appDir);
   }
@@ -295,7 +295,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfig, DBOSRun
   /* Build final DBOS configuration */
   /************************************/
   globalParams.appVersion = getAppVersion(cliOptions?.appVersion);
-  const dbosConfig: DBOSConfig = {
+  const dbosConfig: DBOSConfigInternal = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || undefined,

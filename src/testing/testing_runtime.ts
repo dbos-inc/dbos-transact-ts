@@ -25,7 +25,6 @@ import { DBOSScheduler } from '../scheduler/scheduler';
 import { StoredProcedure } from '../procedure';
 import { wfQueueRunner, WorkflowQueue } from '../wfqueue';
 import { DBOS } from '../dbos';
-import { DBOSRuntimeConfig } from '../dbos-runtime/runtime';
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -35,7 +34,7 @@ export async function createTestingRuntime(
   configFilePath: string = dbosConfigFilePath,
   dropSysDB: boolean = true,
 ): Promise<TestingRuntime> {
-  const [dbosConfig] = parseConfigFile({ configfile: configFilePath }) as [DBOSConfigInternal, DBOSRuntimeConfig];
+  const [dbosConfig] = parseConfigFile({ configfile: configFilePath });
 
   if (dropSysDB) {
     // Drop system database. Testing runtime always uses Postgres for local testing.
@@ -149,7 +148,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * This should be the first function call before any subsequent calls.
    */
   async init(userClasses?: object[], testConfig?: DBOSConfigInternal, options: DBOSExecutorOptions = {}) {
-    const dbosConfig = testConfig ? [testConfig] : (parseConfigFile() as [DBOSConfigInternal, DBOSRuntimeConfig]);
+    const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
     DBOS.dbosConfig = dbosConfig[0];
     this.#dbosExec = new DBOSExecutor(dbosConfig[0], options);
     this.#applicationConfig = this.#dbosExec.config.application ?? {};

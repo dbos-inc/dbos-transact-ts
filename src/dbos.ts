@@ -286,7 +286,7 @@ export class DBOS {
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
       if (!isDebugging) {
-        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig!);
+        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
       }
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
