@@ -87,7 +87,7 @@ export class DBOSClient {
     return await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
   }
 
-  retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<T> {
+  retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
     return new RetrievedHandle(this.systemDatabase, workflowID);
   }
 }

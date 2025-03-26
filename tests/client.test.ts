@@ -32,6 +32,8 @@ class ClientTest {
   }
 }
 
+type EnqueueTest = typeof ClientTest.enqueueTest;
+
 describe('DBOSClient', () => {
   let config: DBOSConfig;
 
@@ -54,10 +56,8 @@ describe('DBOSClient', () => {
     const wfid = `client-enqueue-${Date.now()}`;
 
     try {
-      type InvokeTest = typeof ClientTest.enqueueTest;
-
       await client.init();
-      await client.enqueue<Parameters<InvokeTest>>(
+      await client.enqueue<Parameters<EnqueueTest>>(
         {
           workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
@@ -69,7 +69,7 @@ describe('DBOSClient', () => {
         { first: 'John', last: 'Doe', age: 30 },
       );
 
-      const handle = DBOS.retrieveWorkflow<Awaited<ReturnType<InvokeTest>>>(wfid);
+      const handle = DBOS.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {
@@ -97,10 +97,8 @@ describe('DBOSClient', () => {
     const wfid = `client-enqueue-${Date.now()}`;
 
     try {
-      type InvokeTest = typeof ClientTest.enqueueTest;
-
       await client.init();
-      await client.enqueue<Parameters<InvokeTest>>(
+      await client.enqueue<Parameters<EnqueueTest>>(
         {
           workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
@@ -113,7 +111,7 @@ describe('DBOSClient', () => {
         { first: 'John', last: 'Doe', age: 30 },
       );
 
-      const handle = DBOS.retrieveWorkflow<Awaited<ReturnType<InvokeTest>>>(wfid);
+      const handle = DBOS.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {
@@ -140,10 +138,8 @@ describe('DBOSClient', () => {
     const client = new DBOSClient(config.poolConfig, config.system_database);
 
     try {
-      type InvokeTest = typeof ClientTest.enqueueTest;
-
       await client.init();
-      await client.enqueue<Parameters<InvokeTest>>(
+      await client.enqueue<Parameters<EnqueueTest>>(
         {
           workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
@@ -303,7 +299,7 @@ describe('DBOSClient', () => {
     const client = new DBOSClient(config.poolConfig, config.system_database);
     try {
       await client.init();
-      const handle = client.retrieveWorkflow<string>(wfid);
+      const handle = client.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {
@@ -324,7 +320,7 @@ describe('DBOSClient', () => {
     const client = new DBOSClient(config.poolConfig, config.system_database);
     try {
       await client.init();
-      const handle = client.retrieveWorkflow<string>(wfid);
+      const handle = client.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {

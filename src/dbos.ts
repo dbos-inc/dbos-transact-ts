@@ -566,7 +566,7 @@ export class DBOS {
     return DBOS.executor.getWorkflowStatus(workflowID);
   }
 
-  static retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<T> {
+  static retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError(
