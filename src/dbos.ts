@@ -9,7 +9,7 @@ import {
   DBOSContextImpl,
   getNextWFID,
 } from './context';
-import { DBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
+import { DBOSConfig, isDeprecatedDBOSConfig, DBOSExecutor, DebugMode, InternalWorkflowParams } from './dbos-executor';
 import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
@@ -27,7 +27,7 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
 } from './error';
-import { parseConfigFile } from './dbos-runtime/config';
+import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
 import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
 import {
@@ -199,9 +199,30 @@ export class DBOS {
   static appServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
 
+  static getDebugMode(): DebugMode {
+    const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
+    const isDebugging = debugWorkflowId !== undefined;
+    return isDebugging
+      ? process.env.DBOS_DEBUG_TIME_TRAVEL === 'true'
+        ? DebugMode.TIME_TRAVEL
+        : DebugMode.ENABLED
+      : DebugMode.DISABLED;
+  }
+
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
     DBOS.runtimeConfig = runtimeConfig;
+    DBOS.translateConfig();
+  }
+
+  private static translateConfig() {
+    if (DBOS.dbosConfig && !isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
+      const isDebugging = DBOS.getDebugMode() !== DebugMode.DISABLED;
+      [DBOS.dbosConfig, DBOS.runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
+      if (process.env.DBOS__CLOUD === 'true') {
+        [DBOS.dbosConfig, DBOS.runtimeConfig] = overwrite_config(DBOS.dbosConfig, DBOS.runtimeConfig);
+      }
+    }
   }
 
   // For unit testing purposes only
@@ -212,7 +233,11 @@ export class DBOS {
   }
 
   static async dropSystemDB(): Promise<void> {
-    return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig ?? parseConfigFile()[0]);
+    if (!DBOS.dbosConfig) {
+      DBOS.dbosConfig = parseConfigFile()[0];
+    }
+    this.translateConfig();
+    return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig);
   }
 
   /** Only relevant for TypeORM, and for testing purposes only, not production */
@@ -234,13 +259,8 @@ export class DBOS {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
-    const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
-    const isDebugging = debugWorkflowId !== undefined;
-    const debugMode = isDebugging
-      ? process.env.DBOS_DEBUG_TIME_TRAVEL === 'true'
-        ? DebugMode.TIME_TRAVEL
-        : DebugMode.ENABLED
-      : DebugMode.DISABLED;
+    const debugMode = this.getDebugMode();
+    const isDebugging = debugMode !== DebugMode.DISABLED;
 
     if (options?.conductorKey) {
       // Use a generated executor ID.
@@ -251,10 +271,19 @@ export class DBOS {
     if (!DBOS.dbosConfig) {
       const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
       if (!isDebugging) {
-        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
+        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig!);
       }
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
+    } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
+      DBOS.translateConfig();
+      if (!isDebugging && DBOS.dbosConfig.poolConfig) {
+        DBOS.dbosConfig.poolConfig = await db_wizard(DBOS.dbosConfig.poolConfig);
+      }
+    }
+
+    if (!DBOS.dbosConfig) {
+      throw new DBOSError('DBOS configuration not set');
     }
 
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig, { debugMode });
@@ -262,6 +291,7 @@ export class DBOS {
     DBOS.globalLogger = executor.logger;
     await executor.init();
 
+    const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     if (debugWorkflowId) {
       DBOS.logger.info(`Debugging workflow "${debugWorkflowId}"`);
       const handle = await executor.executeWorkflowUUID(debugWorkflowId);
@@ -285,7 +315,7 @@ export class DBOS {
 
     // Start the DBOS admin server
     const logger = DBOS.logger;
-    if (DBOS.runtimeConfig) {
+    if (DBOS.runtimeConfig && DBOS.runtimeConfig.runAdminServer) {
       const adminApp = DBOSHttpServer.setupAdminApp(executor);
       await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
 

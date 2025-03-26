@@ -31,7 +31,7 @@ export async function debugWorkflow(
       for (const err of e.errors) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         if (err.code && err.code === 'ECONNREFUSED') {
-          console.error('\x1b[31m%s\x1b[0m', `Is database running at ${dbosConfig.poolConfig.host} ?`);
+          console.error('\x1b[31m%s\x1b[0m', `Is database running at ${dbosConfig.poolConfig?.host} ?`);
           break;
         }
       }
