@@ -1,5 +1,7 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS, DBOSConfig, DBOSClient, WorkflowQueue } from '../src';
+import { PostgresSystemDatabase } from '../src/system_database';
+import { GlobalLogger } from '../src/telemetry/logs';
 import { globalParams, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { Client } from 'pg';
@@ -18,6 +20,12 @@ class ClientTest {
 
   @DBOS.workflow()
   static async sendTest(topic?: string) {
+    return await DBOS.recv<string>(topic, 60);
+  }
+
+  @DBOS.workflow()
+  static async sendTestCrash(topic?: string) {
+    await DBOS.sleepSeconds(5);
     return await DBOS.recv<string>(topic, 60);
   }
 
@@ -200,6 +208,52 @@ describe('DBOSClient', () => {
     const client = new DBOSClient(config.poolConfig, config.system_database);
     try {
       await client.send<string>(workflowID, message);
+    } finally {
+      await client.destroy();
+    }
+
+    const result = await handle.getResult();
+    expect(result).toBe(message);
+  }, 10000);
+
+  test('DBOSClient-send-idempotent', async () => {
+    const now = Date.now();
+    const workflowID = `client-send-${now}`;
+    const topic = `test-topic-${now}`;
+    const message = `Hello, DBOS! (${now})`;
+    const idempotencyKey = `idempotency-key-${now}`;
+
+    const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
+
+    // simulate previous send operation that failed between initWorkflowStatus and send
+    const logger = new GlobalLogger();
+    const systemDatabase = new PostgresSystemDatabase(config.poolConfig, config.system_database, logger);
+    try {
+      const internalStatus = {
+        workflowUUID: `${workflowID}-${idempotencyKey}`,
+        status: 'SUCCESS',
+        workflowName: 'temp_workflow-send-client',
+        workflowClassName: '',
+        workflowConfigName: '',
+        authenticatedUser: '',
+        output: undefined,
+        error: '',
+        assumedRole: '',
+        authenticatedRoles: [],
+        request: {},
+        executorId: '',
+        applicationID: '',
+        createdAt: Date.now(),
+        maxRetries: 50,
+      };
+      await systemDatabase.initWorkflowStatus(internalStatus, [workflowID, message, topic]);
+    } finally {
+      await systemDatabase.destroy();
+    }
+
+    const client = new DBOSClient(config.poolConfig, config.system_database);
+    try {
+      await client.send<string>(workflowID, message, topic, idempotencyKey);
     } finally {
       await client.destroy();
     }

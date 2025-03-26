@@ -14,9 +14,8 @@ interface EnqueueOptions {
 }
 
 export class DBOSClient {
-  readonly logger: Logger;
-
-  readonly systemDatabase: SystemDatabase;
+  private readonly logger: Logger;
+  private readonly systemDatabase: SystemDatabase;
 
   constructor(poolConfig: PoolConfig, systemDatabase: string) {
     this.logger = new Logger();
