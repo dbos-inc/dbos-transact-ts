@@ -42,7 +42,7 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigI
 export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
   return {
     name: 'dbostest', // Passing a name is kind of required because otherwise, we'll take in the name of the framework package.json, which is not a valid DB name
-    database_url: `postgres://postgres:${process.env.PGPASSWORD}@localhost:5432/dbostest`,
+    databaseUrl: `postgres://postgres:${process.env.PGPASSWORD}@localhost:5432/dbostest`,
     userDbclient: UserDatabaseName.PGNODE,
     ...kwargs,
   };
@@ -59,16 +59,16 @@ export async function setUpDBOSTestDb(cfg: DBOSConfig) {
     config = cfg as DBOSConfigInternal;
   }
   const pgSystemClient = new Client({
-    user: config.poolConfig!.user,
-    port: config.poolConfig!.port,
-    host: config.poolConfig!.host,
-    password: config.poolConfig!.password,
+    user: config.poolConfig.user,
+    port: config.poolConfig.port,
+    host: config.poolConfig.host,
+    password: config.poolConfig.password,
     database: 'postgres',
   });
   try {
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig!.database};`);
-    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig!.database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
+    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
     await pgSystemClient.end();
   } catch (e) {

@@ -354,7 +354,7 @@ function isValidDBname(dbName: string): boolean {
  It assumes that the DBOSConfig was passed programmatically and thus does not need to consider CLI options.
 
  - Application Name: check there is no inconsistency between the provided name and the one in dbos-config.yaml, if any
- - Database configuration: Ignore provided poolConfig and reconstructs it from the database_url field and constructPoolConfig()
+ - Database configuration: Ignore provided poolConfig and reconstructs it from the databaseUrl field and constructPoolConfig()
 */
 export function translatePublicDBOSconfig(
   config: DBOSConfig,
@@ -386,8 +386,8 @@ export function translatePublicDBOSconfig(
 
   // Resolve database configuration
   let dburlConfig: DBConfig = {};
-  if (config.database_url) {
-    dburlConfig = parseDbString(config.database_url);
+  if (config.databaseUrl) {
+    dburlConfig = parseDbString(config.databaseUrl);
   }
 
   const poolConfig = constructPoolConfig(

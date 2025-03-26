@@ -577,7 +577,7 @@ describe('dbos-config', () => {
       const dbosConfig = {
         // Public fields
         name: 'dbostest',
-        database_url: 'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
+        databaseUrl: 'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
         userDbclient: UserDatabaseName.PRISMA,
         sysDbName: 'systemdbname',
         logLevel: 'DEBUG',

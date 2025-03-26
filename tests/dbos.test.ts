@@ -15,7 +15,7 @@ describe('dbos-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    username = config.poolConfig!.user || 'postgres';
+    username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
@@ -37,10 +37,10 @@ describe('dbos-tests', () => {
 
   test('simple-workflow-attempts-counter', async () => {
     const systemDBClient = new Client({
-      user: config.poolConfig!.user,
-      port: config.poolConfig!.port,
-      host: config.poolConfig!.host,
-      password: config.poolConfig!.password,
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
       database: config.system_database,
     });
     try {

@@ -40,11 +40,11 @@ export async function createTestingRuntime(
   if (dropSysDB) {
     // Drop system database. Testing runtime always uses Postgres for local testing.
     const pgSystemClient = new Client({
-      user: dbosConfig.poolConfig!.user,
-      port: dbosConfig.poolConfig!.port,
-      host: dbosConfig.poolConfig!.host,
-      password: dbosConfig.poolConfig!.password,
-      database: dbosConfig.poolConfig!.database,
+      user: dbosConfig.poolConfig.user,
+      port: dbosConfig.poolConfig.port,
+      host: dbosConfig.poolConfig.host,
+      password: dbosConfig.poolConfig.password,
+      database: dbosConfig.poolConfig.database,
     });
     await pgSystemClient.connect();
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);

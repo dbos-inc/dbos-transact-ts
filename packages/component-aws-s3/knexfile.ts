@@ -7,11 +7,11 @@ const [dbosConfig] = parseConfigFile() as [DBOSConfigInternal, unknown];
 const config: Knex.Config = {
   client: 'pg',
   connection: {
-    host: dbosConfig.poolConfig!.host,
-    user: dbosConfig.poolConfig!.user,
-    password: dbosConfig.poolConfig!.password,
-    database: dbosConfig.poolConfig!.database,
-    ssl: dbosConfig.poolConfig!.ssl,
+    host: dbosConfig.poolConfig.host,
+    user: dbosConfig.poolConfig.user,
+    password: dbosConfig.poolConfig.password,
+    database: dbosConfig.poolConfig.database,
+    ssl: dbosConfig.poolConfig.ssl,
   },
   migrations: {
     directory: './migrations',
