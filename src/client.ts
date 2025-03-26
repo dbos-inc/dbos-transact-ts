@@ -8,7 +8,7 @@ interface EnqueueOptions {
   queueName: string;
   workflowName: string;
   workflowClassName: string;
-  workflowUUID?: string;
+  workflowID?: string;
   maxRetries?: number;
   appVersion?: string;
 }
@@ -32,7 +32,7 @@ export class DBOSClient {
 
   async enqueue<T extends unknown[]>(options: EnqueueOptions, ...args: T): Promise<void> {
     const { workflowName, workflowClassName, queueName, appVersion } = options;
-    const workflowUUID = options.workflowUUID ?? uuidv4();
+    const workflowUUID = options.workflowID ?? uuidv4();
     const maxRetries = options.maxRetries ?? 50;
 
     const internalStatus: WorkflowStatusInternal = {
