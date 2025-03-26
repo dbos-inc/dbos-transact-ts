@@ -78,7 +78,7 @@ export interface SystemDatabase {
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
 
-  enqueueWorkflow(workflowId: string, queue: string | WorkflowQueue): Promise<void>;
+  enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
   clearQueueAssignment(workflowId: string): Promise<boolean>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
@@ -1460,8 +1460,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { workflows };
   }
 
-  async enqueueWorkflow(workflowId: string, queue: string | WorkflowQueue): Promise<void> {
-    const queueName = typeof queue === 'string' ? queue : queue.name;
+  async enqueueWorkflow(workflowId: string, queueName: string): Promise<void> {
     await this.pool.query<workflow_queue>(
       `
       INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
