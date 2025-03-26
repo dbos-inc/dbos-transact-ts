@@ -1,8 +1,9 @@
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor, isDeprecatedDBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
+import { translatePublicDBOSconfig } from '../src/dbos-runtime/config';
 
 /* DB management helpers */
 export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
@@ -38,18 +39,34 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
   return dbosTestConfig;
 }
 
-export async function setUpDBOSTestDb(config: DBOSConfig) {
+export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
+  return {
+    name: 'dbostest', // Passing a name is kind of required because otherwise, we'll take in the name of the framework package.json, which is not a valid DB name
+    database_url: `postgres://postgres:${process.env.PGPASSWORD}@localhost:5432/dbostest`,
+    userDbclient: UserDatabaseName.PGNODE,
+    ...kwargs,
+  };
+}
+
+export async function setUpDBOSTestDb(cfg: DBOSConfig) {
+  let config = cfg;
+  if (!isDeprecatedDBOSConfig(cfg)) {
+    if (!cfg.name) {
+      cfg.name = 'dbostest';
+    }
+    [config] = translatePublicDBOSconfig(cfg);
+  }
   const pgSystemClient = new Client({
-    user: config.poolConfig.user,
-    port: config.poolConfig.port,
-    host: config.poolConfig.host,
-    password: config.poolConfig.password,
+    user: config.poolConfig!.user,
+    port: config.poolConfig!.port,
+    host: config.poolConfig!.host,
+    password: config.poolConfig!.password,
     database: 'postgres',
   });
   try {
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
-    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig!.database};`);
+    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig!.database};`);
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
     await pgSystemClient.end();
   } catch (e) {

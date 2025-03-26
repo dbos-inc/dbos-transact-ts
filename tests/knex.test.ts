@@ -1,13 +1,14 @@
 import request from 'supertest';
 
 import { DBOS, Authentication, MiddlewareContext } from '../src';
-import { DBOSNotAuthorizedError } from '../src/error';
+import { DBOSInvalidWorkflowTransitionError, DBOSNotAuthorizedError } from '../src/error';
 import { DBOSConfig } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import { Knex } from 'knex';
 import { DatabaseError } from 'pg';
+import { EntityManager } from 'typeorm';
 
 const testTableName = 'dbos_test_kv';
 
@@ -43,6 +44,11 @@ class TestClass {
     const result = await DBOS.knexClient<TestKvTable>(testTableName).insert({ id: key, value: value }).returning('id');
     return result[0].id!;
   }
+
+  @DBOS.transaction()
+  static async nope1Txn() {
+    await (DBOS.typeORMClient as EntityManager).query('Select * from t');
+  }
 }
 
 describe('knex-tests', () => {
@@ -69,6 +75,8 @@ describe('knex-tests', () => {
     await expect(TestClass.testInsert('test-one')).resolves.toBe(1);
     await expect(TestClass.testSelect(1)).resolves.toBe('test-one');
     await expect(TestClass.testWf('test-two')).resolves.toBe('test-two');
+
+    await expect(TestClass.nope1Txn()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
   });
 
   test('knex-return-void', async () => {

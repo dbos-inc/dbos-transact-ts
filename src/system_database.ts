@@ -261,11 +261,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
   static async dropSystemDB(dbosConfig: DBOSConfig) {
     // Drop system database, for testing.
     const pgSystemClient = new Client({
-      user: dbosConfig.poolConfig.user,
-      port: dbosConfig.poolConfig.port,
-      host: dbosConfig.poolConfig.host,
-      password: dbosConfig.poolConfig.password,
-      database: dbosConfig.poolConfig.database,
+      user: dbosConfig.poolConfig!.user,
+      port: dbosConfig.poolConfig!.port,
+      host: dbosConfig.poolConfig!.host,
+      password: dbosConfig.poolConfig!.password,
+      database: dbosConfig.poolConfig!.database,
     });
     await pgSystemClient.connect();
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
