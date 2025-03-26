@@ -6,7 +6,7 @@ import {
   Workflow,
   WorkflowContext,
   WorkflowQueue,
-  createTestingRuntime,
+  createTestingRuntime, // This test intentionally tests v1 and v2
   parseConfigFile,
 } from '@dbos-inc/dbos-sdk';
 
