@@ -8,7 +8,6 @@ import { promisify } from 'util';
 import { password } from '@inquirer/prompts';
 import { exec } from 'child_process';
 import { DatabaseConnection, saveDatabaseConnection } from './db_connection';
-import { dbosConfigFilePath, loadConfigFile } from './config';
 
 export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
   const logger = getLogger();
@@ -38,17 +37,8 @@ export async function db_wizard(poolConfig: PoolConfig): Promise<PoolConfig> {
     throw new DBOSInitializationError(`Could not connect to Postgres: password authentication failed: ${errorStr}`);
   }
 
-  // Read the config file and check if the database hostname/port/username are set. If so, skip the wizard.
-  const localConfig = loadConfigFile(dbosConfigFilePath);
-
-  if (
-    localConfig.database.hostname ||
-    localConfig.database.port ||
-    localConfig.database.username ||
-    poolConfig.host !== 'localhost' ||
-    poolConfig.port !== 5432 ||
-    poolConfig.user !== 'postgres'
-  ) {
+  // If the provided poolConfig database hostname/port/username are set to defaults, skip the wizard.
+  if (poolConfig.host !== 'localhost' || poolConfig.port !== 5432 || poolConfig.user !== 'postgres') {
     throw new DBOSInitializationError(`Could not connect to the database. Exception: ${errorStr}`);
   }
 
