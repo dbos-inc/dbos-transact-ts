@@ -1,5 +1,6 @@
 import { createLogger } from 'winston';
-import { DBOSConfig, GetWorkflowsInput, StatusString } from '..';
+import { GetWorkflowsInput, StatusString } from '..';
+import { DBOSConfigInternal } from '../dbos-executor';
 import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
 import { GetQueuedWorkflowsInput } from '../workflow';
@@ -7,13 +8,13 @@ import { HTTPRequest } from '../context';
 import axios from 'axios';
 
 export async function listWorkflows(
-  config: DBOSConfig,
+  config: DBOSConfigInternal,
   input: GetWorkflowsInput,
   getRequest: boolean,
 ): Promise<WorkflowInformation[]> {
   const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig!,
-    config.system_database!,
+    config.poolConfig,
+    config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
 
@@ -26,13 +27,13 @@ export async function listWorkflows(
 }
 
 export async function listQueuedWorkflows(
-  config: DBOSConfig,
+  config: DBOSConfigInternal,
   input: GetQueuedWorkflowsInput,
   getRequest: boolean,
 ): Promise<WorkflowInformation[]> {
   const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig!,
-    config.system_database!,
+    config.poolConfig,
+    config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
 
@@ -44,10 +45,10 @@ export async function listQueuedWorkflows(
   return workflowInfos;
 }
 
-export async function listWorkflowSteps(config: DBOSConfig, workflowUUID: string) {
+export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID: string) {
   const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig!,
-    config.system_database!,
+    config.poolConfig,
+    config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
   const workflowSteps = await systemDatabase.getWorkflowSteps(workflowUUID);
@@ -91,10 +92,10 @@ export async function getWorkflowInfo(
   return info;
 }
 
-export async function getWorkflow(config: DBOSConfig, workflowUUID: string, getRequest: boolean) {
+export async function getWorkflow(config: DBOSConfigInternal, workflowUUID: string, getRequest: boolean) {
   const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig!,
-    config.system_database!,
+    config.poolConfig,
+    config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
 

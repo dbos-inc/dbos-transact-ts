@@ -1,4 +1,4 @@
-import { DBOSConfig, isDeprecatedDBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSConfigInternal, isDeprecatedDBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
@@ -6,7 +6,7 @@ import { sleepms } from '../src/utils';
 import { translatePublicDBOSconfig } from '../src/dbos-runtime/config';
 
 /* DB management helpers */
-export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
+export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigInternal {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
@@ -14,7 +14,7 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
 
   const silenceLogs: boolean = process.env.SILENCE_LOGS === 'true' ? true : false;
 
-  const dbosTestConfig: DBOSConfig = {
+  const dbosTestConfig: DBOSConfigInternal = {
     poolConfig: {
       host: 'localhost',
       port: 5432,
@@ -49,24 +49,26 @@ export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
 }
 
 export async function setUpDBOSTestDb(cfg: DBOSConfig) {
-  let config = cfg;
+  let config: DBOSConfigInternal;
   if (!isDeprecatedDBOSConfig(cfg)) {
     if (!cfg.name) {
       cfg.name = 'dbostest';
     }
     [config] = translatePublicDBOSconfig(cfg);
+  } else {
+    config = cfg as DBOSConfigInternal;
   }
   const pgSystemClient = new Client({
-    user: config.poolConfig!.user,
-    port: config.poolConfig!.port,
-    host: config.poolConfig!.host,
-    password: config.poolConfig!.password,
+    user: config.poolConfig.user,
+    port: config.poolConfig.port,
+    host: config.poolConfig.host,
+    password: config.poolConfig.password,
     database: 'postgres',
   });
   try {
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig!.database};`);
-    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig!.database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
+    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
     await pgSystemClient.end();
   } catch (e) {

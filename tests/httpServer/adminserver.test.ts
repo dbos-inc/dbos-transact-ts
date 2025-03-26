@@ -1,5 +1,5 @@
 import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
-import { DBOSConfig, DBOSExecutor } from '../../src/dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor } from '../../src/dbos-executor';
 import { WorkflowQueue } from '../../src';
 import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { QueueMetadataResponse } from '../../src/httpServer/server';
@@ -9,7 +9,7 @@ import { Client } from 'pg';
 import { translatePublicDBOSconfig } from '../../src/dbos-runtime/config';
 
 describe('not-running-admin-server', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
   beforeEach(async () => {
     await DBOS.shutdown();
   });
@@ -30,7 +30,7 @@ describe('not-running-admin-server', () => {
 });
 
 describe('running-admin-server-tests', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
   let systemDBClient: Client;
 
   beforeAll(async () => {
@@ -54,10 +54,10 @@ describe('running-admin-server-tests', () => {
 
   beforeEach(async () => {
     systemDBClient = new Client({
-      user: config.poolConfig!.user,
-      port: config.poolConfig!.port,
-      host: config.poolConfig!.host,
-      password: config.poolConfig!.password,
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
       database: config.system_database,
     });
     await systemDBClient.connect();

@@ -2,7 +2,7 @@
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
 import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from './config';
 import { Command } from 'commander';
-import { DBOSConfig } from '../dbos-executor';
+import { DBOSConfig, DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
 import { migrate, rollbackMigration } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
@@ -72,7 +72,7 @@ program
       console.warn('\x1b[33m%s\x1b[0m', 'The --configfile option is deprecated. Please use --appDir instead.');
     }
     options.silent = true;
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(options);
+    const [dbosConfig, runtimeConfig] = parseConfigFile(options) as [DBOSConfigInternal, DBOSRuntimeConfig];
     // If no start commands are provided, start the DBOS runtime
     if (runtimeConfig.start.length === 0) {
       const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
@@ -105,10 +105,10 @@ program
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .option('--time-travel', 'enable time-travel debugging mode')
   .action(async (options: DBOSDebugOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile({
+    const [dbosConfig, runtimeConfig] = parseConfigFile({
       ...options,
       forceConsole: true,
-    });
+    }) as [DBOSConfigInternal, DBOSRuntimeConfig];
     await debugWorkflow(dbosConfig, runtimeConfig, options.uuid, options.timeTravel ?? false);
   });
 
@@ -208,7 +208,7 @@ workflowCommands
         status: options.status as (typeof StatusString)[keyof typeof StatusString],
         applicationVersion: options.applicationVersion,
       };
-      const output = await listWorkflows(dbosConfig, input, options.request);
+      const output = await listWorkflows(dbosConfig as DBOSConfigInternal, input, options.request);
       console.log(JSON.stringify(output));
     },
   );
@@ -220,7 +220,7 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--request', 'Retrieve workflow request information')
   .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
-    const [dbosConfig, _] = parseConfigFile(options);
+    const [dbosConfig, _] = parseConfigFile(options) as [DBOSConfigInternal, DBOSRuntimeConfig];
     const output = await getWorkflow(dbosConfig, uuid, options.request);
     console.log(JSON.stringify(output));
   });
@@ -231,7 +231,7 @@ workflowCommands
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
-    const [dbosConfig, _] = parseConfigFile(options);
+    const [dbosConfig, _] = parseConfigFile(options) as [DBOSConfigInternal, DBOSRuntimeConfig];
     const output = await listWorkflowSteps(dbosConfig, uuid);
     console.log(JSON.stringify(output));
   });
@@ -313,7 +313,7 @@ queueCommands
         workflowName: options.name,
         queueName: options.queue,
       };
-      const output = await listQueuedWorkflows(dbosConfig, input, options.request);
+      const output = await listQueuedWorkflows(dbosConfig as DBOSConfigInternal, input, options.request);
       console.log(JSON.stringify(output));
     },
   );

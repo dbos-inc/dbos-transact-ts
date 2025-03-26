@@ -1,5 +1,5 @@
 import { DBOS } from '../src';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 
@@ -7,11 +7,11 @@ const testTableName = 'dbos_test_kv';
 
 describe('oaoo-tests', () => {
   let username: string;
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    username = config.poolConfig?.user || 'postgres';
+    username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });

@@ -13,7 +13,7 @@ import {
   SyncHandlerWfFuncsInst,
 } from '../httpServer/handler';
 import { DBOSHttpServer } from '../httpServer/server';
-import { DBOSExecutor, DBOSConfig, DBOSExecutorOptions } from '../dbos-executor';
+import { DBOSExecutor, DBOSConfigInternal, DBOSExecutorOptions } from '../dbos-executor';
 import { dbosConfigFilePath, parseConfigFile } from '../dbos-runtime/config';
 import { Transaction } from '../transaction';
 import { GetWorkflowsInput, GetWorkflowsOutput, Workflow, WorkflowHandle, WorkflowParams } from '../workflow';
@@ -25,6 +25,7 @@ import { DBOSScheduler } from '../scheduler/scheduler';
 import { StoredProcedure } from '../procedure';
 import { wfQueueRunner, WorkflowQueue } from '../wfqueue';
 import { DBOS } from '../dbos';
+import { DBOSRuntimeConfig } from '../dbos-runtime/runtime';
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
@@ -34,16 +35,16 @@ export async function createTestingRuntime(
   configFilePath: string = dbosConfigFilePath,
   dropSysDB: boolean = true,
 ): Promise<TestingRuntime> {
-  const [dbosConfig] = parseConfigFile({ configfile: configFilePath });
+  const [dbosConfig] = parseConfigFile({ configfile: configFilePath }) as [DBOSConfigInternal, DBOSRuntimeConfig];
 
   if (dropSysDB) {
     // Drop system database. Testing runtime always uses Postgres for local testing.
     const pgSystemClient = new Client({
-      user: dbosConfig.poolConfig!.user,
-      port: dbosConfig.poolConfig!.port,
-      host: dbosConfig.poolConfig!.host,
-      password: dbosConfig.poolConfig!.password,
-      database: dbosConfig.poolConfig!.database,
+      user: dbosConfig.poolConfig.user,
+      port: dbosConfig.poolConfig.port,
+      host: dbosConfig.poolConfig.host,
+      password: dbosConfig.poolConfig.password,
+      database: dbosConfig.poolConfig.database,
     });
     await pgSystemClient.connect();
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
@@ -124,7 +125,7 @@ export interface TestingRuntime {
  */
 export async function createInternalTestRuntime(
   userClasses: object[] | undefined,
-  testConfig: DBOSConfig,
+  testConfig: DBOSConfigInternal,
   options: DBOSExecutorOptions = {},
 ): Promise<TestingRuntime> {
   const otr = new TestingRuntimeImpl();
@@ -147,8 +148,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * Initialize the testing runtime by loading user functions specified in classes and using the specified config.
    * This should be the first function call before any subsequent calls.
    */
-  async init(userClasses?: object[], testConfig?: DBOSConfig, options: DBOSExecutorOptions = {}) {
-    const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
+  async init(userClasses?: object[], testConfig?: DBOSConfigInternal, options: DBOSExecutorOptions = {}) {
+    const dbosConfig = testConfig ? [testConfig] : (parseConfigFile() as [DBOSConfigInternal, DBOSRuntimeConfig]);
     DBOS.dbosConfig = dbosConfig[0];
     this.#dbosExec = new DBOSExecutor(dbosConfig[0], options);
     this.#applicationConfig = this.#dbosExec.config.application ?? {};

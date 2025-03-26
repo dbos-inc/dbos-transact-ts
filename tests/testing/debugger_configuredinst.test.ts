@@ -10,7 +10,7 @@ import {
 } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfigInternal, DebugMode } from '../../src/dbos-executor';
 import { PoolClient } from 'pg';
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../../src/testing/testing_runtime';
 
@@ -59,9 +59,9 @@ class DebuggerCCTest extends ConfiguredInstance {
 const configR = new DebuggerCCTest('configA');
 
 describe('debugger-test', () => {
-  let config: DBOSConfig;
-  let debugConfig: DBOSConfig;
-  let debugProxyConfig: DBOSConfig;
+  let config: DBOSConfigInternal;
+  let debugConfig: DBOSConfigInternal;
+  let debugProxyConfig: DBOSConfigInternal;
   let testRuntime: TestingRuntime;
   let debugRuntime: TestingRuntime;
   let debugProxyRuntime: TestingRuntime;

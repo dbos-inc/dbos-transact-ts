@@ -10,7 +10,7 @@ import {
 } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfigInternal, DebugMode } from '../../src/dbos-executor';
 import { Client, PoolClient } from 'pg';
 import { TestingRuntime, TestingRuntimeImpl, createInternalTestRuntime } from '../../src/testing/testing_runtime';
 
@@ -19,9 +19,9 @@ const testTableName = 'debugger_test_kv';
 
 describe('debugger-test', () => {
   let username: string;
-  let config: DBOSConfig;
-  let debugConfig: DBOSConfig;
-  let debugProxyConfig: DBOSConfig;
+  let config: DBOSConfigInternal;
+  let debugConfig: DBOSConfigInternal;
+  let debugProxyConfig: DBOSConfigInternal;
   let testRuntime: TestingRuntime;
   let debugRuntime: TestingRuntime;
   let timeTravelRuntime: TestingRuntime;
@@ -31,7 +31,7 @@ describe('debugger-test', () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined);
     debugProxyConfig = generateDBOSTestConfig(undefined);
-    username = config.poolConfig!.user || 'postgres';
+    username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
   });
 
@@ -43,10 +43,10 @@ describe('debugger-test', () => {
     });
     DebuggerTest.count = 0;
     systemDBClient = new Client({
-      user: config.poolConfig!.user,
-      port: config.poolConfig!.port,
-      host: config.poolConfig!.host,
-      password: config.poolConfig!.password,
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
       database: config.system_database,
     });
     await systemDBClient.connect();

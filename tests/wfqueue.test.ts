@@ -1,5 +1,5 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance } from '../src';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event, queueEntriesAreCleanedUp } from './helpers';
 import { WorkflowQueue } from '../src';
 import { v4 as uuidv4 } from 'uuid';
@@ -35,7 +35,7 @@ const qperiod = 2;
 const rlqueue = new WorkflowQueue('limited_queue', undefined, { limitPerPeriod: qlimit, periodSec: qperiod });
 
 describe('queued-wf-tests-simple', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -489,10 +489,10 @@ describe('queued-wf-tests-simple', () => {
 
     // Manually update the database to pretend wf3 is PENDING and comes from a different executor
     const systemDBClient = new Client({
-      user: config.poolConfig!.user,
-      port: config.poolConfig!.port,
-      host: config.poolConfig!.host,
-      password: config.poolConfig!.password,
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
       database: config.system_database,
     });
     await systemDBClient.connect();
@@ -669,7 +669,7 @@ class InterProcessWorkflow {
   static globalConcurrencyLimit = InterProcessWorkflow.localConcurrencyLimit * 2;
 
   @DBOS.workflow()
-  static async testGlobalConcurrency(config: DBOSConfig) {
+  static async testGlobalConcurrency(config: DBOSConfigInternal) {
     // First, start local concurrency limit tasks
     let handles = [];
     for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit; ++i) {
@@ -750,10 +750,10 @@ class InterProcessWorkflow {
 
       // Now check the global concurrency is met
       const systemDBClient = new Client({
-        user: config.poolConfig!.user,
-        port: config.poolConfig!.port,
-        host: config.poolConfig!.host,
-        password: config.poolConfig!.password,
+        user: config.poolConfig.user,
+        port: config.poolConfig.port,
+        host: config.poolConfig.host,
+        password: config.poolConfig.password,
         database: config.system_database,
       });
       await systemDBClient.connect();
@@ -818,7 +818,7 @@ class InterProcessWorkflow {
 }
 
 describe('queued-wf-tests-concurrent-workers', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();

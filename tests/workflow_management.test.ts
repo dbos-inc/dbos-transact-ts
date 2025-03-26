@@ -8,7 +8,7 @@ import {
   WorkflowQueue,
 } from '../src';
 import request from 'supertest';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import {
   WorkflowInformation,
@@ -25,7 +25,7 @@ import { globalParams } from '../src/utils';
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
 
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
   let systemDBClient: Client;
 
   beforeAll(() => {
@@ -42,10 +42,10 @@ describe('workflow-management-tests', () => {
     await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
 
     systemDBClient = new Client({
-      user: config.poolConfig!.user,
-      port: config.poolConfig!.port,
-      host: config.poolConfig!.host,
-      password: config.poolConfig!.password,
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
       database: config.system_database,
     });
     await systemDBClient.connect();
@@ -447,7 +447,7 @@ describe('workflow-management-tests', () => {
 });
 
 describe('test-list-queues', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -602,7 +602,7 @@ describe('test-list-queues', () => {
 });
 
 describe('test-list-steps', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
   const queue = new WorkflowQueue('child_queue');
   beforeAll(() => {
     config = generateDBOSTestConfig();

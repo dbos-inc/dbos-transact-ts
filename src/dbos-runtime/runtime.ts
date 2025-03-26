@@ -1,4 +1,4 @@
-import { DBOSExecutor, DBOSConfig } from '../dbos-executor';
+import { DBOSExecutor, DBOSConfigInternal } from '../dbos-executor';
 import { DBOSHttpServer } from '../httpServer/server';
 import * as fs from 'fs';
 import { isObject } from 'lodash';
@@ -27,14 +27,14 @@ export interface DBOSRuntimeConfig {
 export const defaultEntryPoint = 'dist/operations.js';
 
 export class DBOSRuntime {
-  private dbosConfig: DBOSConfig;
+  private dbosConfig: DBOSConfigInternal;
   private dbosExec?: DBOSExecutor = undefined;
   private servers: { appServer?: Server; adminServer: Server } | undefined;
   private scheduler?: DBOSScheduler = undefined;
   private wfQueueRunner?: Promise<void> = undefined;
 
   constructor(
-    dbosConfig: DBOSConfig,
+    dbosConfig: DBOSConfigInternal,
     private readonly runtimeConfig: DBOSRuntimeConfig,
   ) {
     // Initialize workflow executor.
@@ -47,9 +47,6 @@ export class DBOSRuntime {
    */
   async initAndStart() {
     try {
-      if (!this.dbosConfig.poolConfig) {
-        throw new Error('DBOS pool configuration is not initialized');
-      }
       this.dbosConfig.poolConfig = await db_wizard(this.dbosConfig.poolConfig);
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       DBOS.globalLogger = this.dbosExec.logger;

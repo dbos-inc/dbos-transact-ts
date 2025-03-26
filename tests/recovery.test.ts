@@ -1,6 +1,6 @@
 import { WorkflowQueue, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
@@ -9,7 +9,7 @@ import { sleepms } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 
 describe('recovery-tests', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
   let systemDBClient: Client;
 
   beforeAll(async () => {
@@ -22,10 +22,10 @@ describe('recovery-tests', () => {
     await DBOS.launch();
     process.env.DBOS__VMID = '';
     systemDBClient = new Client({
-      user: config.poolConfig!.user,
-      port: config.poolConfig!.port,
-      host: config.poolConfig!.host,
-      password: config.poolConfig!.password,
+      user: config.poolConfig.user,
+      port: config.poolConfig.port,
+      host: config.poolConfig.host,
+      password: config.poolConfig.password,
       database: config.system_database,
     });
     await systemDBClient.connect();
