@@ -8,7 +8,7 @@ import { OrmEntities, Authentication, MiddlewareContext, DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { v1 as uuidv1 } from 'uuid';
 import { UserDatabaseName } from '../src/user_database';
-import { DBOSNotAuthorizedError } from '../src/error';
+import { DBOSInvalidWorkflowTransitionError, DBOSNotAuthorizedError } from '../src/error';
 
 /**
  * Funtions used in tests.
@@ -45,6 +45,23 @@ class KVController {
     const kvp = await (DBOS.typeORMClient as EntityManager).findOneBy(KV, { id: id });
     return Promise.resolve(kvp?.value || '<Not Found>');
   }
+
+  @DBOS.transaction({ readOnly: true })
+  static async nope1Txn() {
+    return await DBOS.pgClient.query<{ c: string }>('SELECT * FROM t;', []);
+  }
+  @DBOS.transaction({ readOnly: true })
+  static async nope2Txn() {
+    return await DBOS.knexClient.raw<{ c: string }>('SELECT * FROM t;', []);
+  }
+  @DBOS.transaction({ readOnly: true })
+  static async nope3Txn() {
+    return await DBOS.drizzleClient.select();
+  }
+  @DBOS.transaction({ readOnly: true })
+  static async nope4Txn() {
+    return await DBOS.prismaClient.$queryRawUnsafe('SELECT * FROM t;');
+  }
 }
 
 describe('typeorm-tests', () => {
@@ -69,6 +86,11 @@ describe('typeorm-tests', () => {
 
   test('simple-typeorm', async () => {
     await expect(KVController.testTxn('test', 'value')).resolves.toBe('test');
+
+    await expect(KVController.nope1Txn()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    await expect(KVController.nope2Txn()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    await expect(KVController.nope3Txn()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    await expect(KVController.nope4Txn()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
   });
 
   test('typeorm-duplicate-transaction', async () => {

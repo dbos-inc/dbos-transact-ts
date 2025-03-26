@@ -25,6 +25,7 @@ export interface DBOSLocalCtx {
   inRecovery?: boolean;
   curStepFunctionId?: number;
   curTxFunctionId?: number;
+  isInStoredProc?: boolean;
   sqlClient?: UserDatabaseClient;
   span?: Span;
   authenticatedUser?: string;
@@ -159,6 +160,7 @@ export async function runWithStoredProcContext<R>(ctx: StoredProcedureContextImp
       workflowId: ctx.workflowUUID,
       curTxFunctionId: ctx.functionID,
       parentCtx: pctx,
+      isInStoredProc: true,
     },
     callback,
   );

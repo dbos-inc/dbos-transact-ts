@@ -44,7 +44,13 @@ import { globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
 import { koaTracingMiddleware, expressTracingMiddleware, honoTracingMiddleware } from './httpServer/middleware';
 import { Server } from 'http';
-import { DrizzleClient, PrismaClient, TypeORMEntityManager, UserDatabaseClient } from './user_database';
+import {
+  DrizzleClient,
+  PrismaClient,
+  TypeORMEntityManager,
+  UserDatabaseClient,
+  UserDatabaseName,
+} from './user_database';
 import { TransactionConfig, TransactionContextImpl, TransactionFunction } from './transaction';
 
 import Koa from 'koa';
@@ -518,6 +524,10 @@ export class DBOS {
     return getCurrentContextStore()?.curTxFunctionId !== undefined;
   }
 
+  static isInStoredProc(): boolean {
+    return getCurrentContextStore()?.isInStoredProc ?? false;
+  }
+
   static isInStep(): boolean {
     return getCurrentContextStore()?.curStepFunctionId !== undefined;
   }
@@ -540,31 +550,63 @@ export class DBOS {
 
   static get pgClient(): PoolClient {
     const client = DBOS.sqlClient;
-    // TODO CTX check!
+    if (!DBOS.isInStoredProc() && DBOS.dbosConfig?.userDbclient !== UserDatabaseName.PGNODE) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+      );
+    }
     return client as PoolClient;
   }
 
   static get knexClient(): Knex {
+    if (DBOS.isInStoredProc()) {
+      throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.knexClient' from within a stored procedure`);
+    }
+    if (DBOS.dbosConfig?.userDbclient !== UserDatabaseName.KNEX) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+      );
+    }
     const client = DBOS.sqlClient;
-    // TODO CTX check!
     return client as Knex;
   }
 
   static get prismaClient(): PrismaClient {
+    if (DBOS.isInStoredProc()) {
+      throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.prismaClient' from within a stored procedure`);
+    }
+    if (DBOS.dbosConfig?.userDbclient !== UserDatabaseName.PRISMA) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+      );
+    }
     const client = DBOS.sqlClient;
-    // TODO CTX check!
     return client as PrismaClient;
   }
 
   static get typeORMClient(): TypeORMEntityManager {
+    if (DBOS.isInStoredProc()) {
+      throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.typeORMClient' from within a stored procedure`);
+    }
+    if (DBOS.dbosConfig?.userDbclient !== UserDatabaseName.TYPEORM) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+      );
+    }
     const client = DBOS.sqlClient;
-    // TODO CTX check!
     return client as TypeORMEntityManager;
   }
 
   static get drizzleClient(): DrizzleClient {
+    if (DBOS.isInStoredProc()) {
+      throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.drizzleClient' from within a stored procedure`);
+    }
+    if (DBOS.dbosConfig?.userDbclient !== UserDatabaseName.DRIZZLE) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+      );
+    }
     const client = DBOS.sqlClient;
-    // TODO CTX check!
     return client as DrizzleClient;
   }
 
