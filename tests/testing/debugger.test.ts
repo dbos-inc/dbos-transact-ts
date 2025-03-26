@@ -1,16 +1,16 @@
 import { DBOSInitializer, InitContext, DBOS } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfig, DBOSExecutor, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor, DebugMode } from '../../src/dbos-executor';
 import { Client } from 'pg';
 
 const testTableName = 'debugger_test_kv';
 
 describe('debugger-test', () => {
   let username: string;
-  let config: DBOSConfig;
-  let debugConfig: DBOSConfig;
-  let debugProxyConfig: DBOSConfig;
+  let config: DBOSConfigInternal;
+  let debugConfig: DBOSConfigInternal;
+  let debugProxyConfig: DBOSConfigInternal;
   let systemDBClient: Client;
 
   beforeAll(async () => {
