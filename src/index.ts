@@ -2,6 +2,8 @@ export { createTestingRuntime, TestingRuntime } from './testing/testing_runtime'
 
 export { DBOSContext, InitContext } from './context';
 
+export { DBOSClient } from './client';
+
 export { TransactionContext, TransactionConfig, TransactionFunction } from './transaction';
 
 export { StoredProcedureContext, StoredProcedureConfig } from './procedure';

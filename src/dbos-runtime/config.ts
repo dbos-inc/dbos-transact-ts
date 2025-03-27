@@ -20,7 +20,7 @@ import { OTLPExporterConfig } from '../telemetry/exporters';
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true });
 
-interface DBConfig {
+export interface DBConfig {
   hostname?: string;
   port?: number;
   username?: string;
@@ -188,24 +188,26 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     );
   }
 
-  // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
-  if (configFile.database.ssl === false) {
-    // If SSL is set to false, do not use TLS
-    poolConfig.ssl = false;
-  } else if (configFile.database.ssl_ca) {
-    // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
-    poolConfig.ssl = { ca: [readFileSync(configFile.database.ssl_ca)], rejectUnauthorized: true };
-  } else if (
-    configFile.database.ssl === undefined &&
-    (poolConfig.host === 'localhost' || poolConfig.host === '127.0.0.1')
-  ) {
-    // For local development only, do not use TLS unless it is specifically asked for (to support Dockerized Postgres, which does not support SSL connections)
-    poolConfig.ssl = false;
-  } else {
-    // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
-    poolConfig.ssl = { rejectUnauthorized: false };
-  }
+  poolConfig.ssl = parseSSLConfig(configFile.database);
   return poolConfig;
+}
+
+export function parseSSLConfig(dbConfig: DBConfig) {
+  // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
+  if (dbConfig.ssl === false) {
+    // If SSL is set to false, do not use TLS
+    return false;
+  }
+  if (dbConfig.ssl_ca) {
+    // If an SSL certificate is provided, connect to Postgres using TLS and verify the server certificate. (equivalent to verify-full)
+    return { ca: [readFileSync(dbConfig.ssl_ca)], rejectUnauthorized: true };
+  }
+  if (dbConfig.ssl === undefined && (dbConfig.hostname === 'localhost' || dbConfig.hostname === '127.0.0.1')) {
+    // For local development only, do not use TLS unless it is specifically asked for (to support Dockerized Postgres, which does not support SSL connections)
+    return false;
+  }
+  // Otherwise, connect to Postgres using TLS but do not verify the server certificate. (equivalent to require)
+  return { rejectUnauthorized: false };
 }
 
 function prettyPrintAjvErrors(validate: ValidateFunction<unknown>) {

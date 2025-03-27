@@ -936,7 +936,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       );
     } else {
       if (params.queueName && status === 'ENQUEUED' && !this.isDebugging) {
-        await this.systemDatabase.enqueueWorkflow(workflowUUID, this.#getQueueByName(params.queueName));
+        await this.systemDatabase.enqueueWorkflow(workflowUUID, this.#getQueueByName(params.queueName).name);
       }
       return new RetrievedHandle(this.systemDatabase, workflowUUID, callerUUID, callerFunctionID);
     }

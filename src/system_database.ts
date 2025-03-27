@@ -78,10 +78,10 @@ export interface SystemDatabase {
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
 
-  enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
+  enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
   clearQueueAssignment(workflowId: string): Promise<boolean>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
-  findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]>;
+  findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
   durableSleepms(
     workflowUUID: string,
@@ -149,7 +149,7 @@ export interface WorkflowStatusInternal {
   authenticatedRoles: string[];
   request: HTTPRequest;
   executorId: string;
-  applicationVersion: string;
+  applicationVersion?: string;
   applicationID: string;
   createdAt: number;
   updatedAt?: number;
@@ -1460,7 +1460,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { workflows };
   }
 
-  async enqueueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
+  async enqueueWorkflow(workflowId: string, queueName: string): Promise<void> {
     await this.pool.query<workflow_queue>(
       `
       INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
@@ -1468,7 +1468,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       ON CONFLICT (workflow_uuid)
       DO NOTHING;
     `,
-      [workflowId, queue.name],
+      [workflowId, queueName],
     );
   }
 
@@ -1535,7 +1535,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string): Promise<string[]> {
+  async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]> {
     const startTimeMs = new Date().getTime();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
@@ -1620,8 +1620,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
           const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
             .where('workflow_uuid', id)
             .andWhere('status', StatusString.ENQUEUED)
-            .update('status', StatusString.PENDING)
-            .update('executor_id', executorID);
+            .andWhere((b) => {
+              b.whereNull('application_version').orWhere('application_version', appVersion);
+            })
+            .update({
+              status: StatusString.PENDING,
+              executor_id: executorID,
+              application_version: appVersion,
+            });
 
           if (res > 0) {
             claimedIDs.push(id);
