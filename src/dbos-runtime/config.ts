@@ -418,7 +418,7 @@ export function translatePublicDBOSconfig(
       },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
-    sysDbPoolSize: config.sysDbPoolSize || 20,
+    sysDbPoolSize: config.sysDbPoolSize || 2,
   };
 
   // The third predicate is just to satisfy TS: we know it is set above
