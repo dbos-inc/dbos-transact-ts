@@ -206,7 +206,10 @@ describe('knex-engine-config-tests', () => {
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     await DBOS.launch();
-    await TestEngine.testEngine();
-    await DBOS.shutdown();
+    try {
+      await TestEngine.testEngine();
+    } finally {
+      await DBOS.shutdown();
+    }
   });
 });
