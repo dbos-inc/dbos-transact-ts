@@ -378,6 +378,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
             database: userDBConfig.database,
             entities: this.typeormEntities,
             ssl: userDBConfig.ssl,
+            poolSize: this.config.userDbPoolSize,
+            connectTimeoutMS: userDBConfig.connectionTimeoutMillis,
           }),
         );
       } catch (s) {

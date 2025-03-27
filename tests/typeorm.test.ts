@@ -3,7 +3,7 @@ import request from 'supertest';
 import { Entity, Column, PrimaryColumn, PrimaryGeneratedColumn } from 'typeorm';
 import { EntityManager, Unique } from 'typeorm';
 
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { OrmEntities, Authentication, MiddlewareContext, DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { v1 as uuidv1 } from 'uuid';
@@ -208,5 +208,28 @@ describe('typeorm-auth-tests', () => {
 
     const response4 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response4.statusCode).toBe(200);
+  });
+});
+
+class TestEngine {
+  @DBOS.transaction()
+  static async testEngine() {
+    const ds = DBOS.typeORMClient;
+    expect((ds as any).connection.driver.master.options.connectionTimeoutMillis).toBe(3000);
+    expect((ds as any).connection.driver.master.options.max).toBe(2);
+  }
+}
+
+describe('typeorm-engine-config-tests', () => {
+  test('engine-config', async () => {
+    const config = generatePublicDBOSTestConfig({
+      userDbclient: UserDatabaseName.TYPEORM,
+      userDbPoolSize: 2,
+    });
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await TestEngine.testEngine();
+    await DBOS.shutdown();
   });
 });
