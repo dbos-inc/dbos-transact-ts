@@ -406,6 +406,7 @@ export function translatePublicDBOSconfig(
     name: appName,
     poolConfig: poolConfig,
     userDbclient: config.userDbclient || UserDatabaseName.KNEX,
+    userDbPoolSize: config.userDbPoolSize || 20,
     telemetry: {
       logs: {
         logLevel: config.logLevel || 'info',
@@ -413,6 +414,7 @@ export function translatePublicDBOSconfig(
       },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
+    sysDbPoolSize: config.sysDbPoolSize || 20,
   };
 
   // The third predicate is just to satisfy TS: we know it is set above
