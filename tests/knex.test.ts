@@ -197,7 +197,7 @@ class TestEngine {
   }
 }
 
-describe.only('typeorm-engine-config-tests', () => {
+describe('knex-engine-config-tests', () => {
   test('engine-config', async () => {
     const config = generatePublicDBOSTestConfig({
       userDbclient: UserDatabaseName.KNEX,

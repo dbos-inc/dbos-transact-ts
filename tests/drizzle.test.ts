@@ -14,7 +14,7 @@ import {
 } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { pgTable, serial, text } from 'drizzle-orm/pg-core';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
@@ -207,5 +207,28 @@ describe('drizzle-auth-tests', () => {
 
     const response4 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response4.statusCode).toBe(200);
+  });
+});
+
+class TestEngine {
+  @DBOS.transaction()
+  static async testEngine() {
+    const ds = DBOS.drizzleClient;
+    expect((ds as any).session.client._connectionTimeoutMillis).toEqual(3000);
+    // Drizzle doesn't expose the pool directly
+  }
+}
+
+describe('typeorm-engine-config-tests', () => {
+  test('engine-config', async () => {
+    const config = generatePublicDBOSTestConfig({
+      userDbclient: UserDatabaseName.DRIZZLE,
+      userDbPoolSize: 2,
+    });
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await TestEngine.testEngine();
+    await DBOS.shutdown();
   });
 });
