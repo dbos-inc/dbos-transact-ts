@@ -3,7 +3,7 @@ import { DBOS, DBOSConfig, DBOSClient, WorkflowQueue } from '../src';
 import { globalParams, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
-import { spawn, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 
 const _queue = new WorkflowQueue('testQueue');
 
@@ -35,34 +35,11 @@ class ClientTest {
 
 type EnqueueTest = typeof ClientTest.enqueueTest;
 
-function runClientSendWorker(workflowID: string, topic: string, appVersion: string): Promise<void> {
-  const child = spawnSync('npx', ['ts-node', './tests/clientSendWorker.ts', workflowID, topic], {
+function runClientSendWorker(workflowID: string, topic: string, appVersion: string) {
+  const _child = spawnSync('npx', ['ts-node', './tests/clientSendWorker.ts', workflowID, topic], {
     cwd: process.cwd(),
     env: { ...process.env, DBOS__APPVERSION: appVersion },
   });
-
-  return Promise.resolve();
-
-  // return new Promise((resolve, reject) => {
-  //   const child = spawn('npx', ['ts-node', './tests/clientSendWorker.ts', workflowID, topic], {
-  //     stdio: ['pipe', 'pipe', 'inherit'],
-  //   });
-
-  //   console.log(`CHILD PID: ${child.pid}`);
-
-  //   const targetString = `Workflow ${workflowID} started`;
-  //   child.stdout?.on('data', (data) => {
-  //     const output = data.toString();
-  //     console.log(output); // Optional: Log the output for debugging
-
-  //     if (output.includes(targetString)) {
-  //       console.log(`Target string "${targetString}" detected. Terminating process.`);
-  //       child.kill("SIGKILL"); // Terminate the process
-  //       child.stdout?.destroy();
-  //       resolve();
-  //     }
-  //   });
-  // });
 }
 
 describe('DBOSClient', () => {
@@ -77,7 +54,7 @@ describe('DBOSClient', () => {
     await setUpDBOSTestDb(config);
   });
 
-  beforeEach(async () => {
+  beforeEach(() => {
     DBOS.setConfig(config);
   });
 
@@ -321,7 +298,7 @@ describe('DBOSClient', () => {
     const sendWFID = `${workflowID}-${idempotencyKey}`;
 
     await DBOS.launch();
-    await runClientSendWorker(workflowID, topic, globalParams.appVersion);
+    runClientSendWorker(workflowID, topic, globalParams.appVersion);
 
     const client = new DBOSClient(poolConfig, system_database);
     const dbClient = new Client({ ...poolConfig, database: system_database });
@@ -334,12 +311,18 @@ describe('DBOSClient', () => {
       expect(res1.rowCount).toBe(1);
       const res2 = await dbClient.query('DELETE FROM dbos.notifications WHERE destination_uuid = $1', [workflowID]);
       expect(res2.rowCount).toBe(1);
-      const res3 = await dbClient.query('SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1', [sendWFID]);
+      const res3 = await dbClient.query<{ recovery_attempts: string }>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [sendWFID],
+      );
       expect(res3.rows).toHaveLength(1);
       expect(res3.rows[0].recovery_attempts).toBe('1');
 
       await client.send<string>(workflowID, message, topic, idempotencyKey);
-      const res4 = await dbClient.query('SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1', [sendWFID]);
+      const res4 = await dbClient.query<{ recovery_attempts: string }>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [sendWFID],
+      );
       expect(res4.rows).toHaveLength(1);
       expect(res4.rows[0].recovery_attempts).toBe('2');
     } finally {
@@ -362,7 +345,7 @@ describe('DBOSClient', () => {
     const sendWFID = `${workflowID}-${idempotencyKey}`;
 
     await DBOS.launch();
-    await runClientSendWorker(workflowID, topic, globalParams.appVersion);
+    runClientSendWorker(workflowID, topic, globalParams.appVersion);
 
     const client = new DBOSClient(poolConfig, system_database);
     try {

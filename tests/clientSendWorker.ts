@@ -1,5 +1,5 @@
 import { exit } from 'process';
-import { DBOS, WorkflowQueue } from '../src';
+import { DBOS } from '../src';
 import { generateDBOSTestConfig } from './helpers';
 
 class ClientTest {
