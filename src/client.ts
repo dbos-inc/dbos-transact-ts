@@ -18,7 +18,7 @@ export class DBOSClient {
   private readonly logger: Logger;
   private readonly systemDatabase: SystemDatabase;
 
-  constructor(databaseUrl: string, systemDatabase?: string) {
+  private constructor(databaseUrl: string, systemDatabase?: string) {
     const dbConfig = parseDbString(databaseUrl);
 
     const poolConfig: PoolConfig = {
@@ -37,8 +37,10 @@ export class DBOSClient {
     this.systemDatabase = new PostgresSystemDatabase(poolConfig, systemDatabase, this.logger);
   }
 
-  async init() {
-    await this.systemDatabase.init();
+  static async create(databaseUrl: string, systemDatabase?: string): Promise<DBOSClient> {
+    const client = new DBOSClient(databaseUrl, systemDatabase);
+    await client.systemDatabase.init();
+    return client;
   }
 
   async destroy() {
