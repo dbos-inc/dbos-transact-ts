@@ -29,6 +29,7 @@ class ClientTest {
 }
 
 async function main() {
+  console.log(`app version ${process.env.DBOS__APPVERSION}`);
   const config = generateDBOSTestConfig();
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -47,8 +48,7 @@ async function main() {
   }
 
   await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
-
-  // kill the worker after the workflow is started
+  console.log(`Workflow ${workflowID} started`);
   exit(0);
 }
 

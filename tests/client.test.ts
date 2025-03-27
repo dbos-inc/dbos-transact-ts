@@ -3,7 +3,7 @@ import { DBOS, DBOSConfig, DBOSClient, WorkflowQueue } from '../src';
 import { globalParams, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
-import { spawn } from 'child_process';
+import { spawn, spawnSync } from 'child_process';
 
 const _queue = new WorkflowQueue('testQueue');
 
@@ -36,17 +36,33 @@ class ClientTest {
 type EnqueueTest = typeof ClientTest.enqueueTest;
 
 function runClientSendWorker(workflowID: string, topic: string, appVersion: string): Promise<void> {
-  return new Promise((resolve, reject) => {
-    const child = spawn('npx', ['ts-node', './tests/clientSendWorker.ts', workflowID, topic], {
-      cwd: process.cwd(),
-      env: { ...process.env, DBOS__APPVERSION: appVersion },
-      stdio: 'pipe',
-    });
-
-    child.on('close', () => {
-      resolve();
-    });
+  const child = spawnSync('npx', ['ts-node', './tests/clientSendWorker.ts', workflowID, topic], {
+    cwd: process.cwd(),
+    env: { ...process.env, DBOS__APPVERSION: appVersion },
   });
+
+  return Promise.resolve();
+
+  // return new Promise((resolve, reject) => {
+  //   const child = spawn('npx', ['ts-node', './tests/clientSendWorker.ts', workflowID, topic], {
+  //     stdio: ['pipe', 'pipe', 'inherit'],
+  //   });
+
+  //   console.log(`CHILD PID: ${child.pid}`);
+
+  //   const targetString = `Workflow ${workflowID} started`;
+  //   child.stdout?.on('data', (data) => {
+  //     const output = data.toString();
+  //     console.log(output); // Optional: Log the output for debugging
+
+  //     if (output.includes(targetString)) {
+  //       console.log(`Target string "${targetString}" detected. Terminating process.`);
+  //       child.kill("SIGKILL"); // Terminate the process
+  //       child.stdout?.destroy();
+  //       resolve();
+  //     }
+  //   });
+  // });
 }
 
 describe('DBOSClient', () => {
@@ -63,16 +79,80 @@ describe('DBOSClient', () => {
 
   beforeEach(async () => {
     DBOS.setConfig(config);
-    await DBOS.launch();
   });
 
   afterEach(async () => {
     await DBOS.shutdown();
   });
 
-  test('DBOSClient-enqueue-appVer-notSet)', async () => {
+  test('DBOSClient-enqueue-idempotent', async () => {
+    const client = new DBOSClient(poolConfig, system_database);
+    const wfid = `client-enqueue-idempotent-${Date.now()}`;
+
+    try {
+      await client.init();
+      await client.enqueue<Parameters<EnqueueTest>>(
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          workflowID: wfid,
+        },
+        42,
+        'test',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+
+      await client.enqueue<Parameters<EnqueueTest>>(
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          workflowID: wfid,
+        },
+        42,
+        'test',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+    } finally {
+      await client.destroy();
+    }
+
+    const dbClient = new Client({ ...poolConfig, database: system_database });
+    try {
+      await dbClient.connect();
+      const resultBefore = await dbClient.query<workflow_status>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfid],
+      );
+      expect(resultBefore.rows).toHaveLength(1);
+      expect(resultBefore.rows[0].workflow_uuid).toBe(wfid);
+      expect(resultBefore.rows[0].status).toBe('ENQUEUED');
+      expect(resultBefore.rows[0].application_version).toBeNull();
+
+      await DBOS.launch();
+      const handle = DBOS.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
+      const wfresult = await handle.getResult();
+      expect(wfresult).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+
+      const resultAfter = await dbClient.query<workflow_status>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfid],
+      );
+      expect(resultAfter.rows).toHaveLength(1);
+      expect(resultAfter.rows[0].workflow_uuid).toBe(wfid);
+      expect(resultAfter.rows[0].status).toBe('SUCCESS');
+      expect(resultAfter.rows[0].application_version).toBe(globalParams.appVersion);
+    } finally {
+      await dbClient.end();
+    }
+  }, 20000);
+
+  test('DBOSClient-enqueue-appVer-notSet', async () => {
     const client = new DBOSClient(poolConfig, system_database);
     const wfid = `client-enqueue-${Date.now()}`;
+
+    await DBOS.launch();
 
     try {
       await client.init();
@@ -109,11 +189,13 @@ describe('DBOSClient', () => {
     } finally {
       await dbClient.end();
     }
-  }, 10000);
+  }, 20000);
 
   test('DBOSClient-enqueue-appVer-set', async () => {
     const client = new DBOSClient(poolConfig, system_database);
     const wfid = `client-enqueue-${Date.now()}`;
+
+    await DBOS.launch();
 
     try {
       await client.init();
@@ -129,13 +211,13 @@ describe('DBOSClient', () => {
         'test',
         { first: 'John', last: 'Doe', age: 30 },
       );
-
-      const handle = DBOS.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
-      const result = await handle.getResult();
-      expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {
       await client.destroy();
     }
+
+    const handle = DBOS.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
+    const result = await handle.getResult();
+    expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
 
     const dbClient = new Client({ ...poolConfig, database: system_database });
     try {
@@ -151,7 +233,7 @@ describe('DBOSClient', () => {
     } finally {
       await dbClient.end();
     }
-  }, 10000);
+  }, 20000);
 
   test('DBOSClient-enqueue-wrong-appVer', async () => {
     const client = new DBOSClient(poolConfig, system_database);
@@ -173,6 +255,7 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
+    await DBOS.launch();
     await sleepms(10000);
 
     const dbClient = new Client({ ...poolConfig, database: system_database });
@@ -196,6 +279,7 @@ describe('DBOSClient', () => {
     const topic = `test-topic-${now}`;
     const message = `Hello, DBOS! (${now})`;
 
+    await DBOS.launch();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
 
     const client = new DBOSClient(poolConfig, system_database);
@@ -207,13 +291,14 @@ describe('DBOSClient', () => {
 
     const result = await handle.getResult();
     expect(result).toBe(message);
-  }, 10000);
+  });
 
   test('DBOSClient-send-no-topic', async () => {
     const now = Date.now();
     const workflowID = `client-send-${now}`;
     const message = `Hello, DBOS! (${now})`;
 
+    await DBOS.launch();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest();
 
     const client = new DBOSClient(poolConfig, system_database);
@@ -225,7 +310,7 @@ describe('DBOSClient', () => {
 
     const result = await handle.getResult();
     expect(result).toBe(message);
-  }, 10000);
+  });
 
   test('DBOSClient-send-failure', async () => {
     const now = Date.now();
@@ -235,6 +320,7 @@ describe('DBOSClient', () => {
     const idempotencyKey = `idempotency-key-${now}`;
     const sendWFID = `${workflowID}-${idempotencyKey}`;
 
+    await DBOS.launch();
     await runClientSendWorker(workflowID, topic, globalParams.appVersion);
 
     const client = new DBOSClient(poolConfig, system_database);
@@ -265,7 +351,7 @@ describe('DBOSClient', () => {
     const handle = DBOS.retrieveWorkflow<string>(workflowID);
     const result = await handle.getResult();
     expect(result).toBe(message);
-  }, 120000);
+  }, 30000);
 
   test('DBOSClient-send-idempotent', async () => {
     const now = Date.now();
@@ -275,6 +361,7 @@ describe('DBOSClient', () => {
     const idempotencyKey = `idempotency-key-${now}`;
     const sendWFID = `${workflowID}-${idempotencyKey}`;
 
+    await DBOS.launch();
     await runClientSendWorker(workflowID, topic, globalParams.appVersion);
 
     const client = new DBOSClient(poolConfig, system_database);
@@ -302,7 +389,7 @@ describe('DBOSClient', () => {
     const handle = DBOS.retrieveWorkflow<string>(workflowID);
     const result = await handle.getResult();
     expect(result).toBe(message);
-  }, 10000);
+  }, 30000);
 
   test('DBOSClient-getEvent-while-running', async () => {
     const now = Date.now();
@@ -311,6 +398,7 @@ describe('DBOSClient', () => {
     const key = `event-key-${now}`;
     const value = `event-value-${now}`;
 
+    await DBOS.launch();
     const client = new DBOSClient(poolConfig, system_database);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
@@ -321,7 +409,7 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 30000);
+  }, 10000);
 
   test('DBOSClient-getEvent-when-finished', async () => {
     const now = Date.now();
@@ -330,6 +418,7 @@ describe('DBOSClient', () => {
     const key = `event-key-${now}`;
     const value = `event-value-${now}`;
 
+    await DBOS.launch();
     const client = new DBOSClient(poolConfig, system_database);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
@@ -341,7 +430,7 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 30000);
+  }, 10000);
 
   test('DBOSClient-getEvent-update-while-running', async () => {
     const now = Date.now();
@@ -350,6 +439,7 @@ describe('DBOSClient', () => {
     const key = `event-key-${now}`;
     const value = `event-value-${now}`;
 
+    await DBOS.launch();
     const client = new DBOSClient(poolConfig, system_database);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
@@ -362,7 +452,7 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 30000);
+  }, 10000);
 
   test('DBOSClient-getEvent-update-when-finished', async () => {
     const now = Date.now();
@@ -371,6 +461,7 @@ describe('DBOSClient', () => {
     const key = `event-key-${now}`;
     const value = `event-value-${now}`;
 
+    await DBOS.launch();
     const client = new DBOSClient(poolConfig, system_database);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
@@ -382,10 +473,12 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 30000);
+  }, 10000);
 
   test('DBOSClient-retrieve-workflow', async () => {
     const wfid = `client-retrieve-${Date.now()}`;
+
+    await DBOS.launch();
     await DBOS.startWorkflow(ClientTest, { workflowID: wfid }).enqueueTest(42, 'test', {
       first: 'John',
       last: 'Doe',
@@ -405,6 +498,8 @@ describe('DBOSClient', () => {
 
   test('DBOSClient-retrieve-workflow-done', async () => {
     const wfid = `client-retrieve-done-${Date.now()}`;
+
+    await DBOS.launch();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID: wfid }).enqueueTest(42, 'test', {
       first: 'John',
       last: 'Doe',
@@ -422,5 +517,5 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-  }, 30000);
+  });
 });
