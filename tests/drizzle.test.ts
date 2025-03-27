@@ -214,8 +214,10 @@ class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
     const ds = DBOS.drizzleClient;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any).session.client._connectionTimeoutMillis).toEqual(3000);
     // Drizzle doesn't expose the pool directly
+    await Promise.resolve();
   }
 }
 

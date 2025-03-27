@@ -6,8 +6,10 @@ class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
     const ds = DBOS.pgClient;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any)._connectionTimeoutMillis).toEqual(3000);
     // PG doesn't expose the pool directly
+    await Promise.resolve();
   }
 }
 

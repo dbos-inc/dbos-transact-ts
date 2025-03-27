@@ -1,5 +1,5 @@
 import { WorkflowHandle, DBOSInitializer, InitContext, DBOS } from '../src/';
-import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import { StatusString } from '../src/workflow';
 import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';

@@ -215,8 +215,11 @@ class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
     const ds = DBOS.typeORMClient;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any).connection.driver.master.options.connectionTimeoutMillis).toBe(3000);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any).connection.driver.master.options.max).toBe(2);
+    await Promise.resolve();
   }
 }
 

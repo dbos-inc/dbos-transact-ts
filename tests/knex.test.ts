@@ -192,8 +192,11 @@ class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
     const ds = DBOS.knexClient;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any).context.client.config.connection.connectTimeout).toEqual(3000);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any).context.client.config.pool.max).toEqual(2);
+    await Promise.resolve();
   }
 }
 
