@@ -277,7 +277,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
       [workflowUUID],
     );
-    if (rows.length === 0 || rows[0].status === StatusString.PENDING) {
+    if (rows.length === 0 || (rows[0].status !== StatusString.SUCCESS && rows[0].status !== StatusString.ERROR)) {
       return dbosNull;
     } else if (rows[0].status === StatusString.ERROR) {
       throw deserializeError(DBOSJSON.parse(rows[0].error));
