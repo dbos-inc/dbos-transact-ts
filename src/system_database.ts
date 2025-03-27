@@ -44,7 +44,6 @@ export interface SystemDatabase {
   init(): Promise<void>;
   destroy(): Promise<void>;
 
-  checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R>;
   initWorkflowStatus<T extends any[]>(
     bufferedStatus: WorkflowStatusInternal,
     args: T,
@@ -270,20 +269,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await pgSystemClient.connect();
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
     await pgSystemClient.end();
-  }
-
-  async checkWorkflowOutput<R>(workflowUUID: string): Promise<DBOSNull | R> {
-    const { rows } = await this.pool.query<workflow_status>(
-      `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
-      [workflowUUID],
-    );
-    if (rows.length === 0 || rows[0].status === StatusString.PENDING) {
-      return dbosNull;
-    } else if (rows[0].status === StatusString.ERROR) {
-      throw deserializeError(DBOSJSON.parse(rows[0].error));
-    } else {
-      return DBOSJSON.parse(rows[0].output) as R;
-    }
   }
 
   async initWorkflowStatus<T extends any[]>(
