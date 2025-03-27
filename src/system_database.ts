@@ -201,6 +201,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     readonly pgPoolConfig: PoolConfig,
     readonly systemDatabaseName: string,
     readonly logger: Logger,
+    readonly sysDbPoolSize?: number,
   ) {
     this.systemPoolConfig = { ...pgPoolConfig };
     this.systemPoolConfig.database = systemDatabaseName;
@@ -212,7 +213,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client: 'pg',
       connection: this.systemPoolConfig,
       pool: {
-        max: 2,
+        min: 0,
+        max: this.sysDbPoolSize || 2,
       },
     };
     this.knexDB = knex(knexConfig);

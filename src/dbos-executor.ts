@@ -318,6 +318,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.config.poolConfig,
         this.config.system_database,
         this.logger,
+        this.config.sysDbPoolSize,
       );
     }
 
