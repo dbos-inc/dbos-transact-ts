@@ -43,7 +43,6 @@ export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
   return {
     name: 'dbostest', // Passing a name is kind of required because otherwise, we'll take in the name of the framework package.json, which is not a valid DB name
     databaseUrl: `postgres://postgres:${process.env.PGPASSWORD}@localhost:5432/dbostest`,
-    userDbclient: UserDatabaseName.PGNODE,
     ...kwargs,
   };
 }

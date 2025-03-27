@@ -340,12 +340,24 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
       const { PrismaClient } = require(path.join(process.cwd(), 'node_modules', '@prisma', 'client')); // Find the prisma client in the node_modules of the current project
+      let dbUrl = `postgresql://${userDBConfig.user}:${userDBConfig.password as string}@${userDBConfig.host}:${userDBConfig.port}/${userDBConfig.database}`;
+      const queryParams: Record<string, string | number> = {};
+      if (userDBConfig.connectionTimeoutMillis) {
+        queryParams['connect_timeout'] = userDBConfig.connectionTimeoutMillis;
+      }
+      if (this.config.userDbPoolSize) {
+        queryParams['connection_limit'] = this.config.userDbPoolSize;
+      }
+      const queryString = new URLSearchParams(queryParams as Record<string, string>).toString();
+      if (queryString) {
+        dbUrl += `?${queryString}`;
+      }
       this.userDatabase = new PrismaUserDatabase(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
         new PrismaClient({
           datasources: {
             db: {
-              url: `postgresql://${userDBConfig.user}:${userDBConfig.password as string}@${userDBConfig.host}:${userDBConfig.port}/${userDBConfig.database}`,
+              url: dbUrl,
             },
           },
         }),
