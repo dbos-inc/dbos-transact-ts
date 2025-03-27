@@ -64,11 +64,10 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-enqueue-idempotent', async () => {
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     const wfid = `client-enqueue-idempotent-${Date.now()}`;
 
     try {
-      await client.init();
       await client.enqueue<Parameters<EnqueueTest>>(
         {
           workflowName: 'enqueueTest',
@@ -127,13 +126,12 @@ describe('DBOSClient', () => {
   }, 20000);
 
   test('DBOSClient-enqueue-appVer-notSet', async () => {
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     const wfid = `client-enqueue-${Date.now()}`;
 
     await DBOS.launch();
 
     try {
-      await client.init();
       await client.enqueue<Parameters<EnqueueTest>>(
         {
           workflowName: 'enqueueTest',
@@ -170,13 +168,12 @@ describe('DBOSClient', () => {
   }, 20000);
 
   test('DBOSClient-enqueue-appVer-set', async () => {
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     const wfid = `client-enqueue-${Date.now()}`;
 
     await DBOS.launch();
 
     try {
-      await client.init();
       await client.enqueue<Parameters<EnqueueTest>>(
         {
           workflowName: 'enqueueTest',
@@ -214,10 +211,9 @@ describe('DBOSClient', () => {
   }, 20000);
 
   test('DBOSClient-enqueue-wrong-appVer', async () => {
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
 
     try {
-      await client.init();
       await client.enqueue<Parameters<EnqueueTest>>(
         {
           workflowName: 'enqueueTest',
@@ -260,7 +256,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
 
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     try {
       await client.send<string>(workflowID, message, topic);
     } finally {
@@ -279,7 +275,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest();
 
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     try {
       await client.send<string>(workflowID, message);
     } finally {
@@ -301,7 +297,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
     runClientSendWorker(workflowID, topic, globalParams.appVersion);
 
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     const dbClient = new Client(poolConfig);
     try {
       await dbClient.connect();
@@ -348,7 +344,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
     runClientSendWorker(workflowID, topic, globalParams.appVersion);
 
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     try {
       await client.send<string>(workflowID, message, topic, idempotencyKey);
       await client.send<string>(workflowID, message, topic, idempotencyKey);
@@ -383,7 +379,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
       const eventValue = await client.getEvent<string>(workflowID, key, 10);
@@ -403,7 +399,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
       const result = await handle.getResult();
@@ -424,7 +420,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
       let eventValue = await client.getEvent<string>(workflowID, key, 1);
@@ -446,7 +442,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
       const result = await handle.getResult();
@@ -469,9 +465,8 @@ describe('DBOSClient', () => {
       age: 30,
     });
 
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     try {
-      await client.init();
       const handle = client.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
@@ -492,9 +487,8 @@ describe('DBOSClient', () => {
     const result1 = await handle.getResult();
     expect(result1).toBe('42-test-{"first":"John","last":"Doe","age":30}');
 
-    const client = new DBOSClient(database_url);
+    const client = await DBOSClient.create(database_url);
     try {
-      await client.init();
       const handle = client.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
