@@ -4,7 +4,7 @@ import { DBOS, Authentication, MiddlewareContext } from '../src';
 import { DBOSInvalidWorkflowTransitionError, DBOSNotAuthorizedError } from '../src/error';
 import { DBOSConfig } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
-import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { TestKvTable, generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import { Knex } from 'knex';
 import { DatabaseError } from 'pg';
@@ -185,5 +185,28 @@ describe('knex-auth-tests', () => {
 
     const response4 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response4.statusCode).toBe(200);
+  });
+});
+
+class TestEngine {
+  @DBOS.transaction()
+  static async testEngine() {
+    const ds = DBOS.knexClient;
+    expect((ds as any).context.client.config.connection.connectTimeout).toEqual(3000);
+    expect((ds as any).context.client.config.pool.max).toEqual(2);
+  }
+}
+
+describe.only('typeorm-engine-config-tests', () => {
+  test('engine-config', async () => {
+    const config = generatePublicDBOSTestConfig({
+      userDbclient: UserDatabaseName.KNEX,
+      userDbPoolSize: 2,
+    });
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await TestEngine.testEngine();
+    await DBOS.shutdown();
   });
 });

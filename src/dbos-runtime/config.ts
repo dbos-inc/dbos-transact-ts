@@ -402,6 +402,10 @@ export function translatePublicDBOSconfig(
     { silent: true },
   );
 
+  if (config.userDbPoolSize) {
+    poolConfig.max = config.userDbPoolSize;
+  }
+
   const translatedConfig: DBOSConfigInternal = {
     name: appName,
     poolConfig: poolConfig,

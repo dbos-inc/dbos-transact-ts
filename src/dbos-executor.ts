@@ -345,8 +345,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       if (userDBConfig.connectionTimeoutMillis) {
         queryParams['connect_timeout'] = userDBConfig.connectionTimeoutMillis;
       }
-      if (this.config.userDbPoolSize) {
-        queryParams['connection_limit'] = this.config.userDbPoolSize;
+      if (userDBConfig.max) {
+        queryParams['connection_limit'] = String(userDBConfig.max);
       }
       const queryString = new URLSearchParams(queryParams as Record<string, string>).toString();
       if (queryString) {
@@ -378,7 +378,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             database: userDBConfig.database,
             entities: this.typeormEntities,
             ssl: userDBConfig.ssl,
-            poolSize: this.config.userDbPoolSize,
+            poolSize: userDBConfig.max,
             connectTimeoutMS: userDBConfig.connectionTimeoutMillis,
           }),
         );
@@ -397,6 +397,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
           password: userDBConfig.password,
           database: userDBConfig.database,
           ssl: userDBConfig.ssl,
+          connectTimeout: userDBConfig.connectionTimeoutMillis,
+        },
+        pool: {
+          min: 0,
+          max: userDBConfig.max,
         },
       };
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));
