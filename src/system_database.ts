@@ -56,6 +56,7 @@ export interface SystemDatabase {
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
   bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
+  getWorkflowSteps(workflowUUID: string): Promise<workflow_steps>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
   checkChildWorkflow(workflowUUID: string, functionID: number): Promise<string | null>;

@@ -52,6 +52,7 @@ export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID
     createLogger() as unknown as GlobalLogger,
   );
   const workflowSteps = await systemDatabase.getWorkflowSteps(workflowUUID);
+
   await systemDatabase.destroy();
   return workflowSteps;
 }

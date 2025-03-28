@@ -67,6 +67,7 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerResumeWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerRestartWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerQueueMetadataEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerListWorkflowStepsEndpoint(dbosExec, adminRouter);
     adminApp.use(adminRouter.routes()).use(adminRouter.allowedMethods());
     return adminApp;
   }
@@ -292,6 +293,24 @@ export class DBOSHttpServer {
     };
     router.post(workflowResumeUrl, workflowRestartHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
+  }
+
+  /**
+   *
+   * Register Cancel Workflow endpoint.
+   * Cancels a workflow by setting its status to CANCELLED.
+   */
+
+  static registerListWorkflowStepsEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const workflowStepsUrl = '/workflows/:workflow_id/steps';
+    const workflowStepsHandler = async (koaCtxt: Koa.Context) => {
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
+      const steps = await dbosExec.listWorkflowSteps(workflowId);
+      koaCtxt.body = steps;
+      koaCtxt.status = 200;
+    };
+    router.get(workflowStepsUrl, workflowStepsHandler);
+    dbosExec.logger.debug(`DBOS Server Registered List Workflow steps Get ${workflowStepsUrl}`);
   }
 
   /**

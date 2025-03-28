@@ -61,6 +61,7 @@ import {
   ConfiguredInstance,
   getAllRegisteredClasses,
 } from './decorators';
+import { workflow_steps } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import {
@@ -2210,6 +2211,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     await this.systemDatabase.cancelWorkflow(workflowID);
     this.logger.info(`Cancelling workflow ${workflowID}`);
     this.workflowCancellationMap.set(workflowID, true);
+  }
+
+  async listWorkflowSteps(workflowID: string): Promise<workflow_steps> {
+    return await this.systemDatabase.getWorkflowSteps(workflowID);
   }
 
   async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
