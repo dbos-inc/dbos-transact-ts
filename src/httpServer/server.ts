@@ -297,8 +297,8 @@ export class DBOSHttpServer {
 
   /**
    *
-   * Register Cancel Workflow endpoint.
-   * Cancels a workflow by setting its status to CANCELLED.
+   * Register List Workflow Steps endpoint.
+   * List steps for a given workflow.
    */
 
   static registerListWorkflowStepsEndpoint(dbosExec: DBOSExecutor, router: Router) {
