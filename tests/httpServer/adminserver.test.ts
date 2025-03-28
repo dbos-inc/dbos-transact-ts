@@ -89,6 +89,24 @@ describe('running-admin-server-tests', () => {
       testAdminWorkflow.counter++;
       return Promise.resolve();
     }
+
+    @DBOS.step()
+    static async stepOne() {
+      return Promise.resolve();
+    }
+
+    @DBOS.step()
+    static async stepTwo() {
+      return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async workflowWithSteps() {
+      await testAdminWorkflow.stepOne();
+      DBOS.sleepSeconds(1);
+      await testAdminWorkflow.stepTwo();
+      return Promise.resolve();
+    }
   }
 
   test('test-admin-workflow-management', async () => {
@@ -151,6 +169,28 @@ describe('running-admin-server-tests', () => {
     expect(response.status).toBe(204);
     await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     expect(testAdminWorkflow.counter).toBe(3);
+  });
+
+  test('test-admin-list-workflow-steps', async () => {
+    const handle = await DBOS.startWorkflow(testAdminWorkflow).workflowWithSteps();
+    await handle.getResult();
+    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/steps`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(response.status).toBe(200);
+    let steps = await response.json();
+    expect(steps.length).toBe(3);
+    expect(steps[0].function_name).toBe('stepOne');
+    expect(steps[1].function_name).toBe('DBOS.sleep');
+    expect(steps[2].function_name).toBe('stepTwo');
   });
 
   test('test-admin-workflow-recovery', async () => {
