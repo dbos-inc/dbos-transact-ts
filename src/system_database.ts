@@ -28,8 +28,7 @@ import {
   workflow_inputs,
   workflow_queue,
   event_dispatch_kv,
-  step_function,
-  workflow_steps,
+  step_info,
 } from '../schemas/system_db_schema';
 import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep } from './utils';
 import { HTTPRequest } from './context';
@@ -56,7 +55,7 @@ export interface SystemDatabase {
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
   bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
-  getWorkflowSteps(workflowUUID: string): Promise<workflow_steps>;
+  getWorkflowSteps(workflowUUID: string): Promise<step_info[]>;
 
   checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
   checkChildWorkflow(workflowUUID: string, functionID: number): Promise<string | null>;
@@ -626,18 +625,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async getWorkflowSteps(workflowUUID: string): Promise<workflow_steps> {
-    const { rows } = await this.pool.query<step_function>(
-      `SELECT function_id, function_name FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
+  async getWorkflowSteps(workflowUUID: string): Promise<step_info[]> {
+    const { rows } = await this.pool.query<step_info>(
+      `SELECT function_id, function_name, output, error, child_workflow_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
       [workflowUUID],
     );
 
-    const workflow_steps: workflow_steps = {
-      workflow_uuid: workflowUUID,
-      steps: rows,
-    };
-
-    return workflow_steps;
+    return rows;
   }
 
   async recordOperationOutput<R>(
