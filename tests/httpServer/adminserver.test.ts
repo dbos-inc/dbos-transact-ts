@@ -7,6 +7,7 @@ import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../..
 import { globalParams, sleepms } from '../../src/utils';
 import { Client } from 'pg';
 import { translatePublicDBOSconfig } from '../../src/dbos-runtime/config';
+import { step_info } from '../../schemas/system_db_schema';
 
 describe('not-running-admin-server', () => {
   let config: DBOSConfig;
@@ -103,7 +104,7 @@ describe('running-admin-server-tests', () => {
     @DBOS.workflow()
     static async workflowWithSteps() {
       await testAdminWorkflow.stepOne();
-      DBOS.sleepSeconds(1);
+      await DBOS.sleepSeconds(1);
       await testAdminWorkflow.stepTwo();
       return Promise.resolve();
     }
@@ -179,14 +180,15 @@ describe('running-admin-server-tests', () => {
       status: StatusString.SUCCESS,
     });
 
-    let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/steps`, {
+    const response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/steps`, {
       method: 'GET',
       headers: {
         'Content-Type': 'application/json',
       },
     });
     expect(response.status).toBe(200);
-    let steps = await response.json();
+    //eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    const steps: step_info[] = await response.json();
     expect(steps.length).toBe(3);
     expect(steps[0].function_name).toBe('stepOne');
     expect(steps[1].function_name).toBe('DBOS.sleep');
