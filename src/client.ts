@@ -10,7 +10,7 @@ interface EnqueueOptions {
   workflowName: string;
   workflowClassName: string;
   workflowID?: string;
-  maxRetries?: number;
+  maxRecoveryAttempts?: number;
   appVersion?: string;
 }
 
@@ -50,7 +50,7 @@ export class DBOSClient {
   async enqueue<T extends unknown[]>(options: EnqueueOptions, ...args: T): Promise<void> {
     const { workflowName, workflowClassName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? uuidv4();
-    const maxRetries = options.maxRetries ?? 50;
+    const maxRecoveryAttempts = options.maxRecoveryAttempts ?? 50;
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
@@ -69,7 +69,7 @@ export class DBOSClient {
       applicationVersion: appVersion,
       applicationID: '',
       createdAt: Date.now(),
-      maxRetries: maxRetries ?? 50,
+      maxRetries: maxRecoveryAttempts,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, args);
