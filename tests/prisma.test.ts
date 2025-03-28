@@ -1,7 +1,7 @@
 import request from 'supertest';
 
 import { PrismaClient, testkv } from '@prisma/client';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import {
   Transaction,
   TransactionContext,
@@ -19,7 +19,7 @@ import { v1 as uuidv1 } from 'uuid';
 import { sleepms } from '../src/utils';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { UserDatabaseName } from '../src/user_database';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSConfigInternal } from '../src/dbos-executor';
 
 interface PrismaPGError {
   code: string;
@@ -234,5 +234,38 @@ describe('prisma-auth-tests', () => {
 
     const response4 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
     expect(response4.statusCode).toBe(200);
+  });
+});
+
+class TestEngine {
+  @DBOS.transaction()
+  static async testEngine() {
+    const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    expect((DBOS.prismaClient as any)._engineConfig.overrideDatasources.db.url).toBe(
+      `postgresql://${String(pc.user)}:${String(pc.password)}@${String(pc.host)}:${String(pc.port)}/${String(pc.database)}?connect_timeout=3000&connection_limit=2`,
+    );
+    const r = await DBOS.prismaClient.$queryRawUnsafe('SELECT 1');
+    expect(r.length).toBe(1);
+    await Promise.resolve();
+  }
+}
+
+describe('prisma-engine-config-tests', () => {
+  let config: DBOSConfig;
+
+  test('prisma-engine-config', async () => {
+    config = generatePublicDBOSTestConfig({
+      userDbclient: UserDatabaseName.PRISMA,
+      userDbPoolSize: 2,
+    });
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    try {
+      await TestEngine.testEngine();
+    } finally {
+      await DBOS.shutdown();
+    }
   });
 });

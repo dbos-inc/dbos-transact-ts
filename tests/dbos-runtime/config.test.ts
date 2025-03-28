@@ -628,6 +628,7 @@ describe('dbos-config', () => {
           database: 'dbostest',
           connectionTimeoutMillis: 7000,
           ssl: { ca: [certdata], rejectUnauthorized: true },
+          max: 20,
         },
         userDbclient: UserDatabaseName.PRISMA,
         telemetry: {
@@ -640,6 +641,7 @@ describe('dbos-config', () => {
           },
         },
         system_database: dbosConfig.sysDbName,
+        sysDbPoolSize: 2,
       });
       expect(translatedRuntimeConfig).toEqual({
         port: 3000,
@@ -667,6 +669,7 @@ describe('dbos-config', () => {
           database: 'appname',
           connectionTimeoutMillis: 3000,
           ssl: false,
+          max: 20,
         },
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {
@@ -676,6 +679,7 @@ describe('dbos-config', () => {
           },
         },
         system_database: 'appname_dbos_sys',
+        sysDbPoolSize: 2,
       });
       expect(translatedRuntimeConfig).toEqual({
         port: 3000,
@@ -734,6 +738,7 @@ describe('dbos-config', () => {
           database: 'appname',
           connectionTimeoutMillis: 3000,
           ssl: false,
+          max: 20,
         },
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {
@@ -743,6 +748,7 @@ describe('dbos-config', () => {
           },
         },
         system_database: 'appname_dbos_sys',
+        sysDbPoolSize: 2,
       });
       expect(translatedRuntimeConfig).toEqual({
         port: 3000,

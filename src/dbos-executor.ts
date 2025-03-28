@@ -102,7 +102,9 @@ export interface DBOSConfig {
   name?: string;
   readonly databaseUrl?: string;
   readonly userDbclient?: UserDatabaseName;
+  readonly userDbPoolSize?: number;
   readonly sysDbName?: string;
+  readonly sysDbPoolSize?: number;
   readonly logLevel?: string;
   readonly otlpTracesEndpoints?: string[];
   readonly adminPort?: number;
@@ -316,6 +318,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.config.poolConfig,
         this.config.system_database,
         this.logger,
+        this.config.sysDbPoolSize,
       );
     }
 
@@ -338,12 +341,24 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
       const { PrismaClient } = require(path.join(process.cwd(), 'node_modules', '@prisma', 'client')); // Find the prisma client in the node_modules of the current project
+      let dbUrl = `postgresql://${userDBConfig.user}:${userDBConfig.password as string}@${userDBConfig.host}:${userDBConfig.port}/${userDBConfig.database}`;
+      const queryParams: Record<string, string | number> = {};
+      if (userDBConfig.connectionTimeoutMillis) {
+        queryParams['connect_timeout'] = userDBConfig.connectionTimeoutMillis;
+      }
+      if (userDBConfig.max) {
+        queryParams['connection_limit'] = String(userDBConfig.max);
+      }
+      const queryString = new URLSearchParams(queryParams as Record<string, string>).toString();
+      if (queryString) {
+        dbUrl += `?${queryString}`;
+      }
       this.userDatabase = new PrismaUserDatabase(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
         new PrismaClient({
           datasources: {
             db: {
-              url: `postgresql://${userDBConfig.user}:${userDBConfig.password as string}@${userDBConfig.host}:${userDBConfig.port}/${userDBConfig.database}`,
+              url: dbUrl,
             },
           },
         }),
@@ -364,6 +379,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
             database: userDBConfig.database,
             entities: this.typeormEntities,
             ssl: userDBConfig.ssl,
+            poolSize: userDBConfig.max,
+            connectTimeoutMS: userDBConfig.connectionTimeoutMillis,
           }),
         );
       } catch (s) {
@@ -381,6 +398,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
           password: userDBConfig.password,
           database: userDBConfig.database,
           ssl: userDBConfig.ssl,
+          connectTimeout: userDBConfig.connectionTimeoutMillis,
+        },
+        pool: {
+          min: 0,
+          max: userDBConfig.max,
         },
       };
       this.userDatabase = new KnexUserDatabase(knex(knexConfig));

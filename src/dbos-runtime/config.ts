@@ -401,6 +401,7 @@ export function translatePublicDBOSconfig(
     },
     { silent: true },
   );
+  poolConfig.max = config.userDbPoolSize || 20;
 
   const translatedConfig: DBOSConfigInternal = {
     name: appName,
@@ -413,6 +414,7 @@ export function translatePublicDBOSconfig(
       },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
+    sysDbPoolSize: config.sysDbPoolSize || 2,
   };
 
   // The third predicate is just to satisfy TS: we know it is set above

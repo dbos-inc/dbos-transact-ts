@@ -9,6 +9,7 @@ import {
   MiddlewareContext,
   WorkflowQueue,
 } from '../src';
+import { UserDatabaseName } from '../src/user_database';
 import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import jwt from 'koa-jwt';
 
@@ -305,7 +306,9 @@ export class TransitionTests {
 
 async function main() {
   // First hurdle - configuration.
-  const config = generatePublicDBOSTestConfig();
+  const config = generatePublicDBOSTestConfig({
+    userDbclient: UserDatabaseName.PGNODE,
+  });
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
