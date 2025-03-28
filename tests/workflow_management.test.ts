@@ -718,14 +718,13 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.workflow_uuid).toBe(wfid);
-    expect(wfsteps.steps.length).toBe(3);
-    expect(wfsteps.steps[0].function_id).toBe(0);
-    expect(wfsteps.steps[0].function_name).toBe('stepOne');
-    expect(wfsteps.steps[1].function_id).toBe(1);
-    expect(wfsteps.steps[1].function_name).toBe('stepTwo');
-    expect(wfsteps.steps[2].function_id).toBe(2);
-    expect(wfsteps.steps[2].function_name).toBe('DBOS.sleep');
+    expect(wfsteps.length).toBe(3);
+    expect(wfsteps[0].function_id).toBe(0);
+    expect(wfsteps[0].function_name).toBe('stepOne');
+    expect(wfsteps[1].function_id).toBe(1);
+    expect(wfsteps[1].function_name).toBe('stepTwo');
+    expect(wfsteps[2].function_id).toBe(2);
+    expect(wfsteps[2].function_name).toBe('DBOS.sleep');
   });
 
   test('test-send-recv', async () => {
@@ -737,16 +736,13 @@ describe('test-list-steps', () => {
 
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid1);
-    console.log(wfsteps);
-    expect(wfsteps.workflow_uuid).toBe(wfid1);
-    expect(wfsteps.steps.length).toBe(2);
-    expect(wfsteps.steps[0].function_name).toBe('DBOS.sleep');
-    expect(wfsteps.steps[1].function_name).toBe('DBOS.recv');
+    expect(wfsteps.length).toBe(2);
+    expect(wfsteps[0].function_name).toBe('DBOS.sleep');
+    expect(wfsteps[1].function_name).toBe('DBOS.recv');
 
     const wfsteps2 = await listWorkflowSteps(config, wfid2);
-    console.log(wfsteps2);
-    expect(wfsteps2.steps[0].function_id).toBe(0);
-    expect(wfsteps2.steps[0].function_name).toBe('DBOS.send');
+    expect(wfsteps2[0].function_id).toBe(0);
+    expect(wfsteps2[0].function_name).toBe('DBOS.send');
   });
 
   test('test-set-getEvent', async () => {
@@ -754,11 +750,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).setEventWorkflow();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    console.log(wfsteps);
-    expect(wfsteps.workflow_uuid).toBe(wfid);
-    expect(wfsteps.steps.length).toBe(3);
-    expect(wfsteps.steps[0].function_name).toBe('DBOS.setEvent');
-    expect(wfsteps.steps[2].function_name).toBe('DBOS.getEvent');
+    expect(wfsteps.length).toBe(3);
+    expect(wfsteps[0].function_name).toBe('DBOS.setEvent');
+    expect(wfsteps[2].function_name).toBe('DBOS.getEvent');
   });
 
   test('test-call-child-workflow-first', async () => {
@@ -767,11 +761,10 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.steps.length).toBe(4);
-    expect(wfsteps.steps[0].function_name).toBe('testWorkflow');
-    expect(wfsteps.steps[1].function_name).toBe('getStatus');
-    expect(wfsteps.steps[2].function_name).toBe('stepOne');
-    expect(wfsteps.steps[3].function_name).toBe('stepTwo');
+    expect(wfsteps[0].function_name).toBe('testWorkflow');
+    expect(wfsteps[1].function_name).toBe('getStatus');
+    expect(wfsteps[2].function_name).toBe('stepOne');
+    expect(wfsteps[3].function_name).toBe('stepTwo');
   });
 
   test('test-call-child-workflow-middle', async () => {
@@ -780,11 +773,11 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.steps.length).toBe(4);
-    expect(wfsteps.steps[0].function_name).toBe('stepOne');
-    expect(wfsteps.steps[1].function_name).toBe('testWorkflow');
-    expect(wfsteps.steps[2].function_name).toBe('getStatus');
-    expect(wfsteps.steps[3].function_name).toBe('stepTwo');
+    expect(wfsteps.length).toBe(4);
+    expect(wfsteps[0].function_name).toBe('stepOne');
+    expect(wfsteps[1].function_name).toBe('testWorkflow');
+    expect(wfsteps[2].function_name).toBe('getStatus');
+    expect(wfsteps[3].function_name).toBe('stepTwo');
   });
 
   test('test-call-child-workflow-last', async () => {
@@ -793,11 +786,11 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.steps.length).toBe(4);
-    expect(wfsteps.steps[0].function_name).toBe('stepOne');
-    expect(wfsteps.steps[1].function_name).toBe('stepTwo');
-    expect(wfsteps.steps[2].function_name).toBe('testWorkflow');
-    expect(wfsteps.steps[3].function_name).toBe('getStatus');
+    expect(wfsteps.length).toBe(4);
+    expect(wfsteps[0].function_name).toBe('stepOne');
+    expect(wfsteps[1].function_name).toBe('stepTwo');
+    expect(wfsteps[2].function_name).toBe('testWorkflow');
+    expect(wfsteps[3].function_name).toBe('getStatus');
   });
 
   test('test-queue-child-workflow-first', async () => {
@@ -806,11 +799,11 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.steps.length).toBe(4);
-    expect(wfsteps.steps[0].function_name).toBe('testWorkflow');
-    expect(wfsteps.steps[1].function_name).toBe('getStatus');
-    expect(wfsteps.steps[2].function_name).toBe('stepOne');
-    expect(wfsteps.steps[3].function_name).toBe('stepTwo');
+    expect(wfsteps.length).toBe(4);
+    expect(wfsteps[0].function_name).toBe('testWorkflow');
+    expect(wfsteps[1].function_name).toBe('getStatus');
+    expect(wfsteps[2].function_name).toBe('stepOne');
+    expect(wfsteps[3].function_name).toBe('stepTwo');
   });
 
   test('test-queue-child-workflow-middle', async () => {
@@ -819,11 +812,11 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.steps.length).toBe(4);
-    expect(wfsteps.steps[0].function_name).toBe('stepOne');
-    expect(wfsteps.steps[1].function_name).toBe('testWorkflow');
-    expect(wfsteps.steps[2].function_name).toBe('getStatus');
-    expect(wfsteps.steps[3].function_name).toBe('stepTwo');
+    expect(wfsteps.length).toBe(4);
+    expect(wfsteps[0].function_name).toBe('stepOne');
+    expect(wfsteps[1].function_name).toBe('testWorkflow');
+    expect(wfsteps[2].function_name).toBe('getStatus');
+    expect(wfsteps[3].function_name).toBe('stepTwo');
   });
 
   test('test-queue-child-workflow-last', async () => {
@@ -832,11 +825,11 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.steps.length).toBe(4);
-    expect(wfsteps.steps[0].function_name).toBe('stepOne');
-    expect(wfsteps.steps[1].function_name).toBe('stepTwo');
-    expect(wfsteps.steps[2].function_name).toBe('testWorkflow');
-    expect(wfsteps.steps[3].function_name).toBe('getStatus');
+    expect(wfsteps.length).toBe(4);
+    expect(wfsteps[0].function_name).toBe('stepOne');
+    expect(wfsteps[1].function_name).toBe('stepTwo');
+    expect(wfsteps[2].function_name).toBe('testWorkflow');
+    expect(wfsteps[3].function_name).toBe('getStatus');
   });
 
   test('test-child-rerun', async () => {
