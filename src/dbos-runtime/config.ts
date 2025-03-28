@@ -401,16 +401,12 @@ export function translatePublicDBOSconfig(
     },
     { silent: true },
   );
-
-  if (config.userDbPoolSize) {
-    poolConfig.max = config.userDbPoolSize;
-  }
+  poolConfig.max = config.userDbPoolSize || 20;
 
   const translatedConfig: DBOSConfigInternal = {
     name: appName,
     poolConfig: poolConfig,
     userDbclient: config.userDbclient || UserDatabaseName.KNEX,
-    userDbPoolSize: config.userDbPoolSize || 20,
     telemetry: {
       logs: {
         logLevel: config.logLevel || 'info',

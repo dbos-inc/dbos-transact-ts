@@ -628,8 +628,8 @@ describe('dbos-config', () => {
           database: 'dbostest',
           connectionTimeoutMillis: 7000,
           ssl: { ca: [certdata], rejectUnauthorized: true },
+          max: 20,
         },
-        userDbPoolSize: 20,
         userDbclient: UserDatabaseName.PRISMA,
         telemetry: {
           logs: {
@@ -669,8 +669,8 @@ describe('dbos-config', () => {
           database: 'appname',
           connectionTimeoutMillis: 3000,
           ssl: false,
+          max: 20,
         },
-        userDbPoolSize: 20,
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {
           logs: {
@@ -738,8 +738,8 @@ describe('dbos-config', () => {
           database: 'appname',
           connectionTimeoutMillis: 3000,
           ssl: false,
+          max: 20,
         },
-        userDbPoolSize: 20,
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {
           logs: {
