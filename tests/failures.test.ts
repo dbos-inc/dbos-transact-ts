@@ -182,6 +182,33 @@ describe('failures-tests', () => {
 
     return Promise.resolve();
   });
+
+  class TestStepStatus {
+    static count = 0;
+    static max_attempts = 5;
+
+    @DBOS.step({ retriesAllowed: true, maxAttempts: TestStepStatus.max_attempts, intervalSeconds: 0 })
+    static async stepOne() {
+      TestStepStatus.count += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.step()
+    static async stepTwo() {
+      return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async workflow() {
+      await TestStepStatus.stepOne();
+      await TestStepStatus.stepTwo();
+      return DBOS.workflowID;
+    }
+  }
+
+  test('test-step-status', async () => {
+    await expect(TestStepStatus.workflow()).resolves.toBeTruthy();
+  });
 });
 
 class FailureTestClass extends ConfiguredInstance {
