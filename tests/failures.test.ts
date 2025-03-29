@@ -191,6 +191,9 @@ describe('failures-tests', () => {
     @DBOS.step({ retriesAllowed: true, maxAttempts: TestStepStatus.max_attempts, intervalSeconds: 0 })
     static async stepOne() {
       assert.equal(DBOS.stepID, 0);
+      assert.equal(DBOS.stepStatus?.stepID, 0);
+      assert.equal(DBOS.stepStatus?.currentAttempt, 1);
+      assert.equal(DBOS.stepStatus?.maxAttempts, TestStepStatus.max_attempts);
       TestStepStatus.count += 1;
       return Promise.resolve();
     }
@@ -198,6 +201,9 @@ describe('failures-tests', () => {
     @DBOS.step()
     static async stepTwo() {
       assert.equal(DBOS.stepID, 1);
+      assert.equal(DBOS.stepStatus?.stepID, 1);
+      assert.equal(DBOS.stepStatus?.currentAttempt, undefined);
+      assert.equal(DBOS.stepStatus?.maxAttempts, undefined);
       return Promise.resolve();
     }
 

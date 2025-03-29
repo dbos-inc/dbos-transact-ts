@@ -8,6 +8,7 @@ import {
   runWithTopContext,
   DBOSContextImpl,
   getNextWFID,
+  StepStatus,
 } from './context';
 import {
   DBOSConfig,
@@ -520,6 +521,9 @@ export class DBOS {
   }
   static get stepID(): number | undefined {
     return getCurrentContextStore()?.curStepFunctionId;
+  }
+  static get stepStatus(): StepStatus | undefined {
+    return getCurrentContextStore()?.stepStatus;
   }
   static get authenticatedUser(): string {
     return getCurrentDBOSContext()?.authenticatedUser ?? '';
