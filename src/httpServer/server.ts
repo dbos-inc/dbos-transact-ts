@@ -79,7 +79,6 @@ export class DBOSHttpServer {
   async listen(port: number, adminPort: number) {
     const appServer = await this.appListen(port);
 
-    // TODO we should check adminPort as well.  This is done elsewhere though...
     const adminServer = this.adminApp.listen(adminPort, () => {
       this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
     });

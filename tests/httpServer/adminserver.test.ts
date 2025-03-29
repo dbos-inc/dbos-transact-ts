@@ -6,8 +6,8 @@ import { QueueMetadataResponse } from '../../src/httpServer/server';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../../src/httpServer/server';
 import { globalParams, sleepms } from '../../src/utils';
 import { Client } from 'pg';
-import { translatePublicDBOSconfig } from '../../src/dbos-runtime/config';
 import { step_info } from '../../schemas/system_db_schema';
+import http from 'http';
 
 describe('not-running-admin-server', () => {
   let config: DBOSConfig;
@@ -18,8 +18,7 @@ describe('not-running-admin-server', () => {
   test('test-admin-server-not-running', async () => {
     config = generatePublicDBOSTestConfig({ runAdminServer: false });
     DBOS.setConfig(config);
-    const [translatedConfig] = translatePublicDBOSconfig(config);
-    await setUpDBOSTestDb(translatedConfig);
+    await setUpDBOSTestDb(config);
     await DBOS.launch();
 
     await expect(async () => {
@@ -27,6 +26,22 @@ describe('not-running-admin-server', () => {
         method: 'GET',
       });
     }).rejects.toThrow();
+
+    await DBOS.shutdown();
+  });
+
+  test('admin-port-already-in-use', async () => {
+    // Start a dummy server on the admin port
+    const server = http.createServer().listen(3001, '127.0.0.1');
+    try {
+      config = generatePublicDBOSTestConfig({ runAdminServer: true });
+      DBOS.setConfig(config);
+      await setUpDBOSTestDb(config);
+      await DBOS.launch();
+      await DBOS.shutdown();
+    } finally {
+      await new Promise((resolve) => server.close(resolve));
+    }
   });
 });
 
