@@ -4,5 +4,7 @@
     "composite": true,
     "outDir": "./dist",
     "resolveJsonModule": true
-  }
+  },
+  "include": ["src/**/*", "schemas/**/*", "dbos-config.schema.json"],
+  "exclude": ["dist/**"]
 }
