@@ -16,6 +16,7 @@ import { v1 as uuidv1 } from 'uuid';
 import { StatusString } from '../src/workflow';
 import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError } from '../src/error';
 import { DBOSConfig } from '../src/dbos-executor';
+import assert from 'assert';
 
 const testTableName = 'dbos_failure_test_kv';
 type TestTransactionContext = TransactionContext<PoolClient>;
@@ -181,6 +182,51 @@ describe('failures-tests', () => {
     expect(() => DBOS.startWorkflow(new FailureTestClass()).noRegFunction(10)).toThrow(DBOSNotRegisteredError);
 
     return Promise.resolve();
+  });
+
+  class TestStepStatus {
+    static count = 0;
+    static max_attempts = 5;
+
+    @DBOS.step({ retriesAllowed: true, maxAttempts: TestStepStatus.max_attempts, intervalSeconds: 0 })
+    static async stepOne() {
+      assert.equal(DBOS.stepID, 0);
+      assert.equal(DBOS.stepStatus?.stepID, 0);
+      assert.equal(DBOS.stepStatus?.currentAttempt, TestStepStatus.count + 1);
+      assert.equal(DBOS.stepStatus?.maxAttempts, TestStepStatus.max_attempts);
+      TestStepStatus.count += 1;
+      if (TestStepStatus.count < TestStepStatus.max_attempts) {
+        throw new Error('fail');
+      }
+      return Promise.resolve();
+    }
+
+    @DBOS.step()
+    static async stepTwo() {
+      assert.equal(DBOS.stepID, 1);
+      assert.equal(DBOS.stepStatus?.stepID, 1);
+      assert.equal(DBOS.stepStatus?.currentAttempt, undefined);
+      assert.equal(DBOS.stepStatus?.maxAttempts, undefined);
+      return Promise.resolve();
+    }
+
+    @DBOS.transaction()
+    static async stepThreeTx() {
+      assert.equal(DBOS.stepID, 2);
+      return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async workflow() {
+      await TestStepStatus.stepOne();
+      await TestStepStatus.stepTwo();
+      await TestStepStatus.stepThreeTx();
+      return DBOS.workflowID;
+    }
+  }
+
+  test('test-step-status', async () => {
+    await expect(TestStepStatus.workflow()).resolves.toBeTruthy();
   });
 });
 

@@ -8,6 +8,7 @@ import {
   runWithTopContext,
   DBOSContextImpl,
   getNextWFID,
+  StepStatus,
 } from './context';
 import {
   DBOSConfig,
@@ -517,6 +518,19 @@ export class DBOS {
 
   static get workflowID(): string | undefined {
     return getCurrentDBOSContext()?.workflowUUID;
+  }
+
+  static get stepID(): number | undefined {
+    if (DBOS.isInStep()) {
+      return getCurrentContextStore()?.curStepFunctionId;
+    } else if (DBOS.isInTransaction()) {
+      return getCurrentContextStore()?.curTxFunctionId;
+    } else {
+      return undefined;
+    }
+  }
+  static get stepStatus(): StepStatus | undefined {
+    return getCurrentContextStore()?.stepStatus;
   }
   static get authenticatedUser(): string {
     return getCurrentDBOSContext()?.authenticatedUser ?? '';

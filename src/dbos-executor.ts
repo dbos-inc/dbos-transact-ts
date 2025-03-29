@@ -1856,11 +1856,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
           let cresult: R | undefined;
           if (commInfo.registration.passContext) {
-            await runWithStepContext(ctxt, async () => {
+            await runWithStepContext(ctxt, numAttempts, async () => {
               cresult = await stepFn.call(clsInst, ctxt, ...args);
             });
           } else {
-            await runWithStepContext(ctxt, async () => {
+            await runWithStepContext(ctxt, numAttempts, async () => {
               const sf = stepFn as unknown as (...args: T) => Promise<R>;
               cresult = await sf.call(clsInst, ...args);
             });
@@ -1890,11 +1890,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
       try {
         let cresult: R | undefined;
         if (commInfo.registration.passContext) {
-          await runWithStepContext(ctxt, async () => {
+          await runWithStepContext(ctxt, undefined, async () => {
             cresult = await stepFn.call(clsInst, ctxt, ...args);
           });
         } else {
-          await runWithStepContext(ctxt, async () => {
+          await runWithStepContext(ctxt, undefined, async () => {
             const sf = stepFn as unknown as (...args: T) => Promise<R>;
             cresult = await sf.call(clsInst, ...args);
           });

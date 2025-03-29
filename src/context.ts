@@ -15,6 +15,12 @@ import { StoredProcedureContextImpl } from './procedure';
 import { HandlerContextImpl } from './httpServer/handler';
 import { globalParams } from './utils';
 
+export interface StepStatus {
+  stepID: number;
+  currentAttempt?: number;
+  maxAttempts?: number;
+}
+
 export interface DBOSLocalCtx {
   ctx?: DBOSContext;
   parentCtx?: DBOSLocalCtx;
@@ -23,7 +29,8 @@ export interface DBOSLocalCtx {
   workflowId?: string;
   functionId?: number;
   inRecovery?: boolean;
-  curStepFunctionId?: number;
+  curStepFunctionId?: number; // If currently in a step, its function ID
+  stepStatus?: StepStatus; // If currently in a step, its public status object
   curTxFunctionId?: number;
   isInStoredProc?: boolean;
   sqlClient?: UserDatabaseClient;
@@ -166,15 +173,26 @@ export async function runWithStoredProcContext<R>(ctx: StoredProcedureContextImp
   );
 }
 
-export async function runWithStepContext<R>(ctx: StepContextImpl, callback: () => Promise<R>) {
+export async function runWithStepContext<R>(
+  ctx: StepContextImpl,
+  currentAttempt: number | undefined,
+  callback: () => Promise<R>,
+) {
   // Check we are in a workflow context and not in a step / transaction already
   const pctx = getCurrentContextStore();
   if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
   if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
 
+  const stepStatus: StepStatus = {
+    stepID: ctx.functionID,
+    currentAttempt: currentAttempt,
+    maxAttempts: currentAttempt ? ctx.maxAttempts : undefined,
+  };
+
   return await asyncLocalCtx.run(
     {
       ctx,
+      stepStatus: stepStatus,
       workflowId: ctx.workflowUUID,
       curStepFunctionId: ctx.functionID,
       parentCtx: pctx,
