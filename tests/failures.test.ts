@@ -16,6 +16,7 @@ import { v1 as uuidv1 } from 'uuid';
 import { StatusString } from '../src/workflow';
 import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError } from '../src/error';
 import { DBOSConfig } from '../src/dbos-executor';
+import assert from 'assert';
 
 const testTableName = 'dbos_failure_test_kv';
 type TestTransactionContext = TransactionContext<PoolClient>;
@@ -189,12 +190,14 @@ describe('failures-tests', () => {
 
     @DBOS.step({ retriesAllowed: true, maxAttempts: TestStepStatus.max_attempts, intervalSeconds: 0 })
     static async stepOne() {
+      assert.equal(DBOS.stepID, 0);
       TestStepStatus.count += 1;
       return Promise.resolve();
     }
 
     @DBOS.step()
     static async stepTwo() {
+      assert.equal(DBOS.stepID, 1);
       return Promise.resolve();
     }
 

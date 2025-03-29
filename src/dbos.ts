@@ -518,6 +518,9 @@ export class DBOS {
   static get workflowID(): string | undefined {
     return getCurrentDBOSContext()?.workflowUUID;
   }
+  static get stepID(): number | undefined {
+    return getCurrentContextStore()?.curStepFunctionId;
+  }
   static get authenticatedUser(): string {
     return getCurrentDBOSContext()?.authenticatedUser ?? '';
   }
