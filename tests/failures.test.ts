@@ -192,9 +192,12 @@ describe('failures-tests', () => {
     static async stepOne() {
       assert.equal(DBOS.stepID, 0);
       assert.equal(DBOS.stepStatus?.stepID, 0);
-      assert.equal(DBOS.stepStatus?.currentAttempt, 1);
+      assert.equal(DBOS.stepStatus?.currentAttempt, TestStepStatus.count + 1);
       assert.equal(DBOS.stepStatus?.maxAttempts, TestStepStatus.max_attempts);
       TestStepStatus.count += 1;
+      if (TestStepStatus.count < TestStepStatus.max_attempts) {
+        throw new Error('fail');
+      }
       return Promise.resolve();
     }
 
