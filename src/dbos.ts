@@ -519,8 +519,15 @@ export class DBOS {
   static get workflowID(): string | undefined {
     return getCurrentDBOSContext()?.workflowUUID;
   }
+
   static get stepID(): number | undefined {
-    return getCurrentContextStore()?.curStepFunctionId;
+    if (DBOS.isInStep()) {
+      return getCurrentContextStore()?.curStepFunctionId;
+    } else if (DBOS.isInTransaction()) {
+      return getCurrentContextStore()?.curTxFunctionId;
+    } else {
+      return undefined;
+    }
   }
   static get stepStatus(): StepStatus | undefined {
     return getCurrentContextStore()?.stepStatus;

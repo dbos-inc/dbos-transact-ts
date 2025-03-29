@@ -210,10 +210,17 @@ describe('failures-tests', () => {
       return Promise.resolve();
     }
 
+    @DBOS.transaction()
+    static async stepThreeTx() {
+      assert.equal(DBOS.stepID, 2);
+      return Promise.resolve();
+    }
+
     @DBOS.workflow()
     static async workflow() {
       await TestStepStatus.stepOne();
       await TestStepStatus.stepTwo();
+      await TestStepStatus.stepThreeTx();
       return DBOS.workflowID;
     }
   }
