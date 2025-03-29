@@ -78,7 +78,7 @@ export class Conductor {
             return;
           }
           this.dbosExec.logger.debug('Sending ping to conductor');
-          this.websocket!.ping();
+          this.websocket.ping();
           // Set ping timeout.
           this.pingTimeout = setTimeout(() => {
             if (this.isShuttingDown) {
