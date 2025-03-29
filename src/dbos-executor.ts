@@ -61,6 +61,7 @@ import {
   ConfiguredInstance,
   getAllRegisteredClasses,
 } from './decorators';
+import { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import {
@@ -819,10 +820,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
           if (child_id !== null) {
             return new RetrievedHandle(this.systemDatabase, child_id, callerUUID, callerFunctionID);
           }
-
-          await this.systemDatabase.recordChildWorkflow(callerUUID, workflowUUID, callerFunctionID, wf.name);
         }
         const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+
+        if (callerFunctionID !== undefined && callerUUID !== undefined) {
+          await this.systemDatabase.recordChildWorkflow(callerUUID, workflowUUID, callerFunctionID, wf.name);
+        }
+
         args = ires.args;
         status = ires.status;
         await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
@@ -2232,6 +2236,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     await this.systemDatabase.cancelWorkflow(workflowID);
     this.logger.info(`Cancelling workflow ${workflowID}`);
     this.workflowCancellationMap.set(workflowID, true);
+  }
+
+  async listWorkflowSteps(workflowID: string): Promise<step_info[]> {
+    return await this.systemDatabase.getWorkflowSteps(workflowID);
   }
 
   async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
