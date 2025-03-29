@@ -10,8 +10,14 @@ import { hostname } from 'node:os';
 export class Conductor {
   url: string;
   websocket: WebSocket | undefined = undefined;
-  isShuttingDown = false;
-  isClosed = false;
+  isShuttingDown = false; // Is in the process of shutting down the connection
+  isClosed = false; // Is closed after the connection has been terminated
+  pingPeriodMs = 20000; // Time in milliseconds to wait before sending a ping message to the conductor
+  pingTimeoutMs = 15000; // Time in milliseconds to wait for a response to a ping message before considering the connection dead
+  pingInterval: NodeJS.Timeout | undefined = undefined; // Interval for sending ping messages to the conductor
+  pingTimeout: NodeJS.Timeout | undefined = undefined; // Timeout for waiting for a response to a ping message
+  reconnectDelayMs = 1000;
+  reconnectTimeout: NodeJS.Timeout | undefined = undefined;
 
   constructor(
     readonly dbosExec: DBOSExecutor,
@@ -23,9 +29,41 @@ export class Conductor {
     this.url = `${cleanConductorURL}/websocket/${appName}/${conductorKey}`;
   }
 
+  resetWebsocket() {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = undefined;
+    }
+    if (this.pingTimeout) {
+      clearTimeout(this.pingTimeout);
+      this.pingTimeout = undefined;
+    }
+    if (this.websocket) {
+      this.websocket.terminate(); // Terminate the existing connection
+      this.websocket = undefined; // Set the websocket to undefined to indicate it's closed
+    }
+    this.scheduleReconnect();
+  }
+
+  scheduleReconnect() {
+    if (this.reconnectTimeout || this.isShuttingDown) {
+      return;
+    }
+    this.dbosExec.logger.debug(`Reconnecting in ${this.reconnectDelayMs / 1000} second`);
+    this.reconnectTimeout = setTimeout(() => {
+      this.reconnectTimeout = undefined;
+      this.dispatchLoop();
+    }, this.reconnectDelayMs);
+  }
+
   dispatchLoop() {
     if (this.websocket) {
       this.dbosExec.logger.warn('Conductor websocket already exists');
+      return;
+    }
+
+    if (this.isShuttingDown) {
+      this.dbosExec.logger.debug('Not starting dispatch loop as conductor is shutting down');
       return;
     }
 
@@ -35,6 +73,31 @@ export class Conductor {
       this.websocket = new WebSocket(this.url, { handshakeTimeout: 5000 });
       this.websocket.on('open', () => {
         this.dbosExec.logger.debug('Opened connection to DBOS conductor');
+        this.pingInterval = setInterval(() => {
+          if (this.websocket?.readyState !== WebSocket.OPEN) {
+            return;
+          }
+          this.dbosExec.logger.debug('Sending ping to conductor');
+          this.websocket!.ping();
+          // Set ping timeout.
+          this.pingTimeout = setTimeout(() => {
+            if (this.isShuttingDown) {
+              this.isClosed = true;
+              return;
+            }
+            // Otherwise, try to reconnect
+            this.dbosExec.logger.error('Connection to conductor lost. Reconnecting...');
+            this.resetWebsocket();
+          }, this.pingTimeoutMs);
+        }, this.pingPeriodMs);
+      });
+
+      this.websocket.on('pong', () => {
+        this.dbosExec.logger.debug('Received pong from conductor');
+        if (this.pingTimeout) {
+          clearTimeout(this.pingTimeout);
+          this.pingTimeout = undefined;
+        }
       });
 
       this.websocket.on('message', async (data: string) => {
@@ -221,11 +284,7 @@ export class Conductor {
         } else {
           // Try to reconnect
           this.dbosExec.logger.error('Connection to conductor lost. Reconnecting.');
-          setTimeout(() => {
-            this.websocket?.terminate();
-            this.websocket = undefined;
-            this.dispatchLoop();
-          }, 1000);
+          this.resetWebsocket();
         }
       });
 
@@ -233,24 +292,19 @@ export class Conductor {
         console.error(err);
         // TODO: better error message, showing the detailed error.
         this.dbosExec.logger.error(`Unexpected exception in connection to conductor. Reconnecting: ${err.message}`);
-        setTimeout(() => {
-          this.websocket?.terminate();
-          this.websocket = undefined;
-          this.dispatchLoop();
-        }, 1000);
+        this.resetWebsocket();
       });
     } catch (e) {
       this.dbosExec.logger.error(`Error in conductor loop. Reconnecting: ${(e as Error).message}`);
-      setTimeout(() => {
-        this.websocket?.terminate();
-        this.websocket = undefined;
-        this.dispatchLoop();
-      }, 1000);
+      this.resetWebsocket();
     }
   }
 
   stop() {
     this.isShuttingDown = true;
+    clearInterval(this.pingInterval);
+    clearTimeout(this.pingTimeout);
+    clearTimeout(this.reconnectTimeout);
     if (this.websocket) {
       this.websocket.close();
     }
