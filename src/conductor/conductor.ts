@@ -42,10 +42,7 @@ export class Conductor {
       this.websocket.terminate(); // Terminate the existing connection
       this.websocket = undefined; // Set the websocket to undefined to indicate it's closed
     }
-    this.scheduleReconnect();
-  }
 
-  scheduleReconnect() {
     if (this.reconnectTimeout || this.isShuttingDown) {
       return;
     }
@@ -54,6 +51,31 @@ export class Conductor {
       this.reconnectTimeout = undefined;
       this.dispatchLoop();
     }, this.reconnectDelayMs);
+  }
+
+  setPingInterval() {
+    // Clear any existing ping interval to avoid multiple intervals being set
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = undefined;
+    }
+    this.pingInterval = setInterval(() => {
+      if (this.websocket?.readyState !== WebSocket.OPEN) {
+        return;
+      }
+      this.dbosExec.logger.debug('Sending ping to conductor');
+      this.websocket.ping();
+      // Set ping timeout.
+      this.pingTimeout = setTimeout(() => {
+        if (this.isShuttingDown) {
+          this.isClosed = true;
+          return;
+        }
+        // Otherwise, try to reconnect
+        this.dbosExec.logger.error('Connection to conductor lost. Reconnecting...');
+        this.resetWebsocket();
+      }, this.pingTimeoutMs);
+    }, this.pingPeriodMs);
   }
 
   dispatchLoop() {
@@ -73,23 +95,7 @@ export class Conductor {
       this.websocket = new WebSocket(this.url, { handshakeTimeout: 5000 });
       this.websocket.on('open', () => {
         this.dbosExec.logger.debug('Opened connection to DBOS conductor');
-        this.pingInterval = setInterval(() => {
-          if (this.websocket?.readyState !== WebSocket.OPEN) {
-            return;
-          }
-          this.dbosExec.logger.debug('Sending ping to conductor');
-          this.websocket.ping();
-          // Set ping timeout.
-          this.pingTimeout = setTimeout(() => {
-            if (this.isShuttingDown) {
-              this.isClosed = true;
-              return;
-            }
-            // Otherwise, try to reconnect
-            this.dbosExec.logger.error('Connection to conductor lost. Reconnecting...');
-            this.resetWebsocket();
-          }, this.pingTimeoutMs);
-        }, this.pingPeriodMs);
+        this.setPingInterval();
       });
 
       this.websocket.on('pong', () => {
