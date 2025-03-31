@@ -15,7 +15,6 @@ import fs from 'fs';
 import { loadDatabaseConnection } from './db_connection';
 import { GlobalLogger } from '../telemetry/logs';
 import dbosConfigSchema from '../../dbos-config.schema.json';
-import { OTLPExporterConfig } from '../telemetry/exporters';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true });
