@@ -143,9 +143,8 @@ program
   .option('-y, --yes', 'Skip confirmation prompt', false)
   .action(async (options: { yes: boolean }) => {
     const logger = new GlobalLogger();
-    const _ = parseConfigFile(); // Validate config file
-    const configFile = loadConfigFile(dbosConfigFilePath);
-    await reset(configFile, logger, options.yes);
+    const [config] = parseConfigFile();
+    await reset(config, logger, options.yes);
   });
 
 program.command('rollback').action(async () => {
@@ -333,9 +332,12 @@ if (!process.argv.slice(2).length) {
 //If otel exporter is specified in configFile, adds it to the logger and flushes it after.
 //If action throws, logs the exception and sets the exit code to 1.
 //Finally, terminates the program with the exit code.
-export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number) {
+export async function runAndLog(
+  action: (config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number,
+) {
   let logger = new GlobalLogger();
-  const configFile = loadConfigFile(dbosConfigFilePath);
+  const [config] = parseConfigFile();
+  const configFile = loadConfigFile(dbosConfigFilePath); // pass the raw config file for CLI arguments
   let terminate = undefined;
   if (configFile.telemetry?.OTLPExporter) {
     logger = new GlobalLogger(
@@ -354,7 +356,7 @@ export async function runAndLog(action: (configFile: ConfigFile, logger: GlobalL
   }
   let returnCode = 1;
   try {
-    returnCode = await action(configFile, logger);
+    returnCode = await action(config, configFile, logger);
   } catch (e) {
     logger.error(e);
   }
