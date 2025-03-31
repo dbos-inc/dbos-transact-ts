@@ -124,9 +124,10 @@ export interface DBOSConfig {
   };
 }
 
-export type DBOSConfigInternal = Omit<DBOSConfig, 'poolConfig' | 'system_database'> & {
+export type DBOSConfigInternal = Omit<DBOSConfig, 'poolConfig' | 'system_database' | 'telemetry'> & {
   poolConfig: PoolConfig;
   system_database: string;
+  telemetry: TelemetryConfig;
 };
 
 export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {

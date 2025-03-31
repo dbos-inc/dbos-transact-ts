@@ -235,7 +235,10 @@ export class DBOS {
       const isDebugging = DBOS.getDebugModeFromEnv() !== DebugMode.DISABLED;
       [DBOS.dbosConfig, DBOS.runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
       if (process.env.DBOS__CLOUD === 'true') {
-        [DBOS.dbosConfig, DBOS.runtimeConfig] = overwrite_config(DBOS.dbosConfig, DBOS.runtimeConfig);
+        [DBOS.dbosConfig, DBOS.runtimeConfig] = overwrite_config(
+          DBOS.dbosConfig as DBOSConfigInternal,
+          DBOS.runtimeConfig,
+        );
       }
     }
   }
@@ -292,7 +295,7 @@ export class DBOS {
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
     } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
-      DBOS.translateConfig();
+      DBOS.translateConfig(); // This is a defensive measure for users who'd do DBOS.config = X instead of using DBOS.setConfig()
       if (!isDebugging) {
         DBOS.dbosConfig.poolConfig = await db_wizard((DBOS.dbosConfig as DBOSConfigInternal).poolConfig);
       }

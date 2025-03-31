@@ -907,7 +907,7 @@ describe('dbos-config', () => {
 
   describe('overwrite_config', () => {
     test('should return the original configs when config file is not found', () => {
-      const providedDBOSConfig: DBOSConfig = {
+      const providedDBOSConfig: DBOSConfigInternal = {
         name: 'test-app',
         poolConfig: {
           host: 'localhost',
@@ -916,6 +916,8 @@ describe('dbos-config', () => {
           password: 'password',
           database: 'test_db',
         },
+        telemetry: {},
+        system_database: 'abc',
         userDbclient: UserDatabaseName.KNEX,
       };
 
@@ -938,7 +940,7 @@ describe('dbos-config', () => {
     test('should throw when config file is empty', () => {
       jest.spyOn(utils, 'readFileSync').mockReturnValue('');
 
-      const providedDBOSConfig: DBOSConfig = {
+      const providedDBOSConfig: DBOSConfigInternal = {
         name: 'test-app',
         poolConfig: {
           host: 'localhost',
@@ -947,6 +949,8 @@ describe('dbos-config', () => {
           password: 'password',
           database: 'test_db',
         },
+        telemetry: {},
+        system_database: 'abc',
         userDbclient: UserDatabaseName.KNEX,
       };
 
@@ -969,7 +973,7 @@ describe('dbos-config', () => {
     test('should throw when config file is invalid', () => {
       jest.spyOn(utils, 'readFileSync').mockReturnValue('{');
 
-      const providedDBOSConfig: DBOSConfig = {
+      const providedDBOSConfig: DBOSConfigInternal = {
         name: 'test-app',
         poolConfig: {
           host: 'localhost',
@@ -978,6 +982,8 @@ describe('dbos-config', () => {
           password: 'password',
           database: 'test_db',
         },
+        telemetry: {},
+        system_database: 'abc',
         userDbclient: UserDatabaseName.KNEX,
       };
 
@@ -1012,7 +1018,7 @@ describe('dbos-config', () => {
         `;
       jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
 
-      const providedDBOSConfig: DBOSConfig = {
+      const providedDBOSConfig: DBOSConfigInternal = {
         name: 'test-app',
         poolConfig: {
           host: 'localhost',
@@ -1022,6 +1028,7 @@ describe('dbos-config', () => {
           database: 'test_db',
         },
         userDbclient: UserDatabaseName.KNEX,
+        system_database: 'abc',
         telemetry: {
           logs: {
             logLevel: 'debug',
@@ -1060,8 +1067,6 @@ describe('dbos-config', () => {
       // Base telemetry config should be preserved from provided config
       expect(resultDBOSConfig.telemetry?.logs).toEqual(providedDBOSConfig.telemetry?.logs);
       // OTLP traces endpoint should be overwritten from the file
-      // Note: Based on the implementation, if this doesn't pass, it indicates that the
-      // function is not actually overwriting the OTLP traces endpoint as the comments suggest
       expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual('http://otel-collector:4317/from-file');
 
       // Runtime admin_port and runAdminServer should be overwritten
@@ -1073,6 +1078,60 @@ describe('dbos-config', () => {
       expect(resultRuntimeConfig.entrypoints).toEqual(providedRuntimeConfig.entrypoints);
       expect(resultRuntimeConfig.start).toEqual(providedRuntimeConfig.start);
       expect(resultRuntimeConfig.setup).toEqual(providedRuntimeConfig.setup);
+    });
+
+    test('should use config file content when parameters are missing from provided config', () => {
+      // Mock the config file content with database settings
+      const mockDBOSConfigYamlString = `
+            name: app-from-file
+            database:
+                hostname: db-host-from-file
+                port: 1234
+                username: user-from-file
+                password: password-from-file
+                app_db_name: db_from_file
+                sys_db_name: sys_db_from_file
+            telemetry:
+                OTLPExporter:
+                    tracesEndpoint: http://otel-collector:4317/from-file
+                logs:
+                    logLevel: warning
+            `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
+
+      const providedDBOSConfig: DBOSConfigInternal = {
+        name: 'test-app',
+        poolConfig: {
+          host: 'localhost',
+          port: 5432,
+          user: 'postgres',
+          password: 'password',
+          database: 'test_db',
+        },
+        userDbclient: UserDatabaseName.KNEX,
+        system_database: 'abc',
+        telemetry: {
+          logs: {
+            logLevel: 'debug',
+            forceConsole: false,
+          },
+        },
+      };
+      const providedRuntimeConfig: DBOSRuntimeConfig = {
+        port: 3000,
+        admin_port: 4000,
+        runAdminServer: false,
+        entrypoints: ['app.js'],
+        start: ['start.js'],
+        setup: ['setup.js'],
+      };
+
+      const [resultDBOSConfig] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
+
+      // Base telemetry config should be preserved from provided config
+      expect(resultDBOSConfig.telemetry?.logs).toEqual(providedDBOSConfig.telemetry?.logs);
+      // OTLP traces endpoint is taken from the file
+      expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual('http://otel-collector:4317/from-file');
     });
 
     test('should use provided config when parameters are missing from config file', () => {
@@ -1089,7 +1148,7 @@ describe('dbos-config', () => {
 
       jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
 
-      const providedDBOSConfig: DBOSConfig = {
+      const providedDBOSConfig: DBOSConfigInternal = {
         name: 'test-app',
         poolConfig: {
           host: 'localhost',
@@ -1099,6 +1158,7 @@ describe('dbos-config', () => {
           database: 'test_db',
         },
         userDbclient: UserDatabaseName.KNEX,
+        system_database: 'abc',
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -1138,7 +1198,7 @@ describe('dbos-config', () => {
 
       jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
 
-      const providedDBOSConfig: DBOSConfig = {
+      const providedDBOSConfig: DBOSConfigInternal = {
         name: 'test-app',
         poolConfig: {
           host: 'localhost',
@@ -1147,6 +1207,7 @@ describe('dbos-config', () => {
           password: 'password',
           database: 'test_db',
         },
+        telemetry: {},
         system_database: 'original_sys_db',
       };
 
