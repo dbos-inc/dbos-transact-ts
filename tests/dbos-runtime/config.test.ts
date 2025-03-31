@@ -303,7 +303,7 @@ describe('dbos-config', () => {
       expect(ctx.getConfig('no_key')).toBeUndefined();
       // Config key does not exist, default value
       expect(ctx.getConfig('no_key', 'default')).toBe('default');
-      // We didn't init, so do some manual cleanup only
+      // We didn't init, so do some manual cleanup pnly
       clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();
     });
@@ -1073,6 +1073,9 @@ describe('dbos-config', () => {
       // OTLP endpoints should be overwritten from the file
       expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual('http://otel-collector:4317/from-file');
       expect(resultDBOSConfig.telemetry?.OTLPExporter?.logsEndpoint).toEqual('http://otel-collector:4317/logs');
+
+      // Other provided fields should be preserved
+      expect(resultDBOSConfig.userDbclient).toEqual(providedDBOSConfig.userDbclient);
 
       // Runtime admin_port and runAdminServer should be overwritten
       expect(resultRuntimeConfig.admin_port).toEqual(3001);

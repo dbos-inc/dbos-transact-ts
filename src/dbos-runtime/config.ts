@@ -491,6 +491,7 @@ export function overwrite_config(
   }
 
   const overwritenDBOSConfig = {
+    ...providedDBOSConfig,
     name: appName,
     poolConfig: poolConfig,
     telemetry: providedDBOSConfig.telemetry,
