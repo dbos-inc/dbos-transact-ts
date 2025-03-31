@@ -336,11 +336,21 @@ export class DBOS {
     const logger = DBOS.logger;
     if (DBOS.runtimeConfig && DBOS.runtimeConfig.runAdminServer) {
       const adminApp = DBOSHttpServer.setupAdminApp(executor);
-      await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
-
-      DBOS.adminServer = adminApp.listen(DBOS.runtimeConfig.admin_port, () => {
-        DBOS.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
-      });
+      try {
+        await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
+        // Wrap the listen call in a promise to properly catch errors
+        DBOS.adminServer = await new Promise((resolve, reject) => {
+          const server = adminApp.listen(DBOS.runtimeConfig?.admin_port, () => {
+            DBOS.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
+            resolve(server);
+          });
+          server.on('error', (err) => {
+            reject(err);
+          });
+        });
+      } catch (e) {
+        logger.warn(`Unable to start DBOS admin server on port ${DBOS.runtimeConfig.admin_port}`);
+      }
     }
 
     if (options?.koaApp) {
