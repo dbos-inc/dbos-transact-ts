@@ -657,7 +657,9 @@ describe('dbos-config', () => {
     test('translate with no input', () => {
       const mockPackageJsoString = `{name: 'appname'}`;
       jest.spyOn(fs, 'readFileSync').mockReturnValue(mockPackageJsoString);
-      const dbosConfig = {};
+      const dbosConfig = {
+        databaseUrl: process.env.UNDEF,
+      };
       const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig);
       expect(translatedDBOSConfig).toEqual({
         name: 'appname', // Found from config file
@@ -1013,6 +1015,7 @@ describe('dbos-config', () => {
           telemetry:
             OTLPExporter:
                 tracesEndpoint: http://otel-collector:4317/from-file
+                logsEndpoint: http://otel-collector:4317/logs
             logs:
                 logLevel: warning
         `;
@@ -1036,6 +1039,7 @@ describe('dbos-config', () => {
           },
           OTLPExporter: {
             tracesEndpoint: 'http://otel-collector:4317/original',
+            logsEndpoint: 'http://otel-collector:4317/yadiyada',
           },
         },
       };
@@ -1066,8 +1070,9 @@ describe('dbos-config', () => {
 
       // Base telemetry config should be preserved from provided config
       expect(resultDBOSConfig.telemetry?.logs).toEqual(providedDBOSConfig.telemetry?.logs);
-      // OTLP traces endpoint should be overwritten from the file
+      // OTLP endpoints should be overwritten from the file
       expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual('http://otel-collector:4317/from-file');
+      expect(resultDBOSConfig.telemetry?.OTLPExporter?.logsEndpoint).toEqual('http://otel-collector:4317/logs');
 
       // Runtime admin_port and runAdminServer should be overwritten
       expect(resultRuntimeConfig.admin_port).toEqual(3001);
@@ -1130,7 +1135,7 @@ describe('dbos-config', () => {
 
       // Base telemetry config should be preserved from provided config
       expect(resultDBOSConfig.telemetry?.logs).toEqual(providedDBOSConfig.telemetry?.logs);
-      // OTLP traces endpoint is taken from the file
+      // OTLP traces endpoint are overwritten from the file
       expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual('http://otel-collector:4317/from-file');
     });
 
@@ -1166,6 +1171,7 @@ describe('dbos-config', () => {
           },
           OTLPExporter: {
             tracesEndpoint: 'http://otel-collector:4317/original',
+            logsEndpoint: 'http://otel-collector:4317/yadiyada',
           },
         },
       };
@@ -1179,9 +1185,10 @@ describe('dbos-config', () => {
         setup: [],
       };
 
-      const [resultDBOSConfig, _] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
+      const [resultDBOSConfig] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
       expect(resultDBOSConfig.telemetry).toEqual(providedDBOSConfig.telemetry);
       expect(resultDBOSConfig.name).toEqual('test-app');
+      expect(resultDBOSConfig.telemetry?.OTLPExporter).toEqual(providedDBOSConfig.telemetry?.OTLPExporter);
     });
 
     test('use constructPoolConfig default sys db name when missing from config file', () => {

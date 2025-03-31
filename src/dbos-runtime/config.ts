@@ -486,6 +486,9 @@ export function overwrite_config(
   if (configFile!.telemetry?.OTLPExporter?.tracesEndpoint) {
     providedDBOSConfig.telemetry.OTLPExporter.tracesEndpoint = configFile!.telemetry.OTLPExporter.tracesEndpoint;
   }
+  if (configFile!.telemetry?.OTLPExporter?.logsEndpoint) {
+    providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint = configFile!.telemetry.OTLPExporter.logsEndpoint;
+  }
 
   const overwritenDBOSConfig = {
     name: appName,
