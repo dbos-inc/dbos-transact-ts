@@ -349,9 +349,7 @@ export class DBOS {
           });
         });
       } catch (e) {
-        logger.error(
-          `Port ${DBOS.runtimeConfig.admin_port} is not available for DBOS admin server. Please check your configuration.`,
-        );
+        logger.warn(`Unable to start DBOS admin server on port ${DBOS.runtimeConfig.admin_port}`);
       }
     }
 
