@@ -39,8 +39,6 @@ describe('not-running-admin-server', () => {
       await setUpDBOSTestDb(config);
       await DBOS.launch();
       await DBOS.shutdown();
-    } catch (error) {
-      expect((error as Error).message).toMatch(/EADDRINUSE/);
     } finally {
       server.close();
     }
