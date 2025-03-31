@@ -448,7 +448,7 @@ export function parseDbString(dbString: string): DBConfig {
     username: parsed.user || undefined,
     password: parsed.password || undefined,
     app_db_name: parsed.database || undefined,
-    ssl: 'sslmode' in parsed && parsed.sslmode === 'require',
+    ssl: 'sslmode' in parsed && (parsed.sslmode === 'require' || parsed.sslmode === 'verify-full'),
     ssl_ca: queryParams['sslrootcert'] || undefined,
     connectionTimeoutMillis: queryParams['connect_timeout']
       ? parseInt(queryParams['connect_timeout'], 10) * 1000
