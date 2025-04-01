@@ -318,6 +318,8 @@ describe('oaoo-tests', () => {
 
       // Set the child workflow UUID to targetUUID.
       const invokedHandle = await DBOS.startWorkflow(EventStatusOAOO, { workflowID: targetUUID }).setEventWorkflow();
+      const ires = await invokedHandle.getStatus();
+      res += '-' + ires?.status;
       try {
         if (EventStatusOAOO.wfCnt > 2) {
           await invokedHandle.getResult();
@@ -327,8 +329,6 @@ describe('oaoo-tests', () => {
         DBOS.logger.error(e);
       }
 
-      const ires = await invokedHandle.getStatus();
-      res += '-' + ires?.status;
       return res;
     }
   }
