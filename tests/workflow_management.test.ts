@@ -708,9 +708,10 @@ describe('test-list-steps', () => {
 
     @DBOS.workflow()
     static async directCallWorkflow() {
-      await TestListSteps.testWorkflow();
+      const childID = await TestListSteps.testWorkflow();
       await TestListSteps.stepOne();
       await TestListSteps.stepTwo();
+      return childID;
     }
 
     @DBOS.workflow()
@@ -899,11 +900,19 @@ describe('test-list-steps', () => {
   test('test-direct-call-workflow', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).directCallWorkflow();
-    await handle.getResult();
+    const childID = await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(4);
     expect(wfsteps[0].function_name).toBe('testWorkflow');
+    expect(wfsteps[0].function_id).toBe(0);
+    expect(wfsteps[0].output).toBe(null);
+    expect(wfsteps[0].error).toBe(null);
+    expect(wfsteps[0].child_workflow_id).toBe(childID);
     expect(wfsteps[1].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[1].function_id).toBe(1);
+    expect(wfsteps[1].output).toBe(childID);
+    expect(wfsteps[1].error).toBe(null);
+    expect(wfsteps[1].child_workflow_id).toBe(childID);
     expect(wfsteps[2].function_name).toBe('stepOne');
     expect(wfsteps[3].function_name).toBe('stepTwo');
   });
