@@ -67,8 +67,8 @@ export interface workflow_queue {
 
 export interface step_info {
   function_id: number;
-  function_name: string;
-  output: string;
-  error: string;
-  child_workflow_id: string;
+  function_name: string | null;
+  output: unknown;
+  error: Error | null;
+  child_workflow_id: string | null;
 }
