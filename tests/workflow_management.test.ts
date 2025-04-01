@@ -721,6 +721,29 @@ describe('test-list-steps', () => {
       return id;
     }
 
+    @DBOS.step()
+    static async failingStep() {
+      await Promise.resolve();
+      throw Error('fail');
+    }
+
+    @DBOS.workflow()
+    static async callFailingStep() {
+      await TestListSteps.failingStep();
+    }
+
+    @DBOS.workflow()
+    static async startFailingStep() {
+      const handle = await DBOS.startWorkflow(TestListSteps).failingStep();
+      return await handle.getResult();
+    }
+
+    @DBOS.workflow()
+    static async enqueueFailingStep() {
+      const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).failingStep();
+      return await handle.getResult();
+    }
+
     @DBOS.workflow()
     static async CounterParent() {
       const childwfid = uuidv4();
@@ -868,6 +891,32 @@ describe('test-list-steps', () => {
     expect(wfsteps[1].function_name).toBe('DBOS.getResult');
     expect(wfsteps[2].function_name).toBe('stepOne');
     expect(wfsteps[3].function_name).toBe('stepTwo');
+  });
+
+  test('test-list-failing-step', async () => {
+    // Test calling a failing step directly
+    let wfid = uuidv4();
+    let handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callFailingStep();
+    await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
+    let wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.length).toBe(1);
+    expect(wfsteps[0].function_name).toBe('failingStep');
+    // Test starting a failing step
+    wfid = uuidv4();
+    handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).startFailingStep();
+    await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
+    wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.length).toBe(2);
+    expect(wfsteps[0].function_name).toBe('temp_workflow');
+    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
+    // Test enqueueing a failing step
+    wfid = uuidv4();
+    handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueFailingStep();
+    await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
+    wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.length).toBe(2);
+    expect(wfsteps[0].function_name).toBe('temp_workflow');
+    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
   });
 
   test('test-child-rerun', async () => {
