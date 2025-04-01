@@ -1,6 +1,7 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
-import { ConfigFile, constructPoolConfig } from './config';
+import { ConfigFile } from './config';
+import { DBOSConfigInternal } from '../dbos-executor';
 import { PoolConfig, Client } from 'pg';
 import { createUserDBSchema, userDBIndex, userDBSchema } from '../../schemas/user_db_schema';
 import { ExistenceCheck, migrateSystemDatabase } from '../system_database';
@@ -12,9 +13,8 @@ import {
 } from '../user_database';
 import { db_wizard } from './db_wizard';
 
-export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  let poolConfig: PoolConfig = constructPoolConfig(configFile);
-  poolConfig = await db_wizard(poolConfig);
+export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) {
+  const poolConfig = await db_wizard(config.poolConfig);
   logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
   await createDBIfDoesNotExist(poolConfig, logger);
 
@@ -33,7 +33,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 
   logger.info('Creating DBOS tables and system database.');
   try {
-    await createDBOSTables(configFile, poolConfig);
+    await createDBOSTables(config.system_database, poolConfig);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);
@@ -47,7 +47,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   return 0;
 }
 
-export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) {
+export function rollbackMigration(_config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) {
   logger.info('Starting Migration Rollback');
 
   let dbType = configFile.database.app_db_client;
@@ -71,11 +71,11 @@ export function rollbackMigration(configFile: ConfigFile, logger: GlobalLogger) 
 }
 
 // Create DBOS system DB and tables.
-async function createDBOSTables(configFile: ConfigFile, userPoolConfig: PoolConfig) {
+async function createDBOSTables(systemDbName: string, userPoolConfig: PoolConfig) {
   const logger = new GlobalLogger();
 
   const systemPoolConfig = { ...userPoolConfig };
-  systemPoolConfig.database = configFile.database.sys_db_name ?? `${userPoolConfig.database}_dbos_sys`;
+  systemPoolConfig.database = systemDbName;
 
   const pgUserClient = new Client(userPoolConfig);
   await pgUserClient.connect();

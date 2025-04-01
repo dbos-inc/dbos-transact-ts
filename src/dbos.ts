@@ -235,7 +235,10 @@ export class DBOS {
       const isDebugging = DBOS.getDebugModeFromEnv() !== DebugMode.DISABLED;
       [DBOS.dbosConfig, DBOS.runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
       if (process.env.DBOS__CLOUD === 'true') {
-        [DBOS.dbosConfig, DBOS.runtimeConfig] = overwrite_config(DBOS.dbosConfig, DBOS.runtimeConfig);
+        [DBOS.dbosConfig, DBOS.runtimeConfig] = overwrite_config(
+          DBOS.dbosConfig as DBOSConfigInternal,
+          DBOS.runtimeConfig,
+        );
       }
     }
   }
@@ -292,7 +295,7 @@ export class DBOS {
       DBOS.dbosConfig = dbosConfig;
       DBOS.runtimeConfig = runtimeConfig;
     } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
-      DBOS.translateConfig();
+      DBOS.translateConfig(); // This is a defensive measure for users who'd do DBOS.config = X instead of using DBOS.setConfig()
       if (!isDebugging) {
         DBOS.dbosConfig.poolConfig = await db_wizard((DBOS.dbosConfig as DBOSConfigInternal).poolConfig);
       }
@@ -336,11 +339,21 @@ export class DBOS {
     const logger = DBOS.logger;
     if (DBOS.runtimeConfig && DBOS.runtimeConfig.runAdminServer) {
       const adminApp = DBOSHttpServer.setupAdminApp(executor);
-      await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
-
-      DBOS.adminServer = adminApp.listen(DBOS.runtimeConfig.admin_port, () => {
-        DBOS.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
-      });
+      try {
+        await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
+        // Wrap the listen call in a promise to properly catch errors
+        DBOS.adminServer = await new Promise((resolve, reject) => {
+          const server = adminApp.listen(DBOS.runtimeConfig?.admin_port, () => {
+            DBOS.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
+            resolve(server);
+          });
+          server.on('error', (err) => {
+            reject(err);
+          });
+        });
+      } catch (e) {
+        logger.warn(`Unable to start DBOS admin server on port ${DBOS.runtimeConfig.admin_port}`);
+      }
     }
 
     if (options?.koaApp) {

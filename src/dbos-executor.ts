@@ -124,9 +124,10 @@ export interface DBOSConfig {
   };
 }
 
-export type DBOSConfigInternal = Omit<DBOSConfig, 'poolConfig' | 'system_database'> & {
+export type DBOSConfigInternal = Omit<DBOSConfig, 'poolConfig' | 'system_database' | 'telemetry'> & {
   poolConfig: PoolConfig;
   system_database: string;
+  telemetry: TelemetryConfig;
 };
 
 export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
@@ -294,14 +295,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
 
-    if (config.telemetry?.OTLPExporter) {
+    if (config.telemetry.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
       this.telemetryCollector = new TelemetryCollector(OTLPExporter);
     } else {
       // We always setup a collector to drain the signals queue, even if we don't have an exporter.
       this.telemetryCollector = new TelemetryCollector();
     }
-    this.logger = new Logger(this.telemetryCollector, this.config.telemetry?.logs);
+    this.logger = new Logger(this.telemetryCollector, this.config.telemetry.logs);
     this.tracer = new Tracer(this.telemetryCollector);
 
     if (this.isDebugging) {

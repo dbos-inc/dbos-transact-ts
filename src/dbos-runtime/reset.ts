@@ -1,9 +1,9 @@
 import { GlobalLogger } from '../telemetry/logs';
-import { ConfigFile, constructPoolConfig } from './config';
-import { PoolConfig, Client } from 'pg';
+import { Client } from 'pg';
 import { confirm } from '@inquirer/prompts';
+import { DBOSConfigInternal } from '../dbos-executor';
 
-export async function reset(configFile: ConfigFile, logger: GlobalLogger, cnf: boolean) {
+export async function reset(config: DBOSConfigInternal, logger: GlobalLogger, cnf: boolean) {
   if (cnf) {
     const userConfirmed = await confirm({
       message:
@@ -17,18 +17,16 @@ export async function reset(configFile: ConfigFile, logger: GlobalLogger, cnf: b
     }
   }
 
-  const userPoolConfig: PoolConfig = constructPoolConfig(configFile);
-
-  const sysDbName = configFile.database.sys_db_name ?? `${userPoolConfig.database}_dbos_sys`;
+  const sysDbName = config.system_database;
 
   logger.info(`Resetting ${sysDbName} if it exists`);
 
   const pgClient = new Client({
-    user: userPoolConfig.user,
-    host: userPoolConfig.host,
+    user: config.poolConfig.user,
+    host: config.poolConfig.host,
     database: 'postgres', // Connect to the default PostgreSQL database
-    password: userPoolConfig.password,
-    port: userPoolConfig.port,
+    password: config.poolConfig.password,
+    port: config.poolConfig.port,
   });
 
   await pgClient.connect();

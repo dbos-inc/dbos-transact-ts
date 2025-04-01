@@ -1,6 +1,7 @@
 /* Visit https://aka.ms/tsconfig to read more about this file */
 {
   "compilerOptions": {
+    "composite": true /* Enable the compilation of a project to be used as a dependency in other projects. This is required for projects that use project references. */,
     "declaration": true /* Generate .d.ts files from TypeScript and JavaScript files in your project. */,
     "declarationMap": true /* Create sourcemaps for d.ts files. */,
     "emitDecoratorMetadata": true /* Emit design-type metadata for decorated declarations in source files. */,
@@ -9,6 +10,7 @@
     "forceConsistentCasingInFileNames": true /* Ensure that casing is correct in imports. */,
     "module": "Node16" /* Specify what module code is generated. */,
     "newLine": "lf" /* Set the newline character for emitting files. */,
+    "resolveJsonModule": true /* Include modules imported with JSON extension in the compilation. */,
     "skipLibCheck": true /* Skip type checking all .d.ts files. */,
     "sourceMap": true /* Create source map files for emitted JavaScript files. */,
     "strict": true /* Enable all strict type-checking options. */,

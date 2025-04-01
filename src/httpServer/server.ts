@@ -79,7 +79,6 @@ export class DBOSHttpServer {
   async listen(port: number, adminPort: number) {
     const appServer = await this.appListen(port);
 
-    // TODO we should check adminPort as well.  This is done elsewhere though...
     const adminServer = this.adminApp.listen(adminPort, () => {
       this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
     });
@@ -105,10 +104,10 @@ export class DBOSHttpServer {
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
       if (err.code === 'EADDRINUSE') {
-        logger.error(
+        logger.warn(
           `Port ${port} is already used for IPv4 address "127.0.0.1". Please use the -p option to choose another port.\n${err.message}`,
         );
-        process.exit(1);
+        throw error;
       } else {
         logger.warn(
           `Error occurred while checking port availability for IPv4 address "127.0.0.1" : ${err.code}\n${err.message}`,
@@ -121,10 +120,10 @@ export class DBOSHttpServer {
     } catch (error) {
       const err = error as NodeJS.ErrnoException;
       if (err.code === 'EADDRINUSE') {
-        logger.error(
+        logger.warn(
           `Port ${port} is already used for IPv6 address "::1". Please use the -p option to choose another port.\n${err.message}`,
         );
-        process.exit(1);
+        throw error;
       } else {
         logger.warn(
           `Error occurred while checking port availability for IPv6 address "::1" : ${err.code}\n${err.message}`,
