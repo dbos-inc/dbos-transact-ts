@@ -1,6 +1,6 @@
 export { createTestingRuntime, TestingRuntime } from './testing/testing_runtime';
 
-export { DBOSContext, InitContext } from './context';
+export { DBOSContext } from './context';
 
 export { DBOSClient } from './client';
 
@@ -124,4 +124,4 @@ export { DBOSConfig } from './dbos-executor';
 
 export { WorkflowQueue } from './wfqueue';
 
-export { DBOS } from './dbos';
+export { DBOS, InitContext } from './dbos';

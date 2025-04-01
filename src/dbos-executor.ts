@@ -66,7 +66,6 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import {
   DBOSContextImpl,
-  InitContext,
   runWithWorkflowContext,
   runWithTransactionContext,
   runWithStepContext,
@@ -78,7 +77,7 @@ import { globalParams, DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput } from '.';
+import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput, InitContext } from '.';
 
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -527,7 +526,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         // Init its configurations
         const creg = getOrCreateClassRegistration(cls as AnyConstructor);
         for (const [_cfgname, cfg] of creg.configuredInstances) {
-          await cfg.initialize(new InitContext(this));
+          await cfg.initialize(new InitContext());
         }
       }
 
@@ -535,7 +534,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const m = v as MethodRegistration<unknown, unknown[], unknown>;
         if (m.init === true) {
           this.logger.debug('Executing init method: ' + m.name);
-          await m.origFunction(new InitContext(this));
+          await m.origFunction(new InitContext());
         }
       }
 

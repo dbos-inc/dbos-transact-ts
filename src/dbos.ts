@@ -30,6 +30,7 @@ import {
 import { DBOSExecutorContext } from './eventreceiver';
 import { DLogger, GlobalLogger } from './telemetry/logs';
 import {
+  DBOSConfigKeyTypeError,
   DBOSError,
   DBOSExecutorNotInitializedError,
   DBOSInvalidWorkflowTransitionError,
@@ -1638,5 +1639,36 @@ export class DBOS {
       throw new DBOSExecutorNotInitializedError();
     }
     return DBOSExecutor.globalInstance.recoverPendingWorkflows(executorIDs);
+  }
+}
+
+export class InitContext {
+  createUserSchema(): Promise<void> {
+    DBOS.logger.warn(
+      'Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations',
+    );
+    return DBOS.createUserSchema();
+  }
+
+  dropUserSchema(): Promise<void> {
+    DBOS.logger.warn(
+      'Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations',
+    );
+    return DBOS.dropUserSchema();
+  }
+
+  queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
+    return DBOS.queryUserDB(sql, params);
+  }
+
+  getConfig<T>(key: string): T | undefined;
+  getConfig<T>(key: string, defaultValue: T): T;
+  getConfig<T>(key: string, defaultValue?: T): T | undefined {
+    const value = DBOS.getConfig(key, defaultValue);
+    // If the key is found and the default value is provided, check whether the value is of the same type.
+    if (value && defaultValue && typeof value !== typeof defaultValue) {
+      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
+    }
+    return value;
   }
 }

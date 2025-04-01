@@ -3,12 +3,13 @@ import 'reflect-metadata';
 import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
-import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, InitContext } from './context';
+import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext } from './context';
 import { StepConfig, StepContext } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError } from './error';
 import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
+import { InitContext } from './dbos';
 
 /**
  * Any column type column can be.
@@ -839,7 +840,7 @@ export function DBOSInitializer() {
   return decorator;
 }
 
-// For future use with Deploy
+/** @deprecated */
 export function DBOSDeploy() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
