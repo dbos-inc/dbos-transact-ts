@@ -87,9 +87,9 @@ export class DBOSDataType {
 }
 
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-function getArgDescriptor(func: Function): { name: string; optional: boolean }[] {
+function getArgNames(func: Function): string[] {
   const fstr = func.toString();
-  const args: { name: string; optional: boolean }[] = [];
+  const args: string[] = [];
   let currentArgName = '';
   let nestDepth = 0;
   let inSingleQuote = false;
@@ -98,7 +98,6 @@ function getArgDescriptor(func: Function): { name: string; optional: boolean }[]
   let inComment = false;
   let inBlockComment = false;
   let inDefaultValue = false;
-  let isOptional = false;
 
   // Extract parameter list from function signature
   const paramStart = fstr.indexOf('(');
@@ -146,7 +145,6 @@ function getArgDescriptor(func: Function): { name: string; optional: boolean }[]
 
     // Handle default values
     if (char === '=' && nestDepth === 0) {
-      isOptional = true;
       inDefaultValue = true;
       continue;
     }
@@ -160,12 +158,6 @@ function getArgDescriptor(func: Function): { name: string; optional: boolean }[]
       nestDepth--;
     }
 
-    // Handle optional `?`
-    if (char === '?' && nestDepth === 0) {
-      isOptional = true;
-      continue;
-    }
-
     // Handle rest parameters `...arg`; this is a problem.
     if (char === '.' && nextChar === '.' && paramStr[i + 2] === '.') {
       i += 2; // Skip the other dots
@@ -175,11 +167,10 @@ function getArgDescriptor(func: Function): { name: string; optional: boolean }[]
     // Handle argument separators (`,`) at depth 0
     if (char === ',' && nestDepth === 0) {
       if (currentArgName.trim()) {
-        args.push({ name: currentArgName.trim(), optional: isOptional });
+        args.push(currentArgName.trim());
       }
       currentArgName = '';
       inDefaultValue = false;
-      isOptional = false;
       continue;
     }
 
@@ -192,23 +183,11 @@ function getArgDescriptor(func: Function): { name: string; optional: boolean }[]
   // Push the last argument if it exists
   if (currentArgName.trim()) {
     if (currentArgName.trim()) {
-      args.push({ name: currentArgName.trim(), optional: isOptional });
+      args.push(currentArgName.trim());
     }
   }
 
   return args;
-}
-
-/* Arguments parsing heuristic:
- * - Convert the function to a string
- * - Minify the function
- * - Remove everything before the first open parenthesis and after the first closed parenthesis
- * This will obviously not work on code that has been obfuscated or optimized as the names get
- *   changed to be really small and useless.
- **/
-// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-function getArgNames(func: Function): string[] {
-  return getArgDescriptor(func).map((x) => x.name);
 }
 
 export enum LogMasks {
