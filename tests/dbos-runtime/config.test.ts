@@ -273,6 +273,18 @@ describe('dbos-config', () => {
       expect(poolConfig.port).toBe(5432);
       await expect(db_wizard(poolConfig)).rejects.toThrow(DBOSInitializationError);
     });
+
+    test('constructPoolConfig correctly handles app names with spaces', () => {
+      const mockDBOSConfigYamlString = `
+        name: 'some app with spaces'
+        `;
+
+      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockDBOSConfigYamlString);
+
+      const [dbosConfig, _]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const poolConfig: PoolConfig = dbosConfig.poolConfig!;
+      expect(poolConfig.database).toBe('some_app_with_spaces');
+    });
   });
 
   describe('context getConfig()', () => {
