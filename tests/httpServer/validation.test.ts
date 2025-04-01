@@ -251,20 +251,6 @@ describe('httpserver-datavalidation-tests', () => {
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe('This is a really nice boolean: false');
   });
-  /* These tests fail in jest - the value in the request is 'undefined' which is deeply mysterious
-  test("false boolean (post) 2", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/boolean")
-    .send({v:false});
-    expect(response.statusCode).toBe(200);
-    expect(response.body.message).toBe("This is a really nice boolean: false");
-  });
-  test("false boolean (post) 3", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/boolean")
-    .send({v:0});
-    expect(response.statusCode).toBe(200);
-    expect(response.body.message).toBe("This is a really nice boolean: false");
-  });
-  */
   test('bad boolean 1', async () => {
     const response = await request(DBOS.getHTTPHandlersCallback()!).post('/boolean').send({ v: 'A' });
     expect(response.statusCode).toBe(400);
@@ -339,59 +325,6 @@ describe('httpserver-datavalidation-tests', () => {
       expect(response.statusCode).toBe(v[2]);
     }
   });
-
-  /*
-  // Integer
-  test("good integer (get)", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/bigint")
-    .query({v:"2023"});
-    expect(response.statusCode).toBe(200);
-  });
-  test("good integer 2 (get)", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/bigint")
-    .query({v:2023});
-    expect(response.statusCode).toBe(200);
-  });
-  test("good integer 2 (post)", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/bigint")
-    .send({v:-2023});
-    expect(response.statusCode).toBe(200);
-  });
-  test("good integer 3 (post)", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/bigint")
-    .send({v:"-2"});
-    expect(response.statusCode).toBe(200);
-  });
-  test("good integer large (post)", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/bigint")
-    .send({v:"12345687901234567890"});
-    expect(response.statusCode).toBe(200);
-    expect(response.body.message).toBe("This is a really nice bigint: 12345678901234567890");
-  });
-  test("bad integer (post)", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/bigint")
-    .send({v:1.1});
-    expect(response.statusCode).toBe(400);
-  });
-  test("bad integer", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get("/bigint")
-    .query({v:-10});
-    expect(response.statusCode).toBe(400);
-  });
-  test("bad integer (post)", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/bigint")
-    .send({v:"turnip"});
-    expect(response.statusCode).toBe(400);
-  });
-  */
-  /* Not allowed
-  test("good integer large 2 (post)", async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post("/bigint")
-    .send({v:12345687901234567890n});
-    expect(response.statusCode).toBe(200);
-    expect(response.body.message).toBe("This is a really nice bigint: 12345678901234567890");
-  });
-  */
 
   class TestEndpointDataVal {
     @GetApi('/hello')
