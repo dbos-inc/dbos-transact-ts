@@ -6,7 +6,7 @@ class TestFunctions extends ConfiguredInstance {
     super(name);
   }
 
-  async initialize() {
+  override async initialize() {
     return Promise.resolve();
   }
 
@@ -80,10 +80,6 @@ const testTableName = 'dbos_test_kv';
 class TestSec extends ConfiguredInstance {
   constructor(name: string) {
     super(name);
-  }
-
-  async initialize() {
-    return Promise.resolve();
   }
 
   @DBOS.requiredRole([])

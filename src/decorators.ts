@@ -285,7 +285,13 @@ export abstract class ConfiguredInstance {
     this.name = name;
     registerClassInstance(this, name);
   }
-  abstract initialize(ctx: InitContext): Promise<void>;
+  /**
+   * Override this method to perform async initialization.
+   * @param _ctx - @deprecated This parameter is unnecessary, use `DBOS` instead.
+   */
+  initialize(_ctx: InitContext): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 export class ClassRegistration<CT extends { new (...args: unknown[]): object }> implements RegistrationDefaults {
