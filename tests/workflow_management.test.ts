@@ -625,14 +625,12 @@ describe('test-list-steps', () => {
     }
 
     @DBOS.step()
-    // eslint-disable-next-line @typescript-eslint/require-await
     static async stepOne() {
-      console.log('executed stepOne');
+      return Promise.resolve(DBOS.workflowID);
     }
     @DBOS.step()
-    // eslint-disable-next-line @typescript-eslint/require-await
     static async stepTwo() {
-      console.log('executed stepTwo');
+      return Promise.resolve(DBOS.workflowID);
     }
 
     @DBOS.workflow()
@@ -809,8 +807,20 @@ describe('test-list-steps', () => {
     expect(wfsteps[0].error).toBe(null);
     expect(wfsteps[0].child_workflow_id).toBe(childID);
     expect(wfsteps[1].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[1].function_id).toBe(1);
+    expect(wfsteps[1].output).toBe(childID);
+    expect(wfsteps[1].error).toBe(null);
+    expect(wfsteps[1].child_workflow_id).toBe(childID);
     expect(wfsteps[2].function_name).toBe('getStatus');
+    expect(wfsteps[2].function_id).toBe(2);
+    expect(wfsteps[2].output).toBeTruthy();
+    expect(wfsteps[2].error).toBe(null);
+    expect(wfsteps[2].child_workflow_id).toBe(null);
     expect(wfsteps[3].function_name).toBe('stepOne');
+    expect(wfsteps[3].function_id).toBe(3);
+    expect(wfsteps[3].output).toBe(wfid);
+    expect(wfsteps[3].error).toBe(null);
+    expect(wfsteps[3].child_workflow_id).toBe(null);
     expect(wfsteps[4].function_name).toBe('stepTwo');
   });
 
