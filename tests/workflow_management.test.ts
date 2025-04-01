@@ -680,8 +680,8 @@ describe('test-list-steps', () => {
     @DBOS.workflow()
     static async enqueueChildWorkflowFirst() {
       const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).testWorkflow();
-      await handle.getStatus();
       const childID = await handle.getResult();
+      await handle.getStatus();
       await TestListSteps.stepOne();
       await TestListSteps.stepTwo();
       return childID;
@@ -797,7 +797,6 @@ describe('test-list-steps', () => {
   test('test-call-child-workflow-first', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowfirst();
-    await handle.getStatus();
     const childID = await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(5);
@@ -827,7 +826,6 @@ describe('test-list-steps', () => {
   test('test-call-child-workflow-middle', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowMiddle();
-    await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(5);
@@ -841,7 +839,6 @@ describe('test-list-steps', () => {
   test('test-call-child-workflow-last', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowLast();
-    await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(5);
@@ -855,13 +852,20 @@ describe('test-list-steps', () => {
   test('test-queue-child-workflow-first', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowFirst();
-    await handle.getStatus();
-    await handle.getResult();
+    const childID = await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('testWorkflow');
-    expect(wfsteps[1].function_name).toBe('getStatus');
-    expect(wfsteps[2].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[0].function_id).toBe(0);
+    expect(wfsteps[0].output).toBe(null);
+    expect(wfsteps[0].error).toBe(null);
+    expect(wfsteps[0].child_workflow_id).toBe(childID);
+    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[1].function_id).toBe(1);
+    expect(wfsteps[1].output).toBe(childID);
+    expect(wfsteps[1].error).toBe(null);
+    expect(wfsteps[1].child_workflow_id).toBe(childID);
+    expect(wfsteps[2].function_name).toBe('getStatus');
     expect(wfsteps[3].function_name).toBe('stepOne');
     expect(wfsteps[4].function_name).toBe('stepTwo');
   });
@@ -869,7 +873,6 @@ describe('test-list-steps', () => {
   test('test-queue-child-workflow-middle', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowMiddle();
-    await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(5);
@@ -883,7 +886,6 @@ describe('test-list-steps', () => {
   test('test-queue-child-workflow-last', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowLast();
-    await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(5);
@@ -897,7 +899,6 @@ describe('test-list-steps', () => {
   test('test-direct-call-workflow', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).directCallWorkflow();
-    await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(4);
