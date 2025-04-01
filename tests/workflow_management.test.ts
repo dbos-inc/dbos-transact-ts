@@ -907,7 +907,7 @@ describe('test-list-steps', () => {
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
     wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(2);
-    expect(wfsteps[0].function_name).toBe('temp_workflow');
+    expect(wfsteps[0].function_name).toBe('temp_workflow-step-failingStep');
     expect(wfsteps[1].function_name).toBe('DBOS.getResult');
     // Test enqueueing a failing step
     wfid = uuidv4();
@@ -915,7 +915,7 @@ describe('test-list-steps', () => {
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
     wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(2);
-    expect(wfsteps[0].function_name).toBe('temp_workflow');
+    expect(wfsteps[0].function_name).toBe('temp_workflow-step-failingStep');
     expect(wfsteps[1].function_name).toBe('DBOS.getResult');
   });
 
