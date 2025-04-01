@@ -86,6 +86,119 @@ export class DBOSDataType {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+function getArgDescriptor(func: Function): { name: string; optional: boolean }[] {
+  const fstr = func.toString();
+  const args: { name: string; optional: boolean }[] = [];
+  let currentArgName = '';
+  let nestDepth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inBacktick = false;
+  let inComment = false;
+  let inBlockComment = false;
+  let inDefaultValue = false;
+  let isOptional = false;
+
+  // Extract parameter list from function signature
+  const paramStart = fstr.indexOf('(');
+  if (paramStart === -1) return [];
+
+  const paramStr = fstr.substring(paramStart + 1);
+
+  for (let i = 0; i < paramStr.length; i++) {
+    const char = paramStr[i];
+    const nextChar = paramStr[i + 1];
+
+    // Handle comments
+    if (inBlockComment) {
+      if (char === '*' && nextChar === '/') {
+        inBlockComment = false;
+        i++; // Skip closing '/'
+      }
+      continue;
+    } else if (inComment) {
+      if (char === '\n') inComment = false;
+      continue;
+    } else if (char === '/' && nextChar === '*') {
+      inBlockComment = true;
+      i++;
+      continue;
+    } else if (char === '/' && nextChar === '/') {
+      inComment = true;
+      continue;
+    }
+    if (inComment || inBlockComment) continue;
+
+    // Handle quotes (for default values)
+    if (char === "'" && !inDoubleQuote && !inBacktick) {
+      inSingleQuote = !inSingleQuote;
+    } else if (char === '"' && !inSingleQuote && !inBacktick) {
+      inDoubleQuote = !inDoubleQuote;
+    } else if (char === '`' && !inSingleQuote && !inDoubleQuote) {
+      inBacktick = !inBacktick;
+    }
+
+    // Skip anything inside quotes
+    if (inSingleQuote || inDoubleQuote || inBacktick) {
+      continue;
+    }
+
+    // Handle default values
+    if (char === '=' && nestDepth === 0) {
+      isOptional = true;
+      inDefaultValue = true;
+      continue;
+    }
+
+    // These can mean default values.  Or destructuring (which is a problem)...
+    if (char === '(' || char === '{' || char === '[') {
+      nestDepth++;
+    }
+    if (char === ')' || char === '}' || char === ']') {
+      if (nestDepth === 0) break; // Done
+      nestDepth--;
+    }
+
+    // Handle optional `?`
+    if (char === '?' && nestDepth === 0) {
+      isOptional = true;
+      continue;
+    }
+
+    // Handle rest parameters `...arg`; this is a problem.
+    if (char === '.' && nextChar === '.' && paramStr[i + 2] === '.') {
+      i += 2; // Skip the other dots
+      continue;
+    }
+
+    // Handle argument separators (`,`) at depth 0
+    if (char === ',' && nestDepth === 0) {
+      if (currentArgName.trim()) {
+        args.push({ name: currentArgName.trim(), optional: isOptional });
+      }
+      currentArgName = '';
+      inDefaultValue = false;
+      isOptional = false;
+      continue;
+    }
+
+    // Add valid characters to the current argument
+    if (!inDefaultValue) {
+      currentArgName += char;
+    }
+  }
+
+  // Push the last argument if it exists
+  if (currentArgName.trim()) {
+    if (currentArgName.trim()) {
+      args.push({ name: currentArgName.trim(), optional: isOptional });
+    }
+  }
+
+  return args;
+}
+
 /* Arguments parsing heuristic:
  * - Convert the function to a string
  * - Minify the function
@@ -95,12 +208,7 @@ export class DBOSDataType {
  **/
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 function getArgNames(func: Function): string[] {
-  let fn = func.toString();
-  fn = fn.replace(/\s/g, '');
-  fn = fn.replace(/\/\*[\s\S]*?\*\//g, '');
-  fn = fn.substring(fn.indexOf('(') + 1, fn.indexOf(')'));
-  if (!fn.length) return [];
-  return fn.split(',');
+  return getArgDescriptor(func).map((x) => x.name);
 }
 
 export enum LogMasks {
