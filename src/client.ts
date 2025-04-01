@@ -15,12 +15,11 @@ interface EnqueueOptions {
    */
   queueName: string;
   /**
-   * The name of the workflow to be executed.
-   * This is the name of the method that will be invoked when the workflow runs.
+   * The name of the method that will be invoked when the workflow runs.
    */
   workflowName: string;
   /**
-   * This is the name of the class containing the  method that will be invoked when the workflow runs.
+   * The name of the class containing the method that will be invoked when the workflow runs.
    */
   workflowClassName: string;
   /**
