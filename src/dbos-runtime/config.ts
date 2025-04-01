@@ -15,7 +15,6 @@ import fs from 'fs';
 import { loadDatabaseConnection } from './db_connection';
 import { GlobalLogger } from '../telemetry/logs';
 import dbosConfigSchema from '../../dbos-config.schema.json';
-import { OTLPExporterConfig } from '../telemetry/exporters';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true });
@@ -300,7 +299,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfigInternal,
   const dbosConfig: DBOSConfigInternal = {
     poolConfig: poolConfig,
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
-    telemetry: configFile.telemetry || undefined,
+    telemetry: configFile.telemetry || { logs: { logLevel: 'info' } },
     system_database: configFile.database.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
     application: configFile.application || undefined,
     env: configFile.env || {},
@@ -448,7 +447,7 @@ export function parseDbString(dbString: string): DBConfig {
     username: parsed.user || undefined,
     password: parsed.password || undefined,
     app_db_name: parsed.database || undefined,
-    ssl: 'sslmode' in parsed && parsed.sslmode === 'require',
+    ssl: 'sslmode' in parsed && (parsed.sslmode === 'require' || parsed.sslmode === 'verify-full'),
     ssl_ca: queryParams['sslrootcert'] || undefined,
     connectionTimeoutMillis: queryParams['connect_timeout']
       ? parseInt(queryParams['connect_timeout'], 10) * 1000
@@ -457,7 +456,7 @@ export function parseDbString(dbString: string): DBConfig {
 }
 
 export function overwrite_config(
-  providedDBOSConfig: DBOSConfig,
+  providedDBOSConfig: DBOSConfigInternal,
   providedRuntimeConfig: DBOSRuntimeConfig,
 ): [DBOSConfig, DBOSRuntimeConfig] {
   // Load the DBOS configuration file and force the use of:
@@ -481,12 +480,18 @@ export function overwrite_config(
 
   const poolConfig = constructPoolConfig(configFile!);
 
-  const OTLPExporterConfig: OTLPExporterConfig = providedDBOSConfig.telemetry?.OTLPExporter || {};
+  if (!providedDBOSConfig.telemetry.OTLPExporter) {
+    providedDBOSConfig.telemetry.OTLPExporter = {};
+  }
   if (configFile!.telemetry?.OTLPExporter?.tracesEndpoint) {
-    OTLPExporterConfig.tracesEndpoint = configFile!.telemetry.OTLPExporter.tracesEndpoint;
+    providedDBOSConfig.telemetry.OTLPExporter.tracesEndpoint = configFile!.telemetry.OTLPExporter.tracesEndpoint;
+  }
+  if (configFile!.telemetry?.OTLPExporter?.logsEndpoint) {
+    providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint = configFile!.telemetry.OTLPExporter.logsEndpoint;
   }
 
   const overwritenDBOSConfig = {
+    ...providedDBOSConfig,
     name: appName,
     poolConfig: poolConfig,
     telemetry: providedDBOSConfig.telemetry,
