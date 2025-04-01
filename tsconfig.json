@@ -1,9 +1,7 @@
 {
   "extends": "./tsconfig.shared.json",
   "compilerOptions": {
-    "composite": true,
-    "outDir": "./dist",
-    "resolveJsonModule": true
+    "outDir": "./dist"
   },
   "include": ["src/**/*", "schemas/**/*", "dbos-config.schema.json"],
   "exclude": ["dist/**"]
