@@ -621,6 +621,7 @@ describe('test-list-steps', () => {
       await TestListSteps.stepOne();
       await TestListSteps.stepTwo();
       await DBOS.sleep(10);
+      return DBOS.workflowID;
     }
 
     @DBOS.step()
@@ -654,16 +655,20 @@ describe('test-list-steps', () => {
     @DBOS.workflow()
     static async callChildWorkflowfirst() {
       const handle = await DBOS.startWorkflow(TestListSteps).testWorkflow();
+      const childID = await handle.getResult();
       await handle.getStatus();
       await TestListSteps.stepOne();
       await TestListSteps.stepTwo();
+      return childID;
     }
     @DBOS.workflow()
     static async callChildWorkflowMiddle() {
       await TestListSteps.stepOne();
       const handle = await DBOS.startWorkflow(TestListSteps).testWorkflow();
       await handle.getStatus();
+      const childID = await handle.getResult();
       await TestListSteps.stepTwo();
+      return childID;
     }
     @DBOS.workflow()
     static async callChildWorkflowLast() {
@@ -671,14 +676,17 @@ describe('test-list-steps', () => {
       await TestListSteps.stepTwo();
       const handle = await DBOS.startWorkflow(TestListSteps).testWorkflow();
       await handle.getStatus();
+      return await handle.getResult();
     }
 
     @DBOS.workflow()
     static async enqueueChildWorkflowFirst() {
       const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).testWorkflow();
       await handle.getStatus();
+      const childID = await handle.getResult();
       await TestListSteps.stepOne();
       await TestListSteps.stepTwo();
+      return childID;
     }
 
     @DBOS.workflow()
@@ -686,7 +694,9 @@ describe('test-list-steps', () => {
       await TestListSteps.stepOne();
       const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).testWorkflow();
       await handle.getStatus();
+      const childID = await handle.getResult();
       await TestListSteps.stepTwo();
+      return childID;
     }
 
     @DBOS.workflow()
@@ -695,6 +705,7 @@ describe('test-list-steps', () => {
       await TestListSteps.stepTwo();
       const handle = await DBOS.startWorkflow(TestListSteps, { queueName: queue.name }).testWorkflow();
       await handle.getStatus();
+      return await handle.getResult();
     }
 
     @DBOS.workflow()
@@ -761,10 +772,12 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('testWorkflow');
-    expect(wfsteps[1].function_name).toBe('getStatus');
-    expect(wfsteps[2].function_name).toBe('stepOne');
-    expect(wfsteps[3].function_name).toBe('stepTwo');
+    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[2].function_name).toBe('getStatus');
+    expect(wfsteps[3].function_name).toBe('stepOne');
+    expect(wfsteps[4].function_name).toBe('stepTwo');
   });
 
   test('test-call-child-workflow-middle', async () => {
@@ -773,11 +786,12 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.length).toBe(4);
+    expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('testWorkflow');
     expect(wfsteps[2].function_name).toBe('getStatus');
-    expect(wfsteps[3].function_name).toBe('stepTwo');
+    expect(wfsteps[3].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[4].function_name).toBe('stepTwo');
   });
 
   test('test-call-child-workflow-last', async () => {
@@ -786,11 +800,12 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.length).toBe(4);
+    expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('stepTwo');
     expect(wfsteps[2].function_name).toBe('testWorkflow');
     expect(wfsteps[3].function_name).toBe('getStatus');
+    expect(wfsteps[4].function_name).toBe('DBOS.getResult');
   });
 
   test('test-queue-child-workflow-first', async () => {
@@ -799,11 +814,12 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.length).toBe(4);
+    expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('testWorkflow');
     expect(wfsteps[1].function_name).toBe('getStatus');
-    expect(wfsteps[2].function_name).toBe('stepOne');
-    expect(wfsteps[3].function_name).toBe('stepTwo');
+    expect(wfsteps[2].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[3].function_name).toBe('stepOne');
+    expect(wfsteps[4].function_name).toBe('stepTwo');
   });
 
   test('test-queue-child-workflow-middle', async () => {
@@ -812,11 +828,12 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.length).toBe(4);
+    expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('testWorkflow');
     expect(wfsteps[2].function_name).toBe('getStatus');
-    expect(wfsteps[3].function_name).toBe('stepTwo');
+    expect(wfsteps[3].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[4].function_name).toBe('stepTwo');
   });
 
   test('test-queue-child-workflow-last', async () => {
@@ -825,11 +842,12 @@ describe('test-list-steps', () => {
     await handle.getStatus();
     await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
-    expect(wfsteps.length).toBe(4);
+    expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('stepTwo');
     expect(wfsteps[2].function_name).toBe('testWorkflow');
     expect(wfsteps[3].function_name).toBe('getStatus');
+    expect(wfsteps[4].function_name).toBe('DBOS.getResult');
   });
 
   test('test-child-rerun', async () => {

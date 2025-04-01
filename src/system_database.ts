@@ -647,7 +647,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async recordGetResult(resultWorkflowID: string, output: string | null, error: string | null): Promise<void> {
     const ctx = getCurrentContextStore();
-    console.log(ctx);
     // Only record getResult called in workflow functions
     if (ctx === undefined || !isInWorkflowCtx(ctx)) {
       return;
