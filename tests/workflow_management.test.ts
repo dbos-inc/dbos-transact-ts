@@ -709,6 +709,13 @@ describe('test-list-steps', () => {
     }
 
     @DBOS.workflow()
+    static async directCallWorkflow() {
+      await TestListSteps.testWorkflow();
+      await TestListSteps.stepOne();
+      await TestListSteps.stepTwo();
+    }
+
+    @DBOS.workflow()
     // eslint-disable-next-line  @typescript-eslint/require-await
     static async childWorkflowWithCounter(id: string) {
       return id;
@@ -848,6 +855,19 @@ describe('test-list-steps', () => {
     expect(wfsteps[2].function_name).toBe('testWorkflow');
     expect(wfsteps[3].function_name).toBe('getStatus');
     expect(wfsteps[4].function_name).toBe('DBOS.getResult');
+  });
+
+  test('test-direct-call-workflow', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).directCallWorkflow();
+    await handle.getStatus();
+    await handle.getResult();
+    const wfsteps = await listWorkflowSteps(config, wfid);
+    expect(wfsteps.length).toBe(4);
+    expect(wfsteps[0].function_name).toBe('testWorkflow');
+    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[2].function_name).toBe('stepOne');
+    expect(wfsteps[3].function_name).toBe('stepTwo');
   });
 
   test('test-child-rerun', async () => {
