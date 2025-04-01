@@ -800,10 +800,14 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowfirst();
     await handle.getStatus();
-    await handle.getResult();
+    const childID = await handle.getResult();
     const wfsteps = await listWorkflowSteps(config, wfid);
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('testWorkflow');
+    expect(wfsteps[0].function_id).toBe(0);
+    expect(wfsteps[0].output).toBe(null);
+    expect(wfsteps[0].error).toBe(null);
+    expect(wfsteps[0].child_workflow_id).toBe(childID);
     expect(wfsteps[1].function_name).toBe('DBOS.getResult');
     expect(wfsteps[2].function_name).toBe('getStatus');
     expect(wfsteps[3].function_name).toBe('stepOne');
