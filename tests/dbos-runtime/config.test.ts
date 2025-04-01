@@ -303,7 +303,7 @@ describe('dbos-config', () => {
       expect(ctx.getConfig('no_key')).toBeUndefined();
       // Config key does not exist, default value
       expect(ctx.getConfig('no_key', 'default')).toBe('default');
-      // We didn't init, so do some manual cleanup pnly
+      // We didn't init, so do some manual cleanup only
       clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();
     });
