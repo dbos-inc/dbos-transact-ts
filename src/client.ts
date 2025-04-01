@@ -68,6 +68,9 @@ export class DBOSClient {
 
   /**
    * Creates a new instance of the DBOSClient.
+   * @param databaseUrl - The connection string for the database. This should include the hostname, port, username, password, and database name.
+   * @param systemDatabase - An optional name for the system database. If not provided, it defaults to the application database name with a `_dbos_sys` suffix.
+   * @returns A Promise that resolves with the DBOSClient instance.
    */
   static async create(databaseUrl: string, systemDatabase?: string): Promise<DBOSClient> {
     const client = new DBOSClient(databaseUrl, systemDatabase);
@@ -78,6 +81,7 @@ export class DBOSClient {
   /**
    * Destroys the underlying database connection.
    * This should be called when the client is no longer needed to clean up resources.
+   * @returns A Promise that resolves when database connection is destroyed.
    */
   async destroy() {
     await this.systemDatabase.destroy();
@@ -87,6 +91,7 @@ export class DBOSClient {
    * Enqueues a workflow for execution.
    * @param options - Options for the enqueue operation, including queue name, workflow name, and other parameters.
    * @param args - Arguments to pass to the workflow upon execution.
+   * @returns A Promise that resolves when the message has been sent.
    */
   async enqueue<T extends unknown[]>(options: EnqueueOptions, ...args: T): Promise<void> {
     const { workflowName, workflowClassName, queueName, appVersion } = options;
