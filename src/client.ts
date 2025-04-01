@@ -85,8 +85,8 @@ export class DBOSClient {
 
   /**
    * Enqueues a workflow for execution.
-   * @param options Options for the enqueue operation, including queue name, workflow name, and other parameters.
-   * @param args Arguments to pass to the workflow upon execution.
+   * @param options - Options for the enqueue operation, including queue name, workflow name, and other parameters.
+   * @param args - Arguments to pass to the workflow upon execution.
    */
   async enqueue<T extends unknown[]>(options: EnqueueOptions, ...args: T): Promise<void> {
     const { workflowName, workflowClassName, queueName, appVersion } = options;
@@ -119,10 +119,10 @@ export class DBOSClient {
 
   /**
    * Sends a message to a workflow, identified by destinationID.
-   * @param destinationID The ID of the destination workflow.
-   * @param message The message to send. This can be any serializable object.
-   * @param topic An optional topic to send the message to. If not provided, the default topic will be used.
-   * @param idempotencyKey An optional idempotency key to ensure that the message is only sent once.
+   * @param destinationID - The ID of the destination workflow.
+   * @param message - The message to send. This can be any serializable object.
+   * @param topic - An optional topic to send the message to. If not provided, the default topic will be used.
+   * @param idempotencyKey - An optional idempotency key to ensure that the message is only sent once.
    * @returns A Promise that resolves when the message has been sent.
    */
   async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
@@ -150,9 +150,9 @@ export class DBOSClient {
 
   /**
    * Retrieves an event published by workflowID for a given key.
-   * @param workflowID The ID of the workflow that published the event.
-   * @param key The key associated with the event you want to retrieve.
-   * @param timeoutSeconds Optional timeout in seconds for how long to wait for the event to be available.
+   * @param workflowID - The ID of the workflow that published the event.
+   * @param key - The key associated with the event you want to retrieve.
+   * @param timeoutSeconds - Optional timeout in seconds for how long to wait for the event to be available.
    * @returns A Promise that resolves with the event payload.
    */
   async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
@@ -161,7 +161,7 @@ export class DBOSClient {
 
   /**
    * Retrieves a single workflow by its id.
-   * @param workflowID The ID of the workflow to retrieve.
+   * @param workflowID - The ID of the workflow to retrieve.
    * @returns a WorkflowHandle that represents the retrieved workflow.
    */
   retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
