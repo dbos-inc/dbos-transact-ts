@@ -837,9 +837,9 @@ export function DBOSInitializer() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }

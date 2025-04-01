@@ -1,6 +1,5 @@
 import {
   DBOS,
-  InitContext,
   ConfiguredInstance,
   Error as DBOSError,
   DBOSEventReceiver,
@@ -233,7 +232,7 @@ export class KafkaProducer extends ConfiguredInstance {
     this.topic = topic;
   }
 
-  async initialize(_ctx: InitContext): Promise<void> {
+  override async initialize(): Promise<void> {
     const kafka = new KafkaJS.Kafka({});
     this.producer = kafka.producer({ kafkaJS: this.cfg });
     await this.producer.connect();
