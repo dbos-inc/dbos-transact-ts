@@ -1,6 +1,7 @@
 import { serializeError } from 'serialize-error';
 import { WorkflowInformation } from '../dbos-runtime/workflow_management';
 import { DBOSJSON } from '../utils';
+import { step_info } from '../../schemas/system_db_schema';
 
 export enum MessageType {
   EXECUTOR_INFO = 'executor_info',
@@ -12,6 +13,7 @@ export enum MessageType {
   RESTART = 'restart',
   GET_WORKFLOW = 'get_workflow',
   EXIST_PENDING_WORKFLOWS = 'exist_pending_workflows',
+  LIST_STEPS = 'list_steps',
 }
 
 export interface BaseMessage {
@@ -175,6 +177,22 @@ export class WorkflowsOutput {
   }
 }
 
+export class WorkflowSteps {
+  function_id: number;
+  function_name: string;
+  output?: string;
+  error?: string;
+  child_workflow_id?: string;
+
+  constructor(info: step_info) {
+    this.function_id = info.function_id;
+    this.function_name = info.function_name;
+    this.output = info.output ? DBOSJSON.stringify(info.output) : undefined;
+    this.error = info.error ? DBOSJSON.stringify(serializeError(info.error)) : undefined;
+    this.child_workflow_id = info.child_workflow_id ? info.child_workflow_id : undefined;
+  }
+}
+
 export class ListWorkflowsRequest implements BaseMessage {
   type = MessageType.LIST_WORKFLOWS;
   request_id: string;
@@ -257,5 +275,23 @@ export class ExistPendingWorkflowsResponse extends BaseResponse {
   constructor(request_id: string, exist: boolean, error_message?: string) {
     super(MessageType.EXIST_PENDING_WORKFLOWS, request_id, error_message);
     this.exist = exist;
+  }
+}
+
+export class ListStepsRequest implements BaseMessage {
+  type = MessageType.LIST_STEPS;
+  request_id: string;
+  workflow_id: string;
+  constructor(request_id: string, workflow_id: string) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+  }
+}
+
+export class ListStepsResponse extends BaseResponse {
+  output?: WorkflowSteps[];
+  constructor(request_id: string, output?: WorkflowSteps[], error_message?: string) {
+    super(MessageType.LIST_STEPS, request_id, error_message);
+    this.output = output;
   }
 }

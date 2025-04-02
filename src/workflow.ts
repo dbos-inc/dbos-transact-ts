@@ -9,6 +9,8 @@ import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
 import { WorkflowQueue } from './wfqueue';
+import { DBOSJSON } from './utils';
+import { serializeError } from 'serialize-error';
 
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
@@ -566,7 +568,17 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
-    return this.workflowPromise;
+    let result: R;
+    try {
+      result = await this.workflowPromise;
+    } catch (error) {
+      const serialErr = DBOSJSON.stringify(serializeError(error));
+      await this.systemDatabase.recordGetResult(this.workflowID, null, serialErr);
+      throw error;
+    }
+    const serialResult = DBOSJSON.stringify(result);
+    await this.systemDatabase.recordGetResult(this.workflowID, serialResult, null);
+    return result;
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
@@ -598,7 +610,17 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
-    return await this.systemDatabase.getWorkflowResult<R>(this.workflowUUID);
+    let result: R;
+    try {
+      result = await this.systemDatabase.getWorkflowResult<R>(this.workflowUUID);
+    } catch (error) {
+      const serialErr = DBOSJSON.stringify(serializeError(error));
+      await this.systemDatabase.recordGetResult(this.workflowID, null, serialErr);
+      throw error;
+    }
+    const serialResult = DBOSJSON.stringify(result);
+    await this.systemDatabase.recordGetResult(this.workflowID, serialResult, null);
+    return result;
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {

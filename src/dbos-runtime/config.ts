@@ -166,7 +166,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     globalParams.appName = appName;
   }
   if (databaseName === undefined) {
-    databaseName = appName.toLowerCase().replaceAll('-', '_');
+    databaseName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
     if (databaseName.match(/^\d/)) {
       databaseName = '_' + databaseName; // Append an underscore if the name starts with a digit
     }
@@ -270,7 +270,7 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfigInternal,
 
   if (!isValidDBname(poolConfig.database!)) {
     throw new DBOSInitializationError(
-      `${configFilePath} specifies invalid app_db_name ${configFile.database.app_db_name}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`,
+      `${configFilePath} specifies invalid app_db_name ${poolConfig.database}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`,
     );
   }
 

@@ -274,6 +274,23 @@ export class Conductor {
             );
             this.websocket!.send(DBOSJSON.stringify(existPendingResp));
             break;
+          case protocol.MessageType.LIST_STEPS:
+            const listStepsMessage = baseMsg as protocol.ListStepsRequest;
+            let workflowSteps: protocol.WorkflowSteps[] | undefined = undefined;
+            try {
+              const stepsInfo = await this.dbosExec.systemDatabase.getWorkflowSteps(listStepsMessage.workflow_id);
+              workflowSteps = stepsInfo.map((i) => new protocol.WorkflowSteps(i));
+            } catch (e) {
+              errorMsg = `Exception encountered when listing steps ${listStepsMessage.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const listStepsResponse = new protocol.ListStepsResponse(
+              listStepsMessage.request_id,
+              workflowSteps,
+              errorMsg,
+            );
+            this.websocket!.send(DBOSJSON.stringify(listStepsResponse));
+            break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
             // Still need to send a response to the conductor
