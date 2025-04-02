@@ -43,7 +43,7 @@ class DBOSTestConfiguredClass extends ConfiguredInstance {
     this.tracker = new ConfigTracker(name);
   }
 
-  initialize(_ctx: InitContext): Promise<void> {
+  override initialize(_ctx: InitContext): Promise<void> {
     const arg = this.tracker;
     if (!arg.name || DBOSTestConfiguredClass.configs.has(arg.name)) {
       throw new Error(`Invalid or duplicate config name: ${arg.name}`);
