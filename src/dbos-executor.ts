@@ -189,7 +189,7 @@ export const OperationType = {
 export const TempWorkflowType = {
   transaction: 'transaction',
   procedure: 'procedure',
-  external: 'external',
+  step: 'step',
   send: 'send',
 } as const;
 
@@ -824,7 +824,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
 
         if (callerFunctionID !== undefined && callerUUID !== undefined) {
-          await this.systemDatabase.recordChildWorkflow(callerUUID, workflowUUID, callerFunctionID, wf.name);
+          await this.systemDatabase.recordChildWorkflow(
+            callerUUID,
+            workflowUUID,
+            callerFunctionID,
+            internalStatus.workflowName,
+          );
         }
 
         args = ires.args;
@@ -1761,7 +1766,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       temp_workflow,
       {
         ...params,
-        tempWfType: TempWorkflowType.external,
+        tempWfType: TempWorkflowType.step,
         tempWfName: getRegisteredMethodName(stepFn),
         tempWfClass: getRegisteredMethodClassName(stepFn),
       },
@@ -2165,7 +2170,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ...inputs,
       );
-    } else if (nameArr[1] === TempWorkflowType.external) {
+    } else if (nameArr[1] === TempWorkflowType.step) {
       const { commInfo, clsInst } = this.getStepInfoByNames(
         wfStatus.workflowClassName,
         nameArr[2],

@@ -26,7 +26,6 @@ export interface DBOSLocalCtx {
   idAssignedForNextWorkflow?: string;
   queueAssignedForWorkflows?: string;
   workflowId?: string;
-  functionId?: number;
   inRecovery?: boolean;
   curStepFunctionId?: number; // If currently in a step, its function ID
   stepStatus?: StepStatus; // If currently in a step, its public status object
@@ -42,24 +41,24 @@ export interface DBOSLocalCtx {
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
 }
 
-function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
+export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
   if (ctx.workflowId === undefined) return false;
   return true;
 }
 
-function isInStepCtx(ctx: DBOSLocalCtx) {
+export function isInStepCtx(ctx: DBOSLocalCtx) {
   if (ctx.workflowId === undefined) return false;
   if (ctx.curStepFunctionId) return true;
   return false;
 }
 
-function isInTxnCtx(ctx: DBOSLocalCtx) {
+export function isInTxnCtx(ctx: DBOSLocalCtx) {
   if (ctx.workflowId === undefined) return false;
   if (ctx.curTxFunctionId) return true;
   return false;
 }
 
-function isInWorkflowCtx(ctx: DBOSLocalCtx) {
+export function isInWorkflowCtx(ctx: DBOSLocalCtx) {
   if (!isWithinWorkflowCtx(ctx)) return false;
   if (isInStepCtx(ctx)) return false;
   if (isInTxnCtx(ctx)) return false;
