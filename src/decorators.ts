@@ -3,12 +3,13 @@ import 'reflect-metadata';
 import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
-import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, InitContext } from './context';
+import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext } from './context';
 import { StepConfig, StepContext } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError } from './error';
 import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
+import { InitContext } from './dbos';
 
 /**
  * Any column type column can be.
@@ -86,21 +87,108 @@ export class DBOSDataType {
   }
 }
 
-/* Arguments parsing heuristic:
- * - Convert the function to a string
- * - Minify the function
- * - Remove everything before the first open parenthesis and after the first closed parenthesis
- * This will obviously not work on code that has been obfuscated or optimized as the names get
- *   changed to be really small and useless.
- **/
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 function getArgNames(func: Function): string[] {
-  let fn = func.toString();
-  fn = fn.replace(/\s/g, '');
-  fn = fn.replace(/\/\*[\s\S]*?\*\//g, '');
-  fn = fn.substring(fn.indexOf('(') + 1, fn.indexOf(')'));
-  if (!fn.length) return [];
-  return fn.split(',');
+  const fstr = func.toString();
+  const args: string[] = [];
+  let currentArgName = '';
+  let nestDepth = 0;
+  let inSingleQuote = false;
+  let inDoubleQuote = false;
+  let inBacktick = false;
+  let inComment = false;
+  let inBlockComment = false;
+  let inDefaultValue = false;
+
+  // Extract parameter list from function signature
+  const paramStart = fstr.indexOf('(');
+  if (paramStart === -1) return [];
+
+  const paramStr = fstr.substring(paramStart + 1);
+
+  for (let i = 0; i < paramStr.length; i++) {
+    const char = paramStr[i];
+    const nextChar = paramStr[i + 1];
+
+    // Handle comments
+    if (inBlockComment) {
+      if (char === '*' && nextChar === '/') {
+        inBlockComment = false;
+        i++; // Skip closing '/'
+      }
+      continue;
+    } else if (inComment) {
+      if (char === '\n') inComment = false;
+      continue;
+    } else if (char === '/' && nextChar === '*') {
+      inBlockComment = true;
+      i++;
+      continue;
+    } else if (char === '/' && nextChar === '/') {
+      inComment = true;
+      continue;
+    }
+    if (inComment || inBlockComment) continue;
+
+    // Handle quotes (for default values)
+    if (char === "'" && !inDoubleQuote && !inBacktick) {
+      inSingleQuote = !inSingleQuote;
+    } else if (char === '"' && !inSingleQuote && !inBacktick) {
+      inDoubleQuote = !inDoubleQuote;
+    } else if (char === '`' && !inSingleQuote && !inDoubleQuote) {
+      inBacktick = !inBacktick;
+    }
+
+    // Skip anything inside quotes
+    if (inSingleQuote || inDoubleQuote || inBacktick) {
+      continue;
+    }
+
+    // Handle default values
+    if (char === '=' && nestDepth === 0) {
+      inDefaultValue = true;
+      continue;
+    }
+
+    // These can mean default values.  Or destructuring (which is a problem)...
+    if (char === '(' || char === '{' || char === '[') {
+      nestDepth++;
+    }
+    if (char === ')' || char === '}' || char === ']') {
+      if (nestDepth === 0) break; // Done
+      nestDepth--;
+    }
+
+    // Handle rest parameters `...arg`; this is a problem.
+    if (char === '.' && nextChar === '.' && paramStr[i + 2] === '.') {
+      i += 2; // Skip the other dots
+      continue;
+    }
+
+    // Handle argument separators (`,`) at depth 0
+    if (char === ',' && nestDepth === 0) {
+      if (currentArgName.trim()) {
+        args.push(currentArgName.trim());
+      }
+      currentArgName = '';
+      inDefaultValue = false;
+      continue;
+    }
+
+    // Add valid characters to the current argument
+    if (!inDefaultValue) {
+      currentArgName += char;
+    }
+  }
+
+  // Push the last argument if it exists
+  if (currentArgName.trim()) {
+    if (currentArgName.trim()) {
+      args.push(currentArgName.trim());
+    }
+  }
+
+  return args;
 }
 
 export enum LogMasks {
@@ -141,6 +229,7 @@ export class MethodParameter {
 export interface RegistrationDefaults {
   name: string;
   requiredRole: string[] | undefined;
+  argRequiredEnabled: boolean;
   defaultArgRequired: ArgRequiredOptions;
   defaultArgValidate: boolean;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
@@ -284,12 +373,19 @@ export abstract class ConfiguredInstance {
     this.name = name;
     registerClassInstance(this, name);
   }
-  abstract initialize(ctx: InitContext): Promise<void>;
+  /**
+   * Override this method to perform async initialization.
+   * @param _ctx - @deprecated This parameter is unnecessary, use `DBOS` instead.
+   */
+  initialize(_ctx: InitContext): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 export class ClassRegistration<CT extends { new (...args: unknown[]): object }> implements RegistrationDefaults {
   name: string = '';
   requiredRole: string[] | undefined;
+  argRequiredEnabled: boolean = false;
   defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
   defaultArgValidate: boolean = false;
   needsInitialized: boolean = true;
@@ -477,6 +573,9 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
     const argNames = getArgNames(descriptor.value!);
     methReg.args.forEach((e) => {
+      if (e.required !== ArgRequiredOptions.DEFAULT) {
+        classReg.argRequiredEnabled = true;
+      }
       if (!e.name) {
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
@@ -725,6 +824,7 @@ export function DefaultRequiredRole(anyOf: string[]) {
 export function DefaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = getOrCreateClassRegistration(ctor);
   clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
+  clsreg.argRequiredEnabled = true;
 }
 
 export function DefaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
@@ -735,6 +835,7 @@ export function DefaultArgValidate<T extends { new (...args: unknown[]): object 
 export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = getOrCreateClassRegistration(ctor);
   clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
+  clsreg.argRequiredEnabled = true;
 }
 
 export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
@@ -830,16 +931,16 @@ export function DBOSInitializer() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }
   return decorator;
 }
 
-// For future use with Deploy
+/** @deprecated */
 export function DBOSDeploy() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,

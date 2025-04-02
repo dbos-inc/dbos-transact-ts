@@ -1,4 +1,4 @@
-import { configureInstance, ConfiguredInstance, InitContext, DBOS } from '../src';
+import { configureInstance, ConfiguredInstance, DBOS } from '../src';
 
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
@@ -33,7 +33,7 @@ class CCRecovery extends ConfiguredInstance {
     super(name);
   }
 
-  initialize(_ctx: InitContext): Promise<void> {
+  initialize(): Promise<void> {
     return Promise.resolve();
   }
 

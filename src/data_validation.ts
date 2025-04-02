@@ -55,6 +55,7 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
 
     if (
       argValue === undefined &&
+      methReg.defaults?.argRequiredEnabled &&
       (argDescriptor.required === ArgRequiredOptions.REQUIRED ||
         (argDescriptor.required === ArgRequiredOptions.DEFAULT &&
           methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED))

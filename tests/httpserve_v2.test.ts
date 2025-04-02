@@ -7,6 +7,7 @@ import {
   Authentication,
   DBOS,
   DBOSResponseError,
+  DefaultArgRequired,
   KoaBodyParser,
   MiddlewareContext,
   StatusString,
@@ -42,6 +43,7 @@ async function testAuthMiddlware(ctx: MiddlewareContext) {
   return;
 }
 
+@DefaultArgRequired
 @Authentication(testAuthMiddlware)
 @KoaBodyParser(
   bodyParser({

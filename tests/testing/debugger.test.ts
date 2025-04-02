@@ -1,4 +1,4 @@
-import { DBOSInitializer, InitContext, DBOS } from '../../src/';
+import { DBOSInitializer, DBOS } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
 import { DBOSConfigInternal, DBOSExecutor, DebugMode } from '../../src/dbos-executor';
@@ -44,9 +44,9 @@ describe('debugger-test', () => {
     static count: number = 0;
 
     @DBOSInitializer()
-    static async init(ctx: InitContext) {
-      await ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-      await ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+    static async init() {
+      await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+      await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     }
 
     @DBOS.transaction({ readOnly: true })

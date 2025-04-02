@@ -299,8 +299,10 @@ class DBOSTestClass {
   @DBOSInitializer()
   static async init(ctx: InitContext) {
     DBOSTestClass.initialized = true;
+    // ctx and DBOS should be interchangeable
     expect(ctx.getConfig('counter')).toBe(3);
-    await ctx.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
+    expect(DBOS.getConfig('counter')).toBe(3);
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     await ctx.queryUserDB(`CREATE OR REPLACE FUNCTION test_proc_raise() returns void as $$
     BEGIN

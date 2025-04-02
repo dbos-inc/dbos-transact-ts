@@ -8,7 +8,6 @@ import {
   ArgOptional,
   DBOS,
   ConfiguredInstance,
-  InitContext,
 } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import { DatabaseError, PoolClient } from 'pg';
@@ -231,7 +230,7 @@ describe('failures-tests', () => {
 });
 
 class FailureTestClass extends ConfiguredInstance {
-  initialize(_ctx: InitContext): Promise<void> {
+  initialize(): Promise<void> {
     return Promise.resolve();
   }
 

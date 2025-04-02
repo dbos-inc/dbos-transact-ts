@@ -3,8 +3,7 @@ import { GlobalLogger as Logger, Logger as DBOSLogger } from './telemetry/logs';
 import { get } from 'lodash';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
-import { UserDatabase, UserDatabaseClient } from './user_database';
-import { DBOSExecutor } from './dbos-executor';
+import { UserDatabaseClient } from './user_database';
 import { DBOSConfigKeyTypeError } from './error';
 import { AsyncLocalStorage } from 'async_hooks';
 import { WorkflowContext, WorkflowContextImpl } from './workflow';
@@ -274,73 +273,6 @@ export class DBOSContextImpl implements DBOSContext {
   getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
     const value = get(this.applicationConfig, key, defaultValue);
-    // If the key is found and the default value is provided, check whether the value is of the same type.
-    if (value && defaultValue && typeof value !== typeof defaultValue) {
-      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
-    }
-    return value;
-  }
-}
-
-/**
- * Context provided to functions that run at `DBOS.launch()` time, before workflow processing begins
- */
-export class InitContext {
-  /** Logger for use during global initialization. */
-  readonly logger: Logger;
-
-  /** Access to user database */
-  private userDatabase: UserDatabase;
-
-  /** Application configuration section */
-  private application?: object;
-
-  constructor(readonly dbosExec: DBOSExecutor) {
-    this.logger = dbosExec.logger;
-    this.userDatabase = dbosExec.userDatabase;
-    this.application = dbosExec.config.application;
-  }
-
-  /**
-   * @deprecated Use migrations for production, or `DBOS.createUserSchema` for testing purposes
-   */
-  createUserSchema(): Promise<void> {
-    this.logger.warn(
-      'Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations',
-    );
-    return this.userDatabase.createSchema();
-  }
-
-  /**
-   * @deprecated Use migrations for production, or `DBOS.dropUserSchema` for testing purposes
-   */
-  dropUserSchema(): Promise<void> {
-    this.logger.warn(
-      'Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations',
-    );
-    return this.userDatabase.dropSchema();
-  }
-
-  /**
-   * Query the user/application database
-   * @param sql - SQL query template
-   * @param params - Parameters for query template
-   * @returns The result records from the query
-   */
-  queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
-    return this.userDatabase.query(sql, ...params);
-  }
-
-  getConfig<T>(key: string): T | undefined;
-  getConfig<T>(key: string, defaultValue: T): T;
-  /**
-   * Look up an application configuration item, returns `defaultValue` if not configured
-   * @param key - Configuration key to retrieve
-   * @param defaultValue - Value to return if there is no configuration for `key`
-   * @returns The application configuration value for `key`, or `defaultValue` if key does not exist in the configuration
-   */
-  getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    const value = get(this.application, key, defaultValue);
     // If the key is found and the default value is provided, check whether the value is of the same type.
     if (value && defaultValue && typeof value !== typeof defaultValue) {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
