@@ -23,7 +23,13 @@ describe('httpserver-datavalidation-tests', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
-    const _classes = [TestEndpointDataVal, DefaultArgToDefault, DefaultArgToOptional, DefaultArgToRequired];
+    const _classes = [
+      TestEndpointDataVal,
+      DefaultArgToDefault,
+      DefaultArgToOptional,
+      DefaultArgToRequired,
+      ArgNotMentioned,
+    ];
     DBOS.setConfig(config);
     await DBOS.launch();
     DBOS.setUpHandlerCallback();
@@ -316,16 +322,27 @@ describe('httpserver-datavalidation-tests', () => {
       ['/ddefault', 'hasaval', 200],
       ['/doptional', undefined, 200],
       ['/doptional', 'hasaval', 200],
+
+      ['/nrequired', undefined, 200],
+      ['/nrequired', 'hasaval', 200],
+      ['/ndefault', undefined, 200],
+      ['/ndefault', 'hasaval', 200],
+      ['/noptional', undefined, 200],
+      ['/noptional', 'hasaval', 200],
     ];
 
     for (const v of attempts) {
       const response = await request(DBOS.getHTTPHandlersCallback()!)
         .post(v[0] as string)
         .send({ v: v[1] });
+      if (response.statusCode !== v[2]) {
+        console.warn(`${v[0]} ${v[1]} ${v[2]} - ${response.statusCode}`);
+      }
       expect(response.statusCode).toBe(v[2]);
     }
   });
 
+  @DefaultArgRequired
   class TestEndpointDataVal {
     @GetApi('/hello')
     static async hello(_ctx: HandlerContext) {
@@ -497,6 +514,23 @@ describe('httpserver-datavalidation-tests', () => {
     static async doWorkflow(ctx: HandlerContext, @ArgOptional v?: string) {
       const wh = await ctx.invoke(DefaultArgToDefault).opworkflow(v);
       return await wh.getResult();
+    }
+  }
+
+  class ArgNotMentioned {
+    @DBOS.postApi('/nrequired')
+    static async checkReqValueO(v: string) {
+      return Promise.resolve({ message: `Got string ${v}` });
+    }
+
+    @DBOS.postApi('/noptional')
+    static async checkOptValueO(v?: string) {
+      return Promise.resolve({ message: `Got string ${v}` });
+    }
+
+    @DBOS.postApi('/ndefault')
+    static async checkDefValueO(v: string = 'b') {
+      return Promise.resolve({ message: `Got string ${v}` });
     }
   }
 });

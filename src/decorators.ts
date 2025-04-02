@@ -228,6 +228,7 @@ export class MethodParameter {
 export interface RegistrationDefaults {
   name: string;
   requiredRole: string[] | undefined;
+  argRequiredEnabled: boolean;
   defaultArgRequired: ArgRequiredOptions;
   defaultArgValidate: boolean;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
@@ -377,6 +378,7 @@ export abstract class ConfiguredInstance {
 export class ClassRegistration<CT extends { new (...args: unknown[]): object }> implements RegistrationDefaults {
   name: string = '';
   requiredRole: string[] | undefined;
+  argRequiredEnabled: boolean = false;
   defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
   defaultArgValidate: boolean = false;
   needsInitialized: boolean = true;
@@ -564,6 +566,9 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
     const argNames = getArgNames(descriptor.value!);
     methReg.args.forEach((e) => {
+      if (e.required !== ArgRequiredOptions.DEFAULT) {
+        classReg.argRequiredEnabled = true;
+      }
       if (!e.name) {
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
@@ -812,6 +817,7 @@ export function DefaultRequiredRole(anyOf: string[]) {
 export function DefaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = getOrCreateClassRegistration(ctor);
   clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
+  clsreg.argRequiredEnabled = true;
 }
 
 export function DefaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
@@ -822,6 +828,7 @@ export function DefaultArgValidate<T extends { new (...args: unknown[]): object 
 export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = getOrCreateClassRegistration(ctor);
   clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
+  clsreg.argRequiredEnabled = true;
 }
 
 export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(

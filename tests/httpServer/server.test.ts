@@ -12,6 +12,7 @@ import {
   Step,
   StepContext,
   DBOS,
+  DefaultArgRequired,
 } from '../../src';
 import { DeleteApi, PatchApi, PutApi } from '../../src';
 import { WorkflowUUIDHeader } from '../../src/httpServer/server';
@@ -336,6 +337,7 @@ describe('httpserver-tests', () => {
       parsedMethods: ['POST', 'PUT', 'PATCH', 'GET', 'DELETE'],
     }),
   )
+  @DefaultArgRequired
   class TestEndpoints {
     @GetApi('/hello')
     static async hello(_ctx: HandlerContext) {
