@@ -87,6 +87,7 @@ export class DBOSClient {
    * @param args - Arguments to pass to the workflow upon execution.
    * @returns A Promise that resolves when the message has been sent.
    */
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async enqueue<T extends (...args: any[]) => Promise<any>>(
     options: EnqueueOptions,
     ...args: Parameters<T>
