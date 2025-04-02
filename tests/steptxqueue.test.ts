@@ -1,4 +1,4 @@
-import { DBOS, ConfiguredInstance, InitContext, WorkflowHandle } from '../src';
+import { DBOS, ConfiguredInstance, WorkflowHandle } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestDb, Event } from './helpers';
 import { WorkflowQueue } from '../src';
@@ -12,7 +12,7 @@ class InstanceStepTx extends ConfiguredInstance {
     super('Instance');
   }
 
-  initialize(_ctx: InitContext): Promise<void> {
+  initialize(): Promise<void> {
     return Promise.resolve();
   }
 
@@ -51,7 +51,7 @@ class StaticStepTx extends ConfiguredInstance {
     super('Instance');
   }
 
-  initialize(_ctx: InitContext): Promise<void> {
+  initialize(): Promise<void> {
     return Promise.resolve();
   }
 
@@ -355,7 +355,7 @@ class TestQueueRecoveryInst extends ConfiguredInstance {
   constructor() {
     super('single');
   }
-  initialize(_ctx: InitContext): Promise<void> {
+  initialize(): Promise<void> {
     return Promise.resolve();
   }
   static queuedSteps = 3;

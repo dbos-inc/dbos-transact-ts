@@ -3,8 +3,7 @@ import { GlobalLogger as Logger, Logger as DBOSLogger } from './telemetry/logs';
 import { get } from 'lodash';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
-import { UserDatabase, UserDatabaseClient } from './user_database';
-import { DBOSExecutor } from './dbos-executor';
+import { UserDatabaseClient } from './user_database';
 import { DBOSConfigKeyTypeError } from './error';
 import { AsyncLocalStorage } from 'async_hooks';
 import { WorkflowContext, WorkflowContextImpl } from './workflow';
@@ -272,52 +271,6 @@ export class DBOSContextImpl implements DBOSContext {
   getConfig<T>(key: string, defaultValue: T): T;
   getConfig<T>(key: string, defaultValue?: T): T | undefined {
     const value = get(this.applicationConfig, key, defaultValue);
-    // If the key is found and the default value is provided, check whether the value is of the same type.
-    if (value && defaultValue && typeof value !== typeof defaultValue) {
-      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
-    }
-    return value;
-  }
-}
-
-/**
- * TODO : move logger and application, getConfig to a BaseContext which is at the root of all contexts
- */
-export class InitContext {
-  readonly logger: Logger;
-
-  // All private Not exposed
-  private userDatabase: UserDatabase;
-  private application?: object;
-
-  constructor(readonly dbosExec: DBOSExecutor) {
-    this.logger = dbosExec.logger;
-    this.userDatabase = dbosExec.userDatabase;
-    this.application = dbosExec.config.application;
-  }
-
-  createUserSchema(): Promise<void> {
-    this.logger.warn(
-      'Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations',
-    );
-    return this.userDatabase.createSchema();
-  }
-
-  dropUserSchema(): Promise<void> {
-    this.logger.warn(
-      'Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations',
-    );
-    return this.userDatabase.dropSchema();
-  }
-
-  queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
-    return this.userDatabase.query(sql, ...params);
-  }
-
-  getConfig<T>(key: string): T | undefined;
-  getConfig<T>(key: string, defaultValue: T): T;
-  getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    const value = get(this.application, key, defaultValue);
     // If the key is found and the default value is provided, check whether the value is of the same type.
     if (value && defaultValue && typeof value !== typeof defaultValue) {
       throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);

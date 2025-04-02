@@ -1,4 +1,4 @@
-import { ConfiguredInstance, DBOS, InitContext } from '../../src/';
+import { ConfiguredInstance, DBOS } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
 import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
@@ -7,7 +7,7 @@ class DebuggerCCTest extends ConfiguredInstance {
   constructor(name: string) {
     super(name);
   }
-  initialize(_ctx: InitContext): Promise<void> {
+  override initialize(): Promise<void> {
     expect(this.name).toBe('configA');
     return Promise.resolve();
   }

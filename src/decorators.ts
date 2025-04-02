@@ -3,12 +3,13 @@ import 'reflect-metadata';
 import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
-import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, InitContext } from './context';
+import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext } from './context';
 import { StepConfig, StepContext } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError } from './error';
 import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
+import { InitContext } from './dbos';
 
 /**
  * Any column type column can be.
@@ -372,7 +373,13 @@ export abstract class ConfiguredInstance {
     this.name = name;
     registerClassInstance(this, name);
   }
-  abstract initialize(ctx: InitContext): Promise<void>;
+  /**
+   * Override this method to perform async initialization.
+   * @param _ctx - @deprecated This parameter is unnecessary, use `DBOS` instead.
+   */
+  initialize(_ctx: InitContext): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 export class ClassRegistration<CT extends { new (...args: unknown[]): object }> implements RegistrationDefaults {
@@ -924,16 +931,16 @@ export function DBOSInitializer() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }
   return decorator;
 }
 
-// For future use with Deploy
+/** @deprecated */
 export function DBOSDeploy() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,

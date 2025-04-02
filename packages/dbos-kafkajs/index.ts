@@ -11,15 +11,7 @@ import {
   logLevel,
   Partitioners,
 } from 'kafkajs';
-import {
-  DBOS,
-  Step,
-  StepContext,
-  ConfiguredInstance,
-  DBOSContext,
-  DBOSEventReceiver,
-  InitContext,
-} from '@dbos-inc/dbos-sdk';
+import { DBOS, Step, StepContext, ConfiguredInstance, DBOSContext, DBOSEventReceiver } from '@dbos-inc/dbos-sdk';
 import { associateClassWithEventReceiver, associateMethodWithEventReceiver } from '@dbos-inc/dbos-sdk';
 import { TransactionFunction } from '@dbos-inc/dbos-sdk';
 import { WorkflowFunction } from '@dbos-inc/dbos-sdk';
@@ -248,7 +240,7 @@ export class KafkaProduceStep extends ConfiguredInstance {
     this.topic = topic;
   }
 
-  async initialize(_ctx: InitContext): Promise<void> {
+  override async initialize(): Promise<void> {
     const kafka = new KafkaJS(this.cfg);
     this.producer = kafka.producer(this.pcfg);
     await this.producer.connect();
