@@ -275,9 +275,13 @@ export class DBOS {
     return await DBOSRuntime.loadClasses(dbosEntrypointFiles);
   }
 
+  static isInitialized(): boolean {
+    return !!DBOSExecutor.globalInstance;
+  }
+
   static async launch(options?: DBOSLaunchOptions) {
     // Do nothing is DBOS is already initialized
-    if (DBOSExecutor.globalInstance) return;
+    if (DBOS.isInitialized()) return;
 
     const debugMode = options?.debugMode ?? DBOS.getDebugModeFromEnv();
     const isDebugging = debugMode !== DebugMode.DISABLED;

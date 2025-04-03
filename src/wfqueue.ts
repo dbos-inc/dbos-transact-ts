@@ -33,7 +33,7 @@ export class WorkflowQueue {
   constructor(name: string, arg2?: QueueParameters | number, rateLimit?: QueueRateLimit) {
     this.name = name;
 
-    if (DBOSExecutor.globalInstance) {
+    if (!DBOS.isInitialized()) {
       DBOS.logger.warn(
         `Workflow queue '${name}' is being created after DBOS initialization and will not be considered for dequeue.`,
       );
