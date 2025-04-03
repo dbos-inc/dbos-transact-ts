@@ -2250,7 +2250,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async getWorkflowSteps(workflowID: string): Promise<WorkflowSteps[]> {
-    let steps = await this.systemDatabase.getWorkflowSteps(workflowID);
+    const steps = await this.systemDatabase.getWorkflowSteps(workflowID);
 
     const wfsteps = steps.map((step) => {
       return new WorkflowSteps(step);
