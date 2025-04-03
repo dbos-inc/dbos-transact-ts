@@ -7,8 +7,8 @@ import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import { ExportResult, ExportResultCode } from '@opentelemetry/core';
 
 export interface OTLPExporterConfig {
-  logsEndpoint?: string;
-  tracesEndpoint?: string;
+  logsEndpoint?: string[];
+  tracesEndpoint?: string[];
 }
 
 export interface ITelemetryExporter {
@@ -21,15 +21,19 @@ export class TelemetryExporter implements ITelemetryExporter {
   private readonly logsExporter?: OTLPLogExporter;
   constructor(config: OTLPExporterConfig) {
     if (config.tracesEndpoint) {
-      this.tracesExporter = new OTLPTraceExporter({
-        url: config.tracesEndpoint,
-      });
+      for (const endpoint of config.tracesEndpoint) {
+        this.tracesExporter = new OTLPTraceExporter({
+          url: endpoint,
+        });
+      }
       console.log(`Traces will be exported to ${config.tracesEndpoint}`);
     }
     if (config.logsEndpoint) {
-      this.logsExporter = new OTLPLogExporter({
-        url: config.logsEndpoint,
-      });
+      for (const endpoint of config.logsEndpoint) {
+        this.logsExporter = new OTLPLogExporter({
+          url: endpoint,
+        });
+      }
       console.log(`Logs will be exported to ${config.logsEndpoint}`);
     }
   }
