@@ -619,10 +619,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       [workflowUUID],
     );
 
-    /* for (const row of rows) {
+    for (const row of rows) {
       row.output = row.output !== null ? DBOSJSON.parse(row.output as string) : null;
       row.error = row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null;
-    } */
+    }
 
     return rows;
   }

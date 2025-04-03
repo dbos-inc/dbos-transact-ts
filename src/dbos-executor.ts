@@ -28,6 +28,8 @@ import {
   GetWorkflowQueueOutput,
 } from './workflow';
 
+import { WorkflowSteps } from './conductor/protocol';
+
 import { IsolationLevel, Transaction, TransactionConfig, TransactionContextImpl } from './transaction';
 import { StepConfig, StepContextImpl, StepFunction } from './step';
 import { TelemetryCollector } from './telemetry/collector';
@@ -91,6 +93,7 @@ import {
 } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
+import { Conductor } from './conductor/conductor';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -2245,6 +2248,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async listWorkflowSteps(workflowID: string): Promise<step_info[]> {
     return await this.systemDatabase.getWorkflowSteps(workflowID);
+  }
+
+  async getWorkflowSteps(workflowID: string): Promise<WorkflowSteps[]> {
+    let steps = await this.systemDatabase.getWorkflowSteps(workflowID);
+
+    const wfsteps = steps.map((step) => {
+      return new WorkflowSteps(step);
+    });
+
+    return wfsteps;
   }
 
   async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
