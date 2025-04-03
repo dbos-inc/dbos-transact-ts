@@ -28,8 +28,6 @@ import {
   GetWorkflowQueueOutput,
 } from './workflow';
 
-import { WorkflowSteps } from './conductor/protocol';
-
 import { IsolationLevel, Transaction, TransactionConfig, TransactionContextImpl } from './transaction';
 import { StepConfig, StepContextImpl, StepFunction } from './step';
 import { TelemetryCollector } from './telemetry/collector';
@@ -2247,16 +2245,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async listWorkflowSteps(workflowID: string): Promise<step_info[]> {
     return await this.systemDatabase.getWorkflowSteps(workflowID);
-  }
-
-  async getWorkflowSteps(workflowID: string): Promise<WorkflowSteps[]> {
-    const steps = await this.systemDatabase.getWorkflowSteps(workflowID);
-
-    const wfsteps = steps.map((step) => {
-      return new WorkflowSteps(step);
-    });
-
-    return wfsteps;
   }
 
   async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
