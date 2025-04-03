@@ -93,7 +93,6 @@ import {
 } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
-import { Conductor } from './conductor/conductor';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}

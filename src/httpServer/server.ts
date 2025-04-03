@@ -304,7 +304,6 @@ export class DBOSHttpServer {
     const workflowStepsUrl = '/workflows/:workflow_id/steps';
     const workflowStepsHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      // const steps = await dbosExec.listWorkflowSteps(workflowId);
       const steps = await dbosExec.getWorkflowSteps(workflowId);
       koaCtxt.body = steps;
       koaCtxt.status = 200;
