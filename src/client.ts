@@ -28,11 +28,6 @@ interface EnqueueOptions {
    */
   workflowID?: string;
   /**
-   * The maximum number of recovery attempts for this workflow.
-   * If not provided, it defaults to 50.
-   */
-  maxRecoveryAttempts?: number;
-  /**
    * The application version associated with this workflow.
    * If not provided, the version of the DBOS app that first dequeues the workflow will be used.
    */
@@ -92,10 +87,13 @@ export class DBOSClient {
    * @param args - Arguments to pass to the workflow upon execution.
    * @returns A Promise that resolves when the message has been sent.
    */
-  async enqueue<T extends unknown[]>(options: EnqueueOptions, ...args: T): Promise<void> {
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async enqueue<T extends (...args: any[]) => Promise<any>>(
+    options: EnqueueOptions,
+    ...args: Parameters<T>
+  ): Promise<WorkflowHandle<Awaited<ReturnType<T>>>> {
     const { workflowName, workflowClassName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? uuidv4();
-    const maxRecoveryAttempts = options.maxRecoveryAttempts ?? 50;
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
@@ -114,11 +112,12 @@ export class DBOSClient {
       applicationVersion: appVersion,
       applicationID: '',
       createdAt: Date.now(),
-      maxRetries: maxRecoveryAttempts,
+      maxRetries: 50,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, args);
     await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName);
+    return new RetrievedHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
 
   /**

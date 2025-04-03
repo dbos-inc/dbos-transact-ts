@@ -68,7 +68,7 @@ describe('DBOSClient', () => {
     const wfid = `client-enqueue-idempotent-${Date.now()}`;
 
     try {
-      await client.enqueue<Parameters<EnqueueTest>>(
+      await client.enqueue<EnqueueTest>(
         {
           workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
@@ -80,7 +80,7 @@ describe('DBOSClient', () => {
         { first: 'John', last: 'Doe', age: 30 },
       );
 
-      await client.enqueue<Parameters<EnqueueTest>>(
+      await client.enqueue<EnqueueTest>(
         {
           workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
@@ -132,7 +132,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
 
     try {
-      await client.enqueue<Parameters<EnqueueTest>>(
+      await client.enqueue<EnqueueTest>(
         {
           workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
@@ -167,6 +167,47 @@ describe('DBOSClient', () => {
     }
   }, 20000);
 
+  test('DBOSClient-enqueue-and-get-result', async () => {
+    const client = await DBOSClient.create(database_url);
+
+    await DBOS.launch();
+
+    let wfid: string;
+    try {
+      const handle = await client.enqueue<EnqueueTest>(
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+        },
+        42,
+        'test',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+      wfid = handle.getWorkflowUUID();
+
+      const result = await handle.getResult();
+      expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await client.destroy();
+    }
+
+    const dbClient = new Client(poolConfig);
+    try {
+      await dbClient.connect();
+      const result = await dbClient.query<workflow_status>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfid],
+      );
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].workflow_uuid).toBe(wfid);
+      expect(result.rows[0].status).toBe('SUCCESS');
+      expect(result.rows[0].application_version).toBe(globalParams.appVersion);
+    } finally {
+      await dbClient.end();
+    }
+  }, 20000);
+
   test('DBOSClient-enqueue-appVer-set', async () => {
     const client = await DBOSClient.create(database_url);
     const wfid = `client-enqueue-${Date.now()}`;
@@ -174,7 +215,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
 
     try {
-      await client.enqueue<Parameters<EnqueueTest>>(
+      await client.enqueue<EnqueueTest>(
         {
           workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
@@ -214,7 +255,7 @@ describe('DBOSClient', () => {
     const client = await DBOSClient.create(database_url);
 
     try {
-      await client.enqueue<Parameters<EnqueueTest>>(
+      await client.enqueue<EnqueueTest>(
         {
           workflowName: 'enqueueTest',
           workflowClassName: 'ClientTest',
