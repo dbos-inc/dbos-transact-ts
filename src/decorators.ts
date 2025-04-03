@@ -838,6 +838,7 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]): object 
   clsreg.argRequiredEnabled = true;
 }
 
+/** @deprecated Use `new` */
 export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
   cls: new (name: string, ...args: T) => R,
   name: string,
@@ -865,6 +866,7 @@ export function RequiredRole(anyOf: string[]) {
   return apidec;
 }
 
+/** @deprecated Use `DBOS.workflow` */
 export function Workflow(config: WorkflowConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -878,6 +880,7 @@ export function Workflow(config: WorkflowConfig = {}) {
   return decorator;
 }
 
+/** @deprecated Use `DBOS.transaction` */
 export function Transaction(config: TransactionConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -892,6 +895,7 @@ export function Transaction(config: TransactionConfig = {}) {
   return decorator;
 }
 
+/** @deprecated Use `DBOS.storedProcedure` */
 export function StoredProcedure(config: StoredProcedureConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -905,6 +909,7 @@ export function StoredProcedure(config: StoredProcedureConfig = {}) {
   return decorator;
 }
 
+/** @deprecated Use `DBOS.step` */
 export function Step(config: StepConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,

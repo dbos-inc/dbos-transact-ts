@@ -12,6 +12,7 @@ export interface StepConfig {
   backoffRate?: number; // The multiplier by which the retry interval increases after every retry attempt (default 2).
 }
 
+/** @deprecated */
 export interface StepContext extends DBOSContext {
   // These fields reflect the communictor's configuration.
   readonly retriesAllowed: boolean;

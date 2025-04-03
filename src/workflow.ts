@@ -162,6 +162,7 @@ export type WfInvokeWfsInstAsync<T> = T extends ConfiguredInstance
     }
   : never;
 
+/** @deprecated */
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;

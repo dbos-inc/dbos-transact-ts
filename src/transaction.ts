@@ -23,6 +23,7 @@ export const IsolationLevel = {
 } as const;
 export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
+/** @deprecated */
 export interface TransactionContext<T extends UserDatabaseClient> extends DBOSContext {
   readonly client: T;
 }
