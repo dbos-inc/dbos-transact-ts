@@ -17,6 +17,8 @@ import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
 import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
+import { serializeError } from 'serialize-error';
+import { step_info } from '../../schemas/system_db_schema';
 export type QueueMetadataResponse = QueueParameters & { name: string };
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
@@ -305,7 +307,13 @@ export class DBOSHttpServer {
     const workflowStepsHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const steps = await dbosExec.listWorkflowSteps(workflowId);
-      koaCtxt.body = steps;
+      koaCtxt.body = steps.map((step: step_info) => ({
+        function_name: step.function_name,
+        function_id: step.function_id,
+        output: step.output ? DBOSJSON.stringify(step.output) : undefined,
+        error: step.error ? DBOSJSON.stringify(serializeError(step.error)) : undefined,
+        child_workflow_id: step.child_workflow_id ? step.child_workflow_id : undefined,
+      }));
       koaCtxt.status = 200;
     };
     router.get(workflowStepsUrl, workflowStepsHandler);
