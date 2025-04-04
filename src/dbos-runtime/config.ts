@@ -84,6 +84,20 @@ export function loadConfigFile(configFilePath: string): ConfigFile {
     if (!configFile.database) {
       configFile.database = {}; // Create an empty database object if it doesn't exist
     }
+    // Handle strings in the config file and convert them to arrays
+    if (
+      configFile.telemetry?.OTLPExporter?.logsEndpoint &&
+      typeof configFile.telemetry.OTLPExporter.logsEndpoint === 'string'
+    ) {
+      configFile.telemetry.OTLPExporter.logsEndpoint = [configFile.telemetry.OTLPExporter.logsEndpoint];
+    }
+    if (
+      configFile.telemetry?.OTLPExporter?.tracesEndpoint &&
+      typeof configFile.telemetry.OTLPExporter.tracesEndpoint === 'string'
+    ) {
+      configFile.telemetry.OTLPExporter.tracesEndpoint = [configFile.telemetry.OTLPExporter.tracesEndpoint];
+    }
+
     return configFile;
   } catch (e) {
     if (e instanceof Error) {
@@ -411,17 +425,14 @@ export function translatePublicDBOSconfig(
         logLevel: config.logLevel || 'info',
         forceConsole: isDebugging === undefined ? false : isDebugging,
       },
+      OTLPExporter: {
+        tracesEndpoint: config.otlpTracesEndpoints || [],
+        logsEndpoint: config.otlpLogsEndpoints || [],
+      },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
     sysDbPoolSize: config.sysDbPoolSize || 2,
   };
-
-  // The third predicate is just to satisfy TS: we know it is set above
-  if (config.otlpTracesEndpoints && config.otlpTracesEndpoints.length > 0 && translatedConfig.telemetry) {
-    translatedConfig.telemetry.OTLPExporter = {
-      tracesEndpoint: config.otlpTracesEndpoints[0],
-    };
-  }
 
   const runtimeConfig: DBOSRuntimeConfig = {
     port: 3000,
@@ -481,13 +492,20 @@ export function overwrite_config(
   const poolConfig = constructPoolConfig(configFile!);
 
   if (!providedDBOSConfig.telemetry.OTLPExporter) {
-    providedDBOSConfig.telemetry.OTLPExporter = {};
+    providedDBOSConfig.telemetry.OTLPExporter = {
+      tracesEndpoint: [],
+      logsEndpoint: [],
+    };
   }
   if (configFile!.telemetry?.OTLPExporter?.tracesEndpoint) {
-    providedDBOSConfig.telemetry.OTLPExporter.tracesEndpoint = configFile!.telemetry.OTLPExporter.tracesEndpoint;
+    providedDBOSConfig.telemetry.OTLPExporter.tracesEndpoint =
+      providedDBOSConfig.telemetry.OTLPExporter.tracesEndpoint?.concat(
+        configFile!.telemetry.OTLPExporter.tracesEndpoint,
+      );
   }
   if (configFile!.telemetry?.OTLPExporter?.logsEndpoint) {
-    providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint = configFile!.telemetry.OTLPExporter.logsEndpoint;
+    providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint =
+      providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint?.concat(configFile!.telemetry.OTLPExporter.logsEndpoint);
   }
 
   const overwritenDBOSConfig = {

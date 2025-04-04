@@ -107,6 +107,7 @@ export interface DBOSConfig {
   readonly sysDbPoolSize?: number;
   readonly logLevel?: string;
   readonly otlpTracesEndpoints?: string[];
+  readonly otlpLogsEndpoints?: string[];
   readonly adminPort?: number;
   readonly runAdminServer?: boolean;
 
