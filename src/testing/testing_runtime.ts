@@ -28,6 +28,7 @@ import { DBOS } from '../dbos';
 
 /**
  * Create a testing runtime. Warn: this function will drop the existing system DB and create a clean new one. Don't run tests against your production database!
+ * @deprecated Use `DBOS.` methods in tests
  */
 export async function createTestingRuntime(
   userClasses: object[] | undefined = undefined,
@@ -60,6 +61,7 @@ export interface WorkflowInvokeParams {
   readonly request?: HTTPRequest; // The originating HTTP request.
 }
 
+/** @deprecated */
 export interface TestingRuntime {
   invoke<T extends ConfiguredInstance>(
     targetInst: T,

@@ -68,6 +68,13 @@ export type SyncHandlerWfFuncsInst<T> = T extends ConfiguredInstance
     }
   : never;
 
+/**
+ * @deprecated This class is no longer necessary
+ * To update to Transact 2.0+
+ *   Remove `HandlerContext` from function parameter lists
+ *   Use `@DBOS.getApi`, `@DBOS.postApi`, etc., decorators instead of `@GetApi`, `@PostApi`, etc.
+ *   Use `DBOS.` to access DBOS context within affected functions
+ */
 export interface HandlerContext extends DBOSContext {
   readonly koaContext: Koa.Context;
   invoke<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string): InvokeFuncsInst<T>;
@@ -314,22 +321,27 @@ function generateApiDec(verb: APITypes, url: string) {
   };
 }
 
+/** @deprecated Use `DBOS.getApi` */
 export function GetApi(url: string) {
   return generateApiDec(APITypes.GET, url);
 }
 
+/** @deprecated  Use `DBOS.postApi` */
 export function PostApi(url: string) {
   return generateApiDec(APITypes.POST, url);
 }
 
+/** @deprecated  Use `DBOS.putApi` */
 export function PutApi(url: string) {
   return generateApiDec(APITypes.PUT, url);
 }
 
+/** @deprecated  Use `DBOS.patchApi` */
 export function PatchApi(url: string) {
   return generateApiDec(APITypes.PATCH, url);
 }
 
+/** @deprecated  Use `DBOS.deleteApi` */
 export function DeleteApi(url: string) {
   return generateApiDec(APITypes.DELETE, url);
 }

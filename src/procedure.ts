@@ -24,6 +24,13 @@ export interface QueryResult<R extends QueryResultRow> extends QueryResultBase {
 
 export type StoredProcedure<T extends unknown[], R> = (ctxt: StoredProcedureContext, ...args: T) => Promise<R>;
 
+/**
+ * @deprecated This class is no longer necessary
+ * To update to Transact 2.0+
+ *   Remove `StoredProcedureContext` from function parameter lists
+ *   Use `DBOS.` to access DBOS context within affected functions
+ *   Adjust callers to call the function directly
+ */
 export interface StoredProcedureContext
   extends Pick<
     DBOSContext,
