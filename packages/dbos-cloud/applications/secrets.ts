@@ -34,12 +34,12 @@ export async function createSecret(
   }
 
   if (!secretName) {
-    logger.error('Secret name is required.');
+    logger.error('Variable name is required.');
     return 1;
   }
 
   if (!secretValue) {
-    logger.error('Secret value is required.');
+    logger.error('Variable value is required.');
     return 1;
   }
 
@@ -68,11 +68,11 @@ export async function postCreateSecret(
     );
 
     if (res.status !== 200) {
-      logger.error(`Failed to create secret for application ${request.ApplicationName}`);
+      logger.error(`Failed to create variable for application ${request.ApplicationName}`);
       return 1;
     }
 
-    logger.info(`Secret ${request.SecretName} successfully updated!`);
+    logger.info(`Variable ${request.SecretName} successfully updated!`);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to retrieve versions for application ${request.ApplicationName}`;
@@ -95,7 +95,7 @@ export async function importSecrets(host: string, appName: string | undefined, e
     return 1;
   }
 
-  logger.info(`Importing secrets from ${envPath}`);
+  logger.info(`Importing variables from ${envPath}`);
 
   const envConfig = readFileSync(envPath, 'utf-8');
 
@@ -112,7 +112,7 @@ export async function importSecrets(host: string, appName: string | undefined, e
   for (const secret of Object.keys(parsed)) {
     const expandedValue = expandedEnv[secret];
     if (expandedValue === undefined) {
-      logger.error(`No value found for secret ${secret}`);
+      logger.error(`No value found for variable ${secret}`);
       return 1;
     }
     const request = { ApplicationName: appName, SecretName: secret, ClearSecretValue: expandedValue };
@@ -148,7 +148,7 @@ export async function listSecrets(host: string, appName: string | undefined, jso
     );
 
     if (res.status !== 200) {
-      logger.error(`Failed to list secret for application ${appName}`);
+      logger.error(`Failed to list variables for application ${appName}`);
       return 1;
     }
 
