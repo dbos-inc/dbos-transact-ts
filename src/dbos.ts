@@ -781,6 +781,12 @@ export class DBOS {
   //////
   // Workflow and other operations
   //////
+
+  /**
+   * Get the workflow status given a workflow ID
+   * @param workflowID - ID of the workflow
+   * @return status of the workflow as `WorkflowStatus`, or `null` if there is no workflow with `workflowID`
+   */
   static getWorkflowStatus(workflowID: string) {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       throw new DBOSInvalidWorkflowTransitionError(
@@ -790,6 +796,13 @@ export class DBOS {
     return DBOS.executor.getWorkflowStatus(workflowID);
   }
 
+  /**
+   * Create a workflow handle with a given workflow ID.
+   * This call always returns a handle, even if the workflow does not exist.
+   * The resulting handle will check the database to provide any workflow information.
+   * @param workflowID - ID of the workflow
+   * @return `WorkflowHandle` that can be used to poll for the status or result of any workflow with `workflowID`
+   */
   static retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -802,6 +815,11 @@ export class DBOS {
     return DBOS.executor.retrieveWorkflow(workflowID);
   }
 
+  /**
+   * Query the system database for all workflows matching the provided predicate
+   * @param input - `GetWorkflowsInput` predicate for filtering returned workflows
+   * @return `GetWorkflowsOutput` listing the workflow IDs of matching workflows
+   */
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       throw new DBOSInvalidWorkflowTransitionError(
@@ -811,14 +829,28 @@ export class DBOS {
     return await DBOS.executor.getWorkflows(input);
   }
 
-  static async cancelWorkflow(wfid: string) {
-    await DBOS.executor.cancelWorkflow(wfid);
+  /**
+   * Cancel a workflow given its ID.
+   * If the workflow is currently running, `DBOSWorkflowCancelledError` will be
+   *   thrown from its next DBOS call.
+   * @param workflowID - ID of the workflow
+   */
+  static async cancelWorkflow(workflowID: string) {
+    await DBOS.executor.cancelWorkflow(workflowID);
   }
 
-  static async resumeWorkflow(wfid: string) {
-    return await DBOS.executor.resumeWorkflow(wfid);
+  /**
+   * Resume a workflow given its ID.
+   * @param workflowID - ID of the workflow
+   */
+  static async resumeWorkflow(workflowID: string) {
+    return await DBOS.executor.resumeWorkflow(workflowID);
   }
 
+  /**
+   * Retrieve the contents of a workflow queue.
+   * @param input - Filter predicate, containing the queue name and other criteria
+   */
   static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       throw new DBOSInvalidWorkflowTransitionError(
@@ -828,7 +860,14 @@ export class DBOS {
     return await DBOS.executor.getWorkflowQueue(input);
   }
 
-  // durable sleep when called from within workflows
+  /**
+   * Sleep for the specified amount of time.
+   * If called from within a workflow, the sleep is "durable",
+   *   meaning that the workflow will sleep until the wakeup time
+   *   (calculated by adding `durationMS` to the original invocation time),
+   *   regardless of workflow recovery.
+   * @param durationMS - Length of sleep, in milliseconds.
+   */
   static async sleepms(durationMS: number): Promise<void> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       if (DBOS.isInTransaction()) {
@@ -838,28 +877,46 @@ export class DBOS {
     }
     await sleepms(durationMS);
   }
+  /** @see sleepms */
   static async sleepSeconds(durationSec: number): Promise<void> {
     return DBOS.sleepms(durationSec * 1000);
   }
+  /** @see sleepms */
   static async sleep(durationMS: number): Promise<void> {
     return DBOS.sleepms(durationMS);
   }
 
-  static async withNextWorkflowID<R>(wfid: string, callback: () => Promise<R>): Promise<R> {
+  /**
+   * Use the provided `workflowID` as the identifier for first workflow started
+   *   within the `callback` function.
+   * @param workflowID - ID to assign to the first workflow started
+   * @param callback - Function to run, which would start a workflow
+   * @return - Return value from `callback`
+   */
+  static async withNextWorkflowID<R>(workflowID: string, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
       const pcwfid = pctx.idAssignedForNextWorkflow;
       try {
-        pctx.idAssignedForNextWorkflow = wfid;
+        pctx.idAssignedForNextWorkflow = workflowID;
         return callback();
       } finally {
         pctx.idAssignedForNextWorkflow = pcwfid;
       }
     } else {
-      return runWithTopContext({ idAssignedForNextWorkflow: wfid }, callback);
+      return runWithTopContext({ idAssignedForNextWorkflow: workflowID }, callback);
     }
   }
 
+  /**
+   * Use the provided `callerName`, `span`, and `request` as context for any
+   *   DBOS functions called within the `callback` function.
+   * @param callerName - Tracing caller name
+   * @param span - Tracing span
+   * @param request - HTTP request that initiated the call
+   * @param callback - Function to run with tracing context in place
+   * @return - Return value from `callback`
+   */
   static async withTracedContext<R>(
     callerName: string,
     span: Span,
@@ -877,6 +934,15 @@ export class DBOS {
     }
   }
 
+  /**
+   * Use the provided `authedUser` and `authedRoles` as the authenticated user for
+   *   any security checks or calls to `DBOS.authenticatedUser`
+   *   or `DBOS.authenticatedRoles` placed within the `callback` function.
+   * @param authedUser - Authenticated user
+   * @param authedRoles - Authenticated roles
+   * @param callback - Function to run with authentication context in place
+   * @return - Return value from `callback`
+   */
   static async withAuthedContext<R>(authedUser: string, authedRoles: string[], callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
@@ -888,7 +954,13 @@ export class DBOS {
     }
   }
 
-  // This generic setter helps users calling DBOS operation to pass a name, later used in seeding a parent OTel span for the operation.
+  /**
+   * This generic setter helps users calling DBOS operation to pass a name,
+   *   later used in seeding a parent OTel span for the operation.
+   * @param callerName - Tracing caller name
+   * @param callback - Function to run with tracing context in place
+   * @return - Return value from `callback`
+   */
   static async withNamedContext<R>(callerName: string, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
@@ -899,18 +971,24 @@ export class DBOS {
     }
   }
 
-  static async withWorkflowQueue<R>(wfq: string, callback: () => Promise<R>): Promise<R> {
+  /**
+   * Use queue named `queueName` for any workflows started within the `callback`.
+   * @param queueName - Name of queue upon which qll workflows called or started within `callback` will be run
+   * @param callback - Function to run, which would call or start workflows
+   * @return - Return value from `callback`
+   */
+  static async withWorkflowQueue<R>(queueName: string, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
       const pcwfq = pctx.queueAssignedForWorkflows;
       try {
-        pctx.queueAssignedForWorkflows = wfq;
+        pctx.queueAssignedForWorkflows = queueName;
         return callback();
       } finally {
         pctx.queueAssignedForWorkflows = pcwfq;
       }
     } else {
-      return runWithTopContext({ queueAssignedForWorkflows: wfq }, callback);
+      return runWithTopContext({ queueAssignedForWorkflows: queueName }, callback);
     }
   }
 
