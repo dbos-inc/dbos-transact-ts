@@ -57,7 +57,7 @@ export class TelemetryExporter implements ITelemetryExporter {
     const tasks: Promise<void>[] = [];
     // A short-lived app that exits before the callback of export() will lose its data.
     // We wrap these callbacks in promise objects to make sure we wait for them:
-    if (exportSpans.length > 0 && this.tracesExporters) {
+    if (exportSpans.length > 0 && this.tracesExporters.length > 0) {
       const traceExportTask = new Promise<void>((resolve) => {
         const exportCallback = (results: ExportResult) => {
           if (results.code !== ExportResultCode.SUCCESS) {
@@ -72,7 +72,7 @@ export class TelemetryExporter implements ITelemetryExporter {
       });
       tasks.push(traceExportTask);
     }
-    if (exportLogs.length > 0 && this.logsExporters) {
+    if (exportLogs.length > 0 && this.logsExporters.length > 0) {
       const logExportTask = new Promise<void>((resolve) => {
         const exportCallback = (results: ExportResult) => {
           if (results.code !== ExportResultCode.SUCCESS) {
