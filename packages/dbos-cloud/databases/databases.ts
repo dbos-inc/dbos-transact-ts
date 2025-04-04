@@ -420,37 +420,24 @@ export async function connect(
   }
 
   try {
-    if (!existsSync(dbosConfigFilePath)) {
-      logger.error(`Error: ${dbosConfigFilePath} not found`);
-      return 1;
-    }
-
-    const backupConfigFilePath = `dbos-config.yaml.${Date.now()}.bak`;
-    logger.info(`Backing up ${dbosConfigFilePath} to ${backupConfigFilePath}`);
-    copyFileSync(dbosConfigFilePath, backupConfigFilePath);
-
     logger.info('Retrieving cloud database info...');
     const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
     const isSupabase = userDBInfo.SupabaseReference !== null;
 
-    const prompt = promptSync({ sigint: true });
-    if (!password) {
-      if (isSupabase) {
-        password = prompt('Enter Supabase Database Password: ', { echo: '*' });
-      } else {
-        password = prompt('Enter Database Password: ', { echo: '*' });
+    if (showPassword) {
+      const prompt = promptSync({ sigint: true });
+      if (!password) {
+        if (isSupabase) {
+          password = prompt('Enter Supabase Database Password: ', { echo: '*' });
+        } else {
+          password = prompt('Enter Database Password: ', { echo: '*' });
+        }
       }
     }
 
     const databaseUsername = isSupabase ? `postgres.${userDBInfo.SupabaseReference}` : userDBInfo.DatabaseUsername;
 
-    console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
-    console.log(`Host Name: ${userDBInfo.HostName}`);
-    console.log(`Port: ${userDBInfo.Port}`);
-    console.log(`Database Username: ${databaseUsername}`);
-    console.log(`Status: ${userDBInfo.Status}`);
-
-    const displayPassword = showPassword ? password : password.replace(/./g, '*');
+    const displayPassword = showPassword ? password : '***';
     const dbString = `postgresql://${databaseUsername}:${displayPassword}@${userDBInfo.HostName}:${userDBInfo.Port}/${
       userDBInfo.PostgresInstanceName
     }`;
