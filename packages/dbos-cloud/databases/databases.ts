@@ -9,7 +9,6 @@ import {
   DBOSCloudCredentials,
 } from '../cloudutils.js';
 import { Logger } from 'winston';
-import { ConfigFile, loadConfigFile, writeConfigFile } from '../configutils.js';
 import { copyFileSync, existsSync } from 'fs';
 import { UserDBInstance } from '../applications/types.js';
 import { input, select } from '@inquirer/prompts';
