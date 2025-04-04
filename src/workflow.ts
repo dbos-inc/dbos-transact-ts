@@ -381,7 +381,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
     await this.#dbosExec.userDatabase.transaction(
       async (client: UserDatabaseClient) => {
-        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID, 'DBOS.send');
+        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
       },
       { isolationLevel: IsolationLevel.ReadCommitted },
     );
@@ -404,7 +404,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
     await this.#dbosExec.userDatabase.transaction(
       async (client: UserDatabaseClient) => {
-        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID, 'DBOS.recv');
+        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
       },
       { isolationLevel: IsolationLevel.ReadCommitted },
     );
@@ -422,7 +422,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
 
     await this.#dbosExec.userDatabase.transaction(
       async (client: UserDatabaseClient) => {
-        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID, 'DBOS.setEvent');
+        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
       },
       { isolationLevel: IsolationLevel.ReadCommitted },
     );

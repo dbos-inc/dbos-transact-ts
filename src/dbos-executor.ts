@@ -1113,7 +1113,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     resultBuffer: Map<number, BufferedResult>,
     workflowUUID: string,
     isKeyConflict: (error: unknown) => boolean,
-    function_name: string,
   ): Promise<void> {
     const funcIDs = Array.from(resultBuffer.keys());
     if (funcIDs.length === 0) {
@@ -1135,6 +1134,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const output = recorded!.output;
         const txnSnapshot = recorded!.txn_snapshot;
         const createdAt = recorded!.created_at!;
+        const function_name = recorded?.function_name ?? '';
         if (paramCnt > 1) {
           sqlStmt += ', ';
         }
@@ -1149,7 +1149,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           function_name,
         );
       }
-      console.log(function_name, sqlStmt, values);
+
       this.logger.debug(sqlStmt);
       await query(sqlStmt, values);
     } catch (error) {
@@ -1166,16 +1166,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     client: UserDatabaseClient,
     resultBuffer: Map<number, BufferedResult>,
     workflowUUID: string,
-    function_name: string,
   ): Promise<void> {
-    console.log('mjjjj flushResultBuffer', function_name, workflowUUID);
     const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
-    return this.#flushResultBuffer(
-      func,
-      resultBuffer,
-      workflowUUID,
-      (error) => this.userDatabase.isKeyConflictError(error),
-      function_name,
+    return this.#flushResultBuffer(func, resultBuffer, workflowUUID, (error) =>
+      this.userDatabase.isKeyConflictError(error),
     );
   }
 
@@ -1183,10 +1177,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     client: PoolClient,
     resultBuffer: Map<number, BufferedResult>,
     workflowUUID: string,
-    function_name: string,
   ): Promise<void> {
     const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then((v) => v.rows as T[]);
-    return this.#flushResultBuffer(func, resultBuffer, workflowUUID, pgNodeIsKeyConflictError, function_name);
+    return this.#flushResultBuffer(func, resultBuffer, workflowUUID, pgNodeIsKeyConflictError);
   }
 
   async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
@@ -1310,7 +1303,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         // For non-read-only transactions, flush the result buffer.
         if (!this.isDebugging && !readOnly) {
-          await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID, txn.name);
+          await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
         }
 
         // Execute the user's transaction.
@@ -1411,7 +1404,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           const e: Error = err as Error;
           await this.userDatabase.transaction(
             async (client: UserDatabaseClient) => {
-              await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID, txn.name);
+              await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
               const func = <T>(sql: string, args: unknown[]) =>
                 this.userDatabase.queryWithClient<T>(client, sql, ...args);
               await this.#recordError(
@@ -1558,7 +1551,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         // For non-read-only transactions, flush the result buffer.
         if (!this.isDebugging && !readOnly) {
-          await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID, proc.name);
+          await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
         }
 
         // Execute the user's transaction.
@@ -1601,6 +1594,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             output: result,
             txn_snapshot: txn_snapshot,
             created_at: Date.now(),
+            function_name: proc.name,
           };
           wfCtx.resultBuffer.set(funcId, readOutput);
         } else {
@@ -1646,7 +1640,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           const e: Error = err as Error;
           await this.invokeStoredProcFunction(
             async (client: PoolClient) => {
-              await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID, proc.name);
+              await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
               const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then((v) => v.rows as T[]);
               await this.#recordError(
                 func,
@@ -1663,7 +1657,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
           await this.userDatabase.transaction(
             async (client: UserDatabaseClient) => {
-              await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID, proc.name);
+              await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
               const func = <T>(sql: string, args: unknown[]) =>
                 this.userDatabase.queryWithClient<T>(client, sql, ...args);
               await this.#recordError(
@@ -1714,9 +1708,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const $args = [wfCtx.workflowUUID, funcId, wfCtx.presetUUID, $jsonCtx, null, JSON.stringify(args)] as unknown[];
     if (!readOnly) {
       // function_id, output, txn_snapshot, created_at
-      const bufferedResults = new Array<[number, unknown, string, number?]>();
-      for (const [functionID, { output, txn_snapshot, created_at }] of wfCtx.resultBuffer.entries()) {
-        bufferedResults.push([functionID, output, txn_snapshot, created_at]);
+      const bufferedResults = new Array<[number, unknown, string, number?, string?]>();
+      for (const [functionID, { output, txn_snapshot, created_at, function_name }] of wfCtx.resultBuffer.entries()) {
+        bufferedResults.push([functionID, output, txn_snapshot, created_at, function_name]);
       }
       // sort by function ID
       bufferedResults.sort((a, b) => a[0] - b[0]);
@@ -1750,6 +1744,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         output,
         txn_snapshot,
         created_at: created_at ?? Date.now(),
+        function_name: proc.name,
       });
     }
 
@@ -1879,7 +1874,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     await this.userDatabase.transaction(
       async (client: UserDatabaseClient) => {
-        await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID, ctxt.operationName);
+        await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
       },
       { isolationLevel: IsolationLevel.ReadCommitted },
     );
