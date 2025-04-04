@@ -9,27 +9,36 @@ import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config
 import { Client, ClientConfig } from 'pg';
 import { type CompileResult, compile } from './compiler.js';
 
-async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: string | boolean) {
+async function emitScriptFiles(outDir: string, result: CompileResult) {
   await fsp.mkdir(outDir, { recursive: true });
 
-  // TODO: remove code that emits the TS/JS code directly for debug purposes
   for (const sourceFile of result.project.getSourceFiles()) {
-    const moduleName = sourceFile.getBaseNameWithoutExtension();
-    const results = sourceFile.getEmitOutput();
+    const baseName = sourceFile.getBaseName();
 
-    if (!results.getEmitSkipped()) {
-      const tsFile = await fsp.open(path.join(outDir, `${moduleName}.gen.ts`), 'w');
+    const tsFile = await fsp.open(path.join(outDir, `gen.${baseName}`), 'w');
+    try {
       await tsFile.write(sourceFile.getText());
+    } finally {
       await tsFile.close();
+    }
 
-      const jsFile = await fsp.open(path.join(outDir, `${moduleName}.gen.js`), 'w');
-      const contents = getModuleContent(results);
-      if (contents) {
-        await jsFile.write(contents);
+    const results = sourceFile.getEmitOutput();
+    if (!results.getEmitSkipped()) {
+      for (const outFile of results.getOutputFiles()) {
+        const baseName = path.basename(outFile.getFilePath());
+        const jsFile = await fsp.open(path.join(outDir, `gen.${baseName}`), 'w');
+        try {
+          await jsFile.write(outFile.getText());
+        } finally {
+          await jsFile.close();
+        }
       }
-      await jsFile.close();
     }
   }
+}
+
+async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: string | boolean) {
+  await fsp.mkdir(outDir, { recursive: true });
 
   const createFile = await fsp.open(path.join(outDir, 'create.sql'), 'w');
   try {
@@ -93,6 +102,7 @@ program.name('dbosc').description('DBOS Stored Procedure compiler').version(getP
 export interface CommonOptions {
   appVersion?: string | boolean;
   suppressWarnings?: boolean;
+  emitScriptFiles?: boolean;
 }
 
 interface CompileOptions extends CommonOptions {
@@ -115,6 +125,10 @@ function verifyTsConfigPath(tsconfigPath: string | undefined, cwd?: string): str
 }
 
 const suppressWarningsOption = new Option('--suppress-warnings', 'Suppress warnings').hideHelp();
+const emitScriptFilesOption = new Option(
+  '--emit-script-files',
+  'emit generated TS and JS files for debug purposes',
+).hideHelp();
 
 program
   // FYI, commander package doesn't seem to handle app version options correctly in deploy subcommand if compile isn't also a subcommand
@@ -124,6 +138,7 @@ program
   .option('-o, --out <string>', 'path to output folder')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
+  .addOption(emitScriptFilesOption)
   .addOption(suppressWarningsOption)
   .action(async (tsconfigPath: string | undefined, options: CompileOptions) => {
     tsconfigPath = verifyTsConfigPath(tsconfigPath);
@@ -131,6 +146,9 @@ program
       const compileResult = compile(tsconfigPath, options.suppressWarnings);
       if (compileResult) {
         const outDir = options.out ?? process.cwd();
+        if (options.emitScriptFiles) {
+          await emitScriptFiles(outDir, compileResult);
+        }
         await emitSqlFiles(outDir, compileResult, options.appVersion);
       } else {
         console.warn('Compilation produced no result.');
