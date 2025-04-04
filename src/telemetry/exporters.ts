@@ -25,16 +25,16 @@ export class TelemetryExporter implements ITelemetryExporter {
         this.tracesExporter = new OTLPTraceExporter({
           url: endpoint,
         });
+        console.log(`Traces will be exported to ${endpoint}`);
       }
-      console.log(`Traces will be exported to ${config.tracesEndpoint}`);
     }
     if (config.logsEndpoint) {
       for (const endpoint of config.logsEndpoint) {
         this.logsExporter = new OTLPLogExporter({
           url: endpoint,
         });
+        console.log(`Logs will be exported to ${endpoint}`);
       }
-      console.log(`Logs will be exported to ${config.logsEndpoint}`);
     }
   }
 
