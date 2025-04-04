@@ -1,4 +1,5 @@
 import { DBOSExecutor } from './dbos-executor';
+import { DBOS } from './dbos';
 import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
 import { DBOSInitializationError } from './error';
 import { globalParams } from './utils';
@@ -31,6 +32,12 @@ export class WorkflowQueue {
 
   constructor(name: string, arg2?: QueueParameters | number, rateLimit?: QueueRateLimit) {
     this.name = name;
+
+    if (DBOS.isInitialized()) {
+      DBOS.logger.warn(
+        `Workflow queue '${name}' is being created after DBOS initialization and will not be considered for dequeue.`,
+      );
+    }
 
     if (typeof arg2 === 'object' && arg2 !== null) {
       // Handle the case where the second argument is QueueParameters

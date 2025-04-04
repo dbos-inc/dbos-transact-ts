@@ -370,6 +370,11 @@ function registerClassInstance(inst: ConfiguredInstance, name: string) {
 export abstract class ConfiguredInstance {
   readonly name: string;
   constructor(name: string) {
+    if (dbosLaunchPoint) {
+      console.warn(
+        `ConfiguredInstance '${name}' is being created after DBOS initialization and was not available for recovery.`,
+      );
+    }
     this.name = name;
     registerClassInstance(this, name);
   }
