@@ -167,6 +167,7 @@ function treeShake(project: tsm.Project, procMethods: readonly CompileMethodInfo
   // A stored proc may not call other DBOS methods (workflows, transactions, handlers, steps, etc)
   // Explicitly remove them before we tree shake the project
   project.getSourceFiles().forEach(removeNonProcDbosMethods);
+  const langSvc = project.getLanguageService();
 
   // find all the symbols referenced by the stored procedure methods and their dependencies
   const usedDeclarations = new Set<tsm.Node>();
@@ -179,18 +180,21 @@ function treeShake(project: tsm.Project, procMethods: readonly CompileMethodInfo
     usedDeclarations.add($class);
 
     // add all identifier declarations used in the method body to the tracking set
-    processBody(method.getBody(), usedDeclarations);
+    processBody(method.getBody(), usedDeclarations, langSvc);
   }
 
   // helper function to process the body, and the bodies of any bodied declarations found
-  function processBody(body: tsm.Node | undefined, set: Set<tsm.Node>) {
+  function processBody(body: tsm.Node | undefined, set: Set<tsm.Node>, langSvc: tsm.LanguageService) {
     body?.forEachDescendant((node) => {
       if (tsm.Node.isIdentifier(node)) {
-        for (const decl of node.getSymbol()?.getDeclarations() ?? []) {
-          set.add(decl);
-          // if the declaration has a body, process it as well
-          if (tsm.Node.isBodied(decl) || tsm.Node.isBodyable(decl)) {
-            processBody(decl.getBody(), set);
+        for (const defInfo of langSvc.getDefinitions(node)) {
+          const decl = defInfo.getDeclarationNode();
+          if (decl) {
+            set.add(decl);
+            // if the declaration has a body, process it as well
+            if (tsm.Node.isBodied(decl) || tsm.Node.isBodyable(decl)) {
+              processBody(decl.getBody(), set, langSvc);
+            }
           }
         }
       }
