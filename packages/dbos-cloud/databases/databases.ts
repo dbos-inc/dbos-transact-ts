@@ -5,11 +5,9 @@ import {
   getCloudCredentials,
   getLogger,
   sleepms,
-  dbosConfigFilePath,
   DBOSCloudCredentials,
 } from '../cloudutils.js';
 import { Logger } from 'winston';
-import { copyFileSync, existsSync } from 'fs';
 import { UserDBInstance } from '../applications/types.js';
 import { input, select } from '@inquirer/prompts';
 import promptSync from 'prompt-sync';
