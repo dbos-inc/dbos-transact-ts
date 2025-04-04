@@ -294,15 +294,16 @@ applicationCommands
   });
 
 const secretsCommands = applicationCommands
-  .command('secret')
+  .command('env')
+  .alias('environment')
   .alias('secrets')
   .alias('sec')
-  .alias('env')
-  .description('Manage your application environment and secrets');
+  .alias('secret')
+  .description('Manage your application environment variables');
 
 secretsCommands
   .command('create')
-  .description('Create a secret for this application')
+  .description('Create an environment variable for this application')
   .argument('[string]', 'application name (Default: name from package.json)')
   .requiredOption('-s, --name <string>', 'Specify the name of the variable to create')
   .requiredOption('-v, --value <string>', 'Specify the value of the variable')
@@ -313,7 +314,7 @@ secretsCommands
 
 secretsCommands
   .command('import')
-  .description('Import environment variables and secrets from a dotenv file')
+  .description('Import environment variables from a dotenv file')
   .argument('[string]', 'application name (Default: name from package.json)')
   .requiredOption('-d, --dotenv <string>', 'Path to a dotenv file')
   .action(async (appName: string | undefined, options: { dotenv: string }) => {
@@ -323,7 +324,7 @@ secretsCommands
 
 secretsCommands
   .command('list')
-  .description('List secrets for this application')
+  .description('List environment variables for this application')
   .argument('[string]', 'application name (Default: name from package.json)')
   .option('--json', 'Emit JSON output')
   .action(async (appName: string | undefined, options: { json: boolean }) => {
