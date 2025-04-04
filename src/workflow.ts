@@ -127,6 +127,7 @@ export interface BufferedResult {
   output: unknown;
   txn_snapshot: string;
   created_at?: number;
+  function_name?: string;
 }
 
 export const StatusString = {

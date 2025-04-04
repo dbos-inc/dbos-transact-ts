@@ -193,6 +193,7 @@ export class PGNodeUserDatabase implements UserDatabase {
   }
 
   async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
+    console.log('pgnode:', sql, params);
     const pgClient: PoolClient = client as PoolClient;
     return pgClient.query<QueryResultRow>(sql, params).then((value) => {
       return value.rows as R[];
@@ -561,6 +562,7 @@ export class KnexUserDatabase implements UserDatabase {
   }
 
   async queryWithClient<R, T extends unknown[]>(client: Knex, sql: string, ...uparams: T): Promise<R[]> {
+    console.log('Knex query:', sql, uparams);
     const knexSql = sql.replace(/\$\d+/g, '?'); // Replace $1, $2... with ?
     let params = uparams as any[];
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
