@@ -293,6 +293,10 @@ export class DBOS {
     return await DBOSRuntime.loadClasses(dbosEntrypointFiles);
   }
 
+  /**
+   * Check if DBOS has been `launch`ed (and not `shutdown`)
+   * @returns `true` if DBOS has been launched, or `false` otherwise
+   */
   static isInitialized(): boolean {
     return !!DBOSExecutor.globalInstance;
   }
@@ -789,7 +793,7 @@ export class DBOS {
   /**
    * Get the workflow status given a workflow ID
    * @param workflowID - ID of the workflow
-   * @return status of the workflow as `WorkflowStatus`, or `null` if there is no workflow with `workflowID`
+   * @returns status of the workflow as `WorkflowStatus`, or `null` if there is no workflow with `workflowID`
    */
   static getWorkflowStatus(workflowID: string) {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
@@ -805,7 +809,7 @@ export class DBOS {
    * This call always returns a handle, even if the workflow does not exist.
    * The resulting handle will check the database to provide any workflow information.
    * @param workflowID - ID of the workflow
-   * @return `WorkflowHandle` that can be used to poll for the status or result of any workflow with `workflowID`
+   * @returns `WorkflowHandle` that can be used to poll for the status or result of any workflow with `workflowID`
    */
   static retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
     if (DBOS.isWithinWorkflow()) {
@@ -822,7 +826,7 @@ export class DBOS {
   /**
    * Query the system database for all workflows matching the provided predicate
    * @param input - `GetWorkflowsInput` predicate for filtering returned workflows
-   * @return `GetWorkflowsOutput` listing the workflow IDs of matching workflows
+   * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
    */
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
@@ -895,7 +899,7 @@ export class DBOS {
    *   within the `callback` function.
    * @param workflowID - ID to assign to the first workflow started
    * @param callback - Function to run, which would start a workflow
-   * @return - Return value from `callback`
+   * @returns - Return value from `callback`
    */
   static async withNextWorkflowID<R>(workflowID: string, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
@@ -919,7 +923,7 @@ export class DBOS {
    * @param span - Tracing span
    * @param request - HTTP request that initiated the call
    * @param callback - Function to run with tracing context in place
-   * @return - Return value from `callback`
+   * @returns - Return value from `callback`
    */
   static async withTracedContext<R>(
     callerName: string,
@@ -945,7 +949,7 @@ export class DBOS {
    * @param authedUser - Authenticated user
    * @param authedRoles - Authenticated roles
    * @param callback - Function to run with authentication context in place
-   * @return - Return value from `callback`
+   * @returns - Return value from `callback`
    */
   static async withAuthedContext<R>(authedUser: string, authedRoles: string[], callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
@@ -963,7 +967,7 @@ export class DBOS {
    *   later used in seeding a parent OTel span for the operation.
    * @param callerName - Tracing caller name
    * @param callback - Function to run with tracing context in place
-   * @return - Return value from `callback`
+   * @returns - Return value from `callback`
    */
   static async withNamedContext<R>(callerName: string, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
@@ -979,7 +983,7 @@ export class DBOS {
    * Use queue named `queueName` for any workflows started within the `callback`.
    * @param queueName - Name of queue upon which qll workflows called or started within `callback` will be run
    * @param callback - Function to run, which would call or start workflows
-   * @return - Return value from `callback`
+   * @returns - Return value from `callback`
    */
   static async withWorkflowQueue<R>(queueName: string, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
@@ -996,10 +1000,28 @@ export class DBOS {
     }
   }
 
+  /**
+   * Start a workflow in the background, returning a handle that can be used to check status, await a result,
+   *   or otherwise interact with the workflow.
+   * The full syntax is:
+   * `handle = await DBOS.startWorkflow(<target object>, <params>).<target method>(<args>);`
+   * @param target - Object (which must be a `ConfiguredInstance`) containing the instance method to invoke
+   * @param params - `StartWorkflowParams` which may specify the ID, queue, or other parameters for starting the workflow
+   * @returns - `WorkflowHandle` which can be used to interact with the workflow
+   */
   static startWorkflow<T extends ConfiguredInstance>(
-    targetClass: T,
+    target: T,
     params?: StartWorkflowParams,
   ): InvokeFunctionsAsyncInst<T>;
+  /**
+   * Start a workflow in the background, returning a handle that can be used to check status, await a result,
+   *   or otherwise interact with the workflow.
+   * The full syntax is:
+   * `handle = await DBOS.startWorkflow(<target class>, <params>).<target method>(<args>);`
+   * @param target - Class containing the static method to invoke
+   * @param params - `StartWorkflowParams` which may specify the ID, queue, or other parameters for starting the workflow
+   * @returns - `WorkflowHandle` which can be used to interact with the workflow
+   */
   static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
   static startWorkflow<T extends object>(target: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T> {
     if (typeof target === 'function') {
@@ -1130,6 +1152,7 @@ export class DBOS {
     return proxy as InvokeFunctionsAsync<T>;
   }
 
+  /** @deprecated Adjust target function to exclude its `DBOSContext` argument, and then call the function directly */
   static invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   static invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
   static invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
@@ -1320,6 +1343,17 @@ export class DBOS {
     }
   }
 
+  /**
+   * Send `message` on optional `topic` to the workflow with `destinationID`
+   *  This can be done from inside or outside of DBOS workflow functions
+   *  Use the optional `idempotencyKey` to guarantee that the message is sent exactly once
+   * @see `DBOS.recv`
+   *
+   * @param destinationID - ID of the workflow that will `recv` the message
+   * @param message - Message to send, which must be serializable as JSON
+   * @param topic - Optional topic; if specified the `recv` command can specify the same topic to receive selectively
+   * @param idempotencyKey - Optional key for sending the message exactly once
+   */
   static async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1335,6 +1369,18 @@ export class DBOS {
     return DBOS.executor.send(destinationID, message, topic, idempotencyKey);
   }
 
+  /**
+   * Receive a message on optional `topic` from within a workflow.
+   *  This must be called from within a workflow; this workflow's ID is used to check for messages sent by `DBOS.send`
+   *  This can be configured to time out.
+   *  Messages are received in the order in which they are sent (per-sender / causal order).
+   * @see `DBOS.send`
+   *
+   * @param topic - Optional topic; if specified the `recv` command can specify the same topic to receive selectively
+   * @param timeoutSeconds - Optional timeout; if no message is received before the timeout, `null` will be returned
+   * @template T - The type of message that is expected to be received
+   * @returns Any message received, or `null` if the timeout expires
+   */
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1347,6 +1393,15 @@ export class DBOS {
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.recv` outside of a workflow'); // Only workflows can recv
   }
 
+  /**
+   * Set an event, from within a DBOS workflow.  This value can be retrieved with `DBOS.getEvent`.
+   * If the event `key` already exists, its `value` is updated.
+   * This function can only be called from within a workflow.
+   * @see `DBOS.getEvent`
+   *
+   * @param key - The key for the event; at most one value is associated with a key at any given time.
+   * @param value - The value to associate with `key`
+   */
   static async setEvent<T>(key: string, value: T): Promise<void> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1359,6 +1414,18 @@ export class DBOS {
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.setEvent` outside of a workflow'); // Only workflows can set event
   }
 
+  /**
+   * Get the value of a workflow event, or wait for it to be set.
+   * This function can be called inside or outside of DBOS workflow functions.
+   * If this function is called from within a workflow, its result is durably checkpointed.
+   * @see `DBOS.setEvent`
+   *
+   * @param workflowID - The ID of the workflow with the corresponding `setEvent`
+   * @param key - The key for the event; at most one value is associated with a key at any given time.
+   * @param timeoutSeconds - Optional timeout; if a value for `key` is not set before the timeout, `null` will be returned
+   * @template T - The expected type for the value assigned to `key`
+   * @returns The value to associate with `key`, or `null` if the timeout is hit
+   */
   static async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1374,6 +1441,10 @@ export class DBOS {
   //////
   // Decorators
   //////
+  /**
+   * Decorator associating a class static method with an invocation schedule
+   * @param schedulerConfig - The schedule, consisting of a crontab and policy for "make-up work"
+   */
   static scheduled(schedulerConfig: SchedulerConfig) {
     function scheddec<This, Return>(
       target: object,
@@ -1389,6 +1460,12 @@ export class DBOS {
     return scheddec;
   }
 
+  /**
+   * Decorator designating a method as a DBOS workflow
+   *   Durable execution will be applied within calls to the workflow function
+   *   This also registers the function so that it is available during recovery
+   * @param config - Configuration information for the workflow
+   */
   static workflow(config: WorkflowConfig = {}) {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
@@ -1496,6 +1573,12 @@ export class DBOS {
     return decorator;
   }
 
+  /**
+   * Decorator designating a method as a DBOS transaction, making SQL clients available.
+   *   A durable execution checkpoint will be applied to to the underlying database transaction
+   * @see `DBOS.sqlClient`
+   * @param config - Configuration information for the transaction, particularly its isolation mode
+   */
   static transaction(config: TransactionConfig = {}) {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
@@ -1588,6 +1671,12 @@ export class DBOS {
     return decorator;
   }
 
+  /**
+   * Decorator designating a method as a DBOS stored procedure.
+   *   Within the procedure, `DBOS.sqlClient` is available for database operations.
+   *   A durable execution checkpoint will be applied to to the underlying database transaction
+   * @param config - Configuration information for the stored procedure, particularly its execution mode
+   */
   static storedProcedure(config: StoredProcedureConfig = {}) {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
@@ -1661,6 +1750,14 @@ export class DBOS {
     return decorator;
   }
 
+  /**
+   * Decorator designating a method as a DBOS step.
+   *   A durable checkpoint will be made after the step completes
+   *   This ensures "at least once" execution of the step, and that the step will not
+   *    be executed again once the checkpoint is recorded
+   *
+   * @param config - Configuration information for the step, particularly the retry policy
+   */
   static step(config: StepConfig = {}) {
     function decorator<This, Args extends unknown[], Return>(
       target: object,
@@ -1751,26 +1848,36 @@ export class DBOS {
     return decorator;
   }
 
+  /** Decorator indicating that the method is the target of HTTP GET operations for `url` */
   static getApi(url: string) {
     return httpApiDec(APITypes.GET, url);
   }
 
+  /** Decorator indicating that the method is the target of HTTP POST operations for `url` */
   static postApi(url: string) {
     return httpApiDec(APITypes.POST, url);
   }
 
+  /** Decorator indicating that the method is the target of HTTP PUT operations for `url` */
   static putApi(url: string) {
     return httpApiDec(APITypes.PUT, url);
   }
 
+  /** Decorator indicating that the method is the target of HTTP PATCH operations for `url` */
   static patchApi(url: string) {
     return httpApiDec(APITypes.PATCH, url);
   }
 
+  /** Decorator indicating that the method is the target of HTTP DELETE operations for `url` */
   static deleteApi(url: string) {
     return httpApiDec(APITypes.DELETE, url);
   }
 
+  /**
+   * Decorate a class with the default list of required roles.
+   *   This class-level default can be overridden on a per-function basis with `requiredRole`.
+   * @param anyOf - The list of roles allowed access; authorization is granted if the authenticated user has any role on the list
+   */
   static defaultRequiredRole(anyOf: string[]) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
@@ -1780,6 +1887,11 @@ export class DBOS {
     return clsdec;
   }
 
+  /**
+   * Decorate a method with the default list of required roles.
+   * @see `DBOS.defaultRequiredRole`
+   * @param anyOf - The list of roles allowed access; authorization is granted if the authenticated user has any role on the list
+   */
   static requiredRole(anyOf: string[]) {
     function apidec<This, Args extends unknown[], Return>(
       target: object,
@@ -1800,6 +1912,7 @@ export class DBOS {
   /**
    * Construct and register an object.
    * Calling this is not necessary; calling the constructor of any `ConfiguredInstance` subclass is sufficient
+   * @deprecated Use `new` directly
    */
   static configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
     cls: new (name: string, ...args: T) => R,
@@ -1809,7 +1922,7 @@ export class DBOS {
     return configureInstance(cls, name, ...args);
   }
 
-  // Function registration
+  // Function registration - for internal use
   static registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(
     target: object,
     propertyKey: string,
@@ -1818,6 +1931,7 @@ export class DBOS {
     return registerAndWrapDBOSFunction(target, propertyKey, descriptor);
   }
 
+  // For internal and testing purposes
   static async executeWorkflowById(
     workflowId: string,
     startNewWorkflow: boolean = false,
@@ -1828,6 +1942,7 @@ export class DBOS {
     return DBOSExecutor.globalInstance.executeWorkflowUUID(workflowId, startNewWorkflow);
   }
 
+  // For internal and testing purposes
   static async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
     if (!DBOSExecutor.globalInstance) {
       throw new DBOSExecutorNotInitializedError();
@@ -1836,6 +1951,7 @@ export class DBOS {
   }
 }
 
+/** @deprecated */
 export class InitContext {
   createUserSchema(): Promise<void> {
     DBOS.logger.warn(
