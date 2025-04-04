@@ -409,7 +409,7 @@ export async function connect(
   host: string,
   dbName: string | undefined,
   password: string | undefined,
-  local_suffix: boolean,
+  showPassword: boolean,
 ) {
   const logger = getLogger();
 
@@ -451,15 +451,11 @@ export async function connect(
     console.log(`Database Username: ${databaseUsername}`);
     console.log(`Status: ${userDBInfo.Status}`);
 
-    logger.info(`Loading cloud database connection information into ${dbosConfigFilePath}...`);
-    const config: ConfigFile = loadConfigFile(dbosConfigFilePath);
-    config.database.hostname = userDBInfo.HostName;
-    config.database.port = userDBInfo.Port;
-    config.database.username = databaseUsername;
-    config.database.password = password;
-    config.database.local_suffix = local_suffix;
-    writeConfigFile(config, dbosConfigFilePath);
-    logger.info(`Cloud database connection information loaded into ${dbosConfigFilePath}`);
+    const displayPassword = showPassword ? password : password.replace(/./g, '*');
+    const dbString = `postgresql://${databaseUsername}:${displayPassword}@${userDBInfo.HostName}:${userDBInfo.Port}/${
+      userDBInfo.PostgresInstanceName
+    }`;
+    console.log(dbString);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to retrieve database record ${dbName}`;
