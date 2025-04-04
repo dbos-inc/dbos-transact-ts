@@ -1037,6 +1037,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     txnSnapshot: string,
     output: R,
     isKeyConflict: (error: unknown) => boolean,
+    function_name: string,
   ): Promise<string> {
     if (this.isDebugging) {
       throw new DBOSDebuggerError('Cannot record output in debug mode.');
@@ -1044,8 +1045,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     try {
       const serialOutput = DBOSJSON.stringify(output);
       const rows = await query<transaction_outputs>(
-        'INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5) RETURNING txn_id;',
-        [workflowUUID, funcID, serialOutput, txnSnapshot, Date.now()],
+        'INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at, function_name) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5, $6) RETURNING txn_id;',
+        [workflowUUID, funcID, serialOutput, txnSnapshot, Date.now(), function_name],
       );
       return rows[0].txn_id!;
     } catch (error) {
@@ -1068,6 +1069,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     txnSnapshot: string,
     err: Error,
     isKeyConflict: (error: unknown) => boolean,
+    function_name: string,
   ): Promise<void> {
     if (this.isDebugging) {
       throw new DBOSDebuggerError('Cannot record error in debug mode.');
@@ -1075,8 +1077,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     try {
       const serialErr = DBOSJSON.stringify(serializeError(err));
       await query<transaction_outputs>(
-        'INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at) VALUES ($1, $2, $3, null, $4, $5) RETURNING txn_id;',
-        [workflowUUID, funcID, serialErr, txnSnapshot, Date.now()],
+        'INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, error, txn_id, txn_snapshot, created_at, function_name) VALUES ($1, $2, $3, null, $4, $5, $6) RETURNING txn_id;',
+        [workflowUUID, funcID, serialErr, txnSnapshot, Date.now(), function_name],
       );
     } catch (error) {
       if (isKeyConflict(error)) {
@@ -1088,6 +1090,20 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
+  async getTransactions(workflowUUID: string): Promise<step_info[]> {
+    const rows = await this.userDatabase.query<step_info, [string]>(
+      `SELECT function_id, function_name, output, error FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
+      workflowUUID,
+    );
+
+    for (const row of rows) {
+      row.output = row.output !== null ? DBOSJSON.parse(row.output as string) : null;
+      row.error = row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null;
+    }
+
+    return rows;
+  }
+
   /**
    * Write all entries in the workflow result buffer to the database.
    * If it encounters a primary key error, this indicates a concurrent execution with the same UUID, so throw an DBOSError.
@@ -1097,6 +1113,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     resultBuffer: Map<number, BufferedResult>,
     workflowUUID: string,
     isKeyConflict: (error: unknown) => boolean,
+    function_name: string,
   ): Promise<void> {
     const funcIDs = Array.from(resultBuffer.keys());
     if (funcIDs.length === 0) {
@@ -1108,7 +1125,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     funcIDs.sort();
     try {
       let sqlStmt =
-        'INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, created_at) VALUES ';
+        'INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, created_at, function_name) VALUES ';
       let paramCnt = 1;
       const values: any[] = [];
       for (const funcID of funcIDs) {
@@ -1122,7 +1139,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
           sqlStmt += ', ';
         }
         sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, null, $${paramCnt++}, $${paramCnt++})`;
-        values.push(workflowUUID, funcID, DBOSJSON.stringify(output), DBOSJSON.stringify(null), txnSnapshot, createdAt);
+        values.push(
+          workflowUUID,
+          funcID,
+          DBOSJSON.stringify(output),
+          DBOSJSON.stringify(null),
+          txnSnapshot,
+          createdAt,
+          function_name,
+        );
       }
       this.logger.debug(sqlStmt);
       await query(sqlStmt, values);
@@ -1140,10 +1165,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
     client: UserDatabaseClient,
     resultBuffer: Map<number, BufferedResult>,
     workflowUUID: string,
+    function_name: string,
   ): Promise<void> {
     const func = <T>(sql: string, args: unknown[]) => this.userDatabase.queryWithClient<T>(client, sql, ...args);
-    return this.#flushResultBuffer(func, resultBuffer, workflowUUID, (error) =>
-      this.userDatabase.isKeyConflictError(error),
+    return this.#flushResultBuffer(
+      func,
+      resultBuffer,
+      workflowUUID,
+      (error) => this.userDatabase.isKeyConflictError(error),
+      function_name,
     );
   }
 
@@ -1151,9 +1181,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     client: PoolClient,
     resultBuffer: Map<number, BufferedResult>,
     workflowUUID: string,
+    function_name: string,
   ): Promise<void> {
     const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then((v) => v.rows as T[]);
-    return this.#flushResultBuffer(func, resultBuffer, workflowUUID, pgNodeIsKeyConflictError);
+    return this.#flushResultBuffer(func, resultBuffer, workflowUUID, pgNodeIsKeyConflictError, function_name);
   }
 
   async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
@@ -1275,7 +1306,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         // For non-read-only transactions, flush the result buffer.
         if (!this.isDebugging && !readOnly) {
-          await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
+          await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID, wfCtx.operationName);
         }
 
         // Execute the user's transaction.
@@ -1332,6 +1363,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
               txn_snapshot,
               result,
               (error) => this.userDatabase.isKeyConflictError(error),
+              wfCtx.operationName,
             );
             tCtxt.span.setAttribute('pg_txn_id', pg_txn_id);
             wfCtx.resultBuffer.clear();
@@ -1372,11 +1404,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
           const e: Error = err as Error;
           await this.userDatabase.transaction(
             async (client: UserDatabaseClient) => {
-              await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
+              await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID, wfCtx.operationName);
               const func = <T>(sql: string, args: unknown[]) =>
                 this.userDatabase.queryWithClient<T>(client, sql, ...args);
-              await this.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, (error) =>
-                this.userDatabase.isKeyConflictError(error),
+              await this.#recordError(
+                func,
+                wfCtx.workflowUUID,
+                funcId,
+                txn_snapshot,
+                e,
+                (error) => this.userDatabase.isKeyConflictError(error),
+                wfCtx.operationName,
               );
             },
             { isolationLevel: IsolationLevel.ReadCommitted },
@@ -1513,7 +1551,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         // For non-read-only transactions, flush the result buffer.
         if (!this.isDebugging && !readOnly) {
-          await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
+          await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID, wfCtx.operationName);
         }
 
         // Execute the user's transaction.
@@ -1568,6 +1606,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             txn_snapshot,
             result,
             pgNodeIsKeyConflictError,
+            wfCtx.operationName,
           );
 
           // const pg_txn_id = await wfCtx.recordOutputProc<R>(client, funcId, txn_snapshot, result);
@@ -1600,20 +1639,34 @@ export class DBOSExecutor implements DBOSExecutorContext {
           const e: Error = err as Error;
           await this.invokeStoredProcFunction(
             async (client: PoolClient) => {
-              await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
+              await this.#flushResultBufferProc(client, wfCtx.resultBuffer, wfCtx.workflowUUID, wfCtx.operationName);
               const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then((v) => v.rows as T[]);
-              await this.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, pgNodeIsKeyConflictError);
+              await this.#recordError(
+                func,
+                wfCtx.workflowUUID,
+                funcId,
+                txn_snapshot,
+                e,
+                pgNodeIsKeyConflictError,
+                wfCtx.operationName,
+              );
             },
             { isolationLevel: IsolationLevel.ReadCommitted },
           );
 
           await this.userDatabase.transaction(
             async (client: UserDatabaseClient) => {
-              await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
+              await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID, wfCtx.operationName);
               const func = <T>(sql: string, args: unknown[]) =>
                 this.userDatabase.queryWithClient<T>(client, sql, ...args);
-              await this.#recordError(func, wfCtx.workflowUUID, funcId, txn_snapshot, e, (error) =>
-                this.userDatabase.isKeyConflictError(error),
+              await this.#recordError(
+                func,
+                wfCtx.workflowUUID,
+                funcId,
+                txn_snapshot,
+                e,
+                (error) => this.userDatabase.isKeyConflictError(error),
+                wfCtx.operationName,
               );
             },
             { isolationLevel: IsolationLevel.ReadCommitted },
@@ -1819,7 +1872,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     await this.userDatabase.transaction(
       async (client: UserDatabaseClient) => {
-        await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID);
+        await this.flushResultBuffer(client, wfCtx.resultBuffer, wfCtx.workflowUUID, ctxt.operationName);
       },
       { isolationLevel: IsolationLevel.ReadCommitted },
     );
