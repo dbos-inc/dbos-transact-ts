@@ -122,14 +122,19 @@ async function generateMethodDrop(
   return await render('method.drop.liquid', context);
 }
 
-function getModuleContext(sourceFile: tsm.SourceFile, appVersion: string | undefined) {
-  const results = sourceFile.getEmitOutput();
-  const contents = results.getEmitSkipped()
-    ? ''
+export function getModuleContent(sourceOrResults: tsm.SourceFile | tsm.EmitOutput) {
+  const results = sourceOrResults instanceof tsm.EmitOutput ? sourceOrResults : sourceOrResults.getEmitOutput();
+
+  return results.getEmitSkipped()
+    ? undefined
     : results
         .getOutputFiles()
-        .map((f) => f.getText())
+        .map((f) => `// -- ${path.basename(f.getFilePath())}\n${f.getText()}`) // Add separator for readability in the generated SQL
         .join('\n');
+}
+
+function getModuleContext(sourceFile: tsm.SourceFile, appVersion: string | undefined) {
+  const contents = getModuleContent(sourceFile) ?? '';
   const moduleName = sourceFile.getBaseNameWithoutExtension();
 
   const context = { moduleName, contents, appVersion };

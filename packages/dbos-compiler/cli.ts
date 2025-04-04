@@ -4,13 +4,32 @@ import { Command, Option } from 'commander';
 import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import { generateCreate, generateDrop } from './generator.js';
+import { generateCreate, generateDrop, getModuleContent } from './generator.js';
 import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config.js';
 import { Client, ClientConfig } from 'pg';
 import { type CompileResult, compile } from './compiler.js';
 
 async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: string | boolean) {
   await fsp.mkdir(outDir, { recursive: true });
+
+  // TODO: remove code that emits the TS/JS code directly for debug purposes
+  for (const sourceFile of result.project.getSourceFiles()) {
+    const moduleName = sourceFile.getBaseNameWithoutExtension();
+    const results = sourceFile.getEmitOutput();
+
+    if (!results.getEmitSkipped()) {
+      const tsFile = await fsp.open(path.join(outDir, `${moduleName}.gen.ts`), 'w');
+      await tsFile.write(sourceFile.getText());
+      await tsFile.close();
+
+      const jsFile = await fsp.open(path.join(outDir, `${moduleName}.gen.js`), 'w');
+      const contents = getModuleContent(results);
+      if (contents) {
+        await jsFile.write(contents);
+      }
+      await jsFile.close();
+    }
+  }
 
   const createFile = await fsp.open(path.join(outDir, 'create.sql'), 'w');
   try {
