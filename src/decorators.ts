@@ -871,7 +871,14 @@ export function RequiredRole(anyOf: string[]) {
   return apidec;
 }
 
-/** @deprecated Use `DBOS.workflow` */
+/**
+ * @deprecated Use `@DBOS.workflow`
+ * To upgrade to DBOS 2.0+ syntax:
+ *   Use `@DBOS.workflow` to decorate the method
+ *   Remove the `WorkflowContext` parameter
+ *   Use `DBOS` instead of the context to access DBOS functions
+ *   Change all callers of the decorated function to call the function directly, or with `DBOS.startWorkflow`
+ */
 export function Workflow(config: WorkflowConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -885,7 +892,14 @@ export function Workflow(config: WorkflowConfig = {}) {
   return decorator;
 }
 
-/** @deprecated Use `DBOS.transaction` */
+/**
+ * @deprecated Use `@DBOS.transaction`
+ * To upgrade to DBOS 2.0+ syntax:
+ *   Use `@DBOS.transaction` to decorate the method
+ *   Remove the `TransactionContext` parameter
+ *   Use `DBOS` instead of the context to access DBOS functions
+ *   Change all callers to call the decorated function directly
+ */
 export function Transaction(config: TransactionConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -900,7 +914,13 @@ export function Transaction(config: TransactionConfig = {}) {
   return decorator;
 }
 
-/** @deprecated Use `DBOS.storedProcedure` */
+/**
+ * @deprecated Use `@DBOS.storedProcedure`
+ * To upgrade to DBOS 2.0+ syntax:
+ *   Use `@DBOS.storedProcedure` to decorate the method
+ *   Remove the context parameter and use `DBOS` instead of the context to access DBOS functions
+ *   Change all callers to call the decorated function directly
+ */
 export function StoredProcedure(config: StoredProcedureConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -914,7 +934,14 @@ export function StoredProcedure(config: StoredProcedureConfig = {}) {
   return decorator;
 }
 
-/** @deprecated Use `DBOS.step` */
+/**
+ * @deprecated Use `@DBOS.step`
+ * To upgrade to DBOS 2.0+ syntax:
+ *   Use `@DBOS.step` to decorate the method
+ *   Remove the `StepContext` parameter
+ *   Use `DBOS` instead of the context to access DBOS functions
+ *   Change all callers to call the decorated function directly
+ */
 export function Step(config: StepConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,

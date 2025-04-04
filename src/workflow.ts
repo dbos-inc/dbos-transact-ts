@@ -162,7 +162,13 @@ export type WfInvokeWfsInstAsync<T> = T extends ConfiguredInstance
     }
   : never;
 
-/** @deprecated */
+/**
+ * @deprecated This class is no longer necessary
+ * To update to Transact 2.0+
+ *   Remove `WorkflowContext` from function parameter lists
+ *   Use `DBOS.` to access DBOS context within affected functions
+ *   Adjust callers to call the function directly, or to use `DBOS.startWorkflow`
+ */
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;

@@ -68,7 +68,13 @@ export type SyncHandlerWfFuncsInst<T> = T extends ConfiguredInstance
     }
   : never;
 
-/** @deprecated */
+/**
+ * @deprecated This class is no longer necessary
+ * To update to Transact 2.0+
+ *   Remove `HandlerContext` from function parameter lists
+ *   Use `@DBOS.getApi`, `@DBOS.postApi`, etc., decorators instead of `@GetApi`, `@PostApi`, etc.
+ *   Use `DBOS.` to access DBOS context within affected functions
+ */
 export interface HandlerContext extends DBOSContext {
   readonly koaContext: Koa.Context;
   invoke<T extends ConfiguredInstance>(targetCfg: T, workflowUUID?: string): InvokeFuncsInst<T>;

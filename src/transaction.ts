@@ -23,7 +23,13 @@ export const IsolationLevel = {
 } as const;
 export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
-/** @deprecated */
+/**
+ * @deprecated This class is no longer necessary
+ * To update to Transact 2.0+
+ *   Remove `TransactionContext` from function parameter lists
+ *   Use `DBOS.` to access DBOS context within affected functions
+ *   Adjust callers to call the function directly
+ */
 export interface TransactionContext<T extends UserDatabaseClient> extends DBOSContext {
   readonly client: T;
 }
