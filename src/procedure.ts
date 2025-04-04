@@ -24,6 +24,7 @@ export interface QueryResult<R extends QueryResultRow> extends QueryResultBase {
 
 export type StoredProcedure<T extends unknown[], R> = (ctxt: StoredProcedureContext, ...args: T) => Promise<R>;
 
+/** @deprecated */
 export interface StoredProcedureContext
   extends Pick<
     DBOSContext,

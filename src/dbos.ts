@@ -225,6 +225,11 @@ export class DBOS {
       : DebugMode.DISABLED;
   }
 
+  /**
+   * Set configuration of `DBOS` prior to `launch`
+   * @param config - configuration of services needed by DBOS
+   * @param runtimeConfig - configuration of runtime access to DBOS
+   */
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
     DBOS.runtimeConfig = runtimeConfig;
@@ -244,13 +249,20 @@ export class DBOS {
     }
   }
 
-  // For unit testing purposes only
+  /**
+   * @deprecated For unit testing purposes only
+   *   Use `setConfig`
+   */
   static setAppConfig<T>(key: string, newValue: T): void {
     const conf = DBOS.dbosConfig?.application;
     if (!conf) throw new DBOSExecutorNotInitializedError();
     set(conf, key, newValue);
   }
 
+  /**
+   * Drop DBOS system database.
+   * USE IN TESTS ONLY - ALL WORKFLOWS, QUEUES, ETC. WILL BE LOST.
+   */
   static async dropSystemDB(): Promise<void> {
     if (!DBOS.dbosConfig) {
       DBOS.dbosConfig = parseConfigFile()[0];
@@ -260,12 +272,18 @@ export class DBOS {
     return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig as DBOSConfigInternal);
   }
 
-  /** Only relevant for TypeORM, and for testing purposes only, not production */
+  /**
+   * Use ORMEntities to set up database schema.
+   * Only relevant for TypeORM, and for testing purposes only, not production
+   */
   static async createUserSchema() {
     return DBOSExecutor.globalInstance?.userDatabase.createSchema();
   }
 
-  /** Only relevant for TypeORM, and for testing purposes only, not production */
+  /**
+   * Use ORMEntities to drop database schema.
+   * Only relevant for TypeORM, and for testing purposes only, not production
+   */
   static async dropUserSchema() {
     return DBOSExecutor.globalInstance?.userDatabase.dropSchema();
   }
@@ -275,7 +293,11 @@ export class DBOS {
     return await DBOSRuntime.loadClasses(dbosEntrypointFiles);
   }
 
-  static async launch(options?: DBOSLaunchOptions) {
+  /**
+   * Launch DBOS, starting recovery and request handling
+   * @param options - Launch options for connecting to DBOS Conductor
+   */
+  static async launch(options?: DBOSLaunchOptions): Promise<void> {
     // Do nothing is DBOS is already initialized
     if (DBOSExecutor.globalInstance) return;
 
@@ -385,7 +407,14 @@ export class DBOS {
     recordDBOSLaunch();
   }
 
-  static logRegisteredEndpoints() {
+  /**
+   * Logs all workflows that can be invoked externally, rather than directly by the applicaton.
+   * This includes:
+   *   All DBOS event receiver entrypoints (message queues, URLs, etc.)
+   *   Scheduled workflows
+   *   Queues
+   */
+  static logRegisteredEndpoints(): void {
     if (!DBOSExecutor.globalInstance) return;
     DBOSExecutor.globalInstance.logRegisteredHTTPUrls();
     DBOSExecutor.globalInstance.scheduler?.logRegisteredSchedulerEndpoints();
@@ -395,6 +424,12 @@ export class DBOS {
     }
   }
 
+  /**
+   * Shut down DBOS processing:
+   *   Stops receiving external workflow requests
+   *   Disconnects from administration / Conductor
+   *   Stops workflow processing and disconnects from databases
+   */
   static async shutdown() {
     // Stop the app server
     if (DBOS.appServer) {
@@ -433,14 +468,19 @@ export class DBOS {
     recordDBOSShutdown();
   }
 
+  /** Stop listening for external events (for testing) */
   static async deactivateEventReceivers() {
     return DBOSExecutor.globalInstance?.deactivateEventReceivers();
   }
 
+  /** Start listening for external events (for testing) */
   static async initEventReceivers() {
     return DBOSExecutor.globalInstance?.initEventReceivers();
   }
 
+  /**
+   * Global DBOS executor instance
+   */
   static get executor() {
     if (!DBOSExecutor.globalInstance) {
       throw new DBOSExecutorNotInitializedError();
@@ -448,6 +488,11 @@ export class DBOS {
     return DBOSExecutor.globalInstance as DBOSExecutorContext;
   }
 
+  /**
+   * Creates a node.js HTTP handler for all entrypoints registered with `@DBOS.getApi`
+   * and other decorators.  The handler can be retrieved with `DBOS.getHTTPHandlersCallback()`.
+   * This method does not start listening for requests.  For that, call `DBOS.launchAppHTTPServer()`.
+   */
   static setUpHandlerCallback() {
     if (!DBOSExecutor.globalInstance) {
       throw new DBOSExecutorNotInitializedError();
@@ -459,6 +504,11 @@ export class DBOS {
     return server;
   }
 
+  /**
+   * Creates a node.js HTTP handler for all entrypoints registered with `@DBOS.getApi`
+   * and other decorators.  This method also starts listening for requests, on the port
+   * specified in the `DBOSRuntimeConfig`.
+   */
   static async launchAppHTTPServer() {
     const server = DBOS.setUpHandlerCallback();
     if (DBOS.runtimeConfig) {
@@ -467,10 +517,12 @@ export class DBOS {
     }
   }
 
-  // This retrieves the HTTP handlers callback for DBOS HTTP.
-  //  (This is the one that handles the @DBOS.getApi, etc., methods.)
-  // Useful for testing purposes, or to combine the DBOS service with routes.
-  // If you are using your own HTTP server, this won't return anything.
+  /**
+   * Retrieves the HTTP handlers callback for DBOS HTTP.
+   *  (This is the one that handles the @DBOS.getApi, etc., methods.)
+   *   Useful for testing purposes, or to combine the DBOS service with other
+   *   node.js HTTP server frameworks.
+   */
   static getHTTPHandlersCallback() {
     if (!DBOSHttpServer.instance) {
       return undefined;
@@ -478,6 +530,7 @@ export class DBOS {
     return DBOSHttpServer.instance.app.callback();
   }
 
+  /** For unit testing of admin server (do not call) */
   static getAdminCallback() {
     if (!DBOSHttpServer.instance) {
       return undefined;
@@ -496,6 +549,7 @@ export class DBOS {
   //////
   // Context
   //////
+  /** Get the current DBOS Logger, appropriate to the current context */
   static get logger(): DLogger {
     const ctx = getCurrentDBOSContext();
     if (ctx) return ctx.logger;
@@ -504,36 +558,43 @@ export class DBOS {
     return new GlobalLogger();
   }
 
+  /** Get the current DBOS tracing span, appropriate to the current context */
   static get span(): Span | undefined {
     const ctx = getCurrentDBOSContext();
     if (ctx) return ctx.span;
     return undefined;
   }
 
+  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
   static getRequest(): HTTPRequest | undefined {
     return getCurrentDBOSContext()?.request;
   }
 
+  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
   static get request(): HTTPRequest {
     const r = DBOS.getRequest();
     if (!r) throw new DBOSError('`DBOS.request` accessed from outside of HTTP requests');
     return r;
   }
 
+  /** Get the current Koa context (within `@DBOS.getApi` et al) */
   static getKoaContext(): Koa.Context | undefined {
     return (getCurrentDBOSContext() as HandlerContext)?.koaContext;
   }
 
+  /** Get the current Koa context (within `@DBOS.getApi` et al) */
   static get koaContext(): Koa.Context {
     const r = DBOS.getKoaContext();
     if (!r) throw new DBOSError('`DBOS.koaContext` accessed from outside koa request');
     return r;
   }
 
+  /** Get the current workflow ID */
   static get workflowID(): string | undefined {
     return getCurrentDBOSContext()?.workflowUUID;
   }
 
+  /** Get the current step number, within the current workflow */
   static get stepID(): number | undefined {
     if (DBOS.isInStep()) {
       return getCurrentContextStore()?.curStepFunctionId;
@@ -543,40 +604,58 @@ export class DBOS {
       return undefined;
     }
   }
+
   static get stepStatus(): StepStatus | undefined {
     return getCurrentContextStore()?.stepStatus;
   }
+
+  /** Get the current authenticated user */
   static get authenticatedUser(): string {
     return getCurrentDBOSContext()?.authenticatedUser ?? '';
   }
+  /** Get the roles granted to the current authenticated user */
   static get authenticatedRoles(): string[] {
     return getCurrentDBOSContext()?.authenticatedRoles ?? [];
   }
+  /** Get the role assumed by the current user giving authorization to execute the current function */
   static get assumedRole(): string {
     return getCurrentDBOSContext()?.assumedRole ?? '';
   }
 
+  /** @returns true if called from within a transaction, false otherwise */
   static isInTransaction(): boolean {
     return getCurrentContextStore()?.curTxFunctionId !== undefined;
   }
 
+  /** @returns true if called from within a stored procedure, false otherwise */
   static isInStoredProc(): boolean {
     return getCurrentContextStore()?.isInStoredProc ?? false;
   }
 
+  /** @returns true if called from within a step, false otherwise */
   static isInStep(): boolean {
     return getCurrentContextStore()?.curStepFunctionId !== undefined;
   }
 
+  /**
+   * @returns true if called from within a workflow
+   *  (regardless of whether the workflow is currently executing a step,
+   *   transaction, or procedure), false otherwise
+   */
   static isWithinWorkflow(): boolean {
     return getCurrentContextStore()?.workflowId !== undefined;
   }
 
+  /**
+   * @returns true if called from within a workflow that is not currently executing
+   *  a step, transaction, or procedure, or false otherwise
+   */
   static isInWorkflow(): boolean {
-    return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
+    return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep() && !DBOS.isInStoredProc();
   }
 
   // sql session (various forms)
+  /** @returns the current SQL client; only allowed within `@DBOS.transaction` functions */
   static get sqlClient(): UserDatabaseClient {
     if (!DBOS.isInTransaction())
       throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
@@ -584,6 +663,10 @@ export class DBOS {
     return ctx.client;
   }
 
+  /**
+   * @returns the current PG SQL client;
+   *  only allowed within `@DBOS.transaction` functions when a `PGNODE` user database is in use
+   */
   static get pgClient(): PoolClient {
     const client = DBOS.sqlClient;
     if (!DBOS.isInStoredProc() && DBOS.dbosConfig?.userDbclient !== UserDatabaseName.PGNODE) {
@@ -594,6 +677,10 @@ export class DBOS {
     return client as PoolClient;
   }
 
+  /**
+   * @returns the current Knex SQL client;
+   *  only allowed within `@DBOS.transaction` functions when a `KNEX` user database is in use
+   */
   static get knexClient(): Knex {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.knexClient' from within a stored procedure`);
@@ -607,6 +694,10 @@ export class DBOS {
     return client as Knex;
   }
 
+  /**
+   * @returns the current Prisma SQL client;
+   *  only allowed within `@DBOS.transaction` functions when a `PRISMA` user database is in use
+   */
   static get prismaClient(): PrismaClient {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.prismaClient' from within a stored procedure`);
@@ -620,6 +711,10 @@ export class DBOS {
     return client as PrismaClient;
   }
 
+  /**
+   * @returns the current  TypeORM SQL client;
+   *  only allowed within `@DBOS.transaction` functions when the `TYPEORM` user database is in use
+   */
   static get typeORMClient(): TypeORMEntityManager {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.typeORMClient' from within a stored procedure`);
@@ -633,6 +728,10 @@ export class DBOS {
     return client as TypeORMEntityManager;
   }
 
+  /**
+   * @returns the current Drizzle SQL client;
+   *  only allowed within `@DBOS.transaction` functions when the `DRIZZLE` user database is in use
+   */
   static get drizzleClient(): DrizzleClient {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.drizzleClient' from within a stored procedure`);
@@ -648,6 +747,12 @@ export class DBOS {
 
   static getConfig<T>(key: string): T | undefined;
   static getConfig<T>(key: string, defaultValue: T): T;
+  /**
+   * Gets configuration information from the `application` section
+   *  of `DBOSConfig`
+   * @param key - name of configuration item
+   * @param defaultValue - value to return if `key` does not exist in the configuration
+   */
   static getConfig<T>(key: string, defaultValue?: T): T | undefined {
     const ctx = getCurrentDBOSContext();
     if (ctx && defaultValue) return ctx.getConfig<T>(key, defaultValue);
@@ -656,6 +761,13 @@ export class DBOS {
     return defaultValue;
   }
 
+  /**
+   * Query the current application database
+   * @param sql - parameterized SQL statement (string) to execute
+   * @param params - parameter values for `sql`
+   * @template T - Type for the returned records
+   * @returns Array of records returned by the SQL statement
+   */
   static async queryUserDB<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       throw new DBOSInvalidWorkflowTransitionError(
