@@ -9,7 +9,7 @@ import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError } from './erro
 import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
-import { DBOS, InitContext } from './dbos';
+import { InitContext } from './dbos';
 
 /**
  * Any column type column can be.
@@ -370,12 +370,12 @@ function registerClassInstance(inst: ConfiguredInstance, name: string) {
 export abstract class ConfiguredInstance {
   readonly name: string;
   constructor(name: string) {
-    this.name = name;
-    if (DBOS.isInitialized()) {
-      DBOS.logger.warn(
-        `ConfiguredInstance '${name}' is being instantiated after DBOS initialization and was not available for recovery.`,
+    if (dbosLaunchPoint) {
+      console.warn(
+        `ConfiguredInstance '${name}' is being created after DBOS initialization and was not available for recovery.`,
       );
     }
+    this.name = name;
     registerClassInstance(this, name);
   }
   /**
