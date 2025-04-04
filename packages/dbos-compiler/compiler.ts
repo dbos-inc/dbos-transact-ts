@@ -3,7 +3,8 @@ import tsm from 'ts-morph';
 export type CompileMethodInfo = readonly [tsm.MethodDeclaration, StoredProcedureConfig];
 export type CompileResult = {
   project: tsm.Project;
-  methods: CompileMethodInfo[];
+  methods: readonly CompileMethodInfo[];
+  diagnostics: readonly tsm.ts.Diagnostic[];
 };
 
 export type IsolationLevel = 'READ UNCOMMITTED' | 'READ COMMITTED' | 'REPEATABLE READ' | 'SERIALIZABLE';
@@ -30,55 +31,49 @@ interface DiagnosticOptions {
   category?: tsm.ts.DiagnosticCategory;
 }
 
-export function compile(
-  configFileOrProject: string | tsm.Project,
-  suppressWarnings: boolean = false,
-): CompileResult | undefined {
-  const diags = new Array<tsm.ts.Diagnostic>();
-  try {
-    const project =
-      typeof configFileOrProject === 'string'
-        ? new tsm.Project({
-            tsConfigFilePath: configFileOrProject,
-            compilerOptions: {
-              sourceMap: false,
-              declaration: false,
-              declarationMap: false,
-              removeComments: true,
-            },
-          })
-        : configFileOrProject;
+export function compile(configFileOrProject: string | tsm.Project): CompileResult {
+  const diagnostics = new Array<tsm.ts.Diagnostic>();
+  const project =
+    typeof configFileOrProject === 'string'
+      ? new tsm.Project({
+          tsConfigFilePath: configFileOrProject,
+          compilerOptions: {
+            sourceMap: false,
+            declaration: false,
+            declarationMap: false,
+            removeComments: true,
+          },
+        })
+      : configFileOrProject;
 
-    const methods = project
-      .getSourceFiles()
-      .flatMap(getProcMethods)
-      .map(([m, v]) => [m, getStoredProcConfig(m, v)] as const);
+  const methods = project
+    .getSourceFiles()
+    .flatMap(getProcMethods)
+    .map(([m, v]) => [m, getStoredProcConfig(m, v)] as const);
 
-    if (methods.length === 0) {
-      diags.push(createDiagnostic('No stored procedure methods found'));
-    } else {
-      methods.forEach((m) => diags.push(...checkStoredProc(m)));
-    }
-    if (hasError(diags)) {
-      return undefined;
-    }
-
-    treeShake(project, methods);
-
-    // Add any diagnostics from the TypeScript compiler after tree shaking
-    // before we remove decorators and async/await from the code
-    diags.push(...project.getPreEmitDiagnostics().map((d) => d.compilerObject));
-    if (hasError(diags)) {
-      return undefined;
-    }
-
-    removeDecorators(project);
-    deAsync(project);
-
-    return { project, methods };
-  } finally {
-    printDiagnostics(diags, suppressWarnings);
+  if (methods.length === 0) {
+    diagnostics.push(createDiagnostic('No stored procedure methods found'));
+  } else {
+    methods.forEach((m) => diagnostics.push(...checkStoredProc(m)));
   }
+  if (hasError(diagnostics)) {
+    return { project, methods, diagnostics };
+  }
+
+  treeShake(project, methods);
+
+  // Add any diagnostics from the TypeScript compiler after tree shaking
+  // before we remove decorators and async/await from the code
+  // (which will make the resulting TS code appear invalid, but is exactly what we want for DBOS stored procedures)
+  diagnostics.push(...project.getPreEmitDiagnostics().map((d) => d.compilerObject));
+  if (hasError(diagnostics)) {
+    return { project, methods, diagnostics };
+  }
+
+  removeDecorators(project);
+  deAsync(project);
+
+  return { project, methods, diagnostics };
 }
 
 function getProcMethods(file: tsm.SourceFile) {
@@ -335,7 +330,7 @@ function removeDecorators(file: tsm.SourceFile | tsm.Project) {
   }
 }
 
-function hasError(diags: readonly tsm.ts.Diagnostic[]) {
+export function hasError(diags: readonly tsm.ts.Diagnostic[]) {
   return diags.some((diag) => diag.category === tsm.ts.DiagnosticCategory.Error);
 }
 
@@ -354,20 +349,6 @@ function createDiagnostic(messageText: string, options?: DiagnosticOptions): tsm
     messageText,
     start: node?.getPos(),
   };
-}
-
-function printDiagnostics(diags: readonly tsm.ts.Diagnostic[], suppressWarnings: boolean = false) {
-  const formatHost: tsm.ts.FormatDiagnosticsHost = {
-    getCurrentDirectory: () => tsm.ts.sys.getCurrentDirectory(),
-    getNewLine: () => tsm.ts.sys.newLine,
-    getCanonicalFileName: (fileName: string) =>
-      tsm.ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase(),
-  };
-
-  const $diags = suppressWarnings ? diags.filter((diag) => diag.category !== tsm.ts.DiagnosticCategory.Warning) : diags;
-
-  const msg = tsm.ts.formatDiagnosticsWithColorAndContext($diags, formatHost);
-  console.log(msg);
 }
 
 function parseImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {

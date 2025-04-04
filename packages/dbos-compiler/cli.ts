@@ -1,18 +1,19 @@
 #!/usr/bin/env node
 
+import tsm from 'ts-morph';
 import { Command, Option } from 'commander';
 import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import { generateCreate, generateDrop, getModuleContent } from './generator.js';
+import { generateCreate, generateDrop } from './generator.js';
 import { parseConfigFile } from '@dbos-inc/dbos-sdk/dist/src/dbos-runtime/config.js';
 import { Client, ClientConfig } from 'pg';
-import { type CompileResult, compile } from './compiler.js';
+import { CompileMethodInfo, compile, hasError } from './compiler.js';
 
-async function emitScriptFiles(outDir: string, result: CompileResult) {
+async function emitScriptFiles(outDir: string, project: tsm.Project) {
   await fsp.mkdir(outDir, { recursive: true });
 
-  for (const sourceFile of result.project.getSourceFiles()) {
+  for (const sourceFile of project.getSourceFiles()) {
     const baseName = sourceFile.getBaseName();
 
     const tsFile = await fsp.open(path.join(outDir, `gen.${baseName}`), 'w');
@@ -37,7 +38,12 @@ async function emitScriptFiles(outDir: string, result: CompileResult) {
   }
 }
 
-async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: string | boolean) {
+async function emitSqlFiles(
+  outDir: string,
+  project: tsm.Project,
+  methods: readonly CompileMethodInfo[],
+  appVersion?: string | boolean,
+) {
   await fsp.mkdir(outDir, { recursive: true });
 
   const createFile = await fsp.open(path.join(outDir, 'create.sql'), 'w');
@@ -45,7 +51,7 @@ async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: 
     const executeSql = async (sql: string) => {
       await createFile.write(sql);
     };
-    await generateCreate(executeSql, result, appVersion);
+    await generateCreate(executeSql, project, methods, appVersion);
   } finally {
     await createFile.close();
   }
@@ -55,13 +61,18 @@ async function emitSqlFiles(outDir: string, result: CompileResult, appVersion?: 
     const executeSql = async (sql: string) => {
       await dropFile.write(sql);
     };
-    await generateDrop(executeSql, result, appVersion);
+    await generateDrop(executeSql, project, methods, appVersion);
   } finally {
     await createFile.close();
   }
 }
 
-async function deployToDatabase(config: ClientConfig, result: CompileResult, appVersion?: string | boolean) {
+async function deployToDatabase(
+  config: ClientConfig,
+  project: tsm.Project,
+  methods: readonly CompileMethodInfo[],
+  appVersion?: string | boolean,
+) {
   const client = new Client(config);
   try {
     await client.connect();
@@ -69,13 +80,18 @@ async function deployToDatabase(config: ClientConfig, result: CompileResult, app
     const executeSql = async (sql: string) => {
       await client.query(sql);
     };
-    await generateCreate(executeSql, result, appVersion);
+    await generateCreate(executeSql, project, methods, appVersion);
   } finally {
     await client.end();
   }
 }
 
-async function dropFromDatabase(config: ClientConfig, result: CompileResult, appVersion?: string | boolean) {
+async function dropFromDatabase(
+  config: ClientConfig,
+  project: tsm.Project,
+  methods: readonly CompileMethodInfo[],
+  appVersion?: string | boolean,
+) {
   const client = new Client(config);
   try {
     await client.connect();
@@ -83,7 +99,7 @@ async function dropFromDatabase(config: ClientConfig, result: CompileResult, app
     const executeSql = async (sql: string) => {
       await client.query(sql);
     };
-    await generateDrop(executeSql, result, appVersion);
+    await generateDrop(executeSql, project, methods, appVersion);
   } finally {
     await client.end();
   }
@@ -143,15 +159,14 @@ program
   .action(async (tsconfigPath: string | undefined, options: CompileOptions) => {
     tsconfigPath = verifyTsConfigPath(tsconfigPath);
     if (tsconfigPath) {
-      const compileResult = compile(tsconfigPath, options.suppressWarnings);
-      if (compileResult) {
-        const outDir = options.out ?? process.cwd();
-        if (options.emitScriptFiles) {
-          await emitScriptFiles(outDir, compileResult);
-        }
-        await emitSqlFiles(outDir, compileResult, options.appVersion);
-      } else {
-        console.warn('Compilation produced no result.');
+      const { project, methods, diagnostics } = compile(tsconfigPath);
+      const hasErrors = printDiagnostics(diagnostics, options.suppressWarnings);
+      const outDir = options.out ?? process.cwd();
+      if (options.emitScriptFiles) {
+        await emitScriptFiles(outDir, project);
+      }
+      if (!hasErrors) {
+        await emitSqlFiles(outDir, project, methods, options.appVersion);
       }
     }
   });
@@ -171,10 +186,11 @@ program
   .action(async (tsconfigPath: string | undefined, options: DeployOptions) => {
     tsconfigPath = verifyTsConfigPath(tsconfigPath, options.appDir);
     if (tsconfigPath) {
-      const compileResult = compile(tsconfigPath, options.suppressWarnings);
-      if (compileResult) {
+      const { project, methods, diagnostics } = compile(tsconfigPath);
+      const hasErrors = printDiagnostics(diagnostics, options.suppressWarnings);
+      if (!hasErrors) {
         const [dbosConfig] = parseConfigFile(options);
-        await deployToDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
+        await deployToDatabase(dbosConfig.poolConfig, project, methods, options.appVersion);
       }
     }
   });
@@ -190,12 +206,29 @@ program
   .action(async (tsconfigPath: string | undefined, options: DeployOptions) => {
     tsconfigPath = verifyTsConfigPath(tsconfigPath, options.appDir);
     if (tsconfigPath) {
-      const compileResult = compile(tsconfigPath, options.suppressWarnings);
-      if (compileResult) {
+      const { project, methods, diagnostics } = compile(tsconfigPath);
+      const hasErrors = printDiagnostics(diagnostics, options.suppressWarnings);
+      if (!hasErrors) {
         const [dbosConfig] = parseConfigFile(options);
-        await dropFromDatabase(dbosConfig.poolConfig, compileResult, options.appVersion);
+        await dropFromDatabase(dbosConfig.poolConfig, project, methods, options.appVersion);
       }
     }
   });
 
 program.parse(process.argv);
+
+function printDiagnostics(diags: readonly tsm.ts.Diagnostic[], suppressWarnings: boolean = false) {
+  const formatHost: tsm.ts.FormatDiagnosticsHost = {
+    getCurrentDirectory: () => tsm.ts.sys.getCurrentDirectory(),
+    getNewLine: () => tsm.ts.sys.newLine,
+    getCanonicalFileName: (fileName: string) =>
+      tsm.ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase(),
+  };
+
+  const $diags = suppressWarnings ? diags.filter((diag) => diag.category !== tsm.ts.DiagnosticCategory.Warning) : diags;
+
+  const msg = tsm.ts.formatDiagnosticsWithColorAndContext($diags, formatHost);
+  console.log(msg);
+
+  return hasError(diags);
+}
