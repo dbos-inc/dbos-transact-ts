@@ -2,7 +2,7 @@ import { WorkflowHandle, DBOSInitializer, InitContext, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import { StatusString } from '../src/workflow';
-import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfigInternal } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import { DBOSFailedSqlTransactionError } from '../src/error';
