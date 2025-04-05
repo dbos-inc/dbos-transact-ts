@@ -1502,7 +1502,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on
     // args and bufferedResults before being passed to #invokeStoredProc
     const $args = [wfCtx.workflowUUID, funcId, wfCtx.presetUUID, $jsonCtx, null, JSON.stringify(args)] as unknown[];
-    $args.unshift(null);
+    const readonly = config.readOnly ?? false;
+    if (!readonly) {
+      $args.unshift(null);
+    }
 
     type ReturnValue = {
       return_value: { output?: R; error?: unknown; txn_id?: string; txn_snapshot?: string; created_at?: number };
@@ -1551,8 +1554,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async invokeStoredProcFunction<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
     const client = await this.procedurePool.connect();
     try {
+      const readOnly = config.readOnly ?? false;
       const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
       await client.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
+      if (readOnly) {
+        await client.query(`SET TRANSACTION READ ONLY`);
+      }
       const result: R = await func(client);
       await client.query(`COMMIT`);
       return result;

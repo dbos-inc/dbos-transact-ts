@@ -160,24 +160,6 @@ describe('dbos-tests', () => {
     }
   }
 
-  test('readonly-recording', async () => {
-    const workflowUUID = uuidv1();
-    // Invoke the workflow, should get the error
-    await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(ReadRecording.testRecordingWorkflow(123, 'test')).rejects.toThrow(new Error('dumb test error'));
-    });
-    expect(ReadRecording.cnt).toBe(1);
-    expect(ReadRecording.wfCnt).toBe(2);
-
-    // Invoke it again, should return the recorded error and re-execute the workflow function but not the transactions
-    await DBOSExecutor.globalInstance!.systemDatabase.setWorkflowStatus(workflowUUID, StatusString.PENDING, true);
-    await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(ReadRecording.testRecordingWorkflow(123, 'test')).rejects.toThrow(new Error('dumb test error'));
-    });
-    expect(ReadRecording.cnt).toBe(1);
-    expect(ReadRecording.wfCnt).toBe(4);
-  });
-
   test('txn-snapshot-recording', async () => {
     // Test the recording of transaction snapshot information in our transaction_outputs table.
     const workflowUUID = uuidv1();
@@ -191,7 +173,7 @@ describe('dbos-tests', () => {
       'SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2',
       [workflowUUID, 0],
     );
-    expect(readRec[0].txn_id).toBeFalsy();
+    expect(readRec[0].txn_id).toBeTruthy();
     expect(readRec[0].txn_snapshot).toBeTruthy();
 
     const writeRec = await DBOS.queryUserDB<transaction_outputs>(

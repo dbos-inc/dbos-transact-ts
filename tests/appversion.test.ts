@@ -69,6 +69,7 @@ describe('test-app-version', () => {
     }
 
     // Complete the workflow, then set its status to PENDING
+    await DBOS.shutdown();
     await DBOS.launch();
     const handle = await DBOS.startWorkflow(TestAppVersionRecovery).testWorkflow();
     await expect(handle.getResult()).resolves.toEqual(0);
@@ -79,6 +80,7 @@ describe('test-app-version', () => {
     );
 
     // Shutdown and restart with the same source code, verify it recovers correctly. Set status to PENDING again
+    process.env.DBOS__VMID = 'test-app-version-recovery';
     await DBOS.shutdown();
     await DBOS.launch();
     let handles = await DBOS.recoverPendingWorkflows();
