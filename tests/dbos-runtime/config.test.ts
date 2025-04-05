@@ -334,8 +334,6 @@ describe('dbos-config', () => {
       expect(ctx.getConfig('no_key')).toBeUndefined();
       // Config key does not exist, default value
       expect(ctx.getConfig('no_key', 'default')).toBe('default');
-      // We didn't init, so do some manual cleanup only
-      clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();
     });
 
@@ -364,8 +362,6 @@ describe('dbos-config', () => {
         undefined,
       );
       expect(ctx.getConfig<string>('payments_url', 'default')).toBe('default');
-      // We didn't init, so do some manual cleanup only
-      clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();
     });
 
@@ -388,8 +384,6 @@ describe('dbos-config', () => {
       const dbosExec = new DBOSExecutor(dbosConfig);
       expect(process.env.FOOFOO).toBe('barbar');
       expect(process.env.RANDENV).toBe(''); // Empty string
-      // We didn't init, so do some manual cleanup only
-      clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();
     });
 
@@ -533,8 +527,6 @@ describe('dbos-config', () => {
         undefined,
       );
       expect(() => ctx.getConfig<number>('payments_url', 1234)).toThrow(DBOSConfigKeyTypeError);
-      // We didn't init, so do some manual cleanup only
-      clearInterval(dbosExec.flushBufferID);
       await dbosExec.telemetryCollector.destroy();
     });
 

@@ -1,5 +1,5 @@
 import { DBOS } from '../src';
-import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfigInternal } from '../src/dbos-executor';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 
@@ -218,21 +218,16 @@ describe('oaoo-tests', () => {
   });
 
   test('nested-workflow-oaoo', async () => {
-    const dbosExec = DBOSExecutor.globalInstance!;
-    clearInterval(dbosExec.flushBufferID); // Don't flush the output buffer.
-
     const workflowUUID = uuidv1();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.nestedWorkflow(username)).resolves.toBe(1);
     });
 
-    await dbosExec.flushWorkflowBuffers();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.nestedWorkflow(username)).resolves.toBe(1);
     });
 
     // Retrieve output of the child workflow.
-    await dbosExec.flushWorkflowBuffers();
     const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID + '-0');
     await expect(retrievedHandle.getResult()).resolves.toBe(1);
 
@@ -288,6 +283,16 @@ describe('oaoo-tests', () => {
       EventStatusOAOO.resolve = r;
     });
 
+    static resolve2: () => void;
+    static promise2 = new Promise<void>((r) => {
+      EventStatusOAOO.resolve2 = r;
+    });
+
+    static resolve3: () => void;
+    static promise3 = new Promise<void>((r) => {
+      EventStatusOAOO.resolve3 = r;
+    });
+
     @DBOS.workflow()
     static async setEventWorkflow() {
       await DBOS.setEvent('key1', 'value1');
@@ -328,7 +333,8 @@ describe('oaoo-tests', () => {
         // Ignore error.
         DBOS.logger.error(e);
       }
-
+      EventStatusOAOO.resolve3();
+      await EventStatusOAOO.promise2;
       return res;
     }
   }
@@ -337,15 +343,14 @@ describe('oaoo-tests', () => {
     // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
     // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
     // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
-    const dbosExec = DBOSExecutor.globalInstance!;
-    clearInterval(dbosExec.flushBufferID); // Don't flush the output buffer.
-
     const getUUID = uuidv1();
     const setUUID = uuidv1();
 
-    await DBOS.withNextWorkflowID(getUUID, async () => {
-      await expect(EventStatusOAOO.getEventRetrieveWorkflow(setUUID)).resolves.toBe('valueNull-statusNull-PENDING');
-    });
+    const handle1 = await DBOS.startWorkflow(EventStatusOAOO, { workflowID: getUUID }).getEventRetrieveWorkflow(
+      setUUID,
+    );
+
+    await EventStatusOAOO.promise3;
     expect(EventStatusOAOO.wfCnt).toBe(2);
     await expect(DBOS.getEvent(setUUID, 'key1')).resolves.toBe('value1');
 
@@ -355,13 +360,18 @@ describe('oaoo-tests', () => {
     const handle = DBOS.retrieveWorkflow(setUUID);
     await expect(handle.getResult()).rejects.toThrow('Failed workflow');
 
+    // Test OAOO for getEvent and getWorkflowStatus.
+    const handle2 = await DBOS.startWorkflow(EventStatusOAOO, { workflowID: getUUID }).getEventRetrieveWorkflow(
+      setUUID,
+    );
+    EventStatusOAOO.resolve2();
+    await expect(handle2.getResult()).resolves.toBe('valueNull-statusNull-PENDING');
+    await expect(handle1.getResult()).resolves.toBe('valueNull-statusNull-PENDING');
+
     // Run without UUID, should get the new result.
     await expect(EventStatusOAOO.getEventRetrieveWorkflow(setUUID)).resolves.toBe('value1-ERROR-ERROR');
 
-    // Test OAOO for getEvent and getWorkflowStatus.
-    await DBOS.withNextWorkflowID(getUUID, async () => {
-      await expect(EventStatusOAOO.getEventRetrieveWorkflow(setUUID)).resolves.toBe('valueNull-statusNull-PENDING');
-    });
-    expect(EventStatusOAOO.wfCnt).toBe(6); // Should re-execute the workflow because we're not flushing the result buffer.
+    // TODO(Qian): look at this test
+    expect(EventStatusOAOO.wfCnt).toBe(6); // Should re-execute the workflow because we have concurrent workflows
   });
 });

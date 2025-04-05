@@ -139,7 +139,6 @@ async function main() {
   const wfs = await DBOS.getWorkflows({ workflowName: 'doWorkflow' });
   expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(2);
   expect(wfs.workflowUUIDs.length).toBe(2);
-  await DBOS.executor.flushWorkflowBuffers();
   const wfh1 = DBOS.retrieveWorkflow(wfs.workflowUUIDs[0]);
   const wfh2 = DBOS.retrieveWorkflow(wfs.workflowUUIDs[1]);
   const stat1 = await wfh1.getStatus();
