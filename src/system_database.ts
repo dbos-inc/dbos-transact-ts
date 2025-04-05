@@ -44,15 +44,13 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   initWorkflowStatus<T extends any[]>(
-    bufferedStatus: WorkflowStatusInternal,
+    initStatus: WorkflowStatusInternal,
     args: T,
   ): Promise<{ args: T; status: string }>;
-  bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): void;
-  flushWorkflowSystemBuffers(): Promise<void>;
+  recordWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
-  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void;
   getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
   getWorkflowSteps(workflowUUID: string): Promise<step_info[]>;
 
@@ -192,9 +190,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly notificationsMap: Record<string, () => void> = {};
   readonly workflowEventsMap: Record<string, () => void> = {};
 
-  readonly workflowStatusBuffer: Map<string, WorkflowStatusInternal> = new Map();
-  readonly workflowInputsBuffer: Map<string, any[]> = new Map();
-  readonly flushBatchSize = 100;
   static readonly connectionTimeoutMillis = 10000; // 10 second timeout
 
   constructor(
@@ -381,83 +376,47 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { args: DBOSJSON.parse(rows[0].inputs) as T, status };
   }
 
-  bufferWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal) {
-    this.workflowStatusBuffer.set(workflowUUID, status);
-  }
-
-  /**
-   * Flush the workflow output buffer and the input buffer to the database.
-   */
-  async flushWorkflowSystemBuffers(): Promise<void> {
-    // Always flush the status buffer first because of foreign key constraints
-    await this.flushWorkflowStatusBuffer();
-    await this.flushWorkflowInputsBuffer();
-  }
-
-  async flushWorkflowStatusBuffer(): Promise<void> {
-    const localBuffer = new Map(this.workflowStatusBuffer);
-    this.workflowStatusBuffer.clear();
-    const totalSize = localBuffer.size;
-    try {
-      let finishedCnt = 0;
-      while (finishedCnt < totalSize) {
-        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (workflow_uuid, status, name, authenticated_user, assumed_role, authenticated_roles, request, output, executor_id, application_version, application_id, created_at, updated_at, class_name, config_name, queue_name) VALUES `;
-        let paramCnt = 1;
-        const values: any[] = [];
-        const batchUUIDs: string[] = [];
-        for (const [workflowUUID, status] of localBuffer) {
-          if (paramCnt > 1) {
-            sqlStmt += ', ';
-          }
-          sqlStmt += `($${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++}, $${paramCnt++})`;
-          values.push(
-            workflowUUID,
-            status.status,
-            status.workflowName,
-            status.authenticatedUser,
-            status.assumedRole,
-            DBOSJSON.stringify(status.authenticatedRoles),
-            DBOSJSON.stringify(status.request),
-            DBOSJSON.stringify(status.output),
-            status.executorId,
-            status.applicationVersion,
-            status.applicationID,
-            status.createdAt,
-            Date.now(),
-            status.workflowClassName,
-            status.workflowConfigName,
-            status.queueName,
-          );
-          batchUUIDs.push(workflowUUID);
-          finishedCnt++;
-
-          if (batchUUIDs.length >= this.flushBatchSize) {
-            // Cap at the batch size.
-            break;
-          }
-        }
-        sqlStmt +=
-          ' ON CONFLICT (workflow_uuid) DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at=EXCLUDED.updated_at;';
-
-        await this.pool.query(sqlStmt, values);
-
-        // Clean up after each batch succeeds
-        batchUUIDs.forEach((value) => {
-          localBuffer.delete(value);
-        });
-      }
-    } catch (error) {
-      (error as Error).message = `Error flushing workflow status buffer: ${(error as Error).message}`;
-      this.logger.error(error);
-    } finally {
-      // If there are still items in flushing the buffer, return items to the global buffer for retrying later.
-      for (const [workflowUUID, output] of localBuffer) {
-        if (!this.workflowStatusBuffer.has(workflowUUID)) {
-          this.workflowStatusBuffer.set(workflowUUID, output);
-        }
-      }
-    }
-    return;
+  async recordWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
+    await this.pool.query<workflow_status>(
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
+        workflow_uuid,
+        status,
+        name,
+        class_name,
+        config_name,
+        queue_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
+        output,
+        executor_id,
+        application_id,
+        application_version,
+        created_at,
+        updated_at
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+    ON CONFLICT (workflow_uuid)
+    DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at=EXCLUDED.updated_at;`,
+      [
+        workflowUUID,
+        StatusString.ERROR,
+        status.workflowName,
+        status.workflowClassName,
+        status.workflowConfigName,
+        status.queueName,
+        status.authenticatedUser,
+        status.assumedRole,
+        DBOSJSON.stringify(status.authenticatedRoles),
+        DBOSJSON.stringify(status.request),
+        DBOSJSON.stringify(status.output),
+        status.executorId,
+        status.applicationID,
+        status.applicationVersion,
+        status.createdAt,
+        Date.now(),
+      ],
+    );
   }
 
   async recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void> {
@@ -515,64 +474,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
           queueName: i.queue_name,
         },
     );
-  }
-
-  bufferWorkflowInputs<T extends any[]>(workflowUUID: string, args: T): void {
-    this.workflowInputsBuffer.set(workflowUUID, args);
-  }
-
-  async flushWorkflowInputsBuffer(): Promise<void> {
-    const localBuffer = new Map(this.workflowInputsBuffer);
-    this.workflowInputsBuffer.clear();
-    const totalSize = localBuffer.size;
-    try {
-      let finishedCnt = 0;
-      while (finishedCnt < totalSize) {
-        let sqlStmt = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES `;
-        let paramCnt = 1;
-        const values: any[] = [];
-        const batchUUIDs: string[] = [];
-        for (const [workflowUUID, args] of localBuffer) {
-          finishedCnt++;
-          if (this.workflowStatusBuffer.has(workflowUUID)) {
-            // Need the workflow status buffer to be flushed first. Continue and retry later.
-            continue;
-          }
-
-          if (paramCnt > 1) {
-            sqlStmt += ', ';
-          }
-          sqlStmt += `($${paramCnt++}, $${paramCnt++})`;
-          values.push(workflowUUID, DBOSJSON.stringify(args));
-          batchUUIDs.push(workflowUUID);
-
-          if (batchUUIDs.length >= this.flushBatchSize) {
-            // Cap at the batch size.
-            break;
-          }
-        }
-
-        if (batchUUIDs.length > 0) {
-          sqlStmt += ' ON CONFLICT (workflow_uuid) DO NOTHING;';
-          await this.pool.query(sqlStmt, values);
-          // Clean up after each batch succeeds
-          batchUUIDs.forEach((value) => {
-            localBuffer.delete(value);
-          });
-        }
-      }
-    } catch (error) {
-      (error as Error).message = `Error flushing workflow inputs buffer: ${(error as Error).message}`;
-      this.logger.error(error);
-    } finally {
-      // If there are still items in flushing the buffer, return items to the global buffer for retrying later.
-      for (const [workflowUUID, args] of localBuffer) {
-        if (!this.workflowInputsBuffer.has(workflowUUID)) {
-          this.workflowInputsBuffer.set(workflowUUID, args);
-        }
-      }
-    }
-    return;
   }
 
   async getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null> {

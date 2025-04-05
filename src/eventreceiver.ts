@@ -62,7 +62,6 @@ export interface DBOSExecutorContext {
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  flushWorkflowBuffers(): Promise<void>;
   getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null>;
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;

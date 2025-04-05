@@ -123,12 +123,6 @@ export interface PgTransactionId {
   txid: string;
 }
 
-export interface BufferedResult {
-  output: unknown;
-  txn_snapshot: string;
-  created_at?: number;
-}
-
 export const StatusString = {
   PENDING: 'PENDING',
   SUCCESS: 'SUCCESS',
@@ -207,7 +201,6 @@ export interface WorkflowContext extends DBOSContext {
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
   functionID: number = 0;
   readonly #dbosExec;
-  readonly resultBuffer: Map<number, BufferedResult> = new Map<number, BufferedResult>();
   readonly isTempWorkflow: boolean;
   readonly maxRecoveryAttempts;
 
@@ -384,15 +377,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async send<T>(destinationUUID: string, message: T, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
-
-    await this.#dbosExec.userDatabase.transaction(
-      async (client: UserDatabaseClient) => {
-        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
-      },
-      { isolationLevel: IsolationLevel.ReadCommitted },
-    );
-    this.resultBuffer.clear();
-
     await this.#dbosExec.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
   }
 
@@ -407,15 +391,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   ): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
     const timeoutFunctionID: number = this.functionIDGetIncrement();
-
-    await this.#dbosExec.userDatabase.transaction(
-      async (client: UserDatabaseClient) => {
-        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
-      },
-      { isolationLevel: IsolationLevel.ReadCommitted },
-    );
-    this.resultBuffer.clear();
-
     return this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, timeoutFunctionID, topic, timeoutSeconds);
   }
 
@@ -425,15 +400,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async setEvent<T>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
-
-    await this.#dbosExec.userDatabase.transaction(
-      async (client: UserDatabaseClient) => {
-        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
-      },
-      { isolationLevel: IsolationLevel.ReadCommitted },
-    );
-    this.resultBuffer.clear();
-
     await this.#dbosExec.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
   }
 
