@@ -2,7 +2,7 @@ import { DBOS } from '../src';
 import { v1 as uuidv1 } from 'uuid';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 
 const testTableName = 'dbos_concurrency_test_kv';
 

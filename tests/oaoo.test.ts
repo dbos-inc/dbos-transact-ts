@@ -1,5 +1,5 @@
 import { DBOS } from '../src';
-import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfigInternal } from '../src/dbos-executor';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 

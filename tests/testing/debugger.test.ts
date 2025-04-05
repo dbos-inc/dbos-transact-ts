@@ -1,7 +1,7 @@
 import { DBOSInitializer, DBOS } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfigInternal, DBOSExecutor, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfigInternal, DebugMode } from '../../src/dbos-executor';
 import { Client } from 'pg';
 
 const testTableName = 'debugger_test_kv';

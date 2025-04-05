@@ -1,7 +1,6 @@
 import { WorkflowQueue, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
-import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
-import { PostgresSystemDatabase } from '../src/system_database';
+import { DBOSConfigInternal } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
 import { DBOSDeadLetterQueueError } from '../src/error';

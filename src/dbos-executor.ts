@@ -1512,7 +1512,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       $args,
     );
 
-    const { error, output, txn_snapshot, txn_id, created_at } = return_value;
+    const { error, output, txn_id } = return_value;
 
     // if the stored proc returns an error, deserialize and throw it.
     // stored proc saves the error in tx_output before returning

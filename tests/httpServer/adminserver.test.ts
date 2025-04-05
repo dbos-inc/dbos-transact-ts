@@ -1,5 +1,5 @@
 import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
-import { DBOSConfig, DBOSConfigInternal, DBOSExecutor } from '../../src/dbos-executor';
+import { DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { WorkflowQueue } from '../../src';
 import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { QueueMetadataResponse } from '../../src/httpServer/server';

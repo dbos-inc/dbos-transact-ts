@@ -11,7 +11,7 @@ import {
   configureInstance,
 } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import request from 'supertest';
 import { v1 as uuidv1 } from 'uuid';
 

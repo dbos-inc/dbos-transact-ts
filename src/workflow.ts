@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { DBOSExecutor, OperationType } from './dbos-executor';
-import { IsolationLevel, Transaction, TransactionContext } from './transaction';
+import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
 import { SystemDatabase } from './system_database';
-import { UserDatabaseClient } from './user_database';
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
