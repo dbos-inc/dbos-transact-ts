@@ -7,7 +7,7 @@ export interface dbos_hello {
 }
 
 export class StoredProcTest {
-  @DBOS.storedProcedure({ readOnly: true })
+  @DBOS.storedProcedure()
   static async getGreetCount(user: string): Promise<number> {
     const query = 'SELECT greet_count FROM dbos_hello WHERE name = $1;';
     const { rows } = await DBOS.pgClient.query<dbos_hello>(query, [user]);
@@ -52,7 +52,7 @@ export class StoredProcTest {
     return greeting;
   }
 
-  @DBOS.storedProcedure({ readOnly: true, executeLocally: true })
+  @DBOS.storedProcedure({ executeLocally: true })
   static async getGreetCountLocal(user: string): Promise<number> {
     const query = 'SELECT greet_count FROM dbos_hello WHERE name = $1;';
     const { rows } = await DBOS.pgClient.query<dbos_hello>(query, [user]);
@@ -84,7 +84,7 @@ export class StoredProcTest {
     return { count, greeting, rowCount };
   }
 
-  @DBOS.transaction({ readOnly: true })
+  @DBOS.transaction()
   static async getGreetCountTx(user: string): Promise<number> {
     const query = 'SELECT greet_count FROM dbos_hello WHERE name = ?;';
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
@@ -125,7 +125,7 @@ export class StoredProcTest {
     return { count, greeting, local };
   }
 
-  @DBOS.transaction({ readOnly: true })
+  @DBOS.transaction()
   static async getGreetCountTx_v2(user: string): Promise<number> {
     const query = 'SELECT greet_count FROM dbos_hello WHERE name = ?;';
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-type-assertion
