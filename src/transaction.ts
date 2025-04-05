@@ -12,7 +12,7 @@ export type TransactionFunction<T extends unknown[], R> = Transaction<T, R>;
 
 export interface TransactionConfig {
   isolationLevel?: IsolationLevel;
-  readOnly?: boolean;
+  readOnly?: boolean; // Deprecated
 }
 
 export const IsolationLevel = {

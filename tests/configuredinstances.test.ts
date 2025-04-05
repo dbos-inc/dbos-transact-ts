@@ -173,7 +173,6 @@ describe('dbos-configclass-tests', () => {
     expect(configA.tracker.nTrans).toBe(1);
 
     // Make sure we correctly record the function's class name and config name
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     let stat = await DBOS.getWorkflowStatus(wfUUID1);
     expect(stat?.workflowClassName).toBe('DBOSTestConfiguredClass');
     expect(stat?.workflowName).toContain('testTransaction1');

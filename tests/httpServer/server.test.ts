@@ -273,9 +273,6 @@ describe('httpserver-tests', () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
 
-    const dbosExec = DBOSExecutor.globalInstance!;
-    await dbosExec.flushWorkflowBuffers();
-
     // Retrieve the workflow with UUID.
     const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
     expect(retrievedHandle).not.toBeNull();

@@ -268,8 +268,7 @@ describe('dbos-tests', () => {
     RetrieveWorkflowStatus.resolve2();
     await expect(workflowHandle.getResult()).resolves.toBe('hello');
 
-    // Flush workflow output buffer so the retrieved handle can proceed and the status would transition to SUCCESS.
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
+    // The status should transition to SUCCESS.
     const retrievedHandle = DBOS.retrieveWorkflow<string>(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     expect(retrievedHandle.workflowID).toBe(workflowUUID);

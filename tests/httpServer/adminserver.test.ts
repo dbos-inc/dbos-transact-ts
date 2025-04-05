@@ -130,7 +130,6 @@ describe('running-admin-server-tests', () => {
     const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow();
     await handle.getResult();
     expect(testAdminWorkflow.counter).toBe(1);
-    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -155,7 +154,6 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(204);
-    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     expect(testAdminWorkflow.counter).toBe(2);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -169,7 +167,6 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(204);
-    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     expect(testAdminWorkflow.counter).toBe(2);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -183,14 +180,12 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(204);
-    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     expect(testAdminWorkflow.counter).toBe(3);
   });
 
   test('test-admin-list-workflow-steps', async () => {
     const handle = await DBOS.startWorkflow(testAdminWorkflow).workflowWithSteps();
     await handle.getResult();
-    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -218,7 +213,6 @@ describe('running-admin-server-tests', () => {
     const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow();
     await handle.getResult();
     expect(testAdminWorkflow.counter).toBe(1);
-    await DBOSExecutor.globalInstance?.flushWorkflowBuffers();
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });

@@ -14,7 +14,7 @@ export class StoredProcTest {
     return rows.length === 0 ? 0 : rows[0].greet_count;
   }
 
-  @DBOS.storedProcedure() // not marking this read only so the tx output table write is not buffered
+  @DBOS.storedProcedure()
   static async getHelloRowCount(): Promise<number> {
     const query = 'SELECT COUNT(*) FROM dbos_hello;';
     const { rows } = await DBOS.pgClient.query<{ count: string }>(query);
@@ -69,7 +69,7 @@ export class StoredProcTest {
     return `Hello, ${user}! You have been greeted ${greet_count} times.\n`;
   }
 
-  @DBOS.storedProcedure({ executeLocally: true }) // like getHelloRowCount, not marked as read only so the tx output does not get buffered
+  @DBOS.storedProcedure({ executeLocally: true })
   static async getHelloRowCountLocal(): Promise<number> {
     const query = 'SELECT COUNT(*) FROM dbos_hello;';
     const { rows } = await DBOS.pgClient.query<{ count: string }>(query);

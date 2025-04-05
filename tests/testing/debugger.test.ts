@@ -299,7 +299,6 @@ describe('debugger-test', () => {
     // Execute again with the provided UUID.
     await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBeFalsy();
     expect(DebuggerTest.count).toBe(1);
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     await DBOS.shutdown();
 
     // Make sure we correctly record the function's class name
@@ -435,7 +434,6 @@ describe('debugger-test', () => {
     );
 
     // Make sure we correctly record the function's class name
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     await DBOS.shutdown();
     const result = await systemDBClient.query<{ status: string; name: string; class_name: string }>(
       `SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,
