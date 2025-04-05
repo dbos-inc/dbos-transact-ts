@@ -400,7 +400,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at=EXCLUDED.updated_at;`,
       [
         workflowUUID,
-        StatusString.ERROR,
+        StatusString.SUCCESS,
         status.workflowName,
         status.workflowClassName,
         status.workflowConfigName,

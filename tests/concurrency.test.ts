@@ -113,7 +113,7 @@ class ConcurrTestClass {
 
   static resolve3: () => void;
   static promise3 = new Promise<void>((r) => {
-    ConcurrTestClass.resolve2 = r;
+    ConcurrTestClass.resolve3 = r;
   });
 
   @DBOS.transaction()

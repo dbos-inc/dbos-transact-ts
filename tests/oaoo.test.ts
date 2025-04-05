@@ -283,6 +283,16 @@ describe('oaoo-tests', () => {
       EventStatusOAOO.resolve = r;
     });
 
+    static resolve2: () => void;
+    static promise2 = new Promise<void>((r) => {
+      EventStatusOAOO.resolve2 = r;
+    });
+
+    static resolve3: () => void;
+    static promise3 = new Promise<void>((r) => {
+      EventStatusOAOO.resolve3 = r;
+    });
+
     @DBOS.workflow()
     static async setEventWorkflow() {
       await DBOS.setEvent('key1', 'value1');
@@ -323,7 +333,8 @@ describe('oaoo-tests', () => {
         // Ignore error.
         DBOS.logger.error(e);
       }
-
+      EventStatusOAOO.resolve3();
+      await EventStatusOAOO.promise2;
       return res;
     }
   }
@@ -335,9 +346,11 @@ describe('oaoo-tests', () => {
     const getUUID = uuidv1();
     const setUUID = uuidv1();
 
-    await DBOS.withNextWorkflowID(getUUID, async () => {
-      await expect(EventStatusOAOO.getEventRetrieveWorkflow(setUUID)).resolves.toBe('valueNull-statusNull-PENDING');
-    });
+    const handle1 = await DBOS.startWorkflow(EventStatusOAOO, { workflowID: getUUID }).getEventRetrieveWorkflow(
+      setUUID,
+    );
+
+    await EventStatusOAOO.promise3;
     expect(EventStatusOAOO.wfCnt).toBe(2);
     await expect(DBOS.getEvent(setUUID, 'key1')).resolves.toBe('value1');
 
@@ -347,14 +360,18 @@ describe('oaoo-tests', () => {
     const handle = DBOS.retrieveWorkflow(setUUID);
     await expect(handle.getResult()).rejects.toThrow('Failed workflow');
 
+    // Test OAOO for getEvent and getWorkflowStatus.
+    const handle2 = await DBOS.startWorkflow(EventStatusOAOO, { workflowID: getUUID }).getEventRetrieveWorkflow(
+      setUUID,
+    );
+    EventStatusOAOO.resolve2();
+    await expect(handle2.getResult()).resolves.toBe('valueNull-statusNull-PENDING');
+    await expect(handle1.getResult()).resolves.toBe('valueNull-statusNull-PENDING');
+
     // Run without UUID, should get the new result.
     await expect(EventStatusOAOO.getEventRetrieveWorkflow(setUUID)).resolves.toBe('value1-ERROR-ERROR');
 
-    // Test OAOO for getEvent and getWorkflowStatus.
-    await DBOS.withNextWorkflowID(getUUID, async () => {
-      await expect(EventStatusOAOO.getEventRetrieveWorkflow(setUUID)).resolves.toBe('valueNull-statusNull-PENDING');
-    });
     // TODO(Qian): look at this test
-    expect(EventStatusOAOO.wfCnt).toBe(6); // Should re-execute the workflow because we're not flushing the result buffer.
+    expect(EventStatusOAOO.wfCnt).toBe(6); // Should re-execute the workflow because we have concurrent workflows
   });
 });
