@@ -726,6 +726,15 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
   return clsReg;
 }
 
+/**
+ * Associates a class with a `DBOSEventReceiver`, which will be calling DBOS methods from within the class.
+ * This allows class-level default values or other storage to be associated with the class, rather than
+ *   separately for each registered method.
+ *
+ * @param rcvr - Event receiver which will dispatch DBOS methods from within the class specified by `ctor`
+ * @param ctor - Constructor of the class that is being registered and associated with `rcvr`
+ * @returns - Class-specific registration info cumulatively collected for `rcvr`
+ */
 export function associateClassWithEventReceiver<CT extends { new (...args: unknown[]): object }>(
   rcvr: DBOSEventReceiver,
   ctor: CT,
@@ -737,6 +746,17 @@ export function associateClassWithEventReceiver<CT extends { new (...args: unkno
   return clsReg.eventReceiverInfo.get(rcvr)!;
 }
 
+/**
+ * Associates a workflow method with a `DBOSEventReceiver` which will be in charge of calling the method
+ *   in response to received events.
+ * This version is to be used in decorators, as it applies the DBOS wrapper to the registered method.
+ *
+ * @param rcvr - Subclass of `DBOSEventReceiver` that should be informed of the `target` method's registration
+ * @param target - A DBOS method to associate with the event receiver
+ * @param propertyKey - For Stage 2 decorator use, this is the property key for storing the method wrapper
+ * @param inDescriptor - For Stage 2 decorator use, this is the method descriptor for storing the method wrapper
+ * @returns The new method descriptor, registration, and event receiver info
+ */
 export function associateMethodWithEventReceiver<This, Args extends unknown[], Return>(
   rcvr: DBOSEventReceiver,
   target: object,

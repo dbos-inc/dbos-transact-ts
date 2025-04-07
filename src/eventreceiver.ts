@@ -22,9 +22,18 @@ export interface DBNotificationListener {
   close(): Promise<void>;
 }
 
+/**
+ * Interface for registration information provided to `DBOSEventReceiver`
+ *  instances about each method and containing class.  This contains any
+ *  information stored by the decorators that registered the method with
+ *  its event receiver.
+ */
 export interface DBOSEventReceiverRegistration {
+  /** Method-level configuration information, as stored by the event receiver's decorators (or other registration mechanism) */
   methodConfig: unknown;
+  /** Class-level configuration information, as stored by the event receiver's decorators (or other registration mechanism) */
   classConfig: unknown;
+  /** Method to dispatch, and associated DBOS registration information */
   methodReg: MethodRegistrationBase;
 }
 
@@ -34,86 +43,155 @@ export interface DBOSEventReceiverRegistration {
  *  (retrieve decorated endpoints, and run new transactions / workflows)
  */
 export interface DBOSExecutorContext {
-  /* Logging service */
+  /** Logging service; @deprecated: Use `DBOS.logger` instead. */
   readonly logger: Logger;
-  /* Tracing service */
+  /** Tracing service; @deprecated: Use `DBOS` instead.  */
   readonly tracer: Tracer;
 
+  /** @deprecated */
   getConfig<T>(key: string): T | undefined;
+  /** @deprecated */
   getConfig<T>(key: string, defaultValue: T): T;
 
-  /*
-   * Get the registrations for a receiver; this comes with:
+  /**
+   * Get the registrations for a receiver
+   * @param eri - all registrations for this `DBOSEventReceiver` will be returned
+   * @returns array of all methods registered for the receiver, including:
    *  methodConfig: the method info the receiver stored
    *  classConfig: the class info the receiver stored
    *  methodReg: the method registration (w/ workflow, transaction, function, and other info)
    */
   getRegistrationsFor(eri: DBOSEventReceiver): DBOSEventReceiverRegistration[];
 
+  /**
+   * Invoke a transaction function.
+   *  Note that functions can be called directly instead of using this interface.
+   */
   transaction<T extends unknown[], R>(txn: TransactionFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+
+  /**
+   * Invoke a workflow function.
+   *  Note that functions can enqueued directly with DBOS.startWorkflow instead of using this interface.
+   */
   workflow<T extends unknown[], R>(
     wf: WorkflowFunction<T, R>,
     params: WorkflowParams,
     ...args: T
   ): Promise<WorkflowHandle<R>>;
+
+  /**
+   * Invoke a step function.
+   *  Note that functions can be called directly instead of using this interface.
+   */
   external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+
+  /**
+   * Invoke a stored procedure function.
+   *  Note that functions can be called directly instead of using this interface.
+   */
   procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
 
-  send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
-  getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  /**
+   * Send a messsage to workflow with a given ID.  Note that `DBOS.send` can be used instead.
+   * @param destinationID - ID of workflow to receive the message
+   * @param message - Message
+   * @param topic - Topic for message
+   * @param idempotencyKey - For sending exactly once
+   * @template T - Type of object to send
+   */
+  send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
+  /** Get an event set by a workflow.  Note that `DBOS.getEvent` can be used instead. */
+  getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
+  /** Retrieve a workflow handle given the workflow ID.  Note that `DBOS.retrieveWorkflow` can be used instead */
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  /** @deprecated */
   flushWorkflowBuffers(): Promise<void>;
+  /** @deprecated Use functions on `DBOS` */
   getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null>;
+  /** @deprecated Use functions on `DBOS` */
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
+  /** @deprecated Use functions on `DBOS` */
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
+  /** @deprecated Use functions on `DBOS` */
   cancelWorkflow(workflowID: string): Promise<void>;
+  /** @deprecated Use functions on `DBOS` */
   resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>>;
 
   // Event receiver state queries / updates
-  /*
-   * An event dispatcher may keep state in the system database
-   *  The 'service' should be unique to the event receiver keeping state, to separate from others
-   *   The 'workflowFnName' workflow function name should be the fully qualified / unique function name dispatched
-   *   The 'key' field allows multiple records per service / workflow function
-   *   The service+workflowFnName+key uniquely identifies the record, which is associated with:
-   *     'value' - a value set by the event receiver service; this string may be a JSON to keep complex details
-   *     A version, either as a sequence number (long integer), or as a time (high precision floating point).
+  /**
+   * Get a state item from the system database, which provides a key/value store interface for event dispatchers.
+   *   The full key for the database state should include the service, function, and item.
+   *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
    *       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
    *       The upsert returns the current record, which is useful if it is more recent.
+   * @param service - should be unique to the event receiver keeping state, to separate from others
+   * @param workflowFnName - function name; should be the fully qualified / unique function name dispatched
+   * @param key - The subitem kept by event receiver service for the function, allowing multiple values to be stored per function
+   * @returns The latest system database state for the specified service+workflow+item
    */
   getEventDispatchState(
     service: string,
     workflowFnName: string,
     key: string,
   ): Promise<DBOSEventReceiverState | undefined>;
+
+  /**
+   * Set a state item into the system database, which provides a key/value store interface for event dispatchers.
+   *   The full key for the database state should include the service, function, and item; these fields are part of `state`.
+   *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
+   *     If versions are in use, any upsert is discarded if the version field is less than what is already stored.
+   *
+   * @param state - the service, workflow, item, version, and value to write to the database
+   * @returns The upsert returns the current record, which may be useful if it is more recent than the `state` provided.
+   */
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
+  /** @deprecated Use `DBOS.queryUserDB` */
   queryUserDB(sql: string, params?: unknown[]): Promise<unknown[]>;
 
+  /** @deprecated Listen for notifications from the user DB */
   userDBListen(channels: string[], callback: DBNotificationCallback): Promise<DBNotificationListener>;
 }
 
-/*
- * Interface for receiving events
- *  This is for things like kafka, SQS, etc., that poll for events and dispatch workflows
- * Needs to be:
- *  Registered with DBOS executor if any decorated endpoints need it
- *  Initialized / destroyed with the executor
- * It is the implememnter's job to keep going and dispatch workflows between those times
+/**
+ * Interface for DBOS pluggable event receivers.
+ *  This is for things like kafka, SQS, HTTP, schedulers, etc., that listen or poll
+ *    for events and dispatch workflows in response.
+ * A `DBOSEventReceiver` will be:
+ *  Registered with DBOS executor when any endpoint workflow function needs it
+ *  Initialized with the executor during launch
+ *  Destroyed upon any clean `shutdown()`
+ * It is the implementer's job to keep going and dispatch workflows between
+ *  `initialize` and `destroy`
  */
 export interface DBOSEventReceiver {
+  /** Executor, for providing state and dispatching DBOS workflows or other methods */
   executor?: DBOSExecutorContext;
+  /** Called upon shutdown (usually in tests) to stop event receivers and free resources */
   destroy(): Promise<void>;
+  /** Called during DBOS launch to indicate that event receiving should start */
   initialize(executor: DBOSExecutorContext): Promise<void>;
+  /** Called at launch; Implementers should emit a diagnostic list of all registrations */
   logRegisteredEndpoints(): void;
 }
 
+/**
+ * State item to be kept in the DBOS system database on behalf of `DBOSEventReceiver`s
+ * @see DBOSEventReceiver.upsertEventDispatchState
+ * @see DBOSEventReceiver.getEventDispatchState
+ */
 export interface DBOSEventReceiverState {
+  /** Name of event receiver service */
   service: string;
+  /** Fully qualified function name for which state is kept */
   workflowFnName: string;
+  /** subkey within the service+workflowFnName */
   key: string;
+  /** Value kept for the service+workflowFnName+key combination */
   value?: string;
+  /** Updated time (used to version the value) */
   updateTime?: number;
+  /** Updated sequence number (used to version the value) */
   updateSeq?: bigint;
 }
 
