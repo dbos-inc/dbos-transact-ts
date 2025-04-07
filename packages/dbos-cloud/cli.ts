@@ -455,8 +455,9 @@ databaseCommands
   });
 
 databaseCommands
-  .command('connect')
-  .description(`Load cloud database connection information into ${dbosConfigFilePath}`)
+  .command('url')
+  .alias('connect')
+  .description(`Display your cloud database connection URL`)
   .argument('[name]', 'database instance name')
   .option('-W, --password <string>', 'Specify the database user password')
   .option('-S, --show-password', 'Show the password in the output')
