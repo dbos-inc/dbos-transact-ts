@@ -25,7 +25,7 @@ import {
   connect,
 } from './databases/databases.js';
 import { launchDashboard, getDashboardURL, deleteDashboard } from './dashboards/dashboards.js';
-import { DBOSCloudHost, credentialsExist, dbosConfigFilePath, deleteCredentials, getLogger } from './cloudutils.js';
+import { DBOSCloudHost, credentialsExist, deleteCredentials, getLogger } from './cloudutils.js';
 import { getAppInfo } from './applications/get-app-info.js';
 import promptSync from 'prompt-sync';
 import chalk from 'chalk';
