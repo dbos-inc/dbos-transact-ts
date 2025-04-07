@@ -77,6 +77,7 @@ async function createZipData(logger: CLILogger): Promise<string> {
     `**/${dbosConfigFilePath}`,
     '**/venv/**',
     '**/.venv/**',
+    '**/.env/**',
     '**/.python-version',
   ];
 
