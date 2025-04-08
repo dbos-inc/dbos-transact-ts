@@ -18,7 +18,7 @@ export interface TransactionConfig {
   /** Isolation level to request from underlying app database */
   isolationLevel?: IsolationLevel;
   /** If set, request read-only transaction from underlying app database */
-  readOnly?: boolean;
+  readOnly?: boolean; // Deprecated
 }
 
 /** Isolation typically supported by application databases */

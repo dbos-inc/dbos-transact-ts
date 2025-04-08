@@ -22,7 +22,7 @@ import { ArgSource, HandlerContext } from '../../src/httpServer/handler';
 import { ArgSources } from '../../src/httpServer/handlerTypes';
 import { Authentication, KoaBodyParser, RequestIDHeader } from '../../src/httpServer/middleware';
 import { v1 as uuidv1, validate as uuidValidate } from 'uuid';
-import { DBOSConfig, DBOSExecutor } from '../../src/dbos-executor';
+import { DBOSConfig } from '../../src/dbos-executor';
 import { DBOSNotAuthorizedError, DBOSResponseError } from '../../src/error';
 import { PoolClient } from 'pg';
 import { IncomingMessage } from 'http';
@@ -272,9 +272,6 @@ describe('httpserver-tests', () => {
       .set({ 'dbos-idempotency-key': workflowUUID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
-
-    const dbosExec = DBOSExecutor.globalInstance!;
-    await dbosExec.flushWorkflowBuffers();
 
     // Retrieve the workflow with UUID.
     const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);

@@ -8,7 +8,7 @@ import {
   WorkflowQueue,
 } from '../src';
 import request from 'supertest';
-import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfigInternal } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
 import {
   WorkflowInformation,
@@ -93,8 +93,6 @@ describe('workflow-management-tests', () => {
     let response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('alice');
-
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
 
     const input: GetWorkflowsInput = {
       status: StatusString.SUCCESS,
@@ -244,8 +242,6 @@ describe('workflow-management-tests', () => {
     const failResponse = await request(DBOS.getHTTPHandlersCallback()!).post('/fail/alice');
     expect(failResponse.statusCode).toBe(500);
 
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
-
     const input: GetWorkflowsInput = {};
     const infos = await listWorkflows(config, input, false);
     expect(infos.length).toBe(2);
@@ -314,7 +310,6 @@ describe('workflow-management-tests', () => {
     expect(TestEndpoints.tries).toBe(2);
     await handle.getResult();
 
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
@@ -326,7 +321,6 @@ describe('workflow-management-tests', () => {
     const wfh = await DBOS.executeWorkflowById(handle.getWorkflowUUID(), true);
     await wfh.getResult();
     expect(TestEndpoints.tries).toBe(3);
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     // Validate a new workflow is started and successful
     result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid!=$1`,
@@ -348,7 +342,6 @@ describe('workflow-management-tests', () => {
 
     await DBOS.invoke(TestEndpoints).testTransaction();
     expect(TestEndpoints.tries).toBe(1);
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
 
     let result = await systemDBClient.query<{ status: string; workflow_uuid: string; name: string }>(
       `SELECT status, workflow_uuid, name FROM dbos.workflow_status`,
@@ -362,7 +355,6 @@ describe('workflow-management-tests', () => {
     let wfh = await DBOS.executeWorkflowById(workflowUUID, true);
     await wfh.getResult();
     expect(TestEndpoints.tries).toBe(2);
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
 
     result = await systemDBClient.query<{ status: string; workflow_uuid: string; name: string }>(
       `SELECT status, workflow_uuid, name FROM dbos.workflow_status WHERE workflow_uuid!=$1`,
