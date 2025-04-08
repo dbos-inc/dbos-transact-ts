@@ -16,7 +16,6 @@ export {
   DBOSExecutorContext,
   DBNotification,
   DBNotificationListener,
-  DBOSEventReceiverQuery,
   DBOSEventReceiverState,
 } from './eventreceiver';
 

@@ -11,7 +11,9 @@ import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
 import { serializeError } from 'serialize-error';
 
+/** @deprecated */
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+/** @deprecated */
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
 export type ContextFreeFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
 
@@ -50,7 +52,11 @@ export interface WorkflowParams {
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
 }
 
+/**
+ * Configuration for `DBOS.workflow` functions
+ */
 export interface WorkflowConfig {
+  /** Maximum number of recovery attempts to make on workflow function, before sending to dead-letter queue */
   maxRecoveryAttempts?: number;
 }
 
@@ -122,12 +128,19 @@ export interface PgTransactionId {
   txid: string;
 }
 
+/** Enumeration of values for workflow status */
 export const StatusString = {
+  /** Workflow has may be running */
   PENDING: 'PENDING',
+  /** Workflow complete with return value */
   SUCCESS: 'SUCCESS',
+  /** Workflow complete with error thrown */
   ERROR: 'ERROR',
+  /** Workflow has been retried the maximum number of times, without completing (SUCCESS/ERROR) */
   RETRIES_EXCEEDED: 'RETRIES_EXCEEDED',
+  /** Workflow is being, or has been, cancelled */
   CANCELLED: 'CANCELLED',
+  /** Workflow is on a `WorkflowQueue` and has not yet started */
   ENQUEUED: 'ENQUEUED',
 } as const;
 
