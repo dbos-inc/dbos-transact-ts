@@ -18,6 +18,7 @@ export const userDBSchema = `
     txn_id TEXT,
     txn_snapshot TEXT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
+    function_name TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (workflow_uuid, function_id)
   );
 `;

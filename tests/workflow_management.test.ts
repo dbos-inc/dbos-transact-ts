@@ -615,6 +615,7 @@ describe('test-list-steps', () => {
   afterEach(async () => {
     await DBOS.shutdown();
   });
+
   class TestListSteps {
     @DBOS.workflow()
     static async testWorkflow() {
@@ -630,6 +631,22 @@ describe('test-list-steps', () => {
     }
     @DBOS.step()
     static async stepTwo() {
+      return Promise.resolve(DBOS.workflowID);
+    }
+
+    @DBOS.transaction()
+    static async transaction() {
+      return Promise.resolve(DBOS.workflowID);
+    }
+
+    @DBOS.transaction()
+    static async transactionWithError() {
+      await TestListSteps.transaction();
+      throw new Error('transaction error');
+    }
+
+    @DBOS.transaction({ readOnly: true })
+    static async readOnlyTransaction() {
       return Promise.resolve(DBOS.workflowID);
     }
 
@@ -750,6 +767,11 @@ describe('test-list-steps', () => {
         childwfid,
       );
       return await handle.getResult();
+    }
+
+    @DBOS.workflow()
+    static async workflowWithTransaction() {
+      await TestListSteps.transaction();
     }
   }
 
@@ -976,5 +998,17 @@ describe('test-list-steps', () => {
     const result3 = await handle.getResult();
 
     expect(result3).not.toEqual(result1);
+  });
+
+  test('test-transaction', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransaction();
+    await handle.getResult();
+    // const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    console.log(wfsteps);
+    expect(wfsteps.length).toBe(1);
+    expect(wfsteps[0].function_name).toBe('transaction');
+    expect(wfsteps[0].output).toBe(wfid);
   });
 });

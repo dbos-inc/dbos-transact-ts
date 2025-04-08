@@ -1091,15 +1091,20 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async getTransactions(workflowUUID: string): Promise<step_info[]> {
+    console.log('Before calling query');
     const rows = await this.userDatabase.query<step_info, [string]>(
       `SELECT function_id, function_name, output, error FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
       workflowUUID,
     );
 
+    console.log('After calling query', rows);
+
     for (const row of rows) {
       row.output = row.output !== null ? DBOSJSON.parse(row.output as string) : null;
       row.error = row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null;
     }
+
+    console.log('getTransactions', rows);
 
     return rows;
   }
@@ -2299,7 +2304,19 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async listWorkflowSteps(workflowID: string): Promise<step_info[]> {
-    return await this.systemDatabase.getWorkflowSteps(workflowID);
+    // return await this.systemDatabase.getWorkflowSteps(workflowID);
+
+    console.log('In the list workflow steps');
+    const steps = await this.systemDatabase.getWorkflowSteps(workflowID);
+    const transactions = await this.getTransactions(workflowID);
+
+    console.log('transactions', transactions);
+
+    const merged = [...steps, ...transactions];
+
+    merged.sort((a, b) => a.function_id - b.function_id);
+
+    return merged;
   }
 
   async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
