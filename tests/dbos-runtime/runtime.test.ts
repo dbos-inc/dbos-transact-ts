@@ -4,6 +4,7 @@ import { Writable } from 'stream';
 import { Client } from 'pg';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { HealthUrl } from '../../src/httpServer/server';
+import { sleepms } from '../../src/utils';
 
 async function waitForMessageTest(
   command: ChildProcess,
@@ -19,38 +20,27 @@ async function waitForMessageTest(
     adminPort = (Number(port) + 1).toString();
   }
 
-  const waitForMessage = new Promise<void>((resolve, reject) => {
-    const onData = (data: Buffer) => {
-      const message = data.toString();
-      process.stdout.write(message);
-      if (message.includes('DBOS Admin Server is running at')) {
-        stdout.off('data', onData); // remove listener
-        resolve();
-      }
-    };
-
-    stdout.on('data', onData);
-    stderr.on('data', onData);
-
-    command.on('error', (error) => {
-      reject(error); // Reject promise on command error
-    });
-  });
   try {
-    await waitForMessage;
     // Axios will throw an exception if the return status is 500
     // Trying and catching is the only way to debug issues in this test
-    try {
-      if (checkResponse) {
-        const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
-        expect(response.status).toBe(200);
+    const maxAttempts = 10;
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      try {
+        if (checkResponse) {
+          const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
+          expect(response.status).toBe(200);
+        }
+        const healthRes = await axios.get(`http://127.0.0.1:${adminPort}${HealthUrl}`);
+        expect(healthRes.status).toBe(200);
+      } catch (error) {
+        const errMsg = `Error sending test request: status: ${(error as AxiosError).response?.status}, statusText: ${(error as AxiosError).response?.statusText}`;
+        console.error(errMsg);
+        if (attempt < maxAttempts - 1) {
+          await sleepms(1000);
+        } else {
+          throw error;
+        }
       }
-      const healthRes = await axios.get(`http://127.0.0.1:${adminPort}${HealthUrl}`);
-      expect(healthRes.status).toBe(200);
-    } catch (error) {
-      const errMsg = `Error sending test request: status: ${(error as AxiosError).response?.status}, statusText: ${(error as AxiosError).response?.statusText}`;
-      console.error(errMsg);
-      throw error;
     }
   } finally {
     stdin.end();
