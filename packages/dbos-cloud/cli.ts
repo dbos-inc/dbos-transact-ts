@@ -25,7 +25,7 @@ import {
   connect,
 } from './databases/databases.js';
 import { launchDashboard, getDashboardURL, deleteDashboard } from './dashboards/dashboards.js';
-import { DBOSCloudHost, credentialsExist, dbosConfigFilePath, deleteCredentials, getLogger } from './cloudutils.js';
+import { DBOSCloudHost, credentialsExist, deleteCredentials, getLogger } from './cloudutils.js';
 import { getAppInfo } from './applications/get-app-info.js';
 import promptSync from 'prompt-sync';
 import chalk from 'chalk';
@@ -455,8 +455,9 @@ databaseCommands
   });
 
 databaseCommands
-  .command('connect')
-  .description(`Load cloud database connection information into ${dbosConfigFilePath}`)
+  .command('url')
+  .alias('connect')
+  .description(`Display your cloud database connection URL`)
   .argument('[name]', 'database instance name')
   .option('-W, --password <string>', 'Specify the database user password')
   .option('-S, --show-password', 'Show the password in the output')
