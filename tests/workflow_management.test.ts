@@ -781,6 +781,13 @@ describe('test-list-steps', () => {
         console.log('transaction error', e);
       }
     }
+
+    @DBOS.workflow()
+    static async workflowWithTransactionAndSteps() {
+      await TestListSteps.stepOne();
+      await TestListSteps.transaction();
+      await TestListSteps.stepTwo();
+    }
   }
 
   test('test-list-steps', async () => {
@@ -1030,5 +1037,17 @@ describe('test-list-steps', () => {
     expect(wfsteps[0].function_name).toBe('transactionWithError');
     expect(wfsteps[0].error).toBeInstanceOf(Error);
     expect(wfsteps[0].output).toBe(null);
+  });
+
+  test('test-transaction-steps', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransactionAndSteps();
+    await handle.getResult();
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    console.log(wfsteps);
+    expect(wfsteps.length).toBe(3);
+    expect(wfsteps[0].function_name).toBe('stepOne');
+    expect(wfsteps[1].function_name).toBe('transaction');
+    expect(wfsteps[2].function_name).toBe('stepTwo');
   });
 });
