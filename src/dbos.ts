@@ -375,7 +375,7 @@ export class DBOS {
         // Wrap the listen call in a promise to properly catch errors
         DBOS.adminServer = await new Promise((resolve, reject) => {
           const server = adminApp.listen(DBOS.runtimeConfig?.admin_port, () => {
-            DBOS.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
+            DBOS.logger.debug(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
             resolve(server);
           });
           server.on('error', (err) => {
