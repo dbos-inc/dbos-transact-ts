@@ -1,7 +1,6 @@
 import { WorkflowQueue, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
-import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
-import { PostgresSystemDatabase } from '../src/system_database';
+import { DBOSConfigInternal } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
 import { DBOSDeadLetterQueueError } from '../src/error';
@@ -134,7 +133,6 @@ describe('recovery-tests', () => {
     LocalRecovery.deadLetterResolve();
     await handle.getResult();
     await resumedHandle.getResult();
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
@@ -173,7 +171,6 @@ describe('recovery-tests', () => {
     LocalRecovery.endEvent.set();
     await handle.getResult();
 
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
@@ -202,40 +199,5 @@ describe('recovery-tests', () => {
     await expect(recoverHandles[0].getResult()).resolves.toBe('test_recovery_user');
     await expect(handle.getResult()).resolves.toBe('test_recovery_user');
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
-  });
-
-  test('test-resuming-already-completed-queue-workflow', async () => {
-    LocalRecovery.startEvent.clear();
-    LocalRecovery.endEvent.clear();
-
-    // Disable buffer flush
-    clearInterval(DBOSExecutor.globalInstance!.flushBufferID);
-
-    const queue = new WorkflowQueue('test-queue');
-    const handle = await DBOS.startWorkflow(LocalRecovery, { queueName: queue.name }).fencedDeadLetterWorkflow();
-    await LocalRecovery.startEvent.wait();
-    LocalRecovery.startEvent.clear();
-    LocalRecovery.endEvent.set();
-    await sleepms(DBOSExecutor.globalInstance!.flushBufferIntervalMs);
-    await expect(handle.getStatus()).resolves.toMatchObject({
-      status: StatusString.PENDING,
-    }); // Result is not flushed
-
-    // Clear workflow outputs buffer (simulates a process restart)
-    (DBOSExecutor.globalInstance!.systemDatabase as PostgresSystemDatabase).workflowStatusBuffer.clear();
-
-    // Recovery will pick up on the workflow
-    const recoveredHandles = await DBOS.recoverPendingWorkflows();
-    expect(recoveredHandles.length).toBe(1);
-    expect(recoveredHandles[0].getWorkflowUUID()).toBe(handle.getWorkflowUUID());
-    await LocalRecovery.startEvent.wait();
-    LocalRecovery.endEvent.set();
-    // Manually flush
-    await sleepms(2000); // Wait until our wrapper actually inserts the workflow status in the buffer
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
-    await expect(recoveredHandles[0].getStatus()).resolves.toMatchObject({
-      status: StatusString.SUCCESS,
-      executorId: 'local',
-    });
   });
 });

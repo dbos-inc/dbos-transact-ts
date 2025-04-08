@@ -110,9 +110,6 @@ describe('queued-wf-tests-simple', () => {
     // Verify all queue entries eventually get cleaned up.
     expect(await queueEntriesAreCleanedUp()).toBe(true);
 
-    // Verify all workflows get the SUCCESS status eventually
-    await DBOS.executor.flushWorkflowBuffers();
-
     // Verify that each "wave" of tasks started at the ~same time.
     for (let wave = 0; wave < numWaves; ++wave) {
       for (let i = wave * qlimit; i < (wave + 1) * qlimit - 1; ++i) {
@@ -162,9 +159,6 @@ describe('queued-wf-tests-simple', () => {
     for (const h of handles) {
       times.push(await h.getResult());
     }
-
-    // Verify all workflows get the SUCCESS status eventually
-    await DBOS.executor.flushWorkflowBuffers();
 
     // Verify that each "wave" of tasks started at the ~same time.
     for (let wave = 0; wave < numWaves; ++wave) {

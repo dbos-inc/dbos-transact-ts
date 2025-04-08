@@ -11,7 +11,7 @@ import {
   configureInstance,
 } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import request from 'supertest';
 import { v1 as uuidv1 } from 'uuid';
 
@@ -173,7 +173,6 @@ describe('dbos-configclass-tests', () => {
     expect(configA.tracker.nTrans).toBe(1);
 
     // Make sure we correctly record the function's class name and config name
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     let stat = await DBOS.getWorkflowStatus(wfUUID1);
     expect(stat?.workflowClassName).toBe('DBOSTestConfiguredClass');
     expect(stat?.workflowName).toContain('testTransaction1');
