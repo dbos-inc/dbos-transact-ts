@@ -33,11 +33,11 @@ async function waitForMessageTest(
         const healthRes = await axios.get(`http://127.0.0.1:${adminPort}${HealthUrl}`);
         expect(healthRes.status).toBe(200);
       } catch (error) {
-        const errMsg = `Error sending test request: status: ${(error as AxiosError).response?.status}, statusText: ${(error as AxiosError).response?.statusText}`;
-        console.error(errMsg);
         if (attempt < maxAttempts - 1) {
           await sleepms(1000);
         } else {
+          const errMsg = `Error sending test request: status: ${(error as AxiosError).response?.status}, statusText: ${(error as AxiosError).response?.statusText}`;
+          console.error(errMsg);
           throw error;
         }
       }
