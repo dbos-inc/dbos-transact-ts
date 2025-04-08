@@ -375,7 +375,7 @@ export class DBOS {
         // Wrap the listen call in a promise to properly catch errors
         DBOS.adminServer = await new Promise((resolve, reject) => {
           const server = adminApp.listen(DBOS.runtimeConfig?.admin_port, () => {
-            DBOS.logger.info(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
+            DBOS.logger.debug(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
             resolve(server);
           });
           server.on('error', (err) => {
@@ -388,27 +388,27 @@ export class DBOS {
     }
 
     if (options?.koaApp) {
-      DBOS.logger.info('Setting up Koa tracing middleware');
+      DBOS.logger.debug('Setting up Koa tracing middleware');
       options.koaApp.use(koaTracingMiddleware);
     }
     if (options?.expressApp) {
-      DBOS.logger.info('Setting up Express tracing middleware');
+      DBOS.logger.debug('Setting up Express tracing middleware');
       options.expressApp.use(expressTracingMiddleware);
     }
     if (options?.fastifyApp) {
       // Fastify can use express or middie under the hood, for middlewares.
       // Middie happens to have the same semantic than express.
       // See https://fastify.dev/docs/latest/Reference/Middleware/
-      DBOS.logger.info('Setting up Fastify tracing middleware');
+      DBOS.logger.debug('Setting up Fastify tracing middleware');
       options.fastifyApp.use(expressTracingMiddleware);
     }
     if (options?.nestApp) {
       // Nest.kj can use express or fastify under the hood. With fastify, Nest.js uses middie.
-      DBOS.logger.info('Setting up NestJS tracing middleware');
+      DBOS.logger.debug('Setting up NestJS tracing middleware');
       options.nestApp.use(expressTracingMiddleware);
     }
     if (options?.honoApp) {
-      DBOS.logger.info('Setting up Hono tracing middleware');
+      DBOS.logger.debug('Setting up Hono tracing middleware');
       options.honoApp.use(honoTracingMiddleware);
     }
 
