@@ -877,6 +877,7 @@ export function configureInstance<R extends ConfiguredInstance, T extends unknow
 /* METHOD DECORATORS */
 ///////////////////////
 
+/** @see `DBOS.requiredRole` */
 export function RequiredRole(anyOf: string[]) {
   function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
     target: object,

@@ -5,29 +5,51 @@ import { DBOSInitializationError } from './error';
 import { globalParams } from './utils';
 
 /**
- Limit the maximum number of functions from this queue
-   that can be started in a given period.
- If the limit is 5 and the period is 10, no more than 5 functions can be
-   started per 10 seconds.
-*/
+ * Limit the maximum number of functions started from a `WorkflowQueue`
+ *   per given time period.
+ * If the limit is 5 and the period is 10, no more than 5 functions can be
+ *   started per 10 seconds.
+ */
 interface QueueRateLimit {
+  /** Number of queue dispateches per `periodSec` */
   limitPerPeriod: number;
+  /** Period of time during which `limitPerPeriod` queued workflows may be dispatched */
   periodSec: number;
 }
 
+/**
+ * Limit the number of concurrent workflows running for a queue.
+ * This limit may be per worker or global
+ */
 export interface QueueParameters {
+  /** If defined, this limits the number of running workflows for a single DBOS process */
   workerConcurrency?: number;
+  /** If defined, this limits the number of running workflows globally in the app */
   concurrency?: number;
+  /** If set, this limits the rate at which queued workflows are started */
   rateLimit?: QueueRateLimit;
 }
 
+/**
+ * Settings structure for a named workflow queue.
+ * Workflow queues limit the rate and concurrency at which DBOS executes workflows.
+ * Queue policies apply to workflows started by `DBOS.startWorkflow`,
+ *   `DBOS.withWorkflowQueue`, etc.
+ */
 export class WorkflowQueue {
   readonly name: string;
   readonly concurrency?: number;
   readonly rateLimit?: QueueRateLimit;
   readonly workerConcurrency?: number;
 
+  /**
+   *
+   * @param name - Name to give the `WorkflowQueue`, accepted by `DBOS.startWorkflow`
+   * @param queueParameters - Policy for limiting workflow initiation rate and execution concurrency
+   */
   constructor(name: string, queueParameters: QueueParameters);
+
+  /** @deprecated @see QueueParameters */
   constructor(name: string, concurrency?: number, rateLimit?: QueueRateLimit);
 
   constructor(name: string, arg2?: QueueParameters | number, rateLimit?: QueueRateLimit) {

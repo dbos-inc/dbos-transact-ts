@@ -9,7 +9,11 @@ export interface QueryResultBase {
   rowCount: number;
 }
 
+/**
+ * Configuration for `@DBOS.storedProcedure` functions
+ */
 export interface StoredProcedureConfig extends TransactionConfig {
+  /** If true, execute locally rather than using in-database stored procedure */
   executeLocally?: boolean;
 }
 

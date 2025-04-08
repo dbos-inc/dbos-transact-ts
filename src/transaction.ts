@@ -6,15 +6,22 @@ import { DBOSContext, DBOSContextImpl } from './context';
 import { ValuesOf } from './utils';
 import { GlobalLogger as Logger } from './telemetry/logs';
 
-// Can we gradually call it TransactionFunction?
+/** @deprecated */
 export type Transaction<T extends unknown[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
+/** @deprecated */
 export type TransactionFunction<T extends unknown[], R> = Transaction<T, R>;
 
+/**
+ * Configuration for `@DBOS.transaction` functions
+ */
 export interface TransactionConfig {
+  /** Isolation level to request from underlying app database */
   isolationLevel?: IsolationLevel;
+  /** If set, request read-only transaction from underlying app database */
   readOnly?: boolean;
 }
 
+/** Isolation typically supported by application databases */
 export const IsolationLevel = {
   ReadUncommitted: 'READ UNCOMMITTED',
   ReadCommitted: 'READ COMMITTED',

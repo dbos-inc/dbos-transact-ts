@@ -124,6 +124,11 @@ export interface DBOSExecutorContext {
    *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
    *       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
    *       The upsert returns the current record, which is useful if it is more recent.
+   *
+   * Examples of state that could be kept:
+   *   Offsets into kafka topics, per topic partition
+   *   Last time for which a scheduling service completed schedule dispatch
+   *
    * @param service - should be unique to the event receiver keeping state, to separate from others
    * @param workflowFnName - function name; should be the fully qualified / unique function name dispatched
    * @param key - The subitem kept by event receiver service for the function, allowing multiple values to be stored per function

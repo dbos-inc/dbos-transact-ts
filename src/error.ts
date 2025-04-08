@@ -130,8 +130,11 @@ export class DBOSDataValidationError extends DBOSError {
   }
 }
 
-// This error is thrown by applications.
 const ResponseError = 11;
+/**
+ * This error can be thrown by DBOS applications to indicate
+ *  the HTTP response code, in addition to the message.
+ */
 export class DBOSResponseError extends DBOSError {
   constructor(
     msg: string,
