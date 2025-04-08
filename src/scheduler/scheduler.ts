@@ -9,7 +9,7 @@ import { Workflow } from '../workflow';
 ////
 
 /**
- * Choices for scheduler mode
+ * Choices for scheduler mode for `@DBOS.scheduled` workflows
  */
 export enum SchedulerMode {
   /**
@@ -29,7 +29,7 @@ export enum SchedulerMode {
  * Configuration for a `@DBOS.scheduled` workflow
  */
 export class SchedulerConfig {
-  /** Schedule, in 5- or 6-spot crontab format; defaults to every minute */
+  /** Schedule, in 5- or 6-spot crontab format; defaults to scheduling every minute */
   crontab: string = '* * * * *';
   /**
    * Indicates whether or not to retroactively start workflows that were scheduled during
@@ -51,7 +51,7 @@ export interface SchedulerRegistrationBase extends MethodRegistrationBase {
   schedulerConfig?: SchedulerConfig;
 }
 
-/** @deprecated Remove `WorkflowContext` argument and use `@DBOS.scheduled` */
+/** @deprecated Remove decorated method's `WorkflowContext` argument and use `@DBOS.scheduled` */
 export function Scheduled(schedulerConfig: SchedulerConfig) {
   function scheddec<This, Ctx extends WorkflowContext, Return>(
     target: object,

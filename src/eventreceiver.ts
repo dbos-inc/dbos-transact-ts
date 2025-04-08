@@ -71,7 +71,7 @@ export interface DBOSExecutorContext {
 
   /**
    * Invoke a workflow function.
-   *  Note that functions can enqueued directly with DBOS.startWorkflow instead of using this interface.
+   *  Note that functions can be enqueued directly with `DBOS.startWorkflow` instead of using this interface.
    */
   workflow<T extends unknown[], R>(
     wf: WorkflowFunction<T, R>,
@@ -103,7 +103,7 @@ export interface DBOSExecutorContext {
   /** Get an event set by a workflow.  Note that `DBOS.getEvent` can be used instead. */
   getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
   /** Retrieve a workflow handle given the workflow ID.  Note that `DBOS.retrieveWorkflow` can be used instead */
-  retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
+  retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R>;
   /** @deprecated */
   flushWorkflowBuffers(): Promise<void>;
   /** @deprecated Use functions on `DBOS` */
@@ -123,7 +123,6 @@ export interface DBOSExecutorContext {
    *   The full key for the database state should include the service, function, and item.
    *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
    *       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
-   *       The upsert returns the current record, which is useful if it is more recent.
    *
    * Examples of state that could be kept:
    *   Offsets into kafka topics, per topic partition
