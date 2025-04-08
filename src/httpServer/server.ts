@@ -232,11 +232,15 @@ export class DBOSHttpServer {
    * Deactivate consumers so that they don't start new workflows.
    *
    */
+  static isDeactivated = false;
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-      dbosExec.logger.info(
-        `Deactivating DBOS executor ${globalParams.executorID} with version ${globalParams.appVersion}. This executor will complete existing workflows but will not start new workflows.`,
-      );
+      if (!DBOSHttpServer.isDeactivated) {
+        dbosExec.logger.info(
+          `Deactivating DBOS executor ${globalParams.executorID} with version ${globalParams.appVersion}. This executor will complete existing workflows but will not start new workflows.`,
+        );
+        DBOSHttpServer.isDeactivated = true;
+      }
       await dbosExec.deactivateEventReceivers();
       dbosExec.logger.info('Deactivating Event Receivers');
       koaCtxt.body = 'Deactivated';
