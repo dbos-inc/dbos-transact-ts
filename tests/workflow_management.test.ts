@@ -794,7 +794,7 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
     await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(3);
     expect(wfsteps[0].function_id).toBe(0);
     expect(wfsteps[0].function_name).toBe('stepOne');
@@ -812,12 +812,12 @@ describe('test-list-steps', () => {
     await DBOS.startWorkflow(TestListSteps, { workflowID: wfid2 }).sendWorkflow(wfid1);
 
     await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid1);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid1);
     expect(wfsteps.length).toBe(2);
-    expect(wfsteps[0].function_name).toBe('DBOS.sleep');
-    expect(wfsteps[1].function_name).toBe('DBOS.recv');
+    expect(wfsteps[1].function_name).toBe('DBOS.sleep');
+    expect(wfsteps[0].function_name).toBe('DBOS.recv');
 
-    const wfsteps2 = await listWorkflowSteps(config, wfid2);
+    const wfsteps2 = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid2);
     expect(wfsteps2[0].function_id).toBe(0);
     expect(wfsteps2[0].function_name).toBe('DBOS.send');
   });
@@ -826,17 +826,17 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).setEventWorkflow();
     await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(3);
     expect(wfsteps[0].function_name).toBe('DBOS.setEvent');
-    expect(wfsteps[2].function_name).toBe('DBOS.getEvent');
+    expect(wfsteps[1].function_name).toBe('DBOS.getEvent');
   });
 
   test('test-call-child-workflow-first', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowfirst();
     const childID = await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('testWorkflow');
     expect(wfsteps[0].function_id).toBe(0);
@@ -865,7 +865,7 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowMiddle();
     await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('testWorkflow');
@@ -878,7 +878,7 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowLast();
     await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('stepTwo');
@@ -891,7 +891,7 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowFirst();
     const childID = await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('testWorkflow');
     expect(wfsteps[0].function_id).toBe(0);
@@ -912,7 +912,7 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowMiddle();
     await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('testWorkflow');
@@ -925,7 +925,7 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowLast();
     await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('stepTwo');
@@ -938,7 +938,7 @@ describe('test-list-steps', () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).directCallWorkflow();
     const childID = await handle.getResult();
-    const wfsteps = await listWorkflowSteps(config, wfid);
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(4);
     expect(wfsteps[0].function_name).toBe('testWorkflow');
     expect(wfsteps[0].function_id).toBe(0);
@@ -959,7 +959,7 @@ describe('test-list-steps', () => {
     let wfid = uuidv4();
     let handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callFailingStep();
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
-    let wfsteps = await listWorkflowSteps(config, wfid);
+    let wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].function_name).toBe('failingStep');
     expect(wfsteps[0].output).toBe(null);
@@ -969,7 +969,7 @@ describe('test-list-steps', () => {
     wfid = uuidv4();
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).startFailingStep();
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
-    wfsteps = await listWorkflowSteps(config, wfid);
+    wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(2);
     expect(wfsteps[0].function_name).toBe('temp_workflow-step-failingStep');
     expect(wfsteps[0].output).toBe(null);
@@ -983,7 +983,9 @@ describe('test-list-steps', () => {
     wfid = uuidv4();
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueFailingStep();
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
-    wfsteps = await listWorkflowSteps(config, wfid);
+
+    wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+
     expect(wfsteps.length).toBe(2);
     expect(wfsteps[0].function_name).toBe('temp_workflow-step-failingStep');
     expect(wfsteps[0].output).toBe(null);
