@@ -82,12 +82,7 @@ import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DBOSScheduler } from './scheduler/scheduler';
-import {
-  DBOSEventReceiverState,
-  DBOSEventReceiverQuery,
-  DBNotificationCallback,
-  DBNotificationListener,
-} from './eventreceiver';
+import { DBOSEventReceiverState, DBNotificationCallback, DBNotificationListener } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
 
@@ -2036,9 +2031,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {
     return await this.systemDatabase.getEventDispatchState(svc, wfn, key);
-  }
-  async queryEventDispatchState(query: DBOSEventReceiverQuery): Promise<DBOSEventReceiverState[]> {
-    return await this.systemDatabase.queryEventDispatchState(query);
   }
   async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
     return await this.systemDatabase.upsertEventDispatchState(state);

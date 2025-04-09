@@ -279,7 +279,7 @@ class SQSReceiver implements DBOSEventReceiver {
                   }),
                 );
               } catch (e) {
-                executor.logger.error(e);
+                DBOS.logger.error(e);
               }
             }
           })(sqs, url),
@@ -290,8 +290,7 @@ class SQSReceiver implements DBOSEventReceiver {
 
   logRegisteredEndpoints() {
     if (!this.executor) return;
-    const logger = this.executor.logger;
-    logger.info('SQS receiver endpoints:');
+    DBOS.logger.info('SQS receiver endpoints:');
     const regops = this.executor.getRegistrationsFor(this);
     regops.forEach((registeredOperation) => {
       const co = registeredOperation.classConfig as SQSReceiverClassDefaults;
@@ -300,7 +299,7 @@ class SQSReceiver implements DBOSEventReceiver {
       if (url) {
         const cname = registeredOperation.methodReg.className;
         const mname = registeredOperation.methodReg.name;
-        logger.info(`    ${url} -> ${cname}.${mname}`);
+        DBOS.logger.info(`    ${url} -> ${cname}.${mname}`);
       }
     });
   }
