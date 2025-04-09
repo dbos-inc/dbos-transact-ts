@@ -370,6 +370,11 @@ function registerClassInstance(inst: ConfiguredInstance, name: string) {
 export abstract class ConfiguredInstance {
   readonly name: string;
   constructor(name: string) {
+    if (dbosLaunchPoint) {
+      console.warn(
+        `ConfiguredInstance '${name}' is being created after DBOS initialization and was not available for recovery.`,
+      );
+    }
     this.name = name;
     registerClassInstance(this, name);
   }
@@ -721,6 +726,15 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
   return clsReg;
 }
 
+/**
+ * Associates a class with a `DBOSEventReceiver`, which will be calling the class's DBOS methods.
+ * Allows class-level default values or other storage to be associated with the class, rather than
+ *   separately for each registered method.
+ *
+ * @param rcvr - Event receiver which will dispatch DBOS methods from the class specified by `ctor`
+ * @param ctor - Constructor of the class that is being registered and associated with `rcvr`
+ * @returns - Class-specific registration info cumulatively collected for `rcvr`
+ */
 export function associateClassWithEventReceiver<CT extends { new (...args: unknown[]): object }>(
   rcvr: DBOSEventReceiver,
   ctor: CT,
@@ -732,6 +746,17 @@ export function associateClassWithEventReceiver<CT extends { new (...args: unkno
   return clsReg.eventReceiverInfo.get(rcvr)!;
 }
 
+/**
+ * Associates a workflow method with a `DBOSEventReceiver` which will be in charge of calling the method
+ *   in response to received events.
+ * This version is to be used in "Stage 2" decorators, as it applies the DBOS wrapper to the registered method.
+ *
+ * @param rcvr - `DBOSEventReceiver` instance that should be informed of the `target` method's registration
+ * @param target - A DBOS method to associate with the event receiver
+ * @param propertyKey - For Stage 2 decorator use, this is the property key used for replacing the method with its wrapper
+ * @param inDescriptor - For Stage 2 decorator use, this is the method descriptor used for replacing the method with its wrapper
+ * @returns The new method descriptor, registration, and event receiver info
+ */
 export function associateMethodWithEventReceiver<This, Args extends unknown[], Return>(
   rcvr: DBOSEventReceiver,
   target: object,
@@ -838,6 +863,7 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]): object 
   clsreg.argRequiredEnabled = true;
 }
 
+/** @deprecated Use `new` */
 export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
   cls: new (name: string, ...args: T) => R,
   name: string,
@@ -851,6 +877,7 @@ export function configureInstance<R extends ConfiguredInstance, T extends unknow
 /* METHOD DECORATORS */
 ///////////////////////
 
+/** @see `DBOS.requiredRole` */
 export function RequiredRole(anyOf: string[]) {
   function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
     target: object,
@@ -865,6 +892,14 @@ export function RequiredRole(anyOf: string[]) {
   return apidec;
 }
 
+/**
+ * @deprecated Use `@DBOS.workflow`
+ * To upgrade to DBOS 2.0+ syntax:
+ *   Use `@DBOS.workflow` to decorate the method
+ *   Remove the `WorkflowContext` parameter
+ *   Use `DBOS` instead of the context to access DBOS functions
+ *   Change all callers of the decorated function to call the function directly, or with `DBOS.startWorkflow`
+ */
 export function Workflow(config: WorkflowConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -878,6 +913,14 @@ export function Workflow(config: WorkflowConfig = {}) {
   return decorator;
 }
 
+/**
+ * @deprecated Use `@DBOS.transaction`
+ * To upgrade to DBOS 2.0+ syntax:
+ *   Use `@DBOS.transaction` to decorate the method
+ *   Remove the `TransactionContext` parameter
+ *   Use `DBOS` instead of the context to access DBOS functions
+ *   Change all callers to call the decorated function directly
+ */
 export function Transaction(config: TransactionConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -892,6 +935,13 @@ export function Transaction(config: TransactionConfig = {}) {
   return decorator;
 }
 
+/**
+ * @deprecated Use `@DBOS.storedProcedure`
+ * To upgrade to DBOS 2.0+ syntax:
+ *   Use `@DBOS.storedProcedure` to decorate the method
+ *   Remove the context parameter and use `DBOS` instead of the context to access DBOS functions
+ *   Change all callers to call the decorated function directly
+ */
 export function StoredProcedure(config: StoredProcedureConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -905,6 +955,14 @@ export function StoredProcedure(config: StoredProcedureConfig = {}) {
   return decorator;
 }
 
+/**
+ * @deprecated Use `@DBOS.step`
+ * To upgrade to DBOS 2.0+ syntax:
+ *   Use `@DBOS.step` to decorate the method
+ *   Remove the `StepContext` parameter
+ *   Use `DBOS` instead of the context to access DBOS functions
+ *   Change all callers to call the decorated function directly
+ */
 export function Step(config: StepConfig = {}) {
   function decorator<This, Args extends unknown[], Return>(
     target: object,

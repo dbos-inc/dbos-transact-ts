@@ -2,7 +2,7 @@ import { DBOS } from '../src';
 import { v1 as uuidv1 } from 'uuid';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 
 const testTableName = 'dbos_concurrency_test_kv';
 
@@ -41,17 +41,17 @@ describe('concurrency-tests', () => {
   });
 
   test('concurrent-workflow', async () => {
-    // Invoke testWorkflow twice with the same UUID and flush workflow output buffer right before the second transaction starts.
+    // Invoke testWorkflow twice with the same UUID and the first one completes right before the second transaction starts.
     // The second transaction should get the correct recorded execution without being executed.
     const uuid = uuidv1();
-    await (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow()).getResult();
-    const handle = await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow();
+    const handle1 = await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow();
+    const handle2 = await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow();
     await ConcurrTestClass.promise2;
+    ConcurrTestClass.resolve3();
+    await handle1.getResult();
 
-    const dbosExec = DBOSExecutor.globalInstance!;
-    await dbosExec.flushWorkflowBuffers();
     ConcurrTestClass.resolve();
-    await handle.getResult();
+    await handle2.getResult();
 
     expect(ConcurrTestClass.cnt).toBe(1);
     expect(ConcurrTestClass.wfCnt).toBe(2);
@@ -111,6 +111,11 @@ class ConcurrTestClass {
     ConcurrTestClass.resolve2 = r;
   });
 
+  static resolve3: () => void;
+  static promise3 = new Promise<void>((r) => {
+    ConcurrTestClass.resolve3 = r;
+  });
+
   @DBOS.transaction()
   static async testReadWriteFunction(id: number) {
     await DBOS.pgClient.query(`INSERT INTO ${testTableName}(id, value) VALUES ($1, $2)`, [1, id]);
@@ -123,6 +128,8 @@ class ConcurrTestClass {
     if (ConcurrTestClass.wfCnt++ === 1) {
       ConcurrTestClass.resolve2();
       await ConcurrTestClass.promise;
+    } else {
+      await ConcurrTestClass.promise3;
     }
     await ConcurrTestClass.testReadWriteFunction(1);
   }

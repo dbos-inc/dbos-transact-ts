@@ -157,12 +157,8 @@ export class PGNodeUserDatabase implements UserDatabase {
   ): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try {
-      const readOnly = config.readOnly ?? false;
       const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
       await client.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
-      if (readOnly) {
-        await client.query(`SET TRANSACTION READ ONLY`);
-      }
       const result: R = await txn(client, ...args);
       await client.query(`COMMIT`);
       return result;
@@ -538,7 +534,7 @@ export class KnexUserDatabase implements UserDatabase {
       async (transactionClient: Knex.Transaction) => {
         return await transactionFunction(transactionClient, ...args);
       },
-      { isolationLevel: isolationLevel, readOnly: config.readOnly ?? false },
+      { isolationLevel: isolationLevel },
     );
     return result;
   }
@@ -659,7 +655,7 @@ export class DrizzleUserDatabase implements UserDatabase {
     } else {
       isolationLevel = 'serializable';
     }
-    const accessMode: 'read only' | 'read write' = config.readOnly ? 'read only' : 'read write';
+    const accessMode = 'read write';
     const result = await this.db.transaction<R>(
       async (tx: DrizzleClient) => {
         return await transactionFunction(tx, ...args);

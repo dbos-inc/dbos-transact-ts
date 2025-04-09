@@ -9,6 +9,7 @@ import {
   getAppLogs,
   createSecret,
   listSecrets,
+  deleteSecret,
 } from './applications/index.js';
 import { Command } from 'commander';
 import { login } from './users/login.js';
@@ -25,7 +26,7 @@ import {
   connect,
 } from './databases/databases.js';
 import { launchDashboard, getDashboardURL, deleteDashboard } from './dashboards/dashboards.js';
-import { DBOSCloudHost, credentialsExist, dbosConfigFilePath, deleteCredentials, getLogger } from './cloudutils.js';
+import { DBOSCloudHost, credentialsExist, deleteCredentials, getLogger } from './cloudutils.js';
 import { getAppInfo } from './applications/get-app-info.js';
 import promptSync from 'prompt-sync';
 import chalk from 'chalk';
@@ -219,18 +220,6 @@ applicationCommands
   );
 
 applicationCommands
-  .command('rollback')
-  .description('Deploy this application to the cloud and run associated database rollback commands')
-  .argument('[string]', 'application name (Default: name from package.json)')
-  .action(async (appName: string | undefined) => {
-    console.warn(
-      `dbos-cloud app rollback is deprecated. Please use 'dbos-cloud db connect' instead and run rollback commands locally`,
-    );
-    const exitCode = await deployAppCode(DBOSCloudHost, true, null, false, null, appName);
-    process.exit(exitCode);
-  });
-
-applicationCommands
   .command('change-database-instance')
   .description("Change this application's database instance and redeploy it")
   .argument('[string]', 'application name (Default: name from package.json)')
@@ -306,15 +295,16 @@ applicationCommands
   });
 
 const secretsCommands = applicationCommands
-  .command('secret')
+  .command('env')
+  .alias('environment')
   .alias('secrets')
   .alias('sec')
-  .alias('env')
-  .description('Manage your application environment and secrets');
+  .alias('secret')
+  .description('Manage your application environment variables');
 
 secretsCommands
   .command('create')
-  .description('Create a secret for this application')
+  .description('Create an environment variable for this application')
   .argument('[string]', 'application name (Default: name from package.json)')
   .requiredOption('-s, --name <string>', 'Specify the name of the variable to create')
   .requiredOption('-v, --value <string>', 'Specify the value of the variable')
@@ -325,7 +315,7 @@ secretsCommands
 
 secretsCommands
   .command('import')
-  .description('Import environment variables and secrets from a dotenv file')
+  .description('Import environment variables from a dotenv file')
   .argument('[string]', 'application name (Default: name from package.json)')
   .requiredOption('-d, --dotenv <string>', 'Path to a dotenv file')
   .action(async (appName: string | undefined, options: { dotenv: string }) => {
@@ -335,11 +325,21 @@ secretsCommands
 
 secretsCommands
   .command('list')
-  .description('List secrets for this application')
+  .description('List environment variables for this application')
   .argument('[string]', 'application name (Default: name from package.json)')
   .option('--json', 'Emit JSON output')
   .action(async (appName: string | undefined, options: { json: boolean }) => {
     const exitCode = await listSecrets(DBOSCloudHost, appName, options.json);
+    process.exit(exitCode);
+  });
+
+secretsCommands
+  .command('delete')
+  .description('Delete an environment variable for this application')
+  .argument('[string]', 'application name (Default: name from package.json)')
+  .requiredOption('-s, --name <string>', 'Specify the name of the variable to delete')
+  .action(async (appName: string | undefined, options: { name: string }) => {
+    const exitCode = await deleteSecret(DBOSCloudHost, appName, options.name);
     process.exit(exitCode);
   });
 
@@ -466,22 +466,14 @@ databaseCommands
   });
 
 databaseCommands
-  .command('connect')
-  .description(`Load cloud database connection information into ${dbosConfigFilePath}`)
+  .command('url')
+  .alias('connect')
+  .description(`Display your cloud database connection URL`)
   .argument('[name]', 'database instance name')
   .option('-W, --password <string>', 'Specify the database user password')
-  .action(async (dbname: string | undefined, options: { password: string | undefined }) => {
-    const exitCode = await connect(DBOSCloudHost, dbname, options.password, false);
-    process.exit(exitCode);
-  });
-
-databaseCommands
-  .command('local')
-  .description(`Configure ${dbosConfigFilePath} to use a DBOS Cloud database for local development`)
-  .argument('[name]', 'database instance name')
-  .option('-W, --password <string>', 'Specify the database user password')
-  .action(async (dbname: string | undefined, options: { password: string | undefined }) => {
-    const exitCode = await connect(DBOSCloudHost, dbname, options.password, true);
+  .option('-S, --show-password', 'Show the password in the output')
+  .action(async (dbname: string | undefined, options: { password: string | undefined; showPassword: boolean }) => {
+    const exitCode = await connect(DBOSCloudHost, dbname, options.password, options.showPassword);
     process.exit(exitCode);
   });
 

@@ -7,8 +7,8 @@ import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import { ExportResult, ExportResultCode } from '@opentelemetry/core';
 
 export interface OTLPExporterConfig {
-  logsEndpoint?: string;
-  tracesEndpoint?: string;
+  logsEndpoint?: string[];
+  tracesEndpoint?: string[];
 }
 
 export interface ITelemetryExporter {
@@ -17,20 +17,28 @@ export interface ITelemetryExporter {
 }
 
 export class TelemetryExporter implements ITelemetryExporter {
-  private readonly tracesExporter?: OTLPTraceExporter;
-  private readonly logsExporter?: OTLPLogExporter;
+  private readonly tracesExporters: OTLPTraceExporter[] = [];
+  private readonly logsExporters: OTLPLogExporter[] = [];
   constructor(config: OTLPExporterConfig) {
     if (config.tracesEndpoint) {
-      this.tracesExporter = new OTLPTraceExporter({
-        url: config.tracesEndpoint,
-      });
-      console.log(`Traces will be exported to ${config.tracesEndpoint}`);
+      for (const endpoint of config.tracesEndpoint) {
+        this.tracesExporters.push(
+          new OTLPTraceExporter({
+            url: endpoint,
+          }),
+        );
+        console.log(`Traces will be exported to ${endpoint}`);
+      }
     }
     if (config.logsEndpoint) {
-      this.logsExporter = new OTLPLogExporter({
-        url: config.logsEndpoint,
-      });
-      console.log(`Logs will be exported to ${config.logsEndpoint}`);
+      for (const endpoint of config.logsEndpoint) {
+        this.logsExporters.push(
+          new OTLPLogExporter({
+            url: endpoint,
+          }),
+        );
+        console.log(`Logs will be exported to ${endpoint}`);
+      }
     }
   }
 
@@ -49,7 +57,7 @@ export class TelemetryExporter implements ITelemetryExporter {
     const tasks: Promise<void>[] = [];
     // A short-lived app that exits before the callback of export() will lose its data.
     // We wrap these callbacks in promise objects to make sure we wait for them:
-    if (exportSpans.length > 0 && this.tracesExporter) {
+    if (exportSpans.length > 0 && this.tracesExporters.length > 0) {
       const traceExportTask = new Promise<void>((resolve) => {
         const exportCallback = (results: ExportResult) => {
           if (results.code !== ExportResultCode.SUCCESS) {
@@ -58,11 +66,13 @@ export class TelemetryExporter implements ITelemetryExporter {
           }
           resolve();
         };
-        this.tracesExporter?.export(exportSpans, exportCallback);
+        for (const exporter of this.tracesExporters) {
+          exporter.export(exportSpans, exportCallback);
+        }
       });
       tasks.push(traceExportTask);
     }
-    if (exportLogs.length > 0 && this.logsExporter) {
+    if (exportLogs.length > 0 && this.logsExporters.length > 0) {
       const logExportTask = new Promise<void>((resolve) => {
         const exportCallback = (results: ExportResult) => {
           if (results.code !== ExportResultCode.SUCCESS) {
@@ -71,7 +81,9 @@ export class TelemetryExporter implements ITelemetryExporter {
           }
           resolve();
         };
-        this.logsExporter?.export(exportLogs, exportCallback);
+        for (const exporter of this.logsExporters) {
+          exporter.export(exportLogs, exportCallback);
+        }
       });
       tasks.push(logExportTask);
     }
@@ -79,7 +91,11 @@ export class TelemetryExporter implements ITelemetryExporter {
   }
 
   async flush() {
-    await this.logsExporter?.forceFlush();
-    await this.tracesExporter?.forceFlush();
+    for (const exporter of this.tracesExporters) {
+      await exporter.forceFlush();
+    }
+    for (const exporter of this.logsExporters) {
+      await exporter.forceFlush();
+    }
   }
 }

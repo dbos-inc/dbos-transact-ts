@@ -1,15 +1,35 @@
-export { createTestingRuntime, TestingRuntime } from './testing/testing_runtime';
-
-export { DBOSContext } from './context';
+export { DBOS } from './dbos';
 
 export { DBOSClient } from './client';
 
-export { TransactionContext, TransactionConfig, TransactionFunction } from './transaction';
+export { SchedulerMode, SchedulerConfig, Scheduled } from './scheduler/scheduler';
+
+export {
+  // Extensions for others to register event receivers/pollers
+  associateMethodWithEventReceiver,
+  associateClassWithEventReceiver,
+} from './decorators';
+
+export {
+  DBOSEventReceiver,
+  DBOSEventReceiverRegistration,
+  DBOSExecutorContext,
+  DBNotification,
+  DBNotificationListener,
+  DBOSEventReceiverState,
+} from './eventreceiver';
+
+export { WorkflowQueue } from './wfqueue';
+
+export * as Error from './error';
+
+export { DBOSResponseError } from './error';
+
+export { TransactionConfig, TransactionFunction } from './transaction';
 
 export { StoredProcedureContext, StoredProcedureConfig } from './procedure';
 
 export {
-  WorkflowContext,
   WorkflowConfig,
   WorkflowHandle,
   WorkflowFunction,
@@ -19,17 +39,22 @@ export {
 } from './workflow';
 
 export {
-  StepContext as CommunicatorContext,
   StepConfig as CommunicatorConfig,
   StepFunction as CommunicatorFunction,
-  StepContext,
   StepConfig,
   StepFunction,
 } from './step';
 
-export * as Error from './error';
+export {
+  // Method Decorators
+  DBOSInitializer,
+  RequiredRole,
 
-export { DBOSResponseError } from './error';
+  // Class Instances
+  ConfiguredInstance,
+} from './decorators';
+
+// Items under redesign for v3
 
 export {
   LogMasks,
@@ -48,43 +73,16 @@ export {
   DefaultArgRequired,
   DefaultArgOptional,
   DefaultArgValidate,
-  // Typeorm Class Decorators
+
+  // ORM Class Decorators
   OrmEntities,
-
-  // Class Instances
-  ConfiguredInstance,
-  configureInstance,
-
-  // Method Decorators
-  Transaction,
-  Workflow,
-  Step,
-  Step as Communicator,
-  StoredProcedure,
-  RequiredRole,
-  DBOSInitializer,
-  DBOSDeploy,
-
-  // Extensions for others to register event receivers/pollers
-  associateMethodWithEventReceiver,
-  associateClassWithEventReceiver,
 } from './decorators';
 
-export { ArgSources } from './httpServer/handlerTypes';
+export { ParseOptions, parseConfigFile } from './dbos-runtime/config';
 
-export {
-  HandlerContext,
+export { DBOSRuntimeConfig } from './dbos-runtime/runtime';
 
-  // Endpoint Parameter Decorators
-  ArgSource,
-
-  // Endpoint Decorators
-  GetApi,
-  PostApi,
-  PatchApi,
-  PutApi,
-  DeleteApi,
-} from './httpServer/handler';
+export { DBOSConfig } from './dbos-executor';
 
 export {
   DBOSHttpAuthMiddleware,
@@ -97,31 +95,58 @@ export {
   KoaCors,
   KoaGlobalMiddleware,
   KoaMiddleware,
+} from './httpServer/middleware';
 
+export { ArgSources } from './httpServer/handlerTypes';
+
+export {
+  // Endpoint Parameter Decorators
+  ArgSource,
+} from './httpServer/handler';
+
+// Deprecated items below here...
+
+export { Kafka, KafkaConsume } from './kafka/kafka';
+
+export { createTestingRuntime, TestingRuntime } from './testing/testing_runtime';
+
+export { DBOSContext } from './context';
+
+export { InitContext } from './dbos';
+
+export {
+  HandlerContext,
+
+  // Endpoint Decorators
+  GetApi,
+  PostApi,
+  PatchApi,
+  PutApi,
+  DeleteApi,
+} from './httpServer/handler';
+
+export {
+  // Method Decorators
+  Transaction,
+  Workflow,
+  Step,
+  Step as Communicator,
+  StoredProcedure,
+  DBOSDeploy,
+} from './decorators';
+
+export {
   // OpenApi Decorators
   OpenApiSecurityScheme,
 } from './httpServer/middleware';
 
-export { Kafka, KafkaConsume } from './kafka/kafka';
+export { TransactionContext } from './transaction';
 
-export { SchedulerMode, SchedulerConfig, Scheduled } from './scheduler/scheduler';
+export { WorkflowContext } from './workflow';
+
+export { StepContext as CommunicatorContext, StepContext } from './step';
 
 export {
-  DBOSEventReceiver,
-  DBOSEventReceiverRegistration,
-  DBOSExecutorContext,
-  DBNotification,
-  DBNotificationListener,
-  DBOSEventReceiverQuery,
-  DBOSEventReceiverState,
-} from './eventreceiver';
-
-export { ParseOptions, parseConfigFile } from './dbos-runtime/config';
-
-export { DBOSRuntimeConfig } from './dbos-runtime/runtime';
-
-export { DBOSConfig } from './dbos-executor';
-
-export { WorkflowQueue } from './wfqueue';
-
-export { DBOS, InitContext } from './dbos';
+  // Class Instances
+  configureInstance,
+} from './decorators';

@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { DBOSExecutor, OperationType } from './dbos-executor';
-import { IsolationLevel, Transaction, TransactionContext } from './transaction';
+import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
 import { SystemDatabase } from './system_database';
-import { UserDatabaseClient } from './user_database';
 import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
@@ -12,7 +11,9 @@ import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
 import { serializeError } from 'serialize-error';
 
+/** @deprecated */
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
+/** @deprecated */
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
 export type ContextFreeFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
 
@@ -51,7 +52,11 @@ export interface WorkflowParams {
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
 }
 
+/**
+ * Configuration for `DBOS.workflow` functions
+ */
 export interface WorkflowConfig {
+  /** Maximum number of recovery attempts to make on workflow function, before sending to dead-letter queue */
   maxRecoveryAttempts?: number;
 }
 
@@ -123,18 +128,19 @@ export interface PgTransactionId {
   txid: string;
 }
 
-export interface BufferedResult {
-  output: unknown;
-  txn_snapshot: string;
-  created_at?: number;
-}
-
+/** Enumeration of values for workflow status */
 export const StatusString = {
+  /** Workflow has may be running */
   PENDING: 'PENDING',
+  /** Workflow complete with return value */
   SUCCESS: 'SUCCESS',
+  /** Workflow complete with error thrown */
   ERROR: 'ERROR',
+  /** Workflow has been retried the maximum number of times, without completing (SUCCESS/ERROR) */
   RETRIES_EXCEEDED: 'RETRIES_EXCEEDED',
+  /** Workflow is being, or has been, cancelled */
   CANCELLED: 'CANCELLED',
+  /** Workflow is on a `WorkflowQueue` and has not yet started */
   ENQUEUED: 'ENQUEUED',
 } as const;
 
@@ -162,6 +168,13 @@ export type WfInvokeWfsInstAsync<T> = T extends ConfiguredInstance
     }
   : never;
 
+/**
+ * @deprecated This class is no longer necessary
+ * To update to Transact 2.0+
+ *   Remove `WorkflowContext` from function parameter lists
+ *   Use `DBOS.` to access DBOS context within affected functions
+ *   Adjust callers to call the function directly, or to use `DBOS.startWorkflow`
+ */
 export interface WorkflowContext extends DBOSContext {
   invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
@@ -200,7 +213,6 @@ export interface WorkflowContext extends DBOSContext {
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
   functionID: number = 0;
   readonly #dbosExec;
-  readonly resultBuffer: Map<number, BufferedResult> = new Map<number, BufferedResult>();
   readonly isTempWorkflow: boolean;
   readonly maxRecoveryAttempts;
 
@@ -377,15 +389,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async send<T>(destinationUUID: string, message: T, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
-
-    await this.#dbosExec.userDatabase.transaction(
-      async (client: UserDatabaseClient) => {
-        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
-      },
-      { isolationLevel: IsolationLevel.ReadCommitted },
-    );
-    this.resultBuffer.clear();
-
     await this.#dbosExec.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
   }
 
@@ -400,15 +403,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   ): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
     const timeoutFunctionID: number = this.functionIDGetIncrement();
-
-    await this.#dbosExec.userDatabase.transaction(
-      async (client: UserDatabaseClient) => {
-        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
-      },
-      { isolationLevel: IsolationLevel.ReadCommitted },
-    );
-    this.resultBuffer.clear();
-
     return this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, timeoutFunctionID, topic, timeoutSeconds);
   }
 
@@ -418,15 +412,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async setEvent<T>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
-
-    await this.#dbosExec.userDatabase.transaction(
-      async (client: UserDatabaseClient) => {
-        await this.#dbosExec.flushResultBuffer(client, this.resultBuffer, this.workflowUUID);
-      },
-      { isolationLevel: IsolationLevel.ReadCommitted },
-    );
-    this.resultBuffer.clear();
-
     await this.#dbosExec.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
   }
 
