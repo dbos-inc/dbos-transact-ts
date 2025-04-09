@@ -1,6 +1,12 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { Pool, PoolConfig, PoolClient, DatabaseError as PGDatabaseError, QueryResultRow, Client } from 'pg';
-import { createUserDBSchema, userDBIndex, userDBSchema } from '../schemas/user_db_schema';
+import {
+  createUserDBSchema,
+  userDBIndex,
+  userDBSchema,
+  columnExistsQuery,
+  addColumnQuery,
+} from '../schemas/user_db_schema';
 import { IsolationLevel, TransactionConfig } from './transaction';
 import { ValuesOf } from './utils';
 import { Knex } from 'knex';
@@ -130,7 +136,13 @@ export class PGNodeUserDatabase implements UserDatabase {
       const schemaExists = await this.pool.query<ExistenceCheck>(schemaExistsQuery);
       if (!schemaExists.rows[0].exists) {
         await this.pool.query(createUserDBSchema);
+      } else {
+        const columnExists = await this.pool.query<ExistenceCheck>(columnExistsQuery);
+        if (!columnExists.rows[0].exists) {
+          await this.pool.query(addColumnQuery);
+        }
       }
+
       const txnOutputTableExists = await this.pool.query<ExistenceCheck>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
         await this.pool.query(userDBSchema);
@@ -266,6 +278,11 @@ export class PrismaUserDatabase implements UserDatabase {
       const schemaExists = await this.prisma.$queryRawUnsafe<ExistenceCheck, unknown[]>(schemaExistsQuery);
       if (!schemaExists[0].exists) {
         await this.prisma.$queryRawUnsafe(createUserDBSchema);
+      } else {
+        const columnExists = await this.prisma.$queryRawUnsafe<ExistenceCheck, unknown[]>(columnExistsQuery);
+        if (!columnExists[0].exists) {
+          await this.prisma.$queryRawUnsafe(addColumnQuery);
+        }
       }
       const txnOutputTableExists = await this.prisma.$queryRawUnsafe<ExistenceCheck, unknown[]>(
         txnOutputTableExistsQuery,
@@ -396,6 +413,11 @@ export class TypeORMDatabase implements UserDatabase {
       const schemaExists = await this.dataSource.query<ExistenceCheck[]>(schemaExistsQuery);
       if (!schemaExists[0].exists) {
         await this.dataSource.query(createUserDBSchema);
+      } else {
+        const columnExists = await this.dataSource.query<ExistenceCheck[]>(columnExistsQuery);
+        if (!columnExists[0].exists) {
+          await this.dataSource.query(addColumnQuery);
+        }
       }
       const txnOutputTableExists = await this.dataSource.query<ExistenceCheck[]>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists[0].exists) {
@@ -495,6 +517,11 @@ export class KnexUserDatabase implements UserDatabase {
       const schemaExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
       if (!schemaExists.rows[0].exists) {
         await this.knex.raw(createUserDBSchema);
+      } else {
+        const columnExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(columnExistsQuery);
+        if (!columnExists.rows[0].exists) {
+          await this.knex.raw(addColumnQuery);
+        }
       }
       const txnOutputTableExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
@@ -620,6 +647,11 @@ export class DrizzleUserDatabase implements UserDatabase {
       const schemaExists = await poolClient.query<ExistenceCheck>(schemaExistsQuery);
       if (!schemaExists.rows[0].exists) {
         await poolClient.query(createUserDBSchema);
+      } else {
+        const columnExists = await poolClient.query<ExistenceCheck>(columnExistsQuery);
+        if (!columnExists.rows[0].exists) {
+          await poolClient.query(addColumnQuery);
+        }
       }
       const txnOutputTableExists = await poolClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
