@@ -9,6 +9,7 @@ import {
   getAppLogs,
   createSecret,
   listSecrets,
+  deleteSecret,
 } from './applications/index.js';
 import { Command } from 'commander';
 import { login } from './users/login.js';
@@ -329,6 +330,16 @@ secretsCommands
   .option('--json', 'Emit JSON output')
   .action(async (appName: string | undefined, options: { json: boolean }) => {
     const exitCode = await listSecrets(DBOSCloudHost, appName, options.json);
+    process.exit(exitCode);
+  });
+
+secretsCommands
+  .command('delete')
+  .description('Delete an environment variable for this application')
+  .argument('[string]', 'application name (Default: name from package.json)')
+  .requiredOption('-s, --name <string>', 'Specify the name of the variable to delete')
+  .action(async (appName: string | undefined, options: { name: string }) => {
+    const exitCode = await deleteSecret(DBOSCloudHost, appName, options.name);
     process.exit(exitCode);
   });
 
