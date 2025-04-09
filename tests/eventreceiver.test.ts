@@ -150,36 +150,36 @@ describe('event-receiver-tests', () => {
   }, 30000);
 
   test('sysdb-el-state-time', async () => {
-    const r0 = await erd.executor!.getEventDispatchState('test', 'func', 'key0');
+    const r0 = await DBOS.getEventDispatchState('test', 'func', 'key0');
     expect(r0).toBeUndefined();
-    const r1 = await erd.executor!.upsertEventDispatchState({
+    const r1 = await DBOS.upsertEventDispatchState({
       service: 'test',
       workflowFnName: 'func',
       key: 'key0',
       value: 'V1',
     });
     expect(r1.value).toBe('V1');
-    const r2 = await erd.executor!.upsertEventDispatchState({
+    const r2 = await DBOS.upsertEventDispatchState({
       service: 'test',
       workflowFnName: 'func',
       key: 'key0',
       value: 'V0',
     });
     expect(r2.value).toBe('V0');
-    const r3 = await erd.executor!.upsertEventDispatchState({
+    const r3 = await DBOS.upsertEventDispatchState({
       service: 'test',
       workflowFnName: 'func',
       key: 'key0',
       value: 'V2',
     });
     expect(r3.value).toBe('V2');
-    expect((await erd.executor!.getEventDispatchState('test', 'func', 'key0'))?.value).toBe('V2');
+    expect((await DBOS.getEventDispatchState('test', 'func', 'key0'))?.value).toBe('V2');
   });
 
   test('sysdb-el-state-time', async () => {
-    const r0 = await erd.executor!.getEventDispatchState('test', 'func', 'key1');
+    const r0 = await DBOS.getEventDispatchState('test', 'func', 'key1');
     expect(r0).toBeUndefined();
-    const r1 = await erd.executor!.upsertEventDispatchState({
+    const r1 = await DBOS.upsertEventDispatchState({
       service: 'test',
       workflowFnName: 'func',
       key: 'key1',
@@ -187,7 +187,7 @@ describe('event-receiver-tests', () => {
       updateTime: new Date().getTime(),
     });
     expect(r1.value).toBe('V1');
-    const r2 = await erd.executor!.upsertEventDispatchState({
+    const r2 = await DBOS.upsertEventDispatchState({
       service: 'test',
       workflowFnName: 'func',
       key: 'key1',
@@ -195,7 +195,7 @@ describe('event-receiver-tests', () => {
       updateTime: new Date().getTime() - 1000,
     });
     expect(r2.value).toBe('V1');
-    const r3 = await erd.executor!.upsertEventDispatchState({
+    const r3 = await DBOS.upsertEventDispatchState({
       service: 'test',
       workflowFnName: 'func',
       key: 'key1',
@@ -203,13 +203,13 @@ describe('event-receiver-tests', () => {
       updateTime: new Date().getTime() + 1000,
     });
     expect(r3.value).toBe('V2');
-    expect((await erd.executor!.getEventDispatchState('test', 'func', 'key1'))?.value).toBe('V2');
+    expect((await DBOS.getEventDispatchState('test', 'func', 'key1'))?.value).toBe('V2');
   });
 
   test('sysdb-el-state-seqn', async () => {
-    const r0 = await erd.executor!.getEventDispatchState('test', 'func', 'key2');
+    const r0 = await DBOS.getEventDispatchState('test', 'func', 'key2');
     expect(r0).toBeUndefined();
-    const r1 = await erd.executor!.upsertEventDispatchState({
+    const r1 = await DBOS.upsertEventDispatchState({
       service: 'test',
       workflowFnName: 'func',
       key: 'key2',
@@ -217,7 +217,7 @@ describe('event-receiver-tests', () => {
       updateSeq: 111111111111111111111111111111n,
     });
     expect(r1.value).toBe('V1');
-    const r2 = await erd.executor!.upsertEventDispatchState({
+    const r2 = await DBOS.upsertEventDispatchState({
       service: 'test',
       workflowFnName: 'func',
       key: 'key2',
@@ -225,7 +225,7 @@ describe('event-receiver-tests', () => {
       updateSeq: 111111111111111111111111111110n,
     });
     expect(r2.value).toBe('V1');
-    const r3 = await erd.executor!.upsertEventDispatchState({
+    const r3 = await DBOS.upsertEventDispatchState({
       service: 'test',
       workflowFnName: 'func',
       key: 'key2',
@@ -233,9 +233,7 @@ describe('event-receiver-tests', () => {
       updateSeq: 211111111111111111111111111111n,
     });
     expect(r3.value).toBe('V2');
-    expect((await erd.executor!.getEventDispatchState('test', 'func', 'key2'))?.value).toBe('V2');
-    expect((await erd.executor!.getEventDispatchState('test', 'func', 'key2'))?.updateSeq).toBe(
-      211111111111111111111111111111n,
-    );
+    expect((await DBOS.getEventDispatchState('test', 'func', 'key2'))?.value).toBe('V2');
+    expect((await DBOS.getEventDispatchState('test', 'func', 'key2'))?.updateSeq).toBe(211111111111111111111111111111n);
   });
 });

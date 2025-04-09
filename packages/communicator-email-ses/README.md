@@ -57,8 +57,8 @@ Within a [DBOS Transact Workflow](https://docs.dbos.dev/typescript/tutorials/wor
 
 ```typescript
 const result = await defaultSES.sendEmail({
-  to: [workflowContext.getConfig('ses_to_address', 'dbos@nowhere.dev')],
-  from: workflowContext.getConfig('ses_from_address', 'info@dbos.dev'),
+  to: [DBOS.getConfig('ses_to_address', 'dbos@nowhere.dev')],
+  from: DBOS.getConfig('ses_from_address', 'info@dbos.dev'),
   subject: 'Test email from DBOS',
   bodyText: 'Check mailbox to see if it worked.',
 });
@@ -81,8 +81,8 @@ await defaultSES.createEmailTemplate('testTemplate', {
 
 ```typescript
 await defaultSES.sendTemplatedEmail({
-  to: [workflowContext.getConfig('ses_to_address', 'dbos@nowhere.dev')],
-  from: workflowContext.getConfig('ses_from_address', 'info@dbos.dev'),
+  to: [DBOS.getConfig('ses_to_address', 'dbos@nowhere.dev')],
+  from: DBOS.getConfig('ses_from_address', 'info@dbos.dev'),
   templateName: 'testTemplate',
   templateDataJSON: JSON.stringify({ todaydate: new Date().toISOString() }),
 });

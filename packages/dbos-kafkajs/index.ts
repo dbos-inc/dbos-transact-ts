@@ -151,8 +151,7 @@ export class DBOSKafka implements DBOSEventReceiver {
 
   logRegisteredEndpoints() {
     if (!this.executor) return;
-    const logger = this.executor.logger;
-    logger.info('Kafka endpoints supported:');
+    DBOS.logger.info('Kafka endpoints supported:');
     const regops = this.executor.getRegistrationsFor(this);
     regops.forEach((registeredOperation) => {
       const ro = registeredOperation.methodConfig as KafkaRegistrationInfo;
@@ -161,10 +160,10 @@ export class DBOSKafka implements DBOSEventReceiver {
         const mname = registeredOperation.methodReg.name;
         if (Array.isArray(ro.kafkaTopics)) {
           ro.kafkaTopics.forEach((kafkaTopic) => {
-            logger.info(`    ${kafkaTopic} -> ${cname}.${mname}`);
+            DBOS.logger.info(`    ${kafkaTopic} -> ${cname}.${mname}`);
           });
         } else {
-          logger.info(`    ${ro.kafkaTopics} -> ${cname}.${mname}`);
+          DBOS.logger.info(`    ${ro.kafkaTopics} -> ${cname}.${mname}`);
         }
       }
     });

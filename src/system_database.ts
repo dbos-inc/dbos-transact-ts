@@ -36,7 +36,7 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
 import path from 'path';
 import { WorkflowQueue } from './wfqueue';
-import { DBOSEventReceiverQuery, DBOSEventReceiverState } from './eventreceiver';
+import { DBOSEventReceiverState } from './eventreceiver';
 import { getCurrentDBOSContext } from './context';
 
 export interface SystemDatabase {
@@ -123,7 +123,6 @@ export interface SystemDatabase {
     workflowFnName: string,
     key: string,
   ): Promise<DBOSEventReceiverState | undefined>;
-  queryEventDispatchState(query: DBOSEventReceiverQuery): Promise<DBOSEventReceiverState[]>;
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
   // Workflow management
@@ -1164,43 +1163,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
           ? BigInt(res.rows[0].update_seq)
           : undefined,
     };
-  }
-
-  async queryEventDispatchState(input: DBOSEventReceiverQuery): Promise<DBOSEventReceiverState[]> {
-    let query = this.knexDB<event_dispatch_kv>(`${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv`);
-    if (input.service) {
-      query = query.where('service_name', input.service);
-    }
-    if (input.workflowFnName) {
-      query = query.where('workflow_fn_name', input.workflowFnName);
-    }
-    if (input.key) {
-      query = query.where('key', input.key);
-    }
-    if (input.startTime) {
-      query = query.where('update_time', '>=', new Date(input.startTime).getTime());
-    }
-    if (input.endTime) {
-      query = query.where('update_time', '<=', new Date(input.endTime).getTime());
-    }
-    if (input.startSeq) {
-      query = query.where('update_seq', '>=', input.startSeq);
-    }
-    if (input.endSeq) {
-      query = query.where('update_seq', '<=', input.endSeq);
-    }
-    const rows = await query.select();
-    const ers = rows.map((row) => {
-      return {
-        service: row.service_name,
-        workflowFnName: row.workflow_fn_name,
-        key: row.key,
-        value: row.value,
-        updateTime: row.update_time,
-        updateSeq: row.update_seq !== undefined && row.update_seq !== null ? BigInt(row.update_seq) : undefined,
-      };
-    });
-    return ers;
   }
 
   async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
