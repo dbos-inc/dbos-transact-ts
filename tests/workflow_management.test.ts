@@ -637,11 +637,6 @@ describe('test-list-steps', () => {
       throw Error('transaction error');
     }
 
-    @DBOS.transaction({ readOnly: true })
-    static async readOnlyTransaction() {
-      return Promise.resolve(DBOS.workflowID);
-    }
-
     @DBOS.workflow()
     static async sendWorkflow(target: string) {
       await DBOS.send(target, 'message1');
