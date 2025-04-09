@@ -299,7 +299,8 @@ describe('workflow-management-tests', () => {
 
     TestEndpoints.testResolve();
     // Retry the workflow, resetting the attempts counter
-    await DBOS.resumeWorkflow(handle.getWorkflowUUID());
+    const handle2 = await DBOS.resumeWorkflow(handle.getWorkflowUUID());
+    await handle2.getResult();
 
     result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
