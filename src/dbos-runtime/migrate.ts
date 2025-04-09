@@ -17,9 +17,10 @@ import {
   txnOutputTableExistsQuery,
   createDBIfDoesNotExist,
 } from '../user_database';
+import { db_wizard } from './db_wizard';
 
 export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) {
-  const poolConfig = config.poolConfig;
+  const poolConfig = await db_wizard(config.poolConfig);
   logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
   await createDBIfDoesNotExist(poolConfig, logger);
 

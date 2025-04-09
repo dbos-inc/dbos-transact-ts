@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
-import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile, constructPoolConfig } from './config';
-import { PoolConfig } from 'pg';
+import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
@@ -24,7 +23,6 @@ import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
-import { db_wizard } from './db_wizard';
 
 const program = new Command();
 
@@ -137,28 +135,6 @@ program
   .description('Perform a database migration')
   .action(async () => {
     await runAndLog(migrate);
-  });
-
-program
-  .command('postgres')
-  .description('Guides you through setting up a local Postgres database')
-  .option('-n, --appName <application-name>', 'Application name', 'dbos-hello-app')
-  .action(async (options: { appName: string }) => {
-    // Load the configuration from the config file and fallback to default values if not found
-    let config: DBOSConfigInternal;
-    let poolConfig: PoolConfig;
-    try {
-      [config] = parseConfigFile();
-      poolConfig = config.poolConfig;
-    } catch (e) {
-      poolConfig = constructPoolConfig({
-        name: options.appName,
-        database: {},
-        application: {},
-        env: {},
-      });
-    }
-    await db_wizard(poolConfig);
   });
 
 program
