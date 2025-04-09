@@ -173,3 +173,45 @@ export async function listSecrets(host: string, appName: string | undefined, jso
     return 1;
   }
 }
+
+export async function deleteSecret(host: string, appName: string | undefined, secretName: string): Promise<number> {
+  const logger = getLogger();
+  const userCredentials = await getCloudCredentials(host, logger);
+  const bearerToken = 'Bearer ' + userCredentials.token;
+
+  logger.debug('Retrieving app name...');
+  appName = appName || retrieveApplicationName(logger);
+  if (!appName) {
+    logger.error('Failed to get app name.');
+    return 1;
+  }
+  logger.debug(`  ... app name is ${appName}.`);
+
+  try {
+    const res = await axios.delete(
+      `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/secrets/${secretName}`,
+      {
+        headers: {
+          Authorization: bearerToken,
+        },
+      },
+    );
+
+    if (res.status !== 204) {
+      logger.error(`Failed to delete secrets for application ${appName}`);
+      return 1;
+    }
+
+    logger.info(`Secrets successfully deleted for application ${appName}`);
+    return 0;
+  } catch (e) {
+    const errorLabel = `Failed to delete secrets for application ${appName}`;
+    const axiosError = e as AxiosError;
+    if (isCloudAPIErrorResponse(axiosError.response?.data)) {
+      handleAPIErrors(errorLabel, axiosError);
+    } else {
+      logger.error(`${errorLabel}: ${(e as Error).message}`);
+    }
+    return 1;
+  }
+}
