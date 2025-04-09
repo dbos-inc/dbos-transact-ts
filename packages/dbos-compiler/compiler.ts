@@ -267,6 +267,7 @@ export function removeUnusedDeclarations(file: tsm.SourceFile, usedDecls: Set<ts
     // remove any other kind of node that has a remove function
     // these are typically module level statements that are  not valid for stored procedures
     if ('remove' in node && typeof node.remove === 'function') {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-call
       node.remove();
     }
   });
