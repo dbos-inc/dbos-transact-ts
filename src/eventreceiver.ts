@@ -45,7 +45,7 @@ export interface DBOSEventReceiverRegistration {
 export interface DBOSExecutorContext {
   /** Logging service; @deprecated: Use `DBOS.logger` instead. */
   readonly logger: Logger;
-  /** Tracing service; @deprecated: Use `DBOS` instead.  */
+  /** Tracing service; @deprecated: Use `DBOS.tracer` instead.  */
   readonly tracer: Tracer;
 
   /** @deprecated */
@@ -80,12 +80,14 @@ export interface DBOSExecutorContext {
   ): Promise<WorkflowHandle<R>>;
 
   /**
+   * @deprecated
    * Invoke a step function.
    *  Note that functions can be called directly instead of using this interface.
    */
   external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   /**
+   * @deprecated
    * Invoke a stored procedure function.
    *  Note that functions can be called directly instead of using this interface.
    */
@@ -116,36 +118,14 @@ export interface DBOSExecutorContext {
   resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>>;
 
   // Event receiver state queries / updates
-  /**
-   * Get a state item from the system database, which provides a key/value store interface for event dispatchers.
-   *   The full key for the database state should include the service, function, and item.
-   *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
-   *       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
-   *
-   * Examples of state that could be kept:
-   *   Offsets into kafka topics, per topic partition
-   *   Last time for which a scheduling service completed schedule dispatch
-   *
-   * @param service - should be unique to the event receiver keeping state, to separate from others
-   * @param workflowFnName - function name; should be the fully qualified / unique function name dispatched
-   * @param key - The subitem kept by event receiver service for the function, allowing multiple values to be stored per function
-   * @returns The latest system database state for the specified service+workflow+item
-   */
+  /** @see DBOS.getEventDispatchState */
   getEventDispatchState(
     service: string,
     workflowFnName: string,
     key: string,
   ): Promise<DBOSEventReceiverState | undefined>;
 
-  /**
-   * Set a state item into the system database, which provides a key/value store interface for event dispatchers.
-   *   The full key for the database state should include the service, function, and item; these fields are part of `state`.
-   *   Values are versioned.  A version can either be a sequence number (long integer), or a time (high precision floating point).
-   *     If versions are in use, any upsert is discarded if the version field is less than what is already stored.
-   *
-   * @param state - the service, workflow, item, version, and value to write to the database
-   * @returns The upsert returns the current record, which may be useful if it is more recent than the `state` provided.
-   */
+  /** @see DBOS.upsertEventDispatchState */
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
   /** @deprecated Use `DBOS.queryUserDB` */
@@ -195,14 +175,4 @@ export interface DBOSEventReceiverState {
   updateTime?: number;
   /** Updated sequence number (used to version the value) */
   updateSeq?: bigint;
-}
-
-export interface DBOSEventReceiverQuery {
-  service?: string;
-  workflowFnName?: string;
-  key?: string;
-  startTime?: number;
-  endTime?: number;
-  startSeq?: bigint;
-  endSeq?: bigint;
 }
