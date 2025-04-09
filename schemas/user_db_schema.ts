@@ -18,10 +18,25 @@ export const userDBSchema = `
     txn_id TEXT,
     txn_snapshot TEXT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
+    function_name TEXT NOT NULL DEFAULT '',
     PRIMARY KEY (workflow_uuid, function_id)
   );
 `;
 
 export const userDBIndex = `
   CREATE INDEX IF NOT EXISTS transaction_outputs_created_at_index ON dbos.transaction_outputs (created_at);
+`;
+
+export const columnExistsQuery = `
+  SELECT EXISTS (
+    SELECT FROM information_schema.columns 
+    WHERE table_schema = 'dbos' 
+      AND table_name = 'transaction_outputs' 
+      AND column_name = 'function_name'
+  ) AS exists;
+`;
+
+export const addColumnQuery = `
+  ALTER TABLE dbos.transaction_outputs 
+    ADD COLUMN function_name TEXT NOT NULL DEFAULT '';
 `;

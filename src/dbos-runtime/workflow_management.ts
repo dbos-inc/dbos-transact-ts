@@ -1,11 +1,12 @@
 import { createLogger } from 'winston';
 import { GetWorkflowsInput, StatusString } from '..';
-import { DBOSConfigInternal } from '../dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor } from '../dbos-executor';
 import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { HTTPRequest } from '../context';
 import axios from 'axios';
+import { DBOS } from '../dbos';
 
 export async function listWorkflows(
   config: DBOSConfigInternal,
@@ -46,13 +47,10 @@ export async function listQueuedWorkflows(
 }
 
 export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID: string) {
-  const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig,
-    config.system_database,
-    createLogger() as unknown as GlobalLogger,
-  );
-  const workflowSteps = await systemDatabase.getWorkflowSteps(workflowUUID);
-  await systemDatabase.destroy();
+  DBOS.setConfig(config);
+  await DBOS.launch();
+  const workflowSteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(workflowUUID);
+  await DBOS.shutdown();
   return workflowSteps;
 }
 
