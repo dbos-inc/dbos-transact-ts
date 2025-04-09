@@ -91,19 +91,18 @@ async function createDBOSTables(systemDbName: string, userPoolConfig: PoolConfig
   const schemaExists = await pgUserClient.query<ExistenceCheck>(schemaExistsQuery);
   if (!schemaExists.rows[0].exists) {
     await pgUserClient.query(createUserDBSchema);
-  } else {
-    const columnExists = await pgUserClient.query<ExistenceCheck>(columnExistsQuery);
-
-    if (!columnExists.rows[0].exists) {
-      // Column does not exist - alter table to add column
-
-      await pgUserClient.query(addColumnQuery);
-    }
   }
   const txnOutputTableExists = await pgUserClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
   if (!txnOutputTableExists.rows[0].exists) {
     await pgUserClient.query(userDBSchema);
+  } else {
+    const columnExists = await pgUserClient.query<ExistenceCheck>(columnExistsQuery);
+
+    if (!columnExists.rows[0].exists) {
+      await pgUserClient.query(addColumnQuery);
+    }
   }
+
   const txnIndexExists = await pgUserClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
   if (!txnIndexExists.rows[0].exists) {
     await pgUserClient.query(userDBIndex);
