@@ -47,17 +47,26 @@ export function compile(configFileOrProject: string | tsm.Project): CompileResul
       : configFileOrProject;
 
   const methods = project.getSourceFiles().flatMap(getStoredProcMethods).map(mapStoredProcConfig);
-
   if (methods.length === 0) {
     diagnostics.push(createDiagnostic('No stored procedure methods found'));
   } else {
     methods.forEach((m) => diagnostics.push(...checkStoredProc(m)));
   }
+
+  // bail early if there are errors at this point
   if (hasError(diagnostics)) {
     return { project, methods, diagnostics };
   }
 
-  treeShake(project, methods);
+  // A stored proc method may not call other DBOS methods (workflows, transactions, handlers, steps, etc)
+  // Explicitly remove them before continuing
+  project.getSourceFiles().forEach(removeNonProcDbosMethods);
+
+  // find all the declarations used in stored proc methods
+  const usedDecls = collectUsedDeclarations(project, methods);
+
+  // remove all declarations that aren't used by stored proc methods
+  project.getSourceFiles().forEach((file) => removeUnusedDeclarations(file, usedDecls));
 
   // Add any diagnostics from the TypeScript compiler after tree shaking
   // before we remove decorators and async/await from the code
@@ -159,25 +168,26 @@ export function checkStoredProc([method, config]: CompileMethodInfo): tsm.ts.Dia
   }
 }
 
-function treeShake(project: tsm.Project, procMethods: readonly CompileMethodInfo[]) {
-  // A stored proc may not call other DBOS methods (workflows, transactions, handlers, steps, etc)
-  // Explicitly remove them before we tree shake the project
-  project.getSourceFiles().forEach(removeNonProcDbosMethods);
+export function collectUsedDeclarations(
+  project: tsm.Project,
+  procMethods: readonly CompileMethodInfo[],
+): Set<tsm.Node> {
   const langSvc = project.getLanguageService();
 
   // find all the symbols referenced by the stored procedure methods and their dependencies
-  const usedDeclarations = new Set<tsm.Node>();
+  const usedDecls = new Set<tsm.Node>();
   for (const [method, _] of procMethods) {
     // checkStoredProc ensures all stored proc methods have valid ClassDeclaration parents
     const $class = method.getParentIfKindOrThrow(tsm.SyntaxKind.ClassDeclaration);
 
     // add stored proc method and parent class declarations to tracking set
-    usedDeclarations.add(method);
-    usedDeclarations.add($class);
+    usedDecls.add(method);
+    usedDecls.add($class);
 
     // add all identifier declarations used in the method body to the tracking set
-    processBody(method.getBody(), usedDeclarations, langSvc);
+    processBody(method.getBody(), usedDecls, langSvc);
   }
+  return usedDecls;
 
   // helper function to process the body, and the bodies of any bodied declarations found
   function processBody(body: tsm.Node | undefined, set: Set<tsm.Node>, langSvc: tsm.LanguageService) {
@@ -196,68 +206,66 @@ function treeShake(project: tsm.Project, procMethods: readonly CompileMethodInfo
       }
     });
   }
+}
 
-  // removed all the unused declarations as well as any top level non-declaration statements
-  for (const file of project.getSourceFiles()) {
-    file.forEachChild((node) => {
-      if (node.getKind() === tsm.ts.SyntaxKind.EndOfFileToken) {
-        // obviously, skip the EOF token
+export function removeUnusedDeclarations(file: tsm.SourceFile, usedDecls: Set<tsm.Node>) {
+  file.forEachChild((node) => {
+    if (node.getKind() === tsm.ts.SyntaxKind.EndOfFileToken) {
+      // obviously, skip the EOF token
+      return;
+    }
+
+    if (tsm.Node.isInterfaceDeclaration(node) || tsm.Node.isTypeAliasDeclaration(node)) {
+      // TS Compilation will remove interfaces and type aliases
+      return;
+    }
+
+    if (tsm.Node.isImportDeclaration(node)) {
+      // TS Compilation will remove unused imports
+      return;
+    }
+
+    if (tsm.Node.isClassDeclaration(node)) {
+      // remove entire class if it isn't in the tracking set of declarations
+      if (!usedDecls.has(node)) {
+        node.remove();
         return;
       }
 
-      if (tsm.Node.isInterfaceDeclaration(node) || tsm.Node.isTypeAliasDeclaration(node)) {
-        // TS Compilation will remove interfaces and type aliases
-        return;
-      }
-
-      if (tsm.Node.isImportDeclaration(node)) {
-        // TS Compilation will remove unused imports
-        return;
-      }
-
-      if (tsm.Node.isClassDeclaration(node)) {
-        // remove entire class if it isn't in the tracking set of declarations
-        if (!usedDeclarations.has(node)) {
-          node.remove();
-          return;
+      // remove any members of the class that are not in the tracking set of declarations
+      for (const member of node.getMembers()) {
+        if (!usedDecls.has(member)) {
+          member.remove();
         }
-
-        // remove any members of the class that are not in the tracking set of declarations
-        for (const member of node.getMembers()) {
-          if (!usedDeclarations.has(member)) {
-            member.remove();
-          }
-        }
-
-        return;
       }
+      return;
+    }
 
-      // remove all variable declarations that are not in the tracking set of declarations
-      // TS compiler API will remove the variable statement if there are no remaining declarations
-      if (tsm.Node.isVariableStatement(node)) {
-        for (const decl of node.getDeclarations()) {
-          if (!usedDeclarations.has(decl)) {
-            decl.remove();
-          }
+    // remove all variable declarations that are not in the tracking set of declarations
+    // TS compiler API will remove the variable statement if there are no remaining declarations
+    if (tsm.Node.isVariableStatement(node)) {
+      for (const decl of node.getDeclarations()) {
+        if (!usedDecls.has(decl)) {
+          decl.remove();
         }
-        return;
       }
+      return;
+    }
 
-      // remove all enum and function declarations that are not in the tracking set of declarations
-      if (tsm.Node.isFunctionDeclaration(node) || tsm.Node.isEnumDeclaration(node)) {
-        if (!usedDeclarations.has(node)) {
-          node.remove();
-        }
-        return;
-      }
-
-      // remove any other kind of node that has a remove function
-      // these are typically module level statements that are  not valid for stored procedures
-      if ('remove' in node && typeof node.remove === 'function') {
+    // remove all enum and function declarations that are not in the tracking set of declarations
+    if (tsm.Node.isFunctionDeclaration(node) || tsm.Node.isEnumDeclaration(node)) {
+      if (!usedDecls.has(node)) {
         node.remove();
       }
-    });
-  }
+      return;
+    }
+
+    // remove any other kind of node that has a remove function
+    // these are typically module level statements that are  not valid for stored procedures
+    if ('remove' in node && typeof node.remove === 'function') {
+      node.remove();
+    }
+  });
 }
 
 export function removeNonProcDbosMethods(file: tsm.SourceFile) {
