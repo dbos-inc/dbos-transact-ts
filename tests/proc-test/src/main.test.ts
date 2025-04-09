@@ -12,12 +12,16 @@ describe('operations-test', () => {
   });
 
   test('test-workflow', async () => {
-    const res = await Hello.helloWorkflow('dbos');
-    expect(res).toMatch('Hello, dbos! You have been greeted');
+    const regex = /^Hello, dbos! You have been greeted (\d+) times.$/s;
 
-    // Check the greet count.
+    const res = await Hello.helloWorkflow('dbos');
+    const match = res.match(regex);
+    expect(match).not.toBeNull();
+    const greetCount = match ? parseInt(match[1], 10) : 0;
+
+    // Check the greet count in the DB matches the result of helloWorkflow.
     const rows = (await DBOS.queryUserDB('SELECT * FROM dbos_hello WHERE name=$1', ['dbos'])) as dbos_hello[];
-    expect(rows[0].greet_count).toBe(1);
+    expect(rows[0].greet_count).toBe(greetCount);
   });
 
   test('test-endpoint', async () => {

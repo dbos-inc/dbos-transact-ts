@@ -9,8 +9,7 @@ export interface dbos_hello {
 export class Hello {
   @DBOS.workflow()
   static async helloWorkflow(user: string) {
-    const greeting = await Hello.helloProcedure(user);
-    return makeHTML(greeting);
+    return await Hello.helloProcedure(user);
   }
 
   @DBOS.storedProcedure()
