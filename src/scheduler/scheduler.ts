@@ -8,14 +8,35 @@ import { Workflow } from '../workflow';
 // Configuration
 ////
 
+/**
+ * Choices for scheduler mode for `@DBOS.scheduled` workflows
+ */
 export enum SchedulerMode {
+  /**
+   * Using `ExactlyOncePerInterval` causes the scheduler to add "make-up work" for any
+   *  schedule slots that occurred when the app was not running
+   */
   ExactlyOncePerInterval = 'ExactlyOncePerInterval',
+  /**
+   * Using `ExactlyOncePerIntervalWhenActive` causes the scheduler to run the workflow once
+   *  per interval when the application is active.  If the app is not running at a time
+   *  otherwise indicated by the schedule, no workflow will be run.
+   */
   ExactlyOncePerIntervalWhenActive = 'ExactlyOncePerIntervalWhenActive',
 }
 
+/**
+ * Configuration for a `@DBOS.scheduled` workflow
+ */
 export class SchedulerConfig {
-  crontab: string = '* * * * *'; // Every minute
+  /** Schedule, in 5- or 6-spot crontab format; defaults to scheduling every minute */
+  crontab: string = '* * * * *';
+  /**
+   * Indicates whether or not to retroactively start workflows that were scheduled during
+   *  times when the app was not running.  @see `SchedulerMode`.
+   */
   mode?: SchedulerMode = SchedulerMode.ExactlyOncePerIntervalWhenActive;
+  /** If set, workflows will be enqueued on the named queue, rather than being started immediately */
   queueName?: string;
 }
 
@@ -30,6 +51,7 @@ export interface SchedulerRegistrationBase extends MethodRegistrationBase {
   schedulerConfig?: SchedulerConfig;
 }
 
+/** @deprecated Remove decorated method's `WorkflowContext` argument and use `@DBOS.scheduled` */
 export function Scheduled(schedulerConfig: SchedulerConfig) {
   function scheddec<This, Ctx extends WorkflowContext, Return>(
     target: object,

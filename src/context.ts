@@ -225,6 +225,9 @@ export interface HTTPRequest {
   readonly requestID?: string; // Request ID. Gathered from headers or generated if missing.
 }
 
+/**
+ * @deprecated Use `DBOS.workflow`, `DBOS.step`, `DBOS.transaction`, and other decorators that do not pass contexts around.
+ */
 export interface DBOSContext {
   readonly request: HTTPRequest;
   readonly workflowUUID: string;
@@ -265,7 +268,6 @@ export class DBOSContextImpl implements DBOSContext {
     this.logger = new DBOSLogger(logger, this);
   }
 
-  /*** Application configuration ***/
   applicationConfig?: object;
   getConfig<T>(key: string): T | undefined;
   getConfig<T>(key: string, defaultValue: T): T;

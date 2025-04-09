@@ -1,7 +1,7 @@
 import { DBOSInitializer, DBOS } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { v1 as uuidv1 } from 'uuid';
-import { DBOSConfigInternal, DBOSExecutor, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfigInternal, DebugMode } from '../../src/dbos-executor';
 import { Client } from 'pg';
 
 const testTableName = 'debugger_test_kv';
@@ -299,7 +299,6 @@ describe('debugger-test', () => {
     // Execute again with the provided UUID.
     await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBeFalsy();
     expect(DebuggerTest.count).toBe(1);
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     await DBOS.shutdown();
 
     // Make sure we correctly record the function's class name
@@ -338,13 +337,13 @@ describe('debugger-test', () => {
     const wfUUID2 = uuidv1();
     await DBOS.withNextWorkflowID(wfUUID2, async () => {
       await expect(DebuggerTest.testFunction(username)).rejects.toThrow(
-        `DEBUGGER: Failed to find the recorded output for the transaction: workflow UUID ${wfUUID2}, step number 0`,
+        `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
       );
     });
 
     // Execute a workflow without specifying the UUID should fail.
     await expect(DebuggerTest.testFunction(username)).rejects.toThrow(
-      /DEBUGGER: Failed to find the recorded output for the transaction: workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
+      /DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
     );
     await DBOS.shutdown();
 
@@ -352,49 +351,6 @@ describe('debugger-test', () => {
     DBOS.setConfig(debugProxyConfig);
     await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
     await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
-    await DBOS.shutdown();
-  });
-
-  test('debug-read-only-transaction', async () => {
-    const wfUUID = uuidv1();
-
-    DBOS.setConfig(config);
-    await DBOS.launch();
-
-    // Execute the workflow and destroy the runtime
-    await DBOS.withNextWorkflowID(wfUUID, async () => {
-      await expect(DebuggerTest.testReadOnlyFunction(1)).resolves.toBe(2);
-    });
-    await DBOS.shutdown();
-
-    // Execute again in debug mode.
-    DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
-    await DBOS.withNextWorkflowID(wfUUID, async () => {
-      await expect(DebuggerTest.testReadOnlyFunction(1)).resolves.toBe(2);
-    });
-
-    // Execute again with the provided UUID.
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(2);
-
-    // Execute a non-exist UUID should fail.
-    const wfUUID2 = uuidv1();
-    await DBOS.withNextWorkflowID(wfUUID2, async () => {
-      await expect(DebuggerTest.testReadOnlyFunction(1)).rejects.toThrow(
-        `DEBUGGER: Failed to find the recorded output for the transaction: workflow UUID ${wfUUID2}, step number 0`,
-      );
-    });
-
-    // Execute a workflow without specifying the UUID should fail.
-    await expect(DebuggerTest.testReadOnlyFunction(1)).rejects.toThrow(
-      /DEBUGGER: Failed to find the recorded output for the transaction: workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
-    );
-    await DBOS.shutdown();
-
-    // Proxy mode should return the same result.
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(2);
     await DBOS.shutdown();
   });
 
@@ -435,7 +391,6 @@ describe('debugger-test', () => {
     );
 
     // Make sure we correctly record the function's class name
-    await DBOSExecutor.globalInstance!.flushWorkflowBuffers();
     await DBOS.shutdown();
     const result = await systemDBClient.query<{ status: string; name: string; class_name: string }>(
       `SELECT status, name, class_name FROM dbos.workflow_status WHERE workflow_uuid=$1`,

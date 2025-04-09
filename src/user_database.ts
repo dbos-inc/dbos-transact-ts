@@ -157,12 +157,8 @@ export class PGNodeUserDatabase implements UserDatabase {
   ): Promise<R> {
     const client: PoolClient = await this.pool.connect();
     try {
-      const readOnly = config.readOnly ?? false;
       const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
       await client.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
-      if (readOnly) {
-        await client.query(`SET TRANSACTION READ ONLY`);
-      }
       const result: R = await txn(client, ...args);
       await client.query(`COMMIT`);
       return result;
@@ -193,7 +189,6 @@ export class PGNodeUserDatabase implements UserDatabase {
   }
 
   async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
-    console.log('pgnode:', sql, params);
     const pgClient: PoolClient = client as PoolClient;
     return pgClient.query<QueryResultRow>(sql, params).then((value) => {
       return value.rows as R[];
@@ -539,7 +534,7 @@ export class KnexUserDatabase implements UserDatabase {
       async (transactionClient: Knex.Transaction) => {
         return await transactionFunction(transactionClient, ...args);
       },
-      { isolationLevel: isolationLevel, readOnly: config.readOnly ?? false },
+      { isolationLevel: isolationLevel },
     );
     return result;
   }
@@ -562,7 +557,6 @@ export class KnexUserDatabase implements UserDatabase {
   }
 
   async queryWithClient<R, T extends unknown[]>(client: Knex, sql: string, ...uparams: T): Promise<R[]> {
-    console.log('Knex query:', sql, uparams);
     const knexSql = sql.replace(/\$\d+/g, '?'); // Replace $1, $2... with ?
     let params = uparams as any[];
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
@@ -661,7 +655,7 @@ export class DrizzleUserDatabase implements UserDatabase {
     } else {
       isolationLevel = 'serializable';
     }
-    const accessMode: 'read only' | 'read write' = config.readOnly ? 'read only' : 'read write';
+    const accessMode = 'read write';
     const result = await this.db.transaction<R>(
       async (tx: DrizzleClient) => {
         return await transactionFunction(tx, ...args);

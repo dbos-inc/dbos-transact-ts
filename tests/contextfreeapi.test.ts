@@ -151,7 +151,7 @@ class TestSec2 {
 }
 
 class ChildWorkflows {
-  @DBOS.transaction({ readOnly: true })
+  @DBOS.transaction()
   static async childTx() {
     await DBOS.pgClient.query('SELECT 1');
     return Promise.resolve(`selected ${DBOS.workflowID}`);
@@ -320,7 +320,6 @@ async function main() {
   const wfs = await DBOS.getWorkflows({ workflowName: 'doWorkflow' });
   expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
   expect(wfs.workflowUUIDs.length).toBe(1);
-  await DBOS.executor.flushWorkflowBuffers();
   const wfh = DBOS.retrieveWorkflow(wfs.workflowUUIDs[0]);
   expect((await wfh.getStatus())?.status).toBe('SUCCESS');
   const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);

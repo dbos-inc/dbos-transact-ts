@@ -5,12 +5,9 @@ import {
   getCloudCredentials,
   getLogger,
   sleepms,
-  dbosConfigFilePath,
   DBOSCloudCredentials,
 } from '../cloudutils.js';
 import { Logger } from 'winston';
-import { ConfigFile, loadConfigFile, writeConfigFile } from '../configutils.js';
-import { copyFileSync, existsSync } from 'fs';
 import { UserDBInstance } from '../applications/types.js';
 import { input, select } from '@inquirer/prompts';
 import promptSync from 'prompt-sync';
@@ -409,7 +406,7 @@ export async function connect(
   host: string,
   dbName: string | undefined,
   password: string | undefined,
-  local_suffix: boolean,
+  showPassword: boolean,
 ) {
   const logger = getLogger();
 
@@ -421,45 +418,28 @@ export async function connect(
   }
 
   try {
-    if (!existsSync(dbosConfigFilePath)) {
-      logger.error(`Error: ${dbosConfigFilePath} not found`);
-      return 1;
-    }
-
-    const backupConfigFilePath = `dbos-config.yaml.${Date.now()}.bak`;
-    logger.info(`Backing up ${dbosConfigFilePath} to ${backupConfigFilePath}`);
-    copyFileSync(dbosConfigFilePath, backupConfigFilePath);
-
     logger.info('Retrieving cloud database info...');
     const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
     const isSupabase = userDBInfo.SupabaseReference !== null;
 
-    const prompt = promptSync({ sigint: true });
-    if (!password) {
-      if (isSupabase) {
-        password = prompt('Enter Supabase Database Password: ', { echo: '*' });
-      } else {
-        password = prompt('Enter Database Password: ', { echo: '*' });
+    if (showPassword) {
+      const prompt = promptSync({ sigint: true });
+      if (!password) {
+        if (isSupabase) {
+          password = prompt('Enter Supabase Database Password: ', { echo: '*' });
+        } else {
+          password = prompt('Enter Database Password: ', { echo: '*' });
+        }
       }
     }
 
     const databaseUsername = isSupabase ? `postgres.${userDBInfo.SupabaseReference}` : userDBInfo.DatabaseUsername;
 
-    console.log(`Postgres Instance Name: ${userDBInfo.PostgresInstanceName}`);
-    console.log(`Host Name: ${userDBInfo.HostName}`);
-    console.log(`Port: ${userDBInfo.Port}`);
-    console.log(`Database Username: ${databaseUsername}`);
-    console.log(`Status: ${userDBInfo.Status}`);
-
-    logger.info(`Loading cloud database connection information into ${dbosConfigFilePath}...`);
-    const config: ConfigFile = loadConfigFile(dbosConfigFilePath);
-    config.database.hostname = userDBInfo.HostName;
-    config.database.port = userDBInfo.Port;
-    config.database.username = databaseUsername;
-    config.database.password = password;
-    config.database.local_suffix = local_suffix;
-    writeConfigFile(config, dbosConfigFilePath);
-    logger.info(`Cloud database connection information loaded into ${dbosConfigFilePath}`);
+    const displayPassword = showPassword ? password : '***';
+    const dbString = `postgresql://${databaseUsername}:${displayPassword}@${userDBInfo.HostName}:${userDBInfo.Port}/${
+      userDBInfo.PostgresInstanceName
+    }`;
+    console.log(dbString);
     return 0;
   } catch (e) {
     const errorLabel = `Failed to retrieve database record ${dbName}`;

@@ -462,8 +462,6 @@ describe('dbos-v2api-tests-http', () => {
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
 
-    await DBOS.executor.flushWorkflowBuffers();
-
     // Retrieve the workflow with UUID.
     const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
     expect(retrievedHandle).not.toBeNull();

@@ -14,7 +14,7 @@ import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
 import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
-import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
+import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
 import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
@@ -232,8 +232,15 @@ export class DBOSHttpServer {
    * Deactivate consumers so that they don't start new workflows.
    *
    */
+  static isDeactivated = false;
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+      if (!DBOSHttpServer.isDeactivated) {
+        dbosExec.logger.info(
+          `Deactivating DBOS executor ${globalParams.executorID} with version ${globalParams.appVersion}. This executor will complete existing workflows but will not start new workflows.`,
+        );
+        DBOSHttpServer.isDeactivated = true;
+      }
       await dbosExec.deactivateEventReceivers();
       dbosExec.logger.info('Deactivating Event Receivers');
       koaCtxt.body = 'Deactivated';

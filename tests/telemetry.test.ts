@@ -36,8 +36,8 @@ describe('dbos-telemetry', () => {
     expect(dbosConfig.telemetry).not.toBeUndefined();
     if (dbosConfig.telemetry) {
       dbosConfig.telemetry.OTLPExporter = {
-        tracesEndpoint: 'http://localhost:4317/v1/traces',
-        logsEndpoint: 'http://localhost:4317/v1/logs',
+        tracesEndpoint: ['http://localhost:4317/v1/traces'],
+        logsEndpoint: ['http://localhost:4317/v1/logs'],
       };
     }
     await setUpDBOSTestDb(dbosConfig);

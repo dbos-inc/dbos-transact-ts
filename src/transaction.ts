@@ -6,15 +6,22 @@ import { DBOSContext, DBOSContextImpl } from './context';
 import { ValuesOf } from './utils';
 import { GlobalLogger as Logger } from './telemetry/logs';
 
-// Can we gradually call it TransactionFunction?
+/** @deprecated */
 export type Transaction<T extends unknown[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
+/** @deprecated */
 export type TransactionFunction<T extends unknown[], R> = Transaction<T, R>;
 
+/**
+ * Configuration for `@DBOS.transaction` functions
+ */
 export interface TransactionConfig {
+  /** Isolation level to request from underlying app database */
   isolationLevel?: IsolationLevel;
-  readOnly?: boolean;
+  /** If set, request read-only transaction from underlying app database */
+  readOnly?: boolean; // Deprecated
 }
 
+/** Isolation typically supported by application databases */
 export const IsolationLevel = {
   ReadUncommitted: 'READ UNCOMMITTED',
   ReadCommitted: 'READ COMMITTED',
@@ -23,6 +30,13 @@ export const IsolationLevel = {
 } as const;
 export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
+/**
+ * @deprecated This class is no longer necessary
+ * To update to Transact 2.0+
+ *   Remove `TransactionContext` from function parameter lists
+ *   Use `DBOS.` to access DBOS context within affected functions
+ *   Adjust callers to call the function directly
+ */
 export interface TransactionContext<T extends UserDatabaseClient> extends DBOSContext {
   readonly client: T;
 }
