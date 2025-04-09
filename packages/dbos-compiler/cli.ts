@@ -14,8 +14,11 @@ async function emitScriptFiles(outDir: string, project: tsm.Project) {
   await fsp.mkdir(outDir, { recursive: true });
 
   for (const sourceFile of project.getSourceFiles()) {
-    const baseName = sourceFile.getBaseName();
+    if (sourceFile.isDeclarationFile()) {
+      continue;
+    }
 
+    const baseName = sourceFile.getBaseName();
     const tsFile = await fsp.open(path.join(outDir, `gen.${baseName}`), 'w');
     try {
       await tsFile.write(sourceFile.getText());

@@ -37,6 +37,10 @@ export async function generateCreate(
   await executeSql(dbosSql);
 
   for (const sourceFile of project.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile()) {
+      continue;
+    }
+
     const moduleSql = await generateModuleCreate(sourceFile, appVersion);
     if (moduleSql) {
       await executeSql(moduleSql);
@@ -61,6 +65,10 @@ export async function generateDrop(
   await executeSql(dbosSql);
 
   for (const sourceFile of project.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile()) {
+      continue;
+    }
+
     const moduleSql = await generateModuleDrop(sourceFile, appVersion);
     if (moduleSql) {
       await executeSql(moduleSql);
