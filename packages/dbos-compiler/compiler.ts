@@ -209,6 +209,10 @@ export function collectUsedDeclarations(
 }
 
 export function removeUnusedDeclarations(file: tsm.SourceFile, usedDecls: Set<tsm.Node>) {
+  if (file.isDeclarationFile()) {
+    return;
+  }
+
   file.forEachChild((node) => {
     if (node.getKind() === tsm.ts.SyntaxKind.EndOfFileToken) {
       // obviously, skip the EOF token
@@ -269,6 +273,10 @@ export function removeUnusedDeclarations(file: tsm.SourceFile, usedDecls: Set<ts
 }
 
 export function removeNonProcDbosMethods(file: tsm.SourceFile) {
+  if (file.isDeclarationFile()) {
+    return;
+  }
+
   file.forEachDescendant((node, traversal) => {
     if (tsm.Node.isClassDeclaration(node)) {
       traversal.skip();
@@ -327,6 +335,10 @@ function deAsync(project: tsm.Project) {
 
 export function removeDecorators(file: tsm.SourceFile | tsm.Project) {
   if (tsm.Node.isNode(file)) {
+    if (file.isDeclarationFile()) {
+      return;
+    }
+
     file.forEachDescendant((node) => {
       if (tsm.Node.isDecorator(node)) {
         node.remove();

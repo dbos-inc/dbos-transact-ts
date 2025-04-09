@@ -1,12 +1,14 @@
 import tsm from 'ts-morph';
 import {
   checkStoredProc,
+  collectUsedDeclarations,
   getStoredProcMethods,
   mapStoredProcConfig,
   removeDecorators,
   removeNonProcDbosMethods,
+  removeUnusedDeclarations,
 } from '../compiler.js';
-import { makeTestProject } from './test-utility.js';
+import { makeTestProject, readTestContent } from './test-utility.js';
 import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
 import { describe, it, expect } from 'vitest';
 
@@ -97,5 +99,33 @@ describe('compiler', () => {
     const diags = procMethods.flatMap(checkStoredProc);
     expect(diags.length).toBe(1);
     expect(diags[0].category === tsm.DiagnosticCategory.Warning);
+  });
+
+  it('single file compile', async () => {
+    const main = await readTestContent('main.ts.txt');
+    const { project } = makeTestProject(main);
+
+    const files = project.getSourceFiles();
+    expect(files.length).toBe(3);
+    const file = files.find((f) => f.getBaseName() === 'operations.ts')!;
+    expect(file).toBeDefined();
+
+    const methods = getStoredProcMethods(file).map(mapStoredProcConfig);
+    expect(methods.length).toBe(1);
+
+    const $class = file.getClass('Example')!;
+    expect($class).toBeDefined();
+
+    expect(file.getFunction('main')).toBeDefined();
+
+    expect($class.getStaticMethods().length).toBe(4);
+    removeNonProcDbosMethods(file);
+    expect($class.getStaticMethods().length).toBe(1);
+
+    const usedDecls = collectUsedDeclarations(project, methods);
+    expect(usedDecls.size).toBe(12);
+
+    removeUnusedDeclarations(file, usedDecls);
+    expect(file.getFunction('main')).toBeUndefined();
   });
 });

@@ -1,6 +1,12 @@
 import tsm from 'ts-morph';
+import * as path from 'node:path';
+import * as fs from 'node:fs/promises';
 
 type TestSource = string | { code: string; filename?: string };
+
+export async function readTestContent(filename: string) {
+  return await fs.readFile(path.join(__dirname, filename), 'utf-8');
+}
 
 export function makeTestProject(...sources: TestSource[]) {
   const project = new tsm.Project({
@@ -60,6 +66,10 @@ declare module "@dbos-inc/dbos-sdk" {
     error(inputError: unknown): void;
   }
 
+  export interface PGClient {
+    query<T>(query: string, values?: any[]): Promise<{ rows: T[] }>;
+  }
+
   export interface DBOSContext {
     readonly logger: Logger;
   }
@@ -104,6 +114,9 @@ declare module "@dbos-inc/dbos-sdk" {
   export interface InitContext extends DBOSContext {}
 
   export class DBOS {
+    static readonly logger: Logger;
+    static readonly pgClient: PGClient;
+
     static workflow(config?: WorkflowConfig);
     static transaction(config?: TransactionConfig);
     static step(config?: StepConfig);
@@ -113,7 +126,8 @@ declare module "@dbos-inc/dbos-sdk" {
     static putApi(url: string);
     static patchApi(url: string);
     static deleteApi(url: string);
+    static launch();
+    static shutdown();
   }
-
 }
 `;
