@@ -55,8 +55,6 @@ export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID
   DBOS.setConfig(config);
   await DBOS.launch();
   const workflowSteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(workflowUUID);
-  // const workflowSteps = await systemDatabase.getWorkflowSteps(workflowUUID);
-  // await systemDatabase.destroy();
   await DBOS.shutdown();
   return workflowSteps;
 }

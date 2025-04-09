@@ -1091,20 +1091,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async getTransactions(workflowUUID: string): Promise<step_info[]> {
-    console.log('Before calling query');
     const rows = await this.userDatabase.query<step_info, [string]>(
       `SELECT function_id, function_name, output, error FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
       workflowUUID,
     );
 
-    console.log('After calling query', rows);
-
     for (const row of rows) {
       row.output = row.output !== null ? DBOSJSON.parse(row.output as string) : null;
       row.error = row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null;
     }
-
-    console.log('getTransactions', rows);
 
     return rows;
   }
@@ -1224,8 +1219,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     wfCtx: WorkflowContextImpl,
     ...args: T
   ): Promise<R> {
-    console.log('mjjjj callTransactionFunction', txn.name, wfCtx.workflowUUID);
-
     const txnInfo = this.getTransactionInfo(txn as Transaction<unknown[], unknown>);
     if (txnInfo === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
@@ -1350,7 +1343,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         // Record the execution, commit, and return.
         if (readOnly) {
           // Buffer the output of read-only transactions instead of synchronously writing it.
-          console.log('mjjjj calling buffer output', funcId, txn.name);
           const readOutput: BufferedResult = {
             output: result,
             txn_snapshot: txn_snapshot,
@@ -1361,7 +1353,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         } else {
           try {
             // Synchronously record the output of write transactions and obtain the transaction ID.
-            console.log('mjjjj calling record output', funcId, txn.name);
             const pg_txn_id = await this.#recordOutput(
               queryFunc,
               wfCtx.workflowUUID,
@@ -2305,13 +2296,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async listWorkflowSteps(workflowID: string): Promise<step_info[]> {
-    // return await this.systemDatabase.getWorkflowSteps(workflowID);
-
-    console.log('In the list workflow steps');
     const steps = await this.systemDatabase.getWorkflowSteps(workflowID);
     const transactions = await this.getTransactions(workflowID);
-
-    console.log('transactions', transactions);
 
     const merged = [...steps, ...transactions];
 
@@ -2384,7 +2370,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
           }
         }
         this.logger.debug(sqlStmt);
-        console.log('flushworkflowresultbuffers', sqlStmt, values);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         await this.userDatabase.query(sqlStmt, ...values);
 
