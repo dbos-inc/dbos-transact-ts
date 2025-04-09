@@ -128,13 +128,6 @@ export interface PgTransactionId {
   txid: string;
 }
 
-export interface BufferedResult {
-  output: unknown;
-  txn_snapshot: string;
-  created_at?: number;
-  function_name?: string;
-}
-
 /** Enumeration of values for workflow status */
 export const StatusString = {
   /** Workflow has may be running */

@@ -15,7 +15,6 @@ import {
   getWorkflow,
   listWorkflows,
   listQueuedWorkflows,
-  listWorkflowSteps,
 } from '../src/dbos-runtime/workflow_management';
 import { Client } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
@@ -633,6 +632,7 @@ describe('test-list-steps', () => {
 
     @DBOS.transaction()
     static async transactionWithError() {
+      await Promise.resolve();
       throw Error('transaction error');
     }
 
