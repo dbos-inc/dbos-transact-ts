@@ -12,8 +12,22 @@ export class Hello {
     return await Hello.helloProcedure(user);
   }
 
+  @DBOS.workflow()
+  static async helloWorkflowLocal(user: string) {
+    return await Hello.helloProcedureLocal(user);
+  }
+
   @DBOS.storedProcedure()
   static async helloProcedure(user: string) {
+    const query =
+      'INSERT INTO dbos_hello (name, greet_count) VALUES ($1, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;';
+    const { rows } = await DBOS.pgClient.query<dbos_hello>(query, [user]);
+    const greet_count = rows[0].greet_count;
+    return `Hello, ${user}! You have been greeted ${greet_count} times.`;
+  }
+
+  @DBOS.storedProcedure({ executeLocally: true })
+  static async helloProcedureLocal(user: string) {
     const query =
       'INSERT INTO dbos_hello (name, greet_count) VALUES ($1, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;';
     const { rows } = await DBOS.pgClient.query<dbos_hello>(query, [user]);
