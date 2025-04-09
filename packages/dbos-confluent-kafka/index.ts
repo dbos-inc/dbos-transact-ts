@@ -92,7 +92,6 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
         }
         await consumer.run({
           eachMessage: async ({ topic, partition, message }) => {
-            const logger = this.executor!.logger;
             try {
               // This combination uniquely identifies a message for a given Kafka cluster (and should ID the workflow also)
               const workflowID = `kafka-unique-id-${topic}-${partition}-${consumerConfig['group.id']}-${message.offset}`;
@@ -117,7 +116,7 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
               }
             } catch (e) {
               const error = e as Error;
-              logger.error(`Error processing Kafka message: ${error.message}`);
+              DBOS.logger.error(`Error processing Kafka message: ${error.message}`);
               throw error;
             }
           },
@@ -144,8 +143,7 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
 
   logRegisteredEndpoints() {
     if (!this.executor) return;
-    const logger = this.executor.logger;
-    logger.info('Kafka endpoints supported:');
+    DBOS.logger.info('Kafka endpoints supported:');
     const regops = this.executor.getRegistrationsFor(this);
     regops.forEach((registeredOperation) => {
       const ro = registeredOperation.methodConfig as KafkaRegistrationInfo;
@@ -154,10 +152,10 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
         const mname = registeredOperation.methodReg.name;
         if (Array.isArray(ro.kafkaTopics)) {
           ro.kafkaTopics.forEach((kafkaTopic) => {
-            logger.info(`    ${kafkaTopic} -> ${cname}.${mname}`);
+            DBOS.logger.info(`    ${kafkaTopic} -> ${cname}.${mname}`);
           });
         } else {
-          logger.info(`    ${ro.kafkaTopics} -> ${cname}.${mname}`);
+          DBOS.logger.info(`    ${ro.kafkaTopics} -> ${cname}.${mname}`);
         }
       }
     });

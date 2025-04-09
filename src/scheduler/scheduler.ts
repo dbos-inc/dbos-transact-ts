@@ -1,4 +1,4 @@
-import { DBOSEventReceiverState, WorkflowContext } from '..';
+import { DBOS, DBOSEventReceiverState, WorkflowContext } from '..';
 import { DBOSExecutor } from '../dbos-executor';
 import { MethodRegistrationBase, registerAndWrapFunctionTakingContext } from '../decorators';
 import { TimeMatcher } from './crontab';
@@ -110,12 +110,11 @@ export class DBOSScheduler {
   }
 
   logRegisteredSchedulerEndpoints() {
-    const logger = this.dbosExec.logger;
-    logger.info('Scheduled endpoints:');
+    DBOS.logger.info('Scheduled endpoints:');
     this.dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as SchedulerRegistrationBase;
       if (ro.schedulerConfig) {
-        logger.info(
+        DBOS.logger.info(
           `    ${ro.name} @ ${ro.schedulerConfig.crontab}; ${ro.schedulerConfig.mode ?? SchedulerMode.ExactlyOncePerInterval}`,
         );
       }
@@ -148,7 +147,7 @@ class DetachableLoop {
   async startLoop(): Promise<void> {
     // See if the exec time is available in durable storage...
     if (this.schedMode === SchedulerMode.ExactlyOncePerInterval) {
-      const lastState = await this.dbosExec.systemDatabase.getEventDispatchState(
+      const lastState = await DBOS.getEventDispatchState(
         SCHEDULER_EVENT_SERVICE_NAME,
         this.scheduledMethodName,
         'lastState',
@@ -174,7 +173,7 @@ class DetachableLoop {
         });
         await Promise.race([timeoutPromise, new Promise<void>((_, reject) => (this.interruptResolve = reject))]).catch(
           () => {
-            this.dbosExec.logger.debug('Scheduler loop interrupted!');
+            DBOS.logger.debug('Scheduler loop interrupted!');
           },
         ); // Interrupt sleep throws
         clearTimeout(timer!);
@@ -197,7 +196,7 @@ class DetachableLoop {
 
       // Init workflow
       const workflowUUID = `sched-${this.scheduledMethodName}-${nextExecTime.toISOString()}`;
-      this.dbosExec.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
+      DBOS.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
       const wfParams = {
         workflowUUID: workflowUUID,
         configuredInstance: null,
@@ -215,7 +214,7 @@ class DetachableLoop {
           ...args,
         );
       } else {
-        this.dbosExec.logger.error(`Function ${this.scheduledMethodName} is @scheduled but not a workflow`);
+        DBOS.logger.error(`Function ${this.scheduledMethodName} is @scheduled but not a workflow`);
       }
 
       // Record the time of the wf kicked off
@@ -226,7 +225,7 @@ class DetachableLoop {
         value: `${nextExecTime.getTime()}`,
         updateTime: nextExecTime.getTime(),
       };
-      const updRec = await this.dbosExec.systemDatabase.upsertEventDispatchState(ers);
+      const updRec = await DBOS.upsertEventDispatchState(ers);
       const dbTime = parseFloat(updRec.value!);
       if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
       this.lastExec = nextExecTime;
