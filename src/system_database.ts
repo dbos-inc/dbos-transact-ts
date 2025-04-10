@@ -202,6 +202,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.systemPoolConfig.connectionTimeoutMillis = PostgresSystemDatabase.connectionTimeoutMillis;
     // This sets the application_name column in pg_stat_activity
     this.systemPoolConfig.application_name = `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`;
+    this.systemPoolConfig.connectionString = undefined; // connection string would otherwise take precedence over the config object
     this.pool = new Pool(this.systemPoolConfig);
     const knexConfig = {
       client: 'pg',
