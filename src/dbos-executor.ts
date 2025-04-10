@@ -35,7 +35,12 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import { TelemetryConfig } from './telemetry';
 import { Pool, PoolClient, PoolConfig, QueryResultRow } from 'pg';
-import { SystemDatabase, PostgresSystemDatabase, WorkflowStatusInternal } from './system_database';
+import {
+  SystemDatabase,
+  PostgresSystemDatabase,
+  WorkflowStatusInternal,
+  SystemDatabaseStoredResult,
+} from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
   PGNodeUserDatabase,
@@ -702,7 +707,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   // TODO: getProcedureInfoByNames??
 
-  static deparseResultOrError<R = unknown>(r: { res?: string | null; err?: string | null }, success?: boolean) {
+  static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, success?: boolean) {
     if (success === true || !r.err) {
       return DBOSJSON.parse(r.res ?? null) as R;
     } else {
@@ -793,9 +798,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       // TODO: Make this transactional (and with the queue step below)
       if (callerFunctionID !== undefined && callerID !== undefined) {
-        const child_id = await this.systemDatabase.checkChildWorkflow(callerID, callerFunctionID);
-        if (child_id !== null) {
-          return new RetrievedHandle(this.systemDatabase, child_id, callerID, callerFunctionID);
+        const cr = await this.systemDatabase.getOperationResult(callerID, callerFunctionID);
+        if (cr.res !== undefined) {
+          return new RetrievedHandle(this.systemDatabase, cr.res.child!, callerID, callerFunctionID);
         }
       }
       const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
@@ -830,7 +835,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         });
 
         if (this.isDebugging) {
-          const recordedResult = DBOSExecutor.deparseResultOrError<Awaited<R>>(
+          const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
             (await this.systemDatabase.awaitWorkflowResult(workflowUUID))!,
           );
           if (!resultsMatch(recordedResult, callResult)) {

@@ -631,7 +631,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
         false,
       );
     }
-    return DBOSExecutor.deparseResultOrError<R>(sr);
+    return DBOSExecutor.reviveResultOrError<R>(sr);
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {

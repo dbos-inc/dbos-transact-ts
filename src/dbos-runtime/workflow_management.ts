@@ -76,7 +76,7 @@ export async function getWorkflowInfo(
   }
   if (info.status === StatusString.SUCCESS || info.status === StatusString.ERROR)
     try {
-      info.output = DBOSExecutor.deparseResultOrError(
+      info.output = DBOSExecutor.reviveResultOrError(
         (await systemDatabase.awaitWorkflowResult(workflowUUID))!,
         info.status === StatusString.SUCCESS,
       );

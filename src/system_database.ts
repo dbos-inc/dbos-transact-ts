@@ -39,6 +39,13 @@ import { WorkflowQueue } from './wfqueue';
 import { DBOSEventReceiverState } from './eventreceiver';
 import { getCurrentDBOSContext } from './context';
 
+/* Result from Sys DB */
+export interface SystemDatabaseStoredResult {
+  res?: string | null;
+  err?: string | null;
+  child?: string | null;
+}
+
 export interface SystemDatabase {
   init(): Promise<void>;
   destroy(): Promise<void>;
@@ -55,7 +62,10 @@ export interface SystemDatabase {
   getWorkflowSteps(workflowID: string): Promise<step_info[]>;
 
   checkOperationOutput<R>(workflowID: string, functionID: number): Promise<DBOSNull | R>;
-  checkChildWorkflow(workflowID: string, functionID: number): Promise<string | null>;
+
+  // If there is no record, res will be undefined;
+  //  otherwise will be defined (with potentially undefined contents)
+  getOperationResult(workflowID: string, functionID: number): Promise<{ res?: SystemDatabaseStoredResult }>;
   recordOperationResult(
     workflowID: string,
     functionID: number,
@@ -74,11 +84,9 @@ export interface SystemDatabase {
     callerUUID?: string,
     functionID?: number,
   ): Promise<WorkflowStatusInternal | null>;
-  awaitWorkflowResult(
-    workflowID: string,
-    timeoutms?: number,
-  ): Promise<{ res?: string | null; err?: string | null } | undefined>;
+  awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined>;
 
+  // Workflow management
   setWorkflowStatus(
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
@@ -87,11 +95,13 @@ export interface SystemDatabase {
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
 
+  // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
   clearQueueAssignment(workflowId: string): Promise<boolean>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
+  // Actions w/ durable records and notifications
   durableSleepms(
     workflowID: string,
     functionID: number,
@@ -497,6 +507,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return DBOSJSON.parse(rows[0].inputs) as T;
   }
 
+  async getOperationResult(
+    workflowID: string,
+    functionID: number,
+    client?: PoolClient,
+  ): Promise<{ res?: SystemDatabaseStoredResult }> {
+    const { rows } = await (client ?? this.pool).query<operation_outputs>(
+      `SELECT output, error, child_workflow_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
+      [workflowID, functionID],
+    );
+    if (rows.length === 0) {
+      return {};
+    } else {
+      return { res: { res: rows[0].output, err: rows[0].error, child: rows[0].child_workflow_id } };
+    }
+  }
+
   async checkOperationOutput<R>(workflowID: string, functionID: number): Promise<DBOSNull | R> {
     const { rows } = await this.pool.query<operation_outputs>(
       `SELECT output, error FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
@@ -508,19 +534,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       throw deserializeError(DBOSJSON.parse(rows[0].error));
     } else {
       return DBOSJSON.parse(rows[0].output) as R;
-    }
-  }
-
-  async checkChildWorkflow(workflowID: string, functionID: number): Promise<string | null> {
-    const { rows } = await this.pool.query<operation_outputs>(
-      `SELECT child_workflow_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
-      [workflowID, functionID],
-    );
-
-    if (rows.length > 0) {
-      return rows[0].child_workflow_id;
-    } else {
-      return null;
     }
   }
 
@@ -1056,10 +1069,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return value;
   }
 
-  async awaitWorkflowResult(
-    workflowID: string,
-    timeoutms?: number,
-  ): Promise<{ res?: string | null; err?: string | null } | undefined> {
+  async awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined> {
     const pollingIntervalMs: number = 1000;
     const et = timeoutms !== undefined ? new Date().getTime() + timeoutms : undefined;
 
