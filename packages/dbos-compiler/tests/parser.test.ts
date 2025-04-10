@@ -1,16 +1,16 @@
 import * as tsm from 'ts-morph';
 import {
   DecoratorArgument,
-  getDbosMethodInfo,
-  getImportSpecifier,
-  getStoredProcConfig,
+  mapStoredProcConfig,
+  parseDbosMethodInfo,
   parseDecoratorArgument,
+  parseImportSpecifier,
 } from '../compiler.js';
 import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
 import { makeTestProject } from './test-utility.js';
 import { describe, it, expect } from 'vitest';
 
-describe('more compiler', () => {
+describe('parser', () => {
   const { project } = makeTestProject(sampleDbosClass);
   const { project: aliasProject } = makeTestProject(sampleDbosClassAliased);
   const file = project.getSourceFileOrThrow('operations.ts');
@@ -20,7 +20,7 @@ describe('more compiler', () => {
     it(`getDbosMethodKind ${name}`, () => {
       const file = project.getSourceFileOrThrow('operations.ts');
       const cls = file.getClassOrThrow('Test');
-      const entries = cls.getStaticMethods().map((m) => [m.getName(), getDbosMethodInfo(m)]);
+      const entries = cls.getStaticMethods().map((m) => [m.getName(), parseDbosMethodInfo(m)]);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
       const actual = Object.fromEntries(entries);
 
@@ -139,6 +139,10 @@ describe('more compiler', () => {
   });
 
   describe('getStoredProcConfig', () => {
+    it('fake', () => {
+      expect(true);
+    });
+
     const data = {
       testProcedure: {},
       testReadOnlyProcedure: { readOnly: true },
@@ -154,7 +158,7 @@ describe('more compiler', () => {
       it(name, () => {
         const expected = { ...config, version: 1 };
         const method = cls.getStaticMethodOrThrow(name);
-        const actual = getStoredProcConfig(method, 1);
+        const [_, actual] = mapStoredProcConfig([method, 1]);
         expect(actual).toEqual(expected);
       });
 
@@ -162,7 +166,7 @@ describe('more compiler', () => {
       it(v2name, () => {
         const expected = { ...config, version: 2 };
         const method = cls.getStaticMethodOrThrow(v2name);
-        const actual = getStoredProcConfig(method, 2);
+        const [_, actual] = mapStoredProcConfig([method, 2]);
         expect(actual).toEqual(expected);
       });
     }
@@ -190,7 +194,7 @@ function testDecorator(expected: DecoratorInfo, actual: tsm.Decorator) {
     ? expr
     : expr.asKindOrThrow(tsm.SyntaxKind.PropertyAccessExpression).getExpressionIfKindOrThrow(tsm.SyntaxKind.Identifier);
 
-  const impSpec = getImportSpecifier(idExpr);
+  const impSpec = parseImportSpecifier(idExpr);
   expect(impSpec).not.toBeNull();
 
   const { name, alias } = impSpec!.getStructure();

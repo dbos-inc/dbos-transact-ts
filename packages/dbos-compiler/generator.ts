@@ -1,7 +1,7 @@
 import path from 'node:path';
 import tsm from 'ts-morph';
 import { Liquid } from 'liquidjs';
-import type { StoredProcedureConfig, CompileResult } from './compiler.js';
+import type { StoredProcedureConfig, CompileMethodInfo } from './compiler.js';
 
 const engine = new Liquid({
   root: path.resolve(__dirname, '..', 'templates'),
@@ -27,7 +27,8 @@ function getAppVersion(appVersion: string | boolean | undefined) {
 
 export async function generateCreate(
   executeSql: (sql: string) => Promise<void>,
-  { project, methods }: CompileResult,
+  project: tsm.Project,
+  methods: readonly CompileMethodInfo[],
   appVersionOption?: string | boolean,
 ) {
   const appVersion = getAppVersion(appVersionOption);
@@ -36,8 +37,14 @@ export async function generateCreate(
   await executeSql(dbosSql);
 
   for (const sourceFile of project.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile()) {
+      continue;
+    }
+
     const moduleSql = await generateModuleCreate(sourceFile, appVersion);
-    await executeSql(moduleSql);
+    if (moduleSql) {
+      await executeSql(moduleSql);
+    }
   }
 
   for (const [method, config] of methods) {
@@ -48,7 +55,8 @@ export async function generateCreate(
 
 export async function generateDrop(
   executeSql: (sql: string) => Promise<void>,
-  { project, methods }: CompileResult,
+  project: tsm.Project,
+  methods: readonly CompileMethodInfo[],
   appVersionOption?: string | boolean,
 ) {
   const appVersion = getAppVersion(appVersionOption);
@@ -57,8 +65,14 @@ export async function generateDrop(
   await executeSql(dbosSql);
 
   for (const sourceFile of project.getSourceFiles()) {
+    if (sourceFile.isDeclarationFile()) {
+      continue;
+    }
+
     const moduleSql = await generateModuleDrop(sourceFile, appVersion);
-    await executeSql(moduleSql);
+    if (moduleSql) {
+      await executeSql(moduleSql);
+    }
   }
 
   for (const [method, config] of methods) {
@@ -124,24 +138,31 @@ async function generateMethodDrop(
 
 function getModuleContext(sourceFile: tsm.SourceFile, appVersion: string | undefined) {
   const results = sourceFile.getEmitOutput();
-  const contents = results.getEmitSkipped()
-    ? ''
-    : results
-        .getOutputFiles()
-        .map((f) => f.getText())
-        .join('\n');
-  const moduleName = sourceFile.getBaseNameWithoutExtension();
+  if (results.getEmitSkipped()) {
+    return undefined;
+  }
 
+  const contents = results
+    .getOutputFiles()
+    // Add separator for readability in the generated module
+    .map((f) => `// -- ${path.basename(f.getFilePath())}\n${f.getText()}`)
+    .join('\n');
+
+  const moduleName = sourceFile.getBaseNameWithoutExtension();
   const context = { moduleName, contents, appVersion };
   return context;
 }
 
 async function generateModuleCreate(sourceFile: tsm.SourceFile, appVersion: string | undefined) {
   const context = getModuleContext(sourceFile, appVersion);
-  return await render('module.create.liquid', context);
+  if (context) {
+    return await render('module.create.liquid', context);
+  }
 }
 
 async function generateModuleDrop(sourceFile: tsm.SourceFile, appVersion: string | undefined) {
   const context = getModuleContext(sourceFile, appVersion);
-  return await render('module.drop.liquid', context);
+  if (context) {
+    return await render('module.drop.liquid', context);
+  }
 }
