@@ -208,7 +208,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     }
   }
   databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName;
-
   const poolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,
