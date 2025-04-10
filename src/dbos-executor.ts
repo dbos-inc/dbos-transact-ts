@@ -714,7 +714,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async internalWorkflow<T extends unknown[], R>(
     wf: Workflow<T, R>,
     params: InternalWorkflowParams,
-    callerUUID?: string,
+    callerID?: string,
     callerFunctionID?: number,
     ...args: T
   ): Promise<WorkflowHandle<R>> {
@@ -784,20 +784,23 @@ export class DBOSExecutor implements DBOSExecutorContext {
       status = wfStatus.status;
     } else {
       // TODO: Make this transactional (and with the queue step below)
-      if (callerFunctionID !== undefined && callerUUID !== undefined) {
-        const child_id = await this.systemDatabase.checkChildWorkflow(callerUUID, callerFunctionID);
+      if (callerFunctionID !== undefined && callerID !== undefined) {
+        const child_id = await this.systemDatabase.checkChildWorkflow(callerID, callerFunctionID);
         if (child_id !== null) {
-          return new RetrievedHandle(this.systemDatabase, child_id, callerUUID, callerFunctionID);
+          return new RetrievedHandle(this.systemDatabase, child_id, callerID, callerFunctionID);
         }
       }
       const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
 
-      if (callerFunctionID !== undefined && callerUUID !== undefined) {
-        await this.systemDatabase.recordChildWorkflow(
-          callerUUID,
-          workflowUUID,
+      if (callerFunctionID !== undefined && callerID !== undefined) {
+        await this.systemDatabase.recordOperationResult(
+          callerID,
           callerFunctionID,
-          internalStatus.workflowName,
+          {
+            childWfId: workflowUUID,
+            functionName: internalStatus.workflowName,
+          },
+          true,
         );
       }
 
@@ -911,19 +914,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
       this.pendingWorkflowMap.set(workflowUUID, awaitWorkflowPromise);
 
       // Return the normal handle that doesn't capture errors.
-      return new InvokedHandle(
-        this.systemDatabase,
-        workflowPromise,
-        workflowUUID,
-        wf.name,
-        callerUUID,
-        callerFunctionID,
-      );
+      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowUUID, wf.name, callerID, callerFunctionID);
     } else {
       if (params.queueName && status === 'ENQUEUED' && !this.isDebugging) {
         await this.systemDatabase.enqueueWorkflow(workflowUUID, this.#getQueueByName(params.queueName).name);
       }
-      return new RetrievedHandle(this.systemDatabase, workflowUUID, callerUUID, callerFunctionID);
+      return new RetrievedHandle(this.systemDatabase, workflowUUID, callerID, callerFunctionID);
     }
   }
 
@@ -1770,9 +1766,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       await this.systemDatabase.recordOperationResult(
         wfCtx.workflowUUID,
         ctxt.functionID,
-        null,
-        DBOSJSON.stringify(serializeError(err)),
-        ctxt.operationName,
+        {
+          serialError: DBOSJSON.stringify(serializeError(err)),
+          functionName: ctxt.operationName,
+        },
         true,
       );
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
@@ -1783,9 +1780,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       await this.systemDatabase.recordOperationResult(
         wfCtx.workflowUUID,
         ctxt.functionID,
-        DBOSJSON.stringify(result),
-        null,
-        ctxt.operationName,
+        {
+          serialOutput: DBOSJSON.stringify(result),
+          functionName: ctxt.operationName,
+        },
         true,
       );
       ctxt.span.setStatus({ code: SpanStatusCode.OK });

@@ -59,13 +59,15 @@ export interface SystemDatabase {
   recordOperationResult(
     workflowID: string,
     functionID: number,
-    output: string | null,
-    error: string | null,
-    functionName: string,
+    rec: {
+      childWfId?: string | null;
+      serialOutput?: string | null;
+      serialError?: string | null;
+      functionName: string;
+    },
     checkConflict: boolean,
   ): Promise<void>;
   recordGetResult(resultWorkflowID: string, output: string | null, error: string | null): Promise<void>;
-  recordChildWorkflow(parentUUID: string, childUUID: string, functionID: number, fuctionName: string): Promise<void>;
 
   getWorkflowStatus(workflowID: string, callerUUID?: string): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
@@ -536,19 +538,29 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordOperationResult(
     workflowID: string,
     functionID: number,
-    serialOutput: string | null,
-    serialError: string | null,
-    functionName: string,
+    rec: {
+      childWfId?: string | null;
+      serialOutput?: string | null;
+      serialError?: string | null;
+      functionName: string;
+    },
     checkConflict: boolean,
   ): Promise<void> {
     try {
       await this.pool.query<operation_outputs>(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs
-          (workflow_uuid, function_id, output, error, function_name)
-          VALUES ($1, $2, $3, $4, $5)
+          (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
+          VALUES ($1, $2, $3, $4, $5, $6)
           ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'}
           ;`,
-        [workflowID, functionID, serialOutput, serialError, functionName],
+        [
+          workflowID,
+          functionID,
+          rec.serialOutput ?? null,
+          rec.serialError ?? null,
+          rec.functionName,
+          rec.childWfId ?? null,
+        ],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
@@ -575,28 +587,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, error, child_workflow_id, function_name) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING;`,
       [ctx.workflowId, functionID, output, error, resultWorkflowID, 'DBOS.getResult'],
     );
-  }
-
-  async recordChildWorkflow(
-    parentUUID: string,
-    childUUID: string,
-    functionID: number,
-    functionName: string,
-  ): Promise<void> {
-    try {
-      await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, function_name, child_workflow_id) VALUES ($1, $2, $3, $4);`,
-        [parentUUID, functionID, functionName, childUUID],
-      );
-    } catch (error) {
-      const err: DatabaseError = error as DatabaseError;
-      if (err.code === '40001' || err.code === '23505') {
-        // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(parentUUID);
-      } else {
-        throw err;
-      }
-    }
   }
 
   /**
@@ -917,9 +907,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await this.recordOperationResult(
         callerWorkflow.workflowUUID,
         callerWorkflow.functionID,
-        DBOSJSON.stringify(value),
-        null,
-        'DBOS.getEvent',
+        {
+          serialOutput: DBOSJSON.stringify(value),
+          functionName: 'DBOS.getEvent',
+        },
         true,
       );
     }
@@ -1083,7 +1074,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Record the output if it is inside a workflow.
     if (callerUUID !== undefined && newfunctionId !== undefined) {
-      await this.recordOperationResult(callerUUID, newfunctionId, DBOSJSON.stringify(value), null, 'getStatus', true);
+      await this.recordOperationResult(
+        callerUUID,
+        newfunctionId,
+        {
+          serialOutput: DBOSJSON.stringify(value),
+          functionName: 'getStatus',
+        },
+        true,
+      );
     }
 
     return value;
