@@ -3,13 +3,14 @@ import { DBOSExecutor, OperationType } from './dbos-executor';
 import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
 import { SystemDatabase } from './system_database';
-import { HTTPRequest, DBOSContext, DBOSContextImpl } from './context';
+import { HTTPRequest, DBOSContext, DBOSContextImpl, assertCurrentWorkflowContext } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
 import { serializeError } from 'serialize-error';
+import { DBOS } from './dbos';
 
 /** @deprecated */
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
@@ -557,12 +558,33 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     try {
       result = await this.workflowPromise;
     } catch (error) {
-      const serialErr = DBOSJSON.stringify(serializeError(error));
-      await this.systemDatabase.recordGetResult(this.workflowID, null, serialErr);
+      if (DBOS.isInWorkflow()) {
+        await this.systemDatabase.recordOperationResult(
+          DBOS.workflowID!,
+          assertCurrentWorkflowContext().functionIDGetIncrement(),
+          {
+            childWfId: this.workflowID,
+            serialError: DBOSJSON.stringify(serializeError(error)),
+            functionName: 'DBOS.getResult',
+          },
+          false,
+        );
+      }
       throw error;
     }
-    const serialResult = DBOSJSON.stringify(result);
-    await this.systemDatabase.recordGetResult(this.workflowID, serialResult, null);
+
+    if (DBOS.isInWorkflow()) {
+      await this.systemDatabase.recordOperationResult(
+        DBOS.workflowID!,
+        assertCurrentWorkflowContext().functionIDGetIncrement(),
+        {
+          childWfId: this.workflowID,
+          serialOutput: DBOSJSON.stringify(result),
+          functionName: 'DBOS.getResult',
+        },
+        false,
+      );
+    }
     return result;
   }
 
@@ -599,12 +621,32 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
     try {
       result = await this.systemDatabase.getWorkflowResult<R>(this.workflowUUID);
     } catch (error) {
-      const serialErr = DBOSJSON.stringify(serializeError(error));
-      await this.systemDatabase.recordGetResult(this.workflowID, null, serialErr);
+      if (DBOS.isInWorkflow()) {
+        await this.systemDatabase.recordOperationResult(
+          DBOS.workflowID!,
+          assertCurrentWorkflowContext().functionIDGetIncrement(),
+          {
+            childWfId: this.workflowID,
+            serialError: DBOSJSON.stringify(serializeError(error)),
+            functionName: 'DBOS.getResult',
+          },
+          false,
+        );
+      }
       throw error;
     }
-    const serialResult = DBOSJSON.stringify(result);
-    await this.systemDatabase.recordGetResult(this.workflowID, serialResult, null);
+    if (DBOS.isInWorkflow()) {
+      await this.systemDatabase.recordOperationResult(
+        DBOS.workflowID!,
+        assertCurrentWorkflowContext().functionIDGetIncrement(),
+        {
+          childWfId: this.workflowID,
+          serialOutput: DBOSJSON.stringify(result),
+          functionName: 'DBOS.getResult',
+        },
+        false,
+      );
+    }
     return result;
   }
 

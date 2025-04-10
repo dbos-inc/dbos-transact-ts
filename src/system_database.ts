@@ -31,7 +31,7 @@ import {
   step_info,
 } from '../schemas/system_db_schema';
 import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep } from './utils';
-import { assertCurrentWorkflowContext, getCurrentContextStore, HTTPRequest, isInWorkflowCtx } from './context';
+import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
 import path from 'path';
@@ -67,7 +67,6 @@ export interface SystemDatabase {
     },
     checkConflict: boolean,
   ): Promise<void>;
-  recordGetResult(resultWorkflowID: string, output: string | null, error: string | null): Promise<void>;
 
   getWorkflowStatus(workflowID: string, callerUUID?: string): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
@@ -571,22 +570,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throw err;
       }
     }
-  }
-
-  async recordGetResult(resultWorkflowID: string, output: string | null, error: string | null): Promise<void> {
-    const ctx = getCurrentContextStore();
-    // Only record getResult called in workflow functions
-    if (ctx === undefined || !isInWorkflowCtx(ctx)) {
-      return;
-    }
-    // Record getResult as a step
-    const functionID = assertCurrentWorkflowContext().functionIDGetIncrement();
-    // Because there's no corresponding check, we do nothing on conflict
-    // and do not raise a DBOSWorkflowConflictUUIDError
-    await this.pool.query(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, error, child_workflow_id, function_name) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING;`,
-      [ctx.workflowId, functionID, output, error, resultWorkflowID, 'DBOS.getResult'],
-    );
   }
 
   /**
