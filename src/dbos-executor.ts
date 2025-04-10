@@ -343,7 +343,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.userDatabase = new TypeORMDatabase(
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
           new DataSourceExports.DataSource({
-            type: 'postgres', // perhaps should move to config file
+            type: 'postgres',
             url: userDBConfig.connectionString,
             entities: this.typeormEntities,
             ssl: userDBConfig.ssl,
@@ -359,7 +359,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else if (userDbClient === UserDatabaseName.KNEX) {
       const knexConfig: Knex.Config = {
         client: 'postgres',
-        connection: userDBConfig.connectionString,
+        connection: {
+          connectionString: userDBConfig.connectionString,
+          ssl: userDBConfig.ssl,
+          connectionTimeoutMillis: userDBConfig.connectionTimeoutMillis,
+        },
         pool: {
           min: 0,
           max: userDBConfig.max,
