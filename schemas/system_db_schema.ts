@@ -37,6 +37,7 @@ export interface operation_outputs {
   output: string;
   error: string;
   child_workflow_id: string;
+  function_name?: string;
 }
 
 export interface workflow_inputs {
@@ -65,6 +66,7 @@ export interface workflow_queue {
   completed_at_epoch_ms?: number; // This time is provided by the client
 }
 
+// This is the deserialized version of operation_outputs
 export interface step_info {
   function_id: number;
   function_name: string;

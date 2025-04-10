@@ -44,6 +44,7 @@ export interface SystemDatabaseStoredResult {
   res?: string | null;
   err?: string | null;
   child?: string | null;
+  functionName?: string;
 }
 
 export interface SystemDatabase {
@@ -511,17 +512,27 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client?: PoolClient,
   ): Promise<{ res?: SystemDatabaseStoredResult }> {
     const { rows } = await (client ?? this.pool).query<operation_outputs>(
-      `SELECT output, error, child_workflow_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
+      `SELECT output, error, child_workflow_id, function_name
+       FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+      WHERE workflow_uuid=$1 AND function_id=$2`,
       [workflowID, functionID],
     );
     if (rows.length === 0) {
       return {};
     } else {
-      return { res: { res: rows[0].output, err: rows[0].error, child: rows[0].child_workflow_id } };
+      return {
+        res: {
+          res: rows[0].output,
+          err: rows[0].error,
+          child: rows[0].child_workflow_id,
+          functionName: rows[0].function_name,
+        },
+      };
     }
   }
 
   async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
+    // TODO Use correct underlying row structure and map()
     const { rows } = await this.pool.query<step_info>(
       `SELECT function_id, function_name, output, error, child_workflow_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
       [workflowID],
@@ -579,21 +590,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     durationMS: number,
   ): Promise<{ promise: Promise<void>; cancel: () => void }> {
-    const { rows } = await this.pool.query<operation_outputs>(
-      `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
-      [workflowID, functionID],
-    );
-    if (rows.length > 0) {
-      const endTimeMs = DBOSJSON.parse(rows[0].output) as number;
-      return cancellableSleep(Math.max(endTimeMs - Date.now(), 0));
+    const curTime = Date.now();
+    let endTimeMs = curTime + durationMS;
+    const res = await this.getOperationResult(workflowID, functionID);
+    if (res.res !== undefined) {
+      endTimeMs = JSON.parse(res.res.res!) as number;
     } else {
-      const endTimeMs = Date.now() + durationMS;
-      await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, function_name) VALUES ($1, $2, $3, $4) ON CONFLICT DO NOTHING;`,
-        [workflowID, functionID, DBOSJSON.stringify(endTimeMs), 'DBOS.sleep'],
+      await this.recordOperationResult(
+        workflowID,
+        functionID,
+        { serialOutput: JSON.stringify(endTimeMs), functionName: `DBOS.sleep` },
+        false,
       );
-      return cancellableSleep(Math.max(endTimeMs - Date.now(), 0));
     }
+    return cancellableSleep(Math.max(endTimeMs - curTime, 0));
   }
 
   readonly nullTopic = '__null__topic__';
@@ -610,11 +620,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     try {
-      const { rows } = await client.query<operation_outputs>(
-        `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
-        [workflowID, functionID],
-      );
-      if (rows.length > 0) {
+      const res = await this.getOperationResult(workflowID, functionID, client);
+      if (res.res !== undefined) {
         await client.query('ROLLBACK');
         return;
       }
@@ -647,14 +654,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<T | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
-    const checkRows = (
-      await this.pool.query<operation_outputs>(
-        `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
-        [workflowID, functionID],
-      )
-    ).rows;
-    if (checkRows.length > 0) {
-      return DBOSJSON.parse(checkRows[0].output) as T;
+    const res = await this.getOperationResult(workflowID, functionID);
+    if (res.res) {
+      return DBOSJSON.parse(res.res.res!) as T;
     }
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
@@ -744,22 +746,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      let { rows } = await client.query<operation_outputs>(
-        `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
-        [workflowID, functionID],
-      );
-      if (rows.length > 0) {
+      const res = await this.getOperationResult(workflowID, functionID, client);
+      if (res.res !== undefined) {
         await client.query('ROLLBACK');
         return;
       }
-      ({ rows } = await client.query(
+      await client.query(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_events (workflow_uuid, key, value)
          VALUES ($1, $2, $3)
          ON CONFLICT (workflow_uuid, key)
          DO UPDATE SET value = $3
          RETURNING workflow_uuid;`,
         [workflowID, key, DBOSJSON.stringify(message)],
-      ));
+      );
       await this.recordOperationResult(workflowID, functionID, { functionName: 'DBOS.setEvent' }, true, client);
       await client.query('COMMIT');
     } catch (e) {
@@ -783,15 +782,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<T | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerWorkflow) {
-      const { rows } = await this.pool.query<operation_outputs>(
-        `
-        SELECT output
-        FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
-        WHERE workflow_uuid=$1 AND function_id=$2`,
-        [callerWorkflow.workflowID, callerWorkflow.functionID],
-      );
-      if (rows.length > 0) {
-        return DBOSJSON.parse(rows[0].output) as T;
+      const res = await this.getOperationResult(callerWorkflow.workflowID, callerWorkflow.functionID);
+      if (res.res !== undefined) {
+        return DBOSJSON.parse(res.res.res!) as T;
       }
     }
 
@@ -998,12 +991,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     let newfunctionId = undefined;
     if (callerID !== undefined && wfctx !== undefined) {
       newfunctionId = wfctx.functionIDGetIncrement();
-      const { rows } = await this.pool.query<operation_outputs>(
-        `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2 AND function_name=$3`,
-        [callerID, newfunctionId, 'getStatus'],
-      );
-      if (rows.length > 0) {
-        return DBOSJSON.parse(rows[0].output) as WorkflowStatusInternal;
+      const res = await this.getOperationResult(callerID, newfunctionId);
+      if (res.res !== undefined) {
+        return DBOSJSON.parse(res.res.res!) as WorkflowStatusInternal;
       }
     }
 
