@@ -29,7 +29,6 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigI
     telemetry: {
       logs: {
         silent: silenceLogs,
-        logLevel: 'debug',
       },
     },
   };
