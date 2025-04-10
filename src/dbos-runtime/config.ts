@@ -130,7 +130,7 @@ function retrieveApplicationName(configFile: ConfigFile): string {
   if (appName !== undefined) {
     return appName;
   }
-  const packageJson = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json')).toString()) as {
+  const packageJson = JSON.parse(readFileSync(path.join(process.cwd(), 'package.json')).toString()) as {
     name: string;
   };
   appName = packageJson.name;
@@ -142,6 +142,23 @@ function retrieveApplicationName(configFile: ConfigFile): string {
   return appName;
 }
 
+/**
+ * Build a PoolConfig object from the config file and CLI options.
+ *
+ * If configFile.database_url is provided, this function expects configFile.database to be built from the database_url.
+ * If not, a connection string will be built from configFile.database, after it is fully resolved.
+ *
+ * Default configuration:
+ * - Hostname: localhost
+ * - Port: 5432
+ * - Username: postgres
+ * - Password: dbos
+ * - Database name: transformed application name. The name is either the one provided in the config file or the one found in package.json.
+ *
+ * @param configFile - The configuration to be used.
+ * @param cliOptions - Optional CLI options.
+ * @returns PoolConfig - The constructed PoolConfig object.
+ */
 export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions): PoolConfig {
   // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
   if (!cliOptions?.silent) {
@@ -188,6 +205,31 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   }
 
   poolConfig.ssl = parseSSLConfig(configFile.database);
+
+  poolConfig.connectionString = `postgresql://${String(poolConfig.user)}:${String(poolConfig.password)}@${String(poolConfig.host)}:${String(poolConfig.port)}/${String(poolConfig.database)}`;
+  // If a connection string was provided, retrieve query parameters from it
+  if (configFile.database_url) {
+    const url = new URL(configFile.database_url);
+    if (url.search) {
+      poolConfig.connectionString += url.search; // url.search already includes the '?' character
+    }
+  } else {
+    // Else build the parameters we know of
+    const queryParams: string[] = [];
+    if (poolConfig.connectionTimeoutMillis) {
+      queryParams.push(`connect_timeout=${poolConfig.connectionTimeoutMillis / 1000}`);
+    }
+    if (poolConfig.ssl === false || poolConfig.ssl === undefined) {
+      queryParams.push(`sslmode=disable`);
+    } else if (poolConfig.ssl.ca) {
+      queryParams.push(`sslmode=verify-full`);
+    } else {
+      queryParams.push(`sslmode=require`);
+    }
+    const query = queryParams.join('&');
+    poolConfig.connectionString += `?${query}`;
+  }
+
   return poolConfig;
 }
 
@@ -395,6 +437,7 @@ export function translatePublicDBOSconfig(
     {
       name: appName,
       database: dburlConfig,
+      database_url: config.databaseUrl,
       application: {},
       env: {},
     },
@@ -434,16 +477,27 @@ export function translatePublicDBOSconfig(
 
 export function parseDbString(dbString: string): DBConfig {
   const parsed = parse(dbString);
-  // pg-connection-string parse query parameters in a way that doesn't match ConnectionOptions (parse return type)
-  // so we resort to the more generic URL() to parse query parameters
   const url = new URL(dbString);
   const queryParams = Object.fromEntries(url.searchParams.entries());
+
+  // Throw if any required field is missing
+  const missingFields: string[] = [];
+  if (!parsed.user) missingFields.push('username');
+  if (!parsed.password) missingFields.push('password');
+  if (!parsed.host) missingFields.push('hostname');
+  if (!parsed.port) missingFields.push('port');
+  if (!parsed.database) missingFields.push('app_db_name');
+
+  if (missingFields.length > 0) {
+    throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
+  }
+
   return {
-    hostname: parsed.host || undefined,
-    port: parsed.port ? parseInt(parsed.port, 10) : undefined,
-    username: parsed.user || undefined,
-    password: parsed.password || undefined,
-    app_db_name: parsed.database || undefined,
+    hostname: parsed.host as string,
+    port: parseInt(parsed.port!, 10),
+    username: parsed.user,
+    password: parsed.password,
+    app_db_name: parsed.database as string,
     ssl: 'sslmode' in parsed && (parsed.sslmode === 'require' || parsed.sslmode === 'verify-full'),
     ssl_ca: queryParams['sslrootcert'] || undefined,
     connectionTimeoutMillis: queryParams['connect_timeout']
