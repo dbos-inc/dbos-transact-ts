@@ -617,37 +617,21 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
-    let result: R;
-    try {
-      result = await this.systemDatabase.getWorkflowResult<R>(this.workflowUUID);
-    } catch (error) {
-      if (DBOS.isInWorkflow()) {
-        await this.systemDatabase.recordOperationResult(
-          DBOS.workflowID!,
-          assertCurrentWorkflowContext().functionIDGetIncrement(),
-          {
-            childWfId: this.workflowID,
-            serialError: DBOSJSON.stringify(serializeError(error)),
-            functionName: 'DBOS.getResult',
-          },
-          false,
-        );
-      }
-      throw error;
-    }
+    const sr = (await this.systemDatabase.awaitWorkflowResult(this.workflowUUID))!;
     if (DBOS.isInWorkflow()) {
       await this.systemDatabase.recordOperationResult(
         DBOS.workflowID!,
         assertCurrentWorkflowContext().functionIDGetIncrement(),
         {
           childWfId: this.workflowID,
-          serialOutput: DBOSJSON.stringify(result),
+          serialOutput: sr.res,
+          serialError: sr.err,
           functionName: 'DBOS.getResult',
         },
         false,
       );
     }
-    return result;
+    return DBOSExecutor.deparseResultOrError<R>(sr);
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {

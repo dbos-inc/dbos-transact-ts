@@ -702,6 +702,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
   // TODO: getProcedureInfoByNames??
 
+  static deparseResultOrError<R = unknown>(r: { res?: string | null; err?: string | null }, success?: boolean) {
+    if (success === true || !r.err) {
+      return DBOSJSON.parse(r.res ?? null) as R;
+    } else {
+      throw deserializeError(DBOSJSON.parse(r.err));
+    }
+  }
+
   async workflow<T extends unknown[], R>(
     wf: Workflow<T, R>,
     params: InternalWorkflowParams,
@@ -822,7 +830,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         });
 
         if (this.isDebugging) {
-          const recordedResult = await this.systemDatabase.getWorkflowResult<R>(workflowUUID);
+          const recordedResult = DBOSExecutor.deparseResultOrError<Awaited<R>>(
+            (await this.systemDatabase.awaitWorkflowResult(workflowUUID))!,
+          );
           if (!resultsMatch(recordedResult, callResult)) {
             this.logger.error(
               `Detect different output for the workflow UUID ${workflowUUID}!\n Received: ${DBOSJSON.stringify(callResult)}\n Original: ${DBOSJSON.stringify(recordedResult)}`,

@@ -74,16 +74,15 @@ export async function getWorkflowInfo(
   if (input !== null) {
     info.input = input;
   }
-  if (info.status === StatusString.SUCCESS) {
-    const result = await systemDatabase.getWorkflowResult(workflowUUID);
-    info.output = result;
-  } else if (info.status === StatusString.ERROR) {
+  if (info.status === StatusString.SUCCESS || info.status === StatusString.ERROR)
     try {
-      await systemDatabase.getWorkflowResult(workflowUUID);
+      info.output = DBOSExecutor.deparseResultOrError(
+        (await systemDatabase.awaitWorkflowResult(workflowUUID))!,
+        info.status === StatusString.SUCCESS,
+      );
     } catch (e) {
       info.error = e;
     }
-  }
   if (!getRequest) {
     delete info.request;
   }

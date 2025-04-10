@@ -74,7 +74,11 @@ export interface SystemDatabase {
     callerUUID?: string,
     functionID?: number,
   ): Promise<WorkflowStatusInternal | null>;
-  getWorkflowResult<R>(workflowID: string): Promise<R>;
+  awaitWorkflowResult(
+    workflowID: string,
+    timeoutms?: number,
+  ): Promise<{ res?: string | null; err?: string | null } | undefined>;
+
   setWorkflowStatus(
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
@@ -1071,8 +1075,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return value;
   }
 
-  async getWorkflowResult<R>(workflowID: string): Promise<R> {
+  async awaitWorkflowResult(
+    workflowID: string,
+    timeoutms?: number,
+  ): Promise<{ res?: string | null; err?: string | null } | undefined> {
     const pollingIntervalMs: number = 1000;
+    const et = timeoutms !== undefined ? new Date().getTime() + timeoutms : undefined;
 
     while (true) {
       const { rows } = await this.pool.query<workflow_status>(
@@ -1082,13 +1090,24 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (rows.length > 0) {
         const status = rows[0].status;
         if (status === StatusString.SUCCESS) {
-          return DBOSJSON.parse(rows[0].output) as R;
+          return { res: rows[0].output };
         } else if (status === StatusString.ERROR) {
-          throw deserializeError(DBOSJSON.parse(rows[0].error));
+          return { err: rows[0].error };
         }
       }
-      await sleepms(pollingIntervalMs);
+
+      if (et !== undefined) {
+        const ct = new Date().getTime();
+        if (et > ct) {
+          await sleepms(Math.min(pollingIntervalMs, et - ct));
+        } else {
+          break;
+        }
+      } else {
+        await sleepms(pollingIntervalMs);
+      }
     }
+    return undefined;
   }
 
   /* BACKGROUND PROCESSES */
