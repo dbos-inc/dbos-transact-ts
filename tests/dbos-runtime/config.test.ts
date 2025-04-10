@@ -196,7 +196,8 @@ describe('dbos-config', () => {
         database: 'test_app',
         connectionTimeoutMillis: 3000,
         ssl: { ca: ['CA_CERT'], rejectUnauthorized: true },
-        connectionString: 'postgresql://u:p@db:5432/test_app?connect_timeout=3&connection_limit=20&sslmode=verify-full',
+        connectionString:
+          'postgresql://u:p@db:5432/test_app?connect_timeout=3&connection_limit=20&sslmode=verify-full&sslrootcert=ca.pem',
       });
     });
 
