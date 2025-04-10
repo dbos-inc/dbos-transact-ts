@@ -548,9 +548,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       functionName: string;
     },
     checkConflict: boolean,
+    client?: PoolClient,
   ): Promise<void> {
     try {
-      await this.pool.query<operation_outputs>(
+      await (client ?? this.pool).query<operation_outputs>(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs
           (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
           VALUES ($1, $2, $3, $4, $5, $6)
@@ -564,32 +565,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
           rec.functionName,
           rec.childWfId ?? null,
         ],
-      );
-    } catch (error) {
-      const err: DatabaseError = error as DatabaseError;
-      if (err.code === '40001' || err.code === '23505') {
-        // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(workflowID);
-      } else {
-        throw err;
-      }
-    }
-  }
-
-  /**
-   *  Guard the operation, throwing an error if a conflicting execution is detected.
-   */
-  async recordNotificationOutput<R>(
-    client: PoolClient,
-    workflowID: string,
-    functionID: number,
-    output: R,
-    functionName: string,
-  ) {
-    try {
-      await client.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, function_name) VALUES ($1, $2, $3, $4);`,
-        [workflowID, functionID, DBOSJSON.stringify(output), functionName],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
@@ -650,7 +625,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
         [destinationID, topic, DBOSJSON.stringify(message)],
       );
-      await this.recordNotificationOutput(client, workflowID, functionID, undefined, 'DBOS.send');
+      await this.recordOperationResult(workflowID, functionID, { functionName: 'DBOS.send' }, true, client);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -748,7 +723,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (finalRecvRows.length > 0) {
         message = DBOSJSON.parse(finalRecvRows[0].message) as T;
       }
-      await this.recordNotificationOutput(client, workflowID, functionID, message, 'DBOS.recv');
+      await this.recordOperationResult(
+        workflowID,
+        functionID,
+        { serialOutput: DBOSJSON.stringify(message), functionName: 'DBOS.recv' },
+        true,
+        client,
+      );
       await client.query(`COMMIT`);
     } catch (e) {
       this.logger.error(e);
@@ -782,7 +763,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
          RETURNING workflow_uuid;`,
         [workflowID, key, DBOSJSON.stringify(message)],
       ));
-      await this.recordNotificationOutput(client, workflowID, functionID, undefined, 'DBOS.setEvent');
+      await this.recordOperationResult(workflowID, functionID, { functionName: 'DBOS.setEvent' }, true, client);
       await client.query('COMMIT');
     } catch (e) {
       this.logger.error(e);
