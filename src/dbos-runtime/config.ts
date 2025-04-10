@@ -240,6 +240,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
       queryParams.push(`sslmode=disable`);
     } else if (poolConfig.ssl && 'ca' in poolConfig.ssl) {
       queryParams.push(`sslmode=verify-full`);
+      queryParams.push(`sslrootcert=${configFile.database.ssl_ca}`);
     } else {
       queryParams.push(`sslmode=require`);
     }
