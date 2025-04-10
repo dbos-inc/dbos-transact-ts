@@ -3,7 +3,13 @@ import { GlobalLogger } from '../telemetry/logs';
 import { ConfigFile } from './config';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { PoolConfig, Client } from 'pg';
-import { createUserDBSchema, userDBIndex, userDBSchema } from '../../schemas/user_db_schema';
+import {
+  createUserDBSchema,
+  userDBIndex,
+  userDBSchema,
+  columnExistsQuery,
+  addColumnQuery,
+} from '../../schemas/user_db_schema';
 import { ExistenceCheck, migrateSystemDatabase } from '../system_database';
 import {
   schemaExistsQuery,
@@ -89,7 +95,14 @@ async function createDBOSTables(systemDbName: string, userPoolConfig: PoolConfig
   const txnOutputTableExists = await pgUserClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
   if (!txnOutputTableExists.rows[0].exists) {
     await pgUserClient.query(userDBSchema);
+  } else {
+    const columnExists = await pgUserClient.query<ExistenceCheck>(columnExistsQuery);
+
+    if (!columnExists.rows[0].exists) {
+      await pgUserClient.query(addColumnQuery);
+    }
   }
+
   const txnIndexExists = await pgUserClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
   if (!txnIndexExists.rows[0].exists) {
     await pgUserClient.query(userDBIndex);
