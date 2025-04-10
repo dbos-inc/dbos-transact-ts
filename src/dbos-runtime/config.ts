@@ -208,15 +208,23 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   poolConfig.ssl = parseSSLConfig(configFile.database);
 
   poolConfig.connectionString = `postgresql://${String(poolConfig.user)}:${String(poolConfig.password)}@${String(poolConfig.host)}:${String(poolConfig.port)}/${String(poolConfig.database)}`;
-  // If a connection string was provided, retrieve query parameters from it
+  let hasQueryParams = false;
+
+  // If a database_url is provided
   if (configFile.database_url) {
     const url = new URL(configFile.database_url);
-    if (url.search) {
-      poolConfig.connectionString += url.search; // url.search already includes the '?' character
+    hasQueryParams = url.search.length > 1;
+
+    if (hasQueryParams) {
+      // Use provided query parameters from database_url
+      poolConfig.connectionString += url.search; // url.search includes '?'
     }
-  } else {
-    // Else build the parameters we know of
+  }
+
+  // If no query parameters were provided or available, build them manually
+  if (!hasQueryParams) {
     const queryParams: string[] = [];
+
     if (poolConfig.connectionTimeoutMillis) {
       queryParams.push(`connect_timeout=${poolConfig.connectionTimeoutMillis / 1000}`);
     }
@@ -225,13 +233,15 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     }
     if (poolConfig.ssl === false || poolConfig.ssl === undefined) {
       queryParams.push(`sslmode=disable`);
-    } else if (poolConfig.ssl.ca) {
+    } else if (poolConfig.ssl && 'ca' in poolConfig.ssl) {
       queryParams.push(`sslmode=verify-full`);
     } else {
       queryParams.push(`sslmode=require`);
     }
-    const query = queryParams.join('&');
-    poolConfig.connectionString += `?${query}`;
+
+    if (queryParams.length > 0) {
+      poolConfig.connectionString += `?${queryParams.join('&')}`;
+    }
   }
 
   return poolConfig;

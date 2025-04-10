@@ -231,6 +231,37 @@ describe('dbos-config', () => {
       });
     });
 
+    test('append connection parameters from config.database when none are provided in the database_url', () => {
+      const dbUrl = 'postgresql://url_user:url_pass@url_host:9999/url_db';
+
+      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('{}'); // loadDatabaseConnection()
+
+      const config = baseConfig();
+      config.database = {
+        hostname: 'url_host',
+        port: 9999,
+        username: 'url_user',
+        password: 'url_pass',
+        app_db_name: 'url_db',
+        connectionTimeoutMillis: 42000,
+      };
+      config.database_url = dbUrl;
+
+      const pool = constructPoolConfig(config, { userDbPoolSize: 2 });
+
+      assertPoolConfig(pool, {
+        host: 'url_host',
+        port: 9999,
+        user: 'url_user',
+        password: 'url_pass',
+        database: 'url_db',
+        connectionTimeoutMillis: 42000,
+        ssl: { rejectUnauthorized: false },
+        connectionString:
+          'postgresql://url_user:url_pass@url_host:9999/url_db?connect_timeout=42&connection_limit=2&sslmode=require',
+      });
+    });
+
     test('constructPoolConfig correctly handles app names with spaces', () => {
       const config = baseConfig();
       config.name = 'app name with spaces';
