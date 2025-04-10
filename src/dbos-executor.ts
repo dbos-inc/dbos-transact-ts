@@ -1767,22 +1767,26 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (result === dbosNull) {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFn.name, ctxt.maxAttempts, errors) : err;
-      await this.systemDatabase.recordOperationError(
+      await this.systemDatabase.recordOperationResult(
         wfCtx.workflowUUID,
         ctxt.functionID,
-        err as Error,
+        null,
+        DBOSJSON.stringify(serializeError(err)),
         ctxt.operationName,
+        true,
       );
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(ctxt.span);
       throw err as Error;
     } else {
       // Record the execution and return.
-      await this.systemDatabase.recordOperationOutput<R>(
+      await this.systemDatabase.recordOperationResult(
         wfCtx.workflowUUID,
         ctxt.functionID,
-        result as R,
+        DBOSJSON.stringify(result),
+        null,
         ctxt.operationName,
+        true,
       );
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(ctxt.span);

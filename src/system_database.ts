@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { deserializeError, serializeError } from 'serialize-error';
+import { deserializeError } from 'serialize-error';
 import { DBOSConfigInternal, DBOSExecutor, dbosNull, DBOSNull } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
@@ -47,29 +47,35 @@ export interface SystemDatabase {
     initStatus: WorkflowStatusInternal,
     args: T,
   ): Promise<{ args: T; status: string }>;
-  recordWorkflowOutput(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
-  recordWorkflowError(workflowUUID: string, status: WorkflowStatusInternal): Promise<void>;
+  recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
+  recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
-  getWorkflowInputs<T extends any[]>(workflowUUID: string): Promise<T | null>;
-  getWorkflowSteps(workflowUUID: string): Promise<step_info[]>;
+  getWorkflowInputs<T extends any[]>(workflowID: string): Promise<T | null>;
+  getWorkflowSteps(workflowID: string): Promise<step_info[]>;
 
-  checkOperationOutput<R>(workflowUUID: string, functionID: number): Promise<DBOSNull | R>;
-  checkChildWorkflow(workflowUUID: string, functionID: number): Promise<string | null>;
-  recordOperationOutput<R>(workflowUUID: string, functionID: number, output: R, functionName: string): Promise<void>;
-  recordOperationError(workflowUUID: string, functionID: number, error: Error, functionName: string): Promise<void>;
+  checkOperationOutput<R>(workflowID: string, functionID: number): Promise<DBOSNull | R>;
+  checkChildWorkflow(workflowID: string, functionID: number): Promise<string | null>;
+  recordOperationResult(
+    workflowID: string,
+    functionID: number,
+    output: string | null,
+    error: string | null,
+    functionName: string,
+    checkConflict: boolean,
+  ): Promise<void>;
   recordGetResult(resultWorkflowID: string, output: string | null, error: string | null): Promise<void>;
   recordChildWorkflow(parentUUID: string, childUUID: string, functionID: number, fuctionName: string): Promise<void>;
 
-  getWorkflowStatus(workflowUUID: string, callerUUID?: string): Promise<WorkflowStatus | null>;
+  getWorkflowStatus(workflowID: string, callerUUID?: string): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
-    workflowUUID: string,
+    workflowID: string,
     callerUUID?: string,
     functionID?: number,
   ): Promise<WorkflowStatusInternal | null>;
-  getWorkflowResult<R>(workflowUUID: string): Promise<R>;
+  getWorkflowResult<R>(workflowID: string): Promise<R>;
   setWorkflowStatus(
-    workflowUUID: string,
+    workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
     resetRecoveryAttempts: boolean,
   ): Promise<void>;
@@ -82,23 +88,23 @@ export interface SystemDatabase {
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
   durableSleepms(
-    workflowUUID: string,
+    workflowID: string,
     functionID: number,
     duration: number,
   ): Promise<{ promise: Promise<void>; cancel: () => void }>;
 
-  send<T>(workflowUUID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
+  send<T>(workflowID: string, functionID: number, destinationUUID: string, message: T, topic?: string): Promise<void>;
   recv<T>(
-    workflowUUID: string,
+    workflowID: string,
     functionID: number,
     timeoutFunctionID: number,
     topic?: string,
     timeoutSeconds?: number,
   ): Promise<T | null>;
 
-  setEvent<T>(workflowUUID: string, functionID: number, key: string, value: T): Promise<void>;
+  setEvent<T>(workflowID: string, functionID: number, key: string, value: T): Promise<void>;
   getEvent<T>(
-    workflowUUID: string,
+    workflowID: string,
     key: string,
     timeoutSeconds: number,
     callerWorkflow?: {
@@ -527,23 +533,28 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows;
   }
 
-  async recordOperationOutput<R>(
-    workflowUUID: string,
+  async recordOperationResult(
+    workflowID: string,
     functionID: number,
-    output: R,
+    serialOutput: string | null,
+    serialError: string | null,
     functionName: string,
+    checkConflict: boolean,
   ): Promise<void> {
-    const serialOutput = DBOSJSON.stringify(output);
     try {
       await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, function_name) VALUES ($1, $2, $3, $4);`,
-        [workflowUUID, functionID, serialOutput, functionName],
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+          (workflow_uuid, function_id, output, error, function_name)
+          VALUES ($1, $2, $3, $4, $5)
+          ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'}
+          ;`,
+        [workflowID, functionID, serialOutput, serialError, functionName],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') {
         // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictUUIDError(workflowID);
       } else {
         throw err;
       }
@@ -564,29 +575,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, output, error, child_workflow_id, function_name) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT DO NOTHING;`,
       [ctx.workflowId, functionID, output, error, resultWorkflowID, 'DBOS.getResult'],
     );
-  }
-
-  async recordOperationError(
-    workflowUUID: string,
-    functionID: number,
-    error: Error,
-    functionName: string,
-  ): Promise<void> {
-    const serialErr = DBOSJSON.stringify(serializeError(error));
-    try {
-      await this.pool.query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (workflow_uuid, function_id, error, function_name) VALUES ($1, $2, $3, $4);`,
-        [workflowUUID, functionID, serialErr, functionName],
-      );
-    } catch (error) {
-      const err: DatabaseError = error as DatabaseError;
-      if (err.code === '40001' || err.code === '23505') {
-        // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
-      } else {
-        throw err;
-      }
-    }
   }
 
   async recordChildWorkflow(
@@ -796,14 +784,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  async setEvent<T>(workflowUUID: string, functionID: number, key: string, message: T): Promise<void> {
+  async setEvent<T>(workflowID: string, functionID: number, key: string, message: T): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       let { rows } = await client.query<operation_outputs>(
         `SELECT output FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
-        [workflowUUID, functionID],
+        [workflowID, functionID],
       );
       if (rows.length > 0) {
         await client.query('ROLLBACK');
@@ -815,9 +803,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
          ON CONFLICT (workflow_uuid, key)
          DO UPDATE SET value = $3
          RETURNING workflow_uuid;`,
-        [workflowUUID, key, DBOSJSON.stringify(message)],
+        [workflowID, key, DBOSJSON.stringify(message)],
       ));
-      await this.recordNotificationOutput(client, workflowUUID, functionID, undefined, 'DBOS.setEvent');
+      await this.recordNotificationOutput(client, workflowID, functionID, undefined, 'DBOS.setEvent');
       await client.query('COMMIT');
     } catch (e) {
       this.logger.error(e);
@@ -829,7 +817,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getEvent<T>(
-    workflowUUID: string,
+    workflowID: string,
     key: string,
     timeoutSeconds: number,
     callerWorkflow?: {
@@ -854,7 +842,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Get the return the value. if it's in the DB, otherwise return null.
     let value: T | null = null;
-    const payloadKey = `${workflowUUID}::${key}`;
+    const payloadKey = `${workflowID}::${key}`;
     // Register the key with the global notifications listener first... we do not want to look in the DB first
     //  or that would cause a timing hole.
     let resolveNotification: () => void;
@@ -871,7 +859,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         SELECT key, value
         FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
         WHERE workflow_uuid=$1 AND key=$2;`,
-          [workflowUUID, key],
+          [workflowID, key],
         )
       ).rows;
 
@@ -913,7 +901,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             SELECT value
             FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
             WHERE workflow_uuid=$1 AND key=$2;`,
-            [workflowUUID, key],
+            [workflowID, key],
           )
         ).rows;
         if (finalRecvRows.length > 0) {
@@ -926,7 +914,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Record the output if it is inside a workflow.
     if (callerWorkflow) {
-      await this.recordOperationOutput(callerWorkflow.workflowUUID, callerWorkflow.functionID, value, 'DBOS.getEvent');
+      await this.recordOperationResult(
+        callerWorkflow.workflowUUID,
+        callerWorkflow.functionID,
+        DBOSJSON.stringify(value),
+        null,
+        'DBOS.getEvent',
+        true,
+      );
     }
     return value;
   }
@@ -1088,7 +1083,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Record the output if it is inside a workflow.
     if (callerUUID !== undefined && newfunctionId !== undefined) {
-      await this.recordOperationOutput(callerUUID, newfunctionId, value, 'getStatus');
+      await this.recordOperationResult(callerUUID, newfunctionId, DBOSJSON.stringify(value), null, 'getStatus', true);
     }
 
     return value;
