@@ -537,8 +537,8 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     readonly workflowPromise: Promise<R>,
     readonly workflowUUID: string,
     readonly workflowName: string,
-    readonly callerUUID?: string,
-    readonly callerFunctionID?: number,
+    readonly callerUUID?: string, // This is the call that started the WF
+    readonly callerFunctionID?: number, // This is the call that started the WF
   ) {}
 
   getWorkflowUUID(): string {

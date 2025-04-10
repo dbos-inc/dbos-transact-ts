@@ -36,7 +36,7 @@ describe('wf-cancel-tests', () => {
     try {
       const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
-      await DBOS.executor.cancelWorkflow(wfid);
+      await DBOS.cancelWorkflow(wfid);
       await wfh.getResult();
     } catch (e) {
       console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
@@ -55,7 +55,7 @@ describe('wf-cancel-tests', () => {
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
     try {
-      await DBOS.executor.cancelWorkflow(wfid);
+      await DBOS.cancelWorkflow(wfid);
 
       await wfh.getResult();
     } catch (e) {
@@ -68,7 +68,7 @@ describe('wf-cancel-tests', () => {
       expect(wfstatus?.status).toBe(StatusString.CANCELLED);
     }
 
-    await DBOS.executor.resumeWorkflow(wfid);
+    await DBOS.resumeWorkflow(wfid);
     const resstatus = await DBOS.getWorkflowStatus(wfid);
     expect(resstatus?.status).toBe(StatusString.PENDING);
   });
@@ -79,7 +79,7 @@ describe('wf-cancel-tests', () => {
     const wfh = await DBOS.startWorkflow(WFwith2Transactions, { workflowID: wfid }).workflowWithTransactions();
 
     try {
-      await DBOS.executor.cancelWorkflow(wfid);
+      await DBOS.cancelWorkflow(wfid);
 
       await wfh.getResult();
     } catch (e) {
@@ -92,7 +92,7 @@ describe('wf-cancel-tests', () => {
       expect(wfstatus?.status).toBe(StatusString.CANCELLED);
     }
 
-    await DBOS.executor.resumeWorkflow(wfid);
+    await DBOS.resumeWorkflow(wfid);
     const resstatus = await DBOS.getWorkflowStatus(wfid);
     expect(resstatus?.status).toBe(StatusString.PENDING);
   });
@@ -105,7 +105,7 @@ describe('wf-cancel-tests', () => {
 
     expect(WFwith2Steps.stepsExecuted).toBe(2);
 
-    await DBOS.executor.resumeWorkflow(wfid);
+    await DBOS.resumeWorkflow(wfid);
     await DBOS.getWorkflowStatus(wfid);
 
     expect(WFwith2Steps.stepsExecuted).toBe(2);

@@ -80,7 +80,7 @@ export interface SystemDatabase {
   getWorkflowStatus(workflowID: string, callerID?: string): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
     workflowID: string,
-    callerUUID?: string,
+    callerID?: string,
     functionID?: number,
   ): Promise<WorkflowStatusInternal | null>;
   awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined>;
