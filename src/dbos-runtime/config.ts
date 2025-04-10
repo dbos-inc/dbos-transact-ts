@@ -152,7 +152,7 @@ function retrieveApplicationName(configFile: ConfigFile): string {
  * - Hostname: localhost
  * - Port: 5432
  * - Username: postgres
- * - Password: dbos
+ * - Password: $PGPASSWORD
  * - Database name: transformed application name. The name is either the one provided in the config file or the one found in package.json.
  *
  * @param configFile - The configuration to be used.
