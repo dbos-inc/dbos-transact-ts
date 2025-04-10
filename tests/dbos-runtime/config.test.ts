@@ -991,11 +991,6 @@ describe('dbos-config', () => {
       expect(() => parseDbString(dbString)).toThrow(/missing required field\(s\): username, password/);
     });
 
-    test('should throw if database name is missing', () => {
-      const dbString = 'postgres://user:password@localhost:5432';
-      expect(() => parseDbString(dbString)).toThrow(/missing required field\(s\): app_db_name/);
-    });
-
     test('should throw on empty connection string', () => {
       expect(() => parseDbString('')).toThrow();
     });

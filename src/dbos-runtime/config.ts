@@ -505,7 +505,6 @@ export function parseDbString(dbString: string): DBConfig {
   if (!parsed.password) missingFields.push('password');
   if (!parsed.host) missingFields.push('hostname');
   if (!parsed.port) missingFields.push('port');
-  if (!parsed.database) missingFields.push('app_db_name');
 
   if (missingFields.length > 0) {
     throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
@@ -516,7 +515,7 @@ export function parseDbString(dbString: string): DBConfig {
     port: parseInt(parsed.port!, 10),
     username: parsed.user,
     password: parsed.password,
-    app_db_name: parsed.database as string,
+    app_db_name: parsed.database || undefined,
     ssl: 'sslmode' in parsed && (parsed.sslmode === 'require' || parsed.sslmode === 'verify-full'),
     ssl_ca: queryParams['sslrootcert'] || undefined,
     connectionTimeoutMillis: queryParams['connect_timeout']
