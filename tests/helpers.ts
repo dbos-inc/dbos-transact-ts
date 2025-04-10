@@ -3,7 +3,7 @@ import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { translatePublicDBOSconfig } from '../src/dbos-runtime/config';
+import { translatePublicDBOSconfig, constructPoolConfig, ConfigFile } from '../src/dbos-runtime/config';
 
 /* DB management helpers */
 export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigInternal {
@@ -11,27 +11,35 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigI
   if (!dbPassword) {
     throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
   }
+  const silenceLogs = process.env.SILENCE_LOGS === 'true';
 
-  const silenceLogs: boolean = process.env.SILENCE_LOGS === 'true' ? true : false;
+  const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
 
-  const dbosTestConfig: DBOSConfigInternal = {
-    poolConfig: {
-      host: 'localhost',
-      port: 5432,
-      user: 'postgres',
-      password: process.env.PGPASSWORD,
-      // We can use another way of randomizing the DB name if needed
-      database: 'dbostest',
+  const configFile: ConfigFile = {
+    name: 'dbostest',
+    database: {
+      app_db_client: dbClient || UserDatabaseName.PGNODE,
     },
+    database_url: databaseUrl,
     application: {
       counter: 3,
       shouldExist: 'exists',
     },
+    env: {},
     telemetry: {
       logs: {
         silent: silenceLogs,
+        logLevel: 'debug',
       },
     },
+  };
+
+  const poolConfig = constructPoolConfig(configFile, { silent: true });
+
+  const dbosTestConfig: DBOSConfigInternal = {
+    poolConfig,
+    application: configFile.application,
+    telemetry: configFile.telemetry!,
     system_database: 'dbostest_dbos_sys',
     userDbclient: dbClient || UserDatabaseName.PGNODE,
   };
