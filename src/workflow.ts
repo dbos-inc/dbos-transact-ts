@@ -467,7 +467,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const functionID: number = this.functionIDGetIncrement();
     const timeoutFunctionID = this.functionIDGetIncrement();
     const params = {
-      workflowUUID: this.workflowUUID,
+      workflowID: this.workflowUUID,
       functionID,
       timeoutFunctionID,
     };
@@ -477,9 +477,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Retrieve a handle for a workflow UUID.
    */
-  retrieveWorkflow<R>(targetUUID: string): WorkflowHandle<R> {
+  retrieveWorkflow<R>(targetID: string): WorkflowHandle<R> {
     const functionID: number = this.functionIDGetIncrement();
-    return new RetrievedHandle(this.#dbosExec.systemDatabase, targetUUID, this.workflowUUID, functionID);
+    return new RetrievedHandle(this.#dbosExec.systemDatabase, targetID, this.workflowUUID, functionID);
   }
 
   /**
