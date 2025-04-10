@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
 import { deserializeError } from 'serialize-error';
-import { DBOSConfigInternal, DBOSExecutor, dbosNull, DBOSNull } from './dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
   DBOSWorkflowConflictUUIDError,
@@ -60,8 +60,6 @@ export interface SystemDatabase {
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
   getWorkflowInputs<T extends any[]>(workflowID: string): Promise<T | null>;
   getWorkflowSteps(workflowID: string): Promise<step_info[]>;
-
-  checkOperationOutput<R>(workflowID: string, functionID: number): Promise<DBOSNull | R>;
 
   // If there is no record, res will be undefined;
   //  otherwise will be defined (with potentially undefined contents)
@@ -520,20 +518,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return {};
     } else {
       return { res: { res: rows[0].output, err: rows[0].error, child: rows[0].child_workflow_id } };
-    }
-  }
-
-  async checkOperationOutput<R>(workflowID: string, functionID: number): Promise<DBOSNull | R> {
-    const { rows } = await this.pool.query<operation_outputs>(
-      `SELECT output, error FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1 AND function_id=$2`,
-      [workflowID, functionID],
-    );
-    if (rows.length === 0) {
-      return dbosNull;
-    } else if (DBOSJSON.parse(rows[0].error) !== null) {
-      throw deserializeError(DBOSJSON.parse(rows[0].error));
-    } else {
-      return DBOSJSON.parse(rows[0].output) as R;
     }
   }
 

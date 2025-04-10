@@ -1690,12 +1690,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, commInfo.config, stepFn.name);
 
     // Check if this execution previously happened, returning its original result if it did.
-    const check: R | DBOSNull = await this.systemDatabase.checkOperationOutput<R>(wfCtx.workflowUUID, ctxt.functionID);
-    if (check !== dbosNull) {
+    const checkr = await this.systemDatabase.getOperationResult(wfCtx.workflowUUID, ctxt.functionID);
+    if (checkr.res !== undefined) {
+      const check = DBOSExecutor.reviveResultOrError<R>(checkr.res);
       ctxt.span.setAttribute('cached', true);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(ctxt.span);
-      return check as R;
+      return check;
     }
 
     if (this.isDebugging) {
