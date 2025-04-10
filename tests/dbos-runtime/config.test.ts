@@ -102,7 +102,8 @@ describe('dbos-config', () => {
         database: 'test_app',
         connectionTimeoutMillis: 3000,
         ssl: false,
-        connectionString: 'postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=3&sslmode=disable',
+        connectionString:
+          'postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=3&connection_limit=20&sslmode=disable',
       });
     });
 
@@ -140,7 +141,8 @@ describe('dbos-config', () => {
         database: 'appdb',
         connectionTimeoutMillis: 3000,
         ssl: false,
-        connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=3&sslmode=disable',
+        connectionString:
+          'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=3&connection_limit=20&sslmode=disable',
       });
     });
 
@@ -154,7 +156,7 @@ describe('dbos-config', () => {
         app_db_name: 'configured_db',
       };
 
-      const pool = constructPoolConfig(config);
+      const pool = constructPoolConfig(config, { userDbPoolSize: 7 });
 
       assertPoolConfig(pool, {
         host: 'env-host.com', // from DBOS_DBHOST
@@ -164,8 +166,9 @@ describe('dbos-config', () => {
         database: 'configured_db', // from config.database
         connectionTimeoutMillis: 3000,
         ssl: { rejectUnauthorized: false }, // default
+        max: 7, // from userDbPoolSize
         connectionString:
-          'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=3&sslmode=require',
+          'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=3&connection_limit=7&sslmode=require',
       });
     });
 
@@ -193,7 +196,7 @@ describe('dbos-config', () => {
         database: 'test_app',
         connectionTimeoutMillis: 3000,
         ssl: { ca: ['CA_CERT'], rejectUnauthorized: true },
-        connectionString: 'postgresql://u:p@db:5432/test_app?connect_timeout=3&sslmode=verify-full',
+        connectionString: 'postgresql://u:p@db:5432/test_app?connect_timeout=3&connection_limit=20&sslmode=verify-full',
       });
     });
 
@@ -241,7 +244,7 @@ describe('dbos-config', () => {
         connectionTimeoutMillis: 3000,
         ssl: false,
         connectionString:
-          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&sslmode=disable',
+          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&connection_limit=20&sslmode=disable',
       });
     });
   });
@@ -778,7 +781,8 @@ describe('dbos-config', () => {
           connectionTimeoutMillis: 3000,
           ssl: false,
           max: 20,
-          connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
+          connectionString:
+            'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&connection_limit=20&sslmode=disable',
         },
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {
@@ -852,7 +856,8 @@ describe('dbos-config', () => {
           connectionTimeoutMillis: 3000,
           ssl: false,
           max: 20,
-          connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
+          connectionString:
+            'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&connection_limit=20&sslmode=disable',
         },
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {

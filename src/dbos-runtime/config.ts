@@ -196,6 +196,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     password: configFile.database.password,
     connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
     database: databaseName,
+    max: cliOptions?.userDbPoolSize || 20,
   };
 
   if (!poolConfig.database) {
@@ -218,6 +219,9 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     const queryParams: string[] = [];
     if (poolConfig.connectionTimeoutMillis) {
       queryParams.push(`connect_timeout=${poolConfig.connectionTimeoutMillis / 1000}`);
+    }
+    if (poolConfig.max) {
+      queryParams.push(`connection_limit=${poolConfig.max}`);
     }
     if (poolConfig.ssl === false || poolConfig.ssl === undefined) {
       queryParams.push(`sslmode=disable`);
@@ -275,6 +279,7 @@ export interface ParseOptions {
   appVersion?: string | boolean;
   silent?: boolean;
   forceConsole?: boolean;
+  userDbPoolSize?: number;
 }
 
 /*
@@ -441,9 +446,8 @@ export function translatePublicDBOSconfig(
       application: {},
       env: {},
     },
-    { silent: true },
+    { silent: true, userDbPoolSize: config.userDbPoolSize },
   );
-  poolConfig.max = config.userDbPoolSize || 20;
 
   const translatedConfig: DBOSConfigInternal = {
     name: appName,
