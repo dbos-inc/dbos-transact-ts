@@ -325,24 +325,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
       const { PrismaClient } = require(path.join(process.cwd(), 'node_modules', '@prisma', 'client')); // Find the prisma client in the node_modules of the current project
-      let dbUrl = `postgresql://${userDBConfig.user}:${userDBConfig.password as string}@${userDBConfig.host}:${userDBConfig.port}/${userDBConfig.database}`;
-      const queryParams: Record<string, string | number> = {};
-      if (userDBConfig.connectionTimeoutMillis) {
-        queryParams['connect_timeout'] = userDBConfig.connectionTimeoutMillis;
-      }
-      if (userDBConfig.max) {
-        queryParams['connection_limit'] = String(userDBConfig.max);
-      }
-      const queryString = new URLSearchParams(queryParams as Record<string, string>).toString();
-      if (queryString) {
-        dbUrl += `?${queryString}`;
-      }
       this.userDatabase = new PrismaUserDatabase(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
         new PrismaClient({
           datasources: {
             db: {
-              url: dbUrl,
+              url: userDBConfig.connectionString,
             },
           },
         }),
@@ -356,11 +344,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
           new DataSourceExports.DataSource({
             type: 'postgres', // perhaps should move to config file
-            host: userDBConfig.host,
-            port: userDBConfig.port,
-            username: userDBConfig.user,
-            password: userDBConfig.password,
-            database: userDBConfig.database,
+            url: userDBConfig.connectionString,
             entities: this.typeormEntities,
             ssl: userDBConfig.ssl,
             poolSize: userDBConfig.max,
@@ -375,15 +359,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else if (userDbClient === UserDatabaseName.KNEX) {
       const knexConfig: Knex.Config = {
         client: 'postgres',
-        connection: {
-          host: userDBConfig.host,
-          port: userDBConfig.port,
-          user: userDBConfig.user,
-          password: userDBConfig.password,
-          database: userDBConfig.database,
-          ssl: userDBConfig.ssl,
-          connectTimeout: userDBConfig.connectionTimeoutMillis,
-        },
+        connection: userDBConfig.connectionString,
         pool: {
           min: 0,
           max: userDBConfig.max,

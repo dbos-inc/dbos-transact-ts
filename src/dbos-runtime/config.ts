@@ -544,6 +544,7 @@ export function overwrite_config(
 
   const appName = configFile!.name || providedDBOSConfig.name;
 
+  configFile.database_url = undefined;
   const poolConfig = constructPoolConfig(configFile!);
 
   if (!providedDBOSConfig.telemetry.OTLPExporter) {
