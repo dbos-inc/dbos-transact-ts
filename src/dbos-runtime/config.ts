@@ -146,7 +146,12 @@ function retrieveApplicationName(configFile: ConfigFile): string {
  * Build a PoolConfig object from the config file and CLI options.
  *
  * If configFile.database_url is provided, this function expects configFile.database to be built from the database_url.
- * If not, a connection string will be built from configFile.database, after it is fully resolved.
+ * A connection string will be built from configFile.database, after it is fully resolved.
+ * If a database_url with query parameters are provided, they will be used.
+ * If no database_url is provided, or if the provided database_url does not contain query parameters, the function will build a connection string with the following query parameters:
+ *  - connect_timeout
+ *  - connection_limit
+ *  - sslmode
  *
  * Default configuration:
  * - Hostname: localhost
