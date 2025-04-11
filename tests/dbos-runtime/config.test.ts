@@ -18,7 +18,6 @@ import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error
 import { DBOSExecutor, DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { WorkflowContextImpl } from '../../src/workflow';
 import { get } from 'lodash';
-import { db_wizard } from '../../src/dbos-runtime/db_wizard';
 
 describe('dbos-config', () => {
   const mockCLIOptions = { port: NaN, loglevel: 'info' };
@@ -272,25 +271,6 @@ describe('dbos-config', () => {
       expect(poolConfig.user).toBe('DBUSER_OVERRIDE');
       expect(poolConfig.password).toBe('DBPASSWORD_OVERRIDE');
       expect(poolConfig.database).toBe('some_db');
-    });
-
-    test('DB wizard will not start with database configured', async () => {
-      const mockDBOSConfigYamlString = `
-      name: 'some-app'
-      language: 'node'
-      database:
-        hostname: 'localhost'
-        port: 5432
-        password: 'somerandom'`;
-
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
-
-      const [dbosConfig, _]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-
-      const poolConfig: PoolConfig = dbosConfig.poolConfig!;
-      expect(poolConfig.host).toBe('localhost');
-      expect(poolConfig.port).toBe(5432);
-      await expect(db_wizard(poolConfig)).rejects.toThrow(DBOSInitializationError);
     });
 
     test('constructPoolConfig correctly handles app names with spaces', () => {
