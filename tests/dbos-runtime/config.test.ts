@@ -89,8 +89,6 @@ describe('dbos-config', () => {
     }
 
     test('uses default values when config is empty', () => {
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(''); // loadDatabaseConnection()
-
       const config = baseConfig();
       const pool = constructPoolConfig(config);
 
@@ -108,10 +106,7 @@ describe('dbos-config', () => {
     });
 
     test('throws when app name and package.json are missing', () => {
-      jest
-        .spyOn(utils, 'readFileSync')
-        .mockReturnValueOnce('') // loadDatabaseConnection()
-        .mockReturnValueOnce('{}'); // load package.json
+      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('{}'); // load package.json
 
       const config = baseConfig();
       config.name = undefined;
@@ -124,8 +119,6 @@ describe('dbos-config', () => {
       process.env.DBOS_DBPORT = '7777';
       process.env.DBOS_DBUSER = 'envuser';
       process.env.DBOS_DBPASSWORD = 'envpass';
-
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('{}'); // loadDatabaseConnection()
 
       const config = baseConfig();
       config.database.app_db_name = 'appdb';
@@ -148,7 +141,6 @@ describe('dbos-config', () => {
 
     test('uses mixed parameters from defaults, config, and environment', () => {
       process.env.DBOS_DBHOST = 'env-host.com';
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(''); // loadDatabaseConnection()
 
       const config = baseConfig();
       config.database = {
@@ -173,10 +165,7 @@ describe('dbos-config', () => {
     });
 
     test('respects ssl_ca and builds verify-full connection string', () => {
-      jest
-        .spyOn(utils, 'readFileSync')
-        .mockReturnValueOnce('{}') // db_connection
-        .mockReturnValueOnce('CA_CERT'); // readFileSync for CA
+      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('CA_CERT'); // readFileSync for CA
 
       const config = baseConfig();
       config.database = {
@@ -201,10 +190,9 @@ describe('dbos-config', () => {
       });
     });
 
+    // Note we still expect config.database to have been built off database_url.
     test('parses all connection parameters from database_url and ignores config.database', () => {
       const dbUrl = 'postgresql://url_user:url_pass@url_host:9999/url_db?sslmode=require&connect_timeout=15&extra=1';
-
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('{}'); // loadDatabaseConnection()
 
       const config = baseConfig();
       config.database = {
@@ -235,8 +223,6 @@ describe('dbos-config', () => {
     test('append connection parameters from config.database when none are provided in the database_url', () => {
       const dbUrl = 'postgresql://url_user:url_pass@url_host:9999/url_db';
 
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('{}'); // loadDatabaseConnection()
-
       const config = baseConfig();
       config.database = {
         hostname: 'url_host',
@@ -266,6 +252,7 @@ describe('dbos-config', () => {
     test('constructPoolConfig correctly handles app names with spaces', () => {
       const config = baseConfig();
       config.name = 'app name with spaces';
+      config.database.ssl = true;
       const pool = constructPoolConfig(config);
       assertPoolConfig(pool, {
         host: 'localhost',
@@ -274,9 +261,9 @@ describe('dbos-config', () => {
         password: 'dbos',
         database: 'app_name_with_spaces',
         connectionTimeoutMillis: 3000,
-        ssl: false,
+        ssl: { rejectUnauthorized: false },
         connectionString:
-          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&connection_limit=20&sslmode=disable',
+          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&connection_limit=20&sslmode=require',
       });
     });
   });
@@ -442,7 +429,6 @@ describe('dbos-config', () => {
         username: 'some user'
         password: 'some password'
         app_db_name: 'some_db'
-        local_suffix: true
         ssl: false`;
 
       jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
@@ -451,7 +437,6 @@ describe('dbos-config', () => {
       process.env.DBOS_DBPORT = '99999';
       process.env.DBOS_DBUSER = 'DBUSER_OVERRIDE';
       process.env.DBOS_DBPASSWORD = 'DBPASSWORD_OVERRIDE';
-      process.env.DBOS_DBLOCALSUFFIX = 'false';
 
       const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
 
@@ -478,7 +463,7 @@ describe('dbos-config', () => {
 
   describe('context getConfig()', () => {
     beforeEach(() => {
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockDBOSConfigYamlString).mockReturnValueOnce(''); // loadDatabaseConnection()
+      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockDBOSConfigYamlString);
     });
 
     test('getConfig returns the expected values', async () => {
@@ -553,77 +538,6 @@ describe('dbos-config', () => {
       expect(process.env.FOOFOO).toBe('barbar');
       expect(process.env.RANDENV).toBe(''); // Empty string
       await dbosExec.telemetryCollector.destroy();
-    });
-
-    test('ssl true enables ssl', async () => {
-      const localMockDBOSConfigYamlString = `
-        database:
-          hostname: 'localhost'
-          port: 1234
-          username: 'some user'
-          password: \${PGPASSWORD}
-          connectionTimeoutMillis: 3000
-          app_db_name: 'some_db'
-          ssl: true
-        env:
-          FOOFOO: barbar
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      expect(dbosConfig.poolConfig!.ssl).toEqual({ rejectUnauthorized: false });
-    });
-
-    test('config works without app_db_name', async () => {
-      const localMockDBOSConfigYamlString = `
-        name: some-app
-        database:
-          hostname: 'localhost'
-          port: 1234
-          username: 'some user'
-          password: \${PGPASSWORD}
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const poolConfig = dbosConfig.poolConfig;
-      expect(poolConfig!.database).toBe('some_app');
-    });
-
-    test('ssl defaults off for localhost', async () => {
-      const localMockDBOSConfigYamlString = `
-        database:
-          hostname: 'localhost'
-          port: 1234
-          username: 'some user'
-          password: \${PGPASSWORD}
-          connectionTimeoutMillis: 3000
-          app_db_name: 'some_db'
-        env:
-          FOOFOO: barbar
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      expect(dbosConfig.poolConfig!.ssl).toBe(false);
-    });
-
-    test('ssl defaults on for not-localhost', async () => {
-      const localMockDBOSConfigYamlString = `
-        database:
-          hostname: 'some host'
-          port: 1234
-          username: 'some user'
-          password: \${PGPASSWORD}
-          connectionTimeoutMillis: 3000
-          app_db_name: 'some_db'
-        env:
-          FOOFOO: barbar
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      expect(dbosConfig.poolConfig!.ssl).toEqual({ rejectUnauthorized: false });
     });
 
     test('getConfig throws when it finds a value of different type than the default', async () => {
@@ -1256,7 +1170,7 @@ describe('dbos-config', () => {
             sys_db_name: sys_db_from_file
         `;
 
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockDBOSConfigYamlString).mockReturnValueOnce(''); // parse package.json
+      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockDBOSConfigYamlString);
 
       const providedDBOSConfig: DBOSConfigInternal = {
         name: 'test-app',
