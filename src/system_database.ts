@@ -7,6 +7,7 @@ import {
   DBOSNonExistentWorkflowError,
   DBOSDeadLetterQueueError,
   DBOSConflictingWorkflowError,
+  DBOSInvalidWorkflowTransitionError,
 } from './error';
 import {
   GetPendingWorkflowsOutput,
@@ -42,6 +43,13 @@ export interface SystemDatabaseStoredResult {
   child?: string | null;
   functionName?: string;
 }
+
+export const DBOS_FUNCNAME_SEND = 'DBOS.send';
+export const DBOS_FUNCNAME_RECV = 'DBOS.recv';
+export const DBOS_FUNCNAME_SETEVENT = 'DBOS.setEvent';
+export const DBOS_FUNCNAME_GETEVENT = 'DBOS.getEvent';
+export const DBOS_FUNCNAME_SLEEP = 'DBOS.sleep';
+export const DBOS_FUNCNAME_GETSTATUS = 'getStatus';
 
 /**
  * General notes:
@@ -594,12 +602,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
     let endTimeMs = curTime + durationMS;
     const res = await this.getOperationResult(workflowID, functionID);
     if (res.res !== undefined) {
+      if (res.res.functionName !== DBOS_FUNCNAME_SLEEP) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          `In call to ${DBOS_FUNCNAME_SLEEP}, existing output was recorded by ${res.res.functionName}`,
+        );
+      }
       endTimeMs = JSON.parse(res.res.res!) as number;
     } else {
       await this.recordOperationResult(
         workflowID,
         functionID,
-        { serialOutput: JSON.stringify(endTimeMs), functionName: `DBOS.sleep` },
+        { serialOutput: JSON.stringify(endTimeMs), functionName: DBOS_FUNCNAME_SLEEP },
         false,
       );
     }
@@ -622,6 +635,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       const res = await this.getOperationResult(workflowID, functionID, client);
       if (res.res !== undefined) {
+        if (res.res.functionName !== DBOS_FUNCNAME_SEND) {
+          throw new DBOSInvalidWorkflowTransitionError(
+            `In call to ${DBOS_FUNCNAME_SEND}, existing output was recorded by ${res.res.functionName}`,
+          );
+        }
+
         await client.query('ROLLBACK');
         return;
       }
@@ -629,7 +648,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
         [destinationID, topic, DBOSJSON.stringify(message)],
       );
-      await this.recordOperationResult(workflowID, functionID, { functionName: 'DBOS.send' }, true, client);
+      await this.recordOperationResult(workflowID, functionID, { functionName: DBOS_FUNCNAME_SEND }, true, client);
       await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
@@ -656,6 +675,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // First, check for previous executions.
     const res = await this.getOperationResult(workflowID, functionID);
     if (res.res) {
+      if (res.res.functionName !== DBOS_FUNCNAME_RECV) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          `In call to ${DBOS_FUNCNAME_RECV}, existing output was recorded by ${res.res.functionName}`,
+        );
+      }
       return DBOSJSON.parse(res.res.res!) as T;
     }
 
@@ -725,7 +749,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await this.recordOperationResult(
         workflowID,
         functionID,
-        { serialOutput: DBOSJSON.stringify(message), functionName: 'DBOS.recv' },
+        { serialOutput: DBOSJSON.stringify(message), functionName: DBOS_FUNCNAME_RECV },
         true,
         client,
       );
@@ -748,6 +772,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       const res = await this.getOperationResult(workflowID, functionID, client);
       if (res.res !== undefined) {
+        if (res.res.functionName !== DBOS_FUNCNAME_SETEVENT) {
+          throw new DBOSInvalidWorkflowTransitionError(
+            `In call to ${DBOS_FUNCNAME_SETEVENT}, existing output was recorded by ${res.res.functionName}`,
+          );
+        }
+
         await client.query('ROLLBACK');
         return;
       }
@@ -759,7 +789,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
          RETURNING workflow_uuid;`,
         [workflowID, key, DBOSJSON.stringify(message)],
       );
-      await this.recordOperationResult(workflowID, functionID, { functionName: 'DBOS.setEvent' }, true, client);
+      await this.recordOperationResult(workflowID, functionID, { functionName: DBOS_FUNCNAME_SETEVENT }, true, client);
       await client.query('COMMIT');
     } catch (e) {
       this.logger.error(e);
@@ -784,6 +814,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (callerWorkflow) {
       const res = await this.getOperationResult(callerWorkflow.workflowID, callerWorkflow.functionID);
       if (res.res !== undefined) {
+        if (res.res.functionName !== DBOS_FUNCNAME_GETEVENT) {
+          throw new DBOSInvalidWorkflowTransitionError(
+            `In call to ${DBOS_FUNCNAME_GETEVENT}, existing output was recorded by ${res.res.functionName}`,
+          );
+        }
         return DBOSJSON.parse(res.res.res!) as T;
       }
     }
@@ -867,7 +902,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         callerWorkflow.functionID,
         {
           serialOutput: DBOSJSON.stringify(value),
-          functionName: 'DBOS.getEvent',
+          functionName: DBOS_FUNCNAME_GETEVENT,
         },
         true,
       );
@@ -992,6 +1027,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (callerID !== undefined && callerFN !== undefined) {
       const res = await this.getOperationResult(callerID, callerFN);
       if (res.res !== undefined) {
+        if (res.res.functionName !== DBOS_FUNCNAME_GETSTATUS) {
+          throw new DBOSInvalidWorkflowTransitionError(
+            `In call to ${DBOS_FUNCNAME_GETSTATUS}, existing output was recorded by ${res.res.functionName}`,
+          );
+        }
         return DBOSJSON.parse(res.res.res!) as WorkflowStatusInternal;
       }
     }
@@ -1033,7 +1073,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         callerFN,
         {
           serialOutput: DBOSJSON.stringify(value),
-          functionName: 'getStatus',
+          functionName: DBOS_FUNCNAME_GETSTATUS,
         },
         true,
       );
