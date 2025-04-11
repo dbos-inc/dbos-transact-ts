@@ -550,7 +550,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return this.systemDatabase.getWorkflowStatus(this.workflowUUID, this.callerUUID);
+    return await DBOS.getWorkflowStatus(this.workflowUUID);
   }
 
   async getResult(): Promise<R> {
@@ -613,7 +613,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await this.systemDatabase.getWorkflowStatus(this.workflowUUID, this.callerUUID);
+    return await DBOS.getWorkflowStatus(this.workflowUUID);
   }
 
   async getResult(): Promise<R> {

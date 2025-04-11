@@ -17,7 +17,6 @@ import {
   GetWorkflowsInput,
   GetWorkflowsOutput,
   StatusString,
-  WorkflowContextImpl,
   WorkflowStatus,
 } from './workflow';
 import {
@@ -37,7 +36,6 @@ import knex, { Knex } from 'knex';
 import path from 'path';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSEventReceiverState } from './eventreceiver';
-import { getCurrentDBOSContext } from './context';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -77,11 +75,11 @@ export interface SystemDatabase {
     checkConflict: boolean,
   ): Promise<void>;
 
-  getWorkflowStatus(workflowID: string, callerID?: string): Promise<WorkflowStatus | null>;
+  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
     workflowID: string,
     callerID?: string,
-    functionID?: number,
+    callerFN?: number,
   ): Promise<WorkflowStatusInternal | null>;
   awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined>;
 
@@ -964,8 +962,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async getWorkflowStatus(workflowID: string, callerID?: string): Promise<WorkflowStatus | null> {
-    const internalStatus = await this.getWorkflowStatusInternal(workflowID, callerID);
+  async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
+    const internalStatus = await this.getWorkflowStatusInternal(workflowID, callerID, callerFN);
     if (internalStatus === null) {
       return null;
     }
@@ -983,15 +981,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  async getWorkflowStatusInternal(workflowID: string, callerID?: string): Promise<WorkflowStatusInternal | null> {
+  async getWorkflowStatusInternal(
+    workflowID: string,
+    callerID?: string,
+    callerFN?: number,
+  ): Promise<WorkflowStatusInternal | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
-
-    const wfctx = getCurrentDBOSContext() as WorkflowContextImpl;
-
-    let newfunctionId = undefined;
-    if (callerID !== undefined && wfctx !== undefined) {
-      newfunctionId = wfctx.functionIDGetIncrement();
-      const res = await this.getOperationResult(callerID, newfunctionId);
+    if (callerID !== undefined && callerFN !== undefined) {
+      const res = await this.getOperationResult(callerID, callerFN);
       if (res.res !== undefined) {
         return DBOSJSON.parse(res.res.res!) as WorkflowStatusInternal;
       }
@@ -1028,10 +1025,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Record the output if it is inside a workflow.
-    if (callerID !== undefined && newfunctionId !== undefined) {
+    if (callerID !== undefined && callerFN !== undefined) {
       await this.recordOperationResult(
         callerID,
-        newfunctionId,
+        callerFN,
         {
           serialOutput: DBOSJSON.stringify(value),
           functionName: 'getStatus',

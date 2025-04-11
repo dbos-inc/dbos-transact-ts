@@ -1847,8 +1847,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return new RetrievedHandle(this.systemDatabase, workflowID);
   }
 
-  getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null> {
-    return this.systemDatabase.getWorkflowStatus(workflowID);
+  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
+    return this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
   }
 
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
