@@ -416,29 +416,41 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { args: DBOSJSON.parse(rows[0].inputs) as T, status };
   }
 
-  async recordWorkflowCompletion(
+  async recordWorkflowStatusChange(
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
-    output?: string | null,
-    error?: string | null,
+    update: {
+      output?: string | null;
+      error?: string | null;
+      resetRecoveryAttempts?: boolean;
+      incrementRecoveryAttempts?: boolean;
+    },
+    client?: PoolClient,
   ): Promise<void> {
-    const wRes = await this.pool.query<workflow_status>(
+    let rec = '';
+    if (update.resetRecoveryAttempts) {
+      rec = ' recovery_attempts = 0, ';
+    }
+    if (update.incrementRecoveryAttempts) {
+      rec = ' recovery_attempts = recovery_attempts + 1';
+    }
+    const wRes = await (client ?? this.pool).query<workflow_status>(
       `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-       SET status=$2, output=$3, error=$4, updated_at=$5 WHERE workflow_uuid=$1`,
-      [workflowID, status, output, error, Date.now()],
+       SET ${rec} status=$2, output=$3, error=$4, updated_at=$5 WHERE workflow_uuid=$1`,
+      [workflowID, status, update.output, update.error, Date.now()],
     );
 
     if (wRes.rowCount !== 1) {
-      throw new DBOSWorkflowConflictUUIDError(`Attempt to record completion of nonexistent workflow ${workflowID}`);
+      throw new DBOSWorkflowConflictUUIDError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
     }
   }
 
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
-    await this.recordWorkflowCompletion(workflowID, StatusString.SUCCESS, status.output, undefined);
+    await this.recordWorkflowStatusChange(workflowID, StatusString.SUCCESS, { output: status.output });
   }
 
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
-    await this.recordWorkflowCompletion(workflowID, StatusString.ERROR, undefined, status.error);
+    await this.recordWorkflowStatusChange(workflowID, StatusString.ERROR, { error: status.error });
   }
 
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
@@ -860,16 +872,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     status: (typeof StatusString)[keyof typeof StatusString],
     resetRecoveryAttempts: boolean,
   ): Promise<void> {
-    await this.pool.query(
-      `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2`,
-      [status, workflowID],
-    );
-    if (resetRecoveryAttempts) {
-      await this.pool.query(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET recovery_attempts=0 WHERE workflow_uuid=$1`,
-        [workflowID],
-      );
-    }
+    await this.recordWorkflowStatusChange(workflowID, status, { resetRecoveryAttempts });
   }
 
   async cancelWorkflow(workflowID: string): Promise<void> {
