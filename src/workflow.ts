@@ -390,7 +390,13 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async send<T>(destinationUUID: string, message: T, topic?: string): Promise<void> {
     const functionID: number = this.functionIDGetIncrement();
-    await this.#dbosExec.systemDatabase.send(this.workflowUUID, functionID, destinationUUID, message, topic);
+    await this.#dbosExec.systemDatabase.send(
+      this.workflowUUID,
+      functionID,
+      destinationUUID,
+      DBOSJSON.stringify(message),
+      topic,
+    );
   }
 
   /**
@@ -404,7 +410,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   ): Promise<T | null> {
     const functionID: number = this.functionIDGetIncrement();
     const timeoutFunctionID: number = this.functionIDGetIncrement();
-    return this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, timeoutFunctionID, topic, timeoutSeconds);
+    return DBOSJSON.parse(
+      await this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, timeoutFunctionID, topic, timeoutSeconds),
+    ) as T;
   }
 
   /**
@@ -413,7 +421,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async setEvent<T>(key: string, value: T) {
     const functionID: number = this.functionIDGetIncrement();
-    await this.#dbosExec.systemDatabase.setEvent(this.workflowUUID, functionID, key, value);
+    await this.#dbosExec.systemDatabase.setEvent(this.workflowUUID, functionID, key, DBOSJSON.stringify(value));
   }
 
   /**
@@ -459,7 +467,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
-  getEvent<T>(
+  async getEvent<T>(
     targetUUID: string,
     key: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
@@ -471,7 +479,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       functionID,
       timeoutFunctionID,
     };
-    return this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, params);
+    return DBOSJSON.parse(await this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, params)) as T;
   }
 
   /**

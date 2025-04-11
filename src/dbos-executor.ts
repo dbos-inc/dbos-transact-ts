@@ -1837,7 +1837,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     key: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
-    return this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
+    return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
   }
 
   /**

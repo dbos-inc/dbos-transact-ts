@@ -122,17 +122,23 @@ export interface SystemDatabase {
     duration: number,
   ): Promise<{ promise: Promise<void>; cancel: () => void }>;
 
-  send<T>(workflowID: string, functionID: number, destinationID: string, message: T, topic?: string): Promise<void>;
-  recv<T>(
+  send(
+    workflowID: string,
+    functionID: number,
+    destinationID: string,
+    message: string | null,
+    topic?: string,
+  ): Promise<void>;
+  recv(
     workflowID: string,
     functionID: number,
     timeoutFunctionID: number,
     topic?: string,
     timeoutSeconds?: number,
-  ): Promise<T | null>;
+  ): Promise<string | null>;
 
-  setEvent<T>(workflowID: string, functionID: number, key: string, value: T): Promise<void>;
-  getEvent<T>(
+  setEvent(workflowID: string, functionID: number, key: string, value: string | null): Promise<void>;
+  getEvent(
     workflowID: string,
     key: string,
     timeoutSeconds: number,
@@ -141,7 +147,7 @@ export interface SystemDatabase {
       functionID: number;
       timeoutFunctionID: number;
     },
-  ): Promise<T | null>;
+  ): Promise<string | null>;
 
   // Event receiver state queries / updates
   // An event dispatcher may keep state in the system database
@@ -621,11 +627,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly nullTopic = '__null__topic__';
 
-  async send<T>(
+  async send(
     workflowID: string,
     functionID: number,
     destinationID: string,
-    message: T,
+    message: string | null,
     topic?: string,
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
@@ -646,7 +652,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
       await client.query(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
-        [destinationID, topic, DBOSJSON.stringify(message)],
+        [destinationID, topic, message],
       );
       await this.recordOperationResult(workflowID, functionID, { functionName: DBOS_FUNCNAME_SEND }, true, client);
       await client.query('COMMIT');
@@ -664,13 +670,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recv<T>(
+  async recv(
     workflowID: string,
     functionID: number,
     timeoutFunctionID: number,
     topic?: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
-  ): Promise<T | null> {
+  ): Promise<string | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
     const res = await this.getOperationResult(workflowID, functionID);
@@ -680,7 +686,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           `In call to ${DBOS_FUNCNAME_RECV}, existing output was recorded by ${res.res.functionName}`,
         );
       }
-      return DBOSJSON.parse(res.res.res!) as T;
+      return res.res.res!;
     }
 
     // Check if the key is already in the DB, then wait for the notification if it isn't.
@@ -719,7 +725,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
-    let message: T | null = null;
+    let message: string | null = null;
     const client = await this.pool.connect();
     try {
       await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
@@ -744,12 +750,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         )
       ).rows;
       if (finalRecvRows.length > 0) {
-        message = DBOSJSON.parse(finalRecvRows[0].message) as T;
+        message = finalRecvRows[0].message;
       }
       await this.recordOperationResult(
         workflowID,
         functionID,
-        { serialOutput: DBOSJSON.stringify(message), functionName: DBOS_FUNCNAME_RECV },
+        { serialOutput: message, functionName: DBOS_FUNCNAME_RECV },
         true,
         client,
       );
@@ -765,7 +771,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  async setEvent<T>(workflowID: string, functionID: number, key: string, message: T): Promise<void> {
+  async setEvent(workflowID: string, functionID: number, key: string, message: string | null): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     try {
@@ -787,7 +793,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
          ON CONFLICT (workflow_uuid, key)
          DO UPDATE SET value = $3
          RETURNING workflow_uuid;`,
-        [workflowID, key, DBOSJSON.stringify(message)],
+        [workflowID, key, message],
       );
       await this.recordOperationResult(workflowID, functionID, { functionName: DBOS_FUNCNAME_SETEVENT }, true, client);
       await client.query('COMMIT');
@@ -800,7 +806,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async getEvent<T>(
+  async getEvent(
     workflowID: string,
     key: string,
     timeoutSeconds: number,
@@ -809,7 +815,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       functionID: number;
       timeoutFunctionID: number;
     },
-  ): Promise<T | null> {
+  ): Promise<string | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerWorkflow) {
       const res = await this.getOperationResult(callerWorkflow.workflowID, callerWorkflow.functionID);
@@ -819,12 +825,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
             `In call to ${DBOS_FUNCNAME_GETEVENT}, existing output was recorded by ${res.res.functionName}`,
           );
         }
-        return DBOSJSON.parse(res.res.res!) as T;
+        return res.res.res!;
       }
     }
 
     // Get the return the value. if it's in the DB, otherwise return null.
-    let value: T | null = null;
+    let value: string | null = null;
     const payloadKey = `${workflowID}::${key}`;
     // Register the key with the global notifications listener first... we do not want to look in the DB first
     //  or that would cause a timing hole.
@@ -847,7 +853,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       ).rows;
 
       if (initRecvRows.length > 0) {
-        value = DBOSJSON.parse(initRecvRows[0].value) as T;
+        value = initRecvRows[0].value;
       } else {
         // If we have a callerWorkflow, we want a durable sleep, otherwise, not
         let timeoutPromise: Promise<void> = Promise.resolve();
@@ -888,7 +894,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           )
         ).rows;
         if (finalRecvRows.length > 0) {
-          value = DBOSJSON.parse(finalRecvRows[0].value) as T;
+          value = finalRecvRows[0].value;
         }
       }
     } finally {
@@ -901,7 +907,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         callerWorkflow.workflowID,
         callerWorkflow.functionID,
         {
-          serialOutput: DBOSJSON.stringify(value),
+          serialOutput: value,
           functionName: DBOS_FUNCNAME_GETEVENT,
         },
         true,
