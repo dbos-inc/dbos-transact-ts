@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
-import { deserializeError } from 'serialize-error';
 import { DBOSConfigInternal, DBOSExecutor } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
@@ -27,7 +26,6 @@ import {
   workflow_inputs,
   workflow_queue,
   event_dispatch_kv,
-  step_info,
 } from '../schemas/system_db_schema';
 import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep } from './utils';
 import { HTTPRequest } from './context';
@@ -45,6 +43,17 @@ export interface SystemDatabaseStoredResult {
   functionName?: string;
 }
 
+/**
+ * General notes:
+ *   The responsibilities of the `SystemDatabase` are to store data for workflows, and
+ *     associated steps, transactions, messages, and events.  The system DB is
+ *     also the IPC mechanism that performs notifications when things change, for
+ *     example a receive is unblocked when a send occurs, or a cancel interrupts
+ *     the receive.
+ *   The `SystemDatabase` expects values in inputs/outputs/errors to be JSON.  However,
+ *     the serialization process of turning data into JSON or converting it back, should
+ *     be done elsewhere (executor), as it may require application-specific logic or extensions.
+ */
 export interface SystemDatabase {
   init(): Promise<void>;
   destroy(): Promise<void>;
@@ -58,7 +67,6 @@ export interface SystemDatabase {
 
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
   getWorkflowInputs<T extends any[]>(workflowID: string): Promise<T | null>;
-  getWorkflowSteps(workflowID: string): Promise<step_info[]>;
 
   // If there is no record, res will be undefined;
   //  otherwise will be defined (with potentially undefined contents)
@@ -74,6 +82,7 @@ export interface SystemDatabase {
     },
     checkConflict: boolean,
   ): Promise<void>;
+  getAllOperationResults(workflowID: string): Promise<operation_outputs[]>;
 
   getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
@@ -529,18 +538,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
-    // TODO Use correct underlying row structure and map()
-    const { rows } = await this.pool.query<step_info>(
-      `SELECT function_id, function_name, output, error, child_workflow_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
+  async getAllOperationResults(workflowID: string): Promise<operation_outputs[]> {
+    const { rows } = await this.pool.query<operation_outputs>(
+      `SELECT * FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
       [workflowID],
     );
-
-    for (const row of rows) {
-      row.output = row.output !== null ? DBOSJSON.parse(row.output as string) : null;
-      row.error = row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null;
-    }
-
     return rows;
   }
 

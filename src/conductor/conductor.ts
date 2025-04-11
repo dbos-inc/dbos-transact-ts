@@ -278,7 +278,7 @@ export class Conductor {
             const listStepsMessage = baseMsg as protocol.ListStepsRequest;
             let workflowSteps: protocol.WorkflowSteps[] | undefined = undefined;
             try {
-              const stepsInfo = await this.dbosExec.systemDatabase.getWorkflowSteps(listStepsMessage.workflow_id);
+              const stepsInfo = await this.dbosExec.getWorkflowSteps(listStepsMessage.workflow_id);
               workflowSteps = stepsInfo.map((i) => new protocol.WorkflowSteps(i));
             } catch (e) {
               errorMsg = `Exception encountered when listing steps ${listStepsMessage.workflow_id}: ${(e as Error).message}`;

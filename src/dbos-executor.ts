@@ -2111,8 +2111,21 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.workflowCancellationMap.set(workflowID, true);
   }
 
+  async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
+    const outputs = await this.systemDatabase.getAllOperationResults(workflowID);
+    return outputs.map((row) => {
+      return {
+        function_id: row.function_id,
+        function_name: row.function_name ?? '<unknown>',
+        child_workflow_id: row.child_workflow_id,
+        output: row.output !== null ? (DBOSJSON.parse(row.output) as unknown) : null,
+        error: row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null,
+      };
+    });
+  }
+
   async listWorkflowSteps(workflowID: string): Promise<step_info[]> {
-    const steps = await this.systemDatabase.getWorkflowSteps(workflowID);
+    const steps = await this.getWorkflowSteps(workflowID);
     const transactions = await this.getTransactions(workflowID);
 
     const merged = [...steps, ...transactions];
