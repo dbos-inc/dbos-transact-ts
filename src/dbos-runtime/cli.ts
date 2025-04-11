@@ -23,6 +23,7 @@ import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
+import { startDockerPg, stopDockerPg } from './docker_pg_helper';
 
 const program = new Command();
 
@@ -136,6 +137,20 @@ program
   .action(async () => {
     await runAndLog(migrate);
   });
+
+program
+  .command('postgres')
+  .description('Helps you setting up a local Postgres database with Docker')
+  .addCommand(
+    new Command('start').description('Start a local Postgres database with Docker').action(async () => {
+      await startDockerPg();
+    }),
+  )
+  .addCommand(
+    new Command('stop').description('Stop the local Postgres database with Docker').action(async () => {
+      await stopDockerPg();
+    }),
+  );
 
 program
   .command('reset')
