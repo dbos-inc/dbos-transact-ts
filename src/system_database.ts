@@ -7,7 +7,7 @@ import {
   DBOSNonExistentWorkflowError,
   DBOSDeadLetterQueueError,
   DBOSConflictingWorkflowError,
-  DBOSInvalidWorkflowTransitionError,
+  DBOSUnexpectedStepError,
 } from './error';
 import {
   GetPendingWorkflowsOutput,
@@ -560,9 +560,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const res = await this.getOperationResult(workflowID, functionID);
     if (res.res !== undefined) {
       if (res.res.functionName !== DBOS_FUNCNAME_SLEEP) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          `In call to ${DBOS_FUNCNAME_SLEEP}, existing output was recorded by ${res.res.functionName}`,
-        );
+        throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SLEEP, res.res.functionName!);
       }
       endTimeMs = JSON.parse(res.res.res!) as number;
     } else {
@@ -593,9 +591,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const res = await this.getOperationResult(workflowID, functionID, client);
       if (res.res !== undefined) {
         if (res.res.functionName !== DBOS_FUNCNAME_SEND) {
-          throw new DBOSInvalidWorkflowTransitionError(
-            `In call to ${DBOS_FUNCNAME_SEND}, existing output was recorded by ${res.res.functionName}`,
-          );
+          throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SEND, res.res.functionName!);
         }
 
         await client.query('ROLLBACK');
@@ -633,9 +629,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const res = await this.getOperationResult(workflowID, functionID);
     if (res.res) {
       if (res.res.functionName !== DBOS_FUNCNAME_RECV) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          `In call to ${DBOS_FUNCNAME_RECV}, existing output was recorded by ${res.res.functionName}`,
-        );
+        throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_RECV, res.res.functionName!);
       }
       return res.res.res!;
     }
@@ -730,9 +724,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const res = await this.getOperationResult(workflowID, functionID, client);
       if (res.res !== undefined) {
         if (res.res.functionName !== DBOS_FUNCNAME_SETEVENT) {
-          throw new DBOSInvalidWorkflowTransitionError(
-            `In call to ${DBOS_FUNCNAME_SETEVENT}, existing output was recorded by ${res.res.functionName}`,
-          );
+          throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SETEVENT, res.res.functionName!);
         }
 
         await client.query('ROLLBACK');
@@ -772,8 +764,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const res = await this.getOperationResult(callerWorkflow.workflowID, callerWorkflow.functionID);
       if (res.res !== undefined) {
         if (res.res.functionName !== DBOS_FUNCNAME_GETEVENT) {
-          throw new DBOSInvalidWorkflowTransitionError(
-            `In call to ${DBOS_FUNCNAME_GETEVENT}, existing output was recorded by ${res.res.functionName}`,
+          throw new DBOSUnexpectedStepError(
+            callerWorkflow.workflowID,
+            callerWorkflow.functionID,
+            DBOS_FUNCNAME_GETEVENT,
+            res.res.functionName!,
           );
         }
         return res.res.res!;
@@ -967,9 +962,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const res = await this.getOperationResult(callerID, callerFN);
       if (res.res !== undefined) {
         if (res.res.functionName !== DBOS_FUNCNAME_GETSTATUS) {
-          throw new DBOSInvalidWorkflowTransitionError(
-            `In call to ${DBOS_FUNCNAME_GETSTATUS}, existing output was recorded by ${res.res.functionName}`,
-          );
+          throw new DBOSUnexpectedStepError(callerID, callerFN, DBOS_FUNCNAME_GETSTATUS, res.res.functionName!);
         }
         return DBOSJSON.parse(res.res.res!) as WorkflowStatusInternal;
       }
