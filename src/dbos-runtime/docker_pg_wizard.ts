@@ -72,7 +72,7 @@ async function startDockerPostgres(logger: Logger, poolConfig: PoolConfig): Prom
             --name ${containerName} \
             -e POSTGRES_PASSWORD=${poolConfig.password as string} \
             -e PGDATA=${pgData} \
-            -p 5432:5432 \
+            -p ${poolConfig.port}:5432 \
             -v ${pgData}:${pgData}:rw \
             --rm \
             pgvector/pgvector:pg16`;
