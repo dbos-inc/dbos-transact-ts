@@ -1,5 +1,4 @@
 import { Pool, PoolConfig } from 'pg';
-import { DBOSInitializationError } from '../error';
 import { Logger } from 'winston';
 import { sleepms } from '../utils';
 import { getLogger } from './cloudutils/cloudutils';
