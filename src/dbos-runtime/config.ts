@@ -505,7 +505,6 @@ export function parseDbString(dbString: string): DBConfig {
   if (!parsed.user) missingFields.push('username');
   if (!parsed.password) missingFields.push('password');
   if (!parsed.host) missingFields.push('hostname');
-  if (!parsed.port) missingFields.push('port');
 
   if (missingFields.length > 0) {
     throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
@@ -513,7 +512,7 @@ export function parseDbString(dbString: string): DBConfig {
 
   return {
     hostname: parsed.host as string,
-    port: parseInt(parsed.port!, 10),
+    port: parsed.port ? parseInt(parsed.port, 10) : undefined,
     username: parsed.user,
     password: parsed.password,
     app_db_name: parsed.database || undefined,

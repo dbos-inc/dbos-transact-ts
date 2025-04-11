@@ -982,11 +982,6 @@ describe('dbos-config', () => {
       expect(() => parseDbString(dbString)).toThrow(/missing required field\(s\): password/);
     });
 
-    test('should throw if port is missing', () => {
-      const dbString = 'postgres://user:password@localhost/mydatabase';
-      expect(() => parseDbString(dbString)).toThrow(/missing required field\(s\): port/);
-    });
-
     test('should throw if username and password are missing', () => {
       const dbString = 'postgres://localhost:5432/mydatabase';
       expect(() => parseDbString(dbString)).toThrow(/missing required field\(s\): username, password/);
