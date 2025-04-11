@@ -66,9 +66,8 @@ async function startDockerPostgres(logger: Logger, poolConfig: PoolConfig): Prom
   const containerName = 'dbos-db';
   const pgData = '/var/lib/postgresql/data';
 
-  try {
-    // Create and start the container
-    const dockerCmd = `docker run -d \
+  // Create and start the container
+  const dockerCmd = `docker run -d \
             --name ${containerName} \
             -e POSTGRES_PASSWORD=${poolConfig.password as string} \
             -e PGDATA=${pgData} \
@@ -77,31 +76,24 @@ async function startDockerPostgres(logger: Logger, poolConfig: PoolConfig): Prom
             --rm \
             pgvector/pgvector:pg16`;
 
-    await execAsync(dockerCmd);
+  await execAsync(dockerCmd);
 
-    // Wait for PostgreSQL to be ready
-    let attempts = 30;
-    while (attempts > 0) {
-      if (attempts % 5 === 0) {
-        logger.info('Waiting for Postgres Docker container to start...');
-      }
-
-      if ((await checkDbConnectivity(poolConfig)) === null) {
-        return true;
-      }
-
-      attempts--;
-      await sleepms(1000);
+  // Wait for PostgreSQL to be ready
+  let attempts = 30;
+  while (attempts > 0) {
+    if (attempts % 5 === 0) {
+      logger.info('Waiting for Postgres Docker container to start...');
     }
 
-    throw new DBOSInitializationError(
-      `Failed to start Docker container: Container ${containerName} did not start in time.`,
-    );
-  } catch (error) {
-    throw new DBOSInitializationError(
-      `Failed to start Docker container: ${error instanceof Error ? error.message : 'Unknown error'}`,
-    );
+    if ((await checkDbConnectivity(poolConfig)) === null) {
+      return true;
+    }
+
+    attempts--;
+    await sleepms(1000);
   }
+
+  throw new Error(`Failed to start Docker container: Container ${containerName} did not start in time.`);
 }
 
 async function checkDockerInstalled(): Promise<boolean> {
