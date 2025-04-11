@@ -132,7 +132,7 @@ describe('runtime-tests-typeorm', () => {
   });
 
   test('test hello-typeorm runtime', async () => {
-    const command = spawn('node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', ['start'], {
+    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', 'start'], {
       env: process.env,
     });
     await waitForMessageTest(command, '3000');
@@ -156,7 +156,7 @@ describe('runtime-tests-prisma', () => {
   });
 
   test('test hello-prisma runtime', async () => {
-    const command = spawn('node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', ['start'], {
+    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', 'start'], {
       env: process.env,
     });
     await waitForMessageTest(command, '3000');
@@ -180,7 +180,7 @@ describe('runtime-tests-drizzle', () => {
   });
 
   test('test hello-drizzle runtime', async () => {
-    const command = spawn('node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', ['start'], {
+    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', 'start'], {
       env: process.env,
     });
     await waitForMessageTest(command, '3000');
