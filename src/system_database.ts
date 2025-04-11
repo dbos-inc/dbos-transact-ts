@@ -887,12 +887,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         [workflowID],
       );
 
-      await client.query(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
-         SET status = $1 
-         WHERE workflow_uuid = $2`,
-        [StatusString.CANCELLED, workflowID],
-      );
+      // Should we check if it is incomplete first?
+      await this.recordWorkflowStatusChange(workflowID, StatusString.CANCELLED, {}, client);
 
       await client.query('COMMIT');
     } catch (error) {
@@ -931,12 +927,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       );
 
       // Update status to pending and reset recovery attempts
-      await client.query(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
-         SET status = $1, recovery_attempts = 0 
-         WHERE workflow_uuid = $2`,
-        [StatusString.PENDING, workflowID],
-      );
+      await this.recordWorkflowStatusChange(workflowID, StatusString.PENDING, { resetRecoveryAttempts: true }, client);
 
       await client.query('COMMIT');
     } catch (error) {
@@ -1305,19 +1296,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         return false;
       }
       // Reset the status of the task to "ENQUEUED"
-      const wsRes = await client.query<workflow_status>(
-        `
-        UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-        SET status = $2
-        WHERE workflow_uuid = $1;
-      `,
-        [workflowId, StatusString.ENQUEUED],
-      );
-      if (wsRes.rowCount === 0) {
-        throw new Error(
-          `UNREACHABLE: Workflow ${workflowId} is found in the workflow_queue table but not found in the workflow_status table`,
-        );
-      }
+      await this.recordWorkflowStatusChange(workflowId, StatusString.ENQUEUED, {}, client);
       await client.query('COMMIT');
       return true;
     } catch (error) {
