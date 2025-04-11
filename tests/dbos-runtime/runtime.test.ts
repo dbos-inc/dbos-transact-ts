@@ -79,7 +79,7 @@ function configureTemplate() {
   if (process.env.PGPASSWORD === undefined) {
     process.env.PGPASSWORD = 'dbos';
   }
-  execSync('npx dbos migrate', { env: process.env });
+  execSync('npx dbos migrate', { env: process.env, stdio: 'inherit' });
 }
 
 describe('runtime-tests-knex', () => {
