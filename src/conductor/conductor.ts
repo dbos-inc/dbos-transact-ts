@@ -6,6 +6,7 @@ import { GetWorkflowsInput, StatusString } from '..';
 import { getWorkflowInfo } from '../dbos-runtime/workflow_management';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { hostname } from 'node:os';
+import { json as streamJSON } from 'stream/consumers';
 
 export class Conductor {
   url: string;
@@ -70,10 +71,11 @@ export class Conductor {
         if (this.isShuttingDown) {
           this.isClosed = true;
           return;
+        } else if (this.reconnectTimeout === undefined) {
+          // Otherwise, try to reconnect if we haven't already
+          this.dbosExec.logger.warn('Connection to conductor lost. Reconnecting...');
+          this.resetWebsocket();
         }
-        // Otherwise, try to reconnect
-        this.dbosExec.logger.error('Connection to conductor lost. Reconnecting...');
-        this.resetWebsocket();
       }, this.pingTimeoutMs);
     }, this.pingPeriodMs);
   }
@@ -278,7 +280,7 @@ export class Conductor {
             const listStepsMessage = baseMsg as protocol.ListStepsRequest;
             let workflowSteps: protocol.WorkflowSteps[] | undefined = undefined;
             try {
-              const stepsInfo = await this.dbosExec.getWorkflowSteps(listStepsMessage.workflow_id);
+              const stepsInfo = await this.dbosExec.listWorkflowSteps(listStepsMessage.workflow_id);
               workflowSteps = stepsInfo.map((i) => new protocol.WorkflowSteps(i));
             } catch (e) {
               errorMsg = `Exception encountered when listing steps ${listStepsMessage.workflow_id}: ${(e as Error).message}`;
@@ -304,21 +306,26 @@ export class Conductor {
           this.dbosExec.logger.info('Shutdown Conductor connection');
           this.isClosed = true;
           return;
-        } else {
-          // Try to reconnect
-          this.dbosExec.logger.error('Connection to conductor lost. Reconnecting.');
+        } else if (this.reconnectTimeout === undefined) {
+          this.dbosExec.logger.warn('Connection to conductor lost. Reconnecting.');
           this.resetWebsocket();
         }
       });
 
+      this.websocket.on('unexpected-response', async (_, res) => {
+        const resBody = await streamJSON(res);
+        this.dbosExec.logger.warn(
+          `Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}. Details: ${DBOSJSON.stringify(resBody)}`,
+        );
+        this.resetWebsocket();
+      });
+
       this.websocket.on('error', (err) => {
-        console.error(err);
-        // TODO: better error message, showing the detailed error.
-        this.dbosExec.logger.error(`Unexpected exception in connection to conductor. Reconnecting: ${err.message}`);
+        this.dbosExec.logger.warn(`Unexpected exception in connection to conductor. Reconnecting: ${err.message}`);
         this.resetWebsocket();
       });
     } catch (e) {
-      this.dbosExec.logger.error(`Error in conductor loop. Reconnecting: ${(e as Error).message}`);
+      this.dbosExec.logger.warn(`Error in conductor loop. Reconnecting: ${(e as Error).message}`);
       this.resetWebsocket();
     }
   }
