@@ -416,90 +416,29 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { args: DBOSJSON.parse(rows[0].inputs) as T, status };
   }
 
-  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
-    await this.pool.query<workflow_status>(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
-        workflow_uuid,
-        status,
-        name,
-        class_name,
-        config_name,
-        queue_name,
-        authenticated_user,
-        assumed_role,
-        authenticated_roles,
-        request,
-        output,
-        executor_id,
-        application_id,
-        application_version,
-        created_at,
-        updated_at
-    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-    ON CONFLICT (workflow_uuid)
-    DO UPDATE SET status=EXCLUDED.status, output=EXCLUDED.output, updated_at=EXCLUDED.updated_at;`,
-      [
-        workflowID,
-        StatusString.SUCCESS,
-        status.workflowName,
-        status.workflowClassName,
-        status.workflowConfigName,
-        status.queueName,
-        status.authenticatedUser,
-        status.assumedRole,
-        DBOSJSON.stringify(status.authenticatedRoles),
-        DBOSJSON.stringify(status.request),
-        status.output,
-        status.executorId,
-        status.applicationID,
-        status.applicationVersion,
-        status.createdAt,
-        Date.now(),
-      ],
+  async recordWorkflowCompletion(
+    workflowID: string,
+    status: (typeof StatusString)[keyof typeof StatusString],
+    output?: string | null,
+    error?: string | null,
+  ): Promise<void> {
+    const wRes = await this.pool.query<workflow_status>(
+      `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
+       SET status=$2, output=$3, error=$4, updated_at=$5 WHERE workflow_uuid=$1`,
+      [workflowID, status, output, error, Date.now()],
     );
+
+    if (wRes.rowCount !== 1) {
+      throw new DBOSWorkflowConflictUUIDError(`Attempt to record completion of nonexistent workflow ${workflowID}`);
+    }
+  }
+
+  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
+    await this.recordWorkflowCompletion(workflowID, StatusString.SUCCESS, status.output, undefined);
   }
 
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
-    await this.pool.query<workflow_status>(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
-        workflow_uuid,
-        status,
-        name,
-        class_name,
-        config_name,
-        queue_name,
-        authenticated_user,
-        assumed_role,
-        authenticated_roles,
-        request,
-        error,
-        executor_id,
-        application_id,
-        application_version,
-        created_at,
-        updated_at
-    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-    ON CONFLICT (workflow_uuid)
-    DO UPDATE SET status=EXCLUDED.status, error=EXCLUDED.error, updated_at=EXCLUDED.updated_at;`,
-      [
-        workflowID,
-        StatusString.ERROR,
-        status.workflowName,
-        status.workflowClassName,
-        status.workflowConfigName,
-        status.queueName,
-        status.authenticatedUser,
-        status.assumedRole,
-        DBOSJSON.stringify(status.authenticatedRoles),
-        DBOSJSON.stringify(status.request),
-        status.error,
-        status.executorId,
-        status.applicationID,
-        status.applicationVersion,
-        status.createdAt,
-        Date.now(),
-      ],
-    );
+    await this.recordWorkflowCompletion(workflowID, StatusString.ERROR, undefined, status.error);
   }
 
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
