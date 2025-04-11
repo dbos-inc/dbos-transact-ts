@@ -499,7 +499,6 @@ export function parseDbString(dbString: string): DBConfig {
   const url = new URL(dbString);
   const queryParams = Object.fromEntries(url.searchParams.entries());
 
-  // Throw if any required field is missing
   const missingFields: string[] = [];
   if (!parsed.user) missingFields.push('username');
   if (!parsed.password) missingFields.push('password');
