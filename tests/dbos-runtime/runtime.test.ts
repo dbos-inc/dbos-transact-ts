@@ -16,6 +16,15 @@ async function waitForMessageTest(
   const stdin = command.stdin as unknown as Writable;
   const stderr = command.stderr as unknown as Writable;
 
+  // Capture and print stdout/stderr
+  stdout?.on('data', (data) => {
+    process.stdout.write(`[child stdout]: ${data}`);
+  });
+
+  stderr?.on('data', (data) => {
+    process.stderr.write(`[child stderr]: ${data}`);
+  });
+
   if (!adminPort) {
     adminPort = (Number(port) + 1).toString();
   }

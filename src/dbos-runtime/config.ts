@@ -11,7 +11,6 @@ import Ajv, { ValidateFunction } from 'ajv';
 import { parse } from 'pg-connection-string';
 import path from 'path';
 import validator from 'validator';
-import fs from 'fs';
 import { GlobalLogger } from '../telemetry/logs';
 import dbosConfigSchema from '../../dbos-config.schema.json';
 
