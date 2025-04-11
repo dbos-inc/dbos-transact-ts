@@ -54,10 +54,11 @@ export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID
   return workflowSteps;
 }
 
-export type WorkflowInformation = Omit<WorkflowStatusInternal, 'request' | 'error'> & {
+export type WorkflowInformation = Omit<WorkflowStatusInternal, 'request' | 'error' | 'output'> & {
   input?: unknown[];
   request?: HTTPRequest;
   error?: unknown;
+  output?: unknown;
 };
 
 export async function getWorkflowInfo(
@@ -65,16 +66,18 @@ export async function getWorkflowInfo(
   workflowID: string,
   getRequest: boolean,
 ): Promise<WorkflowInformation> {
+  // TODO: Fix this cast
   const info = (await systemDatabase.getWorkflowStatusInternal(workflowID)) as WorkflowInformation;
   if (info === null) {
     return Promise.resolve({} as WorkflowInformation);
   }
   delete info.error; // Remove error from info, and add it back if needed
+  delete info.output;
   const input = await systemDatabase.getWorkflowInputs(workflowID);
   if (input !== null) {
     info.input = input;
   }
-  if (info.status === StatusString.SUCCESS || info.status === StatusString.ERROR)
+  if (info.status === StatusString.SUCCESS || info.status === StatusString.ERROR) {
     try {
       info.output = DBOSExecutor.reviveResultOrError(
         (await systemDatabase.awaitWorkflowResult(workflowID))!,
@@ -83,6 +86,7 @@ export async function getWorkflowInfo(
     } catch (e) {
       info.error = e;
     }
+  }
   if (!getRequest) {
     delete info.request;
   }

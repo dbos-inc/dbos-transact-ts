@@ -175,8 +175,8 @@ export interface WorkflowStatusInternal {
   workflowConfigName: string;
   queueName?: string;
   authenticatedUser: string;
-  output: unknown;
-  error: string; // Serialized error
+  output: string | null;
+  error: string | null; // Serialized error
   assumedRole: string;
   authenticatedRoles: string[];
   request: HTTPRequest;
@@ -443,7 +443,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         status.assumedRole,
         DBOSJSON.stringify(status.authenticatedRoles),
         DBOSJSON.stringify(status.request),
-        DBOSJSON.stringify(status.output),
+        status.output,
         status.executorId,
         status.applicationID,
         status.applicationVersion,
@@ -1047,8 +1047,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         workflowUUID: rows[0].workflow_uuid,
         status: rows[0].status,
         workflowName: rows[0].name,
-        output: undefined,
-        error: '',
+        output: null,
+        error: null,
         workflowClassName: rows[0].class_name || '',
         workflowConfigName: rows[0].config_name || '',
         queueName: rows[0].queue_name || undefined,

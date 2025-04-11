@@ -760,8 +760,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       workflowConfigName: params.configuredInstance?.name || '',
       queueName: params.queueName,
       authenticatedUser: wCtxt.authenticatedUser,
-      output: undefined,
-      error: '',
+      output: null,
+      error: null,
       assumedRole: wCtxt.assumedRole,
       authenticatedRoles: wCtxt.authenticatedRoles,
       request: wCtxt.request,
@@ -855,7 +855,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
         }
 
-        internalStatus.output = result;
+        internalStatus.output = DBOSJSON.stringify(result);
         internalStatus.status = StatusString.SUCCESS;
         if (internalStatus.queueName && !this.isDebugging) {
           // Now... the workflow isn't certainly done.
