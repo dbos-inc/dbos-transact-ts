@@ -11,7 +11,7 @@ import { exec } from 'child_process';
  * @returns null
  */
 
-export async function dockerPgWizard() {
+export async function startDockerPg() {
   const logger = getLogger();
   logger.info('Attempting to create a Docker Postgres container...');
 
@@ -26,7 +26,6 @@ export async function dockerPgWizard() {
     connectionTimeoutMillis: 2000,
   };
 
-  // If Docker is installed, prompt the user to start a local Docker based Postgres, and then set the PGPASSWORD to 'dbos' and try to connect to the database.
   if (hasDocker) {
     await startDockerPostgres(logger, poolConfig);
     logger.info(
@@ -101,5 +100,44 @@ async function checkDockerInstalled(): Promise<boolean> {
     return true;
   } catch (error) {
     return false;
+  }
+}
+
+/**
+ * Stops the Docker Postgres container.
+ *
+ * @returns {Promise<boolean>} True if the container was successfully stopped, false if it wasn't running
+ * @throws {Error} If there was an error stopping the container
+ */
+export async function stopDockerPg(): Promise<boolean> {
+  const logger = getLogger();
+  const containerName = 'dbos-db';
+
+  try {
+    logger.info(`Stopping Docker Postgres container ${containerName}...`);
+
+    // Check if container exists and is running
+    const { stdout: containerStatus } = await execAsync(`docker ps -a -f name=${containerName} --format "{{.Status}}"`);
+
+    if (!containerStatus) {
+      logger.info(`Container ${containerName} does not exist.`);
+      return false;
+    }
+
+    const isRunning = containerStatus.toLowerCase().includes('up');
+
+    if (!isRunning) {
+      logger.info(`Container ${containerName} exists but is not running.`);
+      return false;
+    }
+
+    // Stop the container
+    await execAsync(`docker stop ${containerName}`);
+    logger.info(`Successfully stopped Docker Postgres container ${containerName}.`);
+    return true;
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    logger.error(`Failed to stop Docker Postgres container: ${errorMessage}`);
+    throw error;
   }
 }
