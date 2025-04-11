@@ -374,13 +374,7 @@ export class DBOSHttpServer {
         } else {
           router.use(ro.apiURL, bodyParser());
         }
-        // Check if we need to apply any Koa middleware.
-        if (defaults?.koaMiddlewares) {
-          defaults.koaMiddlewares.forEach((koaMiddleware) => {
-            dbosExec.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} to ${ro.apiURL}`);
-            router.use(ro.apiURL, koaMiddleware);
-          });
-        }
+        // Check if we need to apply any Koa global middleware.
         if (defaults?.koaGlobalMiddlewares) {
           defaults.koaGlobalMiddlewares.forEach((koaMiddleware) => {
             if (globalMiddlewares.has(koaMiddleware)) {
@@ -556,25 +550,26 @@ export class DBOSHttpServer {
           }
         };
         // Actually register the endpoint.
+        const routeMiddlewares = defaults.koaMiddlewares ?? [];
         switch (ro.apiType) {
           case APITypes.GET:
-            router.get(ro.apiURL, wrappedHandler);
+            router.get(ro.apiURL, ...routeMiddlewares, wrappedHandler);
             dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
             break;
           case APITypes.POST:
-            router.post(ro.apiURL, wrappedHandler);
+            router.post(ro.apiURL, ...routeMiddlewares, wrappedHandler);
             dbosExec.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
             break;
           case APITypes.PUT:
-            router.put(ro.apiURL, wrappedHandler);
+            router.put(ro.apiURL, ...routeMiddlewares, wrappedHandler);
             dbosExec.logger.debug(`DBOS Server Registered PUT ${ro.apiURL}`);
             break;
           case APITypes.PATCH:
-            router.patch(ro.apiURL, wrappedHandler);
+            router.patch(ro.apiURL, ...routeMiddlewares, wrappedHandler);
             dbosExec.logger.debug(`DBOS Server Registered PATCH ${ro.apiURL}`);
             break;
           case APITypes.DELETE:
-            router.delete(ro.apiURL, wrappedHandler);
+            router.delete(ro.apiURL, ...routeMiddlewares, wrappedHandler);
             dbosExec.logger.debug(`DBOS Server Registered DELETE ${ro.apiURL}`);
             break;
           default:
