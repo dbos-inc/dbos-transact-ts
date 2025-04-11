@@ -436,9 +436,7 @@ export async function connect(
     const databaseUsername = isSupabase ? `postgres.${userDBInfo.SupabaseReference}` : userDBInfo.DatabaseUsername;
 
     const displayPassword = showPassword ? password : '***';
-    const dbString = `postgresql://${databaseUsername}:${displayPassword}@${userDBInfo.HostName}:${userDBInfo.Port}/${
-      userDBInfo.PostgresInstanceName
-    }`;
+    const dbString = `postgresql://${databaseUsername}:${displayPassword}@${userDBInfo.HostName}:${userDBInfo.Port}/postgres`;
     console.log(dbString);
     return 0;
   } catch (e) {
