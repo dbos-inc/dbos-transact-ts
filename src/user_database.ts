@@ -22,7 +22,7 @@ export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Log
     logger.info(`Database ${poolConfig.database} does not exist, creating...`);
   }
   const app_database = poolConfig.database;
-  const postgresConfig = { ...poolConfig, database: 'postgres' };
+  const postgresConfig = { ...poolConfig, database: 'postgres', connectionString: undefined };
   const postgresClient = new Client(postgresConfig);
   let connection_failed = true;
   try {
