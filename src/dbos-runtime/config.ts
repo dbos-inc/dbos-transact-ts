@@ -30,7 +30,6 @@ export interface DBConfig {
   app_db_client?: UserDatabaseName;
   migrate?: string[];
   rollback?: string[];
-  local_suffix?: boolean;
 }
 
 export interface ConfigFile {
@@ -309,12 +308,6 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfigInternal,
   const configFile: ConfigFile | undefined = loadConfigFile(configFilePath);
   if (!configFile) {
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
-  }
-
-  if (configFile.database.local_suffix === true && configFile.database.hostname === 'localhost') {
-    throw new DBOSInitializationError(
-      `Invalid configuration (${configFilePath}): local_suffix may only be true when connecting to remote databases, not to localhost`,
-    );
   }
 
   if (configFile.language && configFile.language !== 'node') {
