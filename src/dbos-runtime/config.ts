@@ -141,15 +141,13 @@ function retrieveApplicationName(configFile: ConfigFile): string {
 }
 
 /**
- * Build a PoolConfig object from the config file and CLI options.
+ * Build a PoolConfig object.
+ * If in debug mode or if no database url is provided, use the provided config.database and consider environment variable overrides.
  *
- * If configFile.database_url is provided, this function expects configFile.database to be built from the database_url.
- * A connection string will be built from configFile.database, after it is fully resolved.
- * If a database_url with query parameters are provided, they will be used.
- * If no database_url is provided, or if the provided database_url does not contain query parameters, the function will build a connection string with the following query parameters:
- *  - connect_timeout
- *  - connection_limit
- *  - sslmode
+ * If configFile.database_url is provided, set it directly in poolConfig.connectionString and backfill the other poolConfig options.
+ * Backfilling allows the rest of the code to access database parameters easily.
+ * We configure the ORMs with the connection string
+ * ORMs accepting a poolConfig object, like pg-node, state the connectionString takes precedence.
  *
  * Default configuration:
  * - Hostname: localhost
@@ -163,41 +161,124 @@ function retrieveApplicationName(configFile: ConfigFile): string {
  * @returns PoolConfig - The constructed PoolConfig object.
  */
 export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions): PoolConfig {
-  // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
+  // FIXME: this is not a good place to set the app name
+  const appName = retrieveApplicationName(configFile);
+  if (globalParams.appName === '') {
+    globalParams.appName = appName;
+  }
+
+  const isDebugMode = process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
+
   if (!cliOptions?.silent) {
     const logger = new GlobalLogger();
-    if (process.env.DBOS_DBHOST) {
+    if (isDebugMode) {
       logger.info('Loading database connection parameters from debug environment variables');
+    } else if (configFile.database_url) {
+      logger.info('Loading database connection parameters from database_url');
     } else if (configFile.database.hostname) {
       logger.info('Loading database connection parameters from dbos-config.yaml');
     } else {
       logger.info('Using default database connection parameters');
     }
   }
-  configFile.database.hostname = process.env.DBOS_DBHOST || configFile.database.hostname || 'localhost';
-  const dbos_dbport = process.env.DBOS_DBPORT ? parseInt(process.env.DBOS_DBPORT) : undefined;
-  configFile.database.port = dbos_dbport || configFile.database.port || 5432;
-  configFile.database.username = process.env.DBOS_DBUSER || configFile.database.username || 'postgres';
-  configFile.database.password =
-    process.env.DBOS_DBPASSWORD || configFile.database.password || process.env.PGPASSWORD || 'dbos';
 
+  // If in debug mode, or no database_url is found, build from provided config and consider env overrides
+  let connectionString = configFile.database_url;
   let databaseName: string | undefined = configFile.database.app_db_name;
-  const appName = retrieveApplicationName(configFile);
-  if (globalParams.appName === '') {
-    globalParams.appName = appName;
-  }
-  if (databaseName === undefined) {
-    databaseName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
-    if (databaseName.match(/^\d/)) {
-      databaseName = '_' + databaseName; // Append an underscore if the name starts with a digit
+  let userDbPoolSize = cliOptions?.userDbPoolSize;
+  if (isDebugMode || !configFile.database_url) {
+    configFile.database.hostname = process.env.DBOS_DBHOST || configFile.database.hostname || 'localhost';
+    const dbos_dbport = process.env.DBOS_DBPORT ? parseInt(process.env.DBOS_DBPORT) : undefined;
+    configFile.database.port = dbos_dbport || configFile.database.port || 5432;
+    configFile.database.username = process.env.DBOS_DBUSER || configFile.database.username || 'postgres';
+    configFile.database.password =
+      process.env.DBOS_DBPASSWORD || configFile.database.password || process.env.PGPASSWORD || 'dbos';
+    configFile.database.connectionTimeoutMillis = configFile.database.connectionTimeoutMillis || 3000;
+
+    userDbPoolSize = userDbPoolSize || 20;
+
+    // Construct the database name from the application name, if needed
+    if (databaseName === undefined) {
+      databaseName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+      if (databaseName.match(/^\d/)) {
+        databaseName = '_' + databaseName; // Append an underscore if the name starts with a digit
+      }
+    }
+
+    connectionString = `postgresql://${configFile.database.username}:${configFile.database.password}@${configFile.database.hostname}:${configFile.database.port}/${databaseName}`;
+
+    // Build connection string query parameters
+    const queryParams: string[] = [];
+
+    if (configFile.database.connectionTimeoutMillis) {
+      queryParams.push(`connect_timeout=${configFile.database.connectionTimeoutMillis / 1000}`);
+    }
+
+    if (userDbPoolSize && userDbPoolSize > 0) {
+      queryParams.push(`connection_limit=${userDbPoolSize}`);
+    }
+
+    // SSL configuration
+    const ssl = parseSSLConfig(configFile.database);
+    if (ssl === false || ssl === undefined) {
+      queryParams.push(`sslmode=disable`);
+    } else if (ssl && 'ca' in ssl) {
+      queryParams.push(`sslmode=verify-full`);
+      queryParams.push(`sslrootcert=${configFile.database.ssl_ca}`);
+    } else {
+      queryParams.push(`sslmode=require`);
+    }
+
+    if (queryParams.length > 0) {
+      connectionString += `?${queryParams.join('&')}`;
+    }
+  } else {
+    // Else parse the database_url to backfill the poolConfig
+    const parsed = parse(configFile.database_url);
+    const url = new URL(configFile.database_url);
+    const queryParams = Object.fromEntries(url.searchParams.entries());
+
+    const missingFields: string[] = [];
+    if (!parsed.user) missingFields.push('username');
+    if (!parsed.password) missingFields.push('password');
+    if (!parsed.host) missingFields.push('hostname');
+
+    if (missingFields.length > 0) {
+      throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
+    }
+
+    configFile.database = {
+      hostname: parsed.host as string,
+      port: parsed.port ? parseInt(parsed.port, 10) : 5432,
+      username: parsed.user,
+      password: parsed.password,
+      app_db_name: parsed.database || undefined,
+      ssl: 'sslmode' in parsed && (parsed.sslmode === 'require' || parsed.sslmode === 'verify-full'),
+      ssl_ca: queryParams['sslrootcert'] || undefined,
+      connectionTimeoutMillis: queryParams['connect_timeout']
+        ? parseInt(queryParams['connect_timeout'], 10) * 1000
+        : 3000,
+    };
+    userDbPoolSize = Number(queryParams['connection_limit']) || 20;
+
+    databaseName = configFile.database.app_db_name;
+    // Construct the database name from the application name, if needed
+    if (databaseName === undefined) {
+      databaseName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+      if (databaseName.match(/^\d/)) {
+        databaseName = '_' + databaseName; // Append an underscore if the name starts with a digit
+      }
     }
   }
+
+  // Build the final poolConfig
   const poolConfig: PoolConfig = {
+    connectionString,
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
     password: configFile.database.password,
-    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis || 3000,
+    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis,
     database: databaseName,
     max: cliOptions?.userDbPoolSize || 20,
   };
@@ -207,47 +288,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
       `DBOS configuration (${dbosConfigFilePath}) does not contain application database name`,
     );
   }
-
-  poolConfig.ssl = parseSSLConfig(configFile.database);
-
-  poolConfig.connectionString = `postgresql://${String(poolConfig.user)}:${String(poolConfig.password)}@${String(poolConfig.host)}:${String(poolConfig.port)}/${String(poolConfig.database)}`;
-  let hasQueryParams = false;
-
-  // If a database_url is provided
-  if (configFile.database_url) {
-    const url = new URL(configFile.database_url);
-    hasQueryParams = url.search.length > 1;
-
-    if (hasQueryParams) {
-      // Use provided query parameters from database_url
-      poolConfig.connectionString += url.search; // url.search includes '?'
-    }
-  }
-
-  // If no query parameters were provided or available, build them manually
-  if (!hasQueryParams) {
-    const queryParams: string[] = [];
-
-    if (poolConfig.connectionTimeoutMillis) {
-      queryParams.push(`connect_timeout=${poolConfig.connectionTimeoutMillis / 1000}`);
-    }
-    if (poolConfig.max) {
-      queryParams.push(`connection_limit=${poolConfig.max}`);
-    }
-    if (poolConfig.ssl === false || poolConfig.ssl === undefined) {
-      queryParams.push(`sslmode=disable`);
-    } else if (poolConfig.ssl && 'ca' in poolConfig.ssl) {
-      queryParams.push(`sslmode=verify-full`);
-      queryParams.push(`sslrootcert=${configFile.database.ssl_ca}`);
-    } else {
-      queryParams.push(`sslmode=require`);
-    }
-
-    if (queryParams.length > 0) {
-      poolConfig.connectionString += `?${queryParams.join('&')}`;
-    }
-  }
-
   return poolConfig;
 }
 
@@ -318,9 +358,6 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfigInternal,
   /* Handle user database config */
   /*******************************/
 
-  if (configFile.database_url) {
-    configFile.database = parseDbString(configFile.database_url);
-  }
   const poolConfig = constructPoolConfig(configFile, cliOptions);
 
   if (!isValidDBname(poolConfig.database!)) {
@@ -441,15 +478,10 @@ export function translatePublicDBOSconfig(
   }
 
   // Resolve database configuration
-  let dburlConfig: DBConfig = {};
-  if (config.databaseUrl) {
-    dburlConfig = parseDbString(config.databaseUrl);
-  }
-
   const poolConfig = constructPoolConfig(
     {
       name: appName,
-      database: dburlConfig,
+      database: {},
       database_url: config.databaseUrl,
       application: {},
       env: {},
