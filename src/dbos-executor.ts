@@ -964,12 +964,19 @@ export class DBOSExecutor implements DBOSExecutorContext {
     query: QueryFunction,
     workflowUUID: string,
     funcID: number,
+    funcName: string,
   ): Promise<{ result: Error | R | DBOSNull; txn_snapshot: string; txn_id?: string }> {
-    type TxOutputRow = Pick<transaction_outputs, 'output' | 'error' | 'txn_snapshot' | 'txn_id'> & {
+    type TxOutputRow = Pick<transaction_outputs, 'output' | 'error' | 'txn_snapshot' | 'txn_id' | 'function_name'> & {
       recorded: boolean;
     };
     const rows = await query<TxOutputRow>(
-      '(SELECT output, error, txn_snapshot, txn_id, true as recorded FROM dbos.transaction_outputs WHERE workflow_uuid=$1 AND function_id=$2 UNION ALL SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot, null as txn_id, false as recorded) ORDER BY recorded',
+      `(SELECT output, error, txn_snapshot, txn_id, function_name, true as recorded
+          FROM dbos.transaction_outputs
+          WHERE workflow_uuid=$1 AND function_id=$2
+        UNION ALL
+          SELECT null as output, null as error, pg_current_snapshot()::text as txn_snapshot,
+                 null as txn_id, '' as function_name, false as recorded
+       ) ORDER BY recorded`,
       [workflowUUID, funcID],
     );
 
@@ -980,6 +987,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     if (rows.length === 2) {
+      if (rows[1].function_name !== funcName) {
+        throw new DBOSUnexpectedStepError(workflowUUID, funcID, funcName, rows[0].function_name);
+      }
+
       const { txn_snapshot, txn_id } = rows[1];
       const error = DBOSJSON.parse(rows[1].error) as ErrorObject | null;
       if (error) {
@@ -1156,7 +1167,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const queryFunc = <T>(sql: string, args: unknown[]) =>
           this.userDatabase.queryWithClient<T>(client, sql, ...args);
         if (wfCtx.presetUUID) {
-          const executionResult = await this.#checkExecution<R>(queryFunc, workflowUUID, funcId);
+          const executionResult = await this.#checkExecution<R>(queryFunc, workflowUUID, funcId, txn.name);
           prevResult = executionResult.result;
           txn_snapshot = executionResult.txn_snapshot;
           if (prevResult !== dbosNull) {
@@ -1255,7 +1266,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         return result;
       } catch (err) {
         const e: Error = err as Error;
-        if (!this.debugMode) {
+        if (!this.debugMode && !(e instanceof DBOSUnexpectedStepError)) {
           if (this.userDatabase.isRetriableTransactionError(err)) {
             // serialization_failure in PostgreSQL
             span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
@@ -1382,7 +1393,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const queryFunc = <T>(sql: string, args: unknown[]) =>
           this.procedurePool.query(sql, args).then((v) => v.rows as T[]);
         if (wfCtx.presetUUID) {
-          const executionResult = await this.#checkExecution<R>(queryFunc, wfCtx.workflowUUID, funcId);
+          const executionResult = await this.#checkExecution<R>(
+            queryFunc,
+            wfCtx.workflowUUID,
+            funcId,
+            wfCtx.operationName,
+          );
           prevResult = executionResult.result;
           txn_snapshot = executionResult.txn_snapshot;
           if (prevResult !== dbosNull) {
@@ -1854,6 +1870,46 @@ export class DBOSExecutor implements DBOSExecutorContext {
    */
   retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R> {
     return new RetrievedHandle(this.systemDatabase, workflowID);
+  }
+
+  async runAsStep<T>(
+    callback: () => Promise<T>,
+    functionName: string,
+    workflowID?: string,
+    functionID?: number,
+  ): Promise<T> {
+    if (workflowID !== undefined && functionID !== undefined) {
+      const res = await this.systemDatabase.getOperationResult(workflowID, functionID);
+      if (res.res !== undefined) {
+        if (res.res.functionName !== functionName) {
+          throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
+        }
+        return DBOSExecutor.reviveResultOrError<T>(res.res);
+      }
+    }
+    try {
+      const output: T = await callback();
+      if (workflowID !== undefined && functionID !== undefined) {
+        await this.systemDatabase.recordOperationResult(
+          workflowID,
+          functionID,
+          { serialOutput: DBOSJSON.stringify(output), functionName },
+          true,
+        );
+      }
+      return output;
+    } catch (e) {
+      if (workflowID !== undefined && functionID !== undefined) {
+        await this.systemDatabase.recordOperationResult(
+          workflowID,
+          functionID,
+          { serialError: DBOSJSON.stringify(serializeError(e)), functionName },
+          false,
+        );
+      }
+
+      throw e;
+    }
   }
 
   getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {

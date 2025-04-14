@@ -79,6 +79,7 @@ export interface SystemDatabase {
   // If there is no record, res will be undefined;
   //  otherwise will be defined (with potentially undefined contents)
   getOperationResult(workflowID: string, functionID: number): Promise<{ res?: SystemDatabaseStoredResult }>;
+  getAllOperationResults(workflowID: string): Promise<operation_outputs[]>;
   recordOperationResult(
     workflowID: string,
     functionID: number,
@@ -90,7 +91,6 @@ export interface SystemDatabase {
     },
     checkConflict: boolean,
   ): Promise<void>;
-  getAllOperationResults(workflowID: string): Promise<operation_outputs[]>;
 
   getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
   getWorkflowStatusInternal(
