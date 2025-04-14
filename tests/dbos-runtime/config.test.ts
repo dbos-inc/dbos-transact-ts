@@ -18,7 +18,6 @@ import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error
 import { DBOSExecutor, DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { WorkflowContextImpl } from '../../src/workflow';
 import { get } from 'lodash';
-import { db_wizard } from '../../src/dbos-runtime/db_wizard';
 
 describe('dbos-config', () => {
   const mockCLIOptions = { port: NaN, loglevel: 'info' };
@@ -209,24 +208,6 @@ describe('dbos-config', () => {
       expect(dbosConfig.poolConfig!.database).toEqual('some_app');
     });
 
-    test('using dbconnection file', () => {
-      const localMockDBOSConfigYamlString = `
-        name: some-app
-      `;
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
-      const mockDatabaseConnectionFile = `
-        {"hostname": "example.com", "port": 2345, "username": "example", "password": "password", "local_suffix": true}
-      `;
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockDatabaseConnectionFile);
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('SQL STATEMENTS');
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      expect(dbosConfig.poolConfig!.host).toEqual('example.com');
-      expect(dbosConfig.poolConfig!.port).toEqual(2345);
-      expect(dbosConfig.poolConfig!.user).toEqual('example');
-      expect(dbosConfig.poolConfig!.password).toEqual('password');
-      expect(dbosConfig.poolConfig!.database).toEqual('some_app_local');
-    });
-
     test('config file specifies the wrong language', () => {
       const localMockDBOSConfigYamlString = `
       language: 'python'
@@ -272,25 +253,6 @@ describe('dbos-config', () => {
       expect(poolConfig.user).toBe('DBUSER_OVERRIDE');
       expect(poolConfig.password).toBe('DBPASSWORD_OVERRIDE');
       expect(poolConfig.database).toBe('some_db');
-    });
-
-    test('DB wizard will not start with database configured', async () => {
-      const mockDBOSConfigYamlString = `
-      name: 'some-app'
-      language: 'node'
-      database:
-        hostname: 'localhost'
-        port: 5432
-        password: 'somerandom'`;
-
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
-
-      const [dbosConfig, _]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-
-      const poolConfig: PoolConfig = dbosConfig.poolConfig!;
-      expect(poolConfig.host).toBe('localhost');
-      expect(poolConfig.port).toBe(5432);
-      await expect(db_wizard(poolConfig)).rejects.toThrow(DBOSInitializationError);
     });
 
     test('constructPoolConfig correctly handles app names with spaces', () => {
@@ -420,61 +382,6 @@ describe('dbos-config', () => {
       const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
       const poolConfig = dbosConfig.poolConfig;
       expect(poolConfig!.database).toBe('some_app');
-    });
-
-    test('local_suffix works', async () => {
-      const localMockDBOSConfigYamlString = `
-        database:
-          hostname: 'remote.com'
-          port: 1234
-          username: 'some user'
-          password: \${PGPASSWORD}
-          connectionTimeoutMillis: 3000
-          app_db_name: 'some_db'
-          local_suffix: true
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const poolConfig = dbosConfig.poolConfig;
-      expect(poolConfig!.host).toBe('remote.com');
-      expect(poolConfig!.port).toBe(1234);
-      expect(poolConfig!.user).toBe('some user');
-      expect(poolConfig!.password).toBe(process.env.PGPASSWORD);
-      expect(poolConfig!.connectionTimeoutMillis).toBe(3000);
-      expect(poolConfig!.database).toBe('some_db_local');
-    });
-
-    test('local_suffix works without app_db_name', async () => {
-      const localMockDBOSConfigYamlString = `
-        name: some-app
-        database:
-          hostname: 'remote.com'
-          port: 1234
-          username: 'some user'
-          password: \${PGPASSWORD}
-          local_suffix: true
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const poolConfig = dbosConfig.poolConfig;
-      expect(poolConfig!.database).toBe('some_app_local');
-    });
-
-    test('local_suffix cannot be used with localhost', () => {
-      const localMockDBOSConfigYamlString = `
-        name: some-app
-        database:
-          hostname: 'localhost'
-          port: 1234
-          username: 'some user'
-          password: \${PGPASSWORD}
-          local_suffix: true
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(localMockDBOSConfigYamlString);
-      expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
     test('ssl defaults off for localhost', async () => {

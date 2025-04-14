@@ -12,7 +12,6 @@ import { parse } from 'pg-connection-string';
 import path from 'path';
 import validator from 'validator';
 import fs from 'fs';
-import { loadDatabaseConnection } from './db_connection';
 import { GlobalLogger } from '../telemetry/logs';
 import dbosConfigSchema from '../../dbos-config.schema.json';
 
@@ -145,34 +144,22 @@ function retrieveApplicationName(configFile: ConfigFile): string {
 
 export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions): PoolConfig {
   // Load database connection parameters. If they're not in dbos-config.yaml, load from .dbos/db_connection. Else, use defaults.
-  const databaseConnection = loadDatabaseConnection();
   if (!cliOptions?.silent) {
     const logger = new GlobalLogger();
     if (process.env.DBOS_DBHOST) {
       logger.info('Loading database connection parameters from debug environment variables');
     } else if (configFile.database.hostname) {
       logger.info('Loading database connection parameters from dbos-config.yaml');
-    } else if (databaseConnection.hostname) {
-      logger.info('Loading database connection parameters from .dbos/db_connection');
     } else {
       logger.info('Using default database connection parameters');
     }
   }
-  configFile.database.hostname =
-    process.env.DBOS_DBHOST || configFile.database.hostname || databaseConnection.hostname || 'localhost';
+  configFile.database.hostname = process.env.DBOS_DBHOST || configFile.database.hostname || 'localhost';
   const dbos_dbport = process.env.DBOS_DBPORT ? parseInt(process.env.DBOS_DBPORT) : undefined;
-  configFile.database.port = dbos_dbport || configFile.database.port || databaseConnection.port || 5432;
-  configFile.database.username =
-    process.env.DBOS_DBUSER || configFile.database.username || databaseConnection.username || 'postgres';
+  configFile.database.port = dbos_dbport || configFile.database.port || 5432;
+  configFile.database.username = process.env.DBOS_DBUSER || configFile.database.username || 'postgres';
   configFile.database.password =
-    process.env.DBOS_DBPASSWORD ||
-    configFile.database.password ||
-    databaseConnection.password ||
-    process.env.PGPASSWORD ||
-    'dbos';
-  const dbos_dblocalsuffix = process.env.DBOS_DBLOCALSUFFIX ? process.env.DBOS_DBLOCALSUFFIX === 'true' : undefined;
-  configFile.database.local_suffix =
-    dbos_dblocalsuffix ?? configFile.database.local_suffix ?? databaseConnection.local_suffix ?? false;
+    process.env.DBOS_DBPASSWORD || configFile.database.password || process.env.PGPASSWORD || 'dbos';
 
   let databaseName: string | undefined = configFile.database.app_db_name;
   const appName = retrieveApplicationName(configFile);
@@ -185,7 +172,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
       databaseName = '_' + databaseName; // Append an underscore if the name starts with a digit
     }
   }
-  databaseName = configFile.database.local_suffix === true ? `${databaseName}_local` : databaseName;
   const poolConfig: PoolConfig = {
     host: configFile.database.hostname,
     port: configFile.database.port,

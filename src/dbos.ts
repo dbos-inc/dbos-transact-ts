@@ -86,7 +86,6 @@ import { StoredProcedure, StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
-import { db_wizard } from './dbos-runtime/db_wizard';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase } from './system_database';
@@ -320,17 +319,9 @@ export class DBOS {
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
-      const [dbosConfig, runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
-      if (!isDebugging) {
-        dbosConfig.poolConfig = await db_wizard(dbosConfig.poolConfig);
-      }
-      DBOS.dbosConfig = dbosConfig;
-      DBOS.runtimeConfig = runtimeConfig;
+      [DBOS.dbosConfig, DBOS.runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
     } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
       DBOS.translateConfig(); // This is a defensive measure for users who'd do DBOS.config = X instead of using DBOS.setConfig()
-      if (!isDebugging) {
-        DBOS.dbosConfig.poolConfig = await db_wizard((DBOS.dbosConfig as DBOSConfigInternal).poolConfig);
-      }
     }
 
     if (!DBOS.dbosConfig) {
