@@ -283,7 +283,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
     // SSL configuration
     const ssl = parseSSLConfig(configFile.database);
-    if (ssl === false || ssl === undefined) {
+    if (ssl === false) {
       queryParams.push(`sslmode=disable`);
     } else if (ssl && 'ca' in ssl) {
       queryParams.push(`sslmode=verify-full`);
