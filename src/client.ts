@@ -4,6 +4,7 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 import { v4 as uuidv4 } from 'uuid';
 import { RetrievedHandle, StatusString, WorkflowHandle } from './workflow';
 import { constructPoolConfig } from './dbos-runtime/config';
+import { DBOSJSON } from './utils';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -98,8 +99,8 @@ export class DBOSClient {
       workflowConfigName: '',
       queueName: queueName,
       authenticatedUser: '',
-      output: undefined,
-      error: '',
+      output: null,
+      error: null,
       assumedRole: '',
       authenticatedRoles: [],
       request: {},
@@ -132,8 +133,8 @@ export class DBOSClient {
       workflowClassName: '',
       workflowConfigName: '',
       authenticatedUser: '',
-      output: undefined,
-      error: '',
+      output: null,
+      error: null,
       assumedRole: '',
       authenticatedRoles: [],
       request: {},
@@ -143,7 +144,9 @@ export class DBOSClient {
       maxRetries: 50,
     };
     await this.systemDatabase.initWorkflowStatus(internalStatus, [destinationID, message, topic]);
-    await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, message, topic);
+    await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, 
+                                   
+                                   .stringify(message), topic);
   }
 
   /**
@@ -154,7 +157,7 @@ export class DBOSClient {
    * @returns A Promise that resolves with the event payload.
    */
   async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
-    return await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
+    return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60)) as T;
   }
 
   /**

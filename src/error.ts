@@ -253,3 +253,19 @@ export class DBOSConflictingRegistrationError extends DBOSError {
     super(msg, ConflictingRegistrationError);
   }
 }
+
+const UnexpectedStep = 26;
+/** Exception raised when a step has an unexpected recorded name, indicating a determinism problem. */
+export class DBOSUnexpectedStepError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly stepID: number,
+    readonly expectedName: string,
+    recordedName: string,
+  ) {
+    super(
+      `During execution of workflow ${workflowID} step ${stepID}, function ${recordedName} was recorded when ${expectedName} was expected. Check that your workflow is deterministic.`,
+      UnexpectedStep,
+    );
+  }
+}

@@ -778,6 +778,18 @@ describe('test-list-steps', () => {
     }
   }
 
+  class ListWorkflows {
+    @DBOS.workflow()
+    static async listingWorkflow() {
+      return (await DBOS.getWorkflows({})).workflowUUIDs.length;
+    }
+
+    @DBOS.workflow()
+    static async simpleWorkflow() {
+      return Promise.resolve();
+    }
+  }
+
   test('test-list-steps', async () => {
     const wfid = uuidv4();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
@@ -1039,5 +1051,24 @@ describe('test-list-steps', () => {
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('transaction');
     expect(wfsteps[2].function_name).toBe('stepTwo');
+  });
+
+  test('test-list-workflows-as-step', async () => {
+    const wfid = uuidv4();
+    const c1 = await DBOS.withNextWorkflowID(wfid, async () => {
+      return await ListWorkflows.listingWorkflow();
+    });
+    expect(c1).toBe(1);
+
+    await ListWorkflows.simpleWorkflow();
+
+    // Let this start over
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(wfid, StatusString.PENDING, true);
+
+    // This value was stored
+    const c2 = await DBOS.withNextWorkflowID(wfid, async () => {
+      return await ListWorkflows.listingWorkflow();
+    });
+    expect(c2).toBe(1);
   });
 });

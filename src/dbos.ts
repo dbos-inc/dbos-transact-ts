@@ -826,16 +826,46 @@ export class DBOS {
   // Workflow and other operations
   //////
 
+  static #runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string): Promise<T> {
+    if (DBOS.isWithinWorkflow()) {
+      if (DBOS.isInStep()) {
+        // OK to use directly
+        return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName);
+      } else if (DBOS.isInWorkflow()) {
+        const wfctx = assertCurrentWorkflowContext();
+        return DBOSExecutor.globalInstance!.runAsStep<T>(
+          callback,
+          funcName,
+          DBOS.workflowID,
+          wfctx.functionIDGetIncrement(),
+        );
+      } else {
+        throw new DBOSInvalidWorkflowTransitionError(
+          `Invalid call to \`${funcName}\` inside a \`transaction\` or \`procedure\``,
+        );
+      }
+    }
+    return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName);
+  }
+
   /**
    * Get the workflow status given a workflow ID
    * @param workflowID - ID of the workflow
    * @returns status of the workflow as `WorkflowStatus`, or `null` if there is no workflow with `workflowID`
    */
   static getWorkflowStatus(workflowID: string) {
-    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        'Invalid call to `getWorkflowStatus` inside a `workflow`, without being in a `step`',
-      );
+    if (DBOS.isWithinWorkflow()) {
+      if (DBOS.isInStep()) {
+        // OK to use directly
+        return DBOS.executor.getWorkflowStatus(workflowID);
+      } else if (DBOS.isInWorkflow()) {
+        const wfctx = assertCurrentWorkflowContext();
+        return DBOS.executor.getWorkflowStatus(workflowID, DBOS.workflowID, wfctx.functionIDGetIncrement());
+      } else {
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `getWorkflowStatus` inside a `transaction` or `procedure`',
+        );
+      }
     }
     return DBOS.executor.getWorkflowStatus(workflowID);
   }
@@ -865,12 +895,9 @@ export class DBOS {
    * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
    */
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        'Invalid call to `getWorkflows` inside a `workflow`, without being in a `step`',
-      );
-    }
-    return await DBOS.executor.getWorkflows(input);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.executor.getWorkflows(input);
+    }, 'DBOS.getWorkflows');
   }
 
   /**
@@ -880,7 +907,9 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async cancelWorkflow(workflowID: string) {
-    await DBOS.executor.cancelWorkflow(workflowID);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.executor.cancelWorkflow(workflowID);
+    }, 'DBOS.cancelWorkflow');
   }
 
   /**
@@ -888,7 +917,9 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async resumeWorkflow(workflowID: string) {
-    return await DBOS.executor.resumeWorkflow(workflowID);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.executor.resumeWorkflow(workflowID);
+    }, 'DBOS.resumeWorkflow');
   }
 
   /**
@@ -896,12 +927,9 @@ export class DBOS {
    * @param input - Filter predicate, containing the queue name and other criteria
    */
   static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
-    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        'Invalid call to `getWorkflows` inside a `workflow`, without being in a `step`',
-      );
-    }
-    return await DBOS.executor.getWorkflowQueue(input);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.executor.getWorkflowQueue(input);
+    }, 'DBOS.getWorkflowQueue');
   }
 
   /**

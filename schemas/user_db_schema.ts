@@ -5,6 +5,7 @@ export interface transaction_outputs {
   error: string | null;
   txn_id: string | null;
   txn_snapshot: string;
+  function_name: string;
 }
 
 export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
