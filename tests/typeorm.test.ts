@@ -230,8 +230,6 @@ describe('typeorm-engine-config-tests', () => {
       name: 'dbostest',
       userDbclient: UserDatabaseName.TYPEORM,
       userDbPoolSize: 2,
-      database_url:
-        'postgresql://maxime:maxime123@userdb-257cbb1e-d285-464a-abe9-58268dbad05e.cvc4gmaa6qm9.us-east-1.rds.amazonaws.com:5432/maximedb',
     };
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
