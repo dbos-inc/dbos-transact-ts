@@ -550,6 +550,30 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  async runAsStep(
+    callback: () => Promise<string | null | undefined>,
+    functionName: string,
+    workflowID?: string,
+    functionID?: number,
+    client?: PoolClient,
+  ): Promise<string | null | undefined> {
+    if (workflowID !== undefined && functionID !== undefined) {
+      const res = await this.getOperationResult(workflowID, functionID, client);
+      if (res.res !== undefined) {
+        if (res.res.functionName !== functionName) {
+          throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
+        }
+        await client?.query('ROLLBACK');
+        return res.res.res;
+      }
+    }
+    const serialOutput = await callback();
+    if (workflowID !== undefined && functionID !== undefined) {
+      await this.recordOperationResult(workflowID, functionID, { serialOutput, functionName }, true, client);
+    }
+    return serialOutput;
+  }
+
   async durableSleepms(
     workflowID: string,
     functionID: number,
@@ -588,21 +612,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     try {
-      const res = await this.getOperationResult(workflowID, functionID, client);
-      if (res.res !== undefined) {
-        if (res.res.functionName !== DBOS_FUNCNAME_SEND) {
-          throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SEND, res.res.functionName!);
-        }
-
-        await client.query('ROLLBACK');
-        return;
-      }
-      await client.query(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
-        [destinationID, topic, message],
+      await this.runAsStep(
+        async () => {
+          await client.query(
+            `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
+            [destinationID, topic, message],
+          );
+          await client.query('COMMIT');
+          return null;
+        },
+        DBOS_FUNCNAME_SEND,
+        workflowID,
+        functionID,
+        client,
       );
-      await this.recordOperationResult(workflowID, functionID, { functionName: DBOS_FUNCNAME_SEND }, true, client);
-      await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
       const err: DatabaseError = error as DatabaseError;
