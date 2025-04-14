@@ -859,9 +859,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         internalStatus.output = DBOSJSON.stringify(result);
         internalStatus.status = StatusString.SUCCESS;
         if (internalStatus.queueName && !this.isDebugging) {
-          // Now... the workflow isn't certainly done.
-          //  But waiting this long is for concurrency control anyway,
-          //   so it is probably done enough.
           await this.systemDatabase.dequeueWorkflow(workflowID, this.#getQueueByName(internalStatus.queueName));
         }
         if (!this.isDebugging) {
