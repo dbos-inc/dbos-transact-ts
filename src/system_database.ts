@@ -619,7 +619,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             [destinationID, topic, message],
           );
           await client.query('COMMIT');
-          return null;
+          return undefined;
         },
         DBOS_FUNCNAME_SEND,
         workflowID,
@@ -744,25 +744,24 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      const res = await this.getOperationResult(workflowID, functionID, client);
-      if (res.res !== undefined) {
-        if (res.res.functionName !== DBOS_FUNCNAME_SETEVENT) {
-          throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SETEVENT, res.res.functionName!);
-        }
-
-        await client.query('ROLLBACK');
-        return;
-      }
-      await client.query(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_events (workflow_uuid, key, value)
-         VALUES ($1, $2, $3)
-         ON CONFLICT (workflow_uuid, key)
-         DO UPDATE SET value = $3
-         RETURNING workflow_uuid;`,
-        [workflowID, key, message],
+      await this.runAsStep(
+        async () => {
+          await client.query(
+            `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_events (workflow_uuid, key, value)
+             VALUES ($1, $2, $3)
+             ON CONFLICT (workflow_uuid, key)
+             DO UPDATE SET value = $3
+             RETURNING workflow_uuid;`,
+            [workflowID, key, message],
+          );
+          await client.query('COMMIT');
+          return undefined;
+        },
+        DBOS_FUNCNAME_SETEVENT,
+        workflowID,
+        functionID,
+        client,
       );
-      await this.recordOperationResult(workflowID, functionID, { functionName: DBOS_FUNCNAME_SETEVENT }, true, client);
-      await client.query('COMMIT');
     } catch (e) {
       this.logger.error(e);
       await client.query(`ROLLBACK`);
