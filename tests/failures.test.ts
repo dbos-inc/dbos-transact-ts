@@ -13,8 +13,8 @@ import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers'
 import { DatabaseError, PoolClient } from 'pg';
 import { v1 as uuidv1 } from 'uuid';
 import { StatusString } from '../src/workflow';
-import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError } from '../src/error';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError, DBOSUnexpectedStepError } from '../src/error';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import assert from 'assert';
 
 const testTableName = 'dbos_failure_test_kv';
@@ -227,6 +227,22 @@ describe('failures-tests', () => {
   test('test-step-status', async () => {
     await expect(TestStepStatus.workflow()).resolves.toBeTruthy();
   });
+
+  test('non-deterministic-workflow-step', async () => {
+    const wfidnds = 'NonDetWFStep';
+
+    await DBOS.withNextWorkflowID(wfidnds, async () => {
+      await NDWF1.nondetWorkflow();
+    });
+    NDWF1.flag = false;
+
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(wfidnds, StatusString.PENDING, true);
+
+    await DBOS.withNextWorkflowID(
+      wfidnds,
+      async () => await expect(NDWF1.nondetWorkflow()).rejects.toThrow(DBOSUnexpectedStepError),
+    );
+  });
 });
 
 class FailureTestClass extends ConfiguredInstance {
@@ -323,3 +339,66 @@ class FailureTestClass extends ConfiguredInstance {
     return await ctxt.invoke(FailureTestClass).noRegComm(1);
   }
 }
+
+class NDWF1 {
+  static flag = true;
+
+  @DBOS.step()
+  static async stepOne() {
+    return Promise.resolve();
+  }
+
+  @DBOS.step()
+  static async stepTwo() {
+    return Promise.resolve();
+  }
+
+  @DBOS.workflow()
+  static async nondetWorkflow() {
+    if (NDWF1.flag) return NDWF1.stepOne();
+    return NDWF1.stepTwo();
+  }
+}
+
+/*
+def test_nondeterministic_workflow_txn(dbos: DBOS) -> None:
+    flag = True
+    workflow_event = threading.Event()
+    main_thread_event = threading.Event()
+
+    @DBOS.transaction()
+    def txn_one() -> None:
+        return
+
+    @DBOS.transaction()
+    def txn_two() -> None:
+        return
+
+    @DBOS.workflow()
+    def non_deterministic_workflow() -> None:
+        if flag:
+            txn_one()
+        else:
+            txn_two()
+        main_thread_event.set()
+        workflow_event.wait()
+
+    # Start the workflow. It will complete step_one then wait.
+    wfid = str(uuid.uuid4())
+    with SetWorkflowID(wfid):
+        handle = dbos.start_workflow(non_deterministic_workflow)
+    main_thread_event.wait()
+
+    # To simulate nondeterminism, set the flag then restart the workflow.
+    flag = False
+    with SetWorkflowID(wfid):
+        handle_two = dbos.start_workflow(non_deterministic_workflow)
+
+    # Due to the nondeterminism, the workflow should encounter an unexpected step.
+    with pytest.raises(DBOSUnexpectedStepError) as exc_info:
+        handle_two.get_result()
+
+    # The original workflow should complete successfully.
+    workflow_event.set()
+    assert handle.get_result() == None
+*/

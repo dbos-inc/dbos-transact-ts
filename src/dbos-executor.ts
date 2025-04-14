@@ -10,6 +10,7 @@ import {
   DBOSFailedSqlTransactionError,
   DBOSMaxStepRetriesError,
   DBOSWorkflowCancelledError,
+  DBOSUnexpectedStepError,
 } from './error';
 import {
   InvokedHandle,
@@ -1692,6 +1693,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Check if this execution previously happened, returning its original result if it did.
     const checkr = await this.systemDatabase.getOperationResult(wfCtx.workflowUUID, ctxt.functionID);
     if (checkr.res !== undefined) {
+      if (checkr.res.functionName !== ctxt.operationName) {
+        throw new DBOSUnexpectedStepError(
+          ctxt.workflowUUID,
+          ctxt.functionID,
+          ctxt.operationName,
+          checkr.res.functionName ?? '?',
+        );
+      }
       const check = DBOSExecutor.reviveResultOrError<R>(checkr.res);
       ctxt.span.setAttribute('cached', true);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
