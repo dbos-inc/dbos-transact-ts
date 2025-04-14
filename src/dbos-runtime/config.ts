@@ -142,12 +142,13 @@ function retrieveApplicationName(configFile: ConfigFile): string {
 
 /**
  * Build a PoolConfig object.
- * If in debug mode or if no database url is provided, use the provided config.database and consider environment variable overrides.
  *
  * If configFile.database_url is provided, set it directly in poolConfig.connectionString and backfill the other poolConfig options.
  * Backfilling allows the rest of the code to access database parameters easily.
  * We configure the ORMs with the connection string
  * ORMs accepting a poolConfig object, like pg-node, state the connectionString takes precedence.
+ *
+ * If in debug mode or if no database url is provided, use the provided config.database and consider environment variable overrides.
  *
  * Default configuration:
  * - Hostname: localhost
