@@ -8,7 +8,6 @@ import { UserDatabaseName } from '../user_database';
 import { TelemetryConfig } from '../telemetry';
 import { writeFileSync } from 'fs';
 import Ajv, { ValidateFunction } from 'ajv';
-import { parse } from 'pg-connection-string';
 import path from 'path';
 import validator from 'validator';
 import { GlobalLogger } from '../telemetry/logs';
@@ -193,7 +192,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   if (configFile.database_url) {
     connectionString = configFile.database_url;
 
-    const parsed = parse(configFile.database_url);
     const url = new URL(configFile.database_url);
 
     // If in debug mode, apply the debug overrides
@@ -215,28 +213,32 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
     const queryParams = Object.fromEntries(url.searchParams.entries());
 
+    // Validate required fields
     const missingFields: string[] = [];
-    if (!parsed.user) missingFields.push('username');
-    if (!parsed.password) missingFields.push('password');
-    if (!parsed.host) missingFields.push('hostname');
+    if (!url.username) missingFields.push('username');
+    if (!url.password) missingFields.push('password');
+    if (!url.hostname) missingFields.push('hostname');
 
     if (missingFields.length > 0) {
       throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
     }
 
+    // Create database config object
     configFile.database = {
-      hostname: parsed.host as string,
-      port: parsed.port ? parseInt(parsed.port, 10) : 5432,
-      username: parsed.user,
-      password: parsed.password,
-      app_db_name: parsed.database || undefined,
-      ssl: 'sslmode' in parsed && (parsed.sslmode === 'require' || parsed.sslmode === 'verify-full'),
+      hostname: url.hostname,
+      port: url.port ? parseInt(url.port, 10) : 5432,
+      username: url.username,
+      password: url.password,
+      app_db_name: url.pathname.substring(1) || undefined,
+      ssl: queryParams['sslmode'] === 'require' || queryParams['sslmode'] === 'verify-full',
       ssl_ca: queryParams['sslrootcert'] || undefined,
       connectionTimeoutMillis: queryParams['connect_timeout']
         ? parseInt(queryParams['connect_timeout'], 10) * 1000
         : 3000,
     };
-    userDbPoolSize = Number(queryParams['connection_limit']) || 20;
+
+    // Calculate pool size
+    userDbPoolSize = queryParams['connection_limit'] ? parseInt(queryParams['connection_limit'], 10) : 20;
 
     databaseName = configFile.database.app_db_name;
     // Construct the database name from the application name, if needed
