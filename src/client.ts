@@ -3,7 +3,7 @@ import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from '
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { v4 as uuidv4 } from 'uuid';
 import { RetrievedHandle, StatusString, WorkflowHandle } from './workflow';
-import { parseDbString, parseSSLConfig } from './dbos-runtime/config';
+import { constructPoolConfig } from './dbos-runtime/config';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -42,19 +42,14 @@ export class DBOSClient {
   private readonly systemDatabase: SystemDatabase;
 
   private constructor(databaseUrl: string, systemDatabase?: string) {
-    const dbConfig = parseDbString(databaseUrl);
+    const poolConfig: PoolConfig = constructPoolConfig({
+      database: {},
+      database_url: databaseUrl,
+      application: {},
+      env: {},
+    });
 
-    const poolConfig: PoolConfig = {
-      host: dbConfig.hostname,
-      port: dbConfig.port,
-      user: dbConfig.username,
-      password: dbConfig.password,
-      database: dbConfig.app_db_name,
-      ssl: parseSSLConfig(dbConfig),
-      connectionTimeoutMillis: dbConfig.connectionTimeoutMillis,
-    };
-
-    systemDatabase ??= `${dbConfig.app_db_name}_dbos_sys`;
+    systemDatabase ??= `${poolConfig.database}_dbos_sys`;
 
     this.logger = new Logger();
     this.systemDatabase = new PostgresSystemDatabase(poolConfig, systemDatabase, this.logger);

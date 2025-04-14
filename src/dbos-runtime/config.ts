@@ -519,34 +519,6 @@ export function translatePublicDBOSconfig(
   return [translatedConfig, runtimeConfig];
 }
 
-export function parseDbString(dbString: string): DBConfig {
-  const parsed = parse(dbString);
-  const url = new URL(dbString);
-  const queryParams = Object.fromEntries(url.searchParams.entries());
-
-  const missingFields: string[] = [];
-  if (!parsed.user) missingFields.push('username');
-  if (!parsed.password) missingFields.push('password');
-  if (!parsed.host) missingFields.push('hostname');
-
-  if (missingFields.length > 0) {
-    throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
-  }
-
-  return {
-    hostname: parsed.host as string,
-    port: parsed.port ? parseInt(parsed.port, 10) : undefined,
-    username: parsed.user,
-    password: parsed.password,
-    app_db_name: parsed.database || undefined,
-    ssl: 'sslmode' in parsed && (parsed.sslmode === 'require' || parsed.sslmode === 'verify-full'),
-    ssl_ca: queryParams['sslrootcert'] || undefined,
-    connectionTimeoutMillis: queryParams['connect_timeout']
-      ? parseInt(queryParams['connect_timeout'], 10) * 1000
-      : undefined,
-  };
-}
-
 export function overwrite_config(
   providedDBOSConfig: DBOSConfigInternal,
   providedRuntimeConfig: DBOSRuntimeConfig,
