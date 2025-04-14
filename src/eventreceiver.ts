@@ -107,7 +107,7 @@ export interface DBOSExecutorContext {
   /** Retrieve a workflow handle given the workflow ID.  Note that `DBOS.retrieveWorkflow` can be used instead */
   retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R>;
   /** @deprecated Use functions on `DBOS` */
-  getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null>;
+  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
   /** @deprecated Use functions on `DBOS` */
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
   /** @deprecated Use functions on `DBOS` */

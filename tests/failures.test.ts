@@ -13,8 +13,8 @@ import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers'
 import { DatabaseError, PoolClient } from 'pg';
 import { v1 as uuidv1 } from 'uuid';
 import { StatusString } from '../src/workflow';
-import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError } from '../src/error';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError, DBOSUnexpectedStepError } from '../src/error';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import assert from 'assert';
 
 const testTableName = 'dbos_failure_test_kv';
@@ -227,6 +227,38 @@ describe('failures-tests', () => {
   test('test-step-status', async () => {
     await expect(TestStepStatus.workflow()).resolves.toBeTruthy();
   });
+
+  test('non-deterministic-workflow-step', async () => {
+    const wfidnds = 'NonDetWFStep';
+
+    await DBOS.withNextWorkflowID(wfidnds, async () => {
+      await NDWFS.nondetWorkflow();
+    });
+    NDWFS.flag = false;
+
+    await DBOSExecutor.globalInstance!.systemDatabase.setWorkflowStatus(wfidnds, StatusString.PENDING, true);
+
+    await DBOS.withNextWorkflowID(
+      wfidnds,
+      async () => await expect(NDWFS.nondetWorkflow()).rejects.toThrow(DBOSUnexpectedStepError),
+    );
+  });
+
+  test('non-deterministic-workflow-tx', async () => {
+    const wfidndt = 'NonDetWFTx';
+
+    await DBOS.withNextWorkflowID(wfidndt, async () => {
+      await NDWFT.nondetWorkflow();
+    });
+    NDWFT.flag = false;
+
+    await DBOSExecutor.globalInstance!.systemDatabase.setWorkflowStatus(wfidndt, StatusString.PENDING, true);
+
+    await DBOS.withNextWorkflowID(
+      wfidndt,
+      async () => await expect(NDWFT.nondetWorkflow()).rejects.toThrow(DBOSUnexpectedStepError),
+    );
+  });
 });
 
 class FailureTestClass extends ConfiguredInstance {
@@ -321,5 +353,45 @@ class FailureTestClass extends ConfiguredInstance {
   @Workflow()
   static async testCommWorkflow(ctxt: WorkflowContext) {
     return await ctxt.invoke(FailureTestClass).noRegComm(1);
+  }
+}
+
+class NDWFS {
+  static flag = true;
+
+  @DBOS.step()
+  static async stepOne() {
+    return Promise.resolve();
+  }
+
+  @DBOS.step()
+  static async stepTwo() {
+    return Promise.resolve();
+  }
+
+  @DBOS.workflow()
+  static async nondetWorkflow() {
+    if (NDWFS.flag) return NDWFS.stepOne();
+    return NDWFS.stepTwo();
+  }
+}
+
+class NDWFT {
+  static flag = true;
+
+  @DBOS.transaction()
+  static async txOne() {
+    return Promise.resolve();
+  }
+
+  @DBOS.transaction()
+  static async txTwo() {
+    return Promise.resolve();
+  }
+
+  @DBOS.workflow()
+  static async nondetWorkflow() {
+    if (NDWFT.flag) return NDWFT.txOne();
+    return NDWFT.txTwo();
   }
 }
