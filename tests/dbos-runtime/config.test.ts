@@ -8,7 +8,6 @@ import {
   ConfigFile,
   loadConfigFile,
   parseConfigFile,
-  parseDbString,
   translatePublicDBOSconfig,
   overwrite_config,
   constructPoolConfig,
@@ -99,7 +98,6 @@ describe('dbos-config', () => {
         password: 'dbos',
         database: 'test_app',
         connectionTimeoutMillis: 3000,
-        ssl: false,
         connectionString:
           'postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=3&connection_limit=20&sslmode=disable',
       });
@@ -133,7 +131,6 @@ describe('dbos-config', () => {
         password: 'envpass',
         database: 'appdb',
         connectionTimeoutMillis: 3000,
-        ssl: false,
         connectionString:
           'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=3&connection_limit=20&sslmode=disable',
       });
@@ -157,7 +154,6 @@ describe('dbos-config', () => {
         password: 'dbos', // default
         database: 'configured_db', // from config.database
         connectionTimeoutMillis: 3000,
-        ssl: { rejectUnauthorized: false }, // default
         max: 7, // from userDbPoolSize
         connectionString:
           'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=3&connection_limit=7&sslmode=require',
@@ -184,7 +180,6 @@ describe('dbos-config', () => {
         password: 'p',
         database: 'test_app',
         connectionTimeoutMillis: 3000,
-        ssl: { ca: ['CA_CERT'], rejectUnauthorized: true },
         connectionString:
           'postgresql://u:p@db:5432/test_app?connect_timeout=3&connection_limit=20&sslmode=verify-full&sslrootcert=ca.pem',
       });
@@ -214,44 +209,14 @@ describe('dbos-config', () => {
         password: 'url_pass',
         database: 'url_db',
         connectionTimeoutMillis: 15000,
-        ssl: { rejectUnauthorized: false },
-        connectionString:
-          'postgresql://url_user:url_pass@url_host:9999/url_db?sslmode=require&connect_timeout=15&extra=1',
-      });
-    });
-
-    test('append connection parameters from config.database when none are provided in the database_url', () => {
-      const dbUrl = 'postgresql://url_user:url_pass@url_host:9999/url_db';
-
-      const config = baseConfig();
-      config.database = {
-        hostname: 'url_host',
-        port: 9999,
-        username: 'url_user',
-        password: 'url_pass',
-        app_db_name: 'url_db',
-        connectionTimeoutMillis: 42000,
-      };
-      config.database_url = dbUrl;
-
-      const pool = constructPoolConfig(config, { userDbPoolSize: 2 });
-
-      assertPoolConfig(pool, {
-        host: 'url_host',
-        port: 9999,
-        user: 'url_user',
-        password: 'url_pass',
-        database: 'url_db',
-        connectionTimeoutMillis: 42000,
-        ssl: { rejectUnauthorized: false },
-        connectionString:
-          'postgresql://url_user:url_pass@url_host:9999/url_db?connect_timeout=42&connection_limit=2&sslmode=require',
+        connectionString: dbUrl,
       });
     });
 
     test('constructPoolConfig correctly handles app names with spaces', () => {
       const config = baseConfig();
       config.name = 'app name with spaces';
+      config.database_url = 'postgresql://postgres:dbos@localhost:5432/';
       config.database.ssl = true;
       const pool = constructPoolConfig(config);
       assertPoolConfig(pool, {
@@ -261,10 +226,35 @@ describe('dbos-config', () => {
         password: 'dbos',
         database: 'app_name_with_spaces',
         connectionTimeoutMillis: 3000,
-        ssl: { rejectUnauthorized: false },
-        connectionString:
-          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&connection_limit=20&sslmode=require',
+        connectionString: config.database_url,
       });
+    });
+
+    test('constructPoolConfig throws with invalid database_url format', () => {
+      const config = baseConfig();
+      config.database_url = 'not-a-valid-url';
+
+      expect(() => constructPoolConfig(config)).toThrow();
+    });
+
+    test.only('constructPoolConfig throws when database_url is missing required fields', () => {
+      // Test missing password
+      const config1 = baseConfig();
+      config1.database_url = 'postgres://user@host:5432/db';
+
+      expect(() => constructPoolConfig(config1)).toThrow(/missing required field\(s\): password/);
+
+      // Test missing username and password
+      const config2 = baseConfig();
+      config2.database_url = 'postgres://host:5432/db';
+
+      expect(() => constructPoolConfig(config2)).toThrow(/missing required field\(s\): username, password/);
+
+      // Test missing hostname
+      const config3 = baseConfig();
+      config3.database_url = 'postgres://user:pass@:5432/db';
+
+      expect(() => constructPoolConfig(config3)).toThrow(/Invalid URL/);
     });
   });
 
@@ -679,10 +669,9 @@ describe('dbos-config', () => {
           password: 'doe',
           database: 'dbostest',
           connectionTimeoutMillis: 7000,
-          ssl: { ca: [certdata], rejectUnauthorized: true },
           max: 20,
           connectionString:
-            'postgresql://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
+            'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
         },
         userDbclient: UserDatabaseName.PRISMA,
         telemetry: {
@@ -725,7 +714,6 @@ describe('dbos-config', () => {
           password: process.env.PGPASSWORD || 'dbos',
           database: 'appname',
           connectionTimeoutMillis: 3000,
-          ssl: false,
           max: 20,
           connectionString:
             'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&connection_limit=20&sslmode=disable',
@@ -800,7 +788,6 @@ describe('dbos-config', () => {
           password: process.env.PGPASSWORD || 'dbos',
           database: 'appname',
           connectionTimeoutMillis: 3000,
-          ssl: false,
           max: 20,
           connectionString:
             'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&connection_limit=20&sslmode=disable',
@@ -850,68 +837,6 @@ describe('dbos-config', () => {
         new DBOSInitializationError('Failed to load config from dbos-config.yaml: missing name field'),
       );
       jest.restoreAllMocks();
-    });
-  });
-
-  describe('parseDbString', () => {
-    test('should correctly parse a full connection string with extra parameters', () => {
-      jest.spyOn(fs, 'readFileSync').mockReturnValue('cert');
-      const dbString =
-        'postgres://user:password@localhost:5432/mydatabase?sslmode=require&sslrootcert=my_cert.pem&connect_timeout=5&extra_param=ignore_me';
-
-      const result = parseDbString(dbString);
-
-      expect(result).toEqual({
-        hostname: 'localhost',
-        port: 5432,
-        username: 'user',
-        password: 'password',
-        app_db_name: 'mydatabase',
-        ssl: true,
-        ssl_ca: 'my_cert.pem',
-        connectionTimeoutMillis: 5000,
-      });
-      jest.restoreAllMocks();
-    });
-
-    test('should parse a connection string with no parameters', () => {
-      const dbString = 'postgres://user:password@localhost:5432/mydatabase';
-
-      const result = parseDbString(dbString);
-
-      expect(result).toEqual({
-        hostname: 'localhost',
-        port: 5432,
-        username: 'user',
-        password: 'password',
-        app_db_name: 'mydatabase',
-        ssl: false,
-        ssl_ca: undefined,
-        connectionTimeoutMillis: undefined,
-      });
-    });
-
-    test('should throw if password is missing', () => {
-      const dbString = 'postgres://user@localhost:5432/mydatabase?sslmode=require';
-      expect(() => parseDbString(dbString)).toThrow(/missing required field\(s\): password/);
-    });
-
-    test('should throw if username and password are missing', () => {
-      const dbString = 'postgres://localhost:5432/mydatabase';
-      expect(() => parseDbString(dbString)).toThrow(/missing required field\(s\): username, password/);
-    });
-
-    test('should throw on empty connection string', () => {
-      expect(() => parseDbString('')).toThrow();
-    });
-
-    test('should throw on an invalid connection string format', () => {
-      expect(() => parseDbString('not-a-valid-db-string')).toThrow();
-    });
-
-    test('should throw if hostname is missing (invalid URL from parsed())', () => {
-      const dbString = 'postgres://user:password@:5432/mydatabase';
-      expect(() => parseDbString(dbString)).toThrow('Invalid URL');
     });
   });
 
