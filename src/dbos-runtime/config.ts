@@ -591,7 +591,7 @@ export function overwrite_config(
     name: appName,
     poolConfig: poolConfig,
     telemetry: providedDBOSConfig.telemetry,
-    system_database: configFile!.database.sys_db_name || poolConfig.database + '_dbos_sys', // Unexepected, but possible
+    system_database: configFile!.database.sys_db_name || poolConfig.database + '_dbos_sys', // Unexpected, but possible
   };
 
   const overwriteDBOSRuntimeConfig = {
