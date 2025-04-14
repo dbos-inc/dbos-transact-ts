@@ -144,9 +144,7 @@ export class DBOSClient {
       maxRetries: 50,
     };
     await this.systemDatabase.initWorkflowStatus(internalStatus, [destinationID, message, topic]);
-    await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, 
-                                   
-                                   .stringify(message), topic);
+    await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, DBOSJSON.stringify(message), topic);
   }
 
   /**
