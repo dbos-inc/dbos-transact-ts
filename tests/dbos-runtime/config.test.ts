@@ -25,9 +25,9 @@ describe('dbos-config', () => {
       name: 'some app'
       language: 'node'
       database:
-        hostname: 'some host'
+        hostname: 'somehost'
         port: 1234
-        username: 'some user'
+        username: 'someuser'
         password: \${PGPASSWORD}
         app_db_name: 'some_db'
         ssl: false
@@ -237,7 +237,7 @@ describe('dbos-config', () => {
       expect(() => constructPoolConfig(config)).toThrow();
     });
 
-    test.only('constructPoolConfig throws when database_url is missing required fields', () => {
+    test('constructPoolConfig throws when database_url is missing required fields', () => {
       // Test missing password
       const config1 = baseConfig();
       config1.database_url = 'postgres://user@host:5432/db';
@@ -482,9 +482,9 @@ describe('dbos-config', () => {
       const localMockDBOSConfigYamlString = `
         name: some-app
         database:
-          hostname: 'some host'
+          hostname: 'somehost'
           port: 1234
-          username: 'some user'
+          username: 'someuser'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
           app_db_name: 'some_db'
@@ -511,9 +511,9 @@ describe('dbos-config', () => {
       const localMockDBOSConfigYamlString = `
         name: some-app
         database:
-          hostname: 'some host'
+          hostname: 'somehost'
           port: 1234
-          username: 'some user'
+          username: 'someuser'
           password: \${PGPASSWORD}
           connectionTimeoutMillis: 3000
           app_db_name: 'some_db'
