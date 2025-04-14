@@ -194,10 +194,6 @@ class TestEngine {
     const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
     const ds = DBOS.knexClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.config.connection.connectionTimeoutMillis).toEqual(3000);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.config.connection.ssl).toEqual(false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any).context.client.config.connection.connectionString).toEqual(pc.connectionString);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any).context.client.config.pool.max).toEqual(2);

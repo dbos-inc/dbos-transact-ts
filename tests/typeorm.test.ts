@@ -217,10 +217,6 @@ class TestEngine {
     const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
     const ds = DBOS.typeORMClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).connection.driver.master.options.connectionTimeoutMillis).toBe(3000);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).connection.driver.master.options.ssl).toBe(false);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any).connection.driver.master.options.connectionString).toBe(pc.connectionString);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     expect((ds as any).connection.driver.master.options.max).toBe(2);
@@ -234,6 +230,8 @@ describe('typeorm-engine-config-tests', () => {
       name: 'dbostest',
       userDbclient: UserDatabaseName.TYPEORM,
       userDbPoolSize: 2,
+      database_url:
+        'postgresql://maxime:maxime123@userdb-257cbb1e-d285-464a-abe9-58268dbad05e.cvc4gmaa6qm9.us-east-1.rds.amazonaws.com:5432/maximedb',
     };
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);

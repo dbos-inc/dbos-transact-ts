@@ -346,9 +346,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             type: 'postgres',
             url: userDBConfig.connectionString,
             entities: this.typeormEntities,
-            ssl: userDBConfig.ssl,
             poolSize: userDBConfig.max,
-            connectTimeoutMS: userDBConfig.connectionTimeoutMillis,
           }),
         );
       } catch (s) {
@@ -361,8 +359,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         client: 'postgres',
         connection: {
           connectionString: userDBConfig.connectionString,
-          ssl: userDBConfig.ssl,
-          connectionTimeoutMillis: userDBConfig.connectionTimeoutMillis,
         },
         pool: {
           min: 0,
