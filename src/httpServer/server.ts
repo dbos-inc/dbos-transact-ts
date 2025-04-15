@@ -368,12 +368,6 @@ export class DBOSHttpServer {
             );
           }
         }
-        // Check if we need to apply a custom body parser
-        if (defaults.koaBodyParser) {
-          router.use(ro.apiURL, defaults.koaBodyParser);
-        } else {
-          router.use(ro.apiURL, bodyParser());
-        }
         // Check if we need to apply any Koa global middleware.
         if (defaults?.koaGlobalMiddlewares) {
           defaults.koaGlobalMiddlewares.forEach((koaMiddleware) => {
@@ -550,7 +544,8 @@ export class DBOSHttpServer {
           }
         };
         // Actually register the endpoint.
-        const routeMiddlewares = defaults.koaMiddlewares ?? [];
+        // Middleware functions are applied directly to router verb methods to prevent duplicate calls.
+        const routeMiddlewares = [defaults.koaBodyParser ?? bodyParser()].concat(defaults.koaMiddlewares ?? []);
         switch (ro.apiType) {
           case APITypes.GET:
             router.get(ro.apiURL, ...routeMiddlewares, wrappedHandler);
