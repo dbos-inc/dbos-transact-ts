@@ -1,5 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { DBOSConfigInternal, DBOSExecutor } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
@@ -67,10 +65,10 @@ export interface SystemDatabase {
   init(): Promise<void>;
   destroy(): Promise<void>;
 
-  initWorkflowStatus<T extends any[]>(
+  initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    args: T,
-  ): Promise<{ args: T; status: string }>;
+    serializedArgs: string,
+  ): Promise<{ serializedInputs: string; status: string }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
@@ -366,10 +364,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await pgSystemClient.end();
   }
 
-  async initWorkflowStatus<T extends any[]>(
+  async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    args: T,
-  ): Promise<{ args: T; status: string }> {
+    serializedInputs: string,
+  ): Promise<{ serializedInputs: string; status: string }> {
     const result = await this.pool.query<{
       recovery_attempts: number;
       status: string;
@@ -460,7 +458,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
     const status = resRow.status;
 
-    const serializedInputs = DBOSJSON.stringify(args);
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
       [initStatus.workflowUUID, serializedInputs],
@@ -470,7 +467,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `Workflow inputs for ${initStatus.workflowUUID} changed since the first call! Use the original inputs.`,
       );
     }
-    return { args: DBOSJSON.parse(rows[0].inputs) as T, status };
+    return { serializedInputs: rows[0].inputs, status };
   }
 
   async recordWorkflowStatusChange(

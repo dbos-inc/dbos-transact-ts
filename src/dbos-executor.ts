@@ -799,7 +799,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           return new RetrievedHandle(this.systemDatabase, cr.res.child!, callerID, callerFunctionID);
         }
       }
-      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(
@@ -813,7 +813,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         );
       }
 
-      args = ires.args;
+      args = DBOSJSON.parse(ires.serializedInputs) as T;
       status = ires.status;
       await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
     }
