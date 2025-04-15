@@ -1,7 +1,7 @@
 import { DBOSConfigInternal, DBOSExecutor } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
-  DBOSWorkflowConflictUUIDError,
+  DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
   DBOSDeadLetterQueueError,
   DBOSConflictingWorkflowError,
@@ -39,6 +39,7 @@ import { DBOSEventReceiverState } from './eventreceiver';
 export interface SystemDatabaseStoredResult {
   res?: string | null;
   err?: string | null;
+  cancelled?: boolean;
   child?: string | null;
   functionName?: string;
 }
@@ -495,7 +496,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
 
     if (wRes.rowCount !== 1) {
-      throw new DBOSWorkflowConflictUUIDError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
+      throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
     }
   }
 
@@ -597,7 +598,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') {
         // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(workflowID);
+        throw new DBOSWorkflowConflictError(workflowID);
       } else {
         throw err;
       }
@@ -1133,6 +1134,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
           return { res: rows[0].output };
         } else if (status === StatusString.ERROR) {
           return { err: rows[0].error };
+        } else if (status === StatusString.CANCELLED) {
+          return { cancelled: true };
         }
       }
 

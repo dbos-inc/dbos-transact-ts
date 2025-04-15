@@ -3,7 +3,7 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 import {
   DBOSError,
   DBOSInitializationError,
-  DBOSWorkflowConflictUUIDError,
+  DBOSWorkflowConflictError,
   DBOSNotRegisteredError,
   DBOSDebuggerError,
   DBOSConfigKeyTypeError,
@@ -861,7 +861,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
-        if (err instanceof DBOSWorkflowConflictUUIDError) {
+        if (err instanceof DBOSWorkflowConflictError) {
           // Retrieve the handle and wait for the result.
           const retrievedHandle = this.retrieveWorkflow<R>(workflowID);
           result = await retrievedHandle.getResult();
@@ -1012,7 +1012,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } catch (error) {
       if (isKeyConflict(error)) {
         // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictError(workflowUUID);
       } else {
         throw error;
       }
@@ -1043,7 +1043,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } catch (error) {
       if (isKeyConflict(error)) {
         // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictError(workflowUUID);
       } else {
         throw error;
       }
@@ -1846,6 +1846,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     functionName: string,
     workflowID?: string,
     functionID?: number,
+    childWfId?: string,
   ): Promise<T> {
     if (workflowID !== undefined && functionID !== undefined) {
       const res = await this.systemDatabase.getOperationResult(workflowID, functionID);
@@ -1862,7 +1863,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         await this.systemDatabase.recordOperationResult(
           workflowID,
           functionID,
-          { serialOutput: DBOSJSON.stringify(output), functionName },
+          { serialOutput: DBOSJSON.stringify(output), functionName, childWfId },
           true,
         );
       }
@@ -1872,7 +1873,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         await this.systemDatabase.recordOperationResult(
           workflowID,
           functionID,
-          { serialError: DBOSJSON.stringify(serializeError(e)), functionName },
+          { serialError: DBOSJSON.stringify(serializeError(e)), functionName, childWfId },
           false,
         );
       }

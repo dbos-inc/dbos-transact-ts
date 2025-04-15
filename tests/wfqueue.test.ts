@@ -19,7 +19,7 @@ import {
   // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
-import { DBOSConflictingWorkflowError } from '../src/error';
+import { DBOSConflictingWorkflowError, DBOSTargetWorkflowCancelledError } from '../src/error';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -582,7 +582,7 @@ describe('queued-wf-tests-simple', () => {
 
     // Complete the blocked workflow
     TestCancelQueues.blockingEvent.set();
-    await expect(blockedHandle.getResult()).resolves.toBeNull();
+    await expect(blockedHandle.getResult()).rejects.toThrow(DBOSTargetWorkflowCancelledError);
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);

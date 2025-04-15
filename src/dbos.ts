@@ -36,6 +36,7 @@ import {
   DBOSExecutorNotInitializedError,
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
+  DBOSTargetWorkflowCancelledError,
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
@@ -826,11 +827,11 @@ export class DBOS {
   // Workflow and other operations
   //////
 
-  static #runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string): Promise<T> {
+  static runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string, childWFID?: string): Promise<T> {
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInStep()) {
         // OK to use directly
-        return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName);
+        return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
       } else if (DBOS.isInWorkflow()) {
         const wfctx = assertCurrentWorkflowContext();
         return DBOSExecutor.globalInstance!.runAsStep<T>(
@@ -838,6 +839,7 @@ export class DBOS {
           funcName,
           DBOS.workflowID,
           wfctx.functionIDGetIncrement(),
+          childWFID,
         );
       } else {
         throw new DBOSInvalidWorkflowTransitionError(
@@ -845,7 +847,7 @@ export class DBOS {
         );
       }
     }
-    return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName);
+    return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
   }
 
   /**
@@ -868,6 +870,25 @@ export class DBOS {
       }
     }
     return DBOS.executor.getWorkflowStatus(workflowID);
+  }
+
+  /**
+   * Get the workflow result, given a workflow ID
+   * @param workflowID - ID of the workflow
+   * @param timeout - Maximum time to wait for result
+   * @returns The return value of the workflow, or throws the exception thrown by the workflow, or `null` if times out
+   */
+  static async getResult<T>(workflowID: string, timeout?: number): Promise<T | null> {
+    return await DBOS.runAsWorkflowStep(
+      async () => {
+        const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(workflowID, timeout);
+        if (!rres) return null;
+        if (rres?.cancelled) throw new DBOSTargetWorkflowCancelledError(`Workflow ${workflowID} was cancelled`); // TODO: Make semantically meaningful
+        return DBOSExecutor.reviveResultOrError<T>(rres);
+      },
+      'DBOS.getResult',
+      workflowID,
+    );
   }
 
   /**
@@ -895,7 +916,7 @@ export class DBOS {
    * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
    */
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.getWorkflows(input);
     }, 'DBOS.getWorkflows');
   }
@@ -907,7 +928,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async cancelWorkflow(workflowID: string) {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.cancelWorkflow(workflowID);
     }, 'DBOS.cancelWorkflow');
   }
@@ -917,7 +938,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async resumeWorkflow(workflowID: string) {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
   }
@@ -927,7 +948,7 @@ export class DBOS {
    * @param input - Filter predicate, containing the queue name and other criteria
    */
   static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.getWorkflowQueue(input);
     }, 'DBOS.getWorkflowQueue');
   }
