@@ -225,14 +225,46 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger
   }
 }
 
+class NotificationMap {
+  map: Map<string, Map<number, () => void>> = new Map();
+  curCK: number = 0;
+
+  registerCallback(key: string, cb: () => void) {
+    if (!this.map.has(key)) {
+      this.map.set(key, new Map());
+    }
+    const ck = this.curCK++;
+    this.map.get(key)!.set(ck, cb);
+    return { key, ck };
+  }
+
+  deregisterCallback(k: { key: string; ck: number }) {
+    if (!this.map.has(k.key)) return;
+    const sm = this.map.get(k.key)!;
+    if (!sm.has(k.ck)) return;
+    sm.delete(k.ck);
+    if (sm.size === 0) {
+      this.map.delete(k.key);
+    }
+  }
+
+  callCallbacks(key: string) {
+    if (!this.map.has(key)) return;
+    const sm = this.map.get(key)!;
+    for (const cb of sm.values()) {
+      cb();
+    }
+  }
+}
+
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
   readonly knexDB: Knex;
 
   notificationsClient: PoolClient | null = null;
-  readonly notificationsMap: Record<string, () => void> = {};
-  readonly workflowEventsMap: Record<string, () => void> = {};
+  readonly notificationsMap: NotificationMap = new NotificationMap();
+  readonly workflowEventsMap: NotificationMap = new NotificationMap();
 
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
@@ -678,7 +710,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         resolveNotification = resolve;
       });
       const payload = `${workflowID}::${topic}`;
-      this.notificationsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+      const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
       let timeoutPromise: Promise<void> = Promise.resolve();
       let timeoutCancel: () => void = () => {};
       try {
@@ -687,7 +719,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         timeoutCancel = cancel;
       } catch (e) {
         this.logger.error(e);
-        delete this.notificationsMap[payload];
+        this.notificationsMap.deregisterCallback(cbr);
         timeoutCancel();
         throw new Error('durable sleepms failed');
       }
@@ -695,7 +727,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await Promise.race([messagePromise, timeoutPromise]);
       } finally {
         timeoutCancel();
-        delete this.notificationsMap[payload];
+        this.notificationsMap.deregisterCallback(cbr);
       }
     }
 
@@ -813,7 +845,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const valuePromise = new Promise<void>((resolve) => {
       resolveNotification = resolve;
     });
-    this.workflowEventsMap[payloadKey] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+    const cbr = this.workflowEventsMap.registerCallback(payloadKey, resolveNotification!);
 
     try {
       // Check if the key is already in the DB, then wait for the notification if it isn't.
@@ -844,7 +876,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             timeoutCancel = cancel;
           } catch (e) {
             this.logger.error(e);
-            delete this.workflowEventsMap[payloadKey];
+            this.workflowEventsMap.deregisterCallback(cbr);
             throw new Error('durable sleepms failed');
           }
         } else {
@@ -873,7 +905,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
       }
     } finally {
-      delete this.workflowEventsMap[payloadKey];
+      this.workflowEventsMap.deregisterCallback(cbr);
     }
 
     // Record the output if it is inside a workflow.
@@ -1102,12 +1134,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
     const handler = (msg: Notification) => {
       if (msg.channel === 'dbos_notifications_channel') {
-        if (msg.payload && msg.payload in this.notificationsMap) {
-          this.notificationsMap[msg.payload]();
+        if (msg.payload) {
+          this.notificationsMap.callCallbacks(msg.payload);
         }
       } else {
-        if (msg.payload && msg.payload in this.workflowEventsMap) {
-          this.workflowEventsMap[msg.payload]();
+        if (msg.payload) {
+          this.workflowEventsMap.callCallbacks(msg.payload);
         }
       }
     };
