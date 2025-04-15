@@ -225,11 +225,11 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger
   }
 }
 
-class NotificationMap {
-  map: Map<string, Map<number, () => void>> = new Map();
+class NotificationMap<T> {
+  map: Map<string, Map<number, (event?: T) => void>> = new Map();
   curCK: number = 0;
 
-  registerCallback(key: string, cb: () => void) {
+  registerCallback(key: string, cb: (event?: T) => void) {
     if (!this.map.has(key)) {
       this.map.set(key, new Map());
     }
@@ -248,13 +248,19 @@ class NotificationMap {
     }
   }
 
-  callCallbacks(key: string) {
+  callCallbacks(key: string, event?: T) {
     if (!this.map.has(key)) return;
     const sm = this.map.get(key)!;
     for (const cb of sm.values()) {
-      cb();
+      cb(event);
     }
   }
+}
+
+interface WFStatusUpdate {
+  wfid: string;
+  status: string;
+  oldstatus: string;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -262,9 +268,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly systemPoolConfig: PoolConfig;
   readonly knexDB: Knex;
 
+  /*
+   * Generally, notifications are asynchronous.  One should:
+   *  Subscribe to updates
+   *  Read the database item in question
+   *  In response to updates, re-read the database item
+   *  Unsubscribe at the end
+   * The notification mechanism is reliable in the sense that it will eventually deliver updates
+   *  or the DB connection will get dropped.  The right thing to do if you lose connectivity to
+   *  the system DB is to exit the process and go through recovery... system DB writes, notifications,
+   *  etc may not have completed correctly, and recovery is the way to rebuild in-memory state.
+   */
   notificationsClient: PoolClient | null = null;
-  readonly notificationsMap: NotificationMap = new NotificationMap();
-  readonly workflowEventsMap: NotificationMap = new NotificationMap();
+  readonly notificationsMap: NotificationMap<void> = new NotificationMap();
+  readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
+  readonly workflowStatusMap: NotificationMap<WFStatusUpdate> = new NotificationMap();
 
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
@@ -696,39 +714,41 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return res.res.res!;
     }
 
-    // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (
-      await this.pool.query<notifications>(
-        `SELECT topic FROM ${DBOSExecutor.systemDBSchemaName}.notifications WHERE destination_uuid=$1 AND topic=$2;`,
-        [workflowID, topic],
-      )
-    ).rows;
-    if (initRecvRows.length === 0) {
-      // Then, register the key with the global notifications listener.
-      let resolveNotification: () => void;
-      const messagePromise = new Promise<void>((resolve) => {
-        resolveNotification = resolve;
-      });
-      const payload = `${workflowID}::${topic}`;
-      const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
-      let timeoutPromise: Promise<void> = Promise.resolve();
-      let timeoutCancel: () => void = () => {};
-      try {
-        const { promise, cancel } = await this.durableSleepms(workflowID, timeoutFunctionID, timeoutSeconds * 1000);
-        timeoutPromise = promise;
-        timeoutCancel = cancel;
-      } catch (e) {
-        this.logger.error(e);
-        this.notificationsMap.deregisterCallback(cbr);
-        timeoutCancel();
-        throw new Error('durable sleepms failed');
+    // Then, register the key with the global notifications listener.
+    let resolveNotification: () => void;
+    const messagePromise = new Promise<void>((resolve) => {
+      resolveNotification = resolve;
+    });
+    const payload = `${workflowID}::${topic}`;
+    const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
+    try {
+      // Check if the key is already in the DB, then wait for the notification if it isn't.
+      const initRecvRows = (
+        await this.pool.query<notifications>(
+          `SELECT topic FROM ${DBOSExecutor.systemDBSchemaName}.notifications WHERE destination_uuid=$1 AND topic=$2;`,
+          [workflowID, topic],
+        )
+      ).rows;
+      if (initRecvRows.length === 0) {
+        let timeoutPromise: Promise<void> = Promise.resolve();
+        let timeoutCancel: () => void = () => {};
+        try {
+          const { promise, cancel } = await this.durableSleepms(workflowID, timeoutFunctionID, timeoutSeconds * 1000);
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+        } catch (e) {
+          this.logger.error(e);
+          timeoutCancel();
+          throw new Error('durable sleepms failed');
+        }
+        try {
+          await Promise.race([messagePromise, timeoutPromise]);
+        } finally {
+          timeoutCancel();
+        }
       }
-      try {
-        await Promise.race([messagePromise, timeoutPromise]);
-      } finally {
-        timeoutCancel();
-        this.notificationsMap.deregisterCallback(cbr);
-      }
+    } finally {
+      this.notificationsMap.deregisterCallback(cbr);
     }
 
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
@@ -876,7 +896,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
             timeoutCancel = cancel;
           } catch (e) {
             this.logger.error(e);
-            this.workflowEventsMap.deregisterCallback(cbr);
             throw new Error('durable sleepms failed');
           }
         } else {
@@ -1023,6 +1042,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
       this.logger.info('Waiting for pending workflows to finish.');
       await Promise.allSettled(this.pendingWorkflowMap.values());
     }
+    if (this.workflowEventsMap.map.size > 0) {
+      this.logger.warn('Workflow events map is not empty - shutdown is not clean.');
+      //throw new Error("Workflow events map is not empty - shutdown is not clean.");
+    }
+    if (this.notificationsMap.map.size > 0) {
+      this.logger.warn('Notification events map is not empty - shutdown is not clean.');
+      //throw new Error("Message notification map is not empty - shutdown is not clean.");
+    }
   }
 
   async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
@@ -1132,14 +1159,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.notificationsClient = await this.pool.connect();
     await this.notificationsClient.query('LISTEN dbos_notifications_channel;');
     await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
+    await this.notificationsClient.query('LISTEN dbos_workflow_status_channel;');
     const handler = (msg: Notification) => {
       if (msg.channel === 'dbos_notifications_channel') {
         if (msg.payload) {
           this.notificationsMap.callCallbacks(msg.payload);
         }
-      } else {
+      } else if (msg.channel === 'dbos_workflow_events_channel') {
         if (msg.payload) {
           this.workflowEventsMap.callCallbacks(msg.payload);
+        }
+      } else if (msg.channel === 'dbos_workflow_status_channel') {
+        if (msg.payload) {
+          const notif: WFStatusUpdate = JSON.parse(msg.payload) as WFStatusUpdate;
+          this.workflowStatusMap.callCallbacks(msg.payload, notif);
         }
       }
     };
