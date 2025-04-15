@@ -120,6 +120,7 @@ describe('dbos-config', () => {
       const config = baseConfig();
       config.database.app_db_name = 'appdb';
       config.database.ssl = false;
+      config.database.hostname = 'something else';
 
       const pool = constructPoolConfig(config);
 
@@ -131,6 +132,29 @@ describe('dbos-config', () => {
         database: 'appdb',
         connectionTimeoutMillis: 3000,
         connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=3&sslmode=disable',
+      });
+    });
+
+    test('uses environment variable overrides with connection string input', () => {
+      process.env.DBOS_DBHOST = 'envhost';
+      process.env.DBOS_DBPORT = '7777';
+      process.env.DBOS_DBUSER = 'envuser';
+      process.env.DBOS_DBPASSWORD = 'envpass';
+      process.env.DBOS_DEBUG_WORKFLOW_ID = 'debug-workflow-id';
+
+      const config = baseConfig();
+      config.database_url = 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable';
+
+      const pool = constructPoolConfig(config);
+
+      assertPoolConfig(pool, {
+        host: 'envhost',
+        port: 7777,
+        user: 'envuser',
+        password: 'envpass',
+        database: 'appdb',
+        connectionTimeoutMillis: 22000,
+        connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=22&sslmode=disable',
       });
     });
 
