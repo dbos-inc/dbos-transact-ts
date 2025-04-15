@@ -189,10 +189,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
   // If a database_url is found, parse it to backfill the poolConfig
   if (configFile.database_url) {
-    connectionString = configFile.database_url;
-
     const url = new URL(configFile.database_url);
-
     // If in debug mode, apply the debug overrides
     if (isDebugMode) {
       if (process.env.DBOS_DBHOST) {
@@ -209,6 +206,9 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
       }
       configFile.database_url = url.toString();
     }
+    connectionString = configFile.database_url;
+
+    // From here backfill the poolConfig
 
     const queryParams = Object.fromEntries(url.searchParams.entries());
 
