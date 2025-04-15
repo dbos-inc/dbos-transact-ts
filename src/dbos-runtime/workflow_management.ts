@@ -7,6 +7,7 @@ import { GetQueuedWorkflowsInput } from '../workflow';
 import { HTTPRequest } from '../context';
 import axios from 'axios';
 import { DBOS } from '../dbos';
+import { DBOSJSON } from '../utils';
 
 export async function listWorkflows(
   config: DBOSConfigInternal,
@@ -75,7 +76,7 @@ export async function getWorkflowInfo(
   delete info.output;
   const input = await systemDatabase.getWorkflowInputs(workflowID);
   if (input !== null) {
-    info.input = input;
+    info.input = DBOSJSON.parse(input) as unknown[];
   }
   if (info.status === StatusString.SUCCESS || info.status === StatusString.ERROR) {
     try {

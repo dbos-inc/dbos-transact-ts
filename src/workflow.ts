@@ -597,7 +597,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    return (await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID)) as T;
+    return DBOSJSON.parse(await this.systemDatabase.getWorkflowInputs(this.workflowUUID)) as T;
   }
 }
 
@@ -643,6 +643,6 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    return (await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID)) as T;
+    return DBOSJSON.parse(await this.systemDatabase.getWorkflowInputs(this.workflowUUID)) as T;
   }
 }

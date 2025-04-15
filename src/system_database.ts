@@ -75,7 +75,7 @@ export interface SystemDatabase {
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
-  getWorkflowInputs<T extends any[]>(workflowID: string): Promise<T | null>;
+  getWorkflowInputs(workflowID: string): Promise<string | null>;
 
   // If there is no record, res will be undefined;
   //  otherwise will be defined (with potentially undefined contents)
@@ -524,7 +524,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  async getWorkflowInputs<T extends any[]>(workflowID: string): Promise<T | null> {
+  async getWorkflowInputs(workflowID: string): Promise<string | null> {
     const { rows } = await this.pool.query<workflow_inputs>(
       `SELECT inputs FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs WHERE workflow_uuid=$1`,
       [workflowID],
@@ -532,7 +532,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (rows.length === 0) {
       return null;
     }
-    return DBOSJSON.parse(rows[0].inputs) as T;
+    return rows[0].inputs;
   }
 
   async getOperationResult(
@@ -980,7 +980,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (this.workflowCancellationMap.get(workflowID) === true) {
       throw new DBOSWorkflowCancelledError(workflowID);
     }
-    // May need to look in sysdb
     return Promise.resolve();
   }
 

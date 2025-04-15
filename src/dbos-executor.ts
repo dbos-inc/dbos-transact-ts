@@ -779,15 +779,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
     if (this.isDebugging) {
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-      const wfInputs = await this.systemDatabase.getWorkflowInputs<T>(workflowID);
+      const wfInputs = await this.systemDatabase.getWorkflowInputs(workflowID);
       if (!wfStatus || !wfInputs) {
         throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowID}`);
       }
 
       // Make sure we use the same input.
-      if (DBOSJSON.stringify(args) !== DBOSJSON.stringify(wfInputs)) {
+      if (DBOSJSON.stringify(args) !== wfInputs) {
         throw new DBOSDebuggerError(
-          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(wfInputs)}`,
+          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${wfInputs}`,
         );
       }
       status = wfStatus.status;
@@ -2012,11 +2012,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async executeWorkflowUUID(workflowID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-    const inputs = await this.systemDatabase.getWorkflowInputs(workflowID);
-    if (!inputs || !wfStatus) {
+    const sInputs = await this.systemDatabase.getWorkflowInputs(workflowID);
+    if (!sInputs || !wfStatus) {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
+    const inputs = DBOSJSON.parse(sInputs) as unknown[];
     const parentCtx = this.#getRecoveryContext(workflowID, wfStatus);
 
     const { wfInfo, configuredInst } = this.getWorkflowInfoByStatus(wfStatus);
@@ -2034,7 +2035,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
           queueName: wfStatus.queueName,
           executeWorkflow: true,
         },
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ...inputs,
       );
     }
@@ -2072,7 +2072,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         },
         undefined,
         undefined,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ...inputs,
       );
     } else if (nameArr[1] === TempWorkflowType.step) {
@@ -2096,7 +2095,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         },
         undefined,
         undefined,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ...inputs,
       );
     } else if (nameArr[1] === TempWorkflowType.send) {
@@ -2112,7 +2110,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
           queueName: wfStatus.queueName,
           executeWorkflow: true,
         },
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ...inputs,
       );
     } else {
