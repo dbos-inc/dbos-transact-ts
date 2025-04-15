@@ -27,7 +27,7 @@ import {
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep } from './utils';
+import { sleepms, findPackageRoot, globalParams, cancellableSleep } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -410,8 +410,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.queueName,
         initStatus.authenticatedUser,
         initStatus.assumedRole,
-        DBOSJSON.stringify(initStatus.authenticatedRoles),
-        DBOSJSON.stringify(initStatus.request),
+        JSON.stringify(initStatus.authenticatedRoles),
+        JSON.stringify(initStatus.request),
         null,
         initStatus.executorId,
         initStatus.applicationVersion,
@@ -1097,8 +1097,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
             queueName: rows[0].queue_name || undefined,
             authenticatedUser: rows[0].authenticated_user,
             assumedRole: rows[0].assumed_role,
-            authenticatedRoles: DBOSJSON.parse(rows[0].authenticated_roles) as string[],
-            request: DBOSJSON.parse(rows[0].request) as HTTPRequest,
+            authenticatedRoles: JSON.parse(rows[0].authenticated_roles) as string[],
+            request: JSON.parse(rows[0].request) as HTTPRequest,
             executorId: rows[0].executor_id,
             createdAt: Number(rows[0].created_at),
             updatedAt: Number(rows[0].updated_at),
