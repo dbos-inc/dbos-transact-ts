@@ -186,7 +186,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
   let connectionString = undefined;
   let databaseName = undefined;
-  let userDbPoolSize = undefined;
 
   // If a database_url is found, parse it to backfill the poolConfig
   if (configFile.database_url) {
@@ -237,9 +236,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
         : 3000,
     };
 
-    // Calculate pool size
-    userDbPoolSize = queryParams['connection_limit'] ? parseInt(queryParams['connection_limit'], 10) : 20;
-
     databaseName = configFile.database.app_db_name;
     // Construct the database name from the application name, if needed
     if (databaseName === undefined) {
@@ -286,8 +282,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
       queryParams.push(`connect_timeout=${configFile.database.connectionTimeoutMillis / 1000}`);
     }
 
-    userDbPoolSize = cliOptions?.userDbPoolSize || 20;
-
     // SSL configuration
     const ssl = parseSSLConfig(configFile.database);
     if (ssl === false) {
@@ -322,7 +316,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     password: configFile.database.password,
     connectionTimeoutMillis: configFile.database.connectionTimeoutMillis,
     database: databaseName,
-    max: userDbPoolSize,
+    max: cliOptions?.userDbPoolSize || 20,
   };
 
   if (!poolConfig.database) {
