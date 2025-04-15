@@ -233,7 +233,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly stepInfoMap: Map<string, StepRegInfo> = new Map();
   readonly procedureInfoMap: Map<string, ProcedureRegInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
-  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
 
   readonly telemetryCollector: TelemetryCollector;
 
@@ -564,10 +563,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async destroy() {
     try {
-      if (this.pendingWorkflowMap.size > 0) {
-        this.logger.info('Waiting for pending workflows to finish.');
-        await Promise.allSettled(this.pendingWorkflowMap.values());
-      }
+      await this.systemDatabase.awaitRunningWorkflows();
       await this.systemDatabase.destroy();
       if (this.userDatabase) {
         await this.userDatabase.destroy();
@@ -914,16 +910,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     ) {
       const workflowPromise: Promise<R> = runWorkflow();
 
-      // Need to await for the workflow and capture errors.
-      const awaitWorkflowPromise = workflowPromise
-        .catch((error) => {
-          this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
-        })
-        .finally(() => {
-          // Remove itself from pending workflow map.
-          this.pendingWorkflowMap.delete(workflowID);
-        });
-      this.pendingWorkflowMap.set(workflowID, awaitWorkflowPromise);
+      this.systemDatabase.registerRunningWorkflow(workflowID, workflowPromise);
 
       // Return the normal handle that doesn't capture errors.
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name, callerID, callerFunctionID);

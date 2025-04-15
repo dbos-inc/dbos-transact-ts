@@ -110,6 +110,8 @@ export interface SystemDatabase {
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
   checkIfCanceled(workflowID: string): Promise<void>;
+  registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
+  awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
 
   // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
@@ -232,7 +234,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly notificationsMap: Record<string, () => void> = {};
   readonly workflowEventsMap: Record<string, () => void> = {};
 
-  readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowUUID to its cancellation status.
+  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
+  readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
   static readonly connectionTimeoutMillis = 10000; // 10 second timeout
 
@@ -968,6 +971,26 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client.release();
     }
     this.workflowCancellationMap.delete(workflowID);
+  }
+
+  registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>) {
+    // Need to await for the workflow and capture errors.
+    const awaitWorkflowPromise = workflowPromise
+      .catch((error) => {
+        this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
+      })
+      .finally(() => {
+        // Remove itself from pending workflow map.
+        this.pendingWorkflowMap.delete(workflowID);
+      });
+    this.pendingWorkflowMap.set(workflowID, awaitWorkflowPromise);
+  }
+
+  async awaitRunningWorkflows(): Promise<void> {
+    if (this.pendingWorkflowMap.size > 0) {
+      this.logger.info('Waiting for pending workflows to finish.');
+      await Promise.allSettled(this.pendingWorkflowMap.values());
+    }
   }
 
   async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
