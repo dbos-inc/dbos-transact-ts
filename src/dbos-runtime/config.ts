@@ -287,9 +287,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     }
 
     userDbPoolSize = cliOptions?.userDbPoolSize || 20;
-    if (userDbPoolSize && userDbPoolSize > 0) {
-      queryParams.push(`connection_limit=${userDbPoolSize}`);
-    }
 
     // SSL configuration
     const ssl = parseSSLConfig(configFile.database);
