@@ -8,6 +8,7 @@ import {
   DBOSDeadLetterQueueError,
   DBOSConflictingWorkflowError,
   DBOSUnexpectedStepError,
+  DBOSWorkflowCancelledError,
 } from './error';
 import {
   GetPendingWorkflowsOutput,
@@ -108,6 +109,7 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
+  checkIfCanceled(workflowID: string): Promise<void>;
 
   // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
@@ -229,6 +231,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
   notificationsClient: PoolClient | null = null;
   readonly notificationsMap: Record<string, () => void> = {};
   readonly workflowEventsMap: Record<string, () => void> = {};
+
+  readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowUUID to its cancellation status.
 
   static readonly connectionTimeoutMillis = 10000; // 10 second timeout
 
@@ -914,6 +918,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } finally {
       client.release();
     }
+
+    this.workflowCancellationMap.set(workflowID, true);
+  }
+
+  async checkIfCanceled(workflowID: string): Promise<void> {
+    if (this.workflowCancellationMap.get(workflowID) === true) {
+      throw new DBOSWorkflowCancelledError(workflowID);
+    }
+    // May need to look in sysdb
+    return Promise.resolve();
   }
 
   async resumeWorkflow(workflowID: string): Promise<void> {
@@ -953,6 +967,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } finally {
       client.release();
     }
+    this.workflowCancellationMap.delete(workflowID);
   }
 
   async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {

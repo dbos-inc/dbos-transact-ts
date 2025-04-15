@@ -234,7 +234,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly procedureInfoMap: Map<string, ProcedureRegInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
   readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
-  readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowUUID to its cancellation status.
 
   readonly telemetryCollector: TelemetryCollector;
 
@@ -1119,9 +1118,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(txn.name);
     }
 
-    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-    }
+    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
@@ -1141,9 +1138,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     );
 
     while (true) {
-      if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-        throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-      }
+      await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
       let txn_snapshot = 'invalid';
       const workflowUUID = wfCtx.workflowUUID;
@@ -1330,9 +1325,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(proc.name);
     }
 
-    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-    }
+    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
     const executeLocally = this.isDebugging || (procInfo.config.executeLocally ?? false);
     const funcId = wfCtx.functionIDGetIncrement();
@@ -1378,9 +1371,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
 
     while (true) {
-      if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-        throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-      }
+      await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
       let txn_snapshot = 'invalid';
       const wrappedProcedure = async (client: PoolClient): Promise<R> => {
@@ -1546,9 +1537,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSDebuggerError("Can't invoke stored procedure in debug mode.");
     }
 
-    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-    }
+    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
     const $jsonCtx = {
       request: wfCtx.request,
@@ -1678,9 +1667,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(stepFn.name);
     }
 
-    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-    }
+    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
     const funcID = wfCtx.functionIDGetIncrement();
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
@@ -1742,9 +1729,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
-          if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-            throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-          }
+          await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
           let cresult: R | undefined;
           if (commInfo.registration.passContext) {
@@ -2170,7 +2155,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async cancelWorkflow(workflowID: string): Promise<void> {
     await this.systemDatabase.cancelWorkflow(workflowID);
     this.logger.info(`Cancelling workflow ${workflowID}`);
-    this.workflowCancellationMap.set(workflowID, true);
   }
 
   async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
@@ -2199,7 +2183,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
     await this.systemDatabase.resumeWorkflow(workflowID);
-    this.workflowCancellationMap.delete(workflowID);
     return await this.executeWorkflowUUID(workflowID, false);
   }
 
