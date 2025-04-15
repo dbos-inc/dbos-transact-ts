@@ -213,6 +213,16 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
     const queryParams = Object.fromEntries(url.searchParams.entries());
 
+    if (!cliOptions?.silent) {
+      const logger = new GlobalLogger();
+      let logConnectionString = `postgresql://${configFile.database.username}:***@${configFile.database.hostname}:${configFile.database.port}/${databaseName}`;
+      const logQueryParamsArray = Object.entries(queryParams).map(([key, value]) => `${key}=${value}`);
+      if (logQueryParamsArray.length > 0) {
+        logConnectionString += `?${logQueryParamsArray.join('&')}`;
+      }
+      logger.info(`Using database connection string: ${logConnectionString}`);
+    }
+
     // Validate required fields
     const missingFields: string[] = [];
     if (!url.username) missingFields.push('username');
@@ -294,6 +304,15 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
     if (queryParams.length > 0) {
       connectionString += `?${queryParams.join('&')}`;
+    }
+
+    if (!cliOptions?.silent) {
+      const logger = new GlobalLogger();
+      let logConnectionString = `postgresql://${configFile.database.username}:***@${configFile.database.hostname}:${configFile.database.port}/${databaseName}`;
+      if (queryParams.length > 0) {
+        logConnectionString += `?${queryParams.join('&')}`;
+      }
+      logger.info(`Using database connection string: ${logConnectionString}`);
     }
   }
 
