@@ -1124,28 +1124,35 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const et = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
 
     while (true) {
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
       let resolveNotification: () => void;
       const statusPromise = new Promise<void>((resolve) => {
         resolveNotification = resolve;
       });
       const irh = this.workflowStatusMap.registerCallback(workflowID, (_res) => {
-        //        resolveNotification();
+        resolveNotification();
       });
       try {
-        const { rows } = await this.pool.query<workflow_status>(
-          `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
-          [workflowID],
-        );
-        if (rows.length > 0) {
-          const status = rows[0].status;
-          if (status === StatusString.SUCCESS) {
-            return { res: rows[0].output };
-          } else if (status === StatusString.ERROR) {
-            return { err: rows[0].error };
-          } else if (status === StatusString.CANCELLED) {
-            return { cancelled: true };
+        try {
+          const { rows } = await this.pool.query<workflow_status>(
+            `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
+            [workflowID],
+          );
+          if (rows.length > 0) {
+            const status = rows[0].status;
+            if (status === StatusString.SUCCESS) {
+              return { res: rows[0].output };
+            } else if (status === StatusString.ERROR) {
+              return { err: rows[0].error };
+            } else if (status === StatusString.CANCELLED) {
+              return { cancelled: true };
+            } else {
+              // Status is not actionable
+            }
           }
+        } catch (e) {
+          const err = e as Error;
+          this.logger.error(`Exception from system database: ${err}`);
+          throw err;
         }
 
         let timeoutPromise: Promise<void> = Promise.resolve();
