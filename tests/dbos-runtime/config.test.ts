@@ -103,6 +103,26 @@ describe('dbos-config', () => {
       });
     });
 
+    test('gets db name from  pkg json name', () => {
+      const mockPackageJsoString = `{"name": "appname"}`;
+      jest.spyOn(fs, 'readFileSync').mockReturnValueOnce(mockPackageJsoString);
+      const config = baseConfig();
+      config.name = undefined;
+      config.database.app_db_name = undefined;
+
+      const pool = constructPoolConfig(config);
+
+      assertPoolConfig(pool, {
+        host: 'localhost',
+        port: 5432,
+        user: 'postgres',
+        password: 'dbos',
+        database: 'appname',
+        connectionTimeoutMillis: 3000,
+        connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
+      });
+    });
+
     test('throws when app name and package.json are missing', () => {
       jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('{}'); // load package.json
 
@@ -207,13 +227,16 @@ describe('dbos-config', () => {
       });
     });
 
-    // Note we still expect config.database to have been built off database_url.
-    test('parses all connection parameters from database_url and backfill poolConfig', () => {
+    test('parses all connection parameters from database_url, backfill poolConfig and ignore provided configFile.database parameters', () => {
       const dbUrl = 'postgresql://url_user:url_pass@url_host:9999/url_db?sslmode=require&connect_timeout=15&extra=1';
 
       const config = baseConfig();
       config.database_url = dbUrl;
-
+      config.database = {
+        hostname: 'a',
+        port: 1234,
+        username: 'b',
+      };
       const pool = constructPoolConfig(config);
 
       assertPoolConfig(pool, {
