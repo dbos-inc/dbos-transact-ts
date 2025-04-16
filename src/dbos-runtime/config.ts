@@ -186,6 +186,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
   let connectionString = undefined;
   let databaseName = undefined;
+  let connectionTimeoutMillis = 3000;
 
   // If a database_url is found, parse it to backfill the poolConfig
   if (configFile.database_url) {
@@ -208,6 +209,11 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     }
     connectionString = configFile.database_url;
     databaseName = url.pathname.substring(1);
+
+    const queryParams = url.searchParams;
+    if (queryParams.has('connect_timeout')) {
+      connectionTimeoutMillis = parseInt(queryParams.get('connect_timeout')!, 10) * 1000;
+    }
 
     // Validate required fields
     const missingFields: string[] = [];
@@ -295,6 +301,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   // Build the final poolConfig
   const poolConfig: PoolConfig = {
     connectionString,
+    connectionTimeoutMillis,
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,

@@ -194,9 +194,11 @@ class TestEngine {
     const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
     const ds = DBOS.knexClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.config.connection.connectionString).toEqual(pc.connectionString);
+    expect((ds as any).context.client.connectionSettings.connectionString).toEqual(pc.connectionString);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.config.pool.max).toEqual(2);
+    expect((ds as any).context.client.config.pool.max).toEqual(pc.max);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    expect((ds as any).context.client.connectionSettings.connectionTimeoutMillis).toBe(pc.connectionTimeoutMillis);
     await Promise.resolve();
   }
 }
@@ -207,6 +209,7 @@ describe('knex-engine-config-tests', () => {
       name: 'dbostest',
       userDbclient: UserDatabaseName.KNEX,
       userDbPoolSize: 2,
+      databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
     };
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);

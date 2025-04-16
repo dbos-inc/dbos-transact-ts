@@ -351,6 +351,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           new DataSourceExports.DataSource({
             type: 'postgres',
             url: userDBConfig.connectionString,
+            connectTimeoutMS: userDBConfig.connectionTimeoutMillis,
             entities: this.typeormEntities,
             poolSize: userDBConfig.max,
           }),
@@ -365,6 +366,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         client: 'postgres',
         connection: {
           connectionString: userDBConfig.connectionString,
+          connectionTimeoutMillis: userDBConfig.connectionTimeoutMillis,
         },
         pool: {
           min: 0,

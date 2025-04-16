@@ -85,6 +85,7 @@ describe('dbos-config', () => {
       expect(pool.password).toBe(expected.password);
       expect(pool.database).toBe(expected.database);
       expect(pool.connectionString).toBe(expected.connectionString);
+      expect(pool.connectionTimeoutMillis).toBe(expected.connectionTimeoutMillis);
     }
 
     test('uses default values when config is empty', () => {
@@ -98,6 +99,7 @@ describe('dbos-config', () => {
         password: 'dbos',
         database: 'test_app',
         connectionString: 'postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=3&sslmode=disable',
+        connectionTimeoutMillis: 3000,
       });
     });
 
@@ -130,6 +132,7 @@ describe('dbos-config', () => {
         password: 'envpass',
         database: 'appdb',
         connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=3&sslmode=disable',
+        connectionTimeoutMillis: 3000,
       });
     });
 
@@ -152,6 +155,7 @@ describe('dbos-config', () => {
         password: 'envpass',
         database: 'appdb',
         connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=22&sslmode=disable',
+        connectionTimeoutMillis: 22000,
       });
     });
 
@@ -173,6 +177,7 @@ describe('dbos-config', () => {
         password: 'dbos', // default
         database: 'configured_db', // from config.database
         max: 7, // from userDbPoolSize
+        connectionTimeoutMillis: 3000, // default
         connectionString:
           'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=3&sslmode=no-verify',
       });
@@ -218,6 +223,7 @@ describe('dbos-config', () => {
         password: 'url_pass',
         database: 'url_db',
         connectionString: dbUrl,
+        connectionTimeoutMillis: 15000,
       });
     });
 
@@ -232,6 +238,7 @@ describe('dbos-config', () => {
         user: 'postgres',
         password: 'dbos',
         database: 'app_name_with_spaces',
+        connectionTimeoutMillis: 3000,
         connectionString:
           'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&sslmode=no-verify',
       });
@@ -355,57 +362,6 @@ describe('dbos-config', () => {
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
     });
 
-    test('config file loads default without database section', () => {
-      const localMockDBOSConfigYamlString = `
-        name: some-app
-      `;
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('SQL STATEMENTS');
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      expect(dbosConfig.poolConfig!.host).toEqual('localhost');
-      expect(dbosConfig.poolConfig!.port).toEqual(5432);
-      expect(dbosConfig.poolConfig!.user).toEqual('postgres');
-      expect(dbosConfig.poolConfig!.password).toEqual(process.env.PGPASSWORD);
-      expect(dbosConfig.poolConfig!.database).toEqual('some_app');
-    });
-
-    test('parseConfigFile prioritizes database_url over database field', () => {
-      const localMockDBOSConfigYamlString = `
-            name: some-app
-            database_url: 'postgres://some_user:some_password@some_host:1234/some_db'
-            database:
-                hostname: 'localhost'
-                port: 5432
-                username: 'postgres'
-                password: \${PGPASSWORD}
-                app_db_name: 'some_db'
-            `;
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('SQL STATEMENTS');
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      expect(dbosConfig.poolConfig!.host).toEqual('some_host');
-      expect(dbosConfig.poolConfig!.port).toEqual(1234);
-      expect(dbosConfig.poolConfig!.user).toEqual('some_user');
-      expect(dbosConfig.poolConfig!.password).toEqual('some_password');
-      expect(dbosConfig.poolConfig!.database).toEqual('some_db');
-    });
-
-    test('config file loads mixed params', () => {
-      const localMockDBOSConfigYamlString = `
-        name: some-app
-        database:
-          hostname: 'some host'
-      `;
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('SQL STATEMENTS');
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      expect(dbosConfig.poolConfig!.host).toEqual('some host');
-      expect(dbosConfig.poolConfig!.port).toEqual(5432);
-      expect(dbosConfig.poolConfig!.user).toEqual('postgres');
-      expect(dbosConfig.poolConfig!.password).toEqual(process.env.PGPASSWORD);
-      expect(dbosConfig.poolConfig!.database).toEqual('some_app');
-    });
-
     test('config file specifies the wrong language', () => {
       const localMockDBOSConfigYamlString = `
       language: 'python'
@@ -420,47 +376,6 @@ describe('dbos-config', () => {
       jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
       jest.spyOn(utils, 'readFileSync').mockReturnValueOnce('SQL STATEMENTS');
       expect(() => parseConfigFile(mockCLIOptions)).toThrow(DBOSInitializationError);
-    });
-
-    test('Config pool settings can be overridden by environment variables', () => {
-      const mockDBOSConfigYamlString = `
-      name: 'some app'
-      language: 'node'
-      database:
-        hostname: 'some host'
-        port: 1234
-        username: 'some user'
-        password: 'some password'
-        app_db_name: 'some_db'
-        ssl: false`;
-
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
-
-      process.env.DBOS_DBHOST = 'DBHOST_OVERRIDE';
-      process.env.DBOS_DBPORT = '99999';
-      process.env.DBOS_DBUSER = 'DBUSER_OVERRIDE';
-      process.env.DBOS_DBPASSWORD = 'DBPASSWORD_OVERRIDE';
-
-      const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-
-      const poolConfig: PoolConfig = dbosConfig.poolConfig!;
-      expect(poolConfig.host).toBe('DBHOST_OVERRIDE');
-      expect(poolConfig.port).toBe(99999);
-      expect(poolConfig.user).toBe('DBUSER_OVERRIDE');
-      expect(poolConfig.password).toBe('DBPASSWORD_OVERRIDE');
-      expect(poolConfig.database).toBe('some_db');
-    });
-
-    test('constructPoolConfig correctly handles app names with spaces', () => {
-      const mockDBOSConfigYamlString = `
-        name: 'some app with spaces'
-        `;
-
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockDBOSConfigYamlString);
-
-      const [dbosConfig, _]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const poolConfig: PoolConfig = dbosConfig.poolConfig!;
-      expect(poolConfig.database).toBe('some_app_with_spaces');
     });
   });
 
@@ -684,6 +599,7 @@ describe('dbos-config', () => {
           max: 20,
           connectionString:
             'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
+          connectionTimeoutMillis: 7000,
         },
         userDbclient: UserDatabaseName.PRISMA,
         telemetry: {
@@ -726,6 +642,7 @@ describe('dbos-config', () => {
           password: process.env.PGPASSWORD || 'dbos',
           database: 'appname',
           max: 20,
+          connectionTimeoutMillis: 3000,
           connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
         },
         userDbclient: UserDatabaseName.KNEX,
@@ -798,6 +715,7 @@ describe('dbos-config', () => {
           password: process.env.PGPASSWORD || 'dbos',
           database: 'appname',
           max: 20,
+          connectionTimeoutMillis: 3000,
           connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
         },
         userDbclient: UserDatabaseName.KNEX,
