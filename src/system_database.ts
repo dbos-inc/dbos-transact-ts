@@ -101,6 +101,7 @@ export interface SystemDatabase {
   awaitWorkflowResult(
     workflowID: string,
     timeoutSeconds?: number,
+    callerID?: string,
     timerFuncID?: number,
   ): Promise<SystemDatabaseStoredResult | undefined>;
 
@@ -752,6 +753,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     });
     const payload = `${workflowID}::${topic}`;
     const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
+    const crh = this.cancelWakeupMap.registerCallback(workflowID, (_res) => {
+      resolveNotification();
+    });
+
     try {
       // Check if the key is already in the DB, then wait for the notification if it isn't.
       const initRecvRows = (
@@ -783,7 +788,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     } finally {
       this.notificationsMap.deregisterCallback(cbr);
+      this.cancelWakeupMap.deregisterCallback(crh);
     }
+
+    await this.checkIfCanceled(workflowID);
 
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
     let message: string | null = null;
@@ -900,8 +908,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
       resolveNotification = resolve;
     });
     const cbr = this.workflowEventsMap.registerCallback(payloadKey, resolveNotification!);
+    const crh = callerWorkflow?.workflowID
+      ? this.cancelWakeupMap.registerCallback(callerWorkflow.workflowID, (_res) => {
+          resolveNotification();
+        })
+      : undefined;
 
     try {
+      if (callerWorkflow?.workflowID) await this.checkIfCanceled(callerWorkflow?.workflowID);
       // Check if the key is already in the DB, then wait for the notification if it isn't.
       const initRecvRows = (
         await this.pool.query<workflow_events>(
@@ -944,6 +958,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
           timeoutCancel();
         }
 
+        if (callerWorkflow?.workflowID) await this.checkIfCanceled(callerWorkflow?.workflowID);
+
         const finalRecvRows = (
           await this.pool.query<workflow_events>(
             `
@@ -959,6 +975,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     } finally {
       this.workflowEventsMap.deregisterCallback(cbr);
+      if (crh) this.cancelWakeupMap.deregisterCallback(crh);
     }
 
     // Record the output if it is inside a workflow.
@@ -1172,6 +1189,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async awaitWorkflowResult(
     workflowID: string,
     timeoutSeconds?: number,
+    callerID?: string,
     timerFuncID?: number,
   ): Promise<SystemDatabaseStoredResult | undefined> {
     const pollingIntervalMs: number = 1000000;
@@ -1186,7 +1204,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const irh = this.workflowStatusMap.registerCallback(workflowID, (_res) => {
         resolveNotification();
       });
+      const crh = callerID
+        ? this.cancelWakeupMap.registerCallback(callerID, (_res) => {
+            resolveNotification();
+          })
+        : undefined;
       try {
+        if (callerID) await this.checkIfCanceled(callerID);
         try {
           const { rows } = await this.pool.query<workflow_status>(
             `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
@@ -1214,8 +1238,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
         try {
-          if (timerFuncID !== undefined && timeoutms !== undefined) {
-            const { promise, cancel, endTime } = await this.durableSleepmsInternal(workflowID, timerFuncID, timeoutms);
+          if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
+            const { promise, cancel, endTime } = await this.durableSleepmsInternal(callerID, timerFuncID, timeoutms);
             finishTime = endTime;
             timeoutPromise = promise;
             timeoutCancel = cancel;
@@ -1236,6 +1260,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
       } finally {
         this.workflowStatusMap.deregisterCallback(irh);
+        if (crh) this.cancelWakeupMap.deregisterCallback(crh);
       }
     }
   }

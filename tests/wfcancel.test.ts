@@ -1,6 +1,6 @@
 import { StatusString, DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { DBOSTargetWorkflowCancelledError } from '../src/error';
+import { DBOSTargetWorkflowCancelledError, DBOSWorkflowCancelledError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { v4 as uuidv4 } from 'uuid';
 
@@ -121,6 +121,40 @@ describe('wf-cancel-tests', () => {
     await DBOS.cancelWorkflow(wfid);
 
     await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSTargetWorkflowCancelledError);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  test('test-preempt-getresult', async () => {
+    const wfid = uuidv4();
+    const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).getResultTooLong();
+
+    await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
+    await DBOS.cancelWorkflow(wfid);
+
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSTargetWorkflowCancelledError);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  test('test-preempt-getevent', async () => {
+    const wfid = uuidv4();
+    const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).getEventTooLong();
+
+    await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
+    await DBOS.cancelWorkflow(wfid);
+
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSTargetWorkflowCancelledError);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  test('test-preempt-recv', async () => {
+    const wfid = uuidv4();
+    const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).recvTooLong();
+
+    await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
+    await DBOS.cancelWorkflow(wfid);
+
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSTargetWorkflowCancelledError);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 
   class WFwith2Steps {
@@ -178,6 +212,24 @@ describe('wf-cancel-tests', () => {
     @DBOS.workflow()
     static async sleepTooLong() {
       await DBOS.sleepms(1000 * 1000);
+      return 'Done';
+    }
+
+    @DBOS.workflow()
+    static async getResultTooLong() {
+      await DBOS.getResult('bogusbogusbogus', 1000);
+      return 'Done';
+    }
+
+    @DBOS.workflow()
+    static async recvTooLong() {
+      await DBOS.recv('bogusbogusbogus', 1000);
+      return 'Done';
+    }
+
+    @DBOS.workflow()
+    static async getEventTooLong() {
+      await DBOS.getEvent('bogusbogusbogus', 'notopic', 1000);
       return 'Done';
     }
   }

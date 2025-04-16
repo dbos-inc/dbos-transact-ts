@@ -888,6 +888,7 @@ export class DBOS {
         const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
           workflowID,
           timeoutSeconds,
+          DBOS.workflowID,
           timerFuncID,
         );
         if (!rres) return null;
