@@ -649,15 +649,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const cbr = this.cancelWakeupMap.registerCallback(workflowID, resolveNotification!);
     try {
       let timeoutPromise: Promise<void> = Promise.resolve();
-      let timeoutCancel: () => void = () => {};
-      try {
-        const { promise, cancel } = await this.durableSleepmsInternal(workflowID, functionID, durationMS);
-        timeoutPromise = promise;
-        timeoutCancel = cancel;
-      } catch (e) {
-        timeoutCancel();
-        throw e; // Likely a cancel error
-      }
+      const { promise, cancel: timeoutCancel } = await this.durableSleepmsInternal(workflowID, functionID, durationMS);
+      timeoutPromise = promise;
 
       try {
         await Promise.race([cancelPromise, timeoutPromise]);
@@ -794,20 +787,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
         if (timeoutms) {
-          try {
-            const { promise, cancel, endTime } = await this.durableSleepmsInternal(
-              workflowID,
-              timeoutFunctionID,
-              timeoutms,
-              this.dbPollingIntervalMs,
-            );
-            timeoutPromise = promise;
-            timeoutCancel = cancel;
-            finishTime = endTime;
-          } catch (e) {
-            timeoutCancel();
-            throw e; // Probably cancelled
-          }
+          const { promise, cancel, endTime } = await this.durableSleepmsInternal(
+            workflowID,
+            timeoutFunctionID,
+            timeoutms,
+            this.dbPollingIntervalMs,
+          );
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+          finishTime = endTime;
         } else {
           let poll = finishTime ? finishTime - ct : this.dbPollingIntervalMs;
           poll = Math.min(this.dbPollingIntervalMs, poll);
@@ -978,20 +966,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
         if (callerWorkflow && timeoutms) {
-          try {
-            const { promise, cancel, endTime } = await this.durableSleepmsInternal(
-              callerWorkflow.workflowID,
-              callerWorkflow.timeoutFunctionID ?? -1,
-              timeoutms,
-              this.dbPollingIntervalMs,
-            );
-            timeoutPromise = promise;
-            timeoutCancel = cancel;
-            finishTime = endTime;
-          } catch (e) {
-            timeoutCancel();
-            throw e; // Probably cancelled
-          }
+          const { promise, cancel, endTime } = await this.durableSleepmsInternal(
+            callerWorkflow.workflowID,
+            callerWorkflow.timeoutFunctionID ?? -1,
+            timeoutms,
+            this.dbPollingIntervalMs,
+          );
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+          finishTime = endTime;
         } else {
           let poll = finishTime ? finishTime - ct : this.dbPollingIntervalMs;
           poll = Math.min(this.dbPollingIntervalMs, poll);
@@ -1271,27 +1254,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
-        try {
-          if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
-            const { promise, cancel, endTime } = await this.durableSleepmsInternal(
-              callerID,
-              timerFuncID,
-              timeoutms,
-              this.dbPollingIntervalMs,
-            );
-            finishTime = endTime;
-            timeoutPromise = promise;
-            timeoutCancel = cancel;
-          } else {
-            let poll = finishTime ? finishTime - ct : this.dbPollingIntervalMs;
-            poll = Math.min(this.dbPollingIntervalMs, poll);
-            const { promise, cancel } = cancellableSleep(poll);
-            timeoutPromise = promise;
-            timeoutCancel = cancel;
-          }
-        } catch (e) {
-          timeoutCancel();
-          throw e; // Probably cancelled
+        if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
+          const { promise, cancel, endTime } = await this.durableSleepmsInternal(
+            callerID,
+            timerFuncID,
+            timeoutms,
+            this.dbPollingIntervalMs,
+          );
+          finishTime = endTime;
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+        } else {
+          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalMs;
+          poll = Math.min(this.dbPollingIntervalMs, poll);
+          const { promise, cancel } = cancellableSleep(poll);
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
         }
 
         try {
