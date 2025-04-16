@@ -954,6 +954,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           value = initRecvRows[0].value;
           break;
         }
+
         const ct = Date.now();
         if (finishTime && ct > finishTime) break; // Time's up
 
@@ -1248,18 +1249,27 @@ export class PostgresSystemDatabase implements SystemDatabase {
           this.logger.error(`Exception from system database: ${err}`);
           throw err;
         }
-        if (finishTime && Date.now() > finishTime) return undefined;
+
+        const ct = Date.now();
+        if (finishTime && ct > finishTime) return undefined; // Time's up
 
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
         try {
           if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
-            const { promise, cancel, endTime } = await this.durableSleepmsInternal(callerID, timerFuncID, timeoutms);
+            const { promise, cancel, endTime } = await this.durableSleepmsInternal(
+              callerID,
+              timerFuncID,
+              timeoutms,
+              this.dbPollingIntervalMs,
+            );
             finishTime = endTime;
             timeoutPromise = promise;
             timeoutCancel = cancel;
           } else {
-            const { promise, cancel } = cancellableSleep(timeoutms ?? this.dbPollingIntervalMs);
+            let poll = finishTime ? finishTime - ct : this.dbPollingIntervalMs;
+            poll = Math.min(this.dbPollingIntervalMs, poll);
+            const { promise, cancel } = cancellableSleep(poll);
             timeoutPromise = promise;
             timeoutCancel = cancel;
           }
