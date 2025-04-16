@@ -1078,6 +1078,27 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return rows;
   }
 
+  async getMaxFunctionID(workflowID: string): Promise<number> {
+    const rows = await this.userDatabase.query<{ max_function_id: number }, [string]>(
+      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
+      workflowID,
+    );
+    if (rows.length === 0) {
+      return 0;
+    } else {
+      return rows[0].max_function_id;
+    }
+  }
+
+  async cloneWorkflowTransactions(workflowID: string, forkedWorkflowUUID: string): Promise<void> {
+    await this.userDatabase.query(
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.transaction_outputs (workflow_uuid, function_id, output, error, txn_snapshot, created_at, function_name) 
+              SELECT $1, function_id, output, error, txn_snapshot, created_at, function_name 
+              FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$2`,
+      [workflowID, forkedWorkflowUUID],
+    );
+  }
+
   async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
     return await (await this.startTransactionTempWF(txn, params, undefined, undefined, ...args)).getResult();
   }

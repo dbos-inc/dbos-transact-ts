@@ -28,7 +28,7 @@ import {
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep } from './utils';
+import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -548,6 +548,69 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throw err;
       }
     }
+  }
+
+  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number): Promise<string> {
+    const workflowStatus = await this.getWorkflowStatusInternal(originalWorkflowID);
+    if (workflowStatus === null) {
+      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+    }
+
+    const inputs = await this.getWorkflowInputs(originalWorkflowID);
+    if (inputs === null) {
+      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+    }
+
+    const workflowStatusInternal: WorkflowStatusInternal = {
+      ...workflowStatus,
+      workflowUUID: forkedWorkflowId,
+      status: StatusString.PENDING,
+      workflowName: workflowStatus.workflowName,
+      workflowClassName: workflowStatus.workflowClassName,
+      workflowConfigName: workflowStatus.workflowConfigName,
+      queueName: INTERNAL_QUEUE_NAME,
+      authenticatedUser: workflowStatus.authenticatedUser,
+      authenticatedRoles: workflowStatus.authenticatedRoles,
+      request: workflowStatus.request,
+      executorId: globalParams.executorID,
+      applicationVersion: workflowStatus.applicationVersion,
+      applicationID: workflowStatus.applicationID,
+      createdAt: Date.now(),
+    };
+
+    const workflowStatusResult = await this.initWorkflowStatus(workflowStatusInternal, inputs);
+
+    if (startStep > 1) {
+      const query = `
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (
+        workflow_uuid,
+        function_id,
+        output,
+        error,
+        function_name,
+        child_workflow_id
+      )
+      SELECT
+        $1 AS workflow_uuid,
+        function_id,
+        output,
+        error,
+        function_name,
+        child_workflow_id
+        FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+        WHERE workflow_uuid = $2 AND function_id < $3
+      `;
+
+      await this.pool.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
+    }
+
+    await this.pool.query<workflow_queue>(
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+        VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [forkedWorkflowId, INTERNAL_QUEUE_NAME],
+    );
+
+    return forkedWorkflowId;
   }
 
   async runAsStep(
