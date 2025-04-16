@@ -879,9 +879,17 @@ export class DBOS {
    * @returns The return value of the workflow, or throws the exception thrown by the workflow, or `null` if times out
    */
   static async getResult<T>(workflowID: string, timeout?: number): Promise<T | null> {
+    let timerFuncID: number | undefined = undefined;
+    if (DBOS.isWithinWorkflow() && timeout !== undefined) {
+      timerFuncID = assertCurrentWorkflowContext().functionIDGetIncrement();
+    }
     return await DBOS.runAsWorkflowStep(
       async () => {
-        const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(workflowID, timeout);
+        const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
+          workflowID,
+          timeout,
+          timerFuncID,
+        );
         if (!rres) return null;
         if (rres?.cancelled) throw new DBOSTargetWorkflowCancelledError(`Workflow ${workflowID} was cancelled`); // TODO: Make semantically meaningful
         return DBOSExecutor.reviveResultOrError<T>(rres);

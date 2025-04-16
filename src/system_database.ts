@@ -98,7 +98,11 @@ export interface SystemDatabase {
     callerID?: string,
     callerFN?: number,
   ): Promise<WorkflowStatusInternal | null>;
-  awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined>;
+  awaitWorkflowResult(
+    workflowID: string,
+    timeoutms?: number,
+    timerFuncID?: number,
+  ): Promise<SystemDatabaseStoredResult | undefined>;
 
   // Workflow management
   setWorkflowStatus(
@@ -1119,9 +1123,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return sv ? (JSON.parse(sv) as WorkflowStatusInternal) : null;
   }
 
-  async awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined> {
-    const pollingIntervalMs: number = 1000;
-    const et = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
+  async awaitWorkflowResult(
+    workflowID: string,
+    timeoutms?: number,
+    timerFuncID?: number,
+  ): Promise<SystemDatabaseStoredResult | undefined> {
+    const pollingIntervalMs: number = 1000000;
+    let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
 
     while (true) {
       let resolveNotification: () => void;
@@ -1154,21 +1162,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
           this.logger.error(`Exception from system database: ${err}`);
           throw err;
         }
+        if (finishTime && Date.now() > finishTime) return undefined;
 
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
         try {
-          if (et !== undefined) {
-            const ct = Date.now();
-            if (et > ct) {
-              const { promise, cancel } = cancellableSleep(Math.min(pollingIntervalMs, et - ct));
-              timeoutPromise = promise;
-              timeoutCancel = cancel;
-            } else {
-              return undefined;
-            }
+          if (timerFuncID !== undefined && timeoutms !== undefined) {
+            const { promise, cancel, endTime } = await this.durableSleepms(workflowID, timerFuncID, timeoutms);
+            finishTime = endTime;
+            timeoutPromise = promise;
+            timeoutCancel = cancel;
           } else {
-            const { promise, cancel } = cancellableSleep(pollingIntervalMs);
+            const { promise, cancel } = cancellableSleep(timeoutms ?? pollingIntervalMs);
             timeoutPromise = promise;
             timeoutCancel = cancel;
           }
@@ -1451,7 +1456,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
     if (queue.rateLimit) {
-      const time = new Date().getTime();
+      const time = Date.now();
       await this.pool.query<workflow_queue>(
         `
         UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
@@ -1472,7 +1477,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]> {
-    const startTimeMs = new Date().getTime();
+    const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
 

@@ -883,7 +883,7 @@ class TestWFs {
   static async testWorkflowTime(var1: string, var2: string): Promise<number> {
     expect(var1).toBe('abc');
     expect(var2).toBe('123');
-    return Promise.resolve(new Date().getTime());
+    return Promise.resolve(Date.now());
   }
 
   @DBOS.workflow()
