@@ -371,7 +371,7 @@ class TestQueueRecoveryInst extends ConfiguredInstance {
       const h = await DBOS.startWorkflow(this, { queueName: TestQueueRecoveryInst.queue.name }).blockingTask(i);
       handles.push(h);
     }
-    return Promise.all(handles.map((h) => h.getResult()));
+    return await Promise.all(handles.map((h) => h.getResult()));
   }
 
   @DBOS.step()

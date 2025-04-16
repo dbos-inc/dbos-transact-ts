@@ -388,7 +388,7 @@ describe('queued-wf-tests-simple', () => {
         );
         handles.push(h);
       }
-      return Promise.all(handles.map((h) => h.getResult()));
+      return await Promise.all(handles.map((h) => h.getResult()));
     }
 
     @DBOS.workflow()

@@ -27,7 +27,7 @@ import {
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { sleepms, findPackageRoot, globalParams, cancellableSleep } from './utils';
+import { findPackageRoot, globalParams, cancellableSleep } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -1121,36 +1121,65 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined> {
     const pollingIntervalMs: number = 1000;
-    const et = timeoutms !== undefined ? new Date().getTime() + timeoutms : undefined;
+    const et = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
 
     while (true) {
-      const { rows } = await this.pool.query<workflow_status>(
-        `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
-        [workflowID],
-      );
-      if (rows.length > 0) {
-        const status = rows[0].status;
-        if (status === StatusString.SUCCESS) {
-          return { res: rows[0].output };
-        } else if (status === StatusString.ERROR) {
-          return { err: rows[0].error };
-        } else if (status === StatusString.CANCELLED) {
-          return { cancelled: true };
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      let resolveNotification: () => void;
+      const statusPromise = new Promise<void>((resolve) => {
+        resolveNotification = resolve;
+      });
+      const irh = this.workflowStatusMap.registerCallback(workflowID, (_res) => {
+        //        resolveNotification();
+      });
+      try {
+        const { rows } = await this.pool.query<workflow_status>(
+          `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
+          [workflowID],
+        );
+        if (rows.length > 0) {
+          const status = rows[0].status;
+          if (status === StatusString.SUCCESS) {
+            return { res: rows[0].output };
+          } else if (status === StatusString.ERROR) {
+            return { err: rows[0].error };
+          } else if (status === StatusString.CANCELLED) {
+            return { cancelled: true };
+          }
         }
-      }
 
-      if (et !== undefined) {
-        const ct = new Date().getTime();
-        if (et > ct) {
-          await sleepms(Math.min(pollingIntervalMs, et - ct));
-        } else {
-          break;
+        let timeoutPromise: Promise<void> = Promise.resolve();
+        let timeoutCancel: () => void = () => {};
+        try {
+          if (et !== undefined) {
+            const ct = Date.now();
+            if (et > ct) {
+              const { promise, cancel } = cancellableSleep(Math.min(pollingIntervalMs, et - ct));
+              timeoutPromise = promise;
+              timeoutCancel = cancel;
+            } else {
+              return undefined;
+            }
+          } else {
+            const { promise, cancel } = cancellableSleep(pollingIntervalMs);
+            timeoutPromise = promise;
+            timeoutCancel = cancel;
+          }
+        } catch (e) {
+          this.logger.error(e);
+          timeoutCancel();
+          throw new Error('sleepms failed');
         }
-      } else {
-        await sleepms(pollingIntervalMs);
+
+        try {
+          await Promise.race([statusPromise, timeoutPromise]);
+        } finally {
+          timeoutCancel();
+        }
+      } finally {
+        this.workflowStatusMap.deregisterCallback(irh);
       }
     }
-    return undefined;
   }
 
   /* BACKGROUND PROCESSES */
