@@ -241,7 +241,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     systemDbConnectionString.pathname = `/${systemDatabaseName}`;
 
     this.systemPoolConfig = {
-      ...pgPoolConfig,
       connectionString: systemDbConnectionString.toString(),
       // This sets the application_name column in pg_stat_activity
       application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
