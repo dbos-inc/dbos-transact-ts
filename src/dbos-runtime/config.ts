@@ -253,7 +253,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     configFile.database.username = process.env.DBOS_DBUSER || configFile.database.username || 'postgres';
     configFile.database.password =
       process.env.DBOS_DBPASSWORD || configFile.database.password || process.env.PGPASSWORD || 'dbos';
-    configFile.database.connectionTimeoutMillis = configFile.database.connectionTimeoutMillis || 3000;
+    connectionTimeoutMillis = configFile.database.connectionTimeoutMillis || 3000;
 
     databaseName = configFile.database.app_db_name;
     // Construct the database name from the application name, if needed
@@ -269,9 +269,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     // Build connection string query parameters
     const queryParams: string[] = [];
 
-    if (configFile.database.connectionTimeoutMillis) {
-      queryParams.push(`connect_timeout=${configFile.database.connectionTimeoutMillis / 1000}`);
-    }
+    queryParams.push(`connect_timeout=${connectionTimeoutMillis / 1000}`);
 
     // SSL configuration
     const ssl = parseSSLConfig(configFile.database);
