@@ -598,8 +598,8 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
     return await DBOS.getWorkflowStatus(this.workflowUUID);
   }
 
-  getResult(): Promise<R> {
-    return DBOS.getResult<R>(this.workflowUUID) as Promise<R>;
+  async getResult(): Promise<R> {
+    return (await DBOS.getResult<R>(this.workflowUUID)) as Promise<R>;
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {

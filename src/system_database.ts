@@ -123,7 +123,7 @@ export interface SystemDatabase {
     workflowID: string,
     functionID: number,
     duration: number,
-  ): Promise<{ promise: Promise<void>; cancel: () => void }>;
+  ): Promise<{ promise: Promise<void>; cancel: () => void; endTime: number }>;
 
   send(
     workflowID: string,
@@ -633,7 +633,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     workflowID: string,
     functionID: number,
     durationMS: number,
-  ): Promise<{ promise: Promise<void>; cancel: () => void }> {
+  ): Promise<{ promise: Promise<void>; cancel: () => void; endTime: number }> {
     const curTime = Date.now();
     let endTimeMs = curTime + durationMS;
     const res = await this.getOperationResult(workflowID, functionID);
@@ -650,7 +650,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         false,
       );
     }
-    return cancellableSleep(Math.max(endTimeMs - curTime, 0));
+    return { ...cancellableSleep(Math.max(endTimeMs - curTime, 0)), endTime: endTimeMs };
   }
 
   readonly nullTopic = '__null__topic__';
@@ -1175,7 +1175,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       } else if (msg.channel === 'dbos_workflow_status_channel') {
         if (msg.payload) {
           const notif: WFStatusUpdate = JSON.parse(msg.payload) as WFStatusUpdate;
-          this.workflowStatusMap.callCallbacks(msg.payload, notif);
+          this.workflowStatusMap.callCallbacks(notif.wfid, notif);
         }
       }
     };
