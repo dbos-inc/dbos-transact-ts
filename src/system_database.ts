@@ -539,6 +539,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     client?: PoolClient,
   ): Promise<{ res?: SystemDatabaseStoredResult }> {
+    await this.checkIfCanceled(workflowID);
     const { rows } = await (client ?? this.pool).query<operation_outputs>(
       `SELECT output, error, child_workflow_id, function_name
        FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
@@ -645,9 +646,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         timeoutPromise = promise;
         timeoutCancel = cancel;
       } catch (e) {
-        this.logger.error(e);
         timeoutCancel();
-        throw new Error('durable sleepms failed');
+        throw e; // Likely a cancel error
       }
 
       try {
@@ -772,9 +772,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
           timeoutPromise = promise;
           timeoutCancel = cancel;
         } catch (e) {
-          this.logger.error(e);
           timeoutCancel();
-          throw new Error('durable sleepms failed');
+          throw e; // Probably cancelled
         }
         try {
           await Promise.race([messagePromise, timeoutPromise]);
@@ -930,8 +929,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
             timeoutPromise = promise;
             timeoutCancel = cancel;
           } catch (e) {
-            this.logger.error(e);
-            throw new Error('durable sleepms failed');
+            timeoutCancel();
+            throw e; // Probably cancelled
           }
         } else {
           const { promise, cancel } = cancellableSleep(timeoutSeconds * 1000);
@@ -1226,9 +1225,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
             timeoutCancel = cancel;
           }
         } catch (e) {
-          this.logger.error(e);
           timeoutCancel();
-          throw new Error('sleepms failed');
+          throw e; // Probably cancelled
         }
 
         try {

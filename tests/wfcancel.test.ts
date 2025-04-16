@@ -80,6 +80,7 @@ describe('wf-cancel-tests', () => {
     const wfh = await DBOS.startWorkflow(WFwith2Transactions, { workflowID: wfid }).workflowWithTransactions();
 
     try {
+      // NB - This is a race to cancel a WF with a sleep in it.
       await DBOS.cancelWorkflow(wfid);
 
       await wfh.getResult();
