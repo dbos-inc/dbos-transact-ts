@@ -59,6 +59,15 @@ describe('httpserver-defsec-tests', () => {
     expect(middlewareCounterG).toBe(3);
   });
 
+  test('get-hello-name', async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello/alice');
+    expect(response.statusCode).toBe(200);
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+    expect(response.body.message).toBe('hello, alice!');
+    expect(middlewareCounter).toBe(1);
+    expect(middlewareCounterG).toBe(1);
+  });
+
   test('not-authenticated', async () => {
     const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice');
     expect(response.statusCode).toBe(401);
@@ -151,6 +160,12 @@ describe('httpserver-defsec-tests', () => {
     @GetApi('/hello')
     static async hello(_ctx: HandlerContext) {
       return Promise.resolve({ message: 'hello!' });
+    }
+
+    @RequiredRole([])
+    @GetApi('/hello/:name')
+    static async helloName(_ctx: HandlerContext, name: string) {
+      return Promise.resolve({ message: `hello, ${name}!` });
     }
 
     @GetApi('/requireduser')
