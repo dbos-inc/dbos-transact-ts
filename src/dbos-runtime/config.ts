@@ -275,7 +275,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
       queryParams.push(`sslmode=verify-full`);
       queryParams.push(`sslrootcert=${configFile.database.ssl_ca}`);
     } else {
-      queryParams.push(`sslmode=require`);
+      queryParams.push(`sslmode=no-verify`);
     }
 
     if (queryParams.length > 0) {

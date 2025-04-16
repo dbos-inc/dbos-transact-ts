@@ -174,7 +174,7 @@ describe('dbos-config', () => {
         database: 'configured_db', // from config.database
         max: 7, // from userDbPoolSize
         connectionString:
-          'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=3&sslmode=require',
+          'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=3&sslmode=no-verify',
       });
     });
 
@@ -233,7 +233,7 @@ describe('dbos-config', () => {
         password: 'dbos',
         database: 'app_name_with_spaces',
         connectionString:
-          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&sslmode=require',
+          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&sslmode=no-verify',
       });
     });
 
