@@ -248,7 +248,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   }
 
   functionIDGetIncrement(): number {
-    return this.functionID++;
+    return ++this.functionID;
   }
 
   /**
