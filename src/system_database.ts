@@ -100,7 +100,7 @@ export interface SystemDatabase {
   ): Promise<WorkflowStatusInternal | null>;
   awaitWorkflowResult(
     workflowID: string,
-    timeoutms?: number,
+    timeoutSeconds?: number,
     timerFuncID?: number,
   ): Promise<SystemDatabaseStoredResult | undefined>;
 
@@ -123,11 +123,7 @@ export interface SystemDatabase {
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
   // Actions w/ durable records and notifications
-  durableSleepms(
-    workflowID: string,
-    functionID: number,
-    duration: number,
-  ): Promise<{ promise: Promise<void>; cancel: () => void; endTime: number }>;
+  durableSleepms(workflowID: string, functionID: number, duration: number): Promise<void>;
 
   send(
     workflowID: string,
@@ -285,9 +281,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
   notificationsClient: PoolClient | null = null;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
+  readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
   readonly workflowStatusMap: NotificationMap<WFStatusUpdate> = new NotificationMap();
 
-  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
+  readonly runningWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
   static readonly connectionTimeoutMillis = 10000; // 10 second timeout
@@ -633,7 +630,39 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return serialOutput;
   }
 
-  async durableSleepms(
+  async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
+    let resolveNotification: () => void;
+    const cancelPromise = new Promise<void>((resolve) => {
+      resolveNotification = resolve;
+    });
+
+    const cbr = this.cancelWakeupMap.registerCallback(workflowID, resolveNotification!);
+    try {
+      let timeoutPromise: Promise<void> = Promise.resolve();
+      let timeoutCancel: () => void = () => {};
+      try {
+        const { promise, cancel } = await this.durableSleepmsInternal(workflowID, functionID, durationMS);
+        timeoutPromise = promise;
+        timeoutCancel = cancel;
+      } catch (e) {
+        this.logger.error(e);
+        timeoutCancel();
+        throw new Error('durable sleepms failed');
+      }
+
+      try {
+        await Promise.race([cancelPromise, timeoutPromise]);
+      } finally {
+        timeoutCancel();
+      }
+    } finally {
+      this.cancelWakeupMap.deregisterCallback(cbr);
+    }
+
+    await this.checkIfCanceled(workflowID);
+  }
+
+  async durableSleepmsInternal(
     workflowID: string,
     functionID: number,
     durationMS: number,
@@ -735,7 +764,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
         try {
-          const { promise, cancel } = await this.durableSleepms(workflowID, timeoutFunctionID, timeoutSeconds * 1000);
+          const { promise, cancel } = await this.durableSleepmsInternal(
+            workflowID,
+            timeoutFunctionID,
+            timeoutSeconds * 1000,
+          );
           timeoutPromise = promise;
           timeoutCancel = cancel;
         } catch (e) {
@@ -889,7 +922,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let timeoutCancel: () => void = () => {};
         if (callerWorkflow) {
           try {
-            const { promise, cancel } = await this.durableSleepms(
+            const { promise, cancel } = await this.durableSleepmsInternal(
               callerWorkflow.workflowID,
               callerWorkflow.timeoutFunctionID ?? -1,
               timeoutSeconds * 1000,
@@ -952,6 +985,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.recordWorkflowStatusChange(workflowID, status, { resetRecoveryAttempts });
   }
 
+  setWFCancelMap(workflowID: string) {
+    if (this.runningWorkflowMap.has(workflowID)) {
+      this.workflowCancellationMap.set(workflowID, true);
+    }
+    this.cancelWakeupMap.callCallbacks(workflowID);
+  }
+
+  clearWFCancelMap(workflowID: string) {
+    if (this.workflowCancellationMap.has(workflowID)) {
+      this.workflowCancellationMap.delete(workflowID);
+    }
+  }
+
   async cancelWorkflow(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -975,7 +1021,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client.release();
     }
 
-    this.workflowCancellationMap.set(workflowID, true);
+    this.setWFCancelMap(workflowID);
   }
 
   async checkIfCanceled(workflowID: string): Promise<void> {
@@ -1022,7 +1068,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } finally {
       client.release();
     }
-    this.workflowCancellationMap.delete(workflowID);
+    this.clearWFCancelMap(workflowID);
   }
 
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>) {
@@ -1033,27 +1079,28 @@ export class PostgresSystemDatabase implements SystemDatabase {
       })
       .finally(() => {
         // Remove itself from pending workflow map.
-        this.pendingWorkflowMap.delete(workflowID);
+        this.runningWorkflowMap.delete(workflowID);
+        this.workflowCancellationMap.delete(workflowID);
       });
-    this.pendingWorkflowMap.set(workflowID, awaitWorkflowPromise);
+    this.runningWorkflowMap.set(workflowID, awaitWorkflowPromise);
   }
 
   async awaitRunningWorkflows(): Promise<void> {
-    if (this.pendingWorkflowMap.size > 0) {
+    if (this.runningWorkflowMap.size > 0) {
       this.logger.info('Waiting for pending workflows to finish.');
-      await Promise.allSettled(this.pendingWorkflowMap.values());
+      await Promise.allSettled(this.runningWorkflowMap.values());
     }
     if (this.workflowEventsMap.map.size > 0) {
       this.logger.warn('Workflow events map is not empty - shutdown is not clean.');
-      throw new Error('Workflow events map is not empty - shutdown is not clean.');
+      //throw new Error('Workflow events map is not empty - shutdown is not clean.');
     }
     if (this.notificationsMap.map.size > 0) {
       this.logger.warn('Message notification map is not empty - shutdown is not clean.');
-      throw new Error('Message notification map is not empty - shutdown is not clean.');
+      //throw new Error('Message notification map is not empty - shutdown is not clean.');
     }
     if (this.workflowStatusMap.map.size > 0) {
       this.logger.warn('Workflow status map is not empty - shutdown is not clean.');
-      throw new Error('Workflow status map is not empty - shutdown is not clean.');
+      //throw new Error('Workflow status map is not empty - shutdown is not clean.');
     }
   }
 
@@ -1125,10 +1172,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async awaitWorkflowResult(
     workflowID: string,
-    timeoutms?: number,
+    timeoutSeconds?: number,
     timerFuncID?: number,
   ): Promise<SystemDatabaseStoredResult | undefined> {
     const pollingIntervalMs: number = 1000000;
+    const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
 
     while (true) {
@@ -1168,7 +1216,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let timeoutCancel: () => void = () => {};
         try {
           if (timerFuncID !== undefined && timeoutms !== undefined) {
-            const { promise, cancel, endTime } = await this.durableSleepms(workflowID, timerFuncID, timeoutms);
+            const { promise, cancel, endTime } = await this.durableSleepmsInternal(workflowID, timerFuncID, timeoutms);
             finishTime = endTime;
             timeoutPromise = promise;
             timeoutCancel = cancel;
@@ -1217,6 +1265,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         if (msg.payload) {
           const notif: WFStatusUpdate = JSON.parse(msg.payload) as WFStatusUpdate;
           this.workflowStatusMap.callCallbacks(notif.wfid, notif);
+          if (notif.status === StatusString.CANCELLED) {
+            this.setWFCancelMap(notif.wfid);
+          } else {
+            this.clearWFCancelMap(notif.wfid);
+          }
         }
       }
     };

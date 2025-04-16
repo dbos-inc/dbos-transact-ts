@@ -875,19 +875,19 @@ export class DBOS {
   /**
    * Get the workflow result, given a workflow ID
    * @param workflowID - ID of the workflow
-   * @param timeout - Maximum time to wait for result
+   * @param timeoutSeconds - Maximum time to wait for result
    * @returns The return value of the workflow, or throws the exception thrown by the workflow, or `null` if times out
    */
-  static async getResult<T>(workflowID: string, timeout?: number): Promise<T | null> {
+  static async getResult<T>(workflowID: string, timeoutSeconds?: number): Promise<T | null> {
     let timerFuncID: number | undefined = undefined;
-    if (DBOS.isWithinWorkflow() && timeout !== undefined) {
+    if (DBOS.isWithinWorkflow() && timeoutSeconds !== undefined) {
       timerFuncID = assertCurrentWorkflowContext().functionIDGetIncrement();
     }
     return await DBOS.runAsWorkflowStep(
       async () => {
         const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
           workflowID,
-          timeout,
+          timeoutSeconds,
           timerFuncID,
         );
         if (!rres) return null;
