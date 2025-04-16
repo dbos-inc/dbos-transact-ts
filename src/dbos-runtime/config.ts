@@ -145,7 +145,7 @@ function retrieveApplicationName(configFile: ConfigFile): string {
  * If configFile.database_url is provided, set it directly in poolConfig.connectionString and backfill the other poolConfig options.
  * Backfilling allows the rest of the code to access database parameters easily.
  * We configure the ORMs with the connection string
- * ORMs accepting a poolConfig object, like pg-node, state the connectionString takes precedence.
+ * We still need to extract pool size and connectionTimeoutMillis from the config file and give them manually to the ORMs.
  *
  * If configFile.database_url is not provided, we build the connection string from the configFile.database object.
  *
