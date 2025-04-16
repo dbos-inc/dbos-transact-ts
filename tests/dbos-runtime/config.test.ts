@@ -82,8 +82,6 @@ describe('dbos-config', () => {
       expect(pool.user).toBe(expected.user);
       expect(pool.password).toBe(expected.password);
       expect(pool.database).toBe(expected.database);
-      expect(pool.connectionTimeoutMillis).toBe(expected.connectionTimeoutMillis);
-      expect(pool.ssl).toEqual(expected.ssl);
       expect(pool.connectionString).toBe(expected.connectionString);
     }
 
@@ -97,7 +95,6 @@ describe('dbos-config', () => {
         user: 'postgres',
         password: 'dbos',
         database: 'test_app',
-        connectionTimeoutMillis: 3000,
         connectionString: 'postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=3&sslmode=disable',
       });
     });
@@ -130,7 +127,6 @@ describe('dbos-config', () => {
         user: 'envuser',
         password: 'envpass',
         database: 'appdb',
-        connectionTimeoutMillis: 3000,
         connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=3&sslmode=disable',
       });
     });
@@ -153,7 +149,6 @@ describe('dbos-config', () => {
         user: 'envuser',
         password: 'envpass',
         database: 'appdb',
-        connectionTimeoutMillis: 22000,
         connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=22&sslmode=disable',
       });
     });
@@ -175,7 +170,6 @@ describe('dbos-config', () => {
         user: 'configured_user', // from config.database
         password: 'dbos', // default
         database: 'configured_db', // from config.database
-        connectionTimeoutMillis: 3000,
         max: 7, // from userDbPoolSize
         connectionString:
           'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=3&sslmode=require',
@@ -207,18 +201,10 @@ describe('dbos-config', () => {
     });
 
     // Note we still expect config.database to have been built off database_url.
-    test('parses all connection parameters from database_url and ignores config.database', () => {
+    test('parses all connection parameters from database_url and backfill poolConfig', () => {
       const dbUrl = 'postgresql://url_user:url_pass@url_host:9999/url_db?sslmode=require&connect_timeout=15&extra=1';
 
       const config = baseConfig();
-      config.database = {
-        hostname: 'url_host',
-        port: 9999,
-        username: 'url_user',
-        password: 'url_pass',
-        app_db_name: 'url_db',
-        connectionTimeoutMillis: 15000,
-      };
       config.database_url = dbUrl;
 
       const pool = constructPoolConfig(config);
@@ -229,7 +215,6 @@ describe('dbos-config', () => {
         user: 'url_user',
         password: 'url_pass',
         database: 'url_db',
-        connectionTimeoutMillis: 15000,
         connectionString: dbUrl,
       });
     });
@@ -237,7 +222,6 @@ describe('dbos-config', () => {
     test('constructPoolConfig correctly handles app names with spaces', () => {
       const config = baseConfig();
       config.name = 'app name with spaces';
-      config.database_url = 'postgresql://postgres:dbos@localhost:5432/';
       config.database.ssl = true;
       const pool = constructPoolConfig(config);
       assertPoolConfig(pool, {
@@ -246,8 +230,8 @@ describe('dbos-config', () => {
         user: 'postgres',
         password: 'dbos',
         database: 'app_name_with_spaces',
-        connectionTimeoutMillis: 3000,
-        connectionString: config.database_url,
+        connectionString:
+          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&sslmode=require',
       });
     });
 
@@ -276,6 +260,12 @@ describe('dbos-config', () => {
       config3.database_url = 'postgres://user:pass@:5432/db';
 
       expect(() => constructPoolConfig(config3)).toThrow(/Invalid URL/);
+
+      // Test missing database name
+      const config4 = baseConfig();
+      config4.database_url = 'postgres://user:pass@host:5432/';
+
+      expect(() => constructPoolConfig(config4)).toThrow(/missing required field\(s\): database name/);
     });
   });
 
@@ -689,7 +679,6 @@ describe('dbos-config', () => {
           user: 'jon',
           password: 'doe',
           database: 'dbostest',
-          connectionTimeoutMillis: 7000,
           max: 20,
           connectionString:
             'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
@@ -734,7 +723,6 @@ describe('dbos-config', () => {
           user: 'postgres',
           password: process.env.PGPASSWORD || 'dbos',
           database: 'appname',
-          connectionTimeoutMillis: 3000,
           max: 20,
           connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
         },
@@ -807,7 +795,6 @@ describe('dbos-config', () => {
           user: 'postgres',
           password: process.env.PGPASSWORD || 'dbos',
           database: 'appname',
-          connectionTimeoutMillis: 3000,
           max: 20,
           connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
         },
@@ -1016,6 +1003,9 @@ describe('dbos-config', () => {
       expect(resultDBOSConfig.poolConfig?.user).toEqual('user-from-file');
       expect(resultDBOSConfig.poolConfig?.password).toEqual('password-from-file');
       expect(resultDBOSConfig.poolConfig?.database).toEqual('db_from_file');
+      expect(resultDBOSConfig.poolConfig?.connectionString).toEqual(
+        'postgresql://user-from-file:password-from-file@db-host-from-file:1234/db_from_file?connect_timeout=3&sslmode=no-verify',
+      );
 
       // System database name should be from file
       expect(resultDBOSConfig.system_database).toEqual('sys_db_from_file');
@@ -1044,6 +1034,51 @@ describe('dbos-config', () => {
       expect(resultRuntimeConfig.entrypoints).toEqual(providedRuntimeConfig.entrypoints);
       expect(resultRuntimeConfig.start).toEqual(providedRuntimeConfig.start);
       expect(resultRuntimeConfig.setup).toEqual(providedRuntimeConfig.setup);
+    });
+
+    test('should craft a verify-full address with an ssl_ca provided', () => {
+      // Mock the config file content with database settings
+      const mockDBOSConfigYamlString = `
+            name: app-from-file
+            database:
+                hostname: db-host-from-file
+                port: 1234
+                username: user-from-file
+                password: password-from-file
+                app_db_name: db_from_file
+                ssl_ca: my_cert
+            `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
+
+      const providedDBOSConfig: DBOSConfigInternal = {
+        name: 'test-app',
+        poolConfig: {
+          host: 'localhost',
+          port: 5432,
+          user: 'postgres',
+          password: 'password',
+          database: 'test_db',
+        },
+        userDbclient: UserDatabaseName.KNEX,
+        system_database: 'abc',
+        telemetry: {},
+      };
+
+      const providedRuntimeConfig: DBOSRuntimeConfig = {
+        port: 3000,
+        admin_port: 4000,
+        runAdminServer: false,
+        entrypoints: ['app.js'],
+        start: [],
+        setup: [],
+      };
+
+      const [resultDBOSConfig] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
+
+      // Database settings should reflect what's in the file
+      expect(resultDBOSConfig.poolConfig?.connectionString).toEqual(
+        'postgresql://user-from-file:password-from-file@db-host-from-file:1234/db_from_file?connect_timeout=3&sslmode=verify-full&sslrootcert=my_cert',
+      );
     });
 
     test('should use config file content when parameters are missing from provided config', () => {

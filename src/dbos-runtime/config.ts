@@ -207,48 +207,33 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
       configFile.database_url = url.toString();
     }
     connectionString = configFile.database_url;
-
-    // From here backfill the poolConfig
-
-    const queryParams = Object.fromEntries(url.searchParams.entries());
+    databaseName = url.pathname.substring(1);
 
     // Validate required fields
     const missingFields: string[] = [];
     if (!url.username) missingFields.push('username');
     if (!url.password) missingFields.push('password');
     if (!url.hostname) missingFields.push('hostname');
+    if (!databaseName) missingFields.push('database name');
 
     if (missingFields.length > 0) {
       throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
     }
 
-    // Create database config object
+    // Backfill the poolConfig
     configFile.database = {
+      ...configFile.database,
       hostname: url.hostname,
       port: url.port ? parseInt(url.port, 10) : 5432,
       username: url.username,
       password: url.password,
-      app_db_name: url.pathname.substring(1) || undefined,
-      ssl: queryParams['sslmode'] === 'require' || queryParams['sslmode'] === 'verify-full',
-      ssl_ca: queryParams['sslrootcert'] || undefined,
-      connectionTimeoutMillis: queryParams['connect_timeout']
-        ? parseInt(queryParams['connect_timeout'], 10) * 1000
-        : 3000,
+      app_db_name: databaseName,
     };
-
-    databaseName = configFile.database.app_db_name;
-    // Construct the database name from the application name, if needed
-    if (databaseName === undefined) {
-      databaseName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
-      if (databaseName.match(/^\d/)) {
-        databaseName = '_' + databaseName; // Append an underscore if the name starts with a digit
-      }
-    }
 
     if (!cliOptions?.silent) {
       const logger = new GlobalLogger();
       let logConnectionString = `postgresql://${configFile.database.username}:***@${configFile.database.hostname}:${configFile.database.port}/${databaseName}`;
-      const logQueryParamsArray = Object.entries(queryParams).map(([key, value]) => `${key}=${value}`);
+      const logQueryParamsArray = Object.entries(url.searchParams.entries()).map(([key, value]) => `${key}=${value}`);
       if (logQueryParamsArray.length > 0) {
         logConnectionString += `?${logQueryParamsArray.join('&')}`;
       }
@@ -314,7 +299,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     port: configFile.database.port,
     user: configFile.database.username,
     password: configFile.database.password,
-    connectionTimeoutMillis: configFile.database.connectionTimeoutMillis,
     database: databaseName,
     max: cliOptions?.userDbPoolSize || 20,
   };
@@ -578,7 +562,11 @@ export function overwrite_config(
 
   const appName = configFile!.name || providedDBOSConfig.name;
 
-  configFile.database_url = undefined;
+  if (configFile.database.ssl_ca) {
+    configFile.database_url = `postgresql://${configFile.database.username}:${configFile.database.password}@${configFile.database.hostname}:${configFile.database.port}/${configFile.database.app_db_name}?connect_timeout=3&sslmode=verify-full&sslrootcert=${configFile.database.ssl_ca}`;
+  } else {
+    configFile.database_url = `postgresql://${configFile.database.username}:${configFile.database.password}@${configFile.database.hostname}:${configFile.database.port}/${configFile.database.app_db_name}?connect_timeout=3&sslmode=no-verify`;
+  }
   const poolConfig = constructPoolConfig(configFile!);
 
   if (!providedDBOSConfig.telemetry.OTLPExporter) {
