@@ -760,54 +760,70 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return res.res.res!;
     }
 
-    // Then, register the key with the global notifications listener.
-    let resolveNotification: () => void;
-    const messagePromise = new Promise<void>((resolve) => {
-      resolveNotification = resolve;
-    });
-    const payload = `${workflowID}::${topic}`;
-    const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
-    const crh = this.cancelWakeupMap.registerCallback(workflowID, (_res) => {
-      resolveNotification();
-    });
-
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
 
-    try {
-      // Check if the key is already in the DB, then wait for the notification if it isn't.
-      const initRecvRows = (
-        await this.pool.query<notifications>(
-          `SELECT topic FROM ${DBOSExecutor.systemDBSchemaName}.notifications WHERE destination_uuid=$1 AND topic=$2;`,
-          [workflowID, topic],
-        )
-      ).rows;
-      if (initRecvRows.length === 0) {
+    while (true) {
+      // register the key with the global notifications listener.
+      let resolveNotification: () => void;
+      const messagePromise = new Promise<void>((resolve) => {
+        resolveNotification = resolve;
+      });
+      const payload = `${workflowID}::${topic}`;
+      const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
+      const crh = this.cancelWakeupMap.registerCallback(workflowID, (_res) => {
+        resolveNotification();
+      });
+
+      try {
+        await this.checkIfCanceled(workflowID);
+
+        // Check if the key is already in the DB, then wait for the notification if it isn't.
+        const initRecvRows = (
+          await this.pool.query<notifications>(
+            `SELECT topic FROM ${DBOSExecutor.systemDBSchemaName}.notifications WHERE destination_uuid=$1 AND topic=$2;`,
+            [workflowID, topic],
+          )
+        ).rows;
+
+        if (initRecvRows.length !== 0) break;
+
+        const ct = Date.now();
+        if (finishTime && ct > finishTime) break; // Time's up
+
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
-        try {
-          const { promise, cancel, endTime } = await this.durableSleepmsInternal(
-            workflowID,
-            timeoutFunctionID,
-            timeoutms!,
-            this.dbPollingIntervalMs,
-          );
+        if (timeoutms) {
+          try {
+            const { promise, cancel, endTime } = await this.durableSleepmsInternal(
+              workflowID,
+              timeoutFunctionID,
+              timeoutms,
+              this.dbPollingIntervalMs,
+            );
+            timeoutPromise = promise;
+            timeoutCancel = cancel;
+            finishTime = endTime;
+          } catch (e) {
+            timeoutCancel();
+            throw e; // Probably cancelled
+          }
+        } else {
+          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalMs;
+          poll = Math.min(this.dbPollingIntervalMs, poll);
+          const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
-          finishTime = endTime;
-        } catch (e) {
-          timeoutCancel();
-          throw e; // Probably cancelled
         }
         try {
           await Promise.race([messagePromise, timeoutPromise]);
         } finally {
           timeoutCancel();
         }
+      } finally {
+        this.notificationsMap.deregisterCallback(cbr);
+        this.cancelWakeupMap.deregisterCallback(crh);
       }
-    } finally {
-      this.notificationsMap.deregisterCallback(cbr);
-      this.cancelWakeupMap.deregisterCallback(crh);
     }
 
     await this.checkIfCanceled(workflowID);
