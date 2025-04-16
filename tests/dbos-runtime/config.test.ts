@@ -6,12 +6,14 @@ import { UserDatabaseName } from '../../src/user_database';
 import { PoolConfig } from 'pg';
 import {
   ConfigFile,
+  DBConfig,
   loadConfigFile,
   parseConfigFile,
   translatePublicDBOSconfig,
   overwrite_config,
   constructPoolConfig,
   dbosConfigFilePath,
+  parseSSLConfig,
 } from '../../src/dbos-runtime/config';
 import { DBOSRuntimeConfig, defaultEntryPoint } from '../../src/dbos-runtime/runtime';
 import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error';
@@ -1227,6 +1229,70 @@ describe('dbos-config', () => {
 
       const [resultDBOSConfig, _] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
       expect(resultDBOSConfig.system_database).toEqual(`${resultDBOSConfig.poolConfig?.database}_dbos_sys`);
+    });
+  });
+  describe('SSL Configuration Parsing', () => {
+    const originalReadFileSync = fs.readFileSync;
+
+    beforeEach(() => {
+      jest.spyOn(utils, 'readFileSync').mockReturnValue('mock-certificate-data');
+    });
+
+    afterEach(() => {
+      jest.restoreAllMocks();
+    });
+
+    test('parseSSLConfig returns false when SSL is explicitly disabled', () => {
+      const dbConfig: DBConfig = {
+        ssl: false,
+      };
+      expect(parseSSLConfig(dbConfig)).toBe(false);
+    });
+
+    test('parseSSLConfig returns certificate config when SSL CA is provided', () => {
+      const dbConfig: DBConfig = {
+        ssl: true,
+        ssl_ca: '/path/to/ca.pem',
+      };
+      const result = parseSSLConfig(dbConfig);
+      expect(result).toEqual({
+        ca: ['mock-certificate-data'],
+        rejectUnauthorized: true,
+      });
+      expect(utils.readFileSync).toHaveBeenCalledWith('/path/to/ca.pem');
+    });
+
+    test('parseSSLConfig disables SSL for localhost by default', () => {
+      const dbConfig: DBConfig = {
+        hostname: 'localhost',
+      };
+      expect(parseSSLConfig(dbConfig)).toBe(false);
+    });
+
+    test('parseSSLConfig disables SSL for 127.0.0.1 by default', () => {
+      const dbConfig: DBConfig = {
+        hostname: '127.0.0.1',
+      };
+      expect(parseSSLConfig(dbConfig)).toBe(false);
+    });
+
+    test('parseSSLConfig enables SSL with no verification for non-local hosts by default', () => {
+      const dbConfig: DBConfig = {
+        hostname: 'remote-db.example.com',
+      };
+      expect(parseSSLConfig(dbConfig)).toEqual({
+        rejectUnauthorized: false,
+      });
+    });
+
+    test('parseSSLConfig forces SSL for localhost when explicitly enabled', () => {
+      const dbConfig: DBConfig = {
+        hostname: 'localhost',
+        ssl: true,
+      };
+      expect(parseSSLConfig(dbConfig)).toEqual({
+        rejectUnauthorized: false,
+      });
     });
   });
 });
