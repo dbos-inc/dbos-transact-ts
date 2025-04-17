@@ -36,6 +36,7 @@ import {
   DBOSExecutorNotInitializedError,
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
+  DBOSInvalidStepIDError,
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
@@ -90,6 +91,7 @@ import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase } from './system_database';
 import { wfQueueRunner } from './wfqueue';
+import { getWorkflow } from './dbos-runtime/workflow_management';
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -920,6 +922,25 @@ export class DBOS {
     return await DBOS.#runAsWorkflowStep(async () => {
       return await DBOS.executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
+  }
+
+  static async forkWorkflow(workflowID: string, startStep: number): Promise<WorkflowHandle<unknown>> {
+    console.log(` DBOS.forkWorkflow Forking workflow ${workflowID} at step ${startStep}`);
+
+    const maxStepID = await DBOS.executor.getMaxStepID(workflowID);
+
+    console.log(` DBOS.forkWorkflow max step ID ${maxStepID}`);
+
+    if (startStep > maxStepID) {
+      throw new DBOSInvalidStepIDError(workflowID, startStep, maxStepID);
+    }
+
+    const forkedWorkflowID = await DBOS.#runAsWorkflowStep(async () => {
+      console.log('forking workflow as a step');
+      return await DBOS.executor.forkWorkflow(workflowID, startStep);
+    }, 'DBOS.forkWorkflow');
+
+    return this.retrieveWorkflow(forkedWorkflowID);
   }
 
   /**

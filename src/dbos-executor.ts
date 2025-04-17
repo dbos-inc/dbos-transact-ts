@@ -11,6 +11,7 @@ import {
   DBOSMaxStepRetriesError,
   DBOSWorkflowCancelledError,
   DBOSUnexpectedStepError,
+  DBOSInvalidStepIDError,
 } from './error';
 import {
   InvokedHandle,
@@ -84,13 +85,16 @@ import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } fr
 import { NoticeMessage } from 'pg-protocol/dist/messages';
 import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput, InitContext } from '.';
 
-import { get } from 'lodash';
+import { get, max } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DBOSScheduler } from './scheduler/scheduler';
 import { DBOSEventReceiverState, DBNotificationCallback, DBNotificationListener } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
+
+import { DBOS } from './dbos';
+import { start } from 'node:repl';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -1090,13 +1094,59 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async cloneWorkflowTransactions(workflowID: string, forkedWorkflowUUID: string): Promise<void> {
-    await this.userDatabase.query(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.transaction_outputs (workflow_uuid, function_id, output, error, txn_snapshot, created_at, function_name) 
-              SELECT $1, function_id, output, error, txn_snapshot, created_at, function_name 
-              FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$2`,
-      [workflowID, forkedWorkflowUUID],
-    );
+  async cloneWorkflowTransactions(workflowID: string, forkedWorkflowUUID: string, startStep: number): Promise<void> {
+    const query = `
+      INSERT INTO dbos.transaction_outputs
+        (workflow_uuid,
+          function_id, 
+          output, 
+          error, 
+          txn_id, 
+          txn_snapshot,  
+          function_name)
+      SELECT $1 AS workflow_uuid, 
+          function_id, 
+          output, 
+          error, 
+          txn_id, 
+          txn_snapshot, 
+          function_name
+      FROM dbos.transaction_outputs WHERE workflow_uuid= $2 AND function_id < $3`;
+
+    // const query = "INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, executor_id, function_name) SELECT $1 AS workflow_uuid, function_id, output, error, txn_id, txn_snapshot, executor_id, function_name FROM dbos.transaction_outputs WHERE workflow_uuid = $2 AND function_id >= $3";
+
+    // const query = `SELECT function_id, function_name, output, error, txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id >= $2`;
+
+    console.log('cloneWorkflowTransactions', query);
+
+    /* const rows = await this.userDatabase.query<unknown, [string, number]>(query, 
+      workflowID,
+      startStep,
+    ); 
+
+    console.log('rows', rows); */
+    await this.userDatabase.query(query, forkedWorkflowUUID, workflowID, startStep);
+
+    // await this.userDatabase.query(query,[forkedWorkflowUUID, workflowID, startStep]);
+    console.log('successfully executed cloneWorkflowtransactions');
+  }
+
+  async getMaxStepID(workflowID: string): Promise<number> {
+    const maxAppFunctionID = await this.getMaxFunctionID(workflowID);
+    const maxSystemFunctionID = await this.systemDatabase.getMaxFunctionID(workflowID);
+
+    return Math.max(maxAppFunctionID, maxSystemFunctionID);
+  }
+
+  async forkWorkflow(workflowID: string, startStep: number): Promise<string> {
+    const forkedWorkflowUUID = this.#generateUUID();
+
+    console.log('Forking workflow', workflowID, 'to', forkedWorkflowUUID);
+
+    await this.cloneWorkflowTransactions(workflowID, forkedWorkflowUUID, startStep);
+    await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowUUID, startStep);
+
+    return forkedWorkflowUUID;
   }
 
   async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {

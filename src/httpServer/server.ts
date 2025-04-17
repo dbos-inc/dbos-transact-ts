@@ -19,6 +19,7 @@ import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
 import { step_info } from '../../schemas/system_db_schema';
+import { DBOS } from '../dbos';
 export type QueueMetadataResponse = QueueParameters & { name: string };
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
@@ -70,6 +71,7 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerRestartWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerQueueMetadataEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerListWorkflowStepsEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerForkWorkflowEndpoint(dbosExec, adminRouter);
     adminApp.use(adminRouter.routes()).use(adminRouter.allowedMethods());
     return adminApp;
   }
@@ -300,6 +302,34 @@ export class DBOSHttpServer {
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowRestartHandler);
+    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
+  }
+
+  static registerForkWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const workflowResumeUrl = '/workflows/:workflow_id/fork';
+    const workflowForkHandler = async (koaCtxt: Koa.Context) => {
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
+      console.log(' what we got in the body ', koaCtxt.request.body);
+      const body = koaCtxt.request.body as { start_step?: number };
+      console.log(' body after parsing', body);
+      const startStep = body?.start_step ?? 1;
+      // const startStep = (koaCtxt.request.body as { start_step: number })?.start_step;
+
+      dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${startStep} with a new id`);
+      try {
+        await DBOS.forkWorkflow(workflowId, startStep);
+      } catch (e) {
+        dbosExec.logger.error(`Error forking workflow ${workflowId}: ${e}`);
+        koaCtxt.status = 500;
+        koaCtxt.body = {
+          error: `Error forking workflow ${workflowId}: ${e}`,
+        };
+        return;
+      }
+      dbosExec.logger.info(`Forked workflow: ${workflowId} with a new id`);
+      koaCtxt.status = 204;
+    };
+    router.post(workflowResumeUrl, workflowForkHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
   }
 

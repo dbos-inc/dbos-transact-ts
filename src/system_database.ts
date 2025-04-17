@@ -108,6 +108,8 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
+  getMaxFunctionID(workflowID: string): Promise<number>;
+  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number): Promise<string>;
 
   // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
@@ -550,7 +552,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  async getMaxFunctionID(workflowID: string): Promise<number> {
+    const { rows } = await this.pool.query<{ max_function_id: number }>(
+      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
+      [workflowID],
+    );
+
+    return rows.length === 0 ? 0 : rows[0].max_function_id;
+  }
+
   async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number): Promise<string> {
+    console.log('In system db forkWorkflow');
+
     const workflowStatus = await this.getWorkflowStatusInternal(originalWorkflowID);
     if (workflowStatus === null) {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
@@ -580,6 +593,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     const workflowStatusResult = await this.initWorkflowStatus(workflowStatusInternal, inputs);
 
+    console.log('done with workflow init');
+
     if (startStep > 1) {
       const query = `
         INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (
@@ -602,6 +617,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `;
 
       await this.pool.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
+      console.log('done coppying operation outputs');
     }
 
     await this.pool.query<workflow_queue>(
@@ -609,6 +625,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [forkedWorkflowId, INTERNAL_QUEUE_NAME],
     );
+
+    console.log('done with workflow queue');
 
     return forkedWorkflowId;
   }

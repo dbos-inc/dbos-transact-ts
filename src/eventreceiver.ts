@@ -133,6 +133,9 @@ export interface DBOSExecutorContext {
 
   /** @deprecated Listen for notifications from the user DB */
   userDBListen(channels: string[], callback: DBNotificationCallback): Promise<DBNotificationListener>;
+
+  getMaxStepID(workflowID: string): Promise<number>;
+  forkWorkflow(workflowID: string, stepID: number): Promise<string>;
 }
 
 /**
