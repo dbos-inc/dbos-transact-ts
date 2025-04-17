@@ -49,7 +49,8 @@ describe('DBOSClient', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    const $poolConfig = config.poolConfig!;
+    const $poolConfig = structuredClone(config.poolConfig!);
+    $poolConfig.connectionString = undefined;
     database_url = `postgres://${$poolConfig.user}:${$poolConfig.password as string}@${$poolConfig.host}:${$poolConfig.port}/${$poolConfig.database}`;
     poolConfig = { ...$poolConfig, database: config.system_database };
     await setUpDBOSTestDb(config);
