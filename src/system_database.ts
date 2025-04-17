@@ -288,6 +288,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
    */
   notificationsClient: PoolClient | null = null;
   dbPollingIntervalMs: number = 10000;
+  shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
   readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
@@ -349,7 +350,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } finally {
       await pgSystemClient.end();
     }
-    await this.listenForNotifications();
+    if (this.shouldUseDBNotifications) {
+      await this.listenForNotifications();
+    }
   }
 
   async destroy() {
@@ -1295,6 +1298,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
     await this.notificationsClient.query('LISTEN dbos_workflow_status_channel;');
     const handler = (msg: Notification) => {
+      if (!this.shouldUseDBNotifications) return; // Testing parameter
       if (msg.channel === 'dbos_notifications_channel') {
         if (msg.payload) {
           this.notificationsMap.callCallbacks(msg.payload);
