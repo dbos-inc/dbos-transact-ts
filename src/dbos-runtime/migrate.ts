@@ -79,8 +79,11 @@ export function rollbackMigration(_config: DBOSConfigInternal, configFile: Confi
 async function createDBOSTables(systemDbName: string, userPoolConfig: PoolConfig) {
   const logger = new GlobalLogger();
 
-  const systemPoolConfig = { ...userPoolConfig };
-  systemPoolConfig.database = systemDbName;
+  const sysDbConnectionString = new URL(userPoolConfig.connectionString!);
+  sysDbConnectionString.pathname = `/${systemDbName}`;
+  const systemPoolConfig: PoolConfig = {
+    connectionString: sysDbConnectionString.toString(),
+  };
 
   const pgUserClient = new Client(userPoolConfig);
   await pgUserClient.connect();
@@ -109,10 +112,10 @@ async function createDBOSTables(systemDbName: string, userPoolConfig: PoolConfig
 
   // Create the DBOS system database.
   const dbExists = await pgUserClient.query<ExistenceCheck>(
-    `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemPoolConfig.database}')`,
+    `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemDbName}')`,
   );
   if (!dbExists.rows[0].exists) {
-    await pgUserClient.query(`CREATE DATABASE ${systemPoolConfig.database}`);
+    await pgUserClient.query(`CREATE DATABASE ${systemDbName}`);
   }
 
   // Load the DBOS system schema.

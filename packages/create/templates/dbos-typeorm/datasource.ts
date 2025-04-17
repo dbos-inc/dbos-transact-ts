@@ -6,12 +6,7 @@ const [dbosConfig] = parseConfigFile();
 
 const AppDataSource = new DataSource({
   type: 'postgres',
-  host: dbosConfig.poolConfig!.host,
-  port: dbosConfig.poolConfig!.port,
-  username: dbosConfig.poolConfig!.user,
-  password: dbosConfig.poolConfig!.password as string,
-  database: dbosConfig.poolConfig!.database,
-  ssl: dbosConfig.poolConfig!.ssl as TlsOptions,
+  url: dbosConfig.poolConfig.connectionString,
   entities: ['dist/entities/*.js'],
   migrations: ['dist/migrations/*.js'],
 });
