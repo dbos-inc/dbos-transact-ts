@@ -3,7 +3,6 @@
 import fs from 'fs';
 import * as utils from '../../src/utils';
 import { UserDatabaseName } from '../../src/user_database';
-import { PoolConfig } from 'pg';
 import {
   ConfigFile,
   DBConfig,
@@ -86,6 +85,7 @@ describe('dbos-config', () => {
       expect(pool.database).toBe(expected.database);
       expect(pool.connectionString).toBe(expected.connectionString);
       expect(pool.connectionTimeoutMillis).toBe(expected.connectionTimeoutMillis);
+      expect(pool.ssl).toEqual(expected.ssl);
     }
 
     test('uses default values when config is empty', () => {
@@ -100,6 +100,7 @@ describe('dbos-config', () => {
         database: 'test_app',
         connectionString: 'postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=3&sslmode=disable',
         connectionTimeoutMillis: 3000,
+        ssl: false,
       });
     });
 
@@ -120,6 +121,7 @@ describe('dbos-config', () => {
         database: 'appname',
         connectionTimeoutMillis: 3000,
         connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
+        ssl: false,
       });
     });
 
@@ -153,6 +155,7 @@ describe('dbos-config', () => {
         database: 'appdb',
         connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=3&sslmode=disable',
         connectionTimeoutMillis: 3000,
+        ssl: false,
       });
     });
 
@@ -176,6 +179,7 @@ describe('dbos-config', () => {
         database: 'appdb',
         connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=22&sslmode=disable',
         connectionTimeoutMillis: 22000,
+        ssl: false,
       });
     });
 
@@ -200,6 +204,7 @@ describe('dbos-config', () => {
         connectionTimeoutMillis: 3000, // default
         connectionString:
           'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=3&sslmode=no-verify',
+        ssl: { rejectUnauthorized: false },
       });
     });
 
@@ -224,6 +229,7 @@ describe('dbos-config', () => {
         database: 'test_app',
         connectionTimeoutMillis: 3000,
         connectionString: 'postgresql://u:p@db:5432/test_app?connect_timeout=3&sslmode=verify-full&sslrootcert=ca.pem',
+        ssl: { rejectUnauthorized: true, ca: ['CA_CERT'] },
       });
     });
 
@@ -247,6 +253,7 @@ describe('dbos-config', () => {
         database: 'url_db',
         connectionString: dbUrl,
         connectionTimeoutMillis: 15000,
+        ssl: { rejectUnauthorized: false },
       });
     });
 
@@ -264,6 +271,7 @@ describe('dbos-config', () => {
         connectionTimeoutMillis: 3000,
         connectionString:
           'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&sslmode=no-verify',
+        ssl: { rejectUnauthorized: false },
       });
     });
 
@@ -623,6 +631,7 @@ describe('dbos-config', () => {
           connectionString:
             'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
           connectionTimeoutMillis: 7000,
+          ssl: { rejectUnauthorized: false },
         },
         userDbclient: UserDatabaseName.PRISMA,
         telemetry: {
@@ -667,6 +676,7 @@ describe('dbos-config', () => {
           max: 20,
           connectionTimeoutMillis: 3000,
           connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
+          ssl: false,
         },
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {
@@ -740,6 +750,7 @@ describe('dbos-config', () => {
           max: 20,
           connectionTimeoutMillis: 3000,
           connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
+          ssl: false,
         },
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {
@@ -1172,6 +1183,7 @@ describe('dbos-config', () => {
       expect(resultDBOSConfig.system_database).toEqual(`${resultDBOSConfig.poolConfig?.database}_dbos_sys`);
     });
   });
+
   describe('SSL Configuration Parsing', () => {
     const originalReadFileSync = fs.readFileSync;
 
