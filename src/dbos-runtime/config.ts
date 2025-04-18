@@ -218,7 +218,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     }
     const sslMode = queryParams.get('sslmode');
     const sslRootCert = queryParams.get('sslrootcert');
-    console.log(sslMode, sslRootCert);
     ssl = getSSLFromParams(sslMode, sslRootCert);
 
     // Validate required fields
