@@ -1,7 +1,7 @@
 import request from 'supertest';
 
 import { PrismaClient, testkv } from '@prisma/client';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import {
   Transaction,
   TransactionContext,
@@ -242,7 +242,9 @@ class TestEngine {
   static async testEngine() {
     const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((DBOS.prismaClient as any)._engineConfig.overrideDatasources.db.url).toBe(pc.connectionString);
+    expect((DBOS.prismaClient as any)._engineConfig.overrideDatasources.db.url).toBe(
+      `postgresql://${String(pc.user)}:${String(pc.password)}@${String(pc.host)}:${String(pc.port)}/${String(pc.database)}?connect_timeout=3000&connection_limit=2`,
+    );
     const r = await DBOS.prismaClient.$queryRawUnsafe('SELECT 1');
     expect(r.length).toBe(1);
     await Promise.resolve();
@@ -253,12 +255,10 @@ describe('prisma-engine-config-tests', () => {
   let config: DBOSConfig;
 
   test('prisma-engine-config', async () => {
-    config = {
-      name: 'dbostest',
+    config = generatePublicDBOSTestConfig({
       userDbclient: UserDatabaseName.PRISMA,
-      userDbPoolSize: 2, // This is ignored with Prisma
-      databaseUrl: `postgresql://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connection_limit=2&connect_timeout=3`,
-    };
+      userDbPoolSize: 2,
+    });
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     await DBOS.launch();

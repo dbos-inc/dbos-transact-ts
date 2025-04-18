@@ -4,7 +4,14 @@ const [dbosConfig] = parseConfigFile();
 
 const config = {
   client: 'pg',
-  connection: dbosConfig.poolConfig.connectionString,
+  connection: {
+    host: dbosConfig.poolConfig.host,
+    port: dbosConfig.poolConfig.port,
+    user: dbosConfig.poolConfig.user,
+    password: dbosConfig.poolConfig.password,
+    database: dbosConfig.poolConfig.database,
+    ssl: dbosConfig.poolConfig.ssl,
+  },
   migrations: {
     directory: './migrations',
   },

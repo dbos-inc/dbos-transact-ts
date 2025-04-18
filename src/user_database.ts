@@ -21,15 +21,8 @@ export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Log
   } catch (error) {
     logger.info(`Database ${poolConfig.database} does not exist, creating...`);
   }
-  // Craft a db string from the app db string, replacing the database name:
-  const pgDbConnectionString = new URL(poolConfig.connectionString!);
-  const app_database = pgDbConnectionString.pathname.substring(1);
-  pgDbConnectionString.pathname = '/postgres';
-
-  const postgresConfig = {
-    ...poolConfig,
-    connectionString: pgDbConnectionString.toString(),
-  };
+  const app_database = poolConfig.database;
+  const postgresConfig = { ...poolConfig, database: 'postgres' };
   const postgresClient = new Client(postgresConfig);
   let connection_failed = true;
   try {

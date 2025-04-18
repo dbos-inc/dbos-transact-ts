@@ -2,9 +2,9 @@ import request from 'supertest';
 
 import { DBOS, Authentication, MiddlewareContext } from '../src';
 import { DBOSInvalidWorkflowTransitionError, DBOSNotAuthorizedError } from '../src/error';
-import { DBOSConfig, DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
-import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { TestKvTable, generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { v1 as uuidv1 } from 'uuid';
 import { Knex } from 'knex';
 import { DatabaseError } from 'pg';
@@ -191,26 +191,21 @@ describe('knex-auth-tests', () => {
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
     const ds = DBOS.knexClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.connectionSettings.connectionString).toEqual(pc.connectionString);
+    expect((ds as any).context.client.config.connection.connectTimeout).toEqual(3000);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.config.pool.max).toEqual(pc.max);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.connectionSettings.connectionTimeoutMillis).toBe(pc.connectionTimeoutMillis);
+    expect((ds as any).context.client.config.pool.max).toEqual(2);
     await Promise.resolve();
   }
 }
 
 describe('knex-engine-config-tests', () => {
   test('engine-config', async () => {
-    const config = {
-      name: 'dbostest',
+    const config = generatePublicDBOSTestConfig({
       userDbclient: UserDatabaseName.KNEX,
       userDbPoolSize: 2,
-      databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
-    };
+    });
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     await DBOS.launch();

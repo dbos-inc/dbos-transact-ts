@@ -9,6 +9,11 @@ export default defineConfig({
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: dbosConfig.poolConfig.connectionString,
+    host: dbosConfig.poolConfig.host,
+    port: dbosConfig.poolConfig.port,
+    user: dbosConfig.poolConfig.user,
+    password: dbosConfig.poolConfig.password,
+    database: dbosConfig.poolConfig.database,
+    ssl: dbosConfig.poolConfig.ssl,
   },
 });

@@ -20,7 +20,7 @@ describe('stored-proc-tests', () => {
     process.chdir('tests/proc-test');
 
     const [config] = parseConfigFile();
-    await runSql({ ...config.poolConfig, database: 'postgres', connectionString: undefined }, async (client) => {
+    await runSql({ ...config.poolConfig, database: 'postgres' }, async (client) => {
       await client.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
       await client.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
       await client.query(`CREATE DATABASE ${config.poolConfig.database};`);

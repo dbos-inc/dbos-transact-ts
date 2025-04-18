@@ -230,21 +230,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly notificationsMap: Record<string, () => void> = {};
   readonly workflowEventsMap: Record<string, () => void> = {};
 
+  static readonly connectionTimeoutMillis = 10000; // 10 second timeout
+
   constructor(
     readonly pgPoolConfig: PoolConfig,
     readonly systemDatabaseName: string,
     readonly logger: Logger,
     readonly sysDbPoolSize?: number,
   ) {
-    // Craft a db string from the app db string, replacing the database name:
-    const systemDbConnectionString = new URL(pgPoolConfig.connectionString!);
-    systemDbConnectionString.pathname = `/${systemDatabaseName}`;
-
-    this.systemPoolConfig = {
-      connectionString: systemDbConnectionString.toString(),
-      // This sets the application_name column in pg_stat_activity
-      application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
-    };
+    this.systemPoolConfig = { ...pgPoolConfig };
+    this.systemPoolConfig.database = systemDatabaseName;
+    this.systemPoolConfig.connectionTimeoutMillis = PostgresSystemDatabase.connectionTimeoutMillis;
+    // This sets the application_name column in pg_stat_activity
+    this.systemPoolConfig.application_name = `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`;
     this.pool = new Pool(this.systemPoolConfig);
     const knexConfig = {
       client: 'pg',

@@ -12,9 +12,9 @@ import {
   Transaction,
   TransactionContext,
 } from '../src';
-import { DBOSConfig, DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { pgTable, serial, text } from 'drizzle-orm/pg-core';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
@@ -213,10 +213,9 @@ describe('drizzle-auth-tests', () => {
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
     const ds = DBOS.drizzleClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).session.client._connectionTimeoutMillis).toEqual(pc.connectionTimeoutMillis);
+    expect((ds as any).session.client._connectionTimeoutMillis).toEqual(3000);
     // Drizzle doesn't expose the pool directly
     await Promise.resolve();
   }
@@ -224,12 +223,10 @@ class TestEngine {
 
 describe('typeorm-engine-config-tests', () => {
   test('engine-config', async () => {
-    const config = {
-      name: 'dbostest',
+    const config = generatePublicDBOSTestConfig({
       userDbclient: UserDatabaseName.DRIZZLE,
       userDbPoolSize: 2,
-      databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
-    };
+    });
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     await DBOS.launch();

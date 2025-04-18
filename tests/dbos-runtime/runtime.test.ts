@@ -16,15 +16,6 @@ async function waitForMessageTest(
   const stdin = command.stdin as unknown as Writable;
   const stderr = command.stderr as unknown as Writable;
 
-  // Capture and print stdout/stderr
-  stdout?.on('data', (data) => {
-    process.stdout.write(`[child stdout]: ${data}`);
-  });
-
-  stderr?.on('data', (data) => {
-    process.stderr.write(`[child stderr]: ${data}`);
-  });
-
   if (!adminPort) {
     adminPort = (Number(port) + 1).toString();
   }
@@ -88,7 +79,7 @@ function configureTemplate() {
   if (process.env.PGPASSWORD === undefined) {
     process.env.PGPASSWORD = 'dbos';
   }
-  execSync('npx dbos migrate', { env: process.env, stdio: 'inherit' });
+  execSync('npx dbos migrate', { env: process.env });
 }
 
 describe('runtime-tests-knex', () => {
@@ -141,7 +132,7 @@ describe('runtime-tests-typeorm', () => {
   });
 
   test('test hello-typeorm runtime', async () => {
-    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', 'start'], {
+    const command = spawn('node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', ['start'], {
       env: process.env,
     });
     await waitForMessageTest(command, '3000');
@@ -165,7 +156,7 @@ describe('runtime-tests-prisma', () => {
   });
 
   test('test hello-prisma runtime', async () => {
-    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', 'start'], {
+    const command = spawn('node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', ['start'], {
       env: process.env,
     });
     await waitForMessageTest(command, '3000');
@@ -189,7 +180,7 @@ describe('runtime-tests-drizzle', () => {
   });
 
   test('test hello-drizzle runtime', async () => {
-    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', 'start'], {
+    const command = spawn('node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', ['start'], {
       env: process.env,
     });
     await waitForMessageTest(command, '3000');
