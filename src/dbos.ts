@@ -916,10 +916,22 @@ export class DBOS {
    * Resume a workflow given its ID.
    * @param workflowID - ID of the workflow
    */
-  static async resumeWorkflow(workflowID: string) {
-    return await DBOS.#runAsWorkflowStep(async () => {
+  static async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
+    await DBOS.#runAsWorkflowStep(async () => {
       return await DBOS.executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
+    return this.retrieveWorkflow(workflowID);
+  }
+
+  /**
+   * Restart a workflow given its ID.
+   * @param workflowID - ID of the workflow
+   */
+  static async forkWorkflow(workflowID: string, startStep: number = 1): Promise<WorkflowHandle<unknown>> {
+    const forkedID = await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.executor.forkWorkflow(workflowID, startStep);
+    }, 'DBOS.restartWorkflow');
+    return this.retrieveWorkflow(forkedID);
   }
 
   /**

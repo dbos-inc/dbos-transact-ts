@@ -115,7 +115,9 @@ export interface DBOSExecutorContext {
   /** @deprecated Use functions on `DBOS` */
   cancelWorkflow(workflowID: string): Promise<void>;
   /** @deprecated Use functions on `DBOS` */
-  resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>>;
+  resumeWorkflow(workflowID: string): Promise<void>;
+
+  forkWorkflow(workflowID: string, startStep: number): Promise<string>;
 
   // Event receiver state queries / updates
   /** @see DBOS.getEventDispatchState */

@@ -20,6 +20,7 @@ import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
 import { step_info } from '../../schemas/system_db_schema';
 export type QueueMetadataResponse = QueueParameters & { name: string };
+import { DBOS } from '../dbos';
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
 export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
@@ -296,7 +297,8 @@ export class DBOSHttpServer {
     const workflowRestartHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Restarting workflow: ${workflowId} with a new id`);
-      await dbosExec.executeWorkflowUUID(workflowId, true);
+      // await dbosExec.executeWorkflowUUID(workflowId, true);
+      await DBOS.forkWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowRestartHandler);

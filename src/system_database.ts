@@ -28,7 +28,7 @@ import {
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep } from './utils';
+import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -108,6 +108,14 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
+  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep?: number): Promise<string>;
+  runAsStep(
+    callback: () => Promise<string | null | undefined>,
+    functionName: string,
+    workflowID?: string,
+    functionID?: number,
+    client?: PoolClient,
+  ): Promise<string | null | undefined>;
 
   // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
@@ -552,6 +560,76 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number = 1): Promise<string> {
+    console.log('In system db forkWorkflow');
+
+    const workflowStatus = await this.getWorkflowStatusInternal(originalWorkflowID);
+    if (workflowStatus === null) {
+      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+    }
+
+    const inputs = await this.getWorkflowInputs(originalWorkflowID);
+    if (inputs === null) {
+      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+    }
+
+    const workflowStatusInternal: WorkflowStatusInternal = {
+      ...workflowStatus,
+      workflowUUID: forkedWorkflowId,
+      status: StatusString.ENQUEUED,
+      workflowName: workflowStatus.workflowName,
+      workflowClassName: workflowStatus.workflowClassName,
+      workflowConfigName: workflowStatus.workflowConfigName,
+      queueName: INTERNAL_QUEUE_NAME,
+      authenticatedUser: workflowStatus.authenticatedUser,
+      authenticatedRoles: workflowStatus.authenticatedRoles,
+      request: workflowStatus.request,
+      executorId: globalParams.executorID,
+      applicationVersion: workflowStatus.applicationVersion,
+      applicationID: workflowStatus.applicationID,
+      createdAt: Date.now(),
+    };
+
+    const workflowStatusResult = await this.initWorkflowStatus(workflowStatusInternal, inputs);
+
+    console.log('done with workflow init');
+
+    if (startStep > 1) {
+      const query = `
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (
+        workflow_uuid,
+        function_id,
+        output,
+        error,
+        function_name,
+        child_workflow_id
+      )
+      SELECT
+        $1 AS workflow_uuid,
+        function_id,
+        output,
+        error,
+        function_name,
+        child_workflow_id
+        FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+        WHERE workflow_uuid = $2 AND function_id < $3
+      `;
+
+      await this.pool.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
+      console.log('done coppying operation outputs');
+    }
+
+    await this.pool.query<workflow_queue>(
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+        VALUES ($1, $2) ON CONFLICT DO NOTHING`,
+      [forkedWorkflowId, INTERNAL_QUEUE_NAME],
+    );
+
+    console.log('done with workflow queue');
+
+    return forkedWorkflowId;
+  }
+
   async runAsStep(
     callback: () => Promise<string | null | undefined>,
     functionName: string,
@@ -922,6 +1000,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
 
       // Check workflow status. If it is complete, do nothing.
       const statusResult = await client.query<workflow_status>(
@@ -946,7 +1025,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
       );
 
       // Update status to pending and reset recovery attempts
-      await this.recordWorkflowStatusChange(workflowID, StatusString.PENDING, { resetRecoveryAttempts: true }, client);
+      // await this.recordWorkflowStatusChange(workflowID, StatusString.PENDING, { resetRecoveryAttempts: true }, client);
+
+      await client.query(
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue 
+         (workflow_uuid, queue_name) 
+         VALUES ($1, $2)`,
+        [workflowID, INTERNAL_QUEUE_NAME],
+      );
+
+      await client.query(
+        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
+         SET status = $1, recovery_attempts = 0 
+         WHERE workflow_uuid = $2`,
+        [StatusString.ENQUEUED, workflowID],
+      );
 
       await client.query('COMMIT');
     } catch (error) {

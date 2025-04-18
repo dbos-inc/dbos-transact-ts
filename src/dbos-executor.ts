@@ -78,7 +78,7 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
-import { globalParams, DBOSJSON, sleepms } from './utils';
+import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
@@ -272,6 +272,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly executorID: string = globalParams.executorID;
 
   static globalInstance: DBOSExecutor | undefined = undefined;
+
+  // internal queue
+  internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(
@@ -1841,6 +1844,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   /**
+   * Fork a workflow.
+   * The forked workflow will start at the specified step.
+   * The forked workflow will be assigned a new UUID.
+   */
+
+  async forkWorkflow(workflowID: string, startStep: number = 1): Promise<string> {
+    const forkedWorkflowID = uuidv4();
+    await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID, startStep);
+    return forkedWorkflowID;
+  }
+
+  /**
    * Retrieve a handle for a workflow UUID.
    */
   retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R> {
@@ -2175,10 +2190,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return merged;
   }
 
-  async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
+  async resumeWorkflow(workflowID: string) {
     await this.systemDatabase.resumeWorkflow(workflowID);
-    this.workflowCancellationMap.delete(workflowID);
-    return await this.executeWorkflowUUID(workflowID, false);
+    // this.workflowCancellationMap.delete(workflowID);
+    // return await this.executeWorkflowUUID(workflowID, false);
   }
 
   logRegisteredHTTPUrls() {

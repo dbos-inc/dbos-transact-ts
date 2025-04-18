@@ -17,6 +17,9 @@ export const globalParams = {
 };
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
+// The name of the internal queue used by DBOS
+export const INTERNAL_QUEUE_NAME = '_dbos_internal_queue';
+
 /*
 A cancellable sleep function that returns a promise and a callback
 The promise can be awaited for and will automatically resolve after the given time
