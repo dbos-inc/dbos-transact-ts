@@ -130,6 +130,7 @@ class WFQueueRunner {
           wfids = [];
         }
 
+        // console.log('Dipatching workflows:', wfids);
         if (wfids.length > 0) {
           await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
         }

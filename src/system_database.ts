@@ -577,7 +577,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const workflowStatusInternal: WorkflowStatusInternal = {
       ...workflowStatus,
       workflowUUID: forkedWorkflowId,
-      status: StatusString.PENDING,
+      status: StatusString.ENQUEUED,
       workflowName: workflowStatus.workflowName,
       workflowClassName: workflowStatus.workflowClassName,
       workflowConfigName: workflowStatus.workflowConfigName,
@@ -1415,6 +1415,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
 
+    console.log('findAndMarkStartableWorkflows', queue.name, executorID, appVersion);
+
     await this.knexDB.transaction(
       async (trx: Knex.Transaction) => {
         // If there is a rate limit, compute how many functions have started in its period.
@@ -1482,12 +1484,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
         const rows = await query.select(['workflow_uuid']);
 
+        console.log('found tasks to start', rows);
+
         // Start the workflows
         const workflowIDs = rows.map((row) => row.workflow_uuid);
+        console.log('found workflow IDs', workflowIDs);
         for (const id of workflowIDs) {
+          console.log('starting task', id);
           // If we have a rate limit, stop starting functions when the number
           //   of functions started this period exceeds the limit.
           if (queue.rateLimit && numRecentQueries >= queue.rateLimit.limitPerPeriod) {
+            console.log('rate limit reached, stopping');
             break;
           }
 
@@ -1504,11 +1511,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
               application_version: appVersion,
             });
 
+          console.log('updated workflow status', res);
+
           if (res > 0) {
             claimedIDs.push(id);
             await trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
               .where('workflow_uuid', id)
               .update('started_at_epoch_ms', startTimeMs);
+          } else {
+            console.log('workflow status not updated, probably already started');
           }
           // If we did not update this record, probably someone else did.  Count in either case.
           ++numRecentQueries;
@@ -1529,6 +1540,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Return the IDs of all functions we marked started
+    console.log('claimed IDs', claimedIDs);
     return claimedIDs;
   }
 }
