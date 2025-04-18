@@ -12,6 +12,7 @@ import path from 'path';
 import validator from 'validator';
 import { GlobalLogger } from '../telemetry/logs';
 import dbosConfigSchema from '../../dbos-config.schema.json';
+import { ConnectionOptions } from 'tls';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true });
@@ -187,6 +188,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   let connectionString = undefined;
   let databaseName = undefined;
   let connectionTimeoutMillis = 3000;
+  let ssl: boolean | ConnectionOptions = false;
 
   // If a database_url is found, parse it to backfill the poolConfig
   if (configFile.database_url) {
@@ -214,6 +216,10 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     if (queryParams.has('connect_timeout')) {
       connectionTimeoutMillis = parseInt(queryParams.get('connect_timeout')!, 10) * 1000;
     }
+    const sslMode = queryParams.get('sslmode');
+    const sslRootCert = queryParams.get('sslrootcert');
+    console.log(sslMode, sslRootCert);
+    ssl = getSSLFromParams(sslMode, sslRootCert);
 
     // Validate required fields
     const missingFields: string[] = [];
@@ -272,7 +278,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     queryParams.push(`connect_timeout=${connectionTimeoutMillis / 1000}`);
 
     // SSL configuration
-    const ssl = parseSSLConfig(configFile.database);
+    ssl = parseSSLConfig(configFile.database);
     if (ssl === false) {
       queryParams.push(`sslmode=disable`);
     } else if (ssl && 'ca' in ssl) {
@@ -300,6 +306,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   const poolConfig: PoolConfig = {
     connectionString,
     connectionTimeoutMillis,
+    ssl,
     host: configFile.database.hostname,
     port: configFile.database.port,
     user: configFile.database.username,
@@ -316,7 +323,40 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
   return poolConfig;
 }
 
-export function parseSSLConfig(dbConfig: DBConfig) {
+/**
+ * A helper to backfill TLS configuration from a connection string sslmode/sslrootcert query parameters
+ *
+ * @param sslmode
+ * @param sslrootcert
+ * @returns
+ */
+function getSSLFromParams(sslmode: string | null, sslrootcert: string | null): false | ConnectionOptions {
+  if (!sslmode || sslmode === 'disable') {
+    return false;
+  }
+
+  const ssl: ConnectionOptions = {};
+
+  if (sslmode === 'require' || sslmode === 'no-verify') {
+    ssl.rejectUnauthorized = false;
+  } else if (sslmode === 'verify-ca' || sslmode === 'verify-full') {
+    ssl.rejectUnauthorized = sslmode === 'verify-full';
+
+    if (sslrootcert) {
+      try {
+        ssl.ca = readFileSync(path.resolve(sslrootcert)).toString();
+      } catch (err) {
+        throw new Error(`Failed to read sslrootcert from "${sslrootcert}": ${(err as Error).message}`);
+      }
+    } else {
+      throw new Error(`sslmode=${sslmode} requires sslrootcert`);
+    }
+  }
+
+  return ssl;
+}
+
+export function parseSSLConfig(dbConfig: DBConfig): false | ConnectionOptions {
   // Details on Postgres SSL/TLS modes: https://www.postgresql.org/docs/current/libpq-ssl.html#LIBPQ-SSL-PROTECTION
   if (dbConfig.ssl === false) {
     // If SSL is set to false, do not use TLS
