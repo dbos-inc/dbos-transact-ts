@@ -12,7 +12,7 @@ This function returns a `Date` object representing the current clock time.
 
 ### `DBOSDateTime.getCurrentTime()`
 
-This function returns a `number` of milliseconds since January 1, 1970, UTC, in the same manner as `new Date().getTime()`.
+This function returns a `number` of milliseconds since January 1, 1970, UTC, in the same manner as `Date.now()`.
 
 ## Next Steps
 

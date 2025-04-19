@@ -468,7 +468,7 @@ describe('test-list-queues', () => {
         const h = await DBOS.startWorkflow(TestListQueues, { queueName: TestListQueues.queue.name }).blockingTask(i);
         handles.push(h);
       }
-      return Promise.all(handles.map((h) => h.getResult()));
+      return await Promise.all(handles.map((h) => h.getResult()));
     }
 
     @DBOS.workflow()
