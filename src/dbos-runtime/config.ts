@@ -187,7 +187,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
   let connectionString = undefined;
   let databaseName = undefined;
-  let connectionTimeoutMillis = 3000;
+  let connectionTimeoutMillis = 10000;
   let ssl: boolean | ConnectionOptions = false;
 
   // If a database_url is found, parse it to backfill the poolConfig
@@ -258,7 +258,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     configFile.database.username = process.env.DBOS_DBUSER || configFile.database.username || 'postgres';
     configFile.database.password =
       process.env.DBOS_DBPASSWORD || configFile.database.password || process.env.PGPASSWORD || 'dbos';
-    connectionTimeoutMillis = configFile.database.connectionTimeoutMillis || 3000;
+    connectionTimeoutMillis = configFile.database.connectionTimeoutMillis || 10000;
 
     databaseName = configFile.database.app_db_name;
     // Construct the database name from the application name, if needed
@@ -607,9 +607,9 @@ export function overwrite_config(
   const appName = configFile!.name || providedDBOSConfig.name;
 
   if (configFile.database.ssl_ca) {
-    configFile.database_url = `postgresql://${configFile.database.username}:${configFile.database.password}@${configFile.database.hostname}:${configFile.database.port}/${configFile.database.app_db_name}?connect_timeout=3&sslmode=verify-full&sslrootcert=${configFile.database.ssl_ca}`;
+    configFile.database_url = `postgresql://${configFile.database.username}:${configFile.database.password}@${configFile.database.hostname}:${configFile.database.port}/${configFile.database.app_db_name}?connect_timeout=10&sslmode=verify-full&sslrootcert=${configFile.database.ssl_ca}`;
   } else {
-    configFile.database_url = `postgresql://${configFile.database.username}:${configFile.database.password}@${configFile.database.hostname}:${configFile.database.port}/${configFile.database.app_db_name}?connect_timeout=3&sslmode=no-verify`;
+    configFile.database_url = `postgresql://${configFile.database.username}:${configFile.database.password}@${configFile.database.hostname}:${configFile.database.port}/${configFile.database.app_db_name}?connect_timeout=10&sslmode=no-verify`;
   }
   const poolConfig = constructPoolConfig(configFile!);
 
