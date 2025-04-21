@@ -17,7 +17,6 @@ import {
   GetWorkflowsInput,
   GetWorkflowsOutput,
   StatusString,
-  WorkflowStatus,
 } from './workflow';
 import {
   notifications,
@@ -67,12 +66,12 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   initWorkflowStatus<T extends any[]>(
-    initStatus: WorkflowStatusInternal,
+    initStatus: WorkflowStatus,
     args: T,
     maxRetries?: number,
   ): Promise<{ args: T; status: string }>;
-  recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
-  recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
+  recordWorkflowOutput(workflowID: string, status: WorkflowStatus): Promise<void>;
+  recordWorkflowError(workflowID: string, status: WorkflowStatus): Promise<void>;
 
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
   getWorkflowInputs<T extends any[]>(workflowID: string): Promise<T | null>;
@@ -94,11 +93,6 @@ export interface SystemDatabase {
   ): Promise<void>;
 
   getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
-  getWorkflowStatusInternal(
-    workflowID: string,
-    callerID?: string,
-    callerFN?: number,
-  ): Promise<WorkflowStatusInternal | null>;
   awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined>;
 
   // Workflow management
@@ -174,7 +168,7 @@ export interface SystemDatabase {
 }
 
 // For internal use, not serialized status.
-export interface WorkflowStatusInternal {
+export interface WorkflowStatus {
   workflowUUID: string;
   status: string;
   workflowName: string;
@@ -313,7 +307,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async initWorkflowStatus<T extends any[]>(
-    initStatus: WorkflowStatusInternal,
+    initStatus: WorkflowStatus,
     args: T,
     maxRetries?: number,
   ): Promise<{ args: T; status: string }> {
@@ -449,11 +443,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
+  async recordWorkflowOutput(workflowID: string, status: WorkflowStatus): Promise<void> {
     await this.recordWorkflowStatusChange(workflowID, StatusString.SUCCESS, { output: status.output });
   }
 
-  async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
+  async recordWorkflowError(workflowID: string, status: WorkflowStatus): Promise<void> {
     await this.recordWorkflowStatusChange(workflowID, StatusString.ERROR, { error: status.error });
   }
 
@@ -960,29 +954,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
-    const internalStatus = await this.getWorkflowStatusInternal(workflowID, callerID, callerFN);
-    if (internalStatus === null) {
-      return null;
-    }
-    return {
-      status: internalStatus.status,
-      workflowName: internalStatus.workflowName,
-      workflowClassName: internalStatus.workflowClassName,
-      workflowConfigName: internalStatus.workflowConfigName,
-      queueName: internalStatus.queueName,
-      authenticatedUser: internalStatus.authenticatedUser,
-      assumedRole: internalStatus.assumedRole,
-      authenticatedRoles: internalStatus.authenticatedRoles,
-      request: internalStatus.request,
-      executorId: internalStatus.executorId,
-    };
-  }
-
-  async getWorkflowStatusInternal(
-    workflowID: string,
-    callerID?: string,
-    callerFN?: number,
-  ): Promise<WorkflowStatusInternal | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     const sv = await this.runAsStep(
       async () => {
@@ -991,7 +962,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           [workflowID],
         );
 
-        let value: WorkflowStatusInternal | null = null;
+        let value: WorkflowStatus | null = null;
         if (rows.length > 0) {
           value = {
             workflowUUID: rows[0].workflow_uuid,
@@ -1022,7 +993,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       callerFN,
     );
 
-    return sv ? (JSON.parse(sv) as WorkflowStatusInternal) : null;
+    return sv ? (JSON.parse(sv) as WorkflowStatus) : null;
   }
 
   async awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined> {

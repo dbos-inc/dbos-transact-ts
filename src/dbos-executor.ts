@@ -21,7 +21,6 @@ import {
   WorkflowParams,
   RetrievedHandle,
   WorkflowContextImpl,
-  WorkflowStatus,
   StatusString,
   ContextFreeFunction,
   GetWorkflowQueueInput,
@@ -36,12 +35,7 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import { TelemetryConfig } from './telemetry';
 import { Pool, PoolClient, PoolConfig, QueryResultRow } from 'pg';
-import {
-  SystemDatabase,
-  PostgresSystemDatabase,
-  WorkflowStatusInternal,
-  SystemDatabaseStoredResult,
-} from './system_database';
+import { SystemDatabase, PostgresSystemDatabase, WorkflowStatus, SystemDatabaseStoredResult } from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
   PGNodeUserDatabase,
@@ -736,7 +730,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       params.tempWfName,
     );
 
-    const internalStatus: WorkflowStatusInternal = {
+    const internalStatus: WorkflowStatus = {
       workflowUUID: workflowID,
       status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
       workflowName: wf.name,

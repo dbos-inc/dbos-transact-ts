@@ -1,5 +1,5 @@
 import { PoolConfig } from 'pg';
-import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from './system_database';
+import { PostgresSystemDatabase, SystemDatabase, WorkflowStatus } from './system_database';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { v4 as uuidv4 } from 'uuid';
 import { RetrievedHandle, StatusString, WorkflowHandle } from './workflow';
@@ -91,7 +91,7 @@ export class DBOSClient {
     const { workflowName, workflowClassName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? uuidv4();
 
-    const internalStatus: WorkflowStatusInternal = {
+    const internalStatus: WorkflowStatus = {
       workflowUUID: workflowUUID,
       status: StatusString.ENQUEUED,
       workflowName: workflowName,
@@ -125,7 +125,7 @@ export class DBOSClient {
    */
   async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     idempotencyKey ??= uuidv4();
-    const internalStatus: WorkflowStatusInternal = {
+    const internalStatus: WorkflowStatus = {
       workflowUUID: `${destinationID}-${idempotencyKey}`,
       status: StatusString.SUCCESS,
       workflowName: 'temp_workflow-send-client',
