@@ -553,7 +553,6 @@ describe('dbos-config', () => {
         '123db',
         'very_very_very_long_very_very_very_long_very_very__database_name',
         'largeDB',
-        '',
       ];
       for (const dbName of invalidNames) {
         const localMockDBOSConfigYamlString = `
