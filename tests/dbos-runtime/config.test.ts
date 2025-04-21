@@ -52,6 +52,15 @@ describe('dbos-config', () => {
   describe('Configuration loading', () => {
     test('translates otlp endpoints from string to list', () => {
       const mockConfigFile = `
+        database:
+            hostname: \${DOESNOTEXISTS}
+            port: \${DOESNOTEXISTS}
+            username: \${DOESNOTEXISTS}
+            password: \${NO}
+            app_db_name: \${DOESNOTEXISTS}
+            ssl: \${DOESNOTEXISTS}
+            ssl_ca: \${DOESNOTEXISTS}
+            connectionTimeoutMillis: \${DOESNOTEXISTS}
         telemetry:
             OTLPExporter:
                 tracesEndpoint: http://otel-collector:4317/from-file
