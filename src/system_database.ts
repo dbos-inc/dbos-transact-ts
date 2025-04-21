@@ -69,6 +69,7 @@ export interface SystemDatabase {
   initWorkflowStatus<T extends any[]>(
     initStatus: WorkflowStatusInternal,
     args: T,
+    maxRetries?: number,
   ): Promise<{ args: T; status: string }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
@@ -191,7 +192,6 @@ export interface WorkflowStatusInternal {
   applicationID: string;
   createdAt: number;
   updatedAt?: number;
-  maxRetries: number;
   recoveryAttempts?: number;
 }
 
@@ -315,6 +315,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async initWorkflowStatus<T extends any[]>(
     initStatus: WorkflowStatusInternal,
     args: T,
+    maxRetries?: number,
   ): Promise<{ args: T; status: string }> {
     const result = await this.pool.query<{
       recovery_attempts: number;
@@ -396,12 +397,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Every time we init the status, we increment `recovery_attempts` by 1.
     // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
     const attempts = resRow.recovery_attempts;
-    if (attempts > initStatus.maxRetries + 1) {
+    if (maxRetries && attempts > maxRetries + 1) {
       await this.pool.query(
         `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`,
         [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING],
       );
-      throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
+      throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, maxRetries);
     }
     this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
     const status = resRow.status;
@@ -1011,7 +1012,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             applicationVersion: rows[0].application_version,
             applicationID: rows[0].application_id,
             recoveryAttempts: Number(rows[0].recovery_attempts),
-            maxRetries: 0,
+            // maxRetries: 0,
           };
         }
         return value ? JSON.stringify(value) : null;

@@ -753,7 +753,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       applicationVersion: globalParams.appVersion,
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
-      maxRetries: wCtxt.maxRecoveryAttempts,
     };
 
     if (wCtxt.isTempWorkflow) {
@@ -787,7 +786,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           return new RetrievedHandle(this.systemDatabase, cr.res.child!, callerID, callerFunctionID);
         }
       }
-      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args, wCtxt.maxRecoveryAttempts);
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(
