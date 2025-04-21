@@ -203,11 +203,12 @@ describe('queued-wf-tests-simple', () => {
 
   // Test functions - notification variant
   test('run-sysdb-nopoller', async () => {
-    const prev = sysDB().dbPollingIntervalMs;
+    const prev = sysDB().dbPollingIntervalResultMs;
     //sysDB().dbPollingIntervalMs = 1000000;
     //The intent was that this would check the notifier.
     //   But notifier does not exist on WF status table for performance reasons.
-    sysDB().dbPollingIntervalMs = 1000;
+    sysDB().dbPollingIntervalResultMs = 1000;
+    sysDB().dbPollingIntervalEventMs = 1000;
     sysDB().shouldUseDBNotifications = true;
     await doTheNonWFTimeoutTest();
     await doTheNonWFInstantTest();
@@ -216,13 +217,14 @@ describe('queued-wf-tests-simple', () => {
     await doTheWFTimeoutTest();
     await doTheWFInstantTest();
     await doTheWFDelayedTest();
-    sysDB().dbPollingIntervalMs = prev;
+    sysDB().dbPollingIntervalResultMs = prev;
   }, 10000);
 
   // Test functions - poller variant
   test('run-sysdb-onlypoller', async () => {
-    const prev = sysDB().dbPollingIntervalMs;
-    sysDB().dbPollingIntervalMs = 100;
+    const prev = sysDB().dbPollingIntervalResultMs;
+    sysDB().dbPollingIntervalResultMs = 100;
+    sysDB().dbPollingIntervalEventMs = 100;
     sysDB().shouldUseDBNotifications = false;
     await doTheNonWFTimeoutTest();
     await doTheNonWFInstantTest();
@@ -231,6 +233,6 @@ describe('queued-wf-tests-simple', () => {
     await doTheWFTimeoutTest();
     await doTheWFInstantTest();
     await doTheWFDelayedTest();
-    sysDB().dbPollingIntervalMs = prev;
+    sysDB().dbPollingIntervalResultMs = prev;
   }, 10000);
 });

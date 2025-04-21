@@ -22,7 +22,7 @@ exports.up = function (knex) {
     $$ LANGUAGE plpgsql;
 
     CREATE TRIGGER dbos_workflow_cancel_trigger
-    AFTER INSERT OR UPDATE OR DELETE ON dbos.workflow_cancel
+    AFTER INSERT OR DELETE ON dbos.workflow_cancel
     FOR EACH ROW EXECUTE FUNCTION dbos.workflow_cancel_function();
   `);
 };

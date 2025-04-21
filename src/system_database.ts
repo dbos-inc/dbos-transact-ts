@@ -286,7 +286,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
    *     dropped, and only the PG server log may note it.  For those reasons, we do occasional polling
    */
   notificationsClient: PoolClient | null = null;
-  dbPollingIntervalMs: number = 1000;
+  dbPollingIntervalResultMs: number = 1000;
+  dbPollingIntervalEventMs: number = 10000;
   shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
@@ -795,14 +796,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
             workflowID,
             timeoutFunctionID,
             timeoutms,
-            this.dbPollingIntervalMs,
+            this.dbPollingIntervalEventMs,
           );
           timeoutPromise = promise;
           timeoutCancel = cancel;
           finishTime = endTime;
         } else {
-          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalMs;
-          poll = Math.min(this.dbPollingIntervalMs, poll);
+          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalEventMs;
+          poll = Math.min(this.dbPollingIntervalEventMs, poll);
           const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
@@ -974,14 +975,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
             callerWorkflow.workflowID,
             callerWorkflow.timeoutFunctionID ?? -1,
             timeoutms,
-            this.dbPollingIntervalMs,
+            this.dbPollingIntervalEventMs,
           );
           timeoutPromise = promise;
           timeoutCancel = cancel;
           finishTime = endTime;
         } else {
-          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalMs;
-          poll = Math.min(this.dbPollingIntervalMs, poll);
+          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalEventMs;
+          poll = Math.min(this.dbPollingIntervalEventMs, poll);
           const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
@@ -1041,7 +1042,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       await client.query(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_cancel(workflow_id)
-         VALUES ($1)`,
+         VALUES ($1) ON CONFLICT (workflow_id) DO NOTHING`,
         [workflowID],
       );
 
@@ -1273,14 +1274,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
             callerID,
             timerFuncID,
             timeoutms,
-            this.dbPollingIntervalMs,
+            this.dbPollingIntervalResultMs,
           );
           finishTime = endTime;
           timeoutPromise = promise;
           timeoutCancel = cancel;
         } else {
-          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalMs;
-          poll = Math.min(this.dbPollingIntervalMs, poll);
+          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalResultMs;
+          poll = Math.min(this.dbPollingIntervalResultMs, poll);
           const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
