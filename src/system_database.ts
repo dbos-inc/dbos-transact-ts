@@ -257,10 +257,15 @@ class NotificationMap<T> {
   }
 }
 
-interface WFStatusUpdate {
+interface WFStatusUpdateNotification {
   wfid: string;
   status: string;
   oldstatus: string;
+}
+
+interface WFCancelNotification {
+  wfid: string;
+  cancelled: string;
 }
 
 export class PostgresSystemDatabase implements SystemDatabase {
@@ -292,7 +297,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
   readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
-  readonly workflowStatusMap: NotificationMap<WFStatusUpdate> = new NotificationMap();
+  readonly workflowStatusMap: NotificationMap<WFStatusUpdateNotification> = new NotificationMap();
 
   readonly runningWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
@@ -1041,6 +1046,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       await client.query('BEGIN');
 
+      await client.query(
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_cancel(workflow_id)
+         VALUES ($1)`,
+        [workflowID],
+      );
+
       // Remove workflow from queues table
       await client.query(
         `DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue 
@@ -1053,6 +1064,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       await client.query('COMMIT');
     } catch (error) {
+      console.log(error);
       await client.query('ROLLBACK');
       throw error;
     } finally {
@@ -1093,6 +1105,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query(
         `DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue 
          WHERE workflow_uuid = $1`,
+        [workflowID],
+      );
+
+      await client.query(
+        `DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_cancel 
+         WHERE workflow_id = $1`,
         [workflowID],
       );
 
@@ -1300,6 +1318,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.notificationsClient.query('LISTEN dbos_notifications_channel;');
     await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
     await this.notificationsClient.query('LISTEN dbos_workflow_status_channel;');
+    await this.notificationsClient.query('LISTEN dbos_workflow_cancel_channel;');
     const handler = (msg: Notification) => {
       if (!this.shouldUseDBNotifications) return; // Testing parameter
       if (msg.channel === 'dbos_notifications_channel') {
@@ -1312,9 +1331,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
       } else if (msg.channel === 'dbos_workflow_status_channel') {
         if (msg.payload) {
-          const notif: WFStatusUpdate = JSON.parse(msg.payload) as WFStatusUpdate;
+          const notif: WFStatusUpdateNotification = JSON.parse(msg.payload) as WFStatusUpdateNotification;
           this.workflowStatusMap.callCallbacks(notif.wfid, notif);
           if (notif.status === StatusString.CANCELLED) {
+            this.setWFCancelMap(notif.wfid);
+          } else {
+            this.clearWFCancelMap(notif.wfid);
+          }
+        }
+      } else if (msg.channel === 'dbos_workflow_cancel_channel') {
+        if (msg.payload) {
+          const notif: WFCancelNotification = JSON.parse(msg.payload) as WFCancelNotification;
+          if (notif.cancelled === 't') {
             this.setWFCancelMap(notif.wfid);
           } else {
             this.clearWFCancelMap(notif.wfid);

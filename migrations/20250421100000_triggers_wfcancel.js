@@ -6,12 +6,12 @@ exports.up = function (knex) {
     BEGIN
         IF TG_OP = 'INSERT' THEN
             payload = json_build_object(
-                'wfid', NEW.workflow_uuid,
+                'wfid', NEW.workflow_id,
                 'cancelled', 't'
             );
         ELSIF TG_OP = 'DELETE' THEN
             payload = json_build_object(
-                'wfid', OLD.workflow_uuid,
+                'wfid', OLD.workflow_id,
                 'cancelled', 'f'
             );
         END IF;
