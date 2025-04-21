@@ -48,6 +48,14 @@ class PGSDBTests {
   static async doGetResult(wfid: string, timeout: number) {
     return await DBOS.getResult(wfid, timeout);
   }
+
+  @DBOS.workflow()
+  static async doRecvFromChild() {
+    await PGSDBTests.doSend(DBOS.workflowID!, 'topic', 'msg');
+    const ct = Date.now();
+    await expect(DBOS.recv('topic', 10000)).resolves.toBe('msg');
+    expect(Date.now() - ct).toBeLessThan(2000);
+  }
 }
 
 const sysDB = () => DBOSExecutor.globalInstance!.systemDatabase as PostgresSystemDatabase;
@@ -135,16 +143,7 @@ async function doTheWFInstantTest() {
   await expect(PGSDBTests.doGetEvent(wfid1, 'key', 10000)).resolves.toBe('val');
   expect(Date.now() - ct).toBeLessThan(2000);
 
-  /*
-  // This is not allowed ... WF must exist before sending to it.
-  const wfid2 = uuidv1();
-  await PGSDBTests.doSend(wfid2, 'topic', 'msg');
-  ct = Date.now();
-  await DBOS.withNextWorkflowID(wfid2, async () => {
-    await expect(PGSDBTests.doRecv('topic', 10000)).resolves.toBe('msg');
-  });
-  expect(Date.now() - ct).toBeLessThan(2000);
-  */
+  await PGSDBTests.doRecvFromChild();
 
   ct = Date.now();
   await expect(PGSDBTests.doRecv('topic', 0.1)).resolves.toBeNull();
