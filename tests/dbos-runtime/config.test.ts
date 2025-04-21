@@ -52,6 +52,15 @@ describe('dbos-config', () => {
   describe('Configuration loading', () => {
     test('translates otlp endpoints from string to list', () => {
       const mockConfigFile = `
+        database:
+            hostname: \${DOESNOTEXISTS}
+            port: \${DOESNOTEXISTS}
+            username: \${DOESNOTEXISTS}
+            password: \${NO}
+            app_db_name: \${DOESNOTEXISTS}
+            ssl: \${DOESNOTEXISTS}
+            ssl_ca: \${DOESNOTEXISTS}
+            connectionTimeoutMillis: \${DOESNOTEXISTS}
         telemetry:
             OTLPExporter:
                 tracesEndpoint: http://otel-collector:4317/from-file
@@ -544,7 +553,6 @@ describe('dbos-config', () => {
         '123db',
         'very_very_very_long_very_very_very_long_very_very__database_name',
         'largeDB',
-        '',
       ];
       for (const dbName of invalidNames) {
         const localMockDBOSConfigYamlString = `

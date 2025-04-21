@@ -15,7 +15,7 @@ import dbosConfigSchema from '../../dbos-config.schema.json';
 import { ConnectionOptions } from 'tls';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
-const ajv = new Ajv({ allErrors: true, verbose: true });
+const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
 
 export interface DBConfig {
   hostname?: string;
@@ -262,7 +262,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
 
     databaseName = configFile.database.app_db_name;
     // Construct the database name from the application name, if needed
-    if (databaseName === undefined) {
+    if (databaseName === undefined || databaseName === '') {
       databaseName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
       if (databaseName.match(/^\d/)) {
         databaseName = '_' + databaseName; // Append an underscore if the name starts with a digit

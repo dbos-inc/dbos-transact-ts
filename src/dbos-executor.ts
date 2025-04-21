@@ -131,14 +131,19 @@ export type DBOSConfigInternal = Omit<DBOSConfig, 'poolConfig' | 'system_databas
 };
 
 export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
-  return (
+  const isDeprecated =
     config.poolConfig !== undefined ||
     config.telemetry !== undefined ||
     config.system_database !== undefined ||
     config.env !== undefined ||
     config.application !== undefined ||
-    config.http !== undefined
-  );
+    config.http !== undefined;
+  if (isDeprecated) {
+    console.warn(
+      'The following configuration fields are deprecated: poolConfig, system_database, telemetry, env, application, http. Please use the configuration format described at https://docs.dbos.dev/typescript/reference/configuration.',
+    );
+  }
+  return isDeprecated;
 }
 
 export enum DebugMode {
