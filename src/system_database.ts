@@ -257,12 +257,6 @@ class NotificationMap<T> {
   }
 }
 
-interface WFStatusUpdateNotification {
-  wfid: string;
-  status: string;
-  oldstatus: string;
-}
-
 interface WFCancelNotification {
   wfid: string;
   cancelled: string;
@@ -292,12 +286,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
    *     dropped, and only the PG server log may note it.  For those reasons, we do occasional polling
    */
   notificationsClient: PoolClient | null = null;
-  dbPollingIntervalMs: number = 10000;
+  dbPollingIntervalMs: number = 1000;
   shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
   readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
-  readonly workflowStatusMap: NotificationMap<WFStatusUpdateNotification> = new NotificationMap();
 
   readonly runningWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
@@ -1064,7 +1057,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       await client.query('COMMIT');
     } catch (error) {
-      console.log(error);
+      this.logger.error(error);
       await client.query('ROLLBACK');
       throw error;
     } finally {
@@ -1119,6 +1112,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       await client.query('COMMIT');
     } catch (error) {
+      this.logger.error(error);
       await client.query('ROLLBACK');
       throw error;
     } finally {
@@ -1153,10 +1147,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (this.notificationsMap.map.size > 0) {
       this.logger.warn('Message notification map is not empty - shutdown is not clean.');
       //throw new Error('Message notification map is not empty - shutdown is not clean.');
-    }
-    if (this.workflowStatusMap.map.size > 0) {
-      this.logger.warn('Workflow status map is not empty - shutdown is not clean.');
-      //throw new Error('Workflow status map is not empty - shutdown is not clean.');
     }
   }
 
@@ -1240,7 +1230,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const statusPromise = new Promise<void>((resolve) => {
         resolveNotification = resolve;
       });
-      const irh = this.workflowStatusMap.registerCallback(workflowID, (_res) => {
+      const irh = this.cancelWakeupMap.registerCallback(workflowID, (_res) => {
         resolveNotification();
       });
       const crh = callerID
@@ -1302,7 +1292,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           timeoutCancel();
         }
       } finally {
-        this.workflowStatusMap.deregisterCallback(irh);
+        this.cancelWakeupMap.deregisterCallback(irh);
         if (crh) this.cancelWakeupMap.deregisterCallback(crh);
       }
     }
@@ -1317,7 +1307,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.notificationsClient = await this.pool.connect();
     await this.notificationsClient.query('LISTEN dbos_notifications_channel;');
     await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
-    await this.notificationsClient.query('LISTEN dbos_workflow_status_channel;');
     await this.notificationsClient.query('LISTEN dbos_workflow_cancel_channel;');
     const handler = (msg: Notification) => {
       if (!this.shouldUseDBNotifications) return; // Testing parameter
@@ -1328,16 +1317,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       } else if (msg.channel === 'dbos_workflow_events_channel') {
         if (msg.payload) {
           this.workflowEventsMap.callCallbacks(msg.payload);
-        }
-      } else if (msg.channel === 'dbos_workflow_status_channel') {
-        if (msg.payload) {
-          const notif: WFStatusUpdateNotification = JSON.parse(msg.payload) as WFStatusUpdateNotification;
-          this.workflowStatusMap.callCallbacks(notif.wfid, notif);
-          if (notif.status === StatusString.CANCELLED) {
-            this.setWFCancelMap(notif.wfid);
-          } else {
-            this.clearWFCancelMap(notif.wfid);
-          }
         }
       } else if (msg.channel === 'dbos_workflow_cancel_channel') {
         if (msg.payload) {

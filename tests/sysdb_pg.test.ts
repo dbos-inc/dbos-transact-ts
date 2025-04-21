@@ -204,7 +204,10 @@ describe('queued-wf-tests-simple', () => {
   // Test functions - notification variant
   test('run-sysdb-nopoller', async () => {
     const prev = sysDB().dbPollingIntervalMs;
-    sysDB().dbPollingIntervalMs = 1000000;
+    //sysDB().dbPollingIntervalMs = 1000000;
+    //The intent was that this would check the notifier.
+    //   But notifier does not exist on WF status table for performance reasons.
+    sysDB().dbPollingIntervalMs = 1000;
     sysDB().shouldUseDBNotifications = true;
     await doTheNonWFTimeoutTest();
     await doTheNonWFInstantTest();
