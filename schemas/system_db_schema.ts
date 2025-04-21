@@ -25,11 +25,6 @@ export interface notifications {
   message: string;
 }
 
-export interface workflow_cancel {
-  wfid: string;
-  cancelled: string;
-}
-
 export interface workflow_events {
   workflow_uuid: string;
   key: string;
