@@ -976,6 +976,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async cancelWorkflow(workflowID: string): Promise<void> {
+    console.log('In system db cancelWorkflow', workflowID);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -1509,7 +1510,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
         const rows = await query.select(['workflow_uuid']);
 
-        // console.log("found from workflow queue", rows);
+        console.log('found from workflow queue', rows);
 
         // Start the workflows
         const workflowIDs = rows.map((row) => row.workflow_uuid);
@@ -1533,7 +1534,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
               application_version: appVersion,
             });
 
-          // console.log(`updated workflow status ${id}`, res);
+          console.log(`updated workflow status ${id}`, res);
 
           if (res > 0) {
             claimedIDs.push(id);
@@ -1542,7 +1543,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
               .update('started_at_epoch_ms', startTimeMs);
           }
 
-          // console.log(`claimed workflow ${id}`, claimedIDs);
+          console.log(`claimed workflow ${id}`, claimedIDs);
           // If we did not update this record, probably someone else did.  Count in either case.
           ++numRecentQueries;
         }

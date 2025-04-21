@@ -136,6 +136,7 @@ class WFQueueRunner {
           await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
         }
 
+        console.log(`Found ${wfids} workflows to start`);
         for (const wfid of wfids) {
           try {
             const _wfh = await exec.executeWorkflowUUID(wfid);
