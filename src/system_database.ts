@@ -309,6 +309,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     this.systemPoolConfig = {
       connectionString: systemDbConnectionString.toString(),
+      connectionTimeoutMillis: pgPoolConfig.connectionTimeoutMillis,
       // This sets the application_name column in pg_stat_activity
       application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
     };
