@@ -325,7 +325,8 @@ describe('workflow-management-tests', () => {
     console.log('All asserts passed');
 
     // Restart the workflow
-    /* const wfh = await DBOS.executeWorkflowById(handle.getWorkflowUUID(), true);
+    // const wfh = await DBOS.executeWorkflowById(handle.getWorkflowUUID(), true);
+    const wfh = await DBOS.forkWorkflow(handle.getWorkflowUUID());
     await wfh.getResult();
     expect(TestEndpoints.tries).toBe(3);
     // Validate a new workflow is started and successful
@@ -341,7 +342,7 @@ describe('workflow-management-tests', () => {
       [handle.getWorkflowUUID()],
     );
     expect(result.rows[0].attempts).toBe(String(1));
-    expect(result.rows[0].status).toBe(StatusString.SUCCESS); */
+    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
   test('test-restart-transaction', async () => {
