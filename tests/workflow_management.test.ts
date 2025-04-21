@@ -297,14 +297,7 @@ describe('workflow-management-tests', () => {
     await DBOS.recoverPendingWorkflows(); // Does nothing as the workflow is CANCELLED
     expect(TestEndpoints.tries).toBe(1);
 
-    result = await systemDBClient.query<{ status: string; attempts: number }>(
-      `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
-    );
-    console.log('3' + result.rows[0].attempts);
-
     TestEndpoints.testResolve();
-
     // Retry the workflow, resetting the attempts counter
     const handle2 = await DBOS.resumeWorkflow(handle.getWorkflowUUID());
     await handle2.getResult();
