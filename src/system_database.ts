@@ -437,7 +437,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     },
     client?: PoolClient,
   ): Promise<void> {
-    console.trace();
     // console.log('In system db recordWorkflowStatusChange', workflowID, status, update);
     let rec = '';
     if (update.resetRecoveryAttempts) {
