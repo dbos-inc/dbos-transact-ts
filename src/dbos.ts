@@ -307,8 +307,13 @@ export class DBOS {
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
     // Do nothing is DBOS is already initialized
-    if (DBOS.isInitialized()) return;
 
+    console.log('DBOS launch called');
+
+    if (DBOS.isInitialized()) {
+      DBOS.logger.warn('DBOS is already initialized, ignoring launch call');
+      return;
+    }
     const debugMode = options?.debugMode ?? DBOS.getDebugModeFromEnv();
     const isDebugging = debugMode !== DebugMode.DISABLED;
 
@@ -335,6 +340,7 @@ export class DBOS {
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     DBOS.globalLogger = executor.logger;
     await executor.init();
+    console.log('DBOS executor initialized');
 
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     if (debugWorkflowId) {
@@ -403,6 +409,9 @@ export class DBOS {
       DBOS.logger.debug('Setting up Hono tracing middleware');
       options.honoApp.use(honoTracingMiddleware);
     }
+
+    console.log('DBOS about to create internal queue');
+    DBOSExecutor.globalInstance.createInternalQueue();
 
     recordDBOSLaunch();
   }

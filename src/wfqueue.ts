@@ -2,7 +2,7 @@ import { DBOSExecutor } from './dbos-executor';
 import { DBOS } from './dbos';
 import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
 import { DBOSInitializationError } from './error';
-import { globalParams } from './utils';
+import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
 
 /**
  * Limit the maximum number of functions started from a `WorkflowQueue`
@@ -95,6 +95,7 @@ class WFQueueRunner {
 
   async dispatchLoop(exec: DBOSExecutor): Promise<void> {
     this.isRunning = true;
+    console.log('Starting workflow queue dispatch loop');
     while (this.isRunning) {
       // Wait for either the timeout or an interruption
       let timer: NodeJS.Timeout;
@@ -119,6 +120,7 @@ class WFQueueRunner {
       for (const [_qn, q] of this.wfQueuesByName) {
         let wfids: string[];
         try {
+          // console.log(`Checking queue ${q.name}`);
           wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q, exec.executorID, globalParams.appVersion);
         } catch (e) {
           const err = e as Error;

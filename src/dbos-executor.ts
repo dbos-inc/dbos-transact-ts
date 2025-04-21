@@ -274,7 +274,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
   static globalInstance: DBOSExecutor | undefined = undefined;
 
   // internal queue
-  internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
+  internalQueue: WorkflowQueue | undefined = undefined;
+  // internalQueue: WorkflowQueue ;
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(
@@ -282,6 +283,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     { systemDatabase, debugMode }: DBOSExecutorOptions = {},
   ) {
     this.debugMode = debugMode ?? DebugMode.DISABLED;
+
+    // console.log('DBOSExecutor constructor');
+    // console.trace();
+    // this.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
 
     // Set configured environment variables
     if (config.env) {
@@ -391,6 +396,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
       this.userDatabase = new PGNodeUserDatabase(userDBConfig);
       this.logger.debug('Loaded Postgres user database');
     }
+  }
+
+  createInternalQueue() {
+    console.log('Create internal queue called');
+    if (this.internalQueue) {
+      this.logger.warn('Internal queue already created!');
+      return;
+    }
+    this.logger.debug('Creating internal queue');
+    // console.trace()
+    this.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
   }
 
   #registerClass(cls: object) {
@@ -2191,8 +2207,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async resumeWorkflow(workflowID: string) {
+    this.workflowCancellationMap.delete(workflowID);
     await this.systemDatabase.resumeWorkflow(workflowID);
-    // this.workflowCancellationMap.delete(workflowID);
     // return await this.executeWorkflowUUID(workflowID, false);
   }
 

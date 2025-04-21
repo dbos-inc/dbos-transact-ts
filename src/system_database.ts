@@ -437,6 +437,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     },
     client?: PoolClient,
   ): Promise<void> {
+    console.trace();
+    // console.log('In system db recordWorkflowStatusChange', workflowID, status, update);
     let rec = '';
     if (update.resetRecoveryAttempts) {
       rec = ' recovery_attempts = 0, ';
@@ -449,6 +451,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
        SET ${rec} status=$2, output=$3, error=$4, updated_at=$5 WHERE workflow_uuid=$1`,
       [workflowID, status, update.output, update.error, Date.now()],
     );
+
+    // console.log('recordWorkflowStatusChange result', wRes);
 
     if (wRes.rowCount !== 1) {
       throw new DBOSWorkflowConflictUUIDError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
@@ -1025,20 +1029,30 @@ export class PostgresSystemDatabase implements SystemDatabase {
       );
 
       // Update status to pending and reset recovery attempts
-      // await this.recordWorkflowStatusChange(workflowID, StatusString.PENDING, { resetRecoveryAttempts: true }, client);
+      // await this.recordWorkflowStatusChange(workflowID, StatusString.ENQUEUED, { resetRecoveryAttempts: true }, client);
+
+      const query = `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
+          SET status = '${StatusString.ENQUEUED}', queue_name = '${INTERNAL_QUEUE_NAME}', recovery_attempts = 0 
+          WHERE workflow_uuid = '${workflowID}'`;
+
+      console.log('before workflow status update', query);
+
+      const res = await client.query(query);
+
+      /* const res = await client.query(
+        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
+         SET status = $1, queue_name= $2, recovery_attempts = 0 
+         WHERE workflow_uuid = $4`,
+        [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, 0, workflowID],
+      ); */
+
+      console.log('after workflow status update', res.rowCount);
 
       await client.query(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue 
          (workflow_uuid, queue_name) 
          VALUES ($1, $2)`,
         [workflowID, INTERNAL_QUEUE_NAME],
-      );
-
-      await client.query(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
-         SET status = $1, recovery_attempts = 0 
-         WHERE workflow_uuid = $2`,
-        [StatusString.ENQUEUED, workflowID],
       );
 
       await client.query('COMMIT');
@@ -1496,6 +1510,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
         const rows = await query.select(['workflow_uuid']);
 
+        // console.log("found from workflow queue", rows);
+
         // Start the workflows
         const workflowIDs = rows.map((row) => row.workflow_uuid);
         for (const id of workflowIDs) {
@@ -1518,12 +1534,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
               application_version: appVersion,
             });
 
+          // console.log(`updated workflow status ${id}`, res);
+
           if (res > 0) {
             claimedIDs.push(id);
             await trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
               .where('workflow_uuid', id)
               .update('started_at_epoch_ms', startTimeMs);
           }
+
+          // console.log(`claimed workflow ${id}`, claimedIDs);
           // If we did not update this record, probably someone else did.  Count in either case.
           ++numRecentQueries;
         }
