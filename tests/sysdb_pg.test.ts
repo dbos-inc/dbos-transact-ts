@@ -4,6 +4,7 @@
 
 import { DBOS, DBOSConfig } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
+import { DBOSWorkflowCancelledError } from '../src/error';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
@@ -183,6 +184,18 @@ async function doTheWFDelayedTest() {
   expect(Date.now() - ct).toBeLessThan(2000);
 }
 
+async function doTheWFCancelTest() {
+  let ct = Date.now();
+
+  ct = Date.now();
+  const wfid1 = uuidv1();
+  const wfh1 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid1 }).doRecv('key', 100000000);
+  await sleepms(100);
+  await DBOS.cancelWorkflow(wfid1);
+  await expect(wfh1.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  expect(Date.now() - ct).toBeLessThan(2000);
+}
+
 describe('queued-wf-tests-simple', () => {
   let config: DBOSConfig;
 
@@ -216,6 +229,8 @@ describe('queued-wf-tests-simple', () => {
     await doTheWFTimeoutTest();
     await doTheWFInstantTest();
     await doTheWFDelayedTest();
+
+    await doTheWFCancelTest();
     sysDB().dbPollingIntervalResultMs = prev;
   }, 10000);
 
@@ -232,6 +247,8 @@ describe('queued-wf-tests-simple', () => {
     await doTheWFTimeoutTest();
     await doTheWFInstantTest();
     await doTheWFDelayedTest();
+
+    await doTheWFCancelTest();
     sysDB().dbPollingIntervalResultMs = prev;
   }, 10000);
 });

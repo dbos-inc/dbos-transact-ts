@@ -355,9 +355,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (this.shouldUseDBNotifications) {
       await this.listenForNotifications();
     }
+    this.startCancelChecker();
   }
 
   async destroy() {
+    this.stopCancelChecker();
+    await this.cancelPollerLoopEnded;
     await this.knexDB.destroy();
     if (this.notificationsClient) {
       this.notificationsClient.removeAllListeners();
@@ -1120,6 +1123,62 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client.release();
     }
     this.clearWFCancelMap(workflowID);
+  }
+
+  // cancel checker
+  private isCancelCheckerRunning: boolean = false;
+  private interruptCancelCheckerResolve?: () => void;
+  private cancelPollerLoopEnded?: Promise<void> = undefined;
+
+  private stopCancelChecker() {
+    if (!this.isCancelCheckerRunning) return;
+    this.isCancelCheckerRunning = false;
+    if (this.interruptCancelCheckerResolve) {
+      this.interruptCancelCheckerResolve();
+    }
+  }
+
+  private startCancelChecker() {
+    this.cancelPollerLoopEnded = this.cancelCheckerLoop();
+  }
+
+  async cancelCheckerLoop(): Promise<void> {
+    this.isCancelCheckerRunning = true;
+    while (this.isCancelCheckerRunning) {
+      // Wait for either the timeout or an interruption
+      let timer: NodeJS.Timeout;
+      const timeoutPromise = new Promise<void>((resolve) => {
+        timer = setTimeout(() => {
+          resolve();
+        }, this.dbPollingIntervalEventMs);
+      });
+      await Promise.race([
+        timeoutPromise,
+        new Promise<void>((_, reject) => (this.interruptCancelCheckerResolve = reject)),
+      ]).catch(() => {
+        this.logger.debug('Cancel check loop interrupted!');
+      }); // Interrupt sleep throws
+      clearTimeout(timer!);
+
+      if (!this.isCancelCheckerRunning) {
+        break;
+      }
+
+      // See which cancels are in the DB
+      const res = await this.pool.query<{ workflow_id: string }>(
+        `SELECT workflow_id FROM ${DBOSExecutor.systemDBSchemaName}.workflow_cancel;`,
+      );
+      const cs: Set<string> = new Set();
+      for (const ids of res.rows) {
+        this.setWFCancelMap(ids.workflow_id);
+        cs.add(ids.workflow_id);
+      }
+      // Clear any not in result set
+      const ids = this.workflowCancellationMap.keys();
+      for (const id of ids) {
+        if (!cs.has(id)) this.clearWFCancelMap(id);
+      }
+    }
   }
 
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>) {
