@@ -400,7 +400,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   createInternalQueue() {
     console.log('Create internal queue called');
-    if (this.internalQueue) {
+    if (this.internalQueue != undefined) {
       this.logger.warn('Internal queue already created!');
       return;
     }
