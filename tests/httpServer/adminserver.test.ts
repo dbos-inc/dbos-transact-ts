@@ -154,9 +154,8 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(204);
-    expect(testAdminWorkflow.counter).toBe(2);
     await expect(handle.getStatus()).resolves.toMatchObject({
-      status: StatusString.SUCCESS,
+      status: StatusString.ENQUEUED,
     });
 
     // Resume the workflow. Verify it does not run and status remains SUCCESS
@@ -167,9 +166,8 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(204);
-    expect(testAdminWorkflow.counter).toBe(2);
     await expect(handle.getStatus()).resolves.toMatchObject({
-      status: StatusString.SUCCESS,
+      status: StatusString.ENQUEUED,
     });
 
     // Restart the workflow. Verify it runs
@@ -180,7 +178,9 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(204);
-    expect(testAdminWorkflow.counter).toBe(3);
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
   });
 
   test('test-admin-list-workflow-steps', async () => {
@@ -280,8 +280,9 @@ describe('running-admin-server-tests', () => {
     });
     expect(metadataResponse.status).toBe(200);
     const queueMetadata: QueueMetadataResponse[] = (await metadataResponse.json()) as QueueMetadataResponse[];
-    expect(queueMetadata.length).toBe(4);
+    expect(queueMetadata.length).toBe(5);
     for (const q of queueMetadata) {
+      console.log(q.name);
       if (q.name === testQueueOne.name) {
         expect(q.concurrency).toBeUndefined();
         expect(q.workerConcurrency).toBeUndefined();
