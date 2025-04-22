@@ -27,6 +27,7 @@ import {
   WorkflowConfig,
   WorkflowFunction,
   WorkflowParams,
+  WorkflowStatus,
 } from './workflow';
 import { DBOSEventReceiverState, DBOSExecutorContext } from './eventreceiver';
 import { DLogger, GlobalLogger } from './telemetry/logs';
@@ -853,7 +854,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    * @returns status of the workflow as `WorkflowStatus`, or `null` if there is no workflow with `workflowID`
    */
-  static getWorkflowStatus(workflowID: string) {
+  static getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null> {
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInStep()) {
         // OK to use directly

@@ -25,6 +25,7 @@ import {
   ContextFreeFunction,
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
+  WorkflowStatus,
 } from './workflow';
 
 import { IsolationLevel, Transaction, TransactionConfig, TransactionContextImpl } from './transaction';
@@ -35,7 +36,12 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import { TelemetryConfig } from './telemetry';
 import { Pool, PoolClient, PoolConfig, QueryResultRow } from 'pg';
-import { SystemDatabase, PostgresSystemDatabase, WorkflowStatus, SystemDatabaseStoredResult } from './system_database';
+import {
+  SystemDatabase,
+  PostgresSystemDatabase,
+  WorkflowStatusInternal,
+  SystemDatabaseStoredResult,
+} from './system_database';
 import { v4 as uuidv4 } from 'uuid';
 import {
   PGNodeUserDatabase,
@@ -636,7 +642,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       wf.name === DBOSExecutor.tempWorkflowName ? wf.name : getRegisteredMethodClassName(wf) + '.' + wf.name;
     return this.workflowInfoMap.get(wfname);
   }
-  getWorkflowInfoByStatus(wf: WorkflowStatus) {
+
+  getWorkflowInfoByStatus(wf: WorkflowStatusInternal) {
     const wfname = wf.workflowClassName + '.' + wf.workflowName;
     const wfInfo = this.workflowInfoMap.get(wfname);
 
@@ -730,7 +737,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       params.tempWfName,
     );
 
-    const internalStatus: WorkflowStatus = {
+    const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
       status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
       workflowName: wf.name,
@@ -1885,8 +1892,34 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
-    return this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
+  async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
+    const status = await this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
+    const inputs = await this.systemDatabase.getWorkflowInputs(workflowID);
+    if (status) {
+      return {
+        workflowID: status.workflowUUID,
+        status: status.status,
+        workflowName: status.workflowName,
+        workflowClassName: status.workflowClassName,
+        workflowConfigName: status.workflowConfigName,
+        queueName: status.queueName,
+        authenticatedUser: status.authenticatedUser,
+        authenticatedRoles: status.authenticatedRoles,
+        assumedRole: status.assumedRole,
+        output: status.output ?? undefined,
+        error: status.error ? deserializeError(status.error) : undefined,
+        input: inputs ?? undefined,
+        createdAt: status.createdAt,
+        updatedAt: status.updatedAt,
+        recoveryAttempts: status.recoveryAttempts,
+        applicationID: status.applicationID,
+        applicationVersion: status.applicationVersion,
+        executorId: status.executorId,
+        request: status.request,
+      };
+    }
+
+    return null;
   }
 
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
@@ -2132,7 +2165,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return await this.systemDatabase.upsertEventDispatchState(state);
   }
 
-  #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
+  #getRecoveryContext(workflowUUID: string, status: WorkflowStatusInternal): DBOSContextImpl {
     // Note: this doesn't inherit the original parent context's span.
     const oc = new DBOSContextImpl(status.workflowName, undefined as unknown as Span, this.logger);
     oc.request = status.request;

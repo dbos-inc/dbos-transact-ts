@@ -66,12 +66,12 @@ export interface SystemDatabase {
   destroy(): Promise<void>;
 
   initWorkflowStatus<T extends any[]>(
-    initStatus: WorkflowStatus,
+    initStatus: WorkflowStatusInternal,
     args: T,
     maxRetries?: number,
   ): Promise<{ args: T; status: string }>;
-  recordWorkflowOutput(workflowID: string, status: WorkflowStatus): Promise<void>;
-  recordWorkflowError(workflowID: string, status: WorkflowStatus): Promise<void>;
+  recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
+  recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
   getWorkflowInputs<T extends any[]>(workflowID: string): Promise<T | null>;
@@ -92,7 +92,7 @@ export interface SystemDatabase {
     checkConflict: boolean,
   ): Promise<void>;
 
-  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
+  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatusInternal | null>;
   awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined>;
 
   // Workflow management
@@ -165,14 +165,14 @@ export interface SystemDatabase {
   getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
   getQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<GetWorkflowsOutput>;
 
-  getWorkflows2(input: GetWorkflowsInput): Promise<(WorkflowStatus & { input: string })[]>;
-  getQueuedWorkflows2(input: GetQueuedWorkflowsInput): Promise<(WorkflowStatus & { input: string })[]>;
+  getWorkflows2(input: GetWorkflowsInput): Promise<(WorkflowStatusInternal & { input: string })[]>;
+  getQueuedWorkflows2(input: GetQueuedWorkflowsInput): Promise<(WorkflowStatusInternal & { input: string })[]>;
 
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
 }
 
 // For internal use, not serialized status.
-export interface WorkflowStatus {
+export interface WorkflowStatusInternal {
   workflowUUID: string;
   status: string;
   workflowName: string;
@@ -311,7 +311,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async initWorkflowStatus<T extends any[]>(
-    initStatus: WorkflowStatus,
+    initStatus: WorkflowStatusInternal,
     args: T,
     maxRetries?: number,
   ): Promise<{ args: T; status: string }> {
@@ -447,11 +447,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordWorkflowOutput(workflowID: string, status: WorkflowStatus): Promise<void> {
+  async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     await this.recordWorkflowStatusChange(workflowID, StatusString.SUCCESS, { output: status.output });
   }
 
-  async recordWorkflowError(workflowID: string, status: WorkflowStatus): Promise<void> {
+  async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     await this.recordWorkflowStatusChange(workflowID, StatusString.ERROR, { error: status.error });
   }
 
@@ -957,7 +957,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
+  async getWorkflowStatus(
+    workflowID: string,
+    callerID?: string,
+    callerFN?: number,
+  ): Promise<WorkflowStatusInternal | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     const sv = await this.runAsStep(
       async () => {
@@ -966,7 +970,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           [workflowID],
         );
 
-        let value: WorkflowStatus | null = null;
+        let value: WorkflowStatusInternal | null = null;
         if (rows.length > 0) {
           value = {
             workflowUUID: rows[0].workflow_uuid,
@@ -997,7 +1001,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       callerFN,
     );
 
-    return sv ? (JSON.parse(sv) as WorkflowStatus) : null;
+    return sv ? (JSON.parse(sv) as WorkflowStatusInternal) : null;
   }
 
   async awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined> {
@@ -1202,7 +1206,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  async getWorkflows2(input: GetWorkflowsInput): Promise<(WorkflowStatus & { input: string })[]> {
+  async getWorkflows2(input: GetWorkflowsInput): Promise<(WorkflowStatusInternal & { input: string })[]> {
     input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
     let query = this.knexDB<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
       .join<workflow_inputs>(
@@ -1245,7 +1249,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(PostgresSystemDatabase.#mapWorkflowStatus);
   }
 
-  async getQueuedWorkflows2(input: GetQueuedWorkflowsInput): Promise<(WorkflowStatus & { input: string })[]> {
+  async getQueuedWorkflows2(input: GetQueuedWorkflowsInput): Promise<(WorkflowStatusInternal & { input: string })[]> {
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
     let query = this.knexDB<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
       .join<workflow_inputs>(
@@ -1294,7 +1298,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(PostgresSystemDatabase.#mapWorkflowStatus);
   }
 
-  static #mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStatus & { input: string } {
+  static #mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStatusInternal & { input: string } {
     return {
       workflowUUID: row.workflow_uuid,
       status: row.status,

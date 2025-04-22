@@ -8,13 +8,14 @@ import {
   WorkflowFunction,
   WorkflowHandle,
   WorkflowParams,
+  WorkflowStatus,
 } from './workflow';
 import { TransactionFunction } from './transaction';
 import { MethodRegistrationBase } from './decorators';
 import { StepFunction } from './step';
 import { Notification } from 'pg';
 import { StoredProcedure } from './procedure';
-import { WorkflowStatus } from './system_database';
+import { WorkflowStatusInternal } from './system_database';
 
 export type DBNotification = Notification;
 export type DBNotificationCallback = (n: DBNotification) => void;

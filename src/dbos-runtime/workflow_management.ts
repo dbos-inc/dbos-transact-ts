@@ -1,7 +1,7 @@
 import { createLogger } from 'winston';
 import { GetWorkflowsInput, StatusString } from '..';
 import { DBOSConfigInternal, DBOSExecutor } from '../dbos-executor';
-import { PostgresSystemDatabase, SystemDatabase, WorkflowStatus } from '../system_database';
+import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { HTTPRequest } from '../context';
@@ -54,7 +54,7 @@ export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID
   return workflowSteps;
 }
 
-export type WorkflowInformation = Omit<WorkflowStatus, 'request' | 'error' | 'output'> & {
+export type WorkflowInformation = Omit<WorkflowStatusInternal, 'request' | 'error' | 'output'> & {
   input?: unknown[];
   request?: HTTPRequest;
   error?: unknown;
