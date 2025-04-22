@@ -50,7 +50,7 @@ import {
   registerAndWrapDBOSFunction,
   registerFunctionWrapper,
 } from './decorators';
-import { globalParams, sleepms } from './utils';
+import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
 import { koaTracingMiddleware, expressTracingMiddleware, honoTracingMiddleware } from './httpServer/middleware';
 import { Server } from 'http';
@@ -89,7 +89,7 @@ import { set } from 'lodash';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase } from './system_database';
-import { wfQueueRunner } from './wfqueue';
+import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -330,6 +330,7 @@ export class DBOS {
       throw new DBOSError('DBOS configuration not set');
     }
 
+    DBOS.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig as DBOSConfigInternal, {
       debugMode,
     });
@@ -406,8 +407,18 @@ export class DBOS {
       options.honoApp.use(honoTracingMiddleware);
     }
 
-    DBOSExecutor.globalInstance.createInternalQueue();
     recordDBOSLaunch();
+  }
+
+  static internalQueue: WorkflowQueue | undefined = undefined;
+
+  static createInternalQueue() {
+    if (DBOS.internalQueue !== undefined) {
+      DBOS.logger.warn('Internal queue already created!');
+      return;
+    }
+    DBOS.logger.debug('Creating internal queue');
+    DBOS.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
   }
 
   /**
