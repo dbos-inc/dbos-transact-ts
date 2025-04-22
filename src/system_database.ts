@@ -1020,18 +1020,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       // Update status to pending and reset recovery attempts
       // TODO : replace with bind parameters
-      const query = `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
+      /* const query = `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
           SET status = '${StatusString.ENQUEUED}', queue_name = '${INTERNAL_QUEUE_NAME}', recovery_attempts = 0 
           WHERE workflow_uuid = '${workflowID}'`;
 
-      await client.query(query);
+      await client.query(query); */
 
-      /* const res = await client.query(
+      await client.query(
         `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
          SET status = $1, queue_name= $2, recovery_attempts = 0 
-         WHERE workflow_uuid = $4`,
-        [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, 0, workflowID],
-      ); */
+         WHERE workflow_uuid = $3`,
+        [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, workflowID],
+      );
 
       await client.query(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue 

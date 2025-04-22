@@ -1855,7 +1855,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /**
    * Fork a workflow.
    * The forked workflow will start at the specified step.
-   * The forked workflow will be assigned a new UUID.
+   * The forked workflow will be assigned a new ID.
    */
 
   async forkWorkflow(workflowID: string, startStep: number = 1): Promise<string> {
