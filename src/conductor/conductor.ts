@@ -3,7 +3,7 @@ import { DBOSJSON, globalParams } from '../utils';
 import WebSocket from 'ws';
 import * as protocol from './protocol';
 import { GetWorkflowsInput, StatusString } from '..';
-import { getWorkflowInfo } from '../dbos-runtime/workflow_management';
+import { getWorkflowInfo, toWorkflowStatus } from '../dbos-runtime/workflow_management';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { hostname } from 'node:os';
 import { json as streamJSON } from 'stream/consumers';
@@ -193,13 +193,8 @@ export class Conductor {
             };
             let workflowsOutput: protocol.WorkflowsOutput[] = [];
             try {
-              const wfIDs = (await this.dbosExec.systemDatabase.getWorkflows(listWFReq)).workflowUUIDs;
-              workflowsOutput = await Promise.all(
-                wfIDs.map(async (i) => {
-                  const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, i, false);
-                  return new protocol.WorkflowsOutput(wfInfo);
-                }),
-              );
+              const $wfs = await this.dbosExec.systemDatabase.getWorkflows(listWFReq);
+              workflowsOutput = $wfs.map((i) => new protocol.WorkflowsOutput(toWorkflowStatus(i)));
             } catch (e) {
               errorMsg = `Exception encountered when listing workflows: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
@@ -222,14 +217,8 @@ export class Conductor {
             };
             let queuedWFOutput: protocol.WorkflowsOutput[] = [];
             try {
-              const queuedWFIDs = (await this.dbosExec.systemDatabase.getQueuedWorkflows(listQueuedWFReq))
-                .workflowUUIDs;
-              queuedWFOutput = await Promise.all(
-                queuedWFIDs.map(async (i) => {
-                  const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, i, false);
-                  return new protocol.WorkflowsOutput(wfInfo);
-                }),
-              );
+              const $wfs = await this.dbosExec.systemDatabase.getQueuedWorkflows(listQueuedWFReq);
+              queuedWFOutput = $wfs.map((i) => new protocol.WorkflowsOutput(toWorkflowStatus(i)));
             } catch (e) {
               errorMsg = `Exception encountered when listing queued workflows: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
@@ -246,7 +235,7 @@ export class Conductor {
             let wfOutput: protocol.WorkflowsOutput | undefined = undefined;
             try {
               const wfInfo = await getWorkflowInfo(this.dbosExec.systemDatabase, getWFMsg.workflow_id, false);
-              if (wfInfo.workflowUUID) {
+              if (wfInfo) {
                 wfOutput = new protocol.WorkflowsOutput(wfInfo);
               }
             } catch (e) {

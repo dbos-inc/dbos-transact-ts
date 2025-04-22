@@ -253,8 +253,8 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     }
   }
 
-  async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    return this.#dbosExec.systemDatabase.getWorkflows(input);
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    return this.#dbosExec.getWorkflows(input);
   }
 
   //////////////////////

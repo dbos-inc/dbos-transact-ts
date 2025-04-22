@@ -1,49 +1,76 @@
 import { createLogger } from 'winston';
-import { GetWorkflowsInput, StatusString } from '..';
+import { GetWorkflowsInput } from '..';
 import { DBOSConfigInternal, DBOSExecutor } from '../dbos-executor';
 import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
-import { GetQueuedWorkflowsInput } from '../workflow';
-import { HTTPRequest } from '../context';
+import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
 import axios from 'axios';
 import { DBOS } from '../dbos';
+import { DBOSJSON } from '../utils';
+import { deserializeError } from 'serialize-error';
+
+export function toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
+  return {
+    workflowID: internal.workflowUUID,
+    status: internal.status,
+    workflowName: internal.workflowName,
+    workflowClassName: internal.workflowClassName,
+    workflowConfigName: internal.workflowConfigName,
+    queueName: internal.queueName,
+
+    authenticatedUser: internal.authenticatedUser,
+    assumedRole: internal.assumedRole,
+    authenticatedRoles: internal.authenticatedRoles,
+
+    input: internal.input ? (DBOSJSON.parse(internal.input) as unknown[]) : undefined,
+    output: internal.output ? DBOSJSON.parse(internal.output ?? null) : undefined,
+    error: internal.error ? deserializeError(DBOSJSON.parse(internal.error)) : undefined,
+
+    request: getRequest ? internal.request : undefined,
+    executorId: internal.executorId,
+    applicationVersion: internal.applicationVersion,
+    applicationID: internal.applicationID,
+    recoveryAttempts: internal.recoveryAttempts,
+    createdAt: internal.createdAt,
+    updatedAt: internal.updatedAt,
+  };
+}
 
 export async function listWorkflows(
   config: DBOSConfigInternal,
   input: GetWorkflowsInput,
   getRequest: boolean,
-): Promise<WorkflowInformation[]> {
+): Promise<WorkflowStatus[]> {
   const systemDatabase = new PostgresSystemDatabase(
     config.poolConfig,
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
-
-  const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs;
-  const workflowInfos = await Promise.all(
-    workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
-  );
-  await systemDatabase.destroy();
-  return workflowInfos;
+  try {
+    const workflows = await systemDatabase.getWorkflows(input);
+    return workflows.map((wf) => toWorkflowStatus(wf, getRequest));
+  } finally {
+    await systemDatabase.destroy();
+  }
 }
 
 export async function listQueuedWorkflows(
   config: DBOSConfigInternal,
   input: GetQueuedWorkflowsInput,
   getRequest: boolean,
-): Promise<WorkflowInformation[]> {
+): Promise<WorkflowStatus[]> {
   const systemDatabase = new PostgresSystemDatabase(
     config.poolConfig,
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
 
-  const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs;
-  const workflowInfos = await Promise.all(
-    workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
-  );
-  await systemDatabase.destroy();
-  return workflowInfos;
+  try {
+    const workflows = await systemDatabase.getQueuedWorkflows(input);
+    return workflows.map((wf) => toWorkflowStatus(wf, getRequest));
+  } finally {
+    await systemDatabase.destroy();
+  }
 }
 
 export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID: string) {
@@ -54,43 +81,14 @@ export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID
   return workflowSteps;
 }
 
-export type WorkflowInformation = Omit<WorkflowStatusInternal, 'request' | 'error' | 'output'> & {
-  input?: unknown[];
-  request?: HTTPRequest;
-  error?: unknown;
-  output?: unknown;
-};
-
 export async function getWorkflowInfo(
   systemDatabase: SystemDatabase,
   workflowID: string,
   getRequest: boolean,
-): Promise<WorkflowInformation> {
-  // TODO: Fix this cast
-  const info = (await systemDatabase.getWorkflowStatus(workflowID)) as WorkflowInformation;
-  if (info === null) {
-    return Promise.resolve({} as WorkflowInformation);
-  }
-  delete info.error; // Remove error from info, and add it back if needed
-  delete info.output;
-  const input = await systemDatabase.getWorkflowInputs(workflowID);
-  if (input !== null) {
-    info.input = input;
-  }
-  if (info.status === StatusString.SUCCESS || info.status === StatusString.ERROR) {
-    try {
-      info.output = DBOSExecutor.reviveResultOrError(
-        (await systemDatabase.awaitWorkflowResult(workflowID))!,
-        info.status === StatusString.SUCCESS,
-      );
-    } catch (e) {
-      info.error = e;
-    }
-  }
-  if (!getRequest) {
-    delete info.request;
-  }
-  return info;
+): Promise<WorkflowStatus | undefined> {
+  const statuses = await systemDatabase.getWorkflows({ workflowIDs: [workflowID] });
+  const status = statuses.find((s) => s.workflowUUID === workflowID);
+  return status ? toWorkflowStatus(status, getRequest) : undefined;
 }
 
 export async function getWorkflow(config: DBOSConfigInternal, workflowID: string, getRequest: boolean) {
@@ -99,10 +97,11 @@ export async function getWorkflow(config: DBOSConfigInternal, workflowID: string
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
-
-  const info = await getWorkflowInfo(systemDatabase, workflowID, getRequest);
-  await systemDatabase.destroy();
-  return info;
+  try {
+    return await getWorkflowInfo(systemDatabase, workflowID, getRequest);
+  } finally {
+    await systemDatabase.destroy();
+  }
 }
 
 export async function cancelWorkflow(host: string, workflowID: string, logger: GlobalLogger) {

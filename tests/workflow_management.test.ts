@@ -10,15 +10,10 @@ import {
 import request from 'supertest';
 import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
-import {
-  WorkflowInformation,
-  getWorkflow,
-  listWorkflows,
-  listQueuedWorkflows,
-} from '../src/dbos-runtime/workflow_management';
+import { getWorkflow, listWorkflows, listQueuedWorkflows } from '../src/dbos-runtime/workflow_management';
 import { Client } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
-import { GetQueuedWorkflowsInput, WorkflowHandle } from '../src/workflow';
+import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { globalParams } from '../src/utils';
 
 describe('workflow-management-tests', () => {
@@ -275,7 +270,7 @@ describe('workflow-management-tests', () => {
     expect(info.updatedAt).toBeGreaterThan(0);
     expect(info.executorId).toBe(globalParams.executorID);
 
-    const getInfo = await getWorkflow(config, info.workflowUUID, false);
+    const getInfo = await getWorkflow(config, info.workflowID, false);
     expect(info).toEqual(getInfo);
   });
 
@@ -491,7 +486,7 @@ describe('test-list-queues', () => {
     }
 
     let input: GetQueuedWorkflowsInput = {};
-    let output: WorkflowInformation[] = [];
+    let output: WorkflowStatus[] = [];
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
 

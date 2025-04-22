@@ -1,7 +1,7 @@
 import { serializeError } from 'serialize-error';
-import { WorkflowInformation } from '../dbos-runtime/workflow_management';
 import { DBOSJSON } from '../utils';
 import { step_info } from '../../schemas/system_db_schema';
+import { WorkflowStatus } from '../workflow';
 
 export enum MessageType {
   EXECUTOR_INFO = 'executor_info',
@@ -154,9 +154,9 @@ export class WorkflowsOutput {
   ApplicationVersion?: string;
   ExecutorID?: string;
 
-  constructor(info: WorkflowInformation) {
+  constructor(info: WorkflowStatus) {
     // Mark empty fields as undefined
-    this.WorkflowUUID = info.workflowUUID;
+    this.WorkflowUUID = info.workflowID;
     this.Status = info.status;
     this.WorkflowName = info.workflowName;
     this.WorkflowClassName = info.workflowClassName ? info.workflowClassName : undefined;
@@ -164,7 +164,7 @@ export class WorkflowsOutput {
     this.AuthenticatedUser = info.authenticatedUser ? info.authenticatedUser : undefined;
     this.AssumedRole = info.assumedRole ? info.assumedRole : undefined;
     this.AuthenticatedRoles =
-      info.authenticatedRoles.length > 0 ? DBOSJSON.stringify(info.authenticatedRoles) : undefined;
+      (info.authenticatedRoles ?? []).length > 0 ? DBOSJSON.stringify(info.authenticatedRoles) : undefined;
     this.Input = info.input ? DBOSJSON.stringify(info.input) : undefined;
     this.Output = info.output ? DBOSJSON.stringify(info.output) : undefined;
     this.Request = info.request ? DBOSJSON.stringify(info.request) : undefined;
