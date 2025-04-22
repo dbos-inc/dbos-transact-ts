@@ -3,7 +3,6 @@
 import fs from 'fs';
 import * as utils from '../../src/utils';
 import { UserDatabaseName } from '../../src/user_database';
-import { PoolConfig } from 'pg';
 import {
   ConfigFile,
   DBConfig,
@@ -53,6 +52,15 @@ describe('dbos-config', () => {
   describe('Configuration loading', () => {
     test('translates otlp endpoints from string to list', () => {
       const mockConfigFile = `
+        database:
+            hostname: \${DOESNOTEXISTS}
+            port: \${DOESNOTEXISTS}
+            username: \${DOESNOTEXISTS}
+            password: \${NO}
+            app_db_name: \${DOESNOTEXISTS}
+            ssl: \${DOESNOTEXISTS}
+            ssl_ca: \${DOESNOTEXISTS}
+            connectionTimeoutMillis: \${DOESNOTEXISTS}
         telemetry:
             OTLPExporter:
                 tracesEndpoint: http://otel-collector:4317/from-file
@@ -86,6 +94,7 @@ describe('dbos-config', () => {
       expect(pool.database).toBe(expected.database);
       expect(pool.connectionString).toBe(expected.connectionString);
       expect(pool.connectionTimeoutMillis).toBe(expected.connectionTimeoutMillis);
+      expect(pool.ssl).toEqual(expected.ssl);
     }
 
     test('uses default values when config is empty', () => {
@@ -98,8 +107,9 @@ describe('dbos-config', () => {
         user: 'postgres',
         password: 'dbos',
         database: 'test_app',
-        connectionString: 'postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=3&sslmode=disable',
-        connectionTimeoutMillis: 3000,
+        connectionString: 'postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=10&sslmode=disable',
+        connectionTimeoutMillis: 10000,
+        ssl: false,
       });
     });
 
@@ -118,8 +128,9 @@ describe('dbos-config', () => {
         user: 'postgres',
         password: 'dbos',
         database: 'appname',
-        connectionTimeoutMillis: 3000,
-        connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
+        connectionTimeoutMillis: 10000,
+        connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=10&sslmode=disable',
+        ssl: false,
       });
     });
 
@@ -151,8 +162,9 @@ describe('dbos-config', () => {
         user: 'envuser',
         password: 'envpass',
         database: 'appdb',
-        connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=3&sslmode=disable',
-        connectionTimeoutMillis: 3000,
+        connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=10&sslmode=disable',
+        connectionTimeoutMillis: 10000,
+        ssl: false,
       });
     });
 
@@ -176,6 +188,7 @@ describe('dbos-config', () => {
         database: 'appdb',
         connectionString: 'postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=22&sslmode=disable',
         connectionTimeoutMillis: 22000,
+        ssl: false,
       });
     });
 
@@ -197,9 +210,10 @@ describe('dbos-config', () => {
         password: 'dbos', // default
         database: 'configured_db', // from config.database
         max: 7, // from userDbPoolSize
-        connectionTimeoutMillis: 3000, // default
+        connectionTimeoutMillis: 10000, // default
         connectionString:
-          'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=3&sslmode=no-verify',
+          'postgresql://configured_user:dbos@env-host.com:5432/configured_db?connect_timeout=10&sslmode=no-verify',
+        ssl: { rejectUnauthorized: false },
       });
     });
 
@@ -222,8 +236,9 @@ describe('dbos-config', () => {
         user: 'u',
         password: 'p',
         database: 'test_app',
-        connectionTimeoutMillis: 3000,
-        connectionString: 'postgresql://u:p@db:5432/test_app?connect_timeout=3&sslmode=verify-full&sslrootcert=ca.pem',
+        connectionTimeoutMillis: 10000,
+        connectionString: 'postgresql://u:p@db:5432/test_app?connect_timeout=10&sslmode=verify-full&sslrootcert=ca.pem',
+        ssl: { rejectUnauthorized: true, ca: ['CA_CERT'] },
       });
     });
 
@@ -247,6 +262,7 @@ describe('dbos-config', () => {
         database: 'url_db',
         connectionString: dbUrl,
         connectionTimeoutMillis: 15000,
+        ssl: { rejectUnauthorized: false },
       });
     });
 
@@ -261,9 +277,10 @@ describe('dbos-config', () => {
         user: 'postgres',
         password: 'dbos',
         database: 'app_name_with_spaces',
-        connectionTimeoutMillis: 3000,
+        connectionTimeoutMillis: 10000,
         connectionString:
-          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=3&sslmode=no-verify',
+          'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=10&sslmode=no-verify',
+        ssl: { rejectUnauthorized: false },
       });
     });
 
@@ -437,7 +454,7 @@ describe('dbos-config', () => {
           port: 1234
           username: 'someuser'
           password: \${PGPASSWORD}
-          connectionTimeoutMillis: 3000
+          connectionTimeoutMillis: 10000
           app_db_name: 'some_db'
       `;
       jest.restoreAllMocks();
@@ -466,7 +483,7 @@ describe('dbos-config', () => {
           port: 1234
           username: 'someuser'
           password: \${PGPASSWORD}
-          connectionTimeoutMillis: 3000
+          connectionTimeoutMillis: 10000
           app_db_name: 'some_db'
         env:
           FOOFOO: barbar
@@ -505,7 +522,7 @@ describe('dbos-config', () => {
         porfft: 1234
         userffname: 'some user'
         passffword: \${PGPASSWORD}
-        connfectionTimeoutMillis: 3000
+        connfectionTimeoutMillis: 10000
         app_dfb_name: 'some_db'
     `;
       jest.restoreAllMocks();
@@ -520,7 +537,7 @@ describe('dbos-config', () => {
           port: 1234
           username: 'dbos'
           password: \${PGPASSWORD}
-          connectionTimeoutMillis: 3000
+          connectionTimeoutMillis: 10000
           app_db_name: 'some_db'
         env:
           FOOFOO: barbar
@@ -536,7 +553,6 @@ describe('dbos-config', () => {
         '123db',
         'very_very_very_long_very_very_very_long_very_very__database_name',
         'largeDB',
-        '',
       ];
       for (const dbName of invalidNames) {
         const localMockDBOSConfigYamlString = `
@@ -623,6 +639,7 @@ describe('dbos-config', () => {
           connectionString:
             'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
           connectionTimeoutMillis: 7000,
+          ssl: { rejectUnauthorized: false },
         },
         userDbclient: UserDatabaseName.PRISMA,
         telemetry: {
@@ -665,8 +682,9 @@ describe('dbos-config', () => {
           password: process.env.PGPASSWORD || 'dbos',
           database: 'appname',
           max: 20,
-          connectionTimeoutMillis: 3000,
-          connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
+          connectionTimeoutMillis: 10000,
+          connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=10&sslmode=disable',
+          ssl: false,
         },
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {
@@ -738,8 +756,9 @@ describe('dbos-config', () => {
           password: process.env.PGPASSWORD || 'dbos',
           database: 'appname',
           max: 20,
-          connectionTimeoutMillis: 3000,
-          connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=3&sslmode=disable',
+          connectionTimeoutMillis: 10000,
+          connectionString: 'postgresql://postgres:dbos@localhost:5432/appname?connect_timeout=10&sslmode=disable',
+          ssl: false,
         },
         userDbclient: UserDatabaseName.KNEX,
         telemetry: {
@@ -947,7 +966,7 @@ describe('dbos-config', () => {
       expect(resultDBOSConfig.poolConfig?.password).toEqual('password-from-file');
       expect(resultDBOSConfig.poolConfig?.database).toEqual('db_from_file');
       expect(resultDBOSConfig.poolConfig?.connectionString).toEqual(
-        'postgresql://user-from-file:password-from-file@db-host-from-file:1234/db_from_file?connect_timeout=3&sslmode=no-verify',
+        'postgresql://user-from-file:password-from-file@db-host-from-file:1234/db_from_file?connect_timeout=10&sslmode=no-verify',
       );
 
       // System database name should be from file
@@ -1020,7 +1039,7 @@ describe('dbos-config', () => {
 
       // Database settings should reflect what's in the file
       expect(resultDBOSConfig.poolConfig?.connectionString).toEqual(
-        'postgresql://user-from-file:password-from-file@db-host-from-file:1234/db_from_file?connect_timeout=3&sslmode=verify-full&sslrootcert=my_cert',
+        'postgresql://user-from-file:password-from-file@db-host-from-file:1234/db_from_file?connect_timeout=10&sslmode=verify-full&sslrootcert=my_cert',
       );
     });
 
@@ -1172,6 +1191,7 @@ describe('dbos-config', () => {
       expect(resultDBOSConfig.system_database).toEqual(`${resultDBOSConfig.poolConfig?.database}_dbos_sys`);
     });
   });
+
   describe('SSL Configuration Parsing', () => {
     const originalReadFileSync = fs.readFileSync;
 

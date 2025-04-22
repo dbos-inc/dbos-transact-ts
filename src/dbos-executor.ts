@@ -131,14 +131,14 @@ export type DBOSConfigInternal = Omit<DBOSConfig, 'poolConfig' | 'system_databas
 };
 
 export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
-  return (
+  const isDeprecated =
     config.poolConfig !== undefined ||
     config.telemetry !== undefined ||
     config.system_database !== undefined ||
     config.env !== undefined ||
     config.application !== undefined ||
-    config.http !== undefined
-  );
+    config.http !== undefined;
+  return isDeprecated;
 }
 
 export enum DebugMode {

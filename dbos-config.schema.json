@@ -22,43 +22,51 @@
       "additionalProperties": false,
       "properties": {
         "hostname": {
-          "type": "string",
-          "description": "The hostname or IP address of the application database"
+          "type": ["string", "null"],
+          "description": "The hostname or IP address of the application database. DEPRECATED: Use database_url instead",
+          "deprecated": true
         },
         "port": {
-          "type": "number",
-          "description": "The port number of the application database"
+          "type": ["number", "null", "string"],
+          "description": "The port number of the application database. DEPRECATED: Use database_url instead",
+          "deprecated": true
         },
         "username": {
-          "type": "string",
-          "description": "The username to use when connecting to the application database",
+          "type": ["string", "null"],
+          "description": "The username to use when connecting to the application database. DEPRECATED: Use database_url instead",
           "not": {
             "enum": ["dbos"]
-          }
+          },
+          "deprecated": true
         },
         "password": {
-          "type": "string",
-          "description": "The password to use when connecting to the application database. Developers are strongly encouraged to use environment variable substitution to avoid storing secrets in source."
+          "type": ["string", "null"],
+          "description": "The password to use when connecting to the application database. Developers are strongly encouraged to use environment variable substitution to avoid storing secrets in source. DEPRECATED: Use database_url instead",
+          "deprecated": true
         },
         "connectionTimeoutMillis": {
-          "type": "number",
-          "description": "The number of milliseconds the system waits before timing out when connecting to the application database"
+          "type": ["number", "null", "string"],
+          "description": "The number of milliseconds the system waits before timing out when connecting to the application database. DEPRECATED: Use database_url instead",
+          "deprecated": true
         },
         "app_db_name": {
-          "type": "string",
-          "description": "The name of the application database"
+          "type": ["string", "null"],
+          "description": "The name of the application database. DEPRECATED: Use database_url instead",
+          "deprecated": true
         },
         "sys_db_name": {
           "type": "string",
           "description": "The name of the system database"
         },
         "ssl": {
-          "type": "boolean",
-          "description": "Use SSL/TLS to securely connect to the database (default: true)"
+          "type": ["boolean", "null", "string"],
+          "description": "Use SSL/TLS to securely connect to the database (default: true). DEPRECATED: Use database_url instead",
+          "deprecated": true
         },
         "ssl_ca": {
-          "type": "string",
-          "description": "If using SSL/TLS to securely connect to a database, path to an SSL root certificate file"
+          "type": ["string", "null"],
+          "description": "If using SSL/TLS to securely connect to a database, path to an SSL root certificate file. DEPRECATED: Use database_url instead",
+          "deprecated": true
         },
         "app_db_client": {
           "type": "string",
@@ -70,8 +78,9 @@
           "description": "Specify a list of user DB migration commands to run"
         },
         "rollback": {
-          "type": "array",
-          "description": "Specify a list of user DB rollback commands to run"
+          "type": ["array", "null"],
+          "description": "Specify a list of user DB rollback commands to run. DEPRECATED: use your migration tool directly",
+          "deprecated": true
         }
       }
     },
