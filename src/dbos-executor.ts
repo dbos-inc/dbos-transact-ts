@@ -393,15 +393,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  createInternalQueue() {
-    if (this.internalQueue !== undefined) {
-      this.logger.warn('Internal queue already created!');
-      return;
-    }
-    this.logger.debug('Creating internal queue');
-    this.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
-  }
-
   #registerClass(cls: object) {
     const registeredClassOperations = getRegisteredOperations(cls);
     this.registeredOperations.push(...registeredClassOperations);
