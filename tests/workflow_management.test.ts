@@ -429,9 +429,7 @@ describe('workflow-management-tests', () => {
 
     @DBOS.workflow()
     static async waitingWorkflow() {
-      console.log(' executing waitingWorkflow');
       TestEndpoints.tries += 1;
-      console.log(' executing waitingWorkflow incremented tries');
       await TestEndpoints.testPromise;
       await TestEndpoints.stepOne();
     }
@@ -491,8 +489,6 @@ describe('test-list-queues', () => {
   }
 
   test('test-list-queues', async () => {
-    console.log('starting test-list-queues');
-
     const wfid = uuidv4();
 
     // Start the workflow. Wait for all five tasks to start. Verify that they started.
@@ -1033,7 +1029,6 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransaction();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    console.log(wfsteps);
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].function_name).toBe('transaction');
     expect(wfsteps[0].output).toBe(wfid);
@@ -1045,7 +1040,6 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransactionError();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    console.log(wfsteps);
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].function_name).toBe('transactionWithError');
     expect(wfsteps[0].error).toBeInstanceOf(Error);
@@ -1057,7 +1051,6 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransactionAndSteps();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    console.log(wfsteps);
     expect(wfsteps.length).toBe(3);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('transaction');
