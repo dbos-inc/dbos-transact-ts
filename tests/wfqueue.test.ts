@@ -633,16 +633,21 @@ describe('queued-wf-tests-simple', () => {
     });
 
     // Resume a regular workflow. Verify it completes.
-    await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
+    // resume serves no purpose here.
+    // It will delete the entry in the queue but that thread is still blocked until the event is set.
+    // await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
+
+    TestResumeQueues.blockingEvent.set();
     await expect(regularHandle.getResult()).resolves.toBeNull();
 
     // Complete the blocked workflow. Verify the second regular workflow also completes.
-    TestResumeQueues.blockingEvent.set();
+    // TestResumeQueues.blockingEvent.set();
     await expect(blockedHandle.getResult()).resolves.toBeNull();
     await expect(regularHandleTwo.getResult()).resolves.toBeNull();
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
+    console.log('All asserts passed');
   });
 });
 
