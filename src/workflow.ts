@@ -72,6 +72,7 @@ export interface GetWorkflowsInput {
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
+  workflow_id_prefix?: string;
 }
 
 export interface GetQueuedWorkflowsInput {
