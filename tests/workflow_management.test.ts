@@ -301,7 +301,6 @@ describe('workflow-management-tests', () => {
     await DBOS.recoverPendingWorkflows(); // Does nothing as the workflow is CANCELLED
     expect(TestEndpoints.tries).toBe(1);
 
-    // TestEndpoints.testResolve();
     // Retry the workflow, resetting the attempts counter
     const handle2 = await DBOS.resumeWorkflow(handle.getWorkflowUUID());
     TestEndpoints.testResolve();
@@ -322,10 +321,7 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
-    console.log('All asserts passed');
-
     // Restart the workflow
-    // const wfh = await DBOS.executeWorkflowById(handle.getWorkflowUUID(), true);
     const wfh = await DBOS.forkWorkflow(handle.getWorkflowUUID());
     await wfh.getResult();
     expect(TestEndpoints.tries).toBe(3);

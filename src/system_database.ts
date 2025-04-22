@@ -437,7 +437,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     },
     client?: PoolClient,
   ): Promise<void> {
-    // console.log('In system db recordWorkflowStatusChange', workflowID, status, update);
     let rec = '';
     if (update.resetRecoveryAttempts) {
       rec = ' recovery_attempts = 0, ';
@@ -450,8 +449,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
        SET ${rec} status=$2, output=$3, error=$4, updated_at=$5 WHERE workflow_uuid=$1`,
       [workflowID, status, update.output, update.error, Date.now()],
     );
-
-    // console.log('recordWorkflowStatusChange result', wRes);
 
     if (wRes.rowCount !== 1) {
       throw new DBOSWorkflowConflictUUIDError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
@@ -564,8 +561,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number = 1): Promise<string> {
-    console.log('In system db forkWorkflow');
-
     const workflowStatus = await this.getWorkflowStatusInternal(originalWorkflowID);
     if (workflowStatus === null) {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
@@ -593,9 +588,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       createdAt: Date.now(),
     };
 
-    const workflowStatusResult = await this.initWorkflowStatus(workflowStatusInternal, inputs);
-
-    console.log('done with workflow init');
+    await this.initWorkflowStatus(workflowStatusInternal, inputs);
 
     if (startStep > 1) {
       const query = `
@@ -619,7 +612,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       `;
 
       await this.pool.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
-      console.log('done coppying operation outputs');
     }
 
     await this.pool.query<workflow_queue>(
@@ -627,8 +619,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         VALUES ($1, $2) ON CONFLICT DO NOTHING`,
       [forkedWorkflowId, INTERNAL_QUEUE_NAME],
     );
-
-    console.log('done with workflow queue');
 
     return forkedWorkflowId;
   }
@@ -976,7 +966,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async cancelWorkflow(workflowID: string): Promise<void> {
-    console.log('In system db cancelWorkflow', workflowID);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -1029,13 +1018,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       );
 
       // Update status to pending and reset recovery attempts
-      // await this.recordWorkflowStatusChange(workflowID, StatusString.ENQUEUED, { resetRecoveryAttempts: true }, client);
-
+      // TODO : replace with bind parameters
       const query = `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
           SET status = '${StatusString.ENQUEUED}', queue_name = '${INTERNAL_QUEUE_NAME}', recovery_attempts = 0 
           WHERE workflow_uuid = '${workflowID}'`;
-
-      console.log('before workflow status update', query);
 
       const res = await client.query(query);
 
@@ -1045,8 +1031,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
          WHERE workflow_uuid = $4`,
         [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, 0, workflowID],
       ); */
-
-      console.log('after workflow status update', res.rowCount);
 
       await client.query(
         `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue 
@@ -1510,8 +1494,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
         const rows = await query.select(['workflow_uuid']);
 
-        console.log('found from workflow queue', rows);
-
         // Start the workflows
         const workflowIDs = rows.map((row) => row.workflow_uuid);
         for (const id of workflowIDs) {
@@ -1534,8 +1516,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
               application_version: appVersion,
             });
 
-          console.log(`updated workflow status ${id}`, res);
-
           if (res > 0) {
             claimedIDs.push(id);
             await trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
@@ -1543,7 +1523,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
               .update('started_at_epoch_ms', startTimeMs);
           }
 
-          console.log(`claimed workflow ${id}`, claimedIDs);
           // If we did not update this record, probably someone else did.  Count in either case.
           ++numRecentQueries;
         }

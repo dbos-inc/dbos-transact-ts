@@ -96,7 +96,6 @@ class WFQueueRunner {
 
   async dispatchLoop(exec: DBOSExecutor): Promise<void> {
     this.isRunning = true;
-    console.log('Starting workflow queue dispatch loop');
     while (this.isRunning) {
       // Wait for either the timeout or an interruption
       let timer: NodeJS.Timeout;
@@ -121,7 +120,6 @@ class WFQueueRunner {
       for (const [_qn, q] of this.wfQueuesByName) {
         let wfids: string[];
         try {
-          // console.log(`Checking queue ${q.name}`);
           wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q, exec.executorID, globalParams.appVersion);
         } catch (e) {
           const err = e as Error;
@@ -137,7 +135,6 @@ class WFQueueRunner {
           await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_QUEUE_START);
         }
 
-        console.log(`Found ${wfids} workflows to start`);
         for (const wfid of wfids) {
           try {
             const _wfh = await exec.executeWorkflowUUID(wfid);

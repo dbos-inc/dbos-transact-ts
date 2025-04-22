@@ -275,7 +275,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   // internal queue
   internalQueue: WorkflowQueue | undefined = undefined;
-  // internalQueue: WorkflowQueue ;
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(
@@ -283,10 +282,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     { systemDatabase, debugMode }: DBOSExecutorOptions = {},
   ) {
     this.debugMode = debugMode ?? DebugMode.DISABLED;
-
-    // console.log('DBOSExecutor constructor');
-    // console.trace();
-    // this.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
 
     // Set configured environment variables
     if (config.env) {
@@ -399,13 +394,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   createInternalQueue() {
-    console.log('Create internal queue called');
     if (this.internalQueue != undefined) {
       this.logger.warn('Internal queue already created!');
       return;
     }
     this.logger.debug('Creating internal queue');
-    // console.trace()
     this.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
   }
 
@@ -732,8 +725,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const workflowID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
     const presetID: boolean = params.workflowUUID ? true : false;
 
-    console.log('internal workflow called Workflow ID:', workflowID, params.queueName);
-
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
       throw new DBOSNotRegisteredError(wf.name);
@@ -825,7 +816,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const runWorkflow = async () => {
       let result: R;
 
-      console.log('runWorkflow called');
       // Execute the workflow.
       try {
         const callResult = await runWithWorkflowContext(wCtxt, async () => {
@@ -834,8 +824,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
             : (wf as unknown as ContextFreeFunction<T, R>).call(params.configuredInstance, ...args);
           return await callPromise;
         });
-
-        console.log('callResult:', callResult);
 
         if (this.isDebugging) {
           const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
@@ -2053,7 +2041,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async executeWorkflowUUID(workflowID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
-    console.log(`Executing workflow ${workflowID}`);
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
     const inputs = await this.systemDatabase.getWorkflowInputs(workflowID);
     if (!inputs || !wfStatus) {
@@ -2215,7 +2202,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async resumeWorkflow(workflowID: string) {
     this.workflowCancellationMap.delete(workflowID);
     await this.systemDatabase.resumeWorkflow(workflowID);
-    // return await this.executeWorkflowUUID(workflowID, false);
   }
 
   logRegisteredHTTPUrls() {
