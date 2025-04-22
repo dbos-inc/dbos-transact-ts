@@ -2,7 +2,7 @@
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
-import { SystemDatabase, WorkflowStatusInternal } from './system_database';
+import { SystemDatabase } from './system_database';
 import { DBOSContext, DBOSContextImpl, HTTPRequest, assertCurrentWorkflowContext } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
