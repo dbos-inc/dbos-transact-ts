@@ -70,7 +70,7 @@ describe('wf-cancel-tests', () => {
 
     await DBOS.resumeWorkflow(wfid);
     const resstatus = await DBOS.getWorkflowStatus(wfid);
-    expect(resstatus?.status).toBe(StatusString.PENDING);
+    expect(resstatus?.status).toBe(StatusString.ENQUEUED);
   });
 
   test('test-two-transactions-cancel-resume', async () => {
@@ -94,7 +94,7 @@ describe('wf-cancel-tests', () => {
 
     await DBOS.resumeWorkflow(wfid);
     const resstatus = await DBOS.getWorkflowStatus(wfid);
-    expect(resstatus?.status).toBe(StatusString.PENDING);
+    expect(resstatus?.status).toBe(StatusString.ENQUEUED);
   });
 
   test('test-resume-on-a-completed-ws', async () => {
