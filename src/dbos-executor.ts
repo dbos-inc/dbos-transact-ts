@@ -138,11 +138,6 @@ export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
     config.env !== undefined ||
     config.application !== undefined ||
     config.http !== undefined;
-  if (isDeprecated) {
-    console.warn(
-      'The following configuration fields are deprecated: poolConfig, system_database, telemetry, env, application, http. Please use the configuration format described at https://docs.dbos.dev/typescript/reference/configuration.',
-    );
-  }
   return isDeprecated;
 }
 
