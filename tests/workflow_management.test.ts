@@ -20,7 +20,6 @@ import { Client } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { GetQueuedWorkflowsInput, WorkflowHandle } from '../src/workflow';
 import { globalParams } from '../src/utils';
-import Test from 'supertest/lib/test';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -434,7 +433,7 @@ describe('workflow-management-tests', () => {
       TestEndpoints.tries += 1;
       console.log(' executing waitingWorkflow incremented tries');
       await TestEndpoints.testPromise;
-      TestEndpoints.stepOne();
+      await TestEndpoints.stepOne();
     }
 
     @DBOS.step()

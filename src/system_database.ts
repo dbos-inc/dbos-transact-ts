@@ -1023,7 +1023,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           SET status = '${StatusString.ENQUEUED}', queue_name = '${INTERNAL_QUEUE_NAME}', recovery_attempts = 0 
           WHERE workflow_uuid = '${workflowID}'`;
 
-      const res = await client.query(query);
+      await client.query(query);
 
       /* const res = await client.query(
         `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 

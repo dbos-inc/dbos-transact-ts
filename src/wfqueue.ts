@@ -1,8 +1,7 @@
 import { DBOSExecutor } from './dbos-executor';
 import { DBOS } from './dbos';
 import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
-import { DBOSInitializationError } from './error';
-import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
+import { globalParams } from './utils';
 
 /**
  * Limit the maximum number of functions started from a `WorkflowQueue`
