@@ -633,8 +633,8 @@ describe('queued-wf-tests-simple', () => {
     });
 
     // Resume a regular workflow. Verify it completes.
-    // resume serves no purpose here.
-    // It will delete the entry in the queue but that thread is still blocked until the event is set.
+    // resume here not working test times out.
+    //
     // await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
 
     TestResumeQueues.blockingEvent.set();

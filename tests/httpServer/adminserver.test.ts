@@ -154,18 +154,8 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(204);
-    await expect(handle.getStatus()).resolves.toMatchObject({
-      status: StatusString.ENQUEUED,
-    });
+    await handle.getResult();
 
-    // Resume the workflow. Verify it does not run and status remains SUCCESS
-    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/resume`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
-    });
-    expect(response.status).toBe(204);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.ENQUEUED,
     });

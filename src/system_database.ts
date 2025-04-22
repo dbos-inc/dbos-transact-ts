@@ -1025,7 +1025,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
         [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, workflowID],
       );
 
-      await this.enqueueWorkflow(workflowID, INTERNAL_QUEUE_NAME);
+      await client.query<workflow_queue>(
+        `
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+        VALUES ($1, $2)
+        ON CONFLICT (workflow_uuid)
+        DO NOTHING;
+      `,
+        [workflowID, INTERNAL_QUEUE_NAME],
+      );
 
       await client.query('COMMIT');
     } catch (error) {
