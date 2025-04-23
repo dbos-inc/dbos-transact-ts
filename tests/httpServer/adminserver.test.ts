@@ -272,7 +272,6 @@ describe('running-admin-server-tests', () => {
     const queueMetadata: QueueMetadataResponse[] = (await metadataResponse.json()) as QueueMetadataResponse[];
     expect(queueMetadata.length).toBe(5);
     for (const q of queueMetadata) {
-      console.log(q.name);
       if (q.name === testQueueOne.name) {
         expect(q.concurrency).toBeUndefined();
         expect(q.workerConcurrency).toBeUndefined();
