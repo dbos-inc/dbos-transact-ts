@@ -568,7 +568,7 @@ export function translatePublicDBOSconfig(
       },
     },
     system_database: config.sysDbName || `${poolConfig.database}_dbos_sys`,
-    sysDbPoolSize: config.sysDbPoolSize || 2,
+    sysDbPoolSize: config.sysDbPoolSize || 20,
   };
 
   const runtimeConfig: DBOSRuntimeConfig = {
