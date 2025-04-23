@@ -79,6 +79,10 @@ export interface SystemDatabase {
   // If there is no record, res will be undefined;
   //  otherwise will be defined (with potentially undefined contents)
   getOperationResult(workflowID: string, functionID: number): Promise<{ res?: SystemDatabaseStoredResult }>;
+  getOperationResultAndThrowIfCancelled(
+    workflowID: string,
+    functionID: number,
+  ): Promise<{ res?: SystemDatabaseStoredResult }>;
   getAllOperationResults(workflowID: string): Promise<operation_outputs[]>;
   recordOperationResult(
     workflowID: string,
@@ -257,11 +261,6 @@ class NotificationMap<T> {
   }
 }
 
-interface WFCancelNotification {
-  wfid: string;
-  cancelled: string;
-}
-
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
@@ -355,12 +354,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (this.shouldUseDBNotifications) {
       await this.listenForNotifications();
     }
-    this.startCancelChecker();
   }
 
   async destroy() {
-    this.stopCancelChecker();
-    await this.cancelPollerLoopEnded;
     await this.knexDB.destroy();
     if (this.notificationsClient) {
       this.notificationsClient.removeAllListeners();
@@ -577,6 +573,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  async getOperationResultAndThrowIfCancelled(
+    workflowID: string,
+    functionID: number,
+    client?: PoolClient,
+  ): Promise<{ res?: SystemDatabaseStoredResult }> {
+    await this.checkIfCanceled(workflowID);
+    return await this.getOperationResult(workflowID, functionID, client);
+  }
+
   async getAllOperationResults(workflowID: string): Promise<operation_outputs[]> {
     const { rows } = await this.pool.query<operation_outputs>(
       `SELECT * FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
@@ -632,7 +637,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client?: PoolClient,
   ): Promise<string | null | undefined> {
     if (workflowID !== undefined && functionID !== undefined) {
-      const res = await this.getOperationResult(workflowID, functionID, client);
+      const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID, client);
       if (res.res !== undefined) {
         if (res.res.functionName !== functionName) {
           throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
@@ -682,7 +687,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     const curTime = Date.now();
     let endTimeMs = curTime + durationMS;
-    const res = await this.getOperationResult(workflowID, functionID);
+    const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID);
     if (res.res !== undefined) {
       if (res.res.functionName !== DBOS_FUNCNAME_SLEEP) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SLEEP, res.res.functionName!);
@@ -753,7 +758,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<string | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
-    const res = await this.getOperationResult(workflowID, functionID);
+    const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID);
     if (res.res) {
       if (res.res.functionName !== DBOS_FUNCNAME_RECV) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_RECV, res.res.functionName!);
@@ -915,7 +920,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<string | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerWorkflow) {
-      const res = await this.getOperationResult(callerWorkflow.workflowID, callerWorkflow.functionID);
+      const res = await this.getOperationResultAndThrowIfCancelled(
+        callerWorkflow.workflowID,
+        callerWorkflow.functionID,
+      );
       if (res.res !== undefined) {
         if (res.res.functionName !== DBOS_FUNCNAME_GETEVENT) {
           throw new DBOSUnexpectedStepError(
@@ -1043,12 +1051,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       await client.query('BEGIN');
 
-      await client.query(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_cancel(workflow_id)
-         VALUES ($1) ON CONFLICT (workflow_id) DO NOTHING`,
-        [workflowID],
-      );
-
       // Remove workflow from queues table
       await client.query(
         `DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue 
@@ -1073,6 +1075,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async checkIfCanceled(workflowID: string): Promise<void> {
     if (this.workflowCancellationMap.get(workflowID) === true) {
+      throw new DBOSWorkflowCancelledError(workflowID);
+    }
+    const { rows } = await this.pool.query<workflow_status>(
+      `SELECT status FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
+      [workflowID],
+    );
+    if (rows[0].status === StatusString.CANCELLED) {
       throw new DBOSWorkflowCancelledError(workflowID);
     }
     return Promise.resolve();
@@ -1105,12 +1114,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         [workflowID],
       );
 
-      await client.query(
-        `DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_cancel 
-         WHERE workflow_id = $1`,
-        [workflowID],
-      );
-
       // Update status to pending and reset recovery attempts
       await this.recordWorkflowStatusChange(workflowID, StatusString.PENDING, { resetRecoveryAttempts: true }, client);
 
@@ -1123,62 +1126,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client.release();
     }
     this.clearWFCancelMap(workflowID);
-  }
-
-  // cancel checker
-  private isCancelCheckerRunning: boolean = false;
-  private interruptCancelCheckerResolve?: () => void;
-  private cancelPollerLoopEnded?: Promise<void> = undefined;
-
-  private stopCancelChecker() {
-    if (!this.isCancelCheckerRunning) return;
-    this.isCancelCheckerRunning = false;
-    if (this.interruptCancelCheckerResolve) {
-      this.interruptCancelCheckerResolve();
-    }
-  }
-
-  private startCancelChecker() {
-    this.cancelPollerLoopEnded = this.cancelCheckerLoop();
-  }
-
-  async cancelCheckerLoop(): Promise<void> {
-    this.isCancelCheckerRunning = true;
-    while (this.isCancelCheckerRunning) {
-      // Wait for either the timeout or an interruption
-      let timer: NodeJS.Timeout;
-      const timeoutPromise = new Promise<void>((resolve) => {
-        timer = setTimeout(() => {
-          resolve();
-        }, this.dbPollingIntervalEventMs);
-      });
-      await Promise.race([
-        timeoutPromise,
-        new Promise<void>((_, reject) => (this.interruptCancelCheckerResolve = reject)),
-      ]).catch(() => {
-        this.logger.debug('Cancel check loop interrupted!');
-      }); // Interrupt sleep throws
-      clearTimeout(timer!);
-
-      if (!this.isCancelCheckerRunning) {
-        break;
-      }
-
-      // See which cancels are in the DB
-      const res = await this.pool.query<{ workflow_id: string }>(
-        `SELECT workflow_id FROM ${DBOSExecutor.systemDBSchemaName}.workflow_cancel;`,
-      );
-      const cs: Set<string> = new Set();
-      for (const ids of res.rows) {
-        this.setWFCancelMap(ids.workflow_id);
-        cs.add(ids.workflow_id);
-      }
-      // Clear any not in result set
-      const ids = this.workflowCancellationMap.keys();
-      for (const id of ids) {
-        if (!cs.has(id)) this.clearWFCancelMap(id);
-      }
-    }
   }
 
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>) {
@@ -1367,7 +1314,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.notificationsClient = await this.pool.connect();
     await this.notificationsClient.query('LISTEN dbos_notifications_channel;');
     await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
-    await this.notificationsClient.query('LISTEN dbos_workflow_cancel_channel;');
     const handler = (msg: Notification) => {
       if (!this.shouldUseDBNotifications) return; // Testing parameter
       if (msg.channel === 'dbos_notifications_channel') {
@@ -1377,15 +1323,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       } else if (msg.channel === 'dbos_workflow_events_channel') {
         if (msg.payload) {
           this.workflowEventsMap.callCallbacks(msg.payload);
-        }
-      } else if (msg.channel === 'dbos_workflow_cancel_channel') {
-        if (msg.payload) {
-          const notif: WFCancelNotification = JSON.parse(msg.payload) as WFCancelNotification;
-          if (notif.cancelled === 't') {
-            this.setWFCancelMap(notif.wfid);
-          } else {
-            this.clearWFCancelMap(notif.wfid);
-          }
         }
       }
     };

@@ -772,7 +772,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       // TODO: Make this transactional (and with the queue step below)
       if (callerFunctionID !== undefined && callerID !== undefined) {
-        const cr = await this.systemDatabase.getOperationResult(callerID, callerFunctionID);
+        const cr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
         if (cr.res !== undefined) {
           return new RetrievedHandle(this.systemDatabase, cr.res.child!, callerID, callerFunctionID);
         }
@@ -1656,7 +1656,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, commInfo.config, stepFn.name);
 
     // Check if this execution previously happened, returning its original result if it did.
-    const checkr = await this.systemDatabase.getOperationResult(wfCtx.workflowUUID, ctxt.functionID);
+    const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfCtx.workflowUUID, ctxt.functionID);
     if (checkr.res !== undefined) {
       if (checkr.res.functionName !== ctxt.operationName) {
         throw new DBOSUnexpectedStepError(
@@ -1827,7 +1827,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     childWfId?: string,
   ): Promise<T> {
     if (workflowID !== undefined && functionID !== undefined) {
-      const res = await this.systemDatabase.getOperationResult(workflowID, functionID);
+      const res = await this.systemDatabase.getOperationResultAndThrowIfCancelled(workflowID, functionID);
       if (res.res !== undefined) {
         if (res.res.functionName !== functionName) {
           throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
