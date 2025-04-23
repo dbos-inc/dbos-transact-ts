@@ -1113,37 +1113,39 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]> {
+    const schemaName = DBOSExecutor.systemDBSchemaName;
+
     input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
+    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
       .join<workflow_inputs>(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_inputs`,
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
-        `${DBOSExecutor.systemDBSchemaName}.workflow_inputs.workflow_uuid`,
+        `${schemaName}.workflow_inputs`,
+        `${schemaName}.workflow_status.workflow_uuid`,
+        `${schemaName}.workflow_inputs.workflow_uuid`,
       )
-      .orderBy('created_at', input.sortDesc ? 'desc' : 'asc');
+      .orderBy(`${schemaName}.workflow_status.created_at`, input.sortDesc ? 'desc' : 'asc');
     if (input.workflowName) {
-      query = query.where('name', input.workflowName);
+      query = query.where(`${schemaName}.workflow_status.name`, input.workflowName);
     }
     if (input.workflow_id_prefix) {
-      query = query.whereLike('workflow_uuid', `${input.workflow_id_prefix}%`);
+      query = query.whereLike(`${schemaName}.workflow_status.workflow_uuid`, `${input.workflow_id_prefix}%`);
     }
     if (input.workflowIDs) {
-      query = query.whereIn('workflow_uuid', input.workflowIDs);
+      query = query.whereIn(`${schemaName}.workflow_status.workflow_uuid`, input.workflowIDs);
     }
     if (input.authenticatedUser) {
-      query = query.where('authenticated_user', input.authenticatedUser);
+      query = query.where(`${schemaName}.workflow_status.authenticated_user`, input.authenticatedUser);
     }
     if (input.startTime) {
-      query = query.where('created_at', '>=', new Date(input.startTime).getTime());
+      query = query.where(`${schemaName}.workflow_status.created_at`, '>=', new Date(input.startTime).getTime());
     }
     if (input.endTime) {
-      query = query.where('created_at', '<=', new Date(input.endTime).getTime());
+      query = query.where(`${schemaName}.workflow_status.created_at`, '<=', new Date(input.endTime).getTime());
     }
     if (input.status) {
-      query = query.where('status', input.status);
+      query = query.where(`${schemaName}.workflow_status.status`, input.status);
     }
     if (input.applicationVersion) {
-      query = query.where('application_version', input.applicationVersion);
+      query = query.where(`${schemaName}.workflow_status.application_version`, input.applicationVersion);
     }
     if (input.limit) {
       query = query.limit(input.limit);
@@ -1156,42 +1158,36 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async getQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
+    const schemaName = DBOSExecutor.systemDBSchemaName;
+
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
+    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
       .join<workflow_inputs>(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_inputs`,
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
-        `${DBOSExecutor.systemDBSchemaName}.workflow_inputs.workflow_uuid`,
+        `${schemaName}.workflow_inputs`,
+        `${schemaName}.workflow_status.workflow_uuid`,
+        `${schemaName}.workflow_inputs.workflow_uuid`,
       )
       .join<workflow_queue>(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status`,
-        `${DBOSExecutor.systemDBSchemaName}.workflow_queue.workflow_uuid`,
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
+        `${schemaName}.workflow_queue`,
+        `${schemaName}.workflow_queue.workflow_uuid`,
+        `${schemaName}.workflow_status.workflow_uuid`,
       )
-      .orderBy(`${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`, sortDesc ? 'desc' : 'asc');
+      .orderBy(`${schemaName}.workflow_status.created_at`, sortDesc ? 'desc' : 'asc');
 
     if (input.workflowName) {
-      query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.name = ?`, [input.workflowName]);
+      query = query.whereRaw(`${schemaName}.workflow_status.name = ?`, [input.workflowName]);
     }
     if (input.queueName) {
-      query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.queue_name = ?`, [input.queueName]);
+      query = query.whereRaw(`${schemaName}.workflow_status.queue_name = ?`, [input.queueName]);
     }
     if (input.startTime) {
-      query = query.where(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`,
-        '>=',
-        new Date(input.startTime).getTime(),
-      );
+      query = query.where(`${schemaName}.workflow_status.created_at`, '>=', new Date(input.startTime).getTime());
     }
     if (input.endTime) {
-      query = query.where(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`,
-        '<=',
-        new Date(input.endTime).getTime(),
-      );
+      query = query.where(`${schemaName}.workflow_status.created_at`, '<=', new Date(input.endTime).getTime());
     }
     if (input.status) {
-      query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.status = ?`, [input.status]);
+      query = query.whereRaw(`${schemaName}.workflow_status.status = ?`, [input.status]);
     }
     if (input.limit) {
       query = query.limit(input.limit);
