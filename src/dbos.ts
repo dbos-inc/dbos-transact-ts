@@ -941,7 +941,7 @@ export class DBOS {
     }
 
     const forkedID = await DBOS.#runAsWorkflowStep(async () => {
-      return await DBOS.executor.forkWorkflow(workflowID);
+      return await DBOS.executor.forkWorkflow(workflowID, startStep);
     }, 'DBOS.forkWorkflow');
 
     return this.retrieveWorkflow(forkedID);

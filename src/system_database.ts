@@ -108,7 +108,8 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
-  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string>;
+  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number): Promise<string>;
+  getMaxFunctionID(workflowID: string): Promise<number>;
 
   // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
@@ -591,6 +592,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       createdAt: Date.now(),
     };
 
+    // TODO: Important these writes need be in a transaction
     await this.initWorkflowStatus(workflowStatusInternal, inputs);
 
     if (startStep > 0) {

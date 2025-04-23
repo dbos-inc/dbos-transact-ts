@@ -1892,7 +1892,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const forkedWorkflowID = this.#generateUUID();
 
     await this.cloneWorkflowTransactions(workflowID, forkedWorkflowID, startStep);
-    await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID);
+    await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID, startStep);
     return forkedWorkflowID;
   }
 

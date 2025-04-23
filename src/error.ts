@@ -278,6 +278,9 @@ export class DBOSInvalidStepIDError extends DBOSError {
     readonly stepID: number,
     readonly maxStepID: number,
   ) {
-    super(`StepID {stepID} is greater than the highest stepId {maxStepID } for workflow ${workflowID}.`, InvalidStepID);
+    super(
+      `StepID ${stepID} is greater than the highest stepId ${maxStepID} for workflow ${workflowID}.`,
+      InvalidStepID,
+    );
   }
 }
