@@ -554,7 +554,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string> {
+  async getMaxFunctionID(workflowID: string): Promise<number> {
+    const { rows } = await this.pool.query<{ max_function_id: number }>(
+      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
+      [workflowID],
+    );
+
+    return rows.length === 0 ? 0 : rows[0].max_function_id;
+  }
+
+  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number = 0): Promise<string> {
     const workflowStatus = await this.getWorkflowStatusInternal(originalWorkflowID);
     if (workflowStatus === null) {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
@@ -583,6 +592,31 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
 
     await this.initWorkflowStatus(workflowStatusInternal, inputs);
+
+    if (startStep > 0) {
+      const query = `
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (
+        workflow_uuid,
+        function_id,
+        output,
+        error,
+        function_name,
+        child_workflow_id
+      )
+      SELECT
+        $1 AS workflow_uuid,
+        function_id,
+        output,
+        error,
+        function_name,
+        child_workflow_id
+        FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+        WHERE workflow_uuid = $2 AND function_id < $3
+      `;
+
+      await this.pool.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
+      console.log('done coppying operation outputs');
+    }
 
     await this.enqueueWorkflow(forkedWorkflowId, INTERNAL_QUEUE_NAME);
 

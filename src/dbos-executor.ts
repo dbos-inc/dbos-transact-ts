@@ -1840,13 +1840,58 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
   }
 
+  async getMaxFunctionID(workflowID: string): Promise<number> {
+    const rows = await this.userDatabase.query<{ max_function_id: number }, [string]>(
+      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
+      workflowID,
+    );
+    if (rows.length === 0) {
+      return 0;
+    } else {
+      return rows[0].max_function_id;
+    }
+  }
+
+  async cloneWorkflowTransactions(workflowID: string, forkedWorkflowUUID: string, startStep: number): Promise<void> {
+    const query = `
+      INSERT INTO dbos.transaction_outputs
+        (workflow_uuid,
+          function_id, 
+          output, 
+          error, 
+          txn_id, 
+          txn_snapshot,  
+          function_name)
+      SELECT $1 AS workflow_uuid, 
+          function_id, 
+          output, 
+          error, 
+          txn_id, 
+          txn_snapshot, 
+          function_name
+      FROM dbos.transaction_outputs WHERE workflow_uuid= $2 AND function_id < $3`;
+
+    await this.userDatabase.query(query, forkedWorkflowUUID, workflowID, startStep);
+
+    console.log('successfully executed cloneWorkflowtransactions');
+  }
+
+  async getMaxStepID(workflowID: string): Promise<number> {
+    const maxAppFunctionID = await this.getMaxFunctionID(workflowID);
+    const maxSystemFunctionID = await this.systemDatabase.getMaxFunctionID(workflowID);
+
+    return Math.max(maxAppFunctionID, maxSystemFunctionID);
+  }
+
   /**
    * Fork a workflow.
    * The forked workflow will be assigned a new ID.
    */
 
-  async forkWorkflow(workflowID: string): Promise<string> {
-    const forkedWorkflowID = uuidv4();
+  async forkWorkflow(workflowID: string, startStep: number = 0): Promise<string> {
+    const forkedWorkflowID = this.#generateUUID();
+
+    await this.cloneWorkflowTransactions(workflowID, forkedWorkflowID, startStep);
     await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID);
     return forkedWorkflowID;
   }
