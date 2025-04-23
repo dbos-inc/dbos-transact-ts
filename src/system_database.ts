@@ -584,11 +584,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     await this.initWorkflowStatus(workflowStatusInternal, inputs);
 
-    await this.pool.query<workflow_queue>(
-      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
-        VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [forkedWorkflowId, INTERNAL_QUEUE_NAME],
-    );
+    await this.enqueueWorkflow(forkedWorkflowId, INTERNAL_QUEUE_NAME);
 
     return forkedWorkflowId;
   }
