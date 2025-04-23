@@ -50,7 +50,7 @@ import {
   registerAndWrapDBOSFunction,
   registerFunctionWrapper,
 } from './decorators';
-import { globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
+import { globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
 import { koaTracingMiddleware, expressTracingMiddleware, honoTracingMiddleware } from './httpServer/middleware';
 import { Server } from 'http';
@@ -89,7 +89,7 @@ import { set } from 'lodash';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase } from './system_database';
-import { wfQueueRunner, WorkflowQueue } from './wfqueue';
+import { wfQueueRunner } from './wfqueue';
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
