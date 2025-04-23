@@ -414,7 +414,7 @@ export class DBOS {
 
   static createInternalQueue() {
     if (DBOS.internalQueue !== undefined) {
-      DBOS.logger.warn('Internal queue already created!');
+      DBOS.logger.debug('Internal queue already created!');
       return;
     }
     DBOS.logger.debug('Creating internal queue');

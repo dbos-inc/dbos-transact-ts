@@ -273,9 +273,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   static globalInstance: DBOSExecutor | undefined = undefined;
 
-  // internal queue
-  internalQueue: WorkflowQueue | undefined = undefined;
-
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(
     readonly config: DBOSConfigInternal,

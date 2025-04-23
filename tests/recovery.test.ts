@@ -141,7 +141,7 @@ describe('recovery-tests', () => {
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 
-  test('enqueued-dead-letter-queue-xxxx', async () => {
+  test('enqueued-dead-letter-queue', async () => {
     LocalRecovery.recoveryCount = 0;
 
     const queue = new WorkflowQueue('DLQQ', { concurrency: 1 });

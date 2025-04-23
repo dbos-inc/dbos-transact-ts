@@ -109,13 +109,6 @@ export interface SystemDatabase {
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
   forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep?: number): Promise<string>;
-  runAsStep(
-    callback: () => Promise<string | null | undefined>,
-    functionName: string,
-    workflowID?: string,
-    functionID?: number,
-    client?: PoolClient,
-  ): Promise<string | null | undefined>;
 
   // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
