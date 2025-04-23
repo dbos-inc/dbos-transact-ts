@@ -330,7 +330,7 @@ export class DBOS {
       throw new DBOSError('DBOS configuration not set');
     }
 
-    DBOS.createInternalQueue();
+    DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig as DBOSConfigInternal, {
       debugMode,
     });
@@ -408,17 +408,6 @@ export class DBOS {
     }
 
     recordDBOSLaunch();
-  }
-
-  static internalQueue: WorkflowQueue | undefined = undefined;
-
-  static createInternalQueue() {
-    if (DBOS.internalQueue !== undefined) {
-      DBOS.logger.debug('Internal queue already created!');
-      return;
-    }
-    DBOS.logger.debug('Creating internal queue');
-    DBOS.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
   }
 
   /**

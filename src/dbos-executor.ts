@@ -78,7 +78,7 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
-import { globalParams, DBOSJSON, sleepms } from './utils';
+import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
@@ -2231,5 +2231,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
       hasher.update(sourceCode);
     }
     return hasher.digest('hex');
+  }
+
+  static internalQueue: WorkflowQueue | undefined = undefined;
+
+  static createInternalQueue() {
+    if (DBOSExecutor.internalQueue !== undefined) {
+      return;
+    }
+    DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
   }
 }
