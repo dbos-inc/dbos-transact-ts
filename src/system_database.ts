@@ -549,7 +549,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string> {
-    const workflowStatus = await this.getWorkflowStatusInternal(originalWorkflowID);
+    const workflowStatus = await this.getWorkflowStatus(originalWorkflowID);
     if (workflowStatus === null) {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
     }
