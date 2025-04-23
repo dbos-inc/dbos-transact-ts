@@ -68,9 +68,10 @@ describe('wf-cancel-tests', () => {
       expect(wfstatus?.status).toBe(StatusString.CANCELLED);
     }
 
-    await DBOS.resumeWorkflow(wfid);
+    const wfh2 = await DBOS.resumeWorkflow(wfid);
+    await wfh2.getResult();
     const resstatus = await DBOS.getWorkflowStatus(wfid);
-    expect(resstatus?.status).toBe(StatusString.PENDING);
+    expect(resstatus?.status).toBe(StatusString.SUCCESS);
   });
 
   test('test-two-transactions-cancel-resume', async () => {
@@ -92,9 +93,10 @@ describe('wf-cancel-tests', () => {
       expect(wfstatus?.status).toBe(StatusString.CANCELLED);
     }
 
-    await DBOS.resumeWorkflow(wfid);
+    const wfh2 = await DBOS.resumeWorkflow(wfid);
+    await wfh2.getResult();
     const resstatus = await DBOS.getWorkflowStatus(wfid);
-    expect(resstatus?.status).toBe(StatusString.PENDING);
+    expect(resstatus?.status).toBe(StatusString.SUCCESS);
   });
 
   test('test-resume-on-a-completed-ws', async () => {

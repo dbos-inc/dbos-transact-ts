@@ -307,8 +307,10 @@ export class DBOS {
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
     // Do nothing is DBOS is already initialized
-    if (DBOS.isInitialized()) return;
 
+    if (DBOS.isInitialized()) {
+      return;
+    }
     const debugMode = options?.debugMode ?? DBOS.getDebugModeFromEnv();
     const isDebugging = debugMode !== DebugMode.DISABLED;
 
@@ -328,6 +330,7 @@ export class DBOS {
       throw new DBOSError('DBOS configuration not set');
     }
 
+    DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig as DBOSConfigInternal, {
       debugMode,
     });
@@ -916,10 +919,22 @@ export class DBOS {
    * Resume a workflow given its ID.
    * @param workflowID - ID of the workflow
    */
-  static async resumeWorkflow(workflowID: string) {
-    return await DBOS.#runAsWorkflowStep(async () => {
+  static async resumeWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
+    await DBOS.#runAsWorkflowStep(async () => {
       return await DBOS.executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
+    return this.retrieveWorkflow(workflowID);
+  }
+
+  /**
+   * Fork a workflow given its ID.
+   * @param workflowID - ID of the workflow
+   */
+  static async forkWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
+    const forkedID = await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.executor.forkWorkflow(workflowID);
+    }, 'DBOS.forkWorkflow');
+    return this.retrieveWorkflow(forkedID);
   }
 
   /**
