@@ -783,7 +783,7 @@ describe('test-list-steps', () => {
   class ListWorkflows {
     @DBOS.workflow()
     static async listingWorkflow() {
-      return (await DBOS.getWorkflows({})).workflowUUIDs.length;
+      return (await DBOS.getWorkflows({})).length;
     }
 
     @DBOS.workflow()

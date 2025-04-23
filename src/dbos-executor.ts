@@ -82,7 +82,7 @@ import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput, InitContext } from '.';
+import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
 
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -1928,10 +1928,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return null;
   }
 
-  async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+  async getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
     const wfs = await this.systemDatabase.getWorkflows(input);
-    const workflowUUIDs = wfs.map((s) => s.workflowUUID);
-    return { workflowUUIDs };
+    return wfs.map((wf) => DBOSExecutor.toWorkflowStatus(wf, true));
   }
 
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
@@ -2267,5 +2266,32 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return;
     }
     DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
+  }
+
+  static toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
+    return {
+      workflowID: internal.workflowUUID,
+      status: internal.status,
+      workflowName: internal.workflowName,
+      workflowClassName: internal.workflowClassName,
+      workflowConfigName: internal.workflowConfigName,
+      queueName: internal.queueName,
+
+      authenticatedUser: internal.authenticatedUser,
+      assumedRole: internal.assumedRole,
+      authenticatedRoles: internal.authenticatedRoles,
+
+      input: internal.input ? (DBOSJSON.parse(internal.input) as unknown[]) : undefined,
+      output: internal.output ? DBOSJSON.parse(internal.output ?? null) : undefined,
+      error: internal.error ? deserializeError(DBOSJSON.parse(internal.error)) : undefined,
+
+      request: getRequest ? internal.request : undefined,
+      executorId: internal.executorId,
+      applicationVersion: internal.applicationVersion,
+      applicationID: internal.applicationID,
+      recoveryAttempts: internal.recoveryAttempts,
+      createdAt: internal.createdAt,
+      updatedAt: internal.updatedAt,
+    };
   }
 }

@@ -192,8 +192,8 @@ describe('cf-scheduled-wf-tests-when-active', () => {
       });
 
       let foundQ = false;
-      for (const wfid of wfs.workflowUUIDs) {
-        const stat = await DBOS.retrieveWorkflow(wfid).getStatus();
+      for (const wf of wfs) {
+        const stat = await DBOS.retrieveWorkflow(wf.workflowID).getStatus();
         if (stat?.queueName === q.name) foundQ = true;
       }
       expect(foundQ).toBeTruthy();

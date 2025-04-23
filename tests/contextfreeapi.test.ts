@@ -318,11 +318,11 @@ async function main() {
 
   // Check for this to have run
   const wfs = await DBOS.getWorkflows({ workflowName: 'doWorkflow' });
-  expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
-  expect(wfs.workflowUUIDs.length).toBe(1);
-  const wfh = DBOS.retrieveWorkflow(wfs.workflowUUIDs[0]);
+  expect(wfs.length).toBeGreaterThanOrEqual(1);
+  expect(wfs.length).toBe(1);
+  const wfh = DBOS.retrieveWorkflow(wfs[0].workflowID);
   expect((await wfh.getStatus())?.status).toBe('SUCCESS');
-  const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
+  const wfstat = await DBOS.getWorkflowStatus(wfs[0].workflowID);
   expect(wfstat?.status).toBe('SUCCESS');
 
   await DBOS.shutdown();
@@ -392,9 +392,9 @@ async function main5() {
   expect(res).toBe('done');
 
   const wfs = await DBOS.getWorkflows({ workflowName: 'doWorkflow' });
-  expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
-  expect(wfs.workflowUUIDs.length).toBe(1);
-  const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
+  expect(wfs.length).toBeGreaterThanOrEqual(1);
+  expect(wfs.length).toBe(1);
+  const wfstat = await DBOS.getWorkflowStatus(wfs[0].workflowID);
   expect(wfstat?.queueName).toBe('wfq');
 
   // Check queues in startWorkflow

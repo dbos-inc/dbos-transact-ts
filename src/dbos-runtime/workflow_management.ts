@@ -1,40 +1,11 @@
 import { createLogger } from 'winston';
 import { GetWorkflowsInput } from '..';
 import { DBOSConfigInternal, DBOSExecutor } from '../dbos-executor';
-import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from '../system_database';
+import { PostgresSystemDatabase, SystemDatabase } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
 import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
 import axios from 'axios';
 import { DBOS } from '../dbos';
-import { DBOSJSON } from '../utils';
-import { deserializeError } from 'serialize-error';
-
-export function toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
-  return {
-    workflowID: internal.workflowUUID,
-    status: internal.status,
-    workflowName: internal.workflowName,
-    workflowClassName: internal.workflowClassName,
-    workflowConfigName: internal.workflowConfigName,
-    queueName: internal.queueName,
-
-    authenticatedUser: internal.authenticatedUser,
-    assumedRole: internal.assumedRole,
-    authenticatedRoles: internal.authenticatedRoles,
-
-    input: internal.input ? (DBOSJSON.parse(internal.input) as unknown[]) : undefined,
-    output: internal.output ? DBOSJSON.parse(internal.output ?? null) : undefined,
-    error: internal.error ? deserializeError(DBOSJSON.parse(internal.error)) : undefined,
-
-    request: getRequest ? internal.request : undefined,
-    executorId: internal.executorId,
-    applicationVersion: internal.applicationVersion,
-    applicationID: internal.applicationID,
-    recoveryAttempts: internal.recoveryAttempts,
-    createdAt: internal.createdAt,
-    updatedAt: internal.updatedAt,
-  };
-}
 
 export async function listWorkflows(
   config: DBOSConfigInternal,
@@ -48,7 +19,7 @@ export async function listWorkflows(
   );
   try {
     const workflows = await systemDatabase.getWorkflows(input);
-    return workflows.map((wf) => toWorkflowStatus(wf, getRequest));
+    return workflows.map((wf) => DBOSExecutor.toWorkflowStatus(wf, getRequest));
   } finally {
     await systemDatabase.destroy();
   }
@@ -67,7 +38,7 @@ export async function listQueuedWorkflows(
 
   try {
     const workflows = await systemDatabase.getQueuedWorkflows(input);
-    return workflows.map((wf) => toWorkflowStatus(wf, getRequest));
+    return workflows.map((wf) => DBOSExecutor.toWorkflowStatus(wf, getRequest));
   } finally {
     await systemDatabase.destroy();
   }
@@ -88,7 +59,7 @@ export async function getWorkflowInfo(
 ): Promise<WorkflowStatus | undefined> {
   const statuses = await systemDatabase.getWorkflows({ workflowIDs: [workflowID] });
   const status = statuses.find((s) => s.workflowUUID === workflowID);
-  return status ? toWorkflowStatus(status, getRequest) : undefined;
+  return status ? DBOSExecutor.toWorkflowStatus(status, getRequest) : undefined;
 }
 
 export async function getWorkflow(config: DBOSConfigInternal, workflowID: string, getRequest: boolean) {

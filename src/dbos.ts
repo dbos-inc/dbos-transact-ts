@@ -23,7 +23,6 @@ import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
-  GetWorkflowsOutput,
   WorkflowConfig,
   WorkflowFunction,
   WorkflowParams,
@@ -898,7 +897,7 @@ export class DBOS {
    * @param input - `GetWorkflowsInput` predicate for filtering returned workflows
    * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
    */
-  static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+  static async getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
     return await DBOS.#runAsWorkflowStep(async () => {
       return await DBOS.executor.getWorkflows(input);
     }, 'DBOS.getWorkflows');

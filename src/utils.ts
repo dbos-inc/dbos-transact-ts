@@ -1,5 +1,8 @@
 import fs from 'fs';
 import path from 'path';
+import type { WorkflowStatusInternal } from './system_database';
+import type { WorkflowStatus } from './workflow';
+import { deserializeError } from 'serialize-error';
 
 /*
  * A wrapper of readFileSync used for mocking in tests
