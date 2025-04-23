@@ -108,7 +108,7 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
-  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep?: number): Promise<string>;
+  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string>;
 
   // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
@@ -554,7 +554,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number = 1): Promise<string> {
+  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string> {
     const workflowStatus = await this.getWorkflowStatusInternal(originalWorkflowID);
     if (workflowStatus === null) {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
@@ -583,30 +583,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
 
     await this.initWorkflowStatus(workflowStatusInternal, inputs);
-
-    if (startStep > 1) {
-      const query = `
-        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (
-        workflow_uuid,
-        function_id,
-        output,
-        error,
-        function_name,
-        child_workflow_id
-      )
-      SELECT
-        $1 AS workflow_uuid,
-        function_id,
-        output,
-        error,
-        function_name,
-        child_workflow_id
-        FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
-        WHERE workflow_uuid = $2 AND function_id < $3
-      `;
-
-      await this.pool.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
-    }
 
     await this.pool.query<workflow_queue>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
