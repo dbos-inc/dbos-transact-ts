@@ -78,7 +78,7 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
-import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
+import { globalParams, DBOSJSON, sleepms } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
