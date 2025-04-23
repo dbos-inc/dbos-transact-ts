@@ -29,14 +29,7 @@ export { TransactionConfig, TransactionFunction } from './transaction';
 
 export { StoredProcedureContext, StoredProcedureConfig } from './procedure';
 
-export {
-  WorkflowConfig,
-  WorkflowHandle,
-  WorkflowFunction,
-  StatusString,
-  GetWorkflowsInput,
-  GetWorkflowsOutput,
-} from './workflow';
+export { WorkflowConfig, WorkflowHandle, WorkflowFunction, StatusString, GetWorkflowsInput } from './workflow';
 
 export {
   StepConfig as CommunicatorConfig,
