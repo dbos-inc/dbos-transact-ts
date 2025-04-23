@@ -72,7 +72,6 @@ export class WorkflowQueue {
     }
 
     if (wfQueueRunner.wfQueuesByName.has(name)) {
-      // throw new DBOSInitializationError(`Workflow Queue '${name}' defined multiple times`);
       DBOS.logger.warn(`Workflow Queue '${name}' defined multiple times`);
     }
     wfQueueRunner.wfQueuesByName.set(name, this);
