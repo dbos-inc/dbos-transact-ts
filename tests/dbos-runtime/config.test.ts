@@ -653,7 +653,7 @@ describe('dbos-config', () => {
           },
         },
         system_database: dbosConfig.sysDbName,
-        sysDbPoolSize: 2,
+        sysDbPoolSize: 20,
       });
       expect(translatedRuntimeConfig).toEqual({
         port: 3000,
@@ -698,7 +698,7 @@ describe('dbos-config', () => {
           },
         },
         system_database: 'appname_dbos_sys',
-        sysDbPoolSize: 2,
+        sysDbPoolSize: 20,
       });
       expect(translatedRuntimeConfig).toEqual({
         port: 3000,
@@ -772,7 +772,7 @@ describe('dbos-config', () => {
           },
         },
         system_database: 'appname_dbos_sys',
-        sysDbPoolSize: 2,
+        sysDbPoolSize: 20,
       });
       expect(translatedRuntimeConfig).toEqual({
         port: 3000,

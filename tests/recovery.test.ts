@@ -121,8 +121,8 @@ describe('recovery-tests', () => {
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
     );
-    expect(result.rows[0].recovery_attempts).toBe(String(1));
-    expect(result.rows[0].status).toBe(StatusString.PENDING);
+    expect(result.rows[0].recovery_attempts).toBe(String(0));
+    expect(result.rows[0].status).toBe(StatusString.ENQUEUED);
 
     // Verify a direct invocation no longer errors
     await expect(
@@ -137,7 +137,7 @@ describe('recovery-tests', () => {
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.getWorkflowUUID()],
     );
-    expect(result.rows[0].recovery_attempts).toBe(String(2));
+    expect(result.rows[0].recovery_attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   });
 

@@ -280,6 +280,9 @@ describe('workflow-management-tests', () => {
     const handle = await DBOS.startWorkflow(TestEndpoints).waitingWorkflow();
 
     expect(TestEndpoints.tries).toBe(1);
+    TestEndpoints.testResolve();
+    await handle.getResult();
+
     await DBOS.cancelWorkflow(handle.getWorkflowUUID());
 
     let result = await systemDBClient.query<{ status: string; attempts: number }>(
@@ -292,9 +295,9 @@ describe('workflow-management-tests', () => {
     await DBOS.recoverPendingWorkflows(); // Does nothing as the workflow is CANCELLED
     expect(TestEndpoints.tries).toBe(1);
 
-    TestEndpoints.testResolve();
     // Retry the workflow, resetting the attempts counter
     const handle2 = await DBOS.resumeWorkflow(handle.getWorkflowUUID());
+    TestEndpoints.testResolve();
     await handle2.getResult();
 
     result = await systemDBClient.query<{ status: string; attempts: number }>(
@@ -313,7 +316,7 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
     // Restart the workflow
-    const wfh = await DBOS.executeWorkflowById(handle.getWorkflowUUID(), true);
+    const wfh = await DBOS.forkWorkflow(handle.getWorkflowUUID());
     await wfh.getResult();
     expect(TestEndpoints.tries).toBe(3);
     // Validate a new workflow is started and successful
@@ -423,6 +426,12 @@ describe('workflow-management-tests', () => {
     static async waitingWorkflow() {
       TestEndpoints.tries += 1;
       await TestEndpoints.testPromise;
+      await TestEndpoints.stepOne();
+    }
+
+    @DBOS.step()
+    static async stepOne() {
+      return Promise.resolve();
     }
 
     @DBOS.transaction()
@@ -475,8 +484,6 @@ describe('test-list-queues', () => {
   }
 
   test('test-list-queues', async () => {
-    console.log('starting test-list-queues');
-
     const wfid = uuidv4();
 
     // Start the workflow. Wait for all five tasks to start. Verify that they started.
@@ -1017,7 +1024,6 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransaction();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    console.log(wfsteps);
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].function_name).toBe('transaction');
     expect(wfsteps[0].output).toBe(wfid);
@@ -1029,7 +1035,6 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransactionError();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    console.log(wfsteps);
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].function_name).toBe('transactionWithError');
     expect(wfsteps[0].error).toBeInstanceOf(Error);
@@ -1041,7 +1046,6 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransactionAndSteps();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    console.log(wfsteps);
     expect(wfsteps.length).toBe(3);
     expect(wfsteps[0].function_name).toBe('stepOne');
     expect(wfsteps[1].function_name).toBe('transaction');
