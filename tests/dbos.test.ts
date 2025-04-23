@@ -232,6 +232,7 @@ describe('dbos-tests', () => {
 
     expect(workflowHandle.workflowID).toBe(workflowUUID);
     await expect(workflowHandle.getStatus()).resolves.toMatchObject({
+      workflowID: workflowUUID,
       status: StatusString.PENDING,
       workflowName: RetrieveWorkflowStatus.testStatusWorkflow.name,
     });
