@@ -1076,3 +1076,87 @@ describe('test-list-steps', () => {
     expect(c2).toBe(1);
   });
 });
+
+describe('test-fork', () => {
+  let config: DBOSConfigInternal;
+  const queue = new WorkflowQueue('child_queue');
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig(config);
+  });
+  beforeEach(async () => {
+    await setUpDBOSTestDb(config);
+    await DBOS.launch();
+  });
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  class ExampleWorkflow {
+    static stepOneCount = 0;
+    static stepTwoCount = 0;
+    static stepThreeCount = 0;
+    static stepFourCount = 0;
+    static stepFiveCount = 0;
+
+    @DBOS.workflow()
+    static async stepsWorkflow() {
+      await ExampleWorkflow.stepOne();
+      await ExampleWorkflow.stepTwo();
+      await ExampleWorkflow.stepThree();
+      await ExampleWorkflow.stepFour();
+      await ExampleWorkflow.stepFive();
+    }
+
+    @DBOS.step()
+    static async stepOne() {
+      ExampleWorkflow.stepOneCount += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.step()
+    static async stepTwo() {
+      ExampleWorkflow.stepTwoCount += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.step()
+    static async stepThree() {
+      ExampleWorkflow.stepThreeCount += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.step()
+    static async stepFour() {
+      ExampleWorkflow.stepFourCount += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.step()
+    static async stepFive() {
+      ExampleWorkflow.stepFiveCount += 1;
+      return Promise.resolve();
+    }
+  }
+
+  test('test-fork-steps', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow();
+    await handle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+    expect(ExampleWorkflow.stepThreeCount).toBe(1);
+    expect(ExampleWorkflow.stepFourCount).toBe(1);
+    expect(ExampleWorkflow.stepFiveCount).toBe(1);
+
+    const forkedHandle = await DBOS.forkWorkflow(wfid);
+    await forkedHandle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.stepThreeCount).toBe(2);
+    expect(ExampleWorkflow.stepFourCount).toBe(2);
+    expect(ExampleWorkflow.stepFiveCount).toBe(2);
+  });
+});
