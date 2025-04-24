@@ -1102,6 +1102,7 @@ describe('test-fork', () => {
     static transactionOneCount = 0;
     static transactionTwoCount = 0;
     static transactionThreeCount = 0;
+    static childWorkflowCount = 0;
 
     @DBOS.workflow()
     static async stepsWorkflow() {
@@ -1165,6 +1166,27 @@ describe('test-fork', () => {
     static async transactionThree() {
       ExampleWorkflow.transactionThreeCount += 1;
       return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async childWorkflow() {
+      ExampleWorkflow.childWorkflowCount += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async forkWorkflow(id: string, stepID: number): Promise<string> {
+      const handle = await DBOS.forkWorkflow(id, stepID);
+      await handle.getResult();
+      return handle.workflowID;
+    }
+
+    @DBOS.workflow()
+    static async parentWorkflow() {
+      await ExampleWorkflow.stepOne();
+      const handle = await DBOS.startWorkflow(ExampleWorkflow).childWorkflow();
+      await handle.getResult();
+      await ExampleWorkflow.stepTwo();
     }
   }
 
@@ -1262,5 +1284,21 @@ describe('test-fork', () => {
     } catch (e) {
       expect(e).toBeInstanceOf(DBOSInvalidStepIDError);
     }
+  });
+
+  test('test-fork-childwf', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).parentWorkflow();
+    await handle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+
+    const forkedHandle = await DBOS.forkWorkflow(wfid, 2);
+    await forkedHandle.getResult();
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
   });
 });
