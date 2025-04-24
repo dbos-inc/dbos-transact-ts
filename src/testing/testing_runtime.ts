@@ -16,14 +16,7 @@ import { DBOSHttpServer } from '../httpServer/server';
 import { DBOSExecutor, DBOSConfigInternal, DBOSExecutorOptions } from '../dbos-executor';
 import { dbosConfigFilePath, parseConfigFile } from '../dbos-runtime/config';
 import { Transaction } from '../transaction';
-import {
-  GetWorkflowsInput,
-  GetWorkflowsOutput,
-  Workflow,
-  WorkflowHandle,
-  WorkflowParams,
-  WorkflowStatus,
-} from '../workflow';
+import { GetWorkflowsInput, GetWorkflowsOutput, Workflow, WorkflowHandle, WorkflowParams } from '../workflow';
 import { Http2ServerRequest, Http2ServerResponse } from 'http2';
 import { ServerResponse } from 'http';
 import { get, set } from 'lodash';
