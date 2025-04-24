@@ -27,7 +27,7 @@ import {
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { findPackageRoot, globalParams, cancellableSleep } from './utils';
+import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -117,6 +117,7 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
+  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string>;
   checkIfCanceled(workflowID: string): Promise<void>;
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
@@ -629,6 +630,41 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string> {
+    const workflowStatus = await this.getWorkflowStatusInternal(originalWorkflowID);
+    if (workflowStatus === null) {
+      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+    }
+
+    const inputs = await this.getWorkflowInputs(originalWorkflowID);
+    if (inputs === null) {
+      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+    }
+
+    const workflowStatusInternal: WorkflowStatusInternal = {
+      ...workflowStatus,
+      workflowUUID: forkedWorkflowId,
+      status: StatusString.ENQUEUED,
+      workflowName: workflowStatus.workflowName,
+      workflowClassName: workflowStatus.workflowClassName,
+      workflowConfigName: workflowStatus.workflowConfigName,
+      queueName: INTERNAL_QUEUE_NAME,
+      authenticatedUser: workflowStatus.authenticatedUser,
+      authenticatedRoles: workflowStatus.authenticatedRoles,
+      request: workflowStatus.request,
+      executorId: globalParams.executorID,
+      applicationVersion: workflowStatus.applicationVersion,
+      applicationID: workflowStatus.applicationID,
+      createdAt: Date.now(),
+    };
+
+    await this.initWorkflowStatus(workflowStatusInternal, inputs);
+
+    await this.enqueueWorkflow(forkedWorkflowId, INTERNAL_QUEUE_NAME);
+
+    return forkedWorkflowId;
+  }
+
   async runAsStep(
     callback: () => Promise<string | null | undefined>,
     functionName: string,
@@ -1091,6 +1127,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
+      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
 
       // Check workflow status. If it is complete, do nothing.
       const statusResult = await client.query<workflow_status>(
@@ -1114,8 +1151,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
         [workflowID],
       );
 
-      // Update status to pending and reset recovery attempts
-      await this.recordWorkflowStatusChange(workflowID, StatusString.PENDING, { resetRecoveryAttempts: true }, client);
+      await client.query(
+        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
+         SET status = $1, queue_name= $2, recovery_attempts = 0 
+         WHERE workflow_uuid = $3`,
+        [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, workflowID],
+      );
+
+      await client.query<workflow_queue>(
+        `
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+        VALUES ($1, $2)
+        ON CONFLICT (workflow_uuid)
+        DO NOTHING;
+      `,
+        [workflowID, INTERNAL_QUEUE_NAME],
+      );
 
       await client.query('COMMIT');
     } catch (error) {
@@ -1682,6 +1733,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
               .where('workflow_uuid', id)
               .update('started_at_epoch_ms', startTimeMs);
           }
+
           // If we did not update this record, probably someone else did.  Count in either case.
           ++numRecentQueries;
         }

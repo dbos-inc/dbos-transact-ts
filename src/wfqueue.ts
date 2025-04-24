@@ -1,7 +1,6 @@
 import { DBOSExecutor } from './dbos-executor';
 import { DBOS } from './dbos';
 import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
-import { DBOSInitializationError } from './error';
 import { globalParams } from './utils';
 
 /**
@@ -73,7 +72,7 @@ export class WorkflowQueue {
     }
 
     if (wfQueueRunner.wfQueuesByName.has(name)) {
-      throw new DBOSInitializationError(`Workflow Queue '${name}' defined multiple times`);
+      DBOS.logger.warn(`Workflow Queue '${name}' defined multiple times`);
     }
     wfQueueRunner.wfQueuesByName.set(name, this);
   }

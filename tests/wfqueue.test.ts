@@ -646,8 +646,8 @@ describe('queued-wf-tests-simple', () => {
       status: StatusString.ENQUEUED,
     });
 
-    // Resume a regular workflow. Verify it completes.
     await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
+
     await expect(regularHandle.getResult()).resolves.toBeNull();
 
     // Complete the blocked workflow. Verify the second regular workflow also completes.
