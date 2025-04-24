@@ -18,7 +18,7 @@ import {
   WFInvokeFuncs,
   WFInvokeFuncsInst,
   GetWorkflowsInput,
-  WorkflowStatus,
+  GetWorkflowsOutput,
 } from '../workflow';
 import { Transaction } from '../transaction';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
@@ -91,7 +91,7 @@ export interface HandlerContext extends DBOSContext {
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
-  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]>;
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
 }
 
 // TODO: this should be refactored to not take a koaContext in.
@@ -253,8 +253,9 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     }
   }
 
-  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    return this.#dbosExec.listWorkflows(input);
+  async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    const wfs = await this.#dbosExec.listWorkflows(input);
+    return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
   }
 
   //////////////////////

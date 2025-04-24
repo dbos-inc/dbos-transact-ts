@@ -16,7 +16,14 @@ import { DBOSHttpServer } from '../httpServer/server';
 import { DBOSExecutor, DBOSConfigInternal, DBOSExecutorOptions } from '../dbos-executor';
 import { dbosConfigFilePath, parseConfigFile } from '../dbos-runtime/config';
 import { Transaction } from '../transaction';
-import { GetWorkflowsInput, Workflow, WorkflowHandle, WorkflowParams, WorkflowStatus } from '../workflow';
+import {
+  GetWorkflowsInput,
+  GetWorkflowsOutput,
+  Workflow,
+  WorkflowHandle,
+  WorkflowParams,
+  WorkflowStatus,
+} from '../workflow';
 import { Http2ServerRequest, Http2ServerResponse } from 'http2';
 import { ServerResponse } from 'http';
 import { get, set } from 'lodash';
@@ -93,7 +100,7 @@ export interface TestingRuntime {
   ): AsyncHandlerWfFuncs<T>;
 
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]>;
+  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
 
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -375,8 +382,9 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return this.getDBOSExec().retrieveWorkflow(workflowUUID);
   }
 
-  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    return this.getDBOSExec().listWorkflows(input);
+  async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    const wfs = await this.getDBOSExec().listWorkflows(input);
+    return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
   }
 
   async queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {
