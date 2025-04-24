@@ -78,7 +78,6 @@ export interface SystemDatabase {
 
   // If there is no record, res will be undefined;
   //  otherwise will be defined (with potentially undefined contents)
-  getOperationResult(workflowID: string, functionID: number): Promise<{ res?: SystemDatabaseStoredResult }>;
   getOperationResultAndThrowIfCancelled(
     workflowID: string,
     functionID: number,

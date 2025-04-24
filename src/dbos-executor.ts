@@ -2155,7 +2155,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return merged;
   }
 
-  async resumeWorkflow(workflowID: string): Promise<WorkflowHandle<unknown>> {
+  async resumeWorkflow(workflowID: string): Promise<void> {
     await this.systemDatabase.resumeWorkflow(workflowID);
   }
 

@@ -950,7 +950,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async resumeWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
-    return await DBOS.runAsWorkflowStep(async () => {
+    await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
     return this.retrieveWorkflow(workflowID);
@@ -961,7 +961,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async forkWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
-    const forkedID = await DBOS.#runAsWorkflowStep(async () => {
+    const forkedID = await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.forkWorkflow(workflowID);
     }, 'DBOS.forkWorkflow');
     return this.retrieveWorkflow(forkedID);
