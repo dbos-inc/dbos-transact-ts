@@ -299,7 +299,7 @@ export class DBOS {
    * @returns `true` if DBOS has been launched, or `false` otherwise
    */
   static isInitialized(): boolean {
-    return !!DBOSExecutor.globalInstance;
+    return !!DBOSExecutor.globalInstance?.initialized;
   }
 
   /**
