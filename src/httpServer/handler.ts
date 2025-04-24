@@ -91,7 +91,7 @@ export interface HandlerContext extends DBOSContext {
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
-  getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]>;
+  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]>;
 }
 
 // TODO: this should be refactored to not take a koaContext in.
@@ -253,8 +253,8 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
     }
   }
 
-  getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    return this.#dbosExec.getWorkflows(input);
+  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
+    return this.#dbosExec.listWorkflows(input);
   }
 
   //////////////////////

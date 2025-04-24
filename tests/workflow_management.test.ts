@@ -405,7 +405,7 @@ describe('workflow-management-tests', () => {
 
     @DBOS.postApi('/getWorkflows')
     static async getWorkflows(input: GetWorkflowsInput) {
-      return await DBOS.getWorkflows(input);
+      return await DBOS.listWorkflows(input);
     }
 
     static tries = 0;
@@ -775,7 +775,7 @@ describe('test-list-steps', () => {
   class ListWorkflows {
     @DBOS.workflow()
     static async listingWorkflow() {
-      return (await DBOS.getWorkflows({})).length;
+      return (await DBOS.listWorkflows({})).length;
     }
 
     @DBOS.workflow()

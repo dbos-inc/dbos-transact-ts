@@ -93,7 +93,7 @@ export interface TestingRuntime {
   ): AsyncHandlerWfFuncs<T>;
 
   retrieveWorkflow<R>(workflowUUID: string): WorkflowHandle<R>;
-  getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]>;
+  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]>;
 
   send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
   getEvent<T>(workflowUUID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
@@ -375,8 +375,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
     return this.getDBOSExec().retrieveWorkflow(workflowUUID);
   }
 
-  getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    return this.getDBOSExec().getWorkflows(input);
+  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
+    return this.getDBOSExec().listWorkflows(input);
   }
 
   async queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {

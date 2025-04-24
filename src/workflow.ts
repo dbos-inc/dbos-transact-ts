@@ -112,6 +112,10 @@ export interface GetQueuedWorkflowsInput {
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
 }
 
+export interface GetWorkflowsOutput {
+  workflowUUIDs: string[];
+}
+
 export interface GetWorkflowQueueInput {
   queueName?: string; // The name of the workflow queue
   startTime?: string; // Timestamp in ISO 8601 format

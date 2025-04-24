@@ -26,6 +26,7 @@ import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
   WorkflowStatus,
+  GetQueuedWorkflowsInput,
 } from './workflow';
 
 import { IsolationLevel, Transaction, TransactionConfig, TransactionContextImpl } from './transaction';
@@ -1928,8 +1929,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return null;
   }
 
-  async getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
+  async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
     const wfs = await this.systemDatabase.listWorkflows(input);
+    return wfs.map((wf) => DBOSExecutor.toWorkflowStatus(wf, true));
+  }
+
+  async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
+    const wfs = await this.systemDatabase.listQueuedWorkflows(input);
     return wfs.map((wf) => DBOSExecutor.toWorkflowStatus(wf, true));
   }
 

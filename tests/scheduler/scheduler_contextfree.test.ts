@@ -187,7 +187,7 @@ describe('cf-scheduled-wf-tests-when-active', () => {
       expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(4);
       expect(DBOSSchedTestClass.nQCalls).toBeGreaterThanOrEqual(1); // This has some delay, potentially...
 
-      const wfs = await DBOS.getWorkflows({
+      const wfs = await DBOS.listWorkflows({
         workflowName: 'scheduledDefaultQ',
       });
 
