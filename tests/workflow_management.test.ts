@@ -1098,6 +1098,9 @@ describe('test-fork', () => {
     static stepThreeCount = 0;
     static stepFourCount = 0;
     static stepFiveCount = 0;
+    static transactionOneCount = 0;
+    static transactionTwoCount = 0;
+    static transactionThreeCount = 0;
 
     @DBOS.workflow()
     static async stepsWorkflow() {
@@ -1106,6 +1109,15 @@ describe('test-fork', () => {
       await ExampleWorkflow.stepThree();
       await ExampleWorkflow.stepFour();
       await ExampleWorkflow.stepFive();
+    }
+
+    @DBOS.workflow()
+    static async stepsAndTransactionWorkflow() {
+      await ExampleWorkflow.stepOne();
+      await ExampleWorkflow.transactionOne();
+      await ExampleWorkflow.stepTwo();
+      await ExampleWorkflow.transactionTwo();
+      await ExampleWorkflow.transactionThree();
     }
 
     @DBOS.step()
@@ -1135,6 +1147,22 @@ describe('test-fork', () => {
     @DBOS.step()
     static async stepFive() {
       ExampleWorkflow.stepFiveCount += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.transaction()
+    static async transactionOne() {
+      ExampleWorkflow.transactionOneCount += 1;
+      return Promise.resolve();
+    }
+    @DBOS.transaction()
+    static async transactionTwo() {
+      ExampleWorkflow.transactionTwoCount += 1;
+      return Promise.resolve();
+    }
+    @DBOS.transaction()
+    static async transactionThree() {
+      ExampleWorkflow.transactionThreeCount += 1;
       return Promise.resolve();
     }
   }
@@ -1176,5 +1204,44 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepThreeCount).toBe(3);
     expect(ExampleWorkflow.stepFourCount).toBe(3);
     expect(ExampleWorkflow.stepFiveCount).toBe(4);
+  }, 10000);
+
+  test('test-fork-steps-transactions', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsAndTransactionWorkflow();
+    await handle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.transactionOneCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(1);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(1);
+
+    const forkedHandle = await DBOS.forkWorkflow(wfid);
+    await forkedHandle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.transactionOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(2);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(2);
+
+    const forkedHandle2 = await DBOS.forkWorkflow(wfid, 1);
+    await forkedHandle2.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.transactionOneCount).toBe(3);
+    expect(ExampleWorkflow.stepTwoCount).toBe(3);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(3);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(3);
+
+    const forkedHandle3 = await DBOS.forkWorkflow(wfid, 4);
+    await forkedHandle3.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.transactionOneCount).toBe(3);
+    expect(ExampleWorkflow.stepTwoCount).toBe(3);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(3);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(4);
   }, 10000);
 });
