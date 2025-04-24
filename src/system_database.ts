@@ -1212,14 +1212,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const schemaName = DBOSExecutor.systemDBSchemaName;
 
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
+    let query = this.knexDB<workflow_queue>(`${schemaName}.workflow_queue`)
       .join<workflow_inputs>(
         `${schemaName}.workflow_inputs`,
-        `${schemaName}.workflow_status.workflow_uuid`,
+        `${schemaName}.workflow_queue.workflow_uuid`,
         `${schemaName}.workflow_inputs.workflow_uuid`,
       )
-      .join<workflow_queue>(
-        `${schemaName}.workflow_queue`,
+      .join<workflow_status>(
+        `${schemaName}.workflow_status`,
         `${schemaName}.workflow_queue.workflow_uuid`,
         `${schemaName}.workflow_status.workflow_uuid`,
       )
