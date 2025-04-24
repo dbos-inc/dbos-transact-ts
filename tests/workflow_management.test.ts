@@ -1158,5 +1158,23 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepThreeCount).toBe(2);
     expect(ExampleWorkflow.stepFourCount).toBe(2);
     expect(ExampleWorkflow.stepFiveCount).toBe(2);
-  });
+
+    const forkedHandle2 = await DBOS.forkWorkflow(wfid, 2);
+    await forkedHandle2.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.stepThreeCount).toBe(3);
+    expect(ExampleWorkflow.stepFourCount).toBe(3);
+    expect(ExampleWorkflow.stepFiveCount).toBe(3);
+
+    const forkedHandle3 = await DBOS.forkWorkflow(wfid, 4);
+    await forkedHandle3.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.stepThreeCount).toBe(3);
+    expect(ExampleWorkflow.stepFourCount).toBe(3);
+    expect(ExampleWorkflow.stepFiveCount).toBe(4);
+  }, 10000);
 });
