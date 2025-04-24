@@ -575,54 +575,102 @@ export class PostgresSystemDatabase implements SystemDatabase {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
     }
 
-    const workflowStatusInternal: WorkflowStatusInternal = {
-      ...workflowStatus,
-      workflowUUID: forkedWorkflowId,
-      status: StatusString.ENQUEUED,
-      workflowName: workflowStatus.workflowName,
-      workflowClassName: workflowStatus.workflowClassName,
-      workflowConfigName: workflowStatus.workflowConfigName,
-      queueName: INTERNAL_QUEUE_NAME,
-      authenticatedUser: workflowStatus.authenticatedUser,
-      authenticatedRoles: workflowStatus.authenticatedRoles,
-      request: workflowStatus.request,
-      executorId: globalParams.executorID,
-      applicationVersion: workflowStatus.applicationVersion,
-      applicationID: workflowStatus.applicationID,
-      createdAt: Date.now(),
-    };
+    const client = await this.pool.connect();
 
-    // TODO: Important these writes need be in a transaction
-    await this.initWorkflowStatus(workflowStatusInternal, inputs);
+    try {
+      await client.query('BEGIN');
 
-    if (startStep > 0) {
       const query = `
-        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
         workflow_uuid,
-        function_id,
+        status,
+        name,
+        class_name,
+        config_name,
+        queue_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
         output,
-        error,
-        function_name,
-        child_workflow_id
-      )
-      SELECT
-        $1 AS workflow_uuid,
-        function_id,
-        output,
-        error,
-        function_name,
-        child_workflow_id
-        FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
-        WHERE workflow_uuid = $2 AND function_id < $3
-      `;
+        executor_id,
+        application_version,
+        application_id,
+        created_at,
+        recovery_attempts,
+        updated_at
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        `;
 
-      await this.pool.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
-      console.log('done coppying operation outputs');
+      await client.query(query, [
+        forkedWorkflowId,
+        StatusString.ENQUEUED,
+        workflowStatus.workflowName,
+        workflowStatus.workflowClassName,
+        workflowStatus.workflowConfigName,
+        INTERNAL_QUEUE_NAME,
+        workflowStatus.authenticatedUser,
+        workflowStatus.assumedRole,
+        DBOSJSON.stringify(workflowStatus.authenticatedRoles),
+        DBOSJSON.stringify(workflowStatus.request),
+        null,
+        workflowStatus.executorId,
+        workflowStatus.applicationVersion,
+        workflowStatus.applicationID,
+        Date.now(),
+        0,
+        Date.now(),
+      ]);
+
+      // Copy the inputs to the new workflow
+      const serializedInputs = DBOSJSON.stringify(inputs);
+      await client.query<workflow_inputs>(
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2)`,
+        [forkedWorkflowId, serializedInputs],
+      );
+
+      if (startStep > 0) {
+        const query = `
+          INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (
+          workflow_uuid,
+          function_id,
+          output,
+          error,
+          function_name,
+          child_workflow_id
+        )
+        SELECT
+          $1 AS workflow_uuid,
+          function_id,
+          output,
+          error,
+          function_name,
+          child_workflow_id
+          FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+          WHERE workflow_uuid = $2 AND function_id < $3
+        `;
+
+        await client.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
+      }
+
+      await client.query<workflow_queue>(
+        `
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+      VALUES ($1, $2)
+      ON CONFLICT (workflow_uuid)
+      DO NOTHING;
+      `,
+        [forkedWorkflowId, INTERNAL_QUEUE_NAME],
+      );
+
+      await client.query('COMMIT');
+      return forkedWorkflowId;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    await this.enqueueWorkflow(forkedWorkflowId, INTERNAL_QUEUE_NAME);
-
-    return forkedWorkflowId;
   }
 
   async runAsStep(
