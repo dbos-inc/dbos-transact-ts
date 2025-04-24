@@ -29,6 +29,7 @@ import { APITypes, ArgSources } from './handlerTypes';
 import { StoredProcedure } from '../procedure';
 import { WorkflowQueue } from '../wfqueue';
 import { getOrGenerateRequestID, RequestIDHeader } from './middleware';
+import { globalParams } from '../utils';
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -119,6 +120,9 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       requestIP: koaContext.request.ip,
       requestURL: koaContext.request.url,
       requestMethod: koaContext.request.method,
+      applicationVersion: globalParams.appVersion,
+      applicationID: globalParams.appID,
+      executorID: globalParams.executorID,
     };
     if (extractedSpanContext === undefined) {
       span = dbosExec.tracer.startSpan(koaContext.url, spanAttributes);

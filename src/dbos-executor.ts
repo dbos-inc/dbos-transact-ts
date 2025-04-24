@@ -1114,6 +1114,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         assumedRole: wfCtx.assumedRole,
         authenticatedRoles: wfCtx.authenticatedRoles,
         isolationLevel: txnInfo.config.isolationLevel,
+        applicationVersion: globalParams.appVersion,
+        applicationID: globalParams.appID,
+        executorID: globalParams.executorID,
       },
       wfCtx.span,
     );
@@ -1324,6 +1327,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         authenticatedRoles: wfCtx.authenticatedRoles,
         isolationLevel: procInfo.config.isolationLevel,
         executeLocally,
+        applicationVersion: globalParams.appVersion,
+        applicationID: globalParams.appID,
+        executorID: globalParams.executorID,
       },
       wfCtx.span,
     );
@@ -1675,6 +1681,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         intervalSeconds: commInfo.config.intervalSeconds,
         maxAttempts: commInfo.config.maxAttempts,
         backoffRate: commInfo.config.backoffRate,
+        applicationVersion: globalParams.appVersion,
+        applicationID: globalParams.appID,
+        executorID: globalParams.executorID,
       },
       wfCtx.span,
     );

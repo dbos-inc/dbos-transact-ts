@@ -1187,6 +1187,9 @@ export class DBOS {
           authenticatedUser: pctx.authenticatedUser,
           assumedRole: pctx.assumedRole,
           authenticatedRoles: pctx.authenticatedRoles,
+          applicationVersion: globalParams.appVersion,
+          applicationID: globalParams.appID,
+          executorID: globalParams.executorID,
         });
       }
       parentCtx = new DBOSContextImpl(pctx.operationCaller || 'startWorkflow', span, DBOS.logger as GlobalLogger);
@@ -1244,6 +1247,9 @@ export class DBOS {
           authenticatedUser: pctx?.authenticatedUser,
           assumedRole: pctx?.assumedRole,
           authenticatedRoles: pctx?.authenticatedRoles,
+          applicationVersion: globalParams.appVersion,
+          applicationID: globalParams.appID,
+          executorID: globalParams.executorID,
         });
       }
 
@@ -1612,6 +1618,9 @@ export class DBOS {
               authenticatedUser: pctx.authenticatedUser,
               assumedRole: pctx.assumedRole,
               authenticatedRoles: pctx.authenticatedRoles,
+              applicationVersion: globalParams.appVersion,
+              applicationID: globalParams.appID,
+              executorID: globalParams.executorID,
             });
           }
           parentCtx = new DBOSContextImpl(pctx.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
@@ -1711,6 +1720,9 @@ export class DBOS {
             authenticatedUser: pctx?.authenticatedUser,
             assumedRole: pctx?.assumedRole,
             authenticatedRoles: pctx?.authenticatedRoles,
+            applicationVersion: globalParams.appVersion,
+            applicationID: globalParams.appID,
+            executorID: globalParams.executorID,
           });
         }
 
@@ -1789,6 +1801,9 @@ export class DBOS {
             authenticatedUser: pctx?.authenticatedUser,
             assumedRole: pctx?.assumedRole,
             authenticatedRoles: pctx?.authenticatedRoles,
+            applicationVersion: globalParams.appVersion,
+            applicationID: globalParams.appID,
+            executorID: globalParams.executorID,
           });
         }
 
@@ -1888,6 +1903,9 @@ export class DBOS {
             authenticatedUser: pctx?.authenticatedUser,
             assumedRole: pctx?.assumedRole,
             authenticatedRoles: pctx?.authenticatedRoles,
+            applicationVersion: globalParams.appVersion,
+            applicationID: globalParams.appID,
+            executorID: globalParams.executorID,
           });
         }
 

@@ -8,7 +8,7 @@ import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
 import { WorkflowQueue } from './wfqueue';
-import { DBOSJSON } from './utils';
+import { DBOSJSON, globalParams } from './utils';
 import { serializeError } from 'serialize-error';
 import { DBOS } from './dbos';
 
@@ -236,6 +236,9 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
         authenticatedUser: parentCtx?.authenticatedUser ?? '',
         authenticatedRoles: parentCtx?.authenticatedRoles ?? [],
         assumedRole: parentCtx?.assumedRole ?? '',
+        applicationVersion: globalParams.appVersion,
+        applicationID: globalParams.appID,
+        executorID: globalParams.executorID,
       },
       parentCtx?.span,
     );
