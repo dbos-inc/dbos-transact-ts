@@ -1086,6 +1086,15 @@ describe('test-fork', () => {
     DBOS.setConfig(config);
   });
   beforeEach(async () => {
+    ExampleWorkflow.stepOneCount = 0;
+    ExampleWorkflow.stepTwoCount = 0;
+    ExampleWorkflow.stepThreeCount = 0;
+    ExampleWorkflow.stepFourCount = 0;
+    ExampleWorkflow.stepFiveCount = 0;
+    ExampleWorkflow.transactionOneCount = 0;
+    ExampleWorkflow.transactionTwoCount = 0;
+    ExampleWorkflow.transactionThreeCount = 0;
+    ExampleWorkflow.childWorkflowCount = 0;
     await setUpDBOSTestDb(config);
     await DBOS.launch();
   });
@@ -1299,6 +1308,33 @@ describe('test-fork', () => {
     await forkedHandle.getResult();
     expect(ExampleWorkflow.stepOneCount).toBe(1);
     expect(ExampleWorkflow.childWorkflowCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+  });
+
+  test('test-fork-fromaworklow', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).parentWorkflow();
+    await handle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+
+    const forkwfid = uuidv4();
+    const forkHandle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: forkwfid }).forkWorkflow(wfid, 0);
+    const firstforkedid = await forkHandle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+
+    // Fork the workflow again
+    const forkHandle2 = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: forkwfid }).forkWorkflow(wfid, 0);
+    const secondforkedid = await forkHandle2.getResult();
+
+    expect(firstforkedid).toEqual(secondforkedid);
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(2);
     expect(ExampleWorkflow.stepTwoCount).toBe(2);
   });
 });
