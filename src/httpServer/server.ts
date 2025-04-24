@@ -325,10 +325,17 @@ export class DBOSHttpServer {
       try {
         await DBOS.forkWorkflow(workflowId, startStep);
       } catch (e) {
-        dbosExec.logger.error(`Error forking workflow ${workflowId}: ${e}`);
+        let errorMessage = '';
+        if (e instanceof DBOSError) {
+          errorMessage = e.message;
+        } else {
+          errorMessage = `Unknown error`;
+        }
+        dbosExec.logger.error(`Error forking workflow ${workflowId}: ${errorMessage}`);
+        dbosExec.logger.error(`Error forking workflow ${workflowId}`);
         koaCtxt.status = 500;
         koaCtxt.body = {
-          error: `Error forking workflow ${workflowId}: ${e}`,
+          error: `Error forking workflow ${workflowId}: ${errorMessage}`,
         };
         return;
       }

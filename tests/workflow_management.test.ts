@@ -1080,7 +1080,6 @@ describe('test-list-steps', () => {
 
 describe('test-fork', () => {
   let config: DBOSConfigInternal;
-  const queue = new WorkflowQueue('child_queue');
   beforeAll(() => {
     config = generateDBOSTestConfig();
     DBOS.setConfig(config);
