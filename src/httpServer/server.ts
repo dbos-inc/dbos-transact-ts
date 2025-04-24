@@ -315,9 +315,7 @@ export class DBOSHttpServer {
     const workflowResumeUrl = '/workflows/:workflow_id/fork';
     const workflowForkHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      console.log(' what we got in the body ', koaCtxt.request.body);
       const body = koaCtxt.request.body as { start_step?: number };
-      console.log(' body after parsing', body);
       const startStep = body?.start_step ?? 1;
       // const startStep = (koaCtxt.request.body as { start_step: number })?.start_step;
 

@@ -1872,8 +1872,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       FROM dbos.transaction_outputs WHERE workflow_uuid= $2 AND function_id < $3`;
 
     await this.userDatabase.query(query, forkedWorkflowUUID, workflowID, startStep);
-
-    console.log('successfully executed cloneWorkflowtransactions');
   }
 
   async getMaxStepID(workflowID: string): Promise<number> {
