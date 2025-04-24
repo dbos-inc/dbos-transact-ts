@@ -934,8 +934,6 @@ export class DBOS {
   static async forkWorkflow<T>(workflowID: string, startStep: number = 0): Promise<WorkflowHandle<Awaited<T>>> {
     const maxStepID = await DBOS.executor.getMaxStepID(workflowID);
 
-    console.log(` DBOS.forkWorkflow max step ID ${maxStepID}`);
-
     if (startStep > maxStepID) {
       throw new DBOSInvalidStepIDError(workflowID, startStep, maxStepID);
     }

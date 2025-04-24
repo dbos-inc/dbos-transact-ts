@@ -20,6 +20,7 @@ import { Client } from 'pg';
 import { v4 as uuidv4 } from 'uuid';
 import { GetQueuedWorkflowsInput, WorkflowHandle } from '../src/workflow';
 import { globalParams } from '../src/utils';
+import { DBOSInvalidStepIDError } from '../src/error';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -1244,4 +1245,22 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.transactionTwoCount).toBe(3);
     expect(ExampleWorkflow.transactionThreeCount).toBe(4);
   }, 10000);
+
+  test('test-fork-invalid-step', async () => {
+    const wfid = uuidv4();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsAndTransactionWorkflow();
+    await handle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.transactionOneCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(1);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(1);
+
+    try {
+      await DBOS.forkWorkflow(wfid, 7);
+    } catch (e) {
+      expect(e).toBeInstanceOf(DBOSInvalidStepIDError);
+    }
+  });
 });
