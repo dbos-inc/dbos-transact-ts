@@ -193,7 +193,7 @@ export class Conductor {
             };
             let workflowsOutput: protocol.WorkflowsOutput[] = [];
             try {
-              const $wfs = await this.dbosExec.systemDatabase.getWorkflows(listWFReq);
+              const $wfs = await this.dbosExec.systemDatabase.listWorkflows(listWFReq);
               workflowsOutput = $wfs.map((i) => new protocol.WorkflowsOutput(DBOSExecutor.toWorkflowStatus(i)));
             } catch (e) {
               errorMsg = `Exception encountered when listing workflows: ${(e as Error).message}`;
@@ -217,7 +217,7 @@ export class Conductor {
             };
             let queuedWFOutput: protocol.WorkflowsOutput[] = [];
             try {
-              const $wfs = await this.dbosExec.systemDatabase.getQueuedWorkflows(listQueuedWFReq);
+              const $wfs = await this.dbosExec.systemDatabase.listQueuedWorkflows(listQueuedWFReq);
               queuedWFOutput = $wfs.map((i) => new protocol.WorkflowsOutput(DBOSExecutor.toWorkflowStatus(i)));
             } catch (e) {
               errorMsg = `Exception encountered when listing queued workflows: ${(e as Error).message}`;

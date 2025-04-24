@@ -162,8 +162,8 @@ export interface SystemDatabase {
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
   // Workflow management
-  getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
-  getQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]>;
+  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
+  listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]>;
 
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
 }
@@ -1163,7 +1163,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  async getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]> {
+  async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]> {
     const schemaName = DBOSExecutor.systemDBSchemaName;
 
     input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
@@ -1208,7 +1208,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(PostgresSystemDatabase.#mapWorkflowStatus);
   }
 
-  async getQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
+  async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
     const schemaName = DBOSExecutor.systemDBSchemaName;
 
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order

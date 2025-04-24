@@ -18,7 +18,7 @@ export async function listWorkflows(
     createLogger() as unknown as GlobalLogger,
   );
   try {
-    const workflows = await systemDatabase.getWorkflows(input);
+    const workflows = await systemDatabase.listWorkflows(input);
     return workflows.map((wf) => DBOSExecutor.toWorkflowStatus(wf, getRequest));
   } finally {
     await systemDatabase.destroy();
@@ -37,7 +37,7 @@ export async function listQueuedWorkflows(
   );
 
   try {
-    const workflows = await systemDatabase.getQueuedWorkflows(input);
+    const workflows = await systemDatabase.listQueuedWorkflows(input);
     return workflows.map((wf) => DBOSExecutor.toWorkflowStatus(wf, getRequest));
   } finally {
     await systemDatabase.destroy();
@@ -57,7 +57,7 @@ export async function getWorkflowInfo(
   workflowID: string,
   getRequest: boolean,
 ): Promise<WorkflowStatus | undefined> {
-  const statuses = await systemDatabase.getWorkflows({ workflowIDs: [workflowID] });
+  const statuses = await systemDatabase.listWorkflows({ workflowIDs: [workflowID] });
   const status = statuses.find((s) => s.workflowUUID === workflowID);
   return status ? DBOSExecutor.toWorkflowStatus(status, getRequest) : undefined;
 }

@@ -1929,7 +1929,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async getWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    const wfs = await this.systemDatabase.getWorkflows(input);
+    const wfs = await this.systemDatabase.listWorkflows(input);
     return wfs.map((wf) => DBOSExecutor.toWorkflowStatus(wf, true));
   }
 
