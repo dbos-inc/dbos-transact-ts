@@ -18,7 +18,7 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { pgTable, serial, text } from 'drizzle-orm/pg-core';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { DatabaseError } from 'pg';
 import { DBOSNotAuthorizedError } from '../src/error';
 
@@ -107,7 +107,7 @@ describe('drizzle-tests', () => {
   });
 
   test('drizzle-duplicate-workflows', async () => {
-    const uuid = uuidv1();
+    const uuid = randomUUID();
     const results = await Promise.allSettled([
       (await DBOS.startWorkflow(TestClass, { workflowID: uuid }).testWf('test-one')).getResult(),
       (await DBOS.startWorkflow(TestClass, { workflowID: uuid }).testWf('test-one')).getResult(),
