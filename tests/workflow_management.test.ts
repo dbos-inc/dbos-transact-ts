@@ -1186,7 +1186,7 @@ describe('test-fork', () => {
   }
 
   test('test-fork-steps', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow();
     await handle.getResult();
 
@@ -1225,7 +1225,7 @@ describe('test-fork', () => {
   }, 10000);
 
   test('test-fork-steps-transactions', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsAndTransactionWorkflow();
     await handle.getResult();
 
@@ -1264,7 +1264,7 @@ describe('test-fork', () => {
   }, 10000);
 
   test('test-fork-invalid-step', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsAndTransactionWorkflow();
     await handle.getResult();
 
@@ -1282,7 +1282,7 @@ describe('test-fork', () => {
   });
 
   test('test-fork-childwf', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).parentWorkflow();
     await handle.getResult();
 
@@ -1298,7 +1298,7 @@ describe('test-fork', () => {
   });
 
   test('test-fork-fromaworklow', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).parentWorkflow();
     await handle.getResult();
 
@@ -1306,7 +1306,7 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.childWorkflowCount).toBe(1);
     expect(ExampleWorkflow.stepTwoCount).toBe(1);
 
-    const forkwfid = uuidv4();
+    const forkwfid = randomUUID();
     const forkHandle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: forkwfid }).forkWorkflow(wfid, 0);
     const firstforkedid = await forkHandle.getResult();
 
