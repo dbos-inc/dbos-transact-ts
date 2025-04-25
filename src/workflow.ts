@@ -3,7 +3,7 @@ import { DBOSExecutor, OperationType } from './dbos-executor';
 import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
 import { SystemDatabase } from './system_database';
-import { DBOSContext, DBOSContextImpl, HTTPRequest, assertCurrentWorkflowContext } from './context';
+import { DBOSContext, DBOSContextImpl, HTTPRequest } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
