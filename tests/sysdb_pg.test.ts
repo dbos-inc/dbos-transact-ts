@@ -9,7 +9,7 @@ import { PostgresSystemDatabase } from '../src/system_database';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 // We cover:  Things that wait within the DB: getResult, Send/Recv, Get/set event
 //
@@ -79,7 +79,7 @@ async function doTheNonWFInstantTest() {
   let ct = Date.now();
 
   ct = Date.now();
-  const wfid1 = uuidv1();
+  const wfid1 = randomUUID();
   await DBOS.withNextWorkflowID(wfid1, async () => {
     await PGSDBTests.doSetEvent('key', 'val');
   });
@@ -88,7 +88,7 @@ async function doTheNonWFInstantTest() {
 
   // Recv cannot be tested, as it must be inside a workflow
 
-  const wfid2 = uuidv1();
+  const wfid2 = randomUUID();
   await DBOS.withNextWorkflowID(wfid2, async () => {
     await PGSDBTests.returnAResult('result');
   });
@@ -101,7 +101,7 @@ async function doTheNonWFDelayedTest() {
   let ct = Date.now();
 
   ct = Date.now();
-  const wfid1 = uuidv1();
+  const wfid1 = randomUUID();
   const wfh1 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid1 }).doSetEvent('key', 'val', 100);
   await expect(DBOS.getEvent(wfid1, 'key', 10000)).resolves.toBe('val');
   await wfh1.getResult();
@@ -109,7 +109,7 @@ async function doTheNonWFDelayedTest() {
 
   // Recv cannot be tested, as it must be inside a workflow
 
-  const wfid3 = uuidv1();
+  const wfid3 = randomUUID();
   const wfh3 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid3 }).returnAResult('result', 100);
   ct = Date.now();
   await expect(DBOS.getResult(wfid3, 10000)).resolves.toBe('result');
@@ -137,7 +137,7 @@ async function doTheWFInstantTest() {
   let ct = Date.now();
 
   ct = Date.now();
-  const wfid1 = uuidv1();
+  const wfid1 = randomUUID();
   await DBOS.withNextWorkflowID(wfid1, async () => {
     await PGSDBTests.doSetEvent('key', 'val');
   });
@@ -150,7 +150,7 @@ async function doTheWFInstantTest() {
   await expect(PGSDBTests.doRecv('topic', 0.1)).resolves.toBeNull();
   expect(Date.now() - ct).toBeLessThan(2000);
 
-  const wfid3 = uuidv1();
+  const wfid3 = randomUUID();
   await DBOS.withNextWorkflowID(wfid3, async () => {
     await PGSDBTests.returnAResult('result');
   });
@@ -163,20 +163,20 @@ async function doTheWFDelayedTest() {
   let ct = Date.now();
 
   ct = Date.now();
-  const wfid1 = uuidv1();
+  const wfid1 = randomUUID();
   const wfh1 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid1 }).doSetEvent('key', 'val', 100);
   await expect(PGSDBTests.doGetEvent(wfid1, 'key', 10000)).resolves.toBe('val');
   await wfh1.getResult();
   expect(Date.now() - ct).toBeLessThan(2000);
 
-  const wfid2 = uuidv1();
+  const wfid2 = randomUUID();
   const wfh2 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid2 }).doRecv('topic', 100000);
   await PGSDBTests.doSend(wfid2, 'topic', 'msg', 100);
   ct = Date.now();
   await expect(wfh2.getResult()).resolves.toBe('msg');
   expect(Date.now() - ct).toBeLessThan(2000);
 
-  const wfid3 = uuidv1();
+  const wfid3 = randomUUID();
   const wfh3 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid3 }).returnAResult('result', 100);
   ct = Date.now();
   await expect(PGSDBTests.doGetResult(wfid3, 10000)).resolves.toBe('result');
@@ -188,7 +188,7 @@ async function doTheWFCancelTest() {
   let ct = Date.now();
 
   ct = Date.now();
-  const wfid1 = uuidv1();
+  const wfid1 = randomUUID();
   const wfh1 = await DBOS.startWorkflow(PGSDBTests, { workflowID: wfid1 }).doRecv('key', 100000000);
   await sleepms(100);
   await DBOS.cancelWorkflow(wfid1);

@@ -2,7 +2,7 @@ import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance } from '../src';
 import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event, queueEntriesAreCleanedUp } from './helpers';
 import { WorkflowQueue } from '../src';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
 
 import { WF } from './wfqtestprocess';
@@ -54,7 +54,7 @@ describe('queued-wf-tests-simple', () => {
   }, 10000);
 
   test('simple-queue', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     TestWFs.wfid = wfid;
 
     const wfh = await DBOS.startWorkflow(TestWFs, { workflowID: wfid, queueName: queue.name }).testWorkflow(
@@ -339,7 +339,7 @@ describe('queued-wf-tests-simple', () => {
   }
 
   test('duplicate-workflow-id', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const handle1 = await DBOS.startWorkflow(TestDuplicateID, { workflowID: wfid }).testWorkflow('abc');
     // Call with a different function name within the same class is not allowed.
     await expect(DBOS.startWorkflow(TestDuplicateID, { workflowID: wfid }).testDupWorkflow()).rejects.toThrow(
@@ -425,7 +425,7 @@ describe('queued-wf-tests-simple', () => {
   }
 
   test('test-queue-recovery', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     // Start the workflow. Wait for all five tasks to start. Verify that they started.
     const originalHandle = await DBOS.startWorkflow(TestQueueRecovery, { workflowID: wfid }).testWorkflow();
@@ -461,17 +461,17 @@ describe('queued-wf-tests-simple', () => {
 
   test('test-queue-concurrency-under-recovery', async () => {
     const recoveryQueue = new WorkflowQueue('recoveryQ', { concurrency: 2 });
-    const wfid1 = uuidv4();
+    const wfid1 = randomUUID();
     const wfh1 = await DBOS.startWorkflow(TestQueueRecovery, {
       workflowID: wfid1,
       queueName: recoveryQueue.name,
     }).blockedWorkflow(0);
-    const wfid2 = uuidv4();
+    const wfid2 = randomUUID();
     const wfh2 = await DBOS.startWorkflow(TestQueueRecovery, {
       workflowID: wfid2,
       queueName: recoveryQueue.name,
     }).blockedWorkflow(1);
-    const wfid3 = uuidv4();
+    const wfid3 = randomUUID();
     const wfh3 = await DBOS.startWorkflow(TestWFs, {
       workflowID: wfid3,
       queueName: recoveryQueue.name,
@@ -567,7 +567,7 @@ describe('queued-wf-tests-simple', () => {
   }
 
   test('test-cancel-queues', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     // Enqueue the blocked and regular workflow on a queue with concurrency 1
     const blockedHandle = await DBOS.startWorkflow(TestCancelQueues, {
@@ -620,7 +620,7 @@ describe('queued-wf-tests-simple', () => {
   }
 
   test('test-resume-queues', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     // Enqueue the blocked and regular workflow on a queue with concurrency 1
     const blockedHandle = await DBOS.startWorkflow(TestResumeQueues, {

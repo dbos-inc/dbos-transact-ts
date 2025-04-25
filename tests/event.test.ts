@@ -1,7 +1,7 @@
 import { DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { DBOSConfigInternal } from '../src/dbos-executor';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 describe('dbos-tests', () => {
   let config: DBOSConfigInternal;
@@ -21,7 +21,7 @@ describe('dbos-tests', () => {
   });
 
   test('concurrent-workflow-events', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const promises: Promise<string | null>[] = [];
     for (let i = 0; i < 10; ++i) {
       promises.push(DBOS.getEvent(wfid, 'key1'));

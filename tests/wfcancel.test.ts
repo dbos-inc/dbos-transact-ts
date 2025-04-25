@@ -2,7 +2,7 @@ import { StatusString, DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { DBOSTargetWorkflowCancelledError, DBOSWorkflowCancelledError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 describe('wf-cancel-tests', () => {
   let config: DBOSConfig;
@@ -23,7 +23,7 @@ describe('wf-cancel-tests', () => {
   }, 10000);
 
   test('test-two-steps-base', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
     await wfh.getResult();
@@ -32,7 +32,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-two-steps-cancel', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     try {
       const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
@@ -51,7 +51,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-two-steps-cancel-resume', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
@@ -76,7 +76,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-two-transactions-cancel-resume', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     const wfh = await DBOS.startWorkflow(WFwith2Transactions, { workflowID: wfid }).workflowWithTransactions();
 
@@ -102,7 +102,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-resume-on-a-completed-ws', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
     await wfh.getResult();
@@ -116,7 +116,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-preempt-sleepms', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).sleepTooLong();
 
     await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
@@ -127,7 +127,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-preempt-getresult', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).getResultTooLong();
 
     await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
@@ -138,7 +138,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-preempt-getevent', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).getEventTooLong();
 
     await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
@@ -149,7 +149,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-preempt-recv', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).recvTooLong();
 
     await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();

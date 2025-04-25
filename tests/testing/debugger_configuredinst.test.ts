@@ -1,6 +1,6 @@
 import { ConfiguredInstance, DBOS } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
 
 class DebuggerCCTest extends ConfiguredInstance {
@@ -58,7 +58,7 @@ describe('debugger-test', () => {
   });
 
   test('debug-workflow', async () => {
-    const wfUUID = uuidv1();
+    const wfUUID = randomUUID();
     // Execute the workflow and destroy the runtime
     DBOS.setConfig(config);
     await DBOS.launch();

@@ -14,9 +14,7 @@ import {
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
-  GetWorkflowsOutput,
   StatusString,
-  WorkflowStatus,
 } from './workflow';
 import {
   notifications,
@@ -69,6 +67,7 @@ export interface SystemDatabase {
   initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     serializedArgs: string,
+    maxRetries?: number,
   ): Promise<{ serializedInputs: string; status: string }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
@@ -95,7 +94,7 @@ export interface SystemDatabase {
     checkConflict: boolean,
   ): Promise<void>;
 
-  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
+  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatusInternal | null>;
   getWorkflowStatusInternal(
     workflowID: string,
     callerID?: string,
@@ -175,8 +174,9 @@ export interface SystemDatabase {
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
   // Workflow management
-  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
-  getQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<GetWorkflowsOutput>;
+  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
+  listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]>;
+
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
 }
 
@@ -191,6 +191,7 @@ export interface WorkflowStatusInternal {
   authenticatedUser: string;
   output: string | null;
   error: string | null; // Serialized error
+  input?: string;
   assumedRole: string;
   authenticatedRoles: string[];
   request: HTTPRequest;
@@ -199,7 +200,6 @@ export interface WorkflowStatusInternal {
   applicationID: string;
   createdAt: number;
   updatedAt?: number;
-  maxRetries: number;
   recoveryAttempts?: number;
 }
 
@@ -382,6 +382,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     serializedInputs: string,
+    maxRetries?: number,
+    args: T,
   ): Promise<{ serializedInputs: string; status: string }> {
     const result = await this.pool.query<{
       recovery_attempts: number;
@@ -402,14 +404,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
         assumed_role,
         authenticated_roles,
         request,
-        output,
         executor_id,
         application_version,
         application_id,
         created_at,
         recovery_attempts,
         updated_at
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
        ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = workflow_status.recovery_attempts + 1,
@@ -427,7 +428,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.assumedRole,
         JSON.stringify(initStatus.authenticatedRoles),
         JSON.stringify(initStatus.request),
-        null,
         initStatus.executorId,
         initStatus.applicationVersion,
         initStatus.applicationID,
@@ -463,12 +463,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Every time we init the status, we increment `recovery_attempts` by 1.
     // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
     const attempts = resRow.recovery_attempts;
-    if (attempts > initStatus.maxRetries + 1) {
+    if (maxRetries && attempts > maxRetries + 1) {
       await this.pool.query(
         `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`,
         [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING],
       );
-      throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, initStatus.maxRetries);
+      throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, maxRetries);
     }
     this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
     const status = resRow.status;
@@ -630,7 +630,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string> {
-    const workflowStatus = await this.getWorkflowStatusInternal(originalWorkflowID);
+    // TODO: remove call to getWorkflowInputs after #871 is merged
+    const workflowStatus = await this.getWorkflowStatus(originalWorkflowID);
     if (workflowStatus === null) {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
     }
@@ -1207,26 +1208,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
-    const internalStatus = await this.getWorkflowStatusInternal(workflowID, callerID, callerFN);
-    if (internalStatus === null) {
-      return null;
-    }
-    return {
-      status: internalStatus.status,
-      workflowName: internalStatus.workflowName,
-      workflowClassName: internalStatus.workflowClassName,
-      workflowConfigName: internalStatus.workflowConfigName,
-      queueName: internalStatus.queueName,
-      authenticatedUser: internalStatus.authenticatedUser,
-      assumedRole: internalStatus.assumedRole,
-      authenticatedRoles: internalStatus.authenticatedRoles,
-      request: internalStatus.request,
-      executorId: internalStatus.executorId,
-    };
-  }
-
-  async getWorkflowStatusInternal(
+  async getWorkflowStatus(
     workflowID: string,
     callerID?: string,
     callerFN?: number,
@@ -1234,36 +1216,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     const sv = await this.runAsStep(
       async () => {
-        const { rows } = await this.pool.query<workflow_status>(
-          `SELECT workflow_uuid, status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name, executor_id, created_at, updated_at, application_version, application_id, recovery_attempts FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
-          [workflowID],
-        );
-
-        let value: WorkflowStatusInternal | null = null;
-        if (rows.length > 0) {
-          value = {
-            workflowUUID: rows[0].workflow_uuid,
-            status: rows[0].status,
-            workflowName: rows[0].name,
-            output: null,
-            error: null,
-            workflowClassName: rows[0].class_name || '',
-            workflowConfigName: rows[0].config_name || '',
-            queueName: rows[0].queue_name || undefined,
-            authenticatedUser: rows[0].authenticated_user,
-            assumedRole: rows[0].assumed_role,
-            authenticatedRoles: JSON.parse(rows[0].authenticated_roles) as string[],
-            request: JSON.parse(rows[0].request) as HTTPRequest,
-            executorId: rows[0].executor_id,
-            createdAt: Number(rows[0].created_at),
-            updatedAt: Number(rows[0].updated_at),
-            applicationVersion: rows[0].application_version,
-            applicationID: rows[0].application_id,
-            recoveryAttempts: Number(rows[0].recovery_attempts),
-            maxRetries: 0,
-          };
-        }
-        return value ? JSON.stringify(value) : null;
+        const statuses = await this.listWorkflows({ workflowIDs: [workflowID] });
+        const status = statuses.find((s) => s.workflowUUID === workflowID);
+        return status ? JSON.stringify(status) : null;
       },
       DBOS_FUNCNAME_GETSTATUS,
       callerID,
@@ -1438,32 +1393,40 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+  async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]> {
+    const schemaName = DBOSExecutor.systemDBSchemaName;
+
     input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB<{ workflow_uuid: string }>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`).orderBy(
-      'created_at',
-      input.sortDesc ? 'desc' : 'asc',
-    );
+    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
+      .join<workflow_inputs>(
+        `${schemaName}.workflow_inputs`,
+        `${schemaName}.workflow_status.workflow_uuid`,
+        `${schemaName}.workflow_inputs.workflow_uuid`,
+      )
+      .orderBy(`${schemaName}.workflow_status.created_at`, input.sortDesc ? 'desc' : 'asc');
     if (input.workflowName) {
-      query = query.where('name', input.workflowName);
+      query = query.where(`${schemaName}.workflow_status.name`, input.workflowName);
+    }
+    if (input.workflow_id_prefix) {
+      query = query.whereLike(`${schemaName}.workflow_status.workflow_uuid`, `${input.workflow_id_prefix}%`);
     }
     if (input.workflowIDs) {
-      query = query.whereIn('workflow_uuid', input.workflowIDs);
+      query = query.whereIn(`${schemaName}.workflow_status.workflow_uuid`, input.workflowIDs);
     }
     if (input.authenticatedUser) {
-      query = query.where('authenticated_user', input.authenticatedUser);
+      query = query.where(`${schemaName}.workflow_status.authenticated_user`, input.authenticatedUser);
     }
     if (input.startTime) {
-      query = query.where('created_at', '>=', new Date(input.startTime).getTime());
+      query = query.where(`${schemaName}.workflow_status.created_at`, '>=', new Date(input.startTime).getTime());
     }
     if (input.endTime) {
-      query = query.where('created_at', '<=', new Date(input.endTime).getTime());
+      query = query.where(`${schemaName}.workflow_status.created_at`, '<=', new Date(input.endTime).getTime());
     }
     if (input.status) {
-      query = query.where('status', input.status);
+      query = query.where(`${schemaName}.workflow_status.status`, input.status);
     }
     if (input.applicationVersion) {
-      query = query.where('application_version', input.applicationVersion);
+      query = query.where(`${schemaName}.workflow_status.application_version`, input.applicationVersion);
     }
     if (input.limit) {
       query = query.limit(input.limit);
@@ -1471,46 +1434,41 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (input.offset) {
       query = query.offset(input.offset);
     }
-    const rows = await query.select('workflow_uuid');
-    const workflowUUIDs = rows.map((row) => row.workflow_uuid);
-    return {
-      workflowUUIDs: workflowUUIDs,
-    };
+    const rows = await query;
+    return rows.map(PostgresSystemDatabase.#mapWorkflowStatus);
   }
 
-  async getQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<GetWorkflowsOutput> {
+  async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
+    const schemaName = DBOSExecutor.systemDBSchemaName;
+
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-      .join(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status`,
-        `${DBOSExecutor.systemDBSchemaName}.workflow_queue.workflow_uuid`,
-        '=',
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`,
+    let query = this.knexDB<workflow_queue>(`${schemaName}.workflow_queue`)
+      .join<workflow_inputs>(
+        `${schemaName}.workflow_inputs`,
+        `${schemaName}.workflow_queue.workflow_uuid`,
+        `${schemaName}.workflow_inputs.workflow_uuid`,
       )
-      .orderBy(`${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`, sortDesc ? 'desc' : 'asc');
+      .join<workflow_status>(
+        `${schemaName}.workflow_status`,
+        `${schemaName}.workflow_queue.workflow_uuid`,
+        `${schemaName}.workflow_status.workflow_uuid`,
+      )
+      .orderBy(`${schemaName}.workflow_status.created_at`, sortDesc ? 'desc' : 'asc');
 
     if (input.workflowName) {
-      query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.name = ?`, [input.workflowName]);
+      query = query.whereRaw(`${schemaName}.workflow_status.name = ?`, [input.workflowName]);
     }
     if (input.queueName) {
-      query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.queue_name = ?`, [input.queueName]);
+      query = query.whereRaw(`${schemaName}.workflow_status.queue_name = ?`, [input.queueName]);
     }
     if (input.startTime) {
-      query = query.where(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`,
-        '>=',
-        new Date(input.startTime).getTime(),
-      );
+      query = query.where(`${schemaName}.workflow_status.created_at`, '>=', new Date(input.startTime).getTime());
     }
     if (input.endTime) {
-      query = query.where(
-        `${DBOSExecutor.systemDBSchemaName}.workflow_status.created_at`,
-        '<=',
-        new Date(input.endTime).getTime(),
-      );
+      query = query.where(`${schemaName}.workflow_status.created_at`, '<=', new Date(input.endTime).getTime());
     }
     if (input.status) {
-      query = query.whereRaw(`${DBOSExecutor.systemDBSchemaName}.workflow_status.status = ?`, [input.status]);
+      query = query.whereRaw(`${schemaName}.workflow_status.status = ?`, [input.status]);
     }
     if (input.limit) {
       query = query.limit(input.limit);
@@ -1519,10 +1477,31 @@ export class PostgresSystemDatabase implements SystemDatabase {
       query = query.offset(input.offset);
     }
 
-    const rows = await query.select(`${DBOSExecutor.systemDBSchemaName}.workflow_status.workflow_uuid`);
-    const workflowUUIDs = rows.map((row) => (row as { workflow_uuid: string }).workflow_uuid);
+    const rows = await query;
+    return rows.map(PostgresSystemDatabase.#mapWorkflowStatus);
+  }
+
+  static #mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStatusInternal {
     return {
-      workflowUUIDs: workflowUUIDs,
+      workflowUUID: row.workflow_uuid,
+      status: row.status,
+      workflowName: row.name,
+      output: row.output ? row.output : null,
+      error: row.error ? row.error : null,
+      workflowClassName: row.class_name ?? '',
+      workflowConfigName: row.config_name ?? '',
+      queueName: row.queue_name,
+      authenticatedUser: row.authenticated_user,
+      assumedRole: row.assumed_role,
+      authenticatedRoles: JSON.parse(row.authenticated_roles) as string[],
+      request: JSON.parse(row.request) as HTTPRequest,
+      executorId: row.executor_id,
+      createdAt: Number(row.created_at),
+      updatedAt: Number(row.updated_at),
+      applicationVersion: row.application_version,
+      applicationID: row.application_id,
+      recoveryAttempts: Number(row.recovery_attempts),
+      input: row.inputs,
     };
   }
 

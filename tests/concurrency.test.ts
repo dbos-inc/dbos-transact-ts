@@ -1,5 +1,5 @@
 import { DBOS } from '../src';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
@@ -30,7 +30,7 @@ describe('concurrency-tests', () => {
   test('duplicate-transaction', async () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const results = await Promise.allSettled([
       (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteFunction(10)).getResult(),
       (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteFunction(10)).getResult(),
@@ -43,7 +43,7 @@ describe('concurrency-tests', () => {
   test('concurrent-workflow', async () => {
     // Invoke testWorkflow twice with the same UUID and the first one completes right before the second transaction starts.
     // The second transaction should get the correct recorded execution without being executed.
-    const uuid = uuidv1();
+    const uuid = randomUUID();
     const handle1 = await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow();
     const handle2 = await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow();
     await ConcurrTestClass.promise2;
@@ -60,7 +60,7 @@ describe('concurrency-tests', () => {
   test('duplicate-step', async () => {
     // Run two steps concurrently with the same UUID; both should succeed.
     // Since we only record the output after the function, it may cause more than once executions.
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const results = await Promise.allSettled([
       (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testStep(11)).getResult(),
       (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testStep(11)).getResult(),
@@ -74,7 +74,7 @@ describe('concurrency-tests', () => {
   test('duplicate-notifications', async () => {
     // Run two send/recv concurrently with the same UUID, both should succeed.
     // It's a bit hard to trigger conflicting send because the transaction runs quickly.
-    const recvUUID = uuidv1();
+    const recvUUID = randomUUID();
     const recvResPromise = Promise.allSettled([
       (
         await DBOS.startWorkflow(ConcurrTestClass, { workflowID: recvUUID }).receiveWorkflow('testTopic', 2)

@@ -14,7 +14,7 @@ import { Context as HonoContext, Next as HonoNext } from 'hono';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { trace, defaultTextMapGetter, ROOT_CONTEXT, SpanStatusCode } from '@opentelemetry/api';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { DBOSJSON } from '../utils';
 
 // Middleware context does not extend base context because it runs before handler/workflow operations.
@@ -169,7 +169,7 @@ export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
   if (reqID) {
     return reqID;
   }
-  const newID = uuidv4();
+  const newID = randomUUID();
   headers[RequestIDHeader.toLowerCase()] = newID; // This does not carry through the response
   return newID;
 }

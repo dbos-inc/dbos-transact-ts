@@ -2,7 +2,7 @@ import { DBOS, ConfiguredInstance, WorkflowHandle } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestDb, Event } from './helpers';
 import { WorkflowQueue } from '../src';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1 });
@@ -313,7 +313,7 @@ describe('queued-wf-tests-simple', () => {
   }, 10000);
 
   test('test-queue-recovery', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     // Start the workflow. Wait for all five tasks to start. Verify that they started.
     const originalHandle = await DBOS.startWorkflow(tqrInst, { workflowID: wfid }).testWorkflow();

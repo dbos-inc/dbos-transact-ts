@@ -1,6 +1,6 @@
 import { DBOSInitializer, DBOS } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { DBOSConfigInternal, DebugMode } from '../../src/dbos-executor';
 import { Client } from 'pg';
 
@@ -151,7 +151,7 @@ describe('debugger-test', () => {
   }
 
   test('debug-workflow', async () => {
-    const wfUUID = uuidv1();
+    const wfUUID = randomUUID();
     // Execute the workflow and destroy the runtime
     DBOS.setConfig(config);
     await DBOS.launch();
@@ -184,7 +184,7 @@ describe('debugger-test', () => {
     await DBOS.shutdown();
 
     // Execute a non-exist UUID should fail under debugger.
-    const wfUUID2 = uuidv1();
+    const wfUUID2 = randomUUID();
     DBOS.setConfig(debugConfig);
     await DBOS.launch({ debugMode: DebugMode.ENABLED });
     await DBOS.withNextWorkflowID(wfUUID2, async () => {
@@ -203,7 +203,7 @@ describe('debugger-test', () => {
 
   test('tt-debug-workflow', async () => {
     DebuggerTest.debugCount = 0;
-    const wfUUID = uuidv1();
+    const wfUUID = randomUUID();
     DBOS.setConfig(config);
     await DBOS.launch();
     await DBOS.withNextWorkflowID(wfUUID, async () => {
@@ -236,7 +236,7 @@ describe('debugger-test', () => {
   });
 
   test('debug-sleep-workflow', async () => {
-    const wfUUID = uuidv1();
+    const wfUUID = randomUUID();
     DBOS.setConfig(config);
     // Execute the workflow and destroy the runtime
     await DBOS.launch();
@@ -266,7 +266,7 @@ describe('debugger-test', () => {
   });
 
   test('debug-void-transaction', async () => {
-    const wfUUID = uuidv1();
+    const wfUUID = randomUUID();
 
     DBOS.setConfig(config);
     await DBOS.launch();
@@ -312,7 +312,7 @@ describe('debugger-test', () => {
   });
 
   test('debug-transaction', async () => {
-    const wfUUID = uuidv1();
+    const wfUUID = randomUUID();
 
     DBOS.setConfig(config);
     await DBOS.launch();
@@ -334,7 +334,7 @@ describe('debugger-test', () => {
     await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
-    const wfUUID2 = uuidv1();
+    const wfUUID2 = randomUUID();
     await DBOS.withNextWorkflowID(wfUUID2, async () => {
       await expect(DebuggerTest.testFunction(username)).rejects.toThrow(
         `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
@@ -355,7 +355,7 @@ describe('debugger-test', () => {
   });
 
   test('debug-step', async () => {
-    const wfUUID = uuidv1();
+    const wfUUID = randomUUID();
 
     // Execute the step and destroy the runtime
     DBOS.setConfig(config);
@@ -378,7 +378,7 @@ describe('debugger-test', () => {
     await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
-    const wfUUID2 = uuidv1();
+    const wfUUID2 = randomUUID();
     await DBOS.withNextWorkflowID(wfUUID2, async () => {
       await expect(DebuggerTest.testStep()).rejects.toThrow(
         `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
@@ -402,8 +402,8 @@ describe('debugger-test', () => {
   });
 
   test('debug-workflow-notifications', async () => {
-    const recvUUID = uuidv1();
-    const sendUUID = uuidv1();
+    const recvUUID = randomUUID();
+    const sendUUID = randomUUID();
 
     // Execute the workflow and destroy the runtime
     DBOS.setConfig(config);
@@ -428,8 +428,8 @@ describe('debugger-test', () => {
   });
 
   test('debug-workflow-events', async () => {
-    const getUUID = uuidv1();
-    const setUUID = uuidv1();
+    const getUUID = randomUUID();
+    const setUUID = randomUUID();
     // Execute the workflow and destroy the runtime
     DBOS.setConfig(config);
     await DBOS.launch();
@@ -454,7 +454,7 @@ describe('debugger-test', () => {
   });
 
   test('debug-workflow-input-output', async () => {
-    const wfUUID = uuidv1();
+    const wfUUID = randomUUID();
     // Execute the workflow and destroy the runtime
     DBOS.setConfig(config);
     await DBOS.launch();

@@ -1,7 +1,7 @@
 import { DBOS } from '../src';
 import { DBOSConfigInternal } from '../src/dbos-executor';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 const testTableName = 'dbos_test_kv';
 
@@ -49,7 +49,7 @@ describe('oaoo-tests', () => {
   }
 
   test('step-oaoo', async () => {
-    const workflowUUID: string = uuidv1();
+    const workflowUUID: string = randomUUID();
 
     let result: number = -222;
     result = await DBOS.withNextWorkflowID(workflowUUID, async () => await StepOAOO.testCommWorkflow());
@@ -139,13 +139,13 @@ describe('oaoo-tests', () => {
 
     @DBOS.workflow()
     static async getEventWorkflow(timeoutSeconds: number) {
-      await DBOS.getEvent(uuidv1(), 'a-key', timeoutSeconds);
+      await DBOS.getEvent(randomUUID(), 'a-key', timeoutSeconds);
       return;
     }
   }
 
   test('workflow-sleep-oaoo', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const initTime = Date.now();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.sleepWorkflow(2)).resolves.toBeFalsy();
@@ -161,7 +161,7 @@ describe('oaoo-tests', () => {
   });
 
   test('workflow-recv-oaoo', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const initTime = Date.now();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.recvWorkflow(2)).resolves.toBeFalsy();
@@ -177,7 +177,7 @@ describe('oaoo-tests', () => {
   });
 
   test('workflow-getEvent-oaoo', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const initTime = Date.now();
     await DBOS.withNextWorkflowID(
       workflowUUID,
@@ -218,7 +218,7 @@ describe('oaoo-tests', () => {
   });
 
   test('nested-workflow-oaoo', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(WorkflowOAOO.nestedWorkflow(username)).resolves.toBe(1);
     });
@@ -251,7 +251,7 @@ describe('oaoo-tests', () => {
   }
 
   test('notification-oaoo', async () => {
-    const recvWorkflowUUID = uuidv1();
+    const recvWorkflowUUID = randomUUID();
     const idempotencyKey = 'test-suffix';
 
     // Receive twice with the same UUID.  Each should get the same result of true.
@@ -343,8 +343,8 @@ describe('oaoo-tests', () => {
     // Execute a workflow (w/ getUUID) to get an event and retrieve a workflow that doesn't exist, then invoke the setEvent workflow as a child workflow.
     // If we execute the get workflow without UUID, both getEvent and retrieveWorkflow should return values.
     // But if we run the get workflow again with getUUID, getEvent/retrieveWorkflow should still return null.
-    const getUUID = uuidv1();
-    const setUUID = uuidv1();
+    const getUUID = randomUUID();
+    const setUUID = randomUUID();
 
     const handle1 = await DBOS.startWorkflow(EventStatusOAOO, { workflowID: getUUID }).getEventRetrieveWorkflow(
       setUUID,
