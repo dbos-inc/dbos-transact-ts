@@ -555,11 +555,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
     }
 
-    const inputs = await this.getWorkflowInputs(originalWorkflowID);
-    if (inputs === null) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
-    }
-
     const workflowStatusInternal: WorkflowStatusInternal = {
       ...workflowStatus,
       workflowUUID: forkedWorkflowId,
@@ -576,7 +571,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       applicationID: workflowStatus.applicationID,
       createdAt: Date.now(),
     };
-
+    const inputs = DBOSJSON.parse(workflowStatus.input ?? '[]') as unknown[];
     await this.initWorkflowStatus(workflowStatusInternal, inputs);
 
     await this.enqueueWorkflow(forkedWorkflowId, INTERNAL_QUEUE_NAME);
