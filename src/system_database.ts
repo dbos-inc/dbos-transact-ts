@@ -565,11 +565,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
     }
 
-    const inputs = await this.getWorkflowInputs(originalWorkflowID);
-    if (inputs === null) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
-    }
-
     const client = await this.pool.connect();
 
     try {
@@ -618,11 +613,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
       ]);
 
       // Copy the inputs to the new workflow
-      const serializedInputs = DBOSJSON.stringify(inputs);
-      await client.query<workflow_inputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2)`,
-        [forkedWorkflowId, serializedInputs],
-      );
+      const inputQuery = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs)
+                            SELECT $2, inputs
+                            FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs
+                            WHERE workflow_uuid = $1;`;
+
+      await client.query<workflow_inputs>(inputQuery, [originalWorkflowID, forkedWorkflowId]);
 
       if (startStep > 0) {
         const query = `
