@@ -466,10 +466,10 @@ describe('dbos-v2api-tests-http', () => {
     const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
-    const status = await retrievedHandle.getStatus();
-    expect(status).not.toBeNull();
-    expect(status?.status).toBe(StatusString.SUCCESS);
-    expect(status?.request).toMatchObject({ url: '/workflow?name=bob' });
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+      request: { url: '/workflow?name=bob' },
+    });
   });
 
   test('endpoint-handler-UUID', async () => {
