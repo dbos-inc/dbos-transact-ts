@@ -5,7 +5,7 @@ import { DBOSInvalidWorkflowTransitionError, DBOSNotAuthorizedError } from '../s
 import { DBOSConfig, DBOSConfigInternal } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { Knex } from 'knex';
 import { DatabaseError } from 'pg';
 import { EntityManager } from 'typeorm';
@@ -84,7 +84,7 @@ describe('knex-tests', () => {
   });
 
   test('knex-duplicate-workflows', async () => {
-    const uuid = uuidv1();
+    const uuid = randomUUID();
     const results = await Promise.allSettled([
       (await DBOS.startWorkflow(TestClass, { workflowID: uuid }).testWf('test-one')).getResult(),
       (await DBOS.startWorkflow(TestClass, { workflowID: uuid }).testWf('test-one')).getResult(),

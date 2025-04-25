@@ -6,7 +6,7 @@ import { EntityManager, Unique } from 'typeorm';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { OrmEntities, Authentication, MiddlewareContext, DBOS } from '../src';
 import { DBOSConfig, DBOSConfigInternal } from '../src/dbos-executor';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOSInvalidWorkflowTransitionError, DBOSNotAuthorizedError } from '../src/error';
 
@@ -96,7 +96,7 @@ describe('typeorm-tests', () => {
   test('typeorm-duplicate-transaction', async () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
-    const workUUID = uuidv1();
+    const workUUID = randomUUID();
     let results = await Promise.allSettled([
       (await DBOS.startWorkflow(KVController, { workflowID: workUUID }).testTxn('oaootest', 'oaoovalue')).getResult(),
       (await DBOS.startWorkflow(KVController, { workflowID: workUUID }).testTxn('oaootest', 'oaoovalue')).getResult(),
@@ -107,7 +107,7 @@ describe('typeorm-tests', () => {
 
     // Read-only transactions would execute twice.
     globalCnt = 0;
-    const readUUID = uuidv1();
+    const readUUID = randomUUID();
     results = await Promise.allSettled([
       (await DBOS.startWorkflow(KVController, { workflowID: readUUID }).readTxn('oaootest')).getResult(),
       (await DBOS.startWorkflow(KVController, { workflowID: readUUID }).readTxn('oaootest')).getResult(),

@@ -1,7 +1,7 @@
 import { StatusString, DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 describe('wf-cancel-tests', () => {
   let config: DBOSConfig;
@@ -22,7 +22,7 @@ describe('wf-cancel-tests', () => {
   }, 10000);
 
   test('test-two-steps-base', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
     await wfh.getResult();
@@ -31,7 +31,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-two-steps-cancel', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     try {
       const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
@@ -50,7 +50,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-two-steps-cancel-resume', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
@@ -75,7 +75,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-two-transactions-cancel-resume', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
 
     const wfh = await DBOS.startWorkflow(WFwith2Transactions, { workflowID: wfid }).workflowWithTransactions();
 
@@ -100,7 +100,7 @@ describe('wf-cancel-tests', () => {
   });
 
   test('test-resume-on-a-completed-ws', async () => {
-    const wfid = uuidv4();
+    const wfid = randomUUID();
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
     await wfh.getResult();

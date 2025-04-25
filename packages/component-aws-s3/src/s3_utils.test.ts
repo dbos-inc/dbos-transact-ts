@@ -6,7 +6,7 @@ import axios, { AxiosResponse } from 'axios';
 import { PresignedPost } from '@aws-sdk/s3-presigned-post';
 import { Readable } from 'stream';
 import * as fs from 'fs';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 enum FileStatus {
   PENDING = 'Pending',
@@ -43,7 +43,7 @@ class TestUserFileTable {
       user_id: details.user_id,
       file_status: FileStatus.PENDING,
       file_type: details.file_type,
-      file_id: uuidv4(),
+      file_id: randomUUID(),
       file_name: details.file_name,
       file_time: new Date().getTime(),
       key: '',
@@ -223,7 +223,7 @@ describe('ses-tests', () => {
       return;
     }
 
-    const userid = uuidv4();
+    const userid = randomUUID();
 
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)
@@ -248,7 +248,7 @@ describe('ses-tests', () => {
 
     // The complex workflows that will be performed are to:
     //  Put the file contents into DBOS with a presigned post
-    const userid = uuidv4();
+    const userid = randomUUID();
 
     // The simple workflows that will be performed are to:
     //   Put file contents into DBOS (w/ table index)

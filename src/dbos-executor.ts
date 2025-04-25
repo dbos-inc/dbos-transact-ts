@@ -42,7 +42,7 @@ import {
   WorkflowStatusInternal,
   SystemDatabaseStoredResult,
 } from './system_database';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import {
   PGNodeUserDatabase,
   PrismaUserDatabase,
@@ -1846,7 +1846,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
    */
 
   async forkWorkflow(workflowID: string): Promise<string> {
-    const forkedWorkflowID = uuidv4();
+    const forkedWorkflowID = randomUUID();
     await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID);
     return forkedWorkflowID;
   }
@@ -1942,7 +1942,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   /* INTERNAL HELPERS */
   #generateUUID(): string {
-    return uuidv4();
+    return randomUUID();
   }
 
   /**
