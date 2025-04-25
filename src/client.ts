@@ -13,10 +13,10 @@ import {
 import { constructPoolConfig } from './dbos-runtime/config';
 import { DBOSJSON } from './utils';
 import {
-  $getWorkflow,
-  $listQueuedWorkflows,
-  $listWorkflows,
-  $listWorkflowSteps,
+  getWorkflow,
+  listQueuedWorkflows,
+  listWorkflows,
+  listWorkflowSteps,
   StepInfo,
 } from './dbos-runtime/workflow_management';
 import { PGNodeUserDatabase, UserDatabase } from './user_database';
@@ -196,18 +196,18 @@ export class DBOSClient {
   }
 
   getWorkflow(workflowID: string, getRequest: boolean = false): Promise<WorkflowStatus | undefined> {
-    return $getWorkflow(this.systemDatabase, workflowID, getRequest);
+    return getWorkflow(this.systemDatabase, workflowID, getRequest);
   }
 
   listWorkflows(input: GetWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
-    return $listWorkflows(this.systemDatabase, input, getRequest);
+    return listWorkflows(this.systemDatabase, input, getRequest);
   }
 
   listQueuedWorkflows(input: GetQueuedWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
-    return $listQueuedWorkflows(this.systemDatabase, input, getRequest);
+    return listQueuedWorkflows(this.systemDatabase, input, getRequest);
   }
 
   listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
-    return $listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
+    return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
   }
 }

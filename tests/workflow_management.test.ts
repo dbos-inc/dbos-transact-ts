@@ -8,7 +8,7 @@ import { randomUUID } from 'node:crypto';
 import { globalParams } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { GlobalLogger as Logger } from '../src/telemetry/logs';
-import { $getWorkflow, $listQueuedWorkflows, $listWorkflows } from '../src/dbos-runtime/workflow_management';
+import { getWorkflow, listQueuedWorkflows, listWorkflows } from '../src/dbos-runtime/workflow_management';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -234,7 +234,7 @@ describe('workflow-management-tests', () => {
     const sysdb = new PostgresSystemDatabase(config.poolConfig, config.system_database, logger);
     try {
       const input: GetWorkflowsInput = {};
-      const infos = await $listWorkflows(sysdb, input);
+      const infos = await listWorkflows(sysdb, input);
       expect(infos.length).toBe(2);
       let info = infos[0];
       expect(info.authenticatedUser).toBe('alice');
@@ -267,7 +267,7 @@ describe('workflow-management-tests', () => {
       expect(info.updatedAt).toBeGreaterThan(0);
       expect(info.executorId).toBe(globalParams.executorID);
 
-      const getInfo = await $getWorkflow(sysdb, info.workflowID);
+      const getInfo = await getWorkflow(sysdb, info.workflowID);
       expect(info).toEqual(getInfo);
     } finally {
       await sysdb.destroy();
@@ -497,7 +497,7 @@ describe('test-list-queues', () => {
     try {
       let input: GetQueuedWorkflowsInput = {};
       let output: WorkflowStatus[] = [];
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(TestListQueues.queuedSteps);
 
       // Test workflowName
@@ -505,7 +505,7 @@ describe('test-list-queues', () => {
         workflowName: 'blockingTask',
       };
 
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(TestListQueues.queuedSteps);
       for (let i = 0; i < TestListQueues.queuedSteps; i++) {
         expect(output[i].input).toEqual([i]);
@@ -514,14 +514,14 @@ describe('test-list-queues', () => {
       input = {
         workflowName: 'no',
       };
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(0);
 
       // Test sortDesc reverts the order
       input = {
         sortDesc: true,
       };
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(TestListQueues.queuedSteps);
       for (let i = 0; i < TestListQueues.queuedSteps; i++) {
         expect(output[i].input).toEqual([TestListQueues.queuedSteps - i - 1]);
@@ -532,47 +532,47 @@ describe('test-list-queues', () => {
         startTime: new Date(Date.now() - 10000).toISOString(),
         endTime: new Date(Date.now()).toISOString(),
       };
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(TestListQueues.queuedSteps);
       input = {
         startTime: new Date(Date.now() + 10000).toISOString(),
       };
 
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(0);
 
       // Test status
       input = {
         status: 'PENDING',
       };
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(TestListQueues.queuedSteps);
       input = {
         status: 'SUCCESS',
       };
 
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(0);
 
       // Test queue name
       input = {
         queueName: TestListQueues.queue.name,
       };
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(TestListQueues.queuedSteps);
 
       input = {
         queueName: 'no',
       };
 
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(0);
 
       // Test limit
       input = {
         limit: 2,
       };
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(input.limit);
       for (let i = 0; i < input.limit!; i++) {
         expect(output[i].input).toEqual([i]);
@@ -583,7 +583,7 @@ describe('test-list-queues', () => {
         limit: 2,
         offset: 2,
       };
-      output = await $listQueuedWorkflows(sysdb, input);
+      output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(input.limit);
       for (let i = 0; i < input.limit!; i++) {
         expect(output[i].input).toEqual([i + 2]);
@@ -594,7 +594,7 @@ describe('test-list-queues', () => {
       await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
 
       input = {};
-      await expect($listQueuedWorkflows(sysdb, input)).resolves.toEqual([]);
+      await expect(listQueuedWorkflows(sysdb, input)).resolves.toEqual([]);
     } finally {
       await sysdb.destroy();
     }
@@ -1016,7 +1016,7 @@ describe('test-list-steps', () => {
 
     const sysdb = new PostgresSystemDatabase(config.poolConfig, config.system_database, new Logger());
     try {
-      const wfs = await $listWorkflows(sysdb, {});
+      const wfs = await listWorkflows(sysdb, {});
       expect(wfs.length).toBe(2);
 
       const wfid1 = randomUUID();

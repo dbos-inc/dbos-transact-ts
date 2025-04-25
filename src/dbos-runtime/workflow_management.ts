@@ -15,34 +15,34 @@ export interface StepInfo {
   readonly childWorkflowID: string | null;
 }
 
-export async function $listWorkflows(
+export async function listWorkflows(
   sysdb: SystemDatabase,
   input: GetWorkflowsInput,
   getRequest: boolean = false,
 ): Promise<WorkflowStatus[]> {
   const workflows = await sysdb.listWorkflows(input);
-  return workflows.map((wf) => $toWorkflowStatus(wf, getRequest));
+  return workflows.map((wf) => toWorkflowStatus(wf, getRequest));
 }
 
-export async function $listQueuedWorkflows(
+export async function listQueuedWorkflows(
   sysdb: SystemDatabase,
   input: GetQueuedWorkflowsInput,
   getRequest: boolean = false,
 ) {
   const workflows = await sysdb.listQueuedWorkflows(input);
-  return workflows.map((wf) => $toWorkflowStatus(wf, getRequest));
+  return workflows.map((wf) => toWorkflowStatus(wf, getRequest));
 }
 
-export async function $getWorkflow(
+export async function getWorkflow(
   sysdb: SystemDatabase,
   workflowID: string,
   getRequest: boolean = false,
 ): Promise<WorkflowStatus | undefined> {
   const status = await sysdb.getWorkflowStatus(workflowID);
-  return status ? $toWorkflowStatus(status, getRequest) : undefined;
+  return status ? toWorkflowStatus(status, getRequest) : undefined;
 }
 
-export async function $listWorkflowSteps(
+export async function listWorkflowSteps(
   sysdb: SystemDatabase,
   userdb: UserDatabase,
   workflowID: string,
@@ -77,7 +77,7 @@ export async function $listWorkflowSteps(
   return [...steps, ...txs].toSorted((a, b) => a.functionID - b.functionID);
 }
 
-function $toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
+function toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
   return {
     workflowID: internal.workflowUUID,
     status: internal.status,

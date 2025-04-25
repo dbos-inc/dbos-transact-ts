@@ -92,7 +92,7 @@ import { DBOSScheduler } from './scheduler/scheduler';
 import { DBOSEventReceiverState, DBNotificationCallback, DBNotificationListener } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
-import { $listQueuedWorkflows, $listWorkflows, $listWorkflowSteps, StepInfo } from './dbos-runtime/workflow_management';
+import { listQueuedWorkflows, listWorkflows, listWorkflowSteps, StepInfo } from './dbos-runtime/workflow_management';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -1912,15 +1912,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async listWorkflows(input: GetWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
-    return $listWorkflows(this.systemDatabase, input, getRequest);
+    return listWorkflows(this.systemDatabase, input, getRequest);
   }
 
   async listQueuedWorkflows(input: GetQueuedWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
-    return $listQueuedWorkflows(this.systemDatabase, input, getRequest);
+    return listQueuedWorkflows(this.systemDatabase, input, getRequest);
   }
 
   async listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
-    return $listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
+    return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
   }
 
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
