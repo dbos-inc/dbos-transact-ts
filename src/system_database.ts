@@ -95,11 +95,6 @@ export interface SystemDatabase {
   ): Promise<void>;
 
   getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatusInternal | null>;
-  getWorkflowStatusInternal(
-    workflowID: string,
-    callerID?: string,
-    callerFN?: number,
-  ): Promise<WorkflowStatusInternal | null>;
   awaitWorkflowResult(
     workflowID: string,
     timeoutSeconds?: number,
@@ -383,7 +378,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     initStatus: WorkflowStatusInternal,
     serializedInputs: string,
     maxRetries?: number,
-    args: T,
   ): Promise<{ serializedInputs: string; status: string }> {
     const result = await this.pool.query<{
       recovery_attempts: number;

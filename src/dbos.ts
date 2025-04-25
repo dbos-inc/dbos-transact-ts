@@ -943,13 +943,13 @@ export class DBOS {
    * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
    */
   static async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.listWorkflows(input);
     }, 'DBOS.listWorkflows');
   }
 
   static async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.listQueuedWorkflows(input);
     }, 'DBOS.listQueuedWorkflows');
   }
