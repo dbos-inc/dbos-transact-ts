@@ -1,24 +1,11 @@
-import {
-  GetWorkflowsOutput,
-  GetWorkflowsInput,
-  StatusString,
-  Authentication,
-  MiddlewareContext,
-  DBOS,
-  WorkflowQueue,
-} from '../src';
+import { GetWorkflowsInput, StatusString, Authentication, MiddlewareContext, DBOS, WorkflowQueue } from '../src';
 import request from 'supertest';
 import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
-import {
-  WorkflowInformation,
-  getWorkflow,
-  listWorkflows,
-  listQueuedWorkflows,
-} from '../src/dbos-runtime/workflow_management';
+import { getWorkflow, listWorkflows, listQueuedWorkflows } from '../src/dbos-runtime/workflow_management';
 import { Client } from 'pg';
+import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
-import { GetQueuedWorkflowsInput, WorkflowHandle } from '../src/workflow';
 import { globalParams } from '../src/utils';
 
 describe('workflow-management-tests', () => {
@@ -63,8 +50,8 @@ describe('workflow-management-tests', () => {
 
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input: {} });
     expect(response.statusCode).toBe(200);
-    const workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+    const workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(1);
   });
 
   test('getworkflows-with-dates', async () => {
@@ -78,14 +65,14 @@ describe('workflow-management-tests', () => {
     };
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+    let workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(1);
 
     input.endTime = new Date(Date.now() - 10000).toISOString();
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(0);
+    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(0);
   });
 
   test('getworkflows-with-status', async () => {
@@ -98,14 +85,14 @@ describe('workflow-management-tests', () => {
     };
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+    let workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(1);
 
     input.status = StatusString.PENDING;
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(0);
+    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(0);
   });
 
   test('getworkflows-with-wfname', async () => {
@@ -118,8 +105,8 @@ describe('workflow-management-tests', () => {
     };
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    const workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+    const workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(1);
   });
 
   test('getworkflows-with-authentication', async () => {
@@ -132,8 +119,8 @@ describe('workflow-management-tests', () => {
     };
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    const workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+    const workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(1);
   });
 
   test('getworkflows-with-authentication', async () => {
@@ -146,14 +133,14 @@ describe('workflow-management-tests', () => {
     };
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
+    let workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(1);
 
     input.applicationVersion = 'v1';
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(0);
+    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(0);
   });
 
   test('getworkflows-with-limit', async () => {
@@ -169,9 +156,9 @@ describe('workflow-management-tests', () => {
 
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    let workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
-    expect(workflowUUIDs.workflowUUIDs[0]).toBe(workflowIDs[0]);
+    let workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(1);
+    expect(workflowUUIDs[0].workflowID).toBe(workflowIDs[0]);
 
     for (let i = 0; i < 10; i++) {
       response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow_get_id');
@@ -182,21 +169,21 @@ describe('workflow-management-tests', () => {
 
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(10);
+    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(10);
     for (let i = 0; i < 10; i++) {
       // The order should be ascending by default
-      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[i]);
+      expect(workflowUUIDs[i].workflowID).toBe(workflowIDs[i]);
     }
 
     // Test sort_desc inverts the order
     input.sortDesc = true;
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(10);
+    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(10);
     for (let i = 0; i < 10; i++) {
-      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[10 - i]);
+      expect(workflowUUIDs[i].workflowID).toBe(workflowIDs[10 - i]);
     }
 
     // Test LIMIT 2 OFFSET 2 returns the third and fourth workflows
@@ -205,20 +192,20 @@ describe('workflow-management-tests', () => {
     input.sortDesc = false;
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(2);
-    for (let i = 0; i < workflowUUIDs.workflowUUIDs.length; i++) {
-      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[i + 2]);
+    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(2);
+    for (let i = 0; i < workflowUUIDs.length; i++) {
+      expect(workflowUUIDs[i].workflowID).toBe(workflowIDs[i + 2]);
     }
 
     // Test OFFSET 10 returns the last workflow
     input.offset = 10;
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
     expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(1);
-    for (let i = 0; i < workflowUUIDs.workflowUUIDs.length; i++) {
-      expect(workflowUUIDs.workflowUUIDs[i]).toBe(workflowIDs[i + 10]);
+    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(1);
+    for (let i = 0; i < workflowUUIDs.length; i++) {
+      expect(workflowUUIDs[i].workflowID).toBe(workflowIDs[i + 10]);
     }
 
     // Test search by workflow ID.
@@ -227,10 +214,10 @@ describe('workflow-management-tests', () => {
     };
     response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input: wfidInput });
     expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as GetWorkflowsOutput;
-    expect(workflowUUIDs.workflowUUIDs.length).toBe(2);
-    expect(workflowUUIDs.workflowUUIDs[0]).toBe(workflowIDs[5]);
-    expect(workflowUUIDs.workflowUUIDs[1]).toBe(workflowIDs[7]);
+    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
+    expect(workflowUUIDs.length).toBe(2);
+    expect(workflowUUIDs[0].workflowID).toBe(workflowIDs[5]);
+    expect(workflowUUIDs[1].workflowID).toBe(workflowIDs[7]);
   });
 
   test('getworkflows-cli', async () => {
@@ -275,7 +262,7 @@ describe('workflow-management-tests', () => {
     expect(info.updatedAt).toBeGreaterThan(0);
     expect(info.executorId).toBe(globalParams.executorID);
 
-    const getInfo = await getWorkflow(config, info.workflowUUID, false);
+    const getInfo = await getWorkflow(config, info.workflowID, false);
     expect(info).toEqual(getInfo);
   });
 
@@ -418,7 +405,7 @@ describe('workflow-management-tests', () => {
 
     @DBOS.postApi('/getWorkflows')
     static async getWorkflows(input: GetWorkflowsInput) {
-      return await DBOS.getWorkflows(input);
+      return await DBOS.listWorkflows(input);
     }
 
     static tries = 0;
@@ -498,7 +485,7 @@ describe('test-list-queues', () => {
     }
 
     let input: GetQueuedWorkflowsInput = {};
-    let output: WorkflowInformation[] = [];
+    let output: WorkflowStatus[] = [];
     output = await listQueuedWorkflows(config, input, false);
     expect(output.length).toBe(TestListQueues.queuedSteps);
 
@@ -788,7 +775,7 @@ describe('test-list-steps', () => {
   class ListWorkflows {
     @DBOS.workflow()
     static async listingWorkflow() {
-      return (await DBOS.getWorkflows({})).workflowUUIDs.length;
+      return (await DBOS.listWorkflows({})).length;
     }
 
     @DBOS.workflow()

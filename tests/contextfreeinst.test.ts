@@ -136,11 +136,11 @@ async function main() {
   expect(resB).toBe('done B');
 
   // Check for this to have run
-  const wfs = await DBOS.getWorkflows({ workflowName: 'doWorkflow' });
-  expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(2);
-  expect(wfs.workflowUUIDs.length).toBe(2);
-  const wfh1 = DBOS.retrieveWorkflow(wfs.workflowUUIDs[0]);
-  const wfh2 = DBOS.retrieveWorkflow(wfs.workflowUUIDs[1]);
+  const wfs = await DBOS.listWorkflows({ workflowName: 'doWorkflow' });
+  expect(wfs.length).toBeGreaterThanOrEqual(2);
+  expect(wfs.length).toBe(2);
+  const wfh1 = DBOS.retrieveWorkflow(wfs[0].workflowID);
+  const wfh2 = DBOS.retrieveWorkflow(wfs[1].workflowID);
   const stat1 = await wfh1.getStatus();
   const stat2 = await wfh2.getStatus();
   expect(stat1?.status).toBe('SUCCESS');
@@ -212,10 +212,10 @@ async function main5() {
   });
   expect(res).toBe('done A');
 
-  const wfs = await DBOS.getWorkflows({ workflowName: 'doWorkflow' });
-  expect(wfs.workflowUUIDs.length).toBeGreaterThanOrEqual(1);
-  expect(wfs.workflowUUIDs.length).toBe(1);
-  const wfstat = await DBOS.getWorkflowStatus(wfs.workflowUUIDs[0]);
+  const wfs = await DBOS.listWorkflows({ workflowName: 'doWorkflow' });
+  expect(wfs.length).toBeGreaterThanOrEqual(1);
+  expect(wfs.length).toBe(1);
+  const wfstat = await DBOS.getWorkflowStatus(wfs[0].workflowID);
   expect(wfstat?.queueName).toBe('wfq');
   expect(wfstat?.workflowConfigName).toBe('A');
 

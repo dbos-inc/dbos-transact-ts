@@ -108,7 +108,6 @@ export class DBOSClient {
       applicationVersion: appVersion,
       applicationID: '',
       createdAt: Date.now(),
-      maxRetries: 50,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, args);
@@ -141,7 +140,6 @@ export class DBOSClient {
       executorId: '',
       applicationID: '',
       createdAt: Date.now(),
-      maxRetries: 50,
     };
     await this.systemDatabase.initWorkflowStatus(internalStatus, [destinationID, message, topic]);
     await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, DBOSJSON.stringify(message), topic);

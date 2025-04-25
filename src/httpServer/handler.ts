@@ -254,7 +254,8 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
   }
 
   async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    return this.#dbosExec.systemDatabase.getWorkflows(input);
+    const wfs = await this.#dbosExec.listWorkflows(input);
+    return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
   }
 
   //////////////////////

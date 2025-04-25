@@ -21,11 +21,12 @@ import {
   WorkflowParams,
   RetrievedHandle,
   WorkflowContextImpl,
-  WorkflowStatus,
   StatusString,
   ContextFreeFunction,
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
+  WorkflowStatus,
+  GetQueuedWorkflowsInput,
 } from './workflow';
 
 import { IsolationLevel, Transaction, TransactionConfig, TransactionContextImpl } from './transaction';
@@ -82,7 +83,7 @@ import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, GetWorkflowsOutput, InitContext } from '.';
+import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
 
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -637,7 +638,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       wf.name === DBOSExecutor.tempWorkflowName ? wf.name : getRegisteredMethodClassName(wf) + '.' + wf.name;
     return this.workflowInfoMap.get(wfname);
   }
-  getWorkflowInfoByStatus(wf: WorkflowStatus) {
+
+  getWorkflowInfoByStatus(wf: WorkflowStatusInternal) {
     const wfname = wf.workflowClassName + '.' + wf.workflowName;
     const wfInfo = this.workflowInfoMap.get(wfname);
 
@@ -748,7 +750,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       applicationVersion: globalParams.appVersion,
       applicationID: wCtxt.applicationID,
       createdAt: Date.now(), // Remember the start time of this workflow
-      maxRetries: wCtxt.maxRecoveryAttempts,
     };
 
     if (wCtxt.isTempWorkflow) {
@@ -761,6 +762,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
     if (this.isDebugging) {
+      // TODO: remove call to getWorkflowInputs after #871 is merged
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
       const wfInputs = await this.systemDatabase.getWorkflowInputs<T>(workflowID);
       if (!wfStatus || !wfInputs) {
@@ -782,7 +784,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           return new RetrievedHandle(this.systemDatabase, cr.res.child!, callerID, callerFunctionID);
         }
       }
-      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args, wCtxt.maxRecoveryAttempts);
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(
@@ -1898,12 +1900,19 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
-    return this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
+  async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
+    const status = await this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
+    return status ? DBOSExecutor.toWorkflowStatus(status, true) : null;
   }
 
-  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    return this.systemDatabase.getWorkflows(input);
+  async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
+    const wfs = await this.systemDatabase.listWorkflows(input);
+    return wfs.map((wf) => DBOSExecutor.toWorkflowStatus(wf, true));
+  }
+
+  async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
+    const wfs = await this.systemDatabase.listQueuedWorkflows(input);
+    return wfs.map((wf) => DBOSExecutor.toWorkflowStatus(wf, true));
   }
 
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
@@ -2028,6 +2037,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async executeWorkflowUUID(workflowID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
+    // TODO: remove call to getWorkflowInputs after #871 is merged
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
     const inputs = await this.systemDatabase.getWorkflowInputs(workflowID);
     if (!inputs || !wfStatus) {
@@ -2145,7 +2155,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return await this.systemDatabase.upsertEventDispatchState(state);
   }
 
-  #getRecoveryContext(workflowUUID: string, status: WorkflowStatus): DBOSContextImpl {
+  #getRecoveryContext(workflowUUID: string, status: WorkflowStatusInternal): DBOSContextImpl {
     // Note: this doesn't inherit the original parent context's span.
     const oc = new DBOSContextImpl(status.workflowName, undefined as unknown as Span, this.logger);
     oc.request = status.request;
@@ -2239,5 +2249,32 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return;
     }
     DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
+  }
+
+  static toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
+    return {
+      workflowID: internal.workflowUUID,
+      status: internal.status,
+      workflowName: internal.workflowName,
+      workflowClassName: internal.workflowClassName,
+      workflowConfigName: internal.workflowConfigName,
+      queueName: internal.queueName,
+
+      authenticatedUser: internal.authenticatedUser,
+      assumedRole: internal.assumedRole,
+      authenticatedRoles: internal.authenticatedRoles,
+
+      input: internal.input ? (DBOSJSON.parse(internal.input) as unknown[]) : undefined,
+      output: internal.output ? DBOSJSON.parse(internal.output ?? null) : undefined,
+      error: internal.error ? deserializeError(DBOSJSON.parse(internal.error)) : undefined,
+
+      request: getRequest ? internal.request : undefined,
+      executorId: internal.executorId,
+      applicationVersion: internal.applicationVersion,
+      applicationID: internal.applicationID,
+      recoveryAttempts: internal.recoveryAttempts,
+      createdAt: internal.createdAt,
+      updatedAt: internal.updatedAt,
+    };
   }
 }

@@ -1,10 +1,9 @@
 import { createLogger } from 'winston';
-import { GetWorkflowsInput, StatusString } from '..';
+import { GetWorkflowsInput } from '..';
 import { DBOSConfigInternal, DBOSExecutor } from '../dbos-executor';
-import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from '../system_database';
+import { PostgresSystemDatabase, SystemDatabase } from '../system_database';
 import { GlobalLogger } from '../telemetry/logs';
-import { GetQueuedWorkflowsInput } from '../workflow';
-import { HTTPRequest } from '../context';
+import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
 import axios from 'axios';
 import { DBOS } from '../dbos';
 
@@ -12,38 +11,37 @@ export async function listWorkflows(
   config: DBOSConfigInternal,
   input: GetWorkflowsInput,
   getRequest: boolean,
-): Promise<WorkflowInformation[]> {
+): Promise<WorkflowStatus[]> {
   const systemDatabase = new PostgresSystemDatabase(
     config.poolConfig,
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
-
-  const workflowUUIDs = (await systemDatabase.getWorkflows(input)).workflowUUIDs;
-  const workflowInfos = await Promise.all(
-    workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
-  );
-  await systemDatabase.destroy();
-  return workflowInfos;
+  try {
+    const workflows = await systemDatabase.listWorkflows(input);
+    return workflows.map((wf) => DBOSExecutor.toWorkflowStatus(wf, getRequest));
+  } finally {
+    await systemDatabase.destroy();
+  }
 }
 
 export async function listQueuedWorkflows(
   config: DBOSConfigInternal,
   input: GetQueuedWorkflowsInput,
   getRequest: boolean,
-): Promise<WorkflowInformation[]> {
+): Promise<WorkflowStatus[]> {
   const systemDatabase = new PostgresSystemDatabase(
     config.poolConfig,
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
 
-  const workflowUUIDs = (await systemDatabase.getQueuedWorkflows(input)).workflowUUIDs;
-  const workflowInfos = await Promise.all(
-    workflowUUIDs.map(async (i) => await getWorkflowInfo(systemDatabase, i, getRequest)),
-  );
-  await systemDatabase.destroy();
-  return workflowInfos;
+  try {
+    const workflows = await systemDatabase.listQueuedWorkflows(input);
+    return workflows.map((wf) => DBOSExecutor.toWorkflowStatus(wf, getRequest));
+  } finally {
+    await systemDatabase.destroy();
+  }
 }
 
 export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID: string) {
@@ -54,43 +52,14 @@ export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID
   return workflowSteps;
 }
 
-export type WorkflowInformation = Omit<WorkflowStatusInternal, 'request' | 'error' | 'output'> & {
-  input?: unknown[];
-  request?: HTTPRequest;
-  error?: unknown;
-  output?: unknown;
-};
-
 export async function getWorkflowInfo(
   systemDatabase: SystemDatabase,
   workflowID: string,
   getRequest: boolean,
-): Promise<WorkflowInformation> {
-  // TODO: Fix this cast
-  const info = (await systemDatabase.getWorkflowStatusInternal(workflowID)) as WorkflowInformation;
-  if (info === null) {
-    return Promise.resolve({} as WorkflowInformation);
-  }
-  delete info.error; // Remove error from info, and add it back if needed
-  delete info.output;
-  const input = await systemDatabase.getWorkflowInputs(workflowID);
-  if (input !== null) {
-    info.input = input;
-  }
-  if (info.status === StatusString.SUCCESS || info.status === StatusString.ERROR) {
-    try {
-      info.output = DBOSExecutor.reviveResultOrError(
-        (await systemDatabase.awaitWorkflowResult(workflowID))!,
-        info.status === StatusString.SUCCESS,
-      );
-    } catch (e) {
-      info.error = e;
-    }
-  }
-  if (!getRequest) {
-    delete info.request;
-  }
-  return info;
+): Promise<WorkflowStatus | undefined> {
+  const statuses = await systemDatabase.listWorkflows({ workflowIDs: [workflowID] });
+  const status = statuses.find((s) => s.workflowUUID === workflowID);
+  return status ? DBOSExecutor.toWorkflowStatus(status, getRequest) : undefined;
 }
 
 export async function getWorkflow(config: DBOSConfigInternal, workflowID: string, getRequest: boolean) {
@@ -99,10 +68,11 @@ export async function getWorkflow(config: DBOSConfigInternal, workflowID: string
     config.system_database,
     createLogger() as unknown as GlobalLogger,
   );
-
-  const info = await getWorkflowInfo(systemDatabase, workflowID, getRequest);
-  await systemDatabase.destroy();
-  return info;
+  try {
+    return await getWorkflowInfo(systemDatabase, workflowID, getRequest);
+  } finally {
+    await systemDatabase.destroy();
+  }
 }
 
 export async function cancelWorkflow(host: string, workflowID: string, logger: GlobalLogger) {

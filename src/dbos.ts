@@ -20,6 +20,7 @@ import {
 } from './dbos-executor';
 import { Tracer } from './telemetry/traces';
 import {
+  GetQueuedWorkflowsInput,
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
@@ -27,6 +28,7 @@ import {
   WorkflowConfig,
   WorkflowFunction,
   WorkflowParams,
+  WorkflowStatus,
 } from './workflow';
 import { DBOSEventReceiverState, DBOSExecutorContext } from './eventreceiver';
 import { DLogger, GlobalLogger } from './telemetry/logs';
@@ -856,7 +858,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    * @returns status of the workflow as `WorkflowStatus`, or `null` if there is no workflow with `workflowID`
    */
-  static getWorkflowStatus(workflowID: string) {
+  static getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null> {
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInStep()) {
         // OK to use directly
@@ -896,13 +898,31 @@ export class DBOS {
    * Query the system database for all workflows matching the provided predicate
    * @param input - `GetWorkflowsInput` predicate for filtering returned workflows
    * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
+   * @deprecated Use `DBOS.listWorkflows` instead
    */
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
     return await DBOS.#runAsWorkflowStep(async () => {
-      return await DBOS.executor.getWorkflows(input);
+      const wfs = await DBOS.executor.listWorkflows(input);
+      return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
     }, 'DBOS.getWorkflows');
   }
 
+  /**
+   * Query the system database for all workflows matching the provided predicate
+   * @param input - `GetWorkflowsInput` predicate for filtering returned workflows
+   * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
+   */
+  static async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.executor.listWorkflows(input);
+    }, 'DBOS.listWorkflows');
+  }
+
+  static async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.executor.listQueuedWorkflows(input);
+    }, 'DBOS.listQueuedWorkflows');
+  }
   /**
    * Cancel a workflow given its ID.
    * If the workflow is currently running, `DBOSWorkflowCancelledError` will be
