@@ -13,7 +13,7 @@ import {
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
 import request from 'supertest';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 class ConfigTracker {
   name: string = '';
@@ -158,8 +158,8 @@ describe('dbos-configclass-tests', () => {
       throw e;
     }
     await DBOS.invoke(configA).testStep();
-    const wfUUID1 = uuidv1();
-    const wfUUID2 = uuidv1();
+    const wfUUID1 = randomUUID();
+    const wfUUID2 = randomUUID();
     await DBOS.withNextWorkflowID(wfUUID1, async () => await config1.testTransaction1());
     await DBOS.withNextWorkflowID(wfUUID2, async () => await configA.testTransaction1());
 

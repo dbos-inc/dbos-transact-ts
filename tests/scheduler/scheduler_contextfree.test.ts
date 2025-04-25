@@ -187,13 +187,13 @@ describe('cf-scheduled-wf-tests-when-active', () => {
       expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(4);
       expect(DBOSSchedTestClass.nQCalls).toBeGreaterThanOrEqual(1); // This has some delay, potentially...
 
-      const wfs = await DBOS.getWorkflows({
+      const wfs = await DBOS.listWorkflows({
         workflowName: 'scheduledDefaultQ',
       });
 
       let foundQ = false;
-      for (const wfid of wfs.workflowUUIDs) {
-        const stat = await DBOS.retrieveWorkflow(wfid).getStatus();
+      for (const wf of wfs) {
+        const stat = await DBOS.retrieveWorkflow(wf.workflowID).getStatus();
         if (stat?.queueName === q.name) foundQ = true;
       }
       expect(foundQ).toBeTruthy();

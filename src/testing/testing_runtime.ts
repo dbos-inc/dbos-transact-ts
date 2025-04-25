@@ -376,7 +376,8 @@ export class TestingRuntimeImpl implements TestingRuntime {
   }
 
   async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    return await this.getDBOSExec().systemDatabase.getWorkflows(input);
+    const wfs = await this.getDBOSExec().listWorkflows(input);
+    return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
   }
 
   async queryUserDB<R>(sql: string, ...params: any[]): Promise<R[]> {

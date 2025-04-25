@@ -11,7 +11,7 @@ import {
 } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import { DatabaseError, PoolClient } from 'pg';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError, DBOSUnexpectedStepError } from '../src/error';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
@@ -42,7 +42,7 @@ describe('failures-tests', () => {
   });
 
   test('dbos-error', async () => {
-    const wfUUID1 = uuidv1();
+    const wfUUID1 = randomUUID();
     await DBOS.withNextWorkflowID(
       wfUUID1,
       async () =>
@@ -61,7 +61,7 @@ describe('failures-tests', () => {
   });
 
   test('readonly-error', async () => {
-    const testUUID = uuidv1();
+    const testUUID = randomUUID();
     await DBOS.withNextWorkflowID(
       testUUID,
       async () => await expect(FailureTestClass.testReadonlyError()).rejects.toThrow(new Error('test error')),
@@ -81,8 +81,8 @@ describe('failures-tests', () => {
   });
 
   test('simple-keyconflict', async () => {
-    const workflowUUID1 = uuidv1();
-    const workflowUUID2 = uuidv1();
+    const workflowUUID1 = randomUUID();
+    const workflowUUID2 = randomUUID();
 
     // Start two concurrent transactions.
     const results = await Promise.allSettled([
@@ -143,7 +143,7 @@ describe('failures-tests', () => {
   });
 
   test('nonretry-step', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
 
     // Should throw an error.
     await DBOS.withNextWorkflowID(workflowUUID, async () => {

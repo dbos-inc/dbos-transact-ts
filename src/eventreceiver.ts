@@ -1,10 +1,10 @@
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import {
+  GetQueuedWorkflowsInput,
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
-  GetWorkflowsOutput,
   WorkflowFunction,
   WorkflowHandle,
   WorkflowParams,
@@ -109,7 +109,9 @@ export interface DBOSExecutorContext {
   /** @deprecated Use functions on `DBOS` */
   getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
   /** @deprecated Use functions on `DBOS` */
-  getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput>;
+  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]>;
+  /** @deprecated Use functions on `DBOS` */
+  listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]>;
   /** @deprecated Use functions on `DBOS` */
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
   /** @deprecated Use functions on `DBOS` */

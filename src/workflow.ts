@@ -3,7 +3,7 @@ import { DBOSExecutor, OperationType } from './dbos-executor';
 import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
 import { SystemDatabase } from './system_database';
-import { HTTPRequest, DBOSContext, DBOSContextImpl, assertCurrentWorkflowContext } from './context';
+import { DBOSContext, DBOSContextImpl, HTTPRequest, assertCurrentWorkflowContext } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
@@ -62,16 +62,29 @@ export interface WorkflowConfig {
 }
 
 export interface WorkflowStatus {
+  readonly workflowID: string;
   readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED.
   readonly workflowName: string; // The name of the workflow function.
   readonly workflowClassName: string; // The class name holding the workflow function.
-  readonly workflowConfigName: string; // The name of the configuration, if the class needs configuration
+  readonly workflowConfigName?: string; // The name of the configuration, if the class needs configuration
   readonly queueName?: string; // The name of the queue, if workflow was queued
-  readonly authenticatedUser: string; // The user who ran the workflow. Empty string if not set.
-  readonly assumedRole: string; // The role used to run this workflow.  Empty string if authorization is not required.
-  readonly authenticatedRoles: string[]; // All roles the authenticated user has, if any.
-  readonly request: HTTPRequest; // The parent request for this workflow, if any.
+
+  readonly authenticatedUser?: string; // The user who ran the workflow. Empty string if not set.
+  readonly assumedRole?: string; // The role used to run this workflow.  Empty string if authorization is not required.
+  readonly authenticatedRoles?: string[]; // All roles the authenticated user has, if any.
+
+  readonly output?: unknown;
+  readonly error?: unknown; // The error thrown by the workflow, if any.
+  readonly input?: unknown[]; // The input to the workflow, if any.
+
+  readonly request?: HTTPRequest; // The parent request for this workflow, if any.
   readonly executorId?: string; // The ID of the workflow executor
+  readonly applicationVersion?: string;
+  readonly applicationID: string;
+  readonly recoveryAttempts?: number;
+
+  readonly createdAt: number;
+  readonly updatedAt?: number;
 }
 
 export interface GetWorkflowsInput {
@@ -85,6 +98,7 @@ export interface GetWorkflowsInput {
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
+  workflow_id_prefix?: string;
 }
 
 export interface GetQueuedWorkflowsInput {

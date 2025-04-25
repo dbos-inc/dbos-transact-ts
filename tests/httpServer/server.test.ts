@@ -16,12 +16,12 @@ import {
 } from '../../src';
 import { DeleteApi, PatchApi, PutApi } from '../../src';
 import { WorkflowUUIDHeader } from '../../src/httpServer/server';
-import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb, uuidValidate } from '../helpers';
 import request from 'supertest';
 import { ArgSource, HandlerContext } from '../../src/httpServer/handler';
 import { ArgSources } from '../../src/httpServer/handlerTypes';
 import { Authentication, KoaBodyParser, RequestIDHeader } from '../../src/httpServer/middleware';
-import { v1 as uuidv1, validate as uuidValidate } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { DBOSConfig } from '../../src/dbos-executor';
 import { DBOSNotAuthorizedError, DBOSResponseError } from '../../src/error';
 import { PoolClient } from 'pg';
@@ -266,7 +266,7 @@ describe('httpserver-tests', () => {
   });
 
   test('test-workflowUUID-header', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const response = await request(DBOS.getHTTPHandlersCallback()!)
       .post('/workflow?name=bob')
       .set({ 'dbos-idempotency-key': workflowUUID });
@@ -284,7 +284,7 @@ describe('httpserver-tests', () => {
   });
 
   test('endpoint-handler-UUID', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const response = await request(DBOS.getHTTPHandlersCallback()!)
       .get('/handler/bob')
       .set({ 'dbos-idempotency-key': workflowUUID });
