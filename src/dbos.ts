@@ -858,21 +858,21 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    * @returns status of the workflow as `WorkflowStatus`, or `null` if there is no workflow with `workflowID`
    */
-  static getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null> {
+  static getWorkflowStatus(workflowID: string, getResult: boolean = false): Promise<WorkflowStatus | null> {
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInStep()) {
         // OK to use directly
-        return DBOS.executor.getWorkflowStatus(workflowID);
+        return DBOS.executor.getWorkflowStatus(workflowID, undefined, undefined, getResult);
       } else if (DBOS.isInWorkflow()) {
         const wfctx = assertCurrentWorkflowContext();
-        return DBOS.executor.getWorkflowStatus(workflowID, DBOS.workflowID, wfctx.functionIDGetIncrement());
+        return DBOS.executor.getWorkflowStatus(workflowID, DBOS.workflowID, wfctx.functionIDGetIncrement(), getResult);
       } else {
         throw new DBOSInvalidWorkflowTransitionError(
           'Invalid call to `getWorkflowStatus` inside a `transaction` or `procedure`',
         );
       }
     }
-    return DBOS.executor.getWorkflowStatus(workflowID);
+    return DBOS.executor.getWorkflowStatus(workflowID, undefined, undefined, getResult);
   }
 
   /**
