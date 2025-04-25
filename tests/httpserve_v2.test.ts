@@ -14,9 +14,9 @@ import {
 } from '../src';
 import { DBOSNotAuthorizedError } from '../src/error';
 import { WorkflowUUIDHeader } from '../src/httpServer/server';
-import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable, uuidValidate } from './helpers';
 import request from 'supertest';
-import { v1 as uuidv1, validate as uuidValidate } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { RequestIDHeader } from '../src/httpServer/middleware';
 import { IncomingMessage } from 'http';
 
@@ -455,7 +455,7 @@ describe('dbos-v2api-tests-http', () => {
   });
 
   test('test-workflowUUID-header', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const response = await request(DBOS.getHTTPHandlersCallback()!)
       .post('/workflow?name=bob')
       .set({ 'dbos-idempotency-key': workflowUUID });
@@ -473,7 +473,7 @@ describe('dbos-v2api-tests-http', () => {
   });
 
   test('endpoint-handler-UUID', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const response = await request(DBOS.getHTTPHandlersCallback()!)
       .get('/handler/bob')
       .set({ 'dbos-idempotency-key': workflowUUID });

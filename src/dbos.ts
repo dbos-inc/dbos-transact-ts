@@ -70,7 +70,7 @@ import { Application as ExpressApp } from 'express';
 import { INestApplication } from '@nestjs/common';
 import { FastifyInstance } from 'fastify';
 import _fastifyExpress from '@fastify/express'; // This is for fastify.use()
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 import { PoolClient } from 'pg';
 import { Knex } from 'knex';
@@ -318,7 +318,7 @@ export class DBOS {
 
     if (options?.conductorKey) {
       // Use a generated executor ID.
-      globalParams.executorID = uuidv4();
+      globalParams.executorID = randomUUID();
     }
 
     // Initialize the DBOS executor

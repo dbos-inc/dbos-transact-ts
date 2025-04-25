@@ -1,7 +1,7 @@
 import { PoolConfig } from 'pg';
 import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { GlobalLogger as Logger } from './telemetry/logs';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { RetrievedHandle, StatusString, WorkflowHandle } from './workflow';
 import { constructPoolConfig } from './dbos-runtime/config';
 import { DBOSJSON } from './utils';
@@ -89,7 +89,7 @@ export class DBOSClient {
     ...args: Parameters<T>
   ): Promise<WorkflowHandle<Awaited<ReturnType<T>>>> {
     const { workflowName, workflowClassName, queueName, appVersion } = options;
-    const workflowUUID = options.workflowID ?? uuidv4();
+    const workflowUUID = options.workflowID ?? randomUUID();
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
@@ -124,7 +124,7 @@ export class DBOSClient {
    * @returns A Promise that resolves when the message has been sent.
    */
   async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
-    idempotencyKey ??= uuidv4();
+    idempotencyKey ??= randomUUID();
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: `${destinationID}-${idempotencyKey}`,
       status: StatusString.SUCCESS,

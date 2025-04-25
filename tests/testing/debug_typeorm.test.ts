@@ -1,6 +1,6 @@
 import { DBOS, OrmEntities } from '../../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
 import { Column, Entity, EntityManager, PrimaryColumn } from 'typeorm';
 import { UserDatabaseName } from '../../src/user_database';
@@ -47,7 +47,7 @@ describe('typeorm-debugger-test', () => {
   }
 
   test('debug-typeorm-transaction', async () => {
-    const wfUUID = uuidv1();
+    const wfUUID = randomUUID();
     // Execute the workflow and destroy the runtime
     DBOS.setConfig(config);
     await DBOS.launch();
