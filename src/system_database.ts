@@ -614,7 +614,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         DBOSJSON.stringify(workflowStatus.authenticatedRoles),
         DBOSJSON.stringify(workflowStatus.request),
         null,
-        workflowStatus.executorId,
+        null,
         workflowStatus.applicationVersion,
         workflowStatus.applicationID,
         Date.now(),
