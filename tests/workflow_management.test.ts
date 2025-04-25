@@ -1100,51 +1100,52 @@ describe('test-fork', () => {
     static childWorkflowCount = 0;
 
     @DBOS.workflow()
-    static async stepsWorkflow() {
-      await ExampleWorkflow.stepOne();
-      await ExampleWorkflow.stepTwo();
-      await ExampleWorkflow.stepThree();
-      await ExampleWorkflow.stepFour();
-      await ExampleWorkflow.stepFive();
+    static async stepsWorkflow(): Promise<number> {
+      let result = await ExampleWorkflow.stepOne(1);
+      result += await ExampleWorkflow.stepTwo(2);
+      result += await ExampleWorkflow.stepThree(3);
+      result += await ExampleWorkflow.stepFour(4);
+      result += await ExampleWorkflow.stepFive(5);
+      return result;
     }
 
     @DBOS.workflow()
     static async stepsAndTransactionWorkflow() {
-      await ExampleWorkflow.stepOne();
+      await ExampleWorkflow.stepOne(1);
       await ExampleWorkflow.transactionOne();
-      await ExampleWorkflow.stepTwo();
+      await ExampleWorkflow.stepTwo(1);
       await ExampleWorkflow.transactionTwo();
       await ExampleWorkflow.transactionThree();
     }
 
     @DBOS.step()
-    static async stepOne() {
+    static async stepOne(input: number): Promise<number> {
       ExampleWorkflow.stepOneCount += 1;
-      return Promise.resolve();
+      return Promise.resolve(1 * input);
     }
 
     @DBOS.step()
-    static async stepTwo() {
+    static async stepTwo(input: number): Promise<number> {
       ExampleWorkflow.stepTwoCount += 1;
-      return Promise.resolve();
+      return Promise.resolve(2 * input);
     }
 
     @DBOS.step()
-    static async stepThree() {
+    static async stepThree(input: number): Promise<number> {
       ExampleWorkflow.stepThreeCount += 1;
-      return Promise.resolve();
+      return Promise.resolve(3 * input);
     }
 
     @DBOS.step()
-    static async stepFour() {
+    static async stepFour(input: number): Promise<number> {
       ExampleWorkflow.stepFourCount += 1;
-      return Promise.resolve();
+      return Promise.resolve(4 * input);
     }
 
     @DBOS.step()
-    static async stepFive() {
+    static async stepFive(input: number): Promise<number> {
       ExampleWorkflow.stepFiveCount += 1;
-      return Promise.resolve();
+      return Promise.resolve(5 * input);
     }
 
     @DBOS.transaction()
@@ -1178,17 +1179,18 @@ describe('test-fork', () => {
 
     @DBOS.workflow()
     static async parentWorkflow() {
-      await ExampleWorkflow.stepOne();
+      await ExampleWorkflow.stepOne(1);
       const handle = await DBOS.startWorkflow(ExampleWorkflow).childWorkflow();
       await handle.getResult();
-      await ExampleWorkflow.stepTwo();
+      await ExampleWorkflow.stepTwo(1);
     }
   }
 
   test('test-fork-steps', async () => {
     const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow();
-    await handle.getResult();
+    let result: number = await handle.getResult();
+    expect(result).toBe(55);
 
     expect(ExampleWorkflow.stepOneCount).toBe(1);
     expect(ExampleWorkflow.stepTwoCount).toBe(1);
@@ -1197,7 +1199,8 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFiveCount).toBe(1);
 
     const forkedHandle = await DBOS.forkWorkflow(wfid);
-    await forkedHandle.getResult();
+    let forkresult = await forkedHandle.getResult();
+    expect(forkresult).toBe(55);
 
     expect(ExampleWorkflow.stepOneCount).toBe(2);
     expect(ExampleWorkflow.stepTwoCount).toBe(2);
@@ -1206,7 +1209,8 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFiveCount).toBe(2);
 
     const forkedHandle2 = await DBOS.forkWorkflow(wfid, 2);
-    await forkedHandle2.getResult();
+    forkresult = await forkedHandle2.getResult();
+    expect(result).toBe(55);
 
     expect(ExampleWorkflow.stepOneCount).toBe(2);
     expect(ExampleWorkflow.stepTwoCount).toBe(2);
@@ -1215,7 +1219,8 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFiveCount).toBe(3);
 
     const forkedHandle3 = await DBOS.forkWorkflow(wfid, 4);
-    await forkedHandle3.getResult();
+    forkresult = await forkedHandle3.getResult();
+    expect(forkresult).toBe(55);
 
     expect(ExampleWorkflow.stepOneCount).toBe(2);
     expect(ExampleWorkflow.stepTwoCount).toBe(2);
