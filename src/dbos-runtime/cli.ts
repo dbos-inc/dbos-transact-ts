@@ -233,7 +233,8 @@ workflowCommands
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--request', 'Retrieve workflow request information')
-  .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
+  .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
+    options.silent = true;
     const [dbosConfig, _] = parseConfigFile(options);
     const output = await getWorkflow(dbosConfig, uuid, options.request);
     console.log(JSON.stringify(output));
@@ -244,7 +245,8 @@ workflowCommands
   .description('List the steps of a workflow')
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
+  .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
+    options.silent = true;
     const [dbosConfig, _] = parseConfigFile(options);
     const output = await listWorkflowSteps(dbosConfig, uuid);
     console.log(JSON.stringify(output));
