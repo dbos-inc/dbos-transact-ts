@@ -277,6 +277,7 @@ describe('httpserver-tests', () => {
     const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
+
     const status = await retrievedHandle.getStatus();
     expect(status).not.toBeNull();
     expect(status?.status).toBe(StatusString.SUCCESS);
