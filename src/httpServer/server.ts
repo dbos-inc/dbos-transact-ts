@@ -317,7 +317,6 @@ export class DBOSHttpServer {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const body = koaCtxt.request.body as { start_step?: number };
       const startStep = body?.start_step ?? 1;
-      // const startStep = (koaCtxt.request.body as { start_step: number })?.start_step;
 
       dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${startStep} with a new id`);
       try {
@@ -330,7 +329,6 @@ export class DBOSHttpServer {
           errorMessage = `Unknown error`;
         }
         dbosExec.logger.error(`Error forking workflow ${workflowId}: ${errorMessage}`);
-        dbosExec.logger.error(`Error forking workflow ${workflowId}`);
         koaCtxt.status = 500;
         koaCtxt.body = {
           error: `Error forking workflow ${workflowId}: ${errorMessage}`,
