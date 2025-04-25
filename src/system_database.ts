@@ -33,6 +33,7 @@ import knex, { Knex } from 'knex';
 import path from 'path';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSEventReceiverState } from './eventreceiver';
+import { randomUUID } from 'crypto';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -102,7 +103,7 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
-  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string>;
+  forkWorkflow(originalWorkflowID: string, forkedWorkflowId?: string): Promise<string>;
 
   // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
@@ -548,7 +549,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string> {
+  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId?: string): Promise<string> {
+    forkedWorkflowId ??= randomUUID();
     // TODO: remove call to getWorkflowInputs after #871 is merged
     const workflowStatus = await this.getWorkflowStatus(originalWorkflowID);
     if (workflowStatus === null) {

@@ -92,6 +92,7 @@ import { DBOSScheduler } from './scheduler/scheduler';
 import { DBOSEventReceiverState, DBNotificationCallback, DBNotificationListener } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
+import { $listQueuedWorkflows, $listWorkflows, $listWorkflowSteps, StepInfo } from './dbos-runtime/workflow_management';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -1847,8 +1848,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * The forked workflow will be assigned a new ID.
    */
 
-  async forkWorkflow(workflowID: string): Promise<string> {
-    const forkedWorkflowID = randomUUID();
+  async forkWorkflow(workflowID: string, forkedWorkflowID?: string): Promise<string> {
+    forkedWorkflowID ??= randomUUID();
     await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID);
     return forkedWorkflowID;
   }
@@ -1900,19 +1901,26 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
+  async getWorkflowStatus(
+    workflowID: string,
+    callerID?: string,
+    callerFN?: number,
+    getRequest: boolean = false,
+  ): Promise<WorkflowStatus | null> {
     const status = await this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
-    return status ? DBOSExecutor.toWorkflowStatus(status, true) : null;
+    return status ? DBOSExecutor.toWorkflowStatus(status, getRequest) : null;
   }
 
-  async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    const wfs = await this.systemDatabase.listWorkflows(input);
-    return wfs.map((wf) => DBOSExecutor.toWorkflowStatus(wf, true));
+  async listWorkflows(input: GetWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
+    return $listWorkflows(this.systemDatabase, input, getRequest);
   }
 
-  async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
-    const wfs = await this.systemDatabase.listQueuedWorkflows(input);
-    return wfs.map((wf) => DBOSExecutor.toWorkflowStatus(wf, true));
+  async listQueuedWorkflows(input: GetQueuedWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
+    return $listQueuedWorkflows(this.systemDatabase, input, getRequest);
+  }
+
+  async listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
+    return $listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
   }
 
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
@@ -2183,17 +2191,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         error: row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null,
       };
     });
-  }
-
-  async listWorkflowSteps(workflowID: string): Promise<step_info[]> {
-    const steps = await this.getWorkflowSteps(workflowID);
-    const transactions = await this.getTransactions(workflowID);
-
-    const merged = [...steps, ...transactions];
-
-    merged.sort((a, b) => a.function_id - b.function_id);
-
-    return merged;
   }
 
   async resumeWorkflow(workflowID: string) {

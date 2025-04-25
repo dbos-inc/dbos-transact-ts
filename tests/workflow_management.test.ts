@@ -2,11 +2,13 @@ import { GetWorkflowsInput, StatusString, Authentication, MiddlewareContext, DBO
 import request from 'supertest';
 import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
-import { getWorkflow, listWorkflows, listQueuedWorkflows } from '../src/dbos-runtime/workflow_management';
 import { Client } from 'pg';
 import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams } from '../src/utils';
+import { PostgresSystemDatabase } from '../src/system_database';
+import { GlobalLogger as Logger } from '../src/telemetry/logs';
+import { $getWorkflow, $listQueuedWorkflows, $listWorkflows } from '../src/dbos-runtime/workflow_management';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -228,42 +230,48 @@ describe('workflow-management-tests', () => {
     const failResponse = await request(DBOS.getHTTPHandlersCallback()!).post('/fail/alice');
     expect(failResponse.statusCode).toBe(500);
 
-    const input: GetWorkflowsInput = {};
-    const infos = await listWorkflows(config, input, false);
-    expect(infos.length).toBe(2);
-    let info = infos[0];
-    expect(info.authenticatedUser).toBe('alice');
-    expect(info.workflowName).toBe('testWorkflow');
-    expect(info.status).toBe(StatusString.SUCCESS);
-    expect(info.workflowClassName).toBe('TestEndpoints');
-    expect(info.assumedRole).toBe('');
-    expect(info.workflowConfigName).toBe('');
-    expect(info.error).toBeUndefined();
-    expect(info.output).toBe('alice');
-    expect(info.input).toEqual(['alice']);
-    expect(info.applicationVersion).toBe(globalParams.appVersion);
-    expect(info.createdAt).toBeGreaterThan(0);
-    expect(info.updatedAt).toBeGreaterThan(0);
-    expect(info.executorId).toBe(globalParams.executorID);
+    const logger = new Logger();
+    const sysdb = new PostgresSystemDatabase(config.poolConfig, config.system_database, logger);
+    try {
+      const input: GetWorkflowsInput = {};
+      const infos = await $listWorkflows(sysdb, input);
+      expect(infos.length).toBe(2);
+      let info = infos[0];
+      expect(info.authenticatedUser).toBe('alice');
+      expect(info.workflowName).toBe('testWorkflow');
+      expect(info.status).toBe(StatusString.SUCCESS);
+      expect(info.workflowClassName).toBe('TestEndpoints');
+      expect(info.assumedRole).toBe('');
+      expect(info.workflowConfigName).toBe('');
+      expect(info.error).toBeUndefined();
+      expect(info.output).toBe('alice');
+      expect(info.input).toEqual(['alice']);
+      expect(info.applicationVersion).toBe(globalParams.appVersion);
+      expect(info.createdAt).toBeGreaterThan(0);
+      expect(info.updatedAt).toBeGreaterThan(0);
+      expect(info.executorId).toBe(globalParams.executorID);
 
-    info = infos[1];
-    expect(info.authenticatedUser).toBe('alice');
-    expect(info.workflowName).toBe('failWorkflow');
-    expect(info.status).toBe(StatusString.ERROR);
-    expect(info.workflowClassName).toBe('TestEndpoints');
-    expect(info.assumedRole).toBe('');
-    expect(info.workflowConfigName).toBe('');
-    const error = info.error as Error;
-    expect(error.message).toBe('alice');
-    expect(info.output).toBeUndefined();
-    expect(info.input).toEqual(['alice']);
-    expect(info.applicationVersion).toBe(globalParams.appVersion);
-    expect(info.createdAt).toBeGreaterThan(0);
-    expect(info.updatedAt).toBeGreaterThan(0);
-    expect(info.executorId).toBe(globalParams.executorID);
+      info = infos[1];
+      expect(info.authenticatedUser).toBe('alice');
+      expect(info.workflowName).toBe('failWorkflow');
+      expect(info.status).toBe(StatusString.ERROR);
+      expect(info.workflowClassName).toBe('TestEndpoints');
+      expect(info.assumedRole).toBe('');
+      expect(info.workflowConfigName).toBe('');
+      const error = info.error as Error;
+      expect(error.message).toBe('alice');
+      expect(info.output).toBeUndefined();
+      expect(info.input).toEqual(['alice']);
+      expect(info.applicationVersion).toBe(globalParams.appVersion);
+      expect(info.createdAt).toBeGreaterThan(0);
+      expect(info.updatedAt).toBeGreaterThan(0);
+      expect(info.executorId).toBe(globalParams.executorID);
 
-    const getInfo = await getWorkflow(config, info.workflowID, false);
-    expect(info).toEqual(getInfo);
+      const getInfo = await $getWorkflow(sysdb, info.workflowID);
+      expect(info).toEqual(getInfo);
+    } finally {
+      await sysdb.destroy();
+    }
   });
 
   test('test-cancel-retry-restart', async () => {
@@ -484,106 +492,112 @@ describe('test-list-queues', () => {
       await e.wait();
     }
 
-    let input: GetQueuedWorkflowsInput = {};
-    let output: WorkflowStatus[] = [];
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(TestListQueues.queuedSteps);
+    const logger = new Logger();
+    const sysdb = new PostgresSystemDatabase(config.poolConfig, config.system_database, logger);
+    try {
+      let input: GetQueuedWorkflowsInput = {};
+      let output: WorkflowStatus[] = [];
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
 
-    // Test workflowName
-    input = {
-      workflowName: 'blockingTask',
-    };
+      // Test workflowName
+      input = {
+        workflowName: 'blockingTask',
+      };
 
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(TestListQueues.queuedSteps);
-    for (let i = 0; i < TestListQueues.queuedSteps; i++) {
-      expect(output[i].input).toEqual([i]);
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
+      for (let i = 0; i < TestListQueues.queuedSteps; i++) {
+        expect(output[i].input).toEqual([i]);
+      }
+
+      input = {
+        workflowName: 'no',
+      };
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(0);
+
+      // Test sortDesc reverts the order
+      input = {
+        sortDesc: true,
+      };
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
+      for (let i = 0; i < TestListQueues.queuedSteps; i++) {
+        expect(output[i].input).toEqual([TestListQueues.queuedSteps - i - 1]);
+      }
+
+      // Test startTime and endTime
+      input = {
+        startTime: new Date(Date.now() - 10000).toISOString(),
+        endTime: new Date(Date.now()).toISOString(),
+      };
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
+      input = {
+        startTime: new Date(Date.now() + 10000).toISOString(),
+      };
+
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(0);
+
+      // Test status
+      input = {
+        status: 'PENDING',
+      };
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
+      input = {
+        status: 'SUCCESS',
+      };
+
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(0);
+
+      // Test queue name
+      input = {
+        queueName: TestListQueues.queue.name,
+      };
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
+
+      input = {
+        queueName: 'no',
+      };
+
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(0);
+
+      // Test limit
+      input = {
+        limit: 2,
+      };
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(input.limit);
+      for (let i = 0; i < input.limit!; i++) {
+        expect(output[i].input).toEqual([i]);
+      }
+
+      // Test offset
+      input = {
+        limit: 2,
+        offset: 2,
+      };
+      output = await $listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(input.limit);
+      for (let i = 0; i < input.limit!; i++) {
+        expect(output[i].input).toEqual([i + 2]);
+      }
+
+      // Confirm the workflow finishes and nothing is in the queue afterwards
+      TestListQueues.event.set();
+      await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
+
+      input = {};
+      await expect($listQueuedWorkflows(sysdb, input)).resolves.toEqual([]);
+    } finally {
+      await sysdb.destroy();
     }
-
-    input = {
-      workflowName: 'no',
-    };
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(0);
-
-    // Test sortDesc reverts the order
-    input = {
-      sortDesc: true,
-    };
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(TestListQueues.queuedSteps);
-    for (let i = 0; i < TestListQueues.queuedSteps; i++) {
-      expect(output[i].input).toEqual([TestListQueues.queuedSteps - i - 1]);
-    }
-
-    // Test startTime and endTime
-    input = {
-      startTime: new Date(Date.now() - 10000).toISOString(),
-      endTime: new Date(Date.now()).toISOString(),
-    };
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(TestListQueues.queuedSteps);
-    input = {
-      startTime: new Date(Date.now() + 10000).toISOString(),
-    };
-
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(0);
-
-    // Test status
-    input = {
-      status: 'PENDING',
-    };
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(TestListQueues.queuedSteps);
-    input = {
-      status: 'SUCCESS',
-    };
-
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(0);
-
-    // Test queue name
-    input = {
-      queueName: TestListQueues.queue.name,
-    };
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(TestListQueues.queuedSteps);
-
-    input = {
-      queueName: 'no',
-    };
-
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(0);
-
-    // Test limit
-    input = {
-      limit: 2,
-    };
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(input.limit);
-    for (let i = 0; i < input.limit!; i++) {
-      expect(output[i].input).toEqual([i]);
-    }
-
-    // Test offset
-    input = {
-      limit: 2,
-      offset: 2,
-    };
-    output = await listQueuedWorkflows(config, input, false);
-    expect(output.length).toBe(input.limit);
-    for (let i = 0; i < input.limit!; i++) {
-      expect(output[i].input).toEqual([i + 2]);
-    }
-
-    // Confirm the workflow finishes and nothing is in the queue afterwards
-    TestListQueues.event.set();
-    await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
-
-    input = {};
-    await expect(listQueuedWorkflows(config, input, false)).resolves.toEqual([]);
   });
 });
 
@@ -790,12 +804,12 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(3);
-    expect(wfsteps[0].function_id).toBe(0);
-    expect(wfsteps[0].function_name).toBe('stepOne');
-    expect(wfsteps[1].function_id).toBe(1);
-    expect(wfsteps[1].function_name).toBe('stepTwo');
-    expect(wfsteps[2].function_id).toBe(2);
-    expect(wfsteps[2].function_name).toBe('DBOS.sleep');
+    expect(wfsteps[0].functionID).toBe(0);
+    expect(wfsteps[0].name).toBe('stepOne');
+    expect(wfsteps[1].functionID).toBe(1);
+    expect(wfsteps[1].name).toBe('stepTwo');
+    expect(wfsteps[2].functionID).toBe(2);
+    expect(wfsteps[2].name).toBe('DBOS.sleep');
   });
 
   test('test-send-recv', async () => {
@@ -808,12 +822,12 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid1);
     expect(wfsteps.length).toBe(2);
-    expect(wfsteps[1].function_name).toBe('DBOS.sleep');
-    expect(wfsteps[0].function_name).toBe('DBOS.recv');
+    expect(wfsteps[1].name).toBe('DBOS.sleep');
+    expect(wfsteps[0].name).toBe('DBOS.recv');
 
     const wfsteps2 = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid2);
-    expect(wfsteps2[0].function_id).toBe(0);
-    expect(wfsteps2[0].function_name).toBe('DBOS.send');
+    expect(wfsteps2[0].functionID).toBe(0);
+    expect(wfsteps2[0].name).toBe('DBOS.send');
   });
 
   test('test-set-getEvent', async () => {
@@ -822,8 +836,8 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(3);
-    expect(wfsteps[0].function_name).toBe('DBOS.setEvent');
-    expect(wfsteps[1].function_name).toBe('DBOS.getEvent');
+    expect(wfsteps[0].name).toBe('DBOS.setEvent');
+    expect(wfsteps[1].name).toBe('DBOS.getEvent');
   });
 
   test('test-call-child-workflow-first', async () => {
@@ -832,27 +846,27 @@ describe('test-list-steps', () => {
     const childID = await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
-    expect(wfsteps[0].function_name).toBe('testWorkflow');
-    expect(wfsteps[0].function_id).toBe(0);
+    expect(wfsteps[0].name).toBe('testWorkflow');
+    expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].output).toBe(null);
     expect(wfsteps[0].error).toBe(null);
-    expect(wfsteps[0].child_workflow_id).toBe(childID);
-    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
-    expect(wfsteps[1].function_id).toBe(1);
+    expect(wfsteps[0].childWorkflowID).toBe(childID);
+    expect(wfsteps[1].name).toBe('DBOS.getResult');
+    expect(wfsteps[1].functionID).toBe(1);
     expect(wfsteps[1].output).toBe(childID);
     expect(wfsteps[1].error).toBe(null);
-    expect(wfsteps[1].child_workflow_id).toBe(childID);
-    expect(wfsteps[2].function_name).toBe('getStatus');
-    expect(wfsteps[2].function_id).toBe(2);
+    expect(wfsteps[1].childWorkflowID).toBe(childID);
+    expect(wfsteps[2].name).toBe('getStatus');
+    expect(wfsteps[2].functionID).toBe(2);
     expect(wfsteps[2].output).toBeTruthy();
     expect(wfsteps[2].error).toBe(null);
-    expect(wfsteps[2].child_workflow_id).toBe(null);
-    expect(wfsteps[3].function_name).toBe('stepOne');
-    expect(wfsteps[3].function_id).toBe(3);
+    expect(wfsteps[2].childWorkflowID).toBe(null);
+    expect(wfsteps[3].name).toBe('stepOne');
+    expect(wfsteps[3].functionID).toBe(3);
     expect(wfsteps[3].output).toBe(wfid);
     expect(wfsteps[3].error).toBe(null);
-    expect(wfsteps[3].child_workflow_id).toBe(null);
-    expect(wfsteps[4].function_name).toBe('stepTwo');
+    expect(wfsteps[3].childWorkflowID).toBe(null);
+    expect(wfsteps[4].name).toBe('stepTwo');
   });
 
   test('test-call-child-workflow-middle', async () => {
@@ -861,11 +875,11 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
-    expect(wfsteps[0].function_name).toBe('stepOne');
-    expect(wfsteps[1].function_name).toBe('testWorkflow');
-    expect(wfsteps[2].function_name).toBe('getStatus');
-    expect(wfsteps[3].function_name).toBe('DBOS.getResult');
-    expect(wfsteps[4].function_name).toBe('stepTwo');
+    expect(wfsteps[0].name).toBe('stepOne');
+    expect(wfsteps[1].name).toBe('testWorkflow');
+    expect(wfsteps[2].name).toBe('getStatus');
+    expect(wfsteps[3].name).toBe('DBOS.getResult');
+    expect(wfsteps[4].name).toBe('stepTwo');
   });
 
   test('test-call-child-workflow-last', async () => {
@@ -874,11 +888,11 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
-    expect(wfsteps[0].function_name).toBe('stepOne');
-    expect(wfsteps[1].function_name).toBe('stepTwo');
-    expect(wfsteps[2].function_name).toBe('testWorkflow');
-    expect(wfsteps[3].function_name).toBe('getStatus');
-    expect(wfsteps[4].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[0].name).toBe('stepOne');
+    expect(wfsteps[1].name).toBe('stepTwo');
+    expect(wfsteps[2].name).toBe('testWorkflow');
+    expect(wfsteps[3].name).toBe('getStatus');
+    expect(wfsteps[4].name).toBe('DBOS.getResult');
   });
 
   test('test-queue-child-workflow-first', async () => {
@@ -887,19 +901,19 @@ describe('test-list-steps', () => {
     const childID = await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
-    expect(wfsteps[0].function_name).toBe('testWorkflow');
-    expect(wfsteps[0].function_id).toBe(0);
+    expect(wfsteps[0].name).toBe('testWorkflow');
+    expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].output).toBe(null);
     expect(wfsteps[0].error).toBe(null);
-    expect(wfsteps[0].child_workflow_id).toBe(childID);
-    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
-    expect(wfsteps[1].function_id).toBe(1);
+    expect(wfsteps[0].childWorkflowID).toBe(childID);
+    expect(wfsteps[1].name).toBe('DBOS.getResult');
+    expect(wfsteps[1].functionID).toBe(1);
     expect(wfsteps[1].output).toBe(childID);
     expect(wfsteps[1].error).toBe(null);
-    expect(wfsteps[1].child_workflow_id).toBe(childID);
-    expect(wfsteps[2].function_name).toBe('getStatus');
-    expect(wfsteps[3].function_name).toBe('stepOne');
-    expect(wfsteps[4].function_name).toBe('stepTwo');
+    expect(wfsteps[1].childWorkflowID).toBe(childID);
+    expect(wfsteps[2].name).toBe('getStatus');
+    expect(wfsteps[3].name).toBe('stepOne');
+    expect(wfsteps[4].name).toBe('stepTwo');
   });
 
   test('test-queue-child-workflow-middle', async () => {
@@ -908,11 +922,11 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
-    expect(wfsteps[0].function_name).toBe('stepOne');
-    expect(wfsteps[1].function_name).toBe('testWorkflow');
-    expect(wfsteps[2].function_name).toBe('getStatus');
-    expect(wfsteps[3].function_name).toBe('DBOS.getResult');
-    expect(wfsteps[4].function_name).toBe('stepTwo');
+    expect(wfsteps[0].name).toBe('stepOne');
+    expect(wfsteps[1].name).toBe('testWorkflow');
+    expect(wfsteps[2].name).toBe('getStatus');
+    expect(wfsteps[3].name).toBe('DBOS.getResult');
+    expect(wfsteps[4].name).toBe('stepTwo');
   });
 
   test('test-queue-child-workflow-last', async () => {
@@ -921,11 +935,11 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(5);
-    expect(wfsteps[0].function_name).toBe('stepOne');
-    expect(wfsteps[1].function_name).toBe('stepTwo');
-    expect(wfsteps[2].function_name).toBe('testWorkflow');
-    expect(wfsteps[3].function_name).toBe('getStatus');
-    expect(wfsteps[4].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[0].name).toBe('stepOne');
+    expect(wfsteps[1].name).toBe('stepTwo');
+    expect(wfsteps[2].name).toBe('testWorkflow');
+    expect(wfsteps[3].name).toBe('getStatus');
+    expect(wfsteps[4].name).toBe('DBOS.getResult');
   });
 
   test('test-direct-call-workflow', async () => {
@@ -934,18 +948,18 @@ describe('test-list-steps', () => {
     const childID = await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(4);
-    expect(wfsteps[0].function_name).toBe('testWorkflow');
-    expect(wfsteps[0].function_id).toBe(0);
+    expect(wfsteps[0].name).toBe('testWorkflow');
+    expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].output).toBe(null);
     expect(wfsteps[0].error).toBe(null);
-    expect(wfsteps[0].child_workflow_id).toBe(childID);
-    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
-    expect(wfsteps[1].function_id).toBe(1);
+    expect(wfsteps[0].childWorkflowID).toBe(childID);
+    expect(wfsteps[1].name).toBe('DBOS.getResult');
+    expect(wfsteps[1].functionID).toBe(1);
     expect(wfsteps[1].output).toBe(childID);
     expect(wfsteps[1].error).toBe(null);
-    expect(wfsteps[1].child_workflow_id).toBe(childID);
-    expect(wfsteps[2].function_name).toBe('stepOne');
-    expect(wfsteps[3].function_name).toBe('stepTwo');
+    expect(wfsteps[1].childWorkflowID).toBe(childID);
+    expect(wfsteps[2].name).toBe('stepOne');
+    expect(wfsteps[3].name).toBe('stepTwo');
   });
 
   test('test-list-failing-step', async () => {
@@ -955,24 +969,24 @@ describe('test-list-steps', () => {
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
     let wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].function_name).toBe('failingStep');
+    expect(wfsteps[0].name).toBe('failingStep');
     expect(wfsteps[0].output).toBe(null);
     expect(wfsteps[0].error).toBeInstanceOf(Error);
-    expect(wfsteps[0].child_workflow_id).toBe(null);
+    expect(wfsteps[0].childWorkflowID).toBe(null);
     // Test starting a failing step
     wfid = randomUUID();
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).startFailingStep();
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
     wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(2);
-    expect(wfsteps[0].function_name).toBe('temp_workflow-step-failingStep');
+    expect(wfsteps[0].name).toBe('temp_workflow-step-failingStep');
     expect(wfsteps[0].output).toBe(null);
     expect(wfsteps[0].error).toBe(null);
-    expect(wfsteps[0].child_workflow_id).toBe(`${wfid}-0`);
-    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[0].childWorkflowID).toBe(`${wfid}-0`);
+    expect(wfsteps[1].name).toBe('DBOS.getResult');
     expect(wfsteps[1].output).toBe(null);
     expect(wfsteps[1].error).toBeInstanceOf(Error);
-    expect(wfsteps[1].child_workflow_id).toBe(`${wfid}-0`);
+    expect(wfsteps[1].childWorkflowID).toBe(`${wfid}-0`);
     // Test enqueueing a failing step
     wfid = randomUUID();
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueFailingStep();
@@ -981,14 +995,14 @@ describe('test-list-steps', () => {
     wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
 
     expect(wfsteps.length).toBe(2);
-    expect(wfsteps[0].function_name).toBe('temp_workflow-step-failingStep');
+    expect(wfsteps[0].name).toBe('temp_workflow-step-failingStep');
     expect(wfsteps[0].output).toBe(null);
     expect(wfsteps[0].error).toBe(null);
-    expect(wfsteps[0].child_workflow_id).toBe(`${wfid}-0`);
-    expect(wfsteps[1].function_name).toBe('DBOS.getResult');
+    expect(wfsteps[0].childWorkflowID).toBe(`${wfid}-0`);
+    expect(wfsteps[1].name).toBe('DBOS.getResult');
     expect(wfsteps[1].output).toBe(null);
     expect(wfsteps[1].error).toBeInstanceOf(Error);
-    expect(wfsteps[1].child_workflow_id).toBe(`${wfid}-0`);
+    expect(wfsteps[1].childWorkflowID).toBe(`${wfid}-0`);
   });
 
   test('test-child-rerun', async () => {
@@ -1000,15 +1014,20 @@ describe('test-list-steps', () => {
     const result2 = await handle.getResult();
     expect(result1).toEqual(result2);
 
-    const wfs = await listWorkflows(config, {}, false);
-    expect(wfs.length).toBe(2);
+    const sysdb = new PostgresSystemDatabase(config.poolConfig, config.system_database, new Logger());
+    try {
+      const wfs = await $listWorkflows(sysdb, {});
+      expect(wfs.length).toBe(2);
 
-    const wfid1 = randomUUID();
-    // call with different wfid we should get different result
-    handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).CounterParent();
-    const result3 = await handle.getResult();
+      const wfid1 = randomUUID();
+      // call with different wfid we should get different result
+      handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid1 }).CounterParent();
+      const result3 = await handle.getResult();
 
-    expect(result3).not.toEqual(result1);
+      expect(result3).not.toEqual(result1);
+    } finally {
+      await sysdb.destroy();
+    }
   });
 
   test('test-transaction', async () => {
@@ -1017,7 +1036,7 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].function_name).toBe('transaction');
+    expect(wfsteps[0].name).toBe('transaction');
     expect(wfsteps[0].output).toBe(wfid);
     expect(wfsteps[0].error).toBe(null);
   });
@@ -1028,7 +1047,7 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].function_name).toBe('transactionWithError');
+    expect(wfsteps[0].name).toBe('transactionWithError');
     expect(wfsteps[0].error).toBeInstanceOf(Error);
     expect(wfsteps[0].output).toBe(null);
   });
@@ -1039,9 +1058,9 @@ describe('test-list-steps', () => {
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
     expect(wfsteps.length).toBe(3);
-    expect(wfsteps[0].function_name).toBe('stepOne');
-    expect(wfsteps[1].function_name).toBe('transaction');
-    expect(wfsteps[2].function_name).toBe('stepTwo');
+    expect(wfsteps[0].name).toBe('stepOne');
+    expect(wfsteps[1].name).toBe('transaction');
+    expect(wfsteps[2].name).toBe('stepTwo');
   });
 
   test('test-list-workflows-as-step', async () => {

@@ -9,16 +9,7 @@ import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { configure } from './configure';
-import {
-  cancelWorkflow,
-  resumeWorkflow,
-  restartWorkflow,
-  getWorkflow,
-  listQueuedWorkflows,
-  listWorkflows,
-  listWorkflowSteps,
-} from './workflow_management';
-import { GetWorkflowsInput, StatusString } from '..';
+import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
 import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
@@ -222,8 +213,16 @@ workflowCommands
         status: options.status as (typeof StatusString)[keyof typeof StatusString],
         applicationVersion: options.applicationVersion,
       };
-      const output = await listWorkflows(dbosConfig, input, options.request);
-      console.log(JSON.stringify(output));
+      if (dbosConfig.databaseUrl === undefined) {
+        throw new Error('Database URL is not defined');
+      }
+      const client = await DBOSClient.create(dbosConfig.databaseUrl);
+      try {
+        const output = await client.listWorkflows(input, options.request);
+        console.log(JSON.stringify(output));
+      } finally {
+        await client.destroy();
+      }
     },
   );
 
@@ -235,8 +234,16 @@ workflowCommands
   .option('--request', 'Retrieve workflow request information')
   .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
     const [dbosConfig, _] = parseConfigFile(options);
-    const output = await getWorkflow(dbosConfig, uuid, options.request);
-    console.log(JSON.stringify(output));
+    if (dbosConfig.databaseUrl === undefined) {
+      throw new Error('Database URL is not defined');
+    }
+    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    try {
+      const output = await client.getWorkflow(uuid, options.request);
+      console.log(JSON.stringify(output));
+    } finally {
+      await client.destroy();
+    }
   });
 
 workflowCommands
@@ -246,8 +253,16 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
     const [dbosConfig, _] = parseConfigFile(options);
-    const output = await listWorkflowSteps(dbosConfig, uuid);
-    console.log(JSON.stringify(output));
+    if (dbosConfig.databaseUrl === undefined) {
+      throw new Error('Database URL is not defined');
+    }
+    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    try {
+      const output = await client.listWorkflowSteps(uuid);
+      console.log(JSON.stringify(output));
+    } finally {
+      await client.destroy();
+    }
   });
 
 workflowCommands
@@ -258,7 +273,15 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const [dbosConfig, _] = parseConfigFile(options);
-    await cancelWorkflow(options.host, uuid, getGlobalLogger(dbosConfig));
+    if (dbosConfig.databaseUrl === undefined) {
+      throw new Error('Database URL is not defined');
+    }
+    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    try {
+      await client.cancelWorkflow(uuid);
+    } finally {
+      await client.destroy();
+    }
   });
 
 workflowCommands
@@ -269,7 +292,15 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const [dbosConfig, _] = parseConfigFile(options);
-    await resumeWorkflow(options.host, uuid, getGlobalLogger(dbosConfig));
+    if (dbosConfig.databaseUrl === undefined) {
+      throw new Error('Database URL is not defined');
+    }
+    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    try {
+      await client.resumeWorkflow(uuid);
+    } finally {
+      await client.destroy();
+    }
   });
 
 workflowCommands
@@ -280,7 +311,16 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const [dbosConfig, _] = parseConfigFile(options);
-    await restartWorkflow(options.host, uuid, getGlobalLogger(dbosConfig));
+    if (dbosConfig.databaseUrl === undefined) {
+      throw new Error('Database URL is not defined');
+    }
+    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    try {
+      // TOD: Review!
+      await client.forkWorkflow(uuid);
+    } finally {
+      await client.destroy();
+    }
   });
 
 const queueCommands = workflowCommands.command('queue').alias('queues').alias('q').description('Manage DBOS queues');
@@ -327,8 +367,17 @@ queueCommands
         workflowName: options.name,
         queueName: options.queue,
       };
-      const output = await listQueuedWorkflows(dbosConfig, input, options.request);
-      console.log(JSON.stringify(output));
+      if (dbosConfig.databaseUrl === undefined) {
+        throw new Error('Database URL is not defined');
+      }
+      const client = await DBOSClient.create(dbosConfig.databaseUrl);
+      try {
+        // TOD: Review!
+        const output = await client.listQueuedWorkflows(input, options.request);
+        console.log(JSON.stringify(output));
+      } finally {
+        await client.destroy();
+      }
     },
   );
 

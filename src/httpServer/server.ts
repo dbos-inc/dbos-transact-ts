@@ -18,9 +18,7 @@ import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
 import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
-import { step_info } from '../../schemas/system_db_schema';
 export type QueueMetadataResponse = QueueParameters & { name: string };
-import { DBOS } from '../dbos';
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
 export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
@@ -279,7 +277,7 @@ export class DBOSHttpServer {
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Resuming workflow with ID: ${workflowId}`);
-      await DBOS.resumeWorkflow(workflowId);
+      await dbosExec.resumeWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
@@ -297,7 +295,7 @@ export class DBOSHttpServer {
     const workflowRestartHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Restarting workflow: ${workflowId} with a new id`);
-      await DBOS.forkWorkflow(workflowId);
+      await dbosExec.forkWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowRestartHandler);
@@ -315,12 +313,12 @@ export class DBOSHttpServer {
     const workflowStepsHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const steps = await dbosExec.listWorkflowSteps(workflowId);
-      koaCtxt.body = steps.map((step: step_info) => ({
-        function_name: step.function_name,
-        function_id: step.function_id,
+      koaCtxt.body = steps.map((step) => ({
+        function_name: step.name,
+        function_id: step.functionID,
         output: step.output ? DBOSJSON.stringify(step.output) : undefined,
         error: step.error ? DBOSJSON.stringify(serializeError(step.error)) : undefined,
-        child_workflow_id: step.child_workflow_id ? step.child_workflow_id : undefined,
+        child_workflow_id: step.childWorkflowID,
       }));
       koaCtxt.status = 200;
     };

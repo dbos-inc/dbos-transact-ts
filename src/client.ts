@@ -2,9 +2,24 @@ import { PoolConfig } from 'pg';
 import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
-import { RetrievedHandle, StatusString, WorkflowHandle } from './workflow';
+import {
+  GetQueuedWorkflowsInput,
+  GetWorkflowsInput,
+  RetrievedHandle,
+  StatusString,
+  WorkflowHandle,
+  WorkflowStatus,
+} from './workflow';
 import { constructPoolConfig } from './dbos-runtime/config';
 import { DBOSJSON } from './utils';
+import {
+  $getWorkflow,
+  $listQueuedWorkflows,
+  $listWorkflows,
+  $listWorkflowSteps,
+  StepInfo,
+} from './dbos-runtime/workflow_management';
+import { PGNodeUserDatabase, UserDatabase } from './user_database';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -41,6 +56,7 @@ interface EnqueueOptions {
 export class DBOSClient {
   private readonly logger: Logger;
   private readonly systemDatabase: SystemDatabase;
+  private readonly userDatabase: UserDatabase;
 
   private constructor(databaseUrl: string, systemDatabase?: string) {
     const poolConfig: PoolConfig = constructPoolConfig({
@@ -54,6 +70,7 @@ export class DBOSClient {
 
     this.logger = new Logger();
     this.systemDatabase = new PostgresSystemDatabase(poolConfig, systemDatabase, this.logger);
+    this.userDatabase = new PGNodeUserDatabase(poolConfig);
   }
 
   /**
@@ -75,6 +92,7 @@ export class DBOSClient {
    */
   async destroy() {
     await this.systemDatabase.destroy();
+    await this.userDatabase.destroy();
   }
 
   /**
@@ -163,5 +181,33 @@ export class DBOSClient {
    */
   retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
     return new RetrievedHandle(this.systemDatabase, workflowID);
+  }
+
+  cancelWorkflow(workflowID: string): Promise<void> {
+    return this.systemDatabase.cancelWorkflow(workflowID);
+  }
+
+  resumeWorkflow(workflowID: string): Promise<void> {
+    return this.systemDatabase.resumeWorkflow(workflowID);
+  }
+
+  forkWorkflow(workflowID: string, newWorkflowID?: string): Promise<string> {
+    return this.systemDatabase.forkWorkflow(workflowID, newWorkflowID);
+  }
+
+  getWorkflow(workflowID: string, getRequest: boolean = false): Promise<WorkflowStatus | undefined> {
+    return $getWorkflow(this.systemDatabase, workflowID, getRequest);
+  }
+
+  listWorkflows(input: GetWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
+    return $listWorkflows(this.systemDatabase, input, getRequest);
+  }
+
+  listQueuedWorkflows(input: GetQueuedWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
+    return $listQueuedWorkflows(this.systemDatabase, input, getRequest);
+  }
+
+  listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
+    return $listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
   }
 }

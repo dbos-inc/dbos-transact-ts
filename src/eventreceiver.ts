@@ -15,6 +15,7 @@ import { MethodRegistrationBase } from './decorators';
 import { StepFunction } from './step';
 import { Notification } from 'pg';
 import { StoredProcedure } from './procedure';
+import { StepInfo } from './dbos-runtime/workflow_management';
 
 export type DBNotification = Notification;
 export type DBNotificationCallback = (n: DBNotification) => void;
@@ -107,11 +108,18 @@ export interface DBOSExecutorContext {
   /** Retrieve a workflow handle given the workflow ID.  Note that `DBOS.retrieveWorkflow` can be used instead */
   retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R>;
   /** @deprecated Use functions on `DBOS` */
-  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
+  getWorkflowStatus(
+    workflowID: string,
+    callerID?: string,
+    callerFN?: number,
+    getRequest?: boolean,
+  ): Promise<WorkflowStatus | null>;
   /** @deprecated Use functions on `DBOS` */
-  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]>;
+  listWorkflows(input: GetWorkflowsInput, getRequest?: boolean): Promise<WorkflowStatus[]>;
   /** @deprecated Use functions on `DBOS` */
-  listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]>;
+  listQueuedWorkflows(input: GetQueuedWorkflowsInput, getRequest?: boolean): Promise<WorkflowStatus[]>;
+
+  listWorkflowSteps(workflowID: string): Promise<StepInfo[]>;
   /** @deprecated Use functions on `DBOS` */
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
   /** @deprecated Use functions on `DBOS` */
