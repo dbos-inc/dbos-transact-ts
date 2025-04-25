@@ -764,14 +764,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (this.isDebugging) {
       // TODO: remove call to getWorkflowInputs after #871 is merged
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-      if (!wfStatus) {
+      const wfInputs = await this.systemDatabase.getWorkflowInputs<T>(workflowID);
+      if (!wfStatus || !wfInputs) {
         throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowID}`);
       }
 
       // Make sure we use the same input.
-      if (DBOSJSON.stringify(args) !== DBOSJSON.stringify(wfStatus.input)) {
+      if (DBOSJSON.stringify(args) !== DBOSJSON.stringify(wfInputs)) {
         throw new DBOSDebuggerError(
-          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${wfStatus.input}`,
+          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(wfInputs)}`,
         );
       }
       status = wfStatus.status;
@@ -2038,11 +2039,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async executeWorkflowUUID(workflowID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
     // TODO: remove call to getWorkflowInputs after #871 is merged
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-    if (!wfStatus) {
+    const inputs = await this.systemDatabase.getWorkflowInputs(workflowID);
+    if (!inputs || !wfStatus) {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
-    const inputs = DBOSJSON.parse(wfStatus.input ?? '[]') as unknown[];
     const parentCtx = this.#getRecoveryContext(workflowID, wfStatus);
 
     const { wfInfo, configuredInst } = this.getWorkflowInfoByStatus(wfStatus);
@@ -2099,7 +2100,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         undefined,
         undefined,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        ...(DBOSJSON.parse(wfStatus.input ?? '[]') as unknown[]),
+        ...inputs,
       );
     } else if (nameArr[1] === TempWorkflowType.step) {
       const { commInfo, clsInst } = this.getStepInfoByNames(
