@@ -635,7 +635,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getStatus(): Promise<WorkflowStatus | null> {
-    return await DBOS.getWorkflowStatus(this.workflowUUID, true);
+    return await DBOS.getWorkflowStatus(this.workflowUUID);
   }
 
   async getResult(): Promise<R> {
