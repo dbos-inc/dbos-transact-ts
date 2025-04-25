@@ -71,6 +71,7 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerRestartWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerQueueMetadataEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerListWorkflowStepsEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerForkWorkflowEndpoint(dbosExec, adminRouter);
     adminApp.use(adminRouter.routes()).use(adminRouter.allowedMethods());
     return adminApp;
   }
@@ -301,6 +302,43 @@ export class DBOSHttpServer {
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowRestartHandler);
+    dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
+  }
+
+  /**
+   *
+   * Register Fork Workflow endpoint.
+   *
+   */
+
+  static registerForkWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const workflowResumeUrl = '/workflows/:workflow_id/fork';
+    const workflowForkHandler = async (koaCtxt: Koa.Context) => {
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
+      const body = koaCtxt.request.body as { start_step?: number };
+      const startStep = body?.start_step ?? 1;
+
+      dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${startStep} with a new id`);
+      try {
+        await DBOS.forkWorkflow(workflowId, startStep);
+      } catch (e) {
+        let errorMessage = '';
+        if (e instanceof DBOSError) {
+          errorMessage = e.message;
+        } else {
+          errorMessage = `Unknown error`;
+        }
+        dbosExec.logger.error(`Error forking workflow ${workflowId}: ${errorMessage}`);
+        koaCtxt.status = 500;
+        koaCtxt.body = {
+          error: `Error forking workflow ${workflowId}: ${errorMessage}`,
+        };
+        return;
+      }
+      dbosExec.logger.info(`Forked workflow: ${workflowId} with a new id`);
+      koaCtxt.status = 204;
+    };
+    router.post(workflowResumeUrl, workflowForkHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
   }
 
