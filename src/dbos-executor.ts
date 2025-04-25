@@ -762,6 +762,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
     if (this.isDebugging) {
+      // TODO: remove call to getWorkflowInputs after #871 is merged
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
       const wfInputs = await this.systemDatabase.getWorkflowInputs<T>(workflowID);
       if (!wfStatus || !wfInputs) {
@@ -1901,32 +1902,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
     const status = await this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
-    const inputs = await this.systemDatabase.getWorkflowInputs(workflowID);
-    if (status) {
-      return {
-        workflowID: status.workflowUUID,
-        status: status.status,
-        workflowName: status.workflowName,
-        workflowClassName: status.workflowClassName,
-        workflowConfigName: status.workflowConfigName,
-        queueName: status.queueName,
-        authenticatedUser: status.authenticatedUser,
-        authenticatedRoles: status.authenticatedRoles,
-        assumedRole: status.assumedRole,
-        output: status.output ?? undefined,
-        error: status.error ? deserializeError(status.error) : undefined,
-        input: inputs ?? undefined,
-        createdAt: status.createdAt,
-        updatedAt: status.updatedAt,
-        recoveryAttempts: status.recoveryAttempts,
-        applicationID: status.applicationID,
-        applicationVersion: status.applicationVersion,
-        executorId: status.executorId,
-        request: status.request,
-      };
-    }
-
-    return null;
+    return status ? DBOSExecutor.toWorkflowStatus(status, false) : null;
   }
 
   async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
@@ -2061,6 +2037,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async executeWorkflowUUID(workflowID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
+    // TODO: remove call to getWorkflowInputs after #871 is merged
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
     const inputs = await this.systemDatabase.getWorkflowInputs(workflowID);
     if (!inputs || !wfStatus) {

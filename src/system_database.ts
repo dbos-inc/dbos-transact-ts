@@ -549,6 +549,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string> {
+    // TODO: remove call to getWorkflowInputs after #871 is merged
     const workflowStatus = await this.getWorkflowStatus(originalWorkflowID);
     if (workflowStatus === null) {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
@@ -1011,35 +1012,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     const sv = await this.runAsStep(
       async () => {
-        const { rows } = await this.pool.query<workflow_status>(
-          `SELECT workflow_uuid, status, name, class_name, config_name, authenticated_user, assumed_role, authenticated_roles, request, queue_name, executor_id, created_at, updated_at, application_version, application_id, recovery_attempts FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
-          [workflowID],
-        );
-
-        let value: WorkflowStatusInternal | null = null;
-        if (rows.length > 0) {
-          value = {
-            workflowUUID: rows[0].workflow_uuid,
-            status: rows[0].status,
-            workflowName: rows[0].name,
-            output: null,
-            error: null,
-            workflowClassName: rows[0].class_name || '',
-            workflowConfigName: rows[0].config_name || '',
-            queueName: rows[0].queue_name || undefined,
-            authenticatedUser: rows[0].authenticated_user,
-            assumedRole: rows[0].assumed_role,
-            authenticatedRoles: DBOSJSON.parse(rows[0].authenticated_roles) as string[],
-            request: DBOSJSON.parse(rows[0].request) as HTTPRequest,
-            executorId: rows[0].executor_id,
-            createdAt: Number(rows[0].created_at),
-            updatedAt: Number(rows[0].updated_at),
-            applicationVersion: rows[0].application_version,
-            applicationID: rows[0].application_id,
-            recoveryAttempts: Number(rows[0].recovery_attempts),
-          };
-        }
-        return value ? JSON.stringify(value) : null;
+        const statuses = await this.listWorkflows({ workflowIDs: [workflowID] });
+        const status = statuses.find((s) => s.workflowUUID === workflowID);
+        return status ? JSON.stringify(status) : null;
       },
       DBOS_FUNCNAME_GETSTATUS,
       callerID,
