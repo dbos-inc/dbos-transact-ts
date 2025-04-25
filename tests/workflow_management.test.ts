@@ -1100,13 +1100,13 @@ describe('test-fork', () => {
     static childWorkflowCount = 0;
 
     @DBOS.workflow()
-    static async stepsWorkflow(): Promise<number> {
+    static async stepsWorkflow(input: number): Promise<number> {
       let result = await ExampleWorkflow.stepOne(1);
       result += await ExampleWorkflow.stepTwo(2);
       result += await ExampleWorkflow.stepThree(3);
       result += await ExampleWorkflow.stepFour(4);
       result += await ExampleWorkflow.stepFive(5);
-      return result;
+      return result * input;
     }
 
     @DBOS.workflow()
@@ -1188,9 +1188,9 @@ describe('test-fork', () => {
 
   test('test-fork-steps', async () => {
     const wfid = randomUUID();
-    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow();
-    let result: number = await handle.getResult();
-    expect(result).toBe(55);
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow(10);
+    const result: number = await handle.getResult();
+    expect(result).toBe(550);
 
     expect(ExampleWorkflow.stepOneCount).toBe(1);
     expect(ExampleWorkflow.stepTwoCount).toBe(1);
@@ -1200,7 +1200,7 @@ describe('test-fork', () => {
 
     const forkedHandle = await DBOS.forkWorkflow(wfid);
     let forkresult = await forkedHandle.getResult();
-    expect(forkresult).toBe(55);
+    expect(forkresult).toBe(550);
 
     expect(ExampleWorkflow.stepOneCount).toBe(2);
     expect(ExampleWorkflow.stepTwoCount).toBe(2);
@@ -1210,7 +1210,7 @@ describe('test-fork', () => {
 
     const forkedHandle2 = await DBOS.forkWorkflow(wfid, 2);
     forkresult = await forkedHandle2.getResult();
-    expect(result).toBe(55);
+    expect(result).toBe(550);
 
     expect(ExampleWorkflow.stepOneCount).toBe(2);
     expect(ExampleWorkflow.stepTwoCount).toBe(2);
@@ -1220,7 +1220,7 @@ describe('test-fork', () => {
 
     const forkedHandle3 = await DBOS.forkWorkflow(wfid, 4);
     forkresult = await forkedHandle3.getResult();
-    expect(forkresult).toBe(55);
+    expect(forkresult).toBe(550);
 
     expect(ExampleWorkflow.stepOneCount).toBe(2);
     expect(ExampleWorkflow.stepTwoCount).toBe(2);
