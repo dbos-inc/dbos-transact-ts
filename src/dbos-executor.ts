@@ -92,7 +92,13 @@ import { DBOSScheduler } from './scheduler/scheduler';
 import { DBOSEventReceiverState, DBNotificationCallback, DBNotificationListener } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
-import { listQueuedWorkflows, listWorkflows, listWorkflowSteps, StepInfo } from './dbos-runtime/workflow_management';
+import {
+  listQueuedWorkflows,
+  listWorkflows,
+  listWorkflowSteps,
+  StepInfo,
+  toWorkflowStatus,
+} from './dbos-runtime/workflow_management';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -1907,8 +1913,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     callerFN?: number,
     getRequest: boolean = false,
   ): Promise<WorkflowStatus | null> {
+    // use sysdb getWorkflowStatus directly in order to support caller ID/FN params
     const status = await this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
-    return status ? DBOSExecutor.toWorkflowStatus(status, getRequest) : null;
+    return status ? toWorkflowStatus(status, getRequest) : null;
   }
 
   async listWorkflows(input: GetWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
@@ -2246,32 +2253,5 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return;
     }
     DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
-  }
-
-  static toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
-    return {
-      workflowID: internal.workflowUUID,
-      status: internal.status,
-      workflowName: internal.workflowName,
-      workflowClassName: internal.workflowClassName,
-      workflowConfigName: internal.workflowConfigName,
-      queueName: internal.queueName,
-
-      authenticatedUser: internal.authenticatedUser,
-      assumedRole: internal.assumedRole,
-      authenticatedRoles: internal.authenticatedRoles,
-
-      input: internal.input ? (DBOSJSON.parse(internal.input) as unknown[]) : undefined,
-      output: internal.output ? DBOSJSON.parse(internal.output ?? null) : undefined,
-      error: internal.error ? deserializeError(DBOSJSON.parse(internal.error)) : undefined,
-
-      request: getRequest ? internal.request : undefined,
-      executorId: internal.executorId,
-      applicationVersion: internal.applicationVersion,
-      applicationID: internal.applicationID,
-      recoveryAttempts: internal.recoveryAttempts,
-      createdAt: internal.createdAt,
-      updatedAt: internal.updatedAt,
-    };
   }
 }

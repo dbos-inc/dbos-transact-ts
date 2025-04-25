@@ -77,7 +77,7 @@ export async function listWorkflowSteps(
   return [...steps, ...txs].toSorted((a, b) => a.functionID - b.functionID);
 }
 
-function toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
+export function toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
   return {
     workflowID: internal.workflowUUID,
     status: internal.status,
