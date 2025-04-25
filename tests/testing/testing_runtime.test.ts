@@ -1,7 +1,7 @@
 import { PoolClient } from 'pg';
 import { TransactionContext } from '../../src/transaction';
 import { TestingRuntime, Transaction, Workflow, WorkflowContext, createTestingRuntime } from '../../src';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 
 type TestTransactionContext = TransactionContext<PoolClient>;
 
@@ -19,7 +19,7 @@ describe('testruntime-test', () => {
   });
 
   test('simple-workflow', async () => {
-    const uuid = uuidv1();
+    const uuid = randomUUID();
     const res = await testRuntime.invokeWorkflow(TestClass, uuid).testWorkflow(username);
     const expectName = testRuntime.getConfig<string>('testvalue'); // Read application config.
     expect(JSON.parse(res)).toEqual({ current_user: expectName });

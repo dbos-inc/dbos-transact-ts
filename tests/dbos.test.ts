@@ -1,6 +1,6 @@
 import { WorkflowHandle, DBOSInitializer, InitContext, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfigInternal } from '../src/dbos-executor';
 import { Client } from 'pg';
@@ -60,7 +60,7 @@ describe('dbos-tests', () => {
   });
 
   test('return-void', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await DBOSTestClass.testVoidFunction();
     });
@@ -88,7 +88,7 @@ describe('dbos-tests', () => {
   });
 
   test('simple-step', async () => {
-    const workflowUUID: string = uuidv1();
+    const workflowUUID: string = randomUUID();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(DBOSTestClass.testStep()).resolves.toBe(0);
     });
@@ -101,7 +101,7 @@ describe('dbos-tests', () => {
       'Sent to non-existent destination workflow UUID',
     );
 
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     const handle = await DBOS.startWorkflow(DBOSTestClass, { workflowID: workflowUUID }).receiveWorkflow();
     await expect(DBOSTestClass.sendWorkflow(handle.workflowID)).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
@@ -162,7 +162,7 @@ describe('dbos-tests', () => {
 
   test('txn-snapshot-recording', async () => {
     // Test the recording of transaction snapshot information in our transaction_outputs table.
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
     // Invoke the workflow, should get the error.
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(ReadRecording.testRecordingWorkflow(123, 'test')).rejects.toThrow(new Error('dumb test error'));
@@ -224,7 +224,7 @@ describe('dbos-tests', () => {
   }
 
   test('retrieve-workflowstatus', async () => {
-    const workflowUUID = uuidv1();
+    const workflowUUID = randomUUID();
 
     const workflowHandle = await DBOS.startWorkflow(RetrieveWorkflowStatus, {
       workflowID: workflowUUID,
@@ -264,7 +264,7 @@ describe('dbos-tests', () => {
   });
 
   test('aborted-transaction', async () => {
-    const workflowUUID: string = uuidv1();
+    const workflowUUID: string = randomUUID();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
       await expect(DBOSTestClass.attemptToCatchAbortingStoredProc()).rejects.toThrow(
         new DBOSFailedSqlTransactionError(workflowUUID, 'attemptToCatchAbortingStoredProc'),

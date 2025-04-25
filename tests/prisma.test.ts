@@ -15,7 +15,7 @@ import {
 } from '../src';
 import { DBOSNotAuthorizedError } from '../src/error';
 
-import { v1 as uuidv1 } from 'uuid';
+import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { UserDatabaseName } from '../src/user_database';
@@ -89,7 +89,7 @@ describe('prisma-tests', () => {
   });
 
   test('simple-prisma', async () => {
-    const workUUID = uuidv1();
+    const workUUID = randomUUID();
     await expect(
       (await DBOS.startWorkflow(PrismaTestClass, { workflowID: workUUID }).testTxn('test', 'value')).getResult(),
     ).resolves.toBe('test');
@@ -101,7 +101,7 @@ describe('prisma-tests', () => {
   test('prisma-duplicate-transaction', async () => {
     // Run two transactions concurrently with the same UUID.
     // Both should return the correct result but only one should execute.
-    const workUUID = uuidv1();
+    const workUUID = randomUUID();
     let results = await Promise.allSettled([
       (
         await DBOS.startWorkflow(PrismaTestClass, { workflowID: workUUID }).testTxn('oaootest', 'oaoovalue')
@@ -116,7 +116,7 @@ describe('prisma-tests', () => {
 
     // Read-only transactions would execute twice.
     globalCnt = 0;
-    const readUUID = uuidv1();
+    const readUUID = randomUUID();
     results = await Promise.allSettled([
       (await DBOS.startWorkflow(PrismaTestClass, { workflowID: readUUID }).readTxn('oaootestread')).getResult(),
       (await DBOS.startWorkflow(PrismaTestClass, { workflowID: readUUID }).readTxn('oaootestread')).getResult(),
@@ -129,8 +129,8 @@ describe('prisma-tests', () => {
   test('prisma-keyconflict', async () => {
     // Test if we can get the correct Postgres error code from Prisma.
     // We must use query raw, otherwise, Prisma would convert the error to use its own error code.
-    const workflowUUID1 = uuidv1();
-    const workflowUUID2 = uuidv1();
+    const workflowUUID1 = randomUUID();
+    const workflowUUID2 = randomUUID();
     const results = await Promise.allSettled([
       (
         await DBOS.startWorkflow(PrismaTestClass, { workflowID: workflowUUID1 }).conflictTxn('conflictkey', 'test1')
