@@ -514,7 +514,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       await this.recoverPendingWorkflows([this.executorID]);
     }
 
-    this.logger.info('DBOS launched!');
+    const packageJson = require('../../package.json') as { version: string };
+    this.logger.info(`Launched DBOS (v${packageJson.version})`);
   }
 
   #logNotice(msg: NoticeMessage) {
