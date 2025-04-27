@@ -7,6 +7,7 @@ import { Client } from 'pg';
 import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams } from '../src/utils';
+import { DBOSInvalidStepIDError } from '../src/error';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -1061,5 +1062,270 @@ describe('test-list-steps', () => {
       return await ListWorkflows.listingWorkflow();
     });
     expect(c2).toBe(1);
+  });
+});
+
+describe('test-fork', () => {
+  let config: DBOSConfigInternal;
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig(config);
+  });
+  beforeEach(async () => {
+    ExampleWorkflow.stepOneCount = 0;
+    ExampleWorkflow.stepTwoCount = 0;
+    ExampleWorkflow.stepThreeCount = 0;
+    ExampleWorkflow.stepFourCount = 0;
+    ExampleWorkflow.stepFiveCount = 0;
+    ExampleWorkflow.transactionOneCount = 0;
+    ExampleWorkflow.transactionTwoCount = 0;
+    ExampleWorkflow.transactionThreeCount = 0;
+    ExampleWorkflow.childWorkflowCount = 0;
+    await setUpDBOSTestDb(config);
+    await DBOS.launch();
+  });
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  class ExampleWorkflow {
+    static stepOneCount = 0;
+    static stepTwoCount = 0;
+    static stepThreeCount = 0;
+    static stepFourCount = 0;
+    static stepFiveCount = 0;
+    static transactionOneCount = 0;
+    static transactionTwoCount = 0;
+    static transactionThreeCount = 0;
+    static childWorkflowCount = 0;
+
+    @DBOS.workflow()
+    static async stepsWorkflow(input: number): Promise<number> {
+      let result = await ExampleWorkflow.stepOne(1);
+      result += await ExampleWorkflow.stepTwo(2);
+      result += await ExampleWorkflow.stepThree(3);
+      result += await ExampleWorkflow.stepFour(4);
+      result += await ExampleWorkflow.stepFive(5);
+      return result * input;
+    }
+
+    @DBOS.workflow()
+    static async stepsAndTransactionWorkflow() {
+      await ExampleWorkflow.stepOne(1);
+      await ExampleWorkflow.transactionOne();
+      await ExampleWorkflow.stepTwo(1);
+      await ExampleWorkflow.transactionTwo();
+      await ExampleWorkflow.transactionThree();
+    }
+
+    @DBOS.step()
+    static async stepOne(input: number): Promise<number> {
+      ExampleWorkflow.stepOneCount += 1;
+      return Promise.resolve(1 * input);
+    }
+
+    @DBOS.step()
+    static async stepTwo(input: number): Promise<number> {
+      ExampleWorkflow.stepTwoCount += 1;
+      return Promise.resolve(2 * input);
+    }
+
+    @DBOS.step()
+    static async stepThree(input: number): Promise<number> {
+      ExampleWorkflow.stepThreeCount += 1;
+      return Promise.resolve(3 * input);
+    }
+
+    @DBOS.step()
+    static async stepFour(input: number): Promise<number> {
+      ExampleWorkflow.stepFourCount += 1;
+      return Promise.resolve(4 * input);
+    }
+
+    @DBOS.step()
+    static async stepFive(input: number): Promise<number> {
+      ExampleWorkflow.stepFiveCount += 1;
+      return Promise.resolve(5 * input);
+    }
+
+    @DBOS.transaction()
+    static async transactionOne() {
+      ExampleWorkflow.transactionOneCount += 1;
+      return Promise.resolve();
+    }
+    @DBOS.transaction()
+    static async transactionTwo() {
+      ExampleWorkflow.transactionTwoCount += 1;
+      return Promise.resolve();
+    }
+    @DBOS.transaction()
+    static async transactionThree() {
+      ExampleWorkflow.transactionThreeCount += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async childWorkflow() {
+      ExampleWorkflow.childWorkflowCount += 1;
+      return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async forkWorkflow(id: string, stepID: number): Promise<string> {
+      const handle = await DBOS.forkWorkflow(id, stepID);
+      await handle.getResult();
+      return handle.workflowID;
+    }
+
+    @DBOS.workflow()
+    static async parentWorkflow() {
+      await ExampleWorkflow.stepOne(1);
+      const handle = await DBOS.startWorkflow(ExampleWorkflow).childWorkflow();
+      await handle.getResult();
+      await ExampleWorkflow.stepTwo(1);
+    }
+  }
+
+  test('test-fork-steps', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow(10);
+    const result: number = await handle.getResult();
+    expect(result).toBe(550);
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+    expect(ExampleWorkflow.stepThreeCount).toBe(1);
+    expect(ExampleWorkflow.stepFourCount).toBe(1);
+    expect(ExampleWorkflow.stepFiveCount).toBe(1);
+
+    const forkedHandle = await DBOS.forkWorkflow(wfid);
+    let forkresult = await forkedHandle.getResult();
+    expect(forkresult).toBe(550);
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.stepThreeCount).toBe(2);
+    expect(ExampleWorkflow.stepFourCount).toBe(2);
+    expect(ExampleWorkflow.stepFiveCount).toBe(2);
+
+    const forkedHandle2 = await DBOS.forkWorkflow(wfid, 2);
+    forkresult = await forkedHandle2.getResult();
+    expect(result).toBe(550);
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.stepThreeCount).toBe(3);
+    expect(ExampleWorkflow.stepFourCount).toBe(3);
+    expect(ExampleWorkflow.stepFiveCount).toBe(3);
+
+    const forkedHandle3 = await DBOS.forkWorkflow(wfid, 4);
+    forkresult = await forkedHandle3.getResult();
+    expect(forkresult).toBe(550);
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.stepThreeCount).toBe(3);
+    expect(ExampleWorkflow.stepFourCount).toBe(3);
+    expect(ExampleWorkflow.stepFiveCount).toBe(4);
+  }, 10000);
+
+  test('test-fork-steps-transactions', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsAndTransactionWorkflow();
+    await handle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.transactionOneCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(1);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(1);
+
+    const forkedHandle = await DBOS.forkWorkflow(wfid);
+    await forkedHandle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.transactionOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(2);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(2);
+
+    const forkedHandle2 = await DBOS.forkWorkflow(wfid, 1);
+    await forkedHandle2.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.transactionOneCount).toBe(3);
+    expect(ExampleWorkflow.stepTwoCount).toBe(3);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(3);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(3);
+
+    const forkedHandle3 = await DBOS.forkWorkflow(wfid, 4);
+    await forkedHandle3.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.transactionOneCount).toBe(3);
+    expect(ExampleWorkflow.stepTwoCount).toBe(3);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(3);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(4);
+  }, 10000);
+
+  test('test-fork-invalid-step', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsAndTransactionWorkflow();
+    await handle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.transactionOneCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+    expect(ExampleWorkflow.transactionTwoCount).toBe(1);
+    expect(ExampleWorkflow.transactionThreeCount).toBe(1);
+
+    try {
+      await DBOS.forkWorkflow(wfid, 7);
+    } catch (e) {
+      expect(e).toBeInstanceOf(DBOSInvalidStepIDError);
+    }
+  });
+
+  test('test-fork-childwf', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).parentWorkflow();
+    await handle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+
+    const forkedHandle = await DBOS.forkWorkflow(wfid, 2);
+    await forkedHandle.getResult();
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+  });
+
+  test('test-fork-fromaworklow', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).parentWorkflow();
+    await handle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+
+    const forkwfid = randomUUID();
+    const forkHandle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: forkwfid }).forkWorkflow(wfid, 0);
+    const firstforkedid = await forkHandle.getResult();
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+
+    // Fork the workflow again
+    const forkHandle2 = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: forkwfid }).forkWorkflow(wfid, 0);
+    const secondforkedid = await forkHandle2.getResult();
+
+    expect(firstforkedid).toEqual(secondforkedid);
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.childWorkflowCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
   });
 });

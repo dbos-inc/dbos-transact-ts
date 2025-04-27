@@ -276,3 +276,18 @@ export class DBOSTargetWorkflowCancelledError extends DBOSError {
     super(`Workflow ${workflowID} has been cancelled`, TargetWorkFlowCancelled);
   }
 }
+
+const InvalidStepID = 28;
+/** Exception raised when a step has an unexpected recorded id */
+export class DBOSInvalidStepIDError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly stepID: number,
+    readonly maxStepID: number,
+  ) {
+    super(
+      `StepID ${stepID} is greater than the highest stepId ${maxStepID} for workflow ${workflowID}.`,
+      InvalidStepID,
+    );
+  }
+}

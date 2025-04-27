@@ -110,7 +110,8 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
-  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string>;
+  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number): Promise<string>;
+  getMaxFunctionID(workflowID: string): Promise<number>;
   checkIfCanceled(workflowID: string): Promise<void>;
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
@@ -623,40 +624,119 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string): Promise<string> {
-    // TODO: remove call to getWorkflowInputs after #871 is merged
+  async getMaxFunctionID(workflowID: string): Promise<number> {
+    const { rows } = await this.pool.query<{ max_function_id: number }>(
+      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
+      [workflowID],
+    );
+
+    return rows.length === 0 ? 0 : rows[0].max_function_id;
+  }
+
+  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number = 0): Promise<string> {
     const workflowStatus = await this.getWorkflowStatus(originalWorkflowID);
+
     if (workflowStatus === null) {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
     }
 
-    const inputs = await this.getWorkflowInputs(originalWorkflowID);
-    if (inputs === null) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const query = `
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
+        workflow_uuid,
+        status,
+        name,
+        class_name,
+        config_name,
+        queue_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
+        output,
+        executor_id,
+        application_version,
+        application_id,
+        created_at,
+        recovery_attempts,
+        updated_at
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        `;
+
+      await client.query(query, [
+        forkedWorkflowId,
+        StatusString.ENQUEUED,
+        workflowStatus.workflowName,
+        workflowStatus.workflowClassName,
+        workflowStatus.workflowConfigName,
+        INTERNAL_QUEUE_NAME,
+        workflowStatus.authenticatedUser,
+        workflowStatus.assumedRole,
+        JSON.stringify(workflowStatus.authenticatedRoles),
+        JSON.stringify(workflowStatus.request),
+        null,
+        null,
+        workflowStatus.applicationVersion,
+        workflowStatus.applicationID,
+        Date.now(),
+        0,
+        Date.now(),
+      ]);
+
+      // Copy the inputs to the new workflow
+      const inputQuery = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs)
+                            SELECT $2, inputs
+                            FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs
+                            WHERE workflow_uuid = $1;`;
+
+      await client.query<workflow_inputs>(inputQuery, [originalWorkflowID, forkedWorkflowId]);
+
+      if (startStep > 0) {
+        const query = `
+          INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (
+          workflow_uuid,
+          function_id,
+          output,
+          error,
+          function_name,
+          child_workflow_id
+        )
+        SELECT
+          $1 AS workflow_uuid,
+          function_id,
+          output,
+          error,
+          function_name,
+          child_workflow_id
+          FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+          WHERE workflow_uuid = $2 AND function_id < $3
+        `;
+
+        await client.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
+      }
+
+      await client.query<workflow_queue>(
+        `
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+      VALUES ($1, $2)
+      ON CONFLICT (workflow_uuid)
+      DO NOTHING;
+      `,
+        [forkedWorkflowId, INTERNAL_QUEUE_NAME],
+      );
+
+      await client.query('COMMIT');
+      return forkedWorkflowId;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const workflowStatusInternal: WorkflowStatusInternal = {
-      ...workflowStatus,
-      workflowUUID: forkedWorkflowId,
-      status: StatusString.ENQUEUED,
-      workflowName: workflowStatus.workflowName,
-      workflowClassName: workflowStatus.workflowClassName,
-      workflowConfigName: workflowStatus.workflowConfigName,
-      queueName: INTERNAL_QUEUE_NAME,
-      authenticatedUser: workflowStatus.authenticatedUser,
-      authenticatedRoles: workflowStatus.authenticatedRoles,
-      request: workflowStatus.request,
-      executorId: globalParams.executorID,
-      applicationVersion: workflowStatus.applicationVersion,
-      applicationID: workflowStatus.applicationID,
-      createdAt: Date.now(),
-    };
-
-    await this.initWorkflowStatus(workflowStatusInternal, inputs);
-
-    await this.enqueueWorkflow(forkedWorkflowId, INTERNAL_QUEUE_NAME);
-
-    return forkedWorkflowId;
   }
 
   async runAsStep(

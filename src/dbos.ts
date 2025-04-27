@@ -39,6 +39,7 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
   DBOSTargetWorkflowCancelledError,
+  DBOSInvalidStepIDError,
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
@@ -980,10 +981,17 @@ export class DBOS {
    * Fork a workflow given its ID.
    * @param workflowID - ID of the workflow
    */
-  static async forkWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
+  static async forkWorkflow<T>(workflowID: string, startStep: number = 0): Promise<WorkflowHandle<Awaited<T>>> {
+    const maxStepID = await DBOS.executor.getMaxStepID(workflowID);
+
+    if (startStep > maxStepID) {
+      throw new DBOSInvalidStepIDError(workflowID, startStep, maxStepID);
+    }
+
     const forkedID = await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.forkWorkflow(workflowID);
+      return await DBOS.executor.forkWorkflow(workflowID, startStep);
     }, 'DBOS.forkWorkflow');
+
     return this.retrieveWorkflow(forkedID);
   }
 
