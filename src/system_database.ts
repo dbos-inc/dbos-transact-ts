@@ -547,7 +547,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     client?: PoolClient,
   ): Promise<{ res?: SystemDatabaseStoredResult }> {
-    await this.checkIfCanceled(workflowID);
     const { rows } = await (client ?? this.pool).query<operation_outputs>(
       `SELECT output, error, child_workflow_id, function_name
        FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
@@ -1198,6 +1197,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async resumeWorkflow(workflowID: string): Promise<void> {
+    this.clearWFCancelMap(workflowID);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -1250,7 +1250,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } finally {
       client.release();
     }
-    this.clearWFCancelMap(workflowID);
   }
 
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>) {
