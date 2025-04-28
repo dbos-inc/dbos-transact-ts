@@ -19,7 +19,7 @@ import {
   // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
-import { DBOSConflictingWorkflowError } from '../src/error';
+import { DBOSConflictingWorkflowError, DBOSTargetWorkflowCancelledError } from '../src/error';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -388,7 +388,20 @@ describe('queued-wf-tests-simple', () => {
         );
         handles.push(h);
       }
-      return Promise.all(handles.map((h) => h.getResult()));
+
+      // NOTE:
+      // The code below used to say:
+      //  return Promise.all(handles.map((h) => h.getResult()));
+      // This is not broken _per se_, but it does interact quite badly with the test
+      //  below that intentionally runs the workflow concurrently.  Promise.all
+      //  will run the getResult calls concurrently.  In turn, they will all be in a
+      //  race to record their results in system DB.  The system DB reacts by killing
+      //  (throwing a DBOSWorkflowConflictError) from the workflows that conflict, and
+      //  there's a high probability that this is both of them, as there are 5 separate
+      //  races here (to record each of the 5 results).  Boom! (with 15/16 probability).
+      const results: number[] = [];
+      for (const h of handles) results.push(await h.getResult());
+      return results;
     }
 
     @DBOS.workflow()
@@ -436,6 +449,7 @@ describe('queued-wf-tests-simple', () => {
         await expect(h.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
       }
     }
+
     await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
 
     // Each task should start twice, once originally and once in recovery
@@ -582,7 +596,7 @@ describe('queued-wf-tests-simple', () => {
 
     // Complete the blocked workflow
     TestCancelQueues.blockingEvent.set();
-    await expect(blockedHandle.getResult()).resolves.toBeNull();
+    await expect(blockedHandle.getResult()).rejects.toThrow(DBOSTargetWorkflowCancelledError);
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
@@ -869,7 +883,7 @@ class TestWFs {
   static async testWorkflowTime(var1: string, var2: string): Promise<number> {
     expect(var1).toBe('abc');
     expect(var2).toBe('123');
-    return Promise.resolve(new Date().getTime());
+    return Promise.resolve(Date.now());
   }
 
   @DBOS.workflow()

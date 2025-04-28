@@ -128,7 +128,7 @@ export class DBOSClient {
       createdAt: Date.now(),
     };
 
-    await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+    await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
     await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName);
     return new RetrievedHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
@@ -159,7 +159,7 @@ export class DBOSClient {
       applicationID: '',
       createdAt: Date.now(),
     };
-    await this.systemDatabase.initWorkflowStatus(internalStatus, [destinationID, message, topic]);
+    await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify([destinationID, message, topic]));
     await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, DBOSJSON.stringify(message), topic);
   }
 
@@ -191,8 +191,8 @@ export class DBOSClient {
     return this.systemDatabase.resumeWorkflow(workflowID);
   }
 
-  forkWorkflow(workflowID: string, newWorkflowID?: string): Promise<string> {
-    return this.systemDatabase.forkWorkflow(workflowID, newWorkflowID);
+  forkWorkflow(workflowID: string, newWorkflowID: string, startStep: number): Promise<string> {
+    return this.systemDatabase.forkWorkflow(workflowID, newWorkflowID, startStep);
   }
 
   getWorkflow(workflowID: string, getRequest: boolean = false): Promise<WorkflowStatus | undefined> {

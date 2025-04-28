@@ -238,6 +238,9 @@ describe('dbos-tests', () => {
     });
     await expect(workflowHandle.getWorkflowInputs()).resolves.toMatchObject([123, 'hello']);
 
+    // getResult with a timeout ... it'll time out.
+    await expect(DBOS.getResult<string>(workflowUUID, 0.1)).resolves.toBeNull();
+
     RetrieveWorkflowStatus.resolve1();
     await RetrieveWorkflowStatus.promise3;
 

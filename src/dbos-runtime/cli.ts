@@ -15,6 +15,7 @@ import { runCommand } from './commands';
 import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
+import { randomUUID } from 'node:crypto';
 
 const program = new Command();
 
@@ -232,7 +233,8 @@ workflowCommands
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--request', 'Retrieve workflow request information')
-  .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
+  .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
+    options.silent = true;
     const [dbosConfig, _] = parseConfigFile(options);
     if (dbosConfig.databaseUrl === undefined) {
       throw new Error('Database URL is not defined');
@@ -251,7 +253,8 @@ workflowCommands
   .description('List the steps of a workflow')
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string; request: boolean }) => {
+  .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
+    options.silent = true;
     const [dbosConfig, _] = parseConfigFile(options);
     if (dbosConfig.databaseUrl === undefined) {
       throw new Error('Database URL is not defined');
@@ -316,8 +319,8 @@ workflowCommands
     }
     const client = await DBOSClient.create(dbosConfig.databaseUrl);
     try {
-      // TOD: Review!
-      await client.forkWorkflow(uuid);
+      // TODO: Review!
+      await client.forkWorkflow(uuid, randomUUID(), 0);
     } finally {
       await client.destroy();
     }

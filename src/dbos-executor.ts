@@ -3,7 +3,7 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 import {
   DBOSError,
   DBOSInitializationError,
-  DBOSWorkflowConflictUUIDError,
+  DBOSWorkflowConflictError,
   DBOSNotRegisteredError,
   DBOSDebuggerError,
   DBOSConfigKeyTypeError,
@@ -241,8 +241,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   readonly stepInfoMap: Map<string, StepRegInfo> = new Map();
   readonly procedureInfoMap: Map<string, ProcedureRegInfo> = new Map();
   readonly registeredOperations: Array<MethodRegistrationBase> = [];
-  readonly pendingWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowUUID to workflow promise
-  readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowUUID to its cancellation status.
 
   readonly telemetryCollector: TelemetryCollector;
 
@@ -551,10 +549,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   async destroy() {
     try {
-      if (this.pendingWorkflowMap.size > 0) {
-        this.logger.info('Waiting for pending workflows to finish.');
-        await Promise.allSettled(this.pendingWorkflowMap.values());
-      }
+      await this.systemDatabase.awaitRunningWorkflows();
       await this.systemDatabase.destroy();
       if (this.userDatabase) {
         await this.userDatabase.destroy();
@@ -771,27 +766,31 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (this.isDebugging) {
       // TODO: remove call to getWorkflowInputs after #871 is merged
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-      const wfInputs = await this.systemDatabase.getWorkflowInputs<T>(workflowID);
+      const wfInputs = await this.systemDatabase.getWorkflowInputs(workflowID);
       if (!wfStatus || !wfInputs) {
         throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowID}`);
       }
 
       // Make sure we use the same input.
-      if (DBOSJSON.stringify(args) !== DBOSJSON.stringify(wfInputs)) {
+      if (DBOSJSON.stringify(args) !== wfInputs) {
         throw new DBOSDebuggerError(
-          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${DBOSJSON.stringify(wfInputs)}`,
+          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${wfInputs}`,
         );
       }
       status = wfStatus.status;
     } else {
       // TODO: Make this transactional (and with the queue step below)
       if (callerFunctionID !== undefined && callerID !== undefined) {
-        const cr = await this.systemDatabase.getOperationResult(callerID, callerFunctionID);
+        const cr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
         if (cr.res !== undefined) {
           return new RetrievedHandle(this.systemDatabase, cr.res.child!, callerID, callerFunctionID);
         }
       }
-      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, args, wCtxt.maxRecoveryAttempts);
+      const ires = await this.systemDatabase.initWorkflowStatus(
+        internalStatus,
+        DBOSJSON.stringify(args),
+        wCtxt.maxRecoveryAttempts,
+      );
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(
@@ -805,7 +804,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         );
       }
 
-      args = ires.args;
+      args = DBOSJSON.parse(ires.serializedInputs) as T;
       status = ires.status;
       await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
     }
@@ -853,7 +852,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
         wCtxt.span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
-        if (err instanceof DBOSWorkflowConflictUUIDError) {
+        if (err instanceof DBOSWorkflowConflictError) {
           // Retrieve the handle and wait for the result.
           const retrievedHandle = this.retrieveWorkflow<R>(workflowID);
           result = await retrievedHandle.getResult();
@@ -902,16 +901,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     ) {
       const workflowPromise: Promise<R> = runWorkflow();
 
-      // Need to await for the workflow and capture errors.
-      const awaitWorkflowPromise = workflowPromise
-        .catch((error) => {
-          this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
-        })
-        .finally(() => {
-          // Remove itself from pending workflow map.
-          this.pendingWorkflowMap.delete(workflowID);
-        });
-      this.pendingWorkflowMap.set(workflowID, awaitWorkflowPromise);
+      this.systemDatabase.registerRunningWorkflow(workflowID, workflowPromise);
 
       // Return the normal handle that doesn't capture errors.
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name, callerID, callerFunctionID);
@@ -1013,7 +1003,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } catch (error) {
       if (isKeyConflict(error)) {
         // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictError(workflowUUID);
       } else {
         throw error;
       }
@@ -1044,7 +1034,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } catch (error) {
       if (isKeyConflict(error)) {
         // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(workflowUUID);
+        throw new DBOSWorkflowConflictError(workflowUUID);
       } else {
         throw error;
       }
@@ -1106,9 +1096,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(txn.name);
     }
 
-    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-    }
+    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
@@ -1128,9 +1116,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     );
 
     while (true) {
-      if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-        throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-      }
+      await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
       let txn_snapshot = 'invalid';
       const workflowUUID = wfCtx.workflowUUID;
@@ -1317,9 +1303,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(proc.name);
     }
 
-    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-    }
+    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
     const executeLocally = this.isDebugging || (procInfo.config.executeLocally ?? false);
     const funcId = wfCtx.functionIDGetIncrement();
@@ -1365,9 +1349,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
 
     while (true) {
-      if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-        throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-      }
+      await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
       let txn_snapshot = 'invalid';
       const wrappedProcedure = async (client: PoolClient): Promise<R> => {
@@ -1533,9 +1515,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSDebuggerError("Can't invoke stored procedure in debug mode.");
     }
 
-    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-    }
+    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
     const $jsonCtx = {
       request: wfCtx.request,
@@ -1665,9 +1645,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(stepFn.name);
     }
 
-    if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-      throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-    }
+    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
     const funcID = wfCtx.functionIDGetIncrement();
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
@@ -1691,7 +1669,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, commInfo.config, stepFn.name);
 
     // Check if this execution previously happened, returning its original result if it did.
-    const checkr = await this.systemDatabase.getOperationResult(wfCtx.workflowUUID, ctxt.functionID);
+    const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfCtx.workflowUUID, ctxt.functionID);
     if (checkr.res !== undefined) {
       if (checkr.res.functionName !== ctxt.operationName) {
         throw new DBOSUnexpectedStepError(
@@ -1729,9 +1707,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
       while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
         try {
-          if (this.workflowCancellationMap.get(wfCtx.workflowUUID) === true) {
-            throw new DBOSWorkflowCancelledError(wfCtx.workflowUUID);
-          }
+          await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
           let cresult: R | undefined;
           if (commInfo.registration.passContext) {
@@ -1849,14 +1825,58 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
   }
 
+  async getMaxFunctionID(workflowID: string): Promise<number> {
+    const rows = await this.userDatabase.query<{ max_function_id: number }, [string]>(
+      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
+      workflowID,
+    );
+    if (rows.length === 0) {
+      return 0;
+    } else {
+      return rows[0].max_function_id;
+    }
+  }
+
+  async cloneWorkflowTransactions(workflowID: string, forkedWorkflowUUID: string, startStep: number): Promise<void> {
+    const query = `
+      INSERT INTO dbos.transaction_outputs
+        (workflow_uuid,
+          function_id, 
+          output, 
+          error, 
+          txn_id, 
+          txn_snapshot,  
+          function_name)
+      SELECT $1 AS workflow_uuid, 
+          function_id, 
+          output, 
+          error, 
+          txn_id, 
+          txn_snapshot, 
+          function_name
+      FROM dbos.transaction_outputs WHERE workflow_uuid= $2 AND function_id < $3`;
+
+    await this.userDatabase.query(query, forkedWorkflowUUID, workflowID, startStep);
+  }
+
+  async getMaxStepID(workflowID: string): Promise<number> {
+    const maxAppFunctionID = await this.getMaxFunctionID(workflowID);
+    const maxSystemFunctionID = await this.systemDatabase.getMaxFunctionID(workflowID);
+
+    return Math.max(maxAppFunctionID, maxSystemFunctionID);
+  }
+
   /**
    * Fork a workflow.
    * The forked workflow will be assigned a new ID.
    */
 
-  async forkWorkflow(workflowID: string, forkedWorkflowID?: string): Promise<string> {
-    forkedWorkflowID ??= randomUUID();
-    await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID);
+  async forkWorkflow(workflowID: string, startStep: number = 0): Promise<string> {
+    const forkedWorkflowID = this.#generateUUID();
+
+    await this.cloneWorkflowTransactions(workflowID, forkedWorkflowID, startStep);
+    await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID, startStep);
+
     return forkedWorkflowID;
   }
 
@@ -1872,9 +1892,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     functionName: string,
     workflowID?: string,
     functionID?: number,
+    childWfId?: string,
   ): Promise<T> {
     if (workflowID !== undefined && functionID !== undefined) {
-      const res = await this.systemDatabase.getOperationResult(workflowID, functionID);
+      const res = await this.systemDatabase.getOperationResultAndThrowIfCancelled(workflowID, functionID);
       if (res.res !== undefined) {
         if (res.res.functionName !== functionName) {
           throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
@@ -1888,7 +1909,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         await this.systemDatabase.recordOperationResult(
           workflowID,
           functionID,
-          { serialOutput: DBOSJSON.stringify(output), functionName },
+          { serialOutput: DBOSJSON.stringify(output), functionName, childWfId },
           true,
         );
       }
@@ -1898,7 +1919,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         await this.systemDatabase.recordOperationResult(
           workflowID,
           functionID,
-          { serialError: DBOSJSON.stringify(serializeError(e)), functionName },
+          { serialError: DBOSJSON.stringify(serializeError(e)), functionName, childWfId },
           false,
         );
       }
@@ -2054,11 +2075,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async executeWorkflowUUID(workflowID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
     // TODO: remove call to getWorkflowInputs after #871 is merged
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-    const inputs = await this.systemDatabase.getWorkflowInputs(workflowID);
-    if (!inputs || !wfStatus) {
+    const sInputs = await this.systemDatabase.getWorkflowInputs(workflowID);
+    if (!sInputs || !wfStatus) {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
+    const inputs = DBOSJSON.parse(sInputs) as unknown[];
     const parentCtx = this.#getRecoveryContext(workflowID, wfStatus);
 
     const { wfInfo, configuredInst } = this.getWorkflowInfoByStatus(wfStatus);
@@ -2076,7 +2098,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
           queueName: wfStatus.queueName,
           executeWorkflow: true,
         },
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ...inputs,
       );
     }
@@ -2114,7 +2135,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         },
         undefined,
         undefined,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ...inputs,
       );
     } else if (nameArr[1] === TempWorkflowType.step) {
@@ -2138,7 +2158,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         },
         undefined,
         undefined,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ...inputs,
       );
     } else if (nameArr[1] === TempWorkflowType.send) {
@@ -2154,7 +2173,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
           queueName: wfStatus.queueName,
           executeWorkflow: true,
         },
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         ...inputs,
       );
     } else {
@@ -2184,7 +2202,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   async cancelWorkflow(workflowID: string): Promise<void> {
     await this.systemDatabase.cancelWorkflow(workflowID);
     this.logger.info(`Cancelling workflow ${workflowID}`);
-    this.workflowCancellationMap.set(workflowID, true);
   }
 
   async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
@@ -2200,8 +2217,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     });
   }
 
-  async resumeWorkflow(workflowID: string) {
-    this.workflowCancellationMap.delete(workflowID);
+  async resumeWorkflow(workflowID: string): Promise<void> {
     await this.systemDatabase.resumeWorkflow(workflowID);
   }
 

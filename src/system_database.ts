@@ -1,13 +1,12 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 import { DBOSConfigInternal, DBOSExecutor } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
-  DBOSWorkflowConflictUUIDError,
+  DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
   DBOSDeadLetterQueueError,
   DBOSConflictingWorkflowError,
   DBOSUnexpectedStepError,
+  DBOSWorkflowCancelledError,
 } from './error';
 import {
   GetPendingWorkflowsOutput,
@@ -26,7 +25,7 @@ import {
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { sleepms, findPackageRoot, DBOSJSON, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME } from './utils';
+import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -39,6 +38,7 @@ import { randomUUID } from 'crypto';
 export interface SystemDatabaseStoredResult {
   res?: string | null;
   err?: string | null;
+  cancelled?: boolean;
   child?: string | null;
   functionName?: string;
 }
@@ -65,20 +65,23 @@ export interface SystemDatabase {
   init(): Promise<void>;
   destroy(): Promise<void>;
 
-  initWorkflowStatus<T extends any[]>(
+  initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    args: T,
+    serializedArgs: string,
     maxRetries?: number,
-  ): Promise<{ args: T; status: string }>;
+  ): Promise<{ serializedInputs: string; status: string }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
-  getWorkflowInputs<T extends any[]>(workflowID: string): Promise<T | null>;
+  getWorkflowInputs(workflowID: string): Promise<string | null>;
 
   // If there is no record, res will be undefined;
   //  otherwise will be defined (with potentially undefined contents)
-  getOperationResult(workflowID: string, functionID: number): Promise<{ res?: SystemDatabaseStoredResult }>;
+  getOperationResultAndThrowIfCancelled(
+    workflowID: string,
+    functionID: number,
+  ): Promise<{ res?: SystemDatabaseStoredResult }>;
   getAllOperationResults(workflowID: string): Promise<operation_outputs[]>;
   recordOperationResult(
     workflowID: string,
@@ -93,7 +96,12 @@ export interface SystemDatabase {
   ): Promise<void>;
 
   getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatusInternal | null>;
-  awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined>;
+  awaitWorkflowResult(
+    workflowID: string,
+    timeoutSeconds?: number,
+    callerID?: string,
+    timerFuncID?: number,
+  ): Promise<SystemDatabaseStoredResult | undefined>;
 
   // Workflow management
   setWorkflowStatus(
@@ -103,7 +111,11 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
-  forkWorkflow(originalWorkflowID: string, forkedWorkflowId?: string): Promise<string>;
+  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number): Promise<string>;
+  getMaxFunctionID(workflowID: string): Promise<number>;
+  checkIfCanceled(workflowID: string): Promise<void>;
+  registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
+  awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
 
   // Queues
   enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
@@ -112,11 +124,7 @@ export interface SystemDatabase {
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
   // Actions w/ durable records and notifications
-  durableSleepms(
-    workflowID: string,
-    functionID: number,
-    duration: number,
-  ): Promise<{ promise: Promise<void>; cancel: () => void }>;
+  durableSleepms(workflowID: string, functionID: number, duration: number): Promise<void>;
 
   send(
     workflowID: string,
@@ -218,14 +226,71 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger
   }
 }
 
+class NotificationMap<T> {
+  map: Map<string, Map<number, (event?: T) => void>> = new Map();
+  curCK: number = 0;
+
+  registerCallback(key: string, cb: (event?: T) => void) {
+    if (!this.map.has(key)) {
+      this.map.set(key, new Map());
+    }
+    const ck = this.curCK++;
+    this.map.get(key)!.set(ck, cb);
+    return { key, ck };
+  }
+
+  deregisterCallback(k: { key: string; ck: number }) {
+    if (!this.map.has(k.key)) return;
+    const sm = this.map.get(k.key)!;
+    if (!sm.has(k.ck)) return;
+    sm.delete(k.ck);
+    if (sm.size === 0) {
+      this.map.delete(k.key);
+    }
+  }
+
+  callCallbacks(key: string, event?: T) {
+    if (!this.map.has(key)) return;
+    const sm = this.map.get(key)!;
+    for (const cb of sm.values()) {
+      cb(event);
+    }
+  }
+}
+
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
   readonly knexDB: Knex;
 
+  /*
+   * Generally, notifications are asynchronous.  One should:
+   *  Subscribe to updates
+   *  Read the database item in question
+   *  In response to updates, re-read the database item
+   *  Unsubscribe at the end
+   * The notification mechanism is reliable in the sense that it will eventually deliver updates
+   *  or the DB connection will get dropped.  The right thing to do if you lose connectivity to
+   *  the system DB is to exit the process and go through recovery... system DB writes, notifications,
+   *  etc may not have completed correctly, and recovery is the way to rebuild in-memory state.
+   *
+   * NOTE:
+   * PG Notifications are not fully reliable.
+   *   Dropped connections are recoverable - you just need to restart and scan everything.
+   *      (The whole VM being the logical choice, so workflows can recover from any write failures.)
+   *   The real problem is, if the pipes out of the server are full... then notifications can be
+   *     dropped, and only the PG server log may note it.  For those reasons, we do occasional polling
+   */
   notificationsClient: PoolClient | null = null;
-  readonly notificationsMap: Record<string, () => void> = {};
-  readonly workflowEventsMap: Record<string, () => void> = {};
+  dbPollingIntervalResultMs: number = 1000;
+  dbPollingIntervalEventMs: number = 10000;
+  shouldUseDBNotifications: boolean = true;
+  readonly notificationsMap: NotificationMap<void> = new NotificationMap();
+  readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
+  readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
+
+  readonly runningWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
+  readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
   constructor(
     readonly pgPoolConfig: PoolConfig,
@@ -283,7 +348,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } finally {
       await pgSystemClient.end();
     }
-    await this.listenForNotifications();
+    if (this.shouldUseDBNotifications) {
+      await this.listenForNotifications();
+    }
   }
 
   async destroy() {
@@ -309,11 +376,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await pgSystemClient.end();
   }
 
-  async initWorkflowStatus<T extends any[]>(
+  async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    args: T,
+    serializedInputs: string,
     maxRetries?: number,
-  ): Promise<{ args: T; status: string }> {
+  ): Promise<{ serializedInputs: string; status: string }> {
     const result = await this.pool.query<{
       recovery_attempts: number;
       status: string;
@@ -355,8 +422,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         initStatus.queueName,
         initStatus.authenticatedUser,
         initStatus.assumedRole,
-        DBOSJSON.stringify(initStatus.authenticatedRoles),
-        DBOSJSON.stringify(initStatus.request),
+        JSON.stringify(initStatus.authenticatedRoles),
+        JSON.stringify(initStatus.request),
         initStatus.executorId,
         initStatus.applicationVersion,
         initStatus.applicationID,
@@ -402,7 +469,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
     const status = resRow.status;
 
-    const serializedInputs = DBOSJSON.stringify(args);
     const { rows } = await this.pool.query<workflow_inputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs) VALUES($1, $2) ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  RETURNING inputs`,
       [initStatus.workflowUUID, serializedInputs],
@@ -412,7 +478,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `Workflow inputs for ${initStatus.workflowUUID} changed since the first call! Use the original inputs.`,
       );
     }
-    return { args: DBOSJSON.parse(rows[0].inputs) as T, status };
+    return { serializedInputs: rows[0].inputs, status };
   }
 
   async recordWorkflowStatusChange(
@@ -440,7 +506,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
 
     if (wRes.rowCount !== 1) {
-      throw new DBOSWorkflowConflictUUIDError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
+      throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
     }
   }
 
@@ -466,7 +532,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  async getWorkflowInputs<T extends any[]>(workflowID: string): Promise<T | null> {
+  async getWorkflowInputs(workflowID: string): Promise<string | null> {
     const { rows } = await this.pool.query<workflow_inputs>(
       `SELECT inputs FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs WHERE workflow_uuid=$1`,
       [workflowID],
@@ -474,7 +540,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (rows.length === 0) {
       return null;
     }
-    return DBOSJSON.parse(rows[0].inputs) as T;
+    return rows[0].inputs;
   }
 
   async getOperationResult(
@@ -500,6 +566,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
         },
       };
     }
+  }
+
+  async getOperationResultAndThrowIfCancelled(
+    workflowID: string,
+    functionID: number,
+    client?: PoolClient,
+  ): Promise<{ res?: SystemDatabaseStoredResult }> {
+    await this.checkIfCanceled(workflowID);
+    return await this.getOperationResult(workflowID, functionID, client);
   }
 
   async getAllOperationResults(workflowID: string): Promise<operation_outputs[]> {
@@ -542,48 +617,126 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '40001' || err.code === '23505') {
         // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictUUIDError(workflowID);
+        throw new DBOSWorkflowConflictError(workflowID);
       } else {
         throw err;
       }
     }
   }
 
-  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId?: string): Promise<string> {
-    forkedWorkflowId ??= randomUUID();
-    // TODO: remove call to getWorkflowInputs after #871 is merged
+  async getMaxFunctionID(workflowID: string): Promise<number> {
+    const { rows } = await this.pool.query<{ max_function_id: number }>(
+      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
+      [workflowID],
+    );
+
+    return rows.length === 0 ? 0 : rows[0].max_function_id;
+  }
+
+  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number = 0): Promise<string> {
     const workflowStatus = await this.getWorkflowStatus(originalWorkflowID);
+
     if (workflowStatus === null) {
       throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
     }
 
-    const inputs = await this.getWorkflowInputs(originalWorkflowID);
-    if (inputs === null) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+    const client = await this.pool.connect();
+
+    try {
+      await client.query('BEGIN');
+
+      const query = `
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_status (
+        workflow_uuid,
+        status,
+        name,
+        class_name,
+        config_name,
+        queue_name,
+        authenticated_user,
+        assumed_role,
+        authenticated_roles,
+        request,
+        output,
+        executor_id,
+        application_version,
+        application_id,
+        created_at,
+        recovery_attempts,
+        updated_at
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)
+        `;
+
+      await client.query(query, [
+        forkedWorkflowId,
+        StatusString.ENQUEUED,
+        workflowStatus.workflowName,
+        workflowStatus.workflowClassName,
+        workflowStatus.workflowConfigName,
+        INTERNAL_QUEUE_NAME,
+        workflowStatus.authenticatedUser,
+        workflowStatus.assumedRole,
+        JSON.stringify(workflowStatus.authenticatedRoles),
+        JSON.stringify(workflowStatus.request),
+        null,
+        null,
+        workflowStatus.applicationVersion,
+        workflowStatus.applicationID,
+        Date.now(),
+        0,
+        Date.now(),
+      ]);
+
+      // Copy the inputs to the new workflow
+      const inputQuery = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs (workflow_uuid, inputs)
+                            SELECT $2, inputs
+                            FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs
+                            WHERE workflow_uuid = $1;`;
+
+      await client.query<workflow_inputs>(inputQuery, [originalWorkflowID, forkedWorkflowId]);
+
+      if (startStep > 0) {
+        const query = `
+          INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs (
+          workflow_uuid,
+          function_id,
+          output,
+          error,
+          function_name,
+          child_workflow_id
+        )
+        SELECT
+          $1 AS workflow_uuid,
+          function_id,
+          output,
+          error,
+          function_name,
+          child_workflow_id
+          FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+          WHERE workflow_uuid = $2 AND function_id < $3
+        `;
+
+        await client.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
+      }
+
+      await client.query<workflow_queue>(
+        `
+      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+      VALUES ($1, $2)
+      ON CONFLICT (workflow_uuid)
+      DO NOTHING;
+      `,
+        [forkedWorkflowId, INTERNAL_QUEUE_NAME],
+      );
+
+      await client.query('COMMIT');
+      return forkedWorkflowId;
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
     }
-
-    const workflowStatusInternal: WorkflowStatusInternal = {
-      ...workflowStatus,
-      workflowUUID: forkedWorkflowId,
-      status: StatusString.ENQUEUED,
-      workflowName: workflowStatus.workflowName,
-      workflowClassName: workflowStatus.workflowClassName,
-      workflowConfigName: workflowStatus.workflowConfigName,
-      queueName: INTERNAL_QUEUE_NAME,
-      authenticatedUser: workflowStatus.authenticatedUser,
-      authenticatedRoles: workflowStatus.authenticatedRoles,
-      request: workflowStatus.request,
-      executorId: globalParams.executorID,
-      applicationVersion: workflowStatus.applicationVersion,
-      applicationID: workflowStatus.applicationID,
-      createdAt: Date.now(),
-    };
-
-    await this.initWorkflowStatus(workflowStatusInternal, inputs);
-
-    await this.enqueueWorkflow(forkedWorkflowId, INTERNAL_QUEUE_NAME);
-
-    return forkedWorkflowId;
   }
 
   async runAsStep(
@@ -594,7 +747,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client?: PoolClient,
   ): Promise<string | null | undefined> {
     if (workflowID !== undefined && functionID !== undefined) {
-      const res = await this.getOperationResult(workflowID, functionID, client);
+      const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID, client);
       if (res.res !== undefined) {
         if (res.res.functionName !== functionName) {
           throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
@@ -610,14 +763,41 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return serialOutput;
   }
 
-  async durableSleepms(
+  async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
+    let resolveNotification: () => void;
+    const cancelPromise = new Promise<void>((resolve) => {
+      resolveNotification = resolve;
+    });
+
+    const cbr = this.cancelWakeupMap.registerCallback(workflowID, resolveNotification!);
+    try {
+      let timeoutPromise: Promise<void> = Promise.resolve();
+      const { promise, cancel: timeoutCancel } = await this.durableSleepmsInternal(workflowID, functionID, durationMS);
+      timeoutPromise = promise;
+
+      try {
+        await Promise.race([cancelPromise, timeoutPromise]);
+      } finally {
+        timeoutCancel();
+      }
+    } finally {
+      this.cancelWakeupMap.deregisterCallback(cbr);
+    }
+
+    await this.checkIfCanceled(workflowID);
+  }
+
+  async durableSleepmsInternal(
     workflowID: string,
     functionID: number,
     durationMS: number,
-  ): Promise<{ promise: Promise<void>; cancel: () => void }> {
+    maxSleepPerIteration?: number,
+  ): Promise<{ promise: Promise<void>; cancel: () => void; endTime: number }> {
+    if (maxSleepPerIteration === undefined) maxSleepPerIteration = durationMS;
+
     const curTime = Date.now();
     let endTimeMs = curTime + durationMS;
-    const res = await this.getOperationResult(workflowID, functionID);
+    const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID);
     if (res.res !== undefined) {
       if (res.res.functionName !== DBOS_FUNCNAME_SLEEP) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SLEEP, res.res.functionName!);
@@ -631,7 +811,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
         false,
       );
     }
-    return cancellableSleep(Math.max(endTimeMs - curTime, 0));
+    return {
+      ...cancellableSleep(Math.max(Math.min(maxSleepPerIteration, endTimeMs - curTime), 0)),
+      endTime: endTimeMs,
+    };
   }
 
   readonly nullTopic = '__null__topic__';
@@ -685,7 +868,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<string | null> {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
-    const res = await this.getOperationResult(workflowID, functionID);
+    const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID);
     if (res.res) {
       if (res.res.functionName !== DBOS_FUNCNAME_RECV) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_RECV, res.res.functionName!);
@@ -693,40 +876,68 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return res.res.res!;
     }
 
-    // Check if the key is already in the DB, then wait for the notification if it isn't.
-    const initRecvRows = (
-      await this.pool.query<notifications>(
-        `SELECT topic FROM ${DBOSExecutor.systemDBSchemaName}.notifications WHERE destination_uuid=$1 AND topic=$2;`,
-        [workflowID, topic],
-      )
-    ).rows;
-    if (initRecvRows.length === 0) {
-      // Then, register the key with the global notifications listener.
+    const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
+    let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
+
+    while (true) {
+      // register the key with the global notifications listener.
       let resolveNotification: () => void;
       const messagePromise = new Promise<void>((resolve) => {
         resolveNotification = resolve;
       });
       const payload = `${workflowID}::${topic}`;
-      this.notificationsMap[payload] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
-      let timeoutPromise: Promise<void> = Promise.resolve();
-      let timeoutCancel: () => void = () => {};
+      const cbr = this.notificationsMap.registerCallback(payload, resolveNotification!);
+      const crh = this.cancelWakeupMap.registerCallback(workflowID, (_res) => {
+        resolveNotification();
+      });
+
       try {
-        const { promise, cancel } = await this.durableSleepms(workflowID, timeoutFunctionID, timeoutSeconds * 1000);
-        timeoutPromise = promise;
-        timeoutCancel = cancel;
-      } catch (e) {
-        this.logger.error(e);
-        delete this.notificationsMap[payload];
-        timeoutCancel();
-        throw new Error('durable sleepms failed');
-      }
-      try {
-        await Promise.race([messagePromise, timeoutPromise]);
+        await this.checkIfCanceled(workflowID);
+
+        // Check if the key is already in the DB, then wait for the notification if it isn't.
+        const initRecvRows = (
+          await this.pool.query<notifications>(
+            `SELECT topic FROM ${DBOSExecutor.systemDBSchemaName}.notifications WHERE destination_uuid=$1 AND topic=$2;`,
+            [workflowID, topic],
+          )
+        ).rows;
+
+        if (initRecvRows.length !== 0) break;
+
+        const ct = Date.now();
+        if (finishTime && ct > finishTime) break; // Time's up
+
+        let timeoutPromise: Promise<void> = Promise.resolve();
+        let timeoutCancel: () => void = () => {};
+        if (timeoutms) {
+          const { promise, cancel, endTime } = await this.durableSleepmsInternal(
+            workflowID,
+            timeoutFunctionID,
+            timeoutms,
+            this.dbPollingIntervalEventMs,
+          );
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+          finishTime = endTime;
+        } else {
+          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalEventMs;
+          poll = Math.min(this.dbPollingIntervalEventMs, poll);
+          const { promise, cancel } = cancellableSleep(poll);
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+        }
+        try {
+          await Promise.race([messagePromise, timeoutPromise]);
+        } finally {
+          timeoutCancel();
+        }
       } finally {
-        timeoutCancel();
-        delete this.notificationsMap[payload];
+        this.notificationsMap.deregisterCallback(cbr);
+        this.cancelWakeupMap.deregisterCallback(crh);
       }
     }
+
+    await this.checkIfCanceled(workflowID);
 
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
     let message: string | null = null;
@@ -819,7 +1030,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<string | null> {
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerWorkflow) {
-      const res = await this.getOperationResult(callerWorkflow.workflowID, callerWorkflow.functionID);
+      const res = await this.getOperationResultAndThrowIfCancelled(
+        callerWorkflow.workflowID,
+        callerWorkflow.functionID,
+      );
       if (res.res !== undefined) {
         if (res.res.functionName !== DBOS_FUNCNAME_GETEVENT) {
           throw new DBOSUnexpectedStepError(
@@ -836,48 +1050,61 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Get the return the value. if it's in the DB, otherwise return null.
     let value: string | null = null;
     const payloadKey = `${workflowID}::${key}`;
+    const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
+    let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
+
     // Register the key with the global notifications listener first... we do not want to look in the DB first
     //  or that would cause a timing hole.
-    let resolveNotification: () => void;
-    const valuePromise = new Promise<void>((resolve) => {
-      resolveNotification = resolve;
-    });
-    this.workflowEventsMap[payloadKey] = resolveNotification!; // The resolver assignment in the Promise definition runs synchronously.
+    while (true) {
+      let resolveNotification: () => void;
+      const valuePromise = new Promise<void>((resolve) => {
+        resolveNotification = resolve;
+      });
+      const cbr = this.workflowEventsMap.registerCallback(payloadKey, resolveNotification!);
+      const crh = callerWorkflow?.workflowID
+        ? this.cancelWakeupMap.registerCallback(callerWorkflow.workflowID, (_res) => {
+            resolveNotification();
+          })
+        : undefined;
 
-    try {
-      // Check if the key is already in the DB, then wait for the notification if it isn't.
-      const initRecvRows = (
-        await this.pool.query<workflow_events>(
-          `
-        SELECT key, value
-        FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
-        WHERE workflow_uuid=$1 AND key=$2;`,
-          [workflowID, key],
-        )
-      ).rows;
+      try {
+        if (callerWorkflow?.workflowID) await this.checkIfCanceled(callerWorkflow?.workflowID);
+        // Check if the key is already in the DB, then wait for the notification if it isn't.
+        const initRecvRows = (
+          await this.pool.query<workflow_events>(
+            `
+          SELECT key, value
+          FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
+          WHERE workflow_uuid=$1 AND key=$2;`,
+            [workflowID, key],
+          )
+        ).rows;
 
-      if (initRecvRows.length > 0) {
-        value = initRecvRows[0].value;
-      } else {
+        if (initRecvRows.length > 0) {
+          value = initRecvRows[0].value;
+          break;
+        }
+
+        const ct = Date.now();
+        if (finishTime && ct > finishTime) break; // Time's up
+
         // If we have a callerWorkflow, we want a durable sleep, otherwise, not
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
-        if (callerWorkflow) {
-          try {
-            const { promise, cancel } = await this.durableSleepms(
-              callerWorkflow.workflowID,
-              callerWorkflow.timeoutFunctionID ?? -1,
-              timeoutSeconds * 1000,
-            );
-            timeoutPromise = promise;
-            timeoutCancel = cancel;
-          } catch (e) {
-            this.logger.error(e);
-            delete this.workflowEventsMap[payloadKey];
-            throw new Error('durable sleepms failed');
-          }
+        if (callerWorkflow && timeoutms) {
+          const { promise, cancel, endTime } = await this.durableSleepmsInternal(
+            callerWorkflow.workflowID,
+            callerWorkflow.timeoutFunctionID ?? -1,
+            timeoutms,
+            this.dbPollingIntervalEventMs,
+          );
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
+          finishTime = endTime;
         } else {
-          const { promise, cancel } = cancellableSleep(timeoutSeconds * 1000);
+          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalEventMs;
+          poll = Math.min(this.dbPollingIntervalEventMs, poll);
+          const { promise, cancel } = cancellableSleep(poll);
           timeoutPromise = promise;
           timeoutCancel = cancel;
         }
@@ -887,22 +1114,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
         } finally {
           timeoutCancel();
         }
-
-        const finalRecvRows = (
-          await this.pool.query<workflow_events>(
-            `
-            SELECT value
-            FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
-            WHERE workflow_uuid=$1 AND key=$2;`,
-            [workflowID, key],
-          )
-        ).rows;
-        if (finalRecvRows.length > 0) {
-          value = finalRecvRows[0].value;
-        }
+      } finally {
+        this.workflowEventsMap.deregisterCallback(cbr);
+        if (crh) this.cancelWakeupMap.deregisterCallback(crh);
       }
-    } finally {
-      delete this.workflowEventsMap[payloadKey];
     }
 
     // Record the output if it is inside a workflow.
@@ -928,6 +1143,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.recordWorkflowStatusChange(workflowID, status, { resetRecoveryAttempts });
   }
 
+  setWFCancelMap(workflowID: string) {
+    if (this.runningWorkflowMap.has(workflowID)) {
+      this.workflowCancellationMap.set(workflowID, true);
+    }
+    this.cancelWakeupMap.callCallbacks(workflowID);
+  }
+
+  clearWFCancelMap(workflowID: string) {
+    if (this.workflowCancellationMap.has(workflowID)) {
+      this.workflowCancellationMap.delete(workflowID);
+    }
+  }
+
   async cancelWorkflow(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -945,14 +1173,32 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       await client.query('COMMIT');
     } catch (error) {
+      this.logger.error(error);
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
     }
+
+    this.setWFCancelMap(workflowID);
+  }
+
+  async checkIfCanceled(workflowID: string): Promise<void> {
+    if (this.workflowCancellationMap.get(workflowID) === true) {
+      throw new DBOSWorkflowCancelledError(workflowID);
+    }
+    const { rows } = await this.pool.query<workflow_status>(
+      `SELECT status FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
+      [workflowID],
+    );
+    if (rows[0].status === StatusString.CANCELLED) {
+      throw new DBOSWorkflowCancelledError(workflowID);
+    }
+    return Promise.resolve();
   }
 
   async resumeWorkflow(workflowID: string): Promise<void> {
+    this.clearWFCancelMap(workflowID);
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN');
@@ -999,10 +1245,40 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       await client.query('COMMIT');
     } catch (error) {
+      this.logger.error(error);
       await client.query('ROLLBACK');
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>) {
+    // Need to await for the workflow and capture errors.
+    const awaitWorkflowPromise = workflowPromise
+      .catch((error) => {
+        this.logger.debug('Captured error in awaitWorkflowPromise: ' + error);
+      })
+      .finally(() => {
+        // Remove itself from pending workflow map.
+        this.runningWorkflowMap.delete(workflowID);
+        this.workflowCancellationMap.delete(workflowID);
+      });
+    this.runningWorkflowMap.set(workflowID, awaitWorkflowPromise);
+  }
+
+  async awaitRunningWorkflows(): Promise<void> {
+    if (this.runningWorkflowMap.size > 0) {
+      this.logger.info('Waiting for pending workflows to finish.');
+      await Promise.allSettled(this.runningWorkflowMap.values());
+    }
+    if (this.workflowEventsMap.map.size > 0) {
+      this.logger.warn('Workflow events map is not empty - shutdown is not clean.');
+      //throw new Error('Workflow events map is not empty - shutdown is not clean.');
+    }
+    if (this.notificationsMap.map.size > 0) {
+      this.logger.warn('Message notification map is not empty - shutdown is not clean.');
+      //throw new Error('Message notification map is not empty - shutdown is not clean.');
     }
   }
 
@@ -1026,36 +1302,86 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return sv ? (JSON.parse(sv) as WorkflowStatusInternal) : null;
   }
 
-  async awaitWorkflowResult(workflowID: string, timeoutms?: number): Promise<SystemDatabaseStoredResult | undefined> {
-    const pollingIntervalMs: number = 1000;
-    const et = timeoutms !== undefined ? new Date().getTime() + timeoutms : undefined;
+  async awaitWorkflowResult(
+    workflowID: string,
+    timeoutSeconds?: number,
+    callerID?: string,
+    timerFuncID?: number,
+  ): Promise<SystemDatabaseStoredResult | undefined> {
+    const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
+    let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
 
     while (true) {
-      const { rows } = await this.pool.query<workflow_status>(
-        `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
-        [workflowID],
-      );
-      if (rows.length > 0) {
-        const status = rows[0].status;
-        if (status === StatusString.SUCCESS) {
-          return { res: rows[0].output };
-        } else if (status === StatusString.ERROR) {
-          return { err: rows[0].error };
+      let resolveNotification: () => void;
+      const statusPromise = new Promise<void>((resolve) => {
+        resolveNotification = resolve;
+      });
+      const irh = this.cancelWakeupMap.registerCallback(workflowID, (_res) => {
+        resolveNotification();
+      });
+      const crh = callerID
+        ? this.cancelWakeupMap.registerCallback(callerID, (_res) => {
+            resolveNotification();
+          })
+        : undefined;
+      try {
+        if (callerID) await this.checkIfCanceled(callerID);
+        try {
+          const { rows } = await this.pool.query<workflow_status>(
+            `SELECT status, output, error FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status WHERE workflow_uuid=$1`,
+            [workflowID],
+          );
+          if (rows.length > 0) {
+            const status = rows[0].status;
+            if (status === StatusString.SUCCESS) {
+              return { res: rows[0].output };
+            } else if (status === StatusString.ERROR) {
+              return { err: rows[0].error };
+            } else if (status === StatusString.CANCELLED) {
+              return { cancelled: true };
+            } else {
+              // Status is not actionable
+            }
+          }
+        } catch (e) {
+          const err = e as Error;
+          this.logger.error(`Exception from system database: ${err}`);
+          throw err;
         }
-      }
 
-      if (et !== undefined) {
-        const ct = new Date().getTime();
-        if (et > ct) {
-          await sleepms(Math.min(pollingIntervalMs, et - ct));
+        const ct = Date.now();
+        if (finishTime && ct > finishTime) return undefined; // Time's up
+
+        let timeoutPromise: Promise<void> = Promise.resolve();
+        let timeoutCancel: () => void = () => {};
+        if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
+          const { promise, cancel, endTime } = await this.durableSleepmsInternal(
+            callerID,
+            timerFuncID,
+            timeoutms,
+            this.dbPollingIntervalResultMs,
+          );
+          finishTime = endTime;
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
         } else {
-          break;
+          let poll = finishTime ? finishTime - ct : this.dbPollingIntervalResultMs;
+          poll = Math.min(this.dbPollingIntervalResultMs, poll);
+          const { promise, cancel } = cancellableSleep(poll);
+          timeoutPromise = promise;
+          timeoutCancel = cancel;
         }
-      } else {
-        await sleepms(pollingIntervalMs);
+
+        try {
+          await Promise.race([statusPromise, timeoutPromise]);
+        } finally {
+          timeoutCancel();
+        }
+      } finally {
+        this.cancelWakeupMap.deregisterCallback(irh);
+        if (crh) this.cancelWakeupMap.deregisterCallback(crh);
       }
     }
-    return undefined;
   }
 
   /* BACKGROUND PROCESSES */
@@ -1068,13 +1394,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.notificationsClient.query('LISTEN dbos_notifications_channel;');
     await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
     const handler = (msg: Notification) => {
+      if (!this.shouldUseDBNotifications) return; // Testing parameter
       if (msg.channel === 'dbos_notifications_channel') {
-        if (msg.payload && msg.payload in this.notificationsMap) {
-          this.notificationsMap[msg.payload]();
+        if (msg.payload) {
+          this.notificationsMap.callCallbacks(msg.payload);
         }
-      } else {
-        if (msg.payload && msg.payload in this.workflowEventsMap) {
-          this.workflowEventsMap[msg.payload]();
+      } else if (msg.channel === 'dbos_workflow_events_channel') {
+        if (msg.payload) {
+          this.workflowEventsMap.callCallbacks(msg.payload);
         }
       }
     };
@@ -1338,7 +1665,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void> {
     if (queue.rateLimit) {
-      const time = new Date().getTime();
+      const time = Date.now();
       await this.pool.query<workflow_queue>(
         `
         UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
@@ -1359,7 +1686,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]> {
-    const startTimeMs = new Date().getTime();
+    const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
 
