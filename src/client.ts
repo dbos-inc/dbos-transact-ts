@@ -13,7 +13,7 @@ import {
 } from './workflow';
 import { constructPoolConfig } from './dbos-runtime/config';
 import { DBOSJSON } from './utils';
-import { getWorkflow, listQueuedWorkflows, listWorkflows, listWorkflowSteps } from './dbos-runtime/workflow_inspection';
+import { getWorkflow, listQueuedWorkflows, listWorkflows, listWorkflowSteps } from './dbos-runtime/workflow_management';
 import { PGNodeUserDatabase, type UserDatabase } from './user_database';
 
 /**

@@ -99,7 +99,7 @@ import {
   listWorkflows,
   listWorkflowSteps,
   toWorkflowStatus,
-} from './dbos-runtime/workflow_inspection';
+} from './dbos-runtime/workflow_management';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
