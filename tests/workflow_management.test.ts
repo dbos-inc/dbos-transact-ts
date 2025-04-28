@@ -317,7 +317,7 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
     // Restart the workflow
-    const wfh = await DBOS.forkWorkflow(handle.getWorkflowUUID());
+    const wfh = await DBOS.forkWorkflow(handle.getWorkflowUUID(), 0);
     await wfh.getResult();
     expect(TestEndpoints.tries).toBe(3);
     // Validate a new workflow is started and successful
@@ -351,7 +351,7 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].name).toBe('temp_workflow-transaction-testTransaction');
     const workflowUUID = result.rows[0].workflow_uuid;
 
-    let wfh = await DBOS.executeWorkflowById(workflowUUID, true);
+    let wfh = await DBOS.forkWorkflow(workflowUUID, 0);
     await wfh.getResult();
     expect(TestEndpoints.tries).toBe(2);
 
@@ -364,7 +364,7 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].name).toBe('temp_workflow-transaction-testTransaction');
     const restartedWorkflowUUID = result.rows[0].workflow_uuid;
 
-    wfh = await DBOS.executeWorkflowById(restartedWorkflowUUID, true);
+    wfh = await DBOS.forkWorkflow(restartedWorkflowUUID, 0);
     await wfh.getResult();
     expect(TestEndpoints.tries).toBe(3);
   });
@@ -1217,7 +1217,7 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFourCount).toBe(1);
     expect(ExampleWorkflow.stepFiveCount).toBe(1);
 
-    const forkedHandle = await DBOS.forkWorkflow(wfid);
+    const forkedHandle = await DBOS.forkWorkflow(wfid, 0);
     let forkresult = await forkedHandle.getResult();
     expect(forkresult).toBe(550);
 
@@ -1259,7 +1259,7 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.transactionTwoCount).toBe(1);
     expect(ExampleWorkflow.transactionThreeCount).toBe(1);
 
-    const forkedHandle = await DBOS.forkWorkflow(wfid);
+    const forkedHandle = await DBOS.forkWorkflow(wfid, 0);
     await forkedHandle.getResult();
 
     expect(ExampleWorkflow.stepOneCount).toBe(2);
