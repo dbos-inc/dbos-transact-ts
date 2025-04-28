@@ -77,6 +77,7 @@ import {
   runWithTransactionContext,
   runWithStepContext,
   runWithStoredProcContext,
+  getNextWFID,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
@@ -1834,7 +1835,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * The forked workflow will be assigned a new ID.
    */
 
-  forkWorkflow(workflowID: string, startStep: number, newWorkflowID?: string): Promise<string> {
+  forkWorkflow(
+    workflowID: string,
+    startStep: number,
+    newWorkflowID?: string,
+    applicationVersion?: string,
+  ): Promise<string> {
     return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, newWorkflowID);
   }
 
