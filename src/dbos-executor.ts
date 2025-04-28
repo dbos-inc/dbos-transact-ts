@@ -766,17 +766,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
     if (this.isDebugging) {
-      // TODO: remove call to getWorkflowInputs after #871 is merged
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-      const wfInputs = await this.systemDatabase.getWorkflowInputs(workflowID);
-      if (!wfStatus || !wfInputs) {
+      if (!wfStatus) {
         throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowID}`);
       }
 
       // Make sure we use the same input.
-      if (DBOSJSON.stringify(args) !== wfInputs) {
+      if (DBOSJSON.stringify(args) !== wfStatus.input) {
         throw new DBOSDebuggerError(
-          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${wfInputs}`,
+          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${wfStatus.input}`,
         );
       }
       status = wfStatus.status;
@@ -2029,14 +2027,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async executeWorkflowUUID(workflowID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
-    // TODO: remove call to getWorkflowInputs after #871 is merged
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-    const sInputs = await this.systemDatabase.getWorkflowInputs(workflowID);
-    if (!sInputs || !wfStatus) {
+    if (!wfStatus) {
+      this.logger.error(`Failed to find workflow status for workflowUUID: ${workflowID}`);
+      throw new DBOSError(`Failed to find workflow status for workflow UUID: ${workflowID}`);
+    }
+
+    if (!wfStatus?.input) {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
-    const inputs = DBOSJSON.parse(sInputs) as unknown[];
+    const inputs = DBOSJSON.parse(wfStatus.input) as unknown[];
     const parentCtx = this.#getRecoveryContext(workflowID, wfStatus);
 
     const { wfInfo, configuredInst } = this.getWorkflowInfoByStatus(wfStatus);
