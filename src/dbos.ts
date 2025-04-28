@@ -980,6 +980,10 @@ export class DBOS {
   /**
    * Fork a workflow given its ID.
    * @param workflowID - ID of the workflow
+   * @param startStep - Step ID to start the forked workflow from
+   * @param applicationVersion - Version of the application to use for the forked workflow
+   * @returns A handle to the forked workflow
+   * @throws DBOSInvalidStepIDError if the `startStep` is greater than the maximum step ID of the workflow
    */
   static async forkWorkflow<T>(
     workflowID: string,
