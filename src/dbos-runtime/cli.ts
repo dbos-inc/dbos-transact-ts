@@ -324,8 +324,6 @@ workflowCommands
     }
   });
 
-// TODO: CLI Fork command
-
 const queueCommands = workflowCommands.command('queue').alias('queues').alias('q').description('Manage DBOS queues');
 queueCommands
   .command('list')

@@ -166,7 +166,7 @@ export class Conductor {
             const restartMsg = baseMsg as protocol.RestartRequest;
             let restartSuccess = true;
             try {
-              await this.dbosExec.executeWorkflowUUID(restartMsg.workflow_id, true);
+              await this.dbosExec.forkWorkflow(restartMsg.workflow_id, 0);
             } catch (e) {
               errorMsg = `Exception encountered when restarting workflow ${restartMsg.workflow_id}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
