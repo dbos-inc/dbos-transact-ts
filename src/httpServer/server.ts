@@ -313,12 +313,14 @@ export class DBOSHttpServer {
     const workflowResumeUrl = '/workflows/:workflow_id/fork';
     const workflowForkHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      const body = koaCtxt.request.body as { start_step?: number };
-      const startStep = body?.start_step ?? 1;
+      const body = koaCtxt.request.body as { start_step?: number; new_workflow_id?: string };
+      if (!body.start_step) {
+        throw new DBOSDataValidationError('Missing start_step in request body');
+      }
 
-      dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${startStep} with a new id`);
+      dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${body.start_step} with a new id`);
       try {
-        await dbosExec.forkWorkflow(workflowId, startStep);
+        await dbosExec.forkWorkflow(workflowId, body.start_step, body.new_workflow_id);
       } catch (e) {
         let errorMessage = '';
         if (e instanceof DBOSError) {
