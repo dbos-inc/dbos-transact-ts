@@ -2062,31 +2062,6 @@ export class DBOS {
   ): R {
     return configureInstance(cls, name, ...args);
   }
-
-  // Function registration - for internal use
-  static registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-  ) {
-    return registerAndWrapDBOSFunction(target, propertyKey, descriptor);
-  }
-
-  // For internal and testing purposes
-  static async executeWorkflowById(workflowId: string): Promise<WorkflowHandle<unknown>> {
-    if (!DBOSExecutor.globalInstance) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    return DBOSExecutor.globalInstance.executeWorkflowUUID(workflowId);
-  }
-
-  // For internal and testing purposes
-  static async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
-    if (!DBOSExecutor.globalInstance) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    return DBOSExecutor.globalInstance.recoverPendingWorkflows(executorIDs);
-  }
 }
 
 /** @deprecated */

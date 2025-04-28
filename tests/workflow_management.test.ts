@@ -1,7 +1,7 @@
 import { GetWorkflowsInput, StatusString, Authentication, MiddlewareContext, DBOS, WorkflowQueue } from '../src';
 import request from 'supertest';
 import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows } from './helpers';
 import { Client } from 'pg';
 import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
@@ -293,7 +293,7 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.CANCELLED);
 
-    await DBOS.recoverPendingWorkflows(); // Does nothing as the workflow is CANCELLED
+    await recoverPendingWorkflows(); // Does nothing as the workflow is CANCELLED
     expect(TestEndpoints.tries).toBe(1);
 
     // Retry the workflow, resetting the attempts counter
