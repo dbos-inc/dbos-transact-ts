@@ -319,12 +319,13 @@ workflowCommands
     }
     const client = await DBOSClient.create(dbosConfig.databaseUrl);
     try {
-      // TODO: Review!
-      await client.forkWorkflow(uuid, randomUUID(), 0);
+      await client.forkWorkflow(uuid, 0);
     } finally {
       await client.destroy();
     }
   });
+
+// TODO: CLI Fork command
 
 const queueCommands = workflowCommands.command('queue').alias('queues').alias('q').description('Manage DBOS queues');
 queueCommands

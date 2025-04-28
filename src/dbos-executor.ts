@@ -1826,7 +1826,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
   }
 
-  async #cloneWorkflowTransactions(workflowID: string, forkedWorkflowUUID: string, startStep: number): Promise<void> {
+  async #cloneWorkflowTransactions(workflowID: string, startStep: number, newWorkflowUUID: string): Promise<void> {
     const query = `
       INSERT INTO dbos.transaction_outputs
         (workflow_uuid,
@@ -1845,7 +1845,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           function_name
       FROM dbos.transaction_outputs WHERE workflow_uuid= $2 AND function_id < $3`;
 
-    await this.userDatabase.query(query, forkedWorkflowUUID, workflowID, startStep);
+    await this.userDatabase.query(query, newWorkflowUUID, workflowID, startStep);
   }
 
   getMaxStepID(workflowID: string): Promise<number> {
@@ -1857,13 +1857,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * The forked workflow will be assigned a new ID.
    */
 
-  async forkWorkflow(workflowID: string, startStep: number = 0): Promise<string> {
-    const forkedWorkflowID = randomUUID();
+  async forkWorkflow(workflowID: string, startStep: number, newWorkflowID?: string): Promise<string> {
+    newWorkflowID ??= randomUUID();
 
-    await this.#cloneWorkflowTransactions(workflowID, forkedWorkflowID, startStep);
-    await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID, startStep);
+    await this.#cloneWorkflowTransactions(workflowID, startStep, newWorkflowID);
+    await this.systemDatabase.forkWorkflow(workflowID, startStep, newWorkflowID);
 
-    return forkedWorkflowID;
+    return newWorkflowID;
   }
 
   /**

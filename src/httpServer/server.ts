@@ -296,7 +296,7 @@ export class DBOSHttpServer {
     const workflowRestartHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Restarting workflow: ${workflowId} with a new id`);
-      await dbosExec.forkWorkflow(workflowId);
+      await dbosExec.forkWorkflow(workflowId, 0);
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowRestartHandler);

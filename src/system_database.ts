@@ -111,7 +111,7 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
-  forkWorkflow(originalWorkflowID: string, forkedWorkflowId?: string, startStep?: number): Promise<string>;
+  forkWorkflow(workflowID: string, startStep: number, newWorkflowId?: string): Promise<string>;
   getMaxFunctionID(workflowID: string): Promise<number>;
   checkIfCanceled(workflowID: string): Promise<void>;
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
@@ -634,12 +634,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.length === 0 ? 0 : rows[0].max_function_id;
   }
 
-  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId?: string, startStep: number = 0): Promise<string> {
-    forkedWorkflowId ??= randomUUID();
-    const workflowStatus = await this.getWorkflowStatus(originalWorkflowID);
+  async forkWorkflow(workflowID: string, startStep: number, newWorkflowId?: string): Promise<string> {
+    newWorkflowId ??= randomUUID();
+    const workflowStatus = await this.getWorkflowStatus(workflowID);
 
     if (workflowStatus === null) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+      throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
     }
 
     const client = await this.pool.connect();
@@ -670,7 +670,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         `;
 
       await client.query(query, [
-        forkedWorkflowId,
+        newWorkflowId,
         StatusString.ENQUEUED,
         workflowStatus.workflowName,
         workflowStatus.workflowClassName,
@@ -695,7 +695,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
                             FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs
                             WHERE workflow_uuid = $1;`;
 
-      await client.query<workflow_inputs>(inputQuery, [originalWorkflowID, forkedWorkflowId]);
+      await client.query<workflow_inputs>(inputQuery, [workflowID, newWorkflowId]);
 
       if (startStep > 0) {
         const query = `
@@ -718,7 +718,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           WHERE workflow_uuid = $2 AND function_id < $3
         `;
 
-        await client.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
+        await client.query(query, [newWorkflowId, workflowID, startStep]);
       }
 
       await client.query<workflow_queue>(
@@ -728,11 +728,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       ON CONFLICT (workflow_uuid)
       DO NOTHING;
       `,
-        [forkedWorkflowId, INTERNAL_QUEUE_NAME],
+        [newWorkflowId, INTERNAL_QUEUE_NAME],
       );
 
       await client.query('COMMIT');
-      return forkedWorkflowId;
+      return newWorkflowId;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
