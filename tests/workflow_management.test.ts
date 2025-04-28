@@ -1328,4 +1328,32 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.childWorkflowCount).toBe(2);
     expect(ExampleWorkflow.stepTwoCount).toBe(2);
   });
+
+  test('test-fork-WithNextWorkflowId', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow(10);
+    const result: number = await handle.getResult();
+    expect(result).toBe(550);
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+    expect(ExampleWorkflow.stepThreeCount).toBe(1);
+    expect(ExampleWorkflow.stepFourCount).toBe(1);
+    expect(ExampleWorkflow.stepFiveCount).toBe(1);
+
+    const forkedWfid = randomUUID();
+
+    await DBOS.withNextWorkflowID(forkedWfid, async () => {
+      const forkedHandle = await DBOS.forkWorkflow(wfid);
+      let forkresult = await forkedHandle.getResult();
+      expect(forkresult).toBe(550);
+      expect(forkedHandle.workflowID).toBe(forkedWfid);
+    });
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.stepThreeCount).toBe(2);
+    expect(ExampleWorkflow.stepFourCount).toBe(2);
+    expect(ExampleWorkflow.stepFiveCount).toBe(2);
+  });
 });

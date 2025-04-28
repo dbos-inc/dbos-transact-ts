@@ -981,7 +981,11 @@ export class DBOS {
    * Fork a workflow given its ID.
    * @param workflowID - ID of the workflow
    */
-  static async forkWorkflow<T>(workflowID: string, startStep: number = 0): Promise<WorkflowHandle<Awaited<T>>> {
+  static async forkWorkflow<T>(
+    workflowID: string,
+    startStep: number = 0,
+    applicationVersion?: string,
+  ): Promise<WorkflowHandle<Awaited<T>>> {
     const maxStepID = await DBOS.executor.getMaxStepID(workflowID);
 
     if (startStep > maxStepID) {
@@ -989,7 +993,7 @@ export class DBOS {
     }
 
     const forkedID = await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.forkWorkflow(workflowID, startStep);
+      return await DBOS.executor.forkWorkflow(workflowID, startStep, applicationVersion);
     }, 'DBOS.forkWorkflow');
 
     return this.retrieveWorkflow(forkedID);
