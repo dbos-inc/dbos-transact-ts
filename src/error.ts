@@ -56,7 +56,7 @@ export function isClientError(dbosErrorCode: number) {
     dbosErrorCode === DataValidationError ||
     dbosErrorCode === WorkflowPermissionDeniedError ||
     dbosErrorCode === TopicPermissionDeniedError ||
-    dbosErrorCode === ConflictingUUIDError ||
+    dbosErrorCode === ConflictingWFIDError ||
     dbosErrorCode === NotRegisteredError ||
     dbosErrorCode === ConflictingWorkflowError
   );
@@ -89,18 +89,18 @@ export class DBOSInitializationError extends DBOSError {
 
 const TopicPermissionDeniedError = 4;
 export class DBOSTopicPermissionDeniedError extends DBOSError {
-  constructor(destinationUUID: string, workflowUUID: string, functionID: number, runAs: string) {
+  constructor(destinationID: string, workflowID: string, functionID: number, runAs: string) {
     const msg =
-      `Subject ${runAs} does not have permission on destination UUID ${destinationUUID}.` +
-      `(workflow UUID: ${workflowUUID}, function ID: ${functionID})`;
+      `Subject ${runAs} does not have permission on destination ID ${destinationID}.` +
+      `(workflow ID: ${workflowID}, function ID: ${functionID})`;
     super(msg, TopicPermissionDeniedError);
   }
 }
 
-const ConflictingUUIDError = 5;
-export class DBOSWorkflowConflictUUIDError extends DBOSError {
-  constructor(workflowUUID: string) {
-    super(`Conflicting UUID ${workflowUUID}`, ConflictingUUIDError);
+const ConflictingWFIDError = 5;
+export class DBOSWorkflowConflictError extends DBOSError {
+  constructor(workflowID: string) {
+    super(`Conflicting WF ID ${workflowID}`, ConflictingWFIDError);
   }
 }
 
@@ -191,9 +191,9 @@ export class DBOSFailLoadOperationsError extends DBOSError {
 
 const DeadLetterQueueError = 18;
 export class DBOSDeadLetterQueueError extends DBOSError {
-  constructor(workflowUUID: string, maxRetries: number) {
+  constructor(workflowID: string, maxRetries: number) {
     super(
-      `Workflow ${workflowUUID} has been moved to the dead-letter queue after exceeding the maximum of ${maxRetries} retries`,
+      `Workflow ${workflowID} has been moved to the dead-letter queue after exceeding the maximum of ${maxRetries} retries`,
       DeadLetterQueueError,
     );
   }
@@ -201,8 +201,8 @@ export class DBOSDeadLetterQueueError extends DBOSError {
 
 const FailedSqlTransactionError = 19;
 export class DBOSFailedSqlTransactionError extends DBOSError {
-  constructor(workflowUUID: string, txnName: string) {
-    super(`Postgres aborted the ${txnName} transaction of Workflow ${workflowUUID}.`, FailedSqlTransactionError);
+  constructor(workflowID: string, txnName: string) {
+    super(`Postgres aborted the ${txnName} transaction of Workflow ${workflowID}.`, FailedSqlTransactionError);
   }
 }
 
@@ -242,8 +242,8 @@ export class DBOSMaxStepRetriesError extends DBOSError {
 
 const WorkFlowCancelled = 24;
 export class DBOSWorkflowCancelledError extends DBOSError {
-  constructor(workflowUUID: string) {
-    super(`Workflow ${workflowUUID} has been cancelled`, WorkFlowCancelled);
+  constructor(readonly workflowID: string) {
+    super(`Workflow ${workflowID} has been cancelled`, WorkFlowCancelled);
   }
 }
 
@@ -270,7 +270,14 @@ export class DBOSUnexpectedStepError extends DBOSError {
   }
 }
 
-const InvalidStepID = 27;
+const TargetWorkFlowCancelled = 27;
+export class DBOSTargetWorkflowCancelledError extends DBOSError {
+  constructor(readonly workflowID: string) {
+    super(`Workflow ${workflowID} has been cancelled`, TargetWorkFlowCancelled);
+  }
+}
+
+const InvalidStepID = 28;
 /** Exception raised when a step has an unexpected recorded id */
 export class DBOSInvalidStepIDError extends DBOSError {
   constructor(

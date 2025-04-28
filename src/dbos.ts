@@ -38,6 +38,7 @@ import {
   DBOSExecutorNotInitializedError,
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
+  DBOSTargetWorkflowCancelledError,
   DBOSInvalidStepIDError,
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
@@ -832,11 +833,11 @@ export class DBOS {
   // Workflow and other operations
   //////
 
-  static #runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string): Promise<T> {
+  static runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string, childWFID?: string): Promise<T> {
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInStep()) {
         // OK to use directly
-        return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName);
+        return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
       } else if (DBOS.isInWorkflow()) {
         const wfctx = assertCurrentWorkflowContext();
         return DBOSExecutor.globalInstance!.runAsStep<T>(
@@ -844,6 +845,7 @@ export class DBOS {
           funcName,
           DBOS.workflowID,
           wfctx.functionIDGetIncrement(),
+          childWFID,
         );
       } else {
         throw new DBOSInvalidWorkflowTransitionError(
@@ -851,7 +853,7 @@ export class DBOS {
         );
       }
     }
-    return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName);
+    return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
   }
 
   /**
@@ -874,6 +876,34 @@ export class DBOS {
       }
     }
     return DBOS.executor.getWorkflowStatus(workflowID);
+  }
+
+  /**
+   * Get the workflow result, given a workflow ID
+   * @param workflowID - ID of the workflow
+   * @param timeoutSeconds - Maximum time to wait for result
+   * @returns The return value of the workflow, or throws the exception thrown by the workflow, or `null` if times out
+   */
+  static async getResult<T>(workflowID: string, timeoutSeconds?: number): Promise<T | null> {
+    let timerFuncID: number | undefined = undefined;
+    if (DBOS.isWithinWorkflow() && timeoutSeconds !== undefined) {
+      timerFuncID = assertCurrentWorkflowContext().functionIDGetIncrement();
+    }
+    return await DBOS.runAsWorkflowStep(
+      async () => {
+        const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
+          workflowID,
+          timeoutSeconds,
+          DBOS.workflowID,
+          timerFuncID,
+        );
+        if (!rres) return null;
+        if (rres?.cancelled) throw new DBOSTargetWorkflowCancelledError(`Workflow ${workflowID} was cancelled`); // TODO: Make semantically meaningful
+        return DBOSExecutor.reviveResultOrError<T>(rres);
+      },
+      'DBOS.getResult',
+      workflowID,
+    );
   }
 
   /**
@@ -902,7 +932,7 @@ export class DBOS {
    * @deprecated Use `DBOS.listWorkflows` instead
    */
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       const wfs = await DBOS.executor.listWorkflows(input);
       return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
     }, 'DBOS.getWorkflows');
@@ -914,13 +944,13 @@ export class DBOS {
    * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
    */
   static async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.listWorkflows(input);
     }, 'DBOS.listWorkflows');
   }
 
   static async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.listQueuedWorkflows(input);
     }, 'DBOS.listQueuedWorkflows');
   }
@@ -931,7 +961,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async cancelWorkflow(workflowID: string) {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.cancelWorkflow(workflowID);
     }, 'DBOS.cancelWorkflow');
   }
@@ -941,7 +971,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async resumeWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
-    await DBOS.#runAsWorkflowStep(async () => {
+    await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
     return this.retrieveWorkflow(workflowID);
@@ -958,7 +988,7 @@ export class DBOS {
       throw new DBOSInvalidStepIDError(workflowID, startStep, maxStepID);
     }
 
-    const forkedID = await DBOS.#runAsWorkflowStep(async () => {
+    const forkedID = await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.forkWorkflow(workflowID, startStep);
     }, 'DBOS.forkWorkflow');
 
@@ -970,7 +1000,7 @@ export class DBOS {
    * @param input - Filter predicate, containing the queue name and other criteria
    */
   static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.getWorkflowQueue(input);
     }, 'DBOS.getWorkflowQueue');
   }

@@ -3,13 +3,12 @@ import { DBOSExecutor, OperationType } from './dbos-executor';
 import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
 import { SystemDatabase } from './system_database';
-import { DBOSContext, DBOSContextImpl, HTTPRequest, assertCurrentWorkflowContext } from './context';
+import { DBOSContext, DBOSContextImpl, HTTPRequest } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
-import { serializeError } from 'serialize-error';
 import { DBOS } from './dbos';
 
 /** @deprecated */
@@ -512,9 +511,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       return;
     }
     const functionID = this.functionIDGetIncrement();
-    // TODO add a new cancellable sleep that also returns the cancel function
-    const { promise } = await this.#dbosExec.systemDatabase.durableSleepms(this.workflowUUID, functionID, durationMS);
-    return await promise;
+    await this.#dbosExec.systemDatabase.durableSleepms(this.workflowUUID, functionID, durationMS);
   }
 
   async sleep(durationSec: number): Promise<void> {
@@ -576,42 +573,17 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
-    let result: R;
-    try {
-      result = await this.workflowPromise;
-    } catch (error) {
-      if (DBOS.isInWorkflow()) {
-        await this.systemDatabase.recordOperationResult(
-          DBOS.workflowID!,
-          assertCurrentWorkflowContext().functionIDGetIncrement(),
-          {
-            childWfId: this.workflowID,
-            serialError: DBOSJSON.stringify(serializeError(error)),
-            functionName: 'DBOS.getResult',
-          },
-          false,
-        );
-      }
-      throw error;
-    }
-
-    if (DBOS.isInWorkflow()) {
-      await this.systemDatabase.recordOperationResult(
-        DBOS.workflowID!,
-        assertCurrentWorkflowContext().functionIDGetIncrement(),
-        {
-          childWfId: this.workflowID,
-          serialOutput: DBOSJSON.stringify(result),
-          functionName: 'DBOS.getResult',
-        },
-        false,
-      );
-    }
-    return result;
+    return await DBOS.runAsWorkflowStep(
+      async () => {
+        return await this.workflowPromise;
+      },
+      'DBOS.getResult',
+      this.workflowUUID,
+    );
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    return (await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID)) as T;
+    return DBOSJSON.parse(await this.systemDatabase.getWorkflowInputs(this.workflowUUID)) as T;
   }
 }
 
@@ -639,24 +611,10 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
-    const sr = (await this.systemDatabase.awaitWorkflowResult(this.workflowUUID))!;
-    if (DBOS.isInWorkflow()) {
-      await this.systemDatabase.recordOperationResult(
-        DBOS.workflowID!,
-        assertCurrentWorkflowContext().functionIDGetIncrement(),
-        {
-          childWfId: this.workflowID,
-          serialOutput: sr.res,
-          serialError: sr.err,
-          functionName: 'DBOS.getResult',
-        },
-        false,
-      );
-    }
-    return DBOSExecutor.reviveResultOrError<R>(sr);
+    return (await DBOS.getResult<R>(this.workflowUUID)) as Promise<R>;
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    return (await this.systemDatabase.getWorkflowInputs<T>(this.workflowUUID)) as T;
+    return DBOSJSON.parse(await this.systemDatabase.getWorkflowInputs(this.workflowUUID)) as T;
   }
 }

@@ -110,7 +110,7 @@ export class DBOSClient {
       createdAt: Date.now(),
     };
 
-    await this.systemDatabase.initWorkflowStatus(internalStatus, args);
+    await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
     await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName);
     return new RetrievedHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
@@ -141,7 +141,7 @@ export class DBOSClient {
       applicationID: '',
       createdAt: Date.now(),
     };
-    await this.systemDatabase.initWorkflowStatus(internalStatus, [destinationID, message, topic]);
+    await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify([destinationID, message, topic]));
     await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, DBOSJSON.stringify(message), topic);
   }
 
