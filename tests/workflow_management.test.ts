@@ -1356,4 +1356,35 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFourCount).toBe(2);
     expect(ExampleWorkflow.stepFiveCount).toBe(2);
   });
+
+  test('test-fork-version', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow(10);
+    const result: number = await handle.getResult();
+    expect(result).toBe(550);
+
+    expect(ExampleWorkflow.stepOneCount).toBe(1);
+    expect(ExampleWorkflow.stepTwoCount).toBe(1);
+    expect(ExampleWorkflow.stepThreeCount).toBe(1);
+    expect(ExampleWorkflow.stepFourCount).toBe(1);
+    expect(ExampleWorkflow.stepFiveCount).toBe(1);
+
+    const version = 'newVersion';
+
+    globalParams.appVersion = version;
+    const forkedHandle = await DBOS.forkWorkflow(wfid, 0, version);
+
+    const status = await forkedHandle.getStatus();
+    const returnedVersion = status?.applicationVersion;
+    expect(returnedVersion).toBe(version);
+
+    let forkresult = await forkedHandle.getResult();
+    expect(forkresult).toBe(550);
+
+    expect(ExampleWorkflow.stepOneCount).toBe(2);
+    expect(ExampleWorkflow.stepTwoCount).toBe(2);
+    expect(ExampleWorkflow.stepThreeCount).toBe(2);
+    expect(ExampleWorkflow.stepFourCount).toBe(2);
+    expect(ExampleWorkflow.stepFiveCount).toBe(2);
+  });
 });
