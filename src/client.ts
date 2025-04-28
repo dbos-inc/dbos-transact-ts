@@ -1,25 +1,20 @@
-import { PoolConfig } from 'pg';
-import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from './system_database';
+import type { PoolConfig } from 'pg';
+import { PostgresSystemDatabase, type SystemDatabase, type WorkflowStatusInternal } from './system_database';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
 import {
-  GetQueuedWorkflowsInput,
-  GetWorkflowsInput,
+  type GetQueuedWorkflowsInput,
+  type GetWorkflowsInput,
   RetrievedHandle,
   StatusString,
-  WorkflowHandle,
-  WorkflowStatus,
+  type StepInfo,
+  type WorkflowHandle,
+  type WorkflowStatus,
 } from './workflow';
 import { constructPoolConfig } from './dbos-runtime/config';
 import { DBOSJSON } from './utils';
-import {
-  getWorkflow,
-  listQueuedWorkflows,
-  listWorkflows,
-  listWorkflowSteps,
-  StepInfo,
-} from './dbos-runtime/workflow_management';
-import { PGNodeUserDatabase, UserDatabase } from './user_database';
+import { getWorkflow, listQueuedWorkflows, listWorkflows, listWorkflowSteps } from './dbos-runtime/workflow_inspection';
+import { PGNodeUserDatabase, type UserDatabase } from './user_database';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.

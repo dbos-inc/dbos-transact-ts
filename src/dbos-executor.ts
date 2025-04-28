@@ -14,45 +14,46 @@ import {
 } from './error';
 import {
   InvokedHandle,
-  Workflow,
-  WorkflowConfig,
-  WorkflowContext,
-  WorkflowHandle,
-  WorkflowParams,
+  type Workflow,
+  type WorkflowConfig,
+  type WorkflowContext,
+  type WorkflowHandle,
+  type WorkflowParams,
   RetrievedHandle,
   WorkflowContextImpl,
   StatusString,
-  ContextFreeFunction,
-  GetWorkflowQueueInput,
-  GetWorkflowQueueOutput,
-  WorkflowStatus,
-  GetQueuedWorkflowsInput,
+  type ContextFreeFunction,
+  type GetWorkflowQueueInput,
+  type GetWorkflowQueueOutput,
+  type WorkflowStatus,
+  type GetQueuedWorkflowsInput,
+  type StepInfo,
 } from './workflow';
 
-import { IsolationLevel, Transaction, TransactionConfig, TransactionContextImpl } from './transaction';
-import { StepConfig, StepContextImpl, StepFunction } from './step';
+import { IsolationLevel, type Transaction, type TransactionConfig, TransactionContextImpl } from './transaction';
+import { type StepConfig, StepContextImpl, type StepFunction } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
-import { TelemetryConfig } from './telemetry';
-import { Pool, PoolClient, PoolConfig, QueryResultRow } from 'pg';
+import type { TelemetryConfig } from './telemetry';
+import { Pool, type PoolClient, type PoolConfig, type QueryResultRow } from 'pg';
 import {
-  SystemDatabase,
+  type SystemDatabase,
   PostgresSystemDatabase,
-  WorkflowStatusInternal,
-  SystemDatabaseStoredResult,
+  type WorkflowStatusInternal,
+  type SystemDatabaseStoredResult,
 } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
   PGNodeUserDatabase,
   PrismaUserDatabase,
-  UserDatabase,
+  type UserDatabase,
   TypeORMDatabase,
   UserDatabaseName,
   KnexUserDatabase,
   DrizzleUserDatabase,
-  UserDatabaseClient,
+  type UserDatabaseClient,
   pgNodeIsKeyConflictError,
   createDBIfDoesNotExist,
 } from './user_database';
@@ -67,7 +68,7 @@ import {
   ConfiguredInstance,
   getAllRegisteredClasses,
 } from './decorators';
-import { step_info } from '../schemas/system_db_schema';
+import type { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import {
@@ -93,12 +94,12 @@ import { DBOSEventReceiverState, DBNotificationCallback, DBNotificationListener 
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
 import {
+  getMaxStepID,
   listQueuedWorkflows,
   listWorkflows,
   listWorkflowSteps,
-  StepInfo,
   toWorkflowStatus,
-} from './dbos-runtime/workflow_management';
+} from './dbos-runtime/workflow_inspection';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -1825,18 +1826,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
   }
 
-  async #getMaxFunctionID(workflowID: string): Promise<number> {
-    const rows = await this.userDatabase.query<{ max_function_id: number }, [string]>(
-      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
-      workflowID,
-    );
-    if (rows.length === 0) {
-      return 0;
-    } else {
-      return rows[0].max_function_id;
-    }
-  }
-
   async #cloneWorkflowTransactions(workflowID: string, forkedWorkflowUUID: string, startStep: number): Promise<void> {
     const query = `
       INSERT INTO dbos.transaction_outputs
@@ -1859,11 +1848,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     await this.userDatabase.query(query, forkedWorkflowUUID, workflowID, startStep);
   }
 
-  async getMaxStepID(workflowID: string): Promise<number> {
-    const maxAppFunctionID = await this.#getMaxFunctionID(workflowID);
-    const maxSystemFunctionID = await this.systemDatabase.getMaxFunctionID(workflowID);
-
-    return Math.max(maxAppFunctionID, maxSystemFunctionID);
+  getMaxStepID(workflowID: string): Promise<number> {
+    return getMaxStepID(this.systemDatabase, this.userDatabase, workflowID);
   }
 
   /**

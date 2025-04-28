@@ -1,7 +1,6 @@
 import { serializeError } from 'serialize-error';
 import { DBOSJSON } from '../utils';
-import { WorkflowStatus } from '../workflow';
-import { StepInfo } from '../dbos-runtime/workflow_management';
+import type { StepInfo, WorkflowStatus } from '../workflow';
 
 export enum MessageType {
   EXECUTOR_INFO = 'executor_info',

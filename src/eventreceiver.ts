@@ -1,21 +1,21 @@
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
-import {
+import type {
   GetQueuedWorkflowsInput,
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
+  StepInfo,
   WorkflowFunction,
   WorkflowHandle,
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
-import { TransactionFunction } from './transaction';
-import { MethodRegistrationBase } from './decorators';
-import { StepFunction } from './step';
-import { Notification } from 'pg';
-import { StoredProcedure } from './procedure';
-import { StepInfo } from './dbos-runtime/workflow_management';
+import type { TransactionFunction } from './transaction';
+import type { MethodRegistrationBase } from './decorators';
+import type { StepFunction } from './step';
+import type { Notification } from 'pg';
+import type { StoredProcedure } from './procedure';
 
 export type DBNotification = Notification;
 export type DBNotificationCallback = (n: DBNotification) => void;

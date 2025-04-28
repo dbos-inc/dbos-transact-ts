@@ -1,19 +1,11 @@
-import { GetWorkflowsInput } from '..';
+import type { GetWorkflowsInput } from '..';
 import { DBOSExecutor } from '../dbos-executor';
-import { SystemDatabase, WorkflowStatusInternal } from '../system_database';
-import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
-import { UserDatabase } from '../user_database';
+import type { SystemDatabase, WorkflowStatusInternal } from '../system_database';
+import type { GetQueuedWorkflowsInput, StepInfo, WorkflowStatus } from '../workflow';
+import type { UserDatabase } from '../user_database';
 import { DBOSJSON } from '../utils';
 import { deserializeError } from 'serialize-error';
-import { transaction_outputs } from '../../schemas/user_db_schema';
-
-export interface StepInfo {
-  readonly functionID: number;
-  readonly name: string;
-  readonly output: unknown;
-  readonly error: Error | null;
-  readonly childWorkflowID: string | null;
-}
+import type { transaction_outputs } from '../../schemas/user_db_schema';
 
 export async function listWorkflows(
   sysdb: SystemDatabase,
@@ -75,6 +67,24 @@ export async function listWorkflowSteps(
   }));
 
   return [...steps, ...txs].toSorted((a, b) => a.functionID - b.functionID);
+}
+
+export async function getMaxStepID(sysdb: SystemDatabase, userdb: UserDatabase, workflowID: string): Promise<number> {
+  const [$stepMaxId, $txMaxId] = await Promise.all([
+    sysdb.getMaxFunctionID(workflowID),
+    getMaxTxFunctionId(userdb, workflowID),
+  ]);
+
+  return Math.max($stepMaxId, $txMaxId);
+
+  function getMaxTxFunctionId(userdb: UserDatabase, workflowID: string): Promise<number> {
+    return userdb
+      .query<
+        { max_function_id: number },
+        [string]
+      >(`SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`, workflowID)
+      .then((rows) => (rows.length === 0 ? 0 : rows[0].max_function_id));
+  }
 }
 
 export function toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
