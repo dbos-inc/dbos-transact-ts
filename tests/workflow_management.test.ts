@@ -1345,7 +1345,7 @@ describe('test-fork', () => {
 
     await DBOS.withNextWorkflowID(forkedWfid, async () => {
       const forkedHandle = await DBOS.forkWorkflow(wfid);
-      let forkresult = await forkedHandle.getResult();
+      const forkresult = await forkedHandle.getResult();
       expect(forkresult).toBe(550);
       expect(forkedHandle.workflowID).toBe(forkedWfid);
     });
@@ -1378,7 +1378,7 @@ describe('test-fork', () => {
     const returnedVersion = status?.applicationVersion;
     expect(returnedVersion).toBe(version);
 
-    let forkresult = await forkedHandle.getResult();
+    const forkresult = await forkedHandle.getResult();
     expect(forkresult).toBe(550);
 
     expect(ExampleWorkflow.stepOneCount).toBe(2);
