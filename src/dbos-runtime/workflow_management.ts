@@ -6,6 +6,7 @@ import type { UserDatabase } from '../user_database';
 import { DBOSJSON } from '../utils';
 import { deserializeError } from 'serialize-error';
 import type { transaction_outputs } from '../../schemas/user_db_schema';
+import { randomUUID } from 'node:crypto';
 
 export async function listWorkflows(
   sysdb: SystemDatabase,
@@ -85,6 +86,38 @@ export async function getMaxStepID(sysdb: SystemDatabase, userdb: UserDatabase, 
       >(`SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`, workflowID)
       .then((rows) => (rows.length === 0 ? 0 : rows[0].max_function_id));
   }
+}
+
+export async function forkWorkflow(
+  sysdb: SystemDatabase,
+  userdb: UserDatabase,
+  workflowID: string,
+  startStep: number,
+  newWorkflowID?: string,
+): Promise<string> {
+  newWorkflowID ??= randomUUID();
+  const query = `
+      INSERT INTO dbos.transaction_outputs
+        (workflow_uuid,
+          function_id, 
+          output, 
+          error, 
+          txn_id, 
+          txn_snapshot,  
+          function_name)
+      SELECT $1 AS workflow_uuid, 
+          function_id, 
+          output, 
+          error, 
+          txn_id, 
+          txn_snapshot, 
+          function_name
+      FROM dbos.transaction_outputs WHERE workflow_uuid= $2 AND function_id < $3`;
+  await Promise.all([
+    sysdb.forkWorkflow(workflowID, startStep, newWorkflowID),
+    userdb.query(query, newWorkflowID, workflowID, startStep),
+  ]);
+  return newWorkflowID;
 }
 
 export function toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
