@@ -714,7 +714,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     callerFunctionID?: number,
     ...args: T
   ): Promise<WorkflowHandle<R>> {
-    const workflowID: string = params.workflowUUID ? params.workflowUUID : this.#generateUUID();
+    const workflowID: string = params.workflowUUID ? params.workflowUUID : randomUUID();
     const presetID: boolean = params.workflowUUID ? true : false;
 
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
@@ -1825,7 +1825,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
   }
 
-  async getMaxFunctionID(workflowID: string): Promise<number> {
+  async #getMaxFunctionID(workflowID: string): Promise<number> {
     const rows = await this.userDatabase.query<{ max_function_id: number }, [string]>(
       `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
       workflowID,
@@ -1837,7 +1837,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async cloneWorkflowTransactions(workflowID: string, forkedWorkflowUUID: string, startStep: number): Promise<void> {
+  async #cloneWorkflowTransactions(workflowID: string, forkedWorkflowUUID: string, startStep: number): Promise<void> {
     const query = `
       INSERT INTO dbos.transaction_outputs
         (workflow_uuid,
@@ -1860,7 +1860,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async getMaxStepID(workflowID: string): Promise<number> {
-    const maxAppFunctionID = await this.getMaxFunctionID(workflowID);
+    const maxAppFunctionID = await this.#getMaxFunctionID(workflowID);
     const maxSystemFunctionID = await this.systemDatabase.getMaxFunctionID(workflowID);
 
     return Math.max(maxAppFunctionID, maxSystemFunctionID);
@@ -1872,9 +1872,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
    */
 
   async forkWorkflow(workflowID: string, startStep: number = 0): Promise<string> {
-    const forkedWorkflowID = this.#generateUUID();
+    const forkedWorkflowID = randomUUID();
 
-    await this.cloneWorkflowTransactions(workflowID, forkedWorkflowID, startStep);
+    await this.#cloneWorkflowTransactions(workflowID, forkedWorkflowID, startStep);
     await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID, startStep);
 
     return forkedWorkflowID;
@@ -1986,10 +1986,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   /* INTERNAL HELPERS */
-  #generateUUID(): string {
-    return randomUUID();
-  }
-
   /**
    * A recovery process that by default runs during executor init time.
    * It runs to completion all pending workflows that were executing when the previous executor failed.

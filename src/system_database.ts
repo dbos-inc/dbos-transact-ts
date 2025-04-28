@@ -111,7 +111,7 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
-  forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number): Promise<string>;
+  forkWorkflow(originalWorkflowID: string, forkedWorkflowId?: string, startStep?: number): Promise<string>;
   getMaxFunctionID(workflowID: string): Promise<number>;
   checkIfCanceled(workflowID: string): Promise<void>;
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
@@ -633,7 +633,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.length === 0 ? 0 : rows[0].max_function_id;
   }
 
-  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId: string, startStep: number = 0): Promise<string> {
+  async forkWorkflow(originalWorkflowID: string, forkedWorkflowId?: string, startStep: number = 0): Promise<string> {
+    forkedWorkflowId ??= randomUUID();
     const workflowStatus = await this.getWorkflowStatus(originalWorkflowID);
 
     if (workflowStatus === null) {
