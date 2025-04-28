@@ -13,7 +13,13 @@ import {
 } from './workflow';
 import { constructPoolConfig } from './dbos-runtime/config';
 import { DBOSJSON } from './utils';
-import { getWorkflow, listQueuedWorkflows, listWorkflows, listWorkflowSteps } from './dbos-runtime/workflow_management';
+import {
+  forkWorkflow,
+  getWorkflow,
+  listQueuedWorkflows,
+  listWorkflows,
+  listWorkflowSteps,
+} from './dbos-runtime/workflow_management';
 import { PGNodeUserDatabase, type UserDatabase } from './user_database';
 
 /**
@@ -187,7 +193,7 @@ export class DBOSClient {
   }
 
   forkWorkflow(workflowID: string, startStep: number, newWorkflowID?: string): Promise<string> {
-    return this.systemDatabase.forkWorkflow(workflowID, startStep, newWorkflowID);
+    return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, newWorkflowID);
   }
 
   getWorkflow(workflowID: string, getRequest: boolean = false): Promise<WorkflowStatus | undefined> {
