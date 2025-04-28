@@ -58,14 +58,15 @@ import {
 } from './user_database';
 import {
   MethodRegistrationBase,
-  getRegisteredOperations,
-  getOrCreateClassRegistration,
   MethodRegistration,
   getRegisteredMethodClassName,
   getRegisteredMethodName,
   getConfiguredInstance,
   ConfiguredInstance,
-  getAllRegisteredClasses,
+  getNameForClass,
+  getClassRegistrationByName,
+  getAllRegisteredClassNames,
+  getRegisteredOperationsByClassname,
 } from './decorators';
 import { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -389,8 +390,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  #registerClass(cls: object) {
-    const registeredClassOperations = getRegisteredOperations(cls);
+  #registerClass(clsname: string) {
+    const registeredClassOperations = getRegisteredOperationsByClassname(clsname);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
@@ -425,15 +426,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return;
     }
 
+    let classnames: string[] = [];
     if (!classes || !classes.length) {
-      classes = getAllRegisteredClasses();
+      classnames = getAllRegisteredClassNames();
+    } else {
+      classnames = classes.map((c) => getNameForClass(c as AnyConstructor));
     }
 
     type AnyConstructor = new (...args: unknown[]) => object;
     try {
       let length; // Track the length of the array (or number of keys of the object)
-      for (const cls of classes) {
-        const reg = getOrCreateClassRegistration(cls as AnyConstructor);
+      for (const clsname of classnames) {
+        const reg = getClassRegistrationByName(clsname);
         /**
          * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
          */
@@ -460,7 +464,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         throw new DBOSInitializationError('No user database configured!');
       }
 
-      for (const cls of classes) {
+      for (const cls of classnames) {
         this.#registerClass(cls);
       }
 
@@ -488,9 +492,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Only execute init code if under non-debug mode
     if (!this.isDebugging) {
-      for (const cls of classes) {
+      for (const cls of classnames) {
         // Init its configurations
-        const creg = getOrCreateClassRegistration(cls as AnyConstructor);
+        const creg = getClassRegistrationByName(cls);
         for (const [_cfgname, cfg] of creg.configuredInstances) {
           await cfg.initialize(new InitContext());
         }

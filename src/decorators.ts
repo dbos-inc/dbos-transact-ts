@@ -5,7 +5,7 @@ import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
 import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext } from './context';
 import { StepConfig, StepContext } from './step';
-import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError } from './error';
+import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError, DBOSNotRegisteredError } from './error';
 import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
@@ -467,7 +467,7 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
   if (typeof target === 'function') {
     // Constructor case
     const classReg = classesByName.get(target.name);
-    classReg?.registeredOperations?.forEach((m) => registeredOperations.push(m));
+    classReg?.reg?.registeredOperations?.forEach((m) => registeredOperations.push(m));
   } else {
     let current: object | undefined = target;
     while (current) {
@@ -482,8 +482,15 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
   return registeredOperations;
 }
 
+export function getRegisteredOperationsByClassname(target: string): ReadonlyArray<MethodRegistrationBase> {
+  const registeredOperations: MethodRegistrationBase[] = [];
+  const cls = getClassRegistrationByName(target);
+  cls.registeredOperations?.forEach((m) => registeredOperations.push(m));
+  return registeredOperations;
+}
+
 export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
-  const classReg = classesByName.get(clsname);
+  const classReg = classesByName.get(clsname)?.reg;
   if (!classReg) return null;
   return classReg.configuredInstances.get(cfgname) ?? null;
 }
@@ -702,22 +709,49 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
 }
 
 type AnyConstructor = new (...args: unknown[]) => object;
-const classesByName: Map<string, ClassRegistration<AnyConstructor>> = new Map();
+const classesByName: Map<string, { reg: ClassRegistration<AnyConstructor>; ctor?: AnyConstructor }> = new Map();
+const classToName: Map<AnyConstructor, { name: string; reg: ClassRegistration<AnyConstructor> }> = new Map();
+export function getNameForClass(ctor: AnyConstructor): string {
+  if (!classToName.has(ctor)) return ctor.name;
+  return classToName.get(ctor)!.name;
+}
 
 export function getAllRegisteredClasses() {
   const ctors: AnyConstructor[] = [];
   for (const [_cn, creg] of classesByName) {
-    ctors.push(creg.ctor);
+    ctors.push(creg.reg.ctor);
   }
   return ctors;
+}
+
+export function getAllRegisteredClassNames() {
+  const cnames: string[] = [];
+  for (const [cn, _creg] of classesByName) {
+    cnames.push(cn);
+  }
+  return cnames;
+}
+
+export function getClassRegistrationByName(name: string) {
+  if (!classesByName.has(name)) {
+    throw new DBOSNotRegisteredError(name, `Class '${name}' is not registered`);
+  }
+  const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!.reg;
+
+  if (clsReg.needsInitialized) {
+    // TODO CB: This is probably something we can do at construction...
+    clsReg.name = name;
+    clsReg.needsInitialized = false;
+  }
+  return clsReg;
 }
 
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]): object }>(ctor: CT) {
   const name = ctor.name;
   if (!classesByName.has(name)) {
-    classesByName.set(name, new ClassRegistration<CT>(ctor));
+    classesByName.set(name, { ctor, reg: new ClassRegistration<CT>(ctor) });
   }
-  const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!;
+  const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!.reg;
 
   if (clsReg.needsInitialized) {
     clsReg.name = name;
