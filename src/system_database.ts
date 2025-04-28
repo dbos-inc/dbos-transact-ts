@@ -261,6 +261,7 @@ class NotificationMap<T> {
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
+  // TODO: remove Knex connection in favor of just using Pool
   readonly knexDB: Knex;
 
   /*
