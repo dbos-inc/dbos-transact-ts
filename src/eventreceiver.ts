@@ -120,7 +120,7 @@ export interface DBOSExecutorContext {
   resumeWorkflow(workflowID: string): Promise<void>;
 
   getMaxStepID(workflowID: string): Promise<number>;
-  forkWorkflow(workflowID: string, startStep: number): Promise<string>;
+  forkWorkflow(workflowID: string, forkedWorkflowID: string, startStep: number): Promise<string>;
 
   // Event receiver state queries / updates
   /** @see DBOS.getEventDispatchState */

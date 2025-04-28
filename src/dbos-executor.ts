@@ -1888,8 +1888,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * The forked workflow will be assigned a new ID.
    */
 
-  async forkWorkflow(workflowID: string, startStep: number = 0): Promise<string> {
-    const forkedWorkflowID = this.#generateUUID();
+  async forkWorkflow(workflowID: string, forkedWorkflowID: string, startStep: number = 0): Promise<string> {
+    // const forkedWorkflowID = this.#generateUUID();
 
     await this.cloneWorkflowTransactions(workflowID, forkedWorkflowID, startStep);
     await this.systemDatabase.forkWorkflow(workflowID, forkedWorkflowID, startStep);

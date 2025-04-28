@@ -951,7 +951,15 @@ export class DBOS {
    * Fork a workflow given its ID.
    * @param workflowID - ID of the workflow
    */
-  static async forkWorkflow<T>(workflowID: string, startStep: number = 0): Promise<WorkflowHandle<Awaited<T>>> {
+  static async forkWorkflow<T>(
+    workflowID: string,
+    startStep: number = 0,
+    applicationVersion?: string,
+  ): Promise<WorkflowHandle<Awaited<T>>> {
+    let fwfid = getNextWFID();
+
+    const forkedwfID = fwfid ? fwfid : randomUUID;
+
     const maxStepID = await DBOS.executor.getMaxStepID(workflowID);
 
     if (startStep > maxStepID) {
