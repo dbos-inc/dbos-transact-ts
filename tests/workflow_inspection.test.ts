@@ -8,10 +8,10 @@ import { randomUUID } from 'node:crypto';
 import { globalParams } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { GlobalLogger as Logger } from '../src/telemetry/logs';
-import { getWorkflow, listQueuedWorkflows, listWorkflows } from '../src/dbos-runtime/workflow_management';
+import { getWorkflow, listQueuedWorkflows, listWorkflows } from '../src/dbos-runtime/workflow_inspection';
 import { DBOSInvalidStepIDError } from '../src/error';
 
-describe('workflow-management-tests', () => {
+describe('workflow-inspection-tests', () => {
   const testTableName = 'dbos_test_kv';
 
   let config: DBOSConfigInternal;

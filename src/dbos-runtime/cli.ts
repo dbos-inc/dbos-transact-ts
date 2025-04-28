@@ -15,7 +15,6 @@ import { runCommand } from './commands';
 import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
-import { randomUUID } from 'node:crypto';
 
 const program = new Command();
 
