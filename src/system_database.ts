@@ -365,6 +365,28 @@ async function getWorkflowStatusValue(client: PoolClient, workflowID: string): P
   return rows.length === 0 ? undefined : rows[0].status;
 }
 
+async function recordWorkflowStatusChange(
+  client: PoolClient,
+  workflowID: string,
+  status: (typeof StatusString)[keyof typeof StatusString],
+  update: {
+    output?: string | null;
+    error?: string | null;
+    resetRecoveryAttempts?: boolean;
+  } = {},
+): Promise<void> {
+  const recoveryAttempts = update.resetRecoveryAttempts ? ' recovery_attempts = 0, ' : '';
+  const wRes = await client.query<workflow_status>(
+    `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
+     SET ${recoveryAttempts} status=$2, output=$3, error=$4, updated_at=$5 WHERE workflow_uuid=$1`,
+    [workflowID, status, update.output, update.error, Date.now()],
+  );
+
+  if (wRes.rowCount !== 1) {
+    throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
+  }
+}
+
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
@@ -538,41 +560,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordWorkflowStatusChange(
-    workflowID: string,
-    status: (typeof StatusString)[keyof typeof StatusString],
-    update: {
-      output?: string | null;
-      error?: string | null;
-      resetRecoveryAttempts?: boolean;
-      incrementRecoveryAttempts?: boolean;
-    },
-    client?: PoolClient,
-  ): Promise<void> {
-    let rec = '';
-    if (update.resetRecoveryAttempts) {
-      rec = ' recovery_attempts = 0, ';
-    }
-    if (update.incrementRecoveryAttempts) {
-      rec = ' recovery_attempts = recovery_attempts + 1';
-    }
-    const wRes = await (client ?? this.pool).query<workflow_status>(
-      `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-       SET ${rec} status=$2, output=$3, error=$4, updated_at=$5 WHERE workflow_uuid=$1`,
-      [workflowID, status, update.output, update.error, Date.now()],
-    );
-
-    if (wRes.rowCount !== 1) {
-      throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
-    }
-  }
-
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
-    await this.recordWorkflowStatusChange(workflowID, StatusString.SUCCESS, { output: status.output });
+    const client = await this.pool.connect();
+    try {
+      await recordWorkflowStatusChange(client, workflowID, StatusString.SUCCESS, { output: status.output });
+    } finally {
+      client.release();
+    }
   }
 
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
-    await this.recordWorkflowStatusChange(workflowID, StatusString.ERROR, { error: status.error });
+    const client = await this.pool.connect();
+    try {
+      await recordWorkflowStatusChange(client, workflowID, StatusString.ERROR, { error: status.error });
+    } finally {
+      client.release();
+    }
   }
 
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
@@ -1174,7 +1177,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     status: (typeof StatusString)[keyof typeof StatusString],
     resetRecoveryAttempts: boolean,
   ): Promise<void> {
-    await this.recordWorkflowStatusChange(workflowID, status, { resetRecoveryAttempts });
+    const client = await this.pool.connect();
+    try {
+      await recordWorkflowStatusChange(client, workflowID, status, { resetRecoveryAttempts });
+    } finally {
+      client.release();
+    }
   }
 
   setWFCancelMap(workflowID: string) {
@@ -1199,7 +1207,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await deleteQueuedWorkflows(client, workflowID);
 
       // Should we check if it is incomplete first?
-      await this.recordWorkflowStatusChange(workflowID, StatusString.CANCELLED, {}, client);
+      await recordWorkflowStatusChange(client, workflowID, StatusString.CANCELLED);
 
       await client.query('COMMIT');
     } catch (error) {
@@ -1660,7 +1668,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         return false;
       }
       // Reset the status of the task to "ENQUEUED"
-      await this.recordWorkflowStatusChange(workflowId, StatusString.ENQUEUED, {}, client);
+      await recordWorkflowStatusChange(client, workflowId, StatusString.ENQUEUED);
       await client.query('COMMIT');
       return true;
     } catch (error) {
