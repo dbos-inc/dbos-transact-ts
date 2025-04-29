@@ -1610,7 +1610,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await this.callStepFunction(stepFn, params.configuredInstance ?? null, ctxtImpl, ...args);
+      return await this.callStepFunction(stepFn, undefined, params.configuredInstance ?? null, ctxtImpl, ...args);
     };
 
     return await this.internalWorkflow(
@@ -1634,12 +1634,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
    */
   async callStepFunction<T extends unknown[], R>(
     stepFn: StepFunction<T, R>,
+    stepConfig: StepConfig | undefined,
     clsInst: ConfiguredInstance | null,
     wfCtx: WorkflowContextImpl,
     ...args: T
   ): Promise<R> {
-    const commInfo = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
-    if (commInfo === undefined) {
+    let passContext = false;
+    if (!stepConfig) {
+      const stepReg = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
+      stepConfig = stepReg?.config;
+      passContext = stepReg?.registration.passContext ?? true;
+    }
+    if (stepConfig === undefined) {
       throw new DBOSNotRegisteredError(stepFn.name);
     }
 
@@ -1656,15 +1662,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
         authenticatedUser: wfCtx.authenticatedUser,
         assumedRole: wfCtx.assumedRole,
         authenticatedRoles: wfCtx.authenticatedRoles,
-        retriesAllowed: commInfo.config.retriesAllowed,
-        intervalSeconds: commInfo.config.intervalSeconds,
-        maxAttempts: commInfo.config.maxAttempts,
-        backoffRate: commInfo.config.backoffRate,
+        retriesAllowed: stepConfig.retriesAllowed,
+        intervalSeconds: stepConfig.intervalSeconds,
+        maxAttempts: stepConfig.maxAttempts,
+        backoffRate: stepConfig.backoffRate,
       },
       wfCtx.span,
     );
 
-    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, commInfo.config, stepFn.name);
+    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, stepConfig, stepFn.name);
 
     // Check if this execution previously happened, returning its original result if it did.
     const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfCtx.workflowUUID, ctxt.functionID);
@@ -1708,7 +1714,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
           let cresult: R | undefined;
-          if (commInfo.registration.passContext) {
+          if (passContext) {
             await runWithStepContext(ctxt, numAttempts, async () => {
               cresult = await stepFn.call(clsInst, ctxt, ...args);
             });
@@ -1742,7 +1748,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       try {
         let cresult: R | undefined;
-        if (commInfo.registration.passContext) {
+        if (passContext) {
           await runWithStepContext(ctxt, undefined, async () => {
             cresult = await stepFn.call(clsInst, ctxt, ...args);
           });

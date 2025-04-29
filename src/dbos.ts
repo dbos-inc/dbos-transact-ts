@@ -1435,6 +1435,7 @@ export class DBOS {
             ? (...args: unknown[]) =>
                 DBOSExecutor.globalInstance!.callStepFunction(
                   op.registeredFunction as StepFunction<unknown[], unknown>,
+                  undefined,
                   null,
                   wfctx,
                   ...args,
@@ -1475,6 +1476,7 @@ export class DBOS {
             ? (...args: unknown[]) =>
                 DBOSExecutor.globalInstance!.callStepFunction(
                   op.registeredFunction as StepFunction<unknown[], unknown>,
+                  undefined,
                   targetInst,
                   wfctx,
                   ...args,
@@ -1610,16 +1612,11 @@ export class DBOS {
     target: {
       classOrInst?: object;
       className?: string;
-      funcName: string;
+      name: string;
       config?: WorkflowConfig;
     },
   ): (this: This, ...args: Args) => Promise<Return> {
-    const { registration } = registerAndWrapDBOSFunctionByName(
-      target.classOrInst,
-      target.className,
-      target.funcName,
-      func,
-    );
+    const { registration } = registerAndWrapDBOSFunctionByName(target.classOrInst, target.className, target.name, func);
     registration.setWorkflowConfig(target.config ?? {});
 
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -2005,12 +2002,41 @@ export class DBOS {
 
   static registerStep<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    _target: {
+    target: {
       name: string;
       config?: StepConfig;
     },
   ): (this: This, ...args: Args) => Promise<Return> {
-    return func;
+    const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+      let inst: ConfiguredInstance | undefined = undefined;
+      if (this && typeof this !== 'function') {
+        if (Object.hasOwn(this, 'name')) {
+          inst = this as unknown as ConfiguredInstance;
+        }
+      }
+
+      if (DBOS.isWithinWorkflow()) {
+        if (DBOS.isInTransaction()) {
+          throw new DBOSInvalidWorkflowTransitionError('Invalid call to a `step` function from within a `transaction`');
+        }
+        if (DBOS.isInStep()) {
+          // There should probably be checks here about the compatibility of the StepConfig...
+          return func.call(this, ...rawArgs);
+        }
+        const wfctx = assertCurrentWorkflowContext();
+        return await DBOSExecutor.globalInstance!.callStepFunction(
+          func as unknown as StepFunction<Args, Return>,
+          target?.config ?? {},
+          inst ?? null,
+          wfctx,
+          ...rawArgs,
+        );
+      }
+
+      throw new DBOSInvalidWorkflowTransitionError(`Call to step '${target.name}' outside of a workflow`);
+    };
+
+    return invokeWrapper;
   }
 
   /**
@@ -2056,6 +2082,7 @@ export class DBOS {
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callStepFunction(
             registration.registeredFunction as unknown as StepFunction<Args, Return>,
+            undefined,
             inst ?? null,
             wfctx,
             ...rawArgs,

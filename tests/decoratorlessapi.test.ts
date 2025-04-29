@@ -36,7 +36,7 @@ async function wfFunctionGuts() {
 }
 
 const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
-  funcName: 'workflow',
+  name: 'workflow',
 });
 
 describe('decoratorless-api-tests', () => {
