@@ -365,6 +365,58 @@ async function getWorkflowStatusValue(client: PoolClient, workflowID: string): P
   return rows.length === 0 ? undefined : rows[0].status;
 }
 
+async function updateWorkflowStatus(
+  client: PoolClient,
+  workflowID: string,
+  status: (typeof StatusString)[keyof typeof StatusString],
+  update: {
+    output?: string | null;
+    error?: string | null;
+    resetRecoveryAttempts?: boolean;
+    queueName?: string;
+  } = {},
+  where: {
+    status?: (typeof StatusString)[keyof typeof StatusString];
+  } = {},
+): Promise<void> {
+  let setClause = `SET status=$2, updated_at=$3`;
+  let whereClause = `WHERE workflow_uuid=$1`;
+  const args = [workflowID, status, Date.now()];
+
+  if (update.output) {
+    const param = args.push(update.output);
+    setClause += `, output=$${param}`;
+  }
+
+  if (update.error) {
+    const param = args.push(update.error);
+    setClause += `, error=$${param}`;
+  }
+
+  if (update.resetRecoveryAttempts) {
+    setClause += `, recovery_attempts = 0`;
+  }
+
+  if (update.queueName) {
+    const param = args.push(update.queueName);
+    setClause += `, queue_name=$${param}`;
+  }
+
+  if (where.status) {
+    const param = args.push(where.status);
+    whereClause += ` AND status=$${param}`;
+  }
+
+  const result = await client.query<workflow_status>(
+    `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status ${setClause} ${whereClause}`,
+    args,
+  );
+
+  if (result.rowCount !== 1) {
+    throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
+  }
+}
+
 function mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStatusInternal {
   return {
     workflowUUID: row.workflow_uuid,
@@ -539,10 +591,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
       const attempts = resRow.recovery_attempts;
       if (maxRetries && attempts > maxRetries + 1) {
-        await client.query(
-          `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
-           SET status=$1 WHERE workflow_uuid=$2 AND status=$3`,
-          [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING],
+        await updateWorkflowStatus(
+          client,
+          initStatus.workflowUUID,
+          StatusString.RETRIES_EXCEEDED,
+          {},
+          { status: StatusString.PENDING },
         );
         throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, maxRetries);
       }
@@ -567,15 +621,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query<workflow_status>(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-         SET status=$2, output=$3, updated_at=$4 WHERE workflow_uuid=$1`,
-        [workflowID, StatusString.SUCCESS, status.output, Date.now()],
-      );
-
-      if (result.rowCount !== 1) {
-        throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
-      }
+      await updateWorkflowStatus(client, workflowID, StatusString.SUCCESS, { output: status.output });
     } finally {
       client.release();
     }
@@ -585,15 +631,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
-      const result = await client.query<workflow_status>(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-         SET status=$2, error=$3, updated_at=$4 WHERE workflow_uuid=$1`,
-        [workflowID, StatusString.ERROR, status.error, Date.now()],
-      );
-
-      if (result.rowCount !== 1) {
-        throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
-      }
+      await updateWorkflowStatus(client, workflowID, StatusString.ERROR, { error: status.error });
     } finally {
       client.release();
     }
@@ -1213,15 +1251,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
-      const wRes = await client.query<workflow_status>(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-         SET recovery_attempts = 0, status=$2, updated_at=$3 WHERE workflow_uuid=$1`,
-        [workflowID, status, Date.now()],
-      );
-
-      if (wRes.rowCount !== 1) {
-        throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
-      }
+      await updateWorkflowStatus(client, workflowID, status, { resetRecoveryAttempts });
     } finally {
       client.release();
     }
@@ -1249,17 +1279,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Remove workflow from queues table
       await deleteQueuedWorkflows(client, workflowID);
 
-      // Should we check if it is incomplete first?
-      const result = await client.query<workflow_status>(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-         SET status=$2, updated_at=$3 WHERE workflow_uuid=$1`,
-        [workflowID, StatusString.CANCELLED, Date.now()],
-      );
-
-      if (result.rowCount !== 1) {
-        throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
+      const statusResult = await getWorkflowStatusValue(client, workflowID);
+      if (!statusResult || statusResult === StatusString.SUCCESS || statusResult === StatusString.ERROR) {
+        await client.query('COMMIT');
+        return;
       }
 
+      await updateWorkflowStatus(client, workflowID, StatusString.CANCELLED);
       await client.query('COMMIT');
     } catch (error) {
       this.logger.error(error);
@@ -1306,12 +1332,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Remove the workflow from the queues table so resume can safely be called on an ENQUEUED workflow
       await deleteQueuedWorkflows(client, workflowID);
 
-      await client.query(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status 
-         SET status = $1, queue_name= $2, recovery_attempts = 0 
-         WHERE workflow_uuid = $3`,
-        [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, workflowID],
-      );
+      await updateWorkflowStatus(client, workflowID, StatusString.ENQUEUED, { queueName: INTERNAL_QUEUE_NAME });
 
       await enqueueWorkflow(client, workflowID, INTERNAL_QUEUE_NAME);
 
@@ -1709,14 +1730,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         return false;
       }
       // Reset the status of the task to "ENQUEUED"
-      const result = await client.query<workflow_status>(
-        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
-         SET status=$2, updated_at=$3 WHERE workflow_uuid=$1`,
-        [workflowID, StatusString.ENQUEUED, Date.now()],
-      );
-      if (result.rowCount !== 1) {
-        throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
-      }
+      await updateWorkflowStatus(client, workflowID, StatusString.ENQUEUED);
+
       await client.query('COMMIT');
 
       return true;
