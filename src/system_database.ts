@@ -369,20 +369,24 @@ async function updateWorkflowStatus(
   client: PoolClient,
   workflowID: string,
   status: (typeof StatusString)[keyof typeof StatusString],
-  update: {
-    output?: string | null;
-    error?: string | null;
-    resetRecoveryAttempts?: boolean;
-    queueName?: string;
-  } = {},
-  where: {
-    status?: (typeof StatusString)[keyof typeof StatusString];
+  options: {
+    update?: {
+      output?: string | null;
+      error?: string | null;
+      resetRecoveryAttempts?: boolean;
+      queueName?: string;
+    };
+    where?: {
+      status?: (typeof StatusString)[keyof typeof StatusString];
+    };
+    throwOnFailure?: boolean;
   } = {},
 ): Promise<void> {
   let setClause = `SET status=$2, updated_at=$3`;
   let whereClause = `WHERE workflow_uuid=$1`;
   const args = [workflowID, status, Date.now()];
 
+  const update = options.update ?? {};
   if (update.output) {
     const param = args.push(update.output);
     setClause += `, output=$${param}`;
@@ -402,6 +406,7 @@ async function updateWorkflowStatus(
     setClause += `, queue_name=$${param}`;
   }
 
+  const where = options.where ?? {};
   if (where.status) {
     const param = args.push(where.status);
     whereClause += ` AND status=$${param}`;
@@ -412,7 +417,8 @@ async function updateWorkflowStatus(
     args,
   );
 
-  if (result.rowCount !== 1) {
+  const throwOnFailure = options.throwOnFailure ?? true;
+  if (throwOnFailure && result.rowCount !== 1) {
     throw new DBOSWorkflowConflictError(`Attempt to record transition of nonexistent workflow ${workflowID}`);
   }
 }
@@ -591,13 +597,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
       const attempts = resRow.recovery_attempts;
       if (maxRetries && attempts > maxRetries + 1) {
-        await updateWorkflowStatus(
-          client,
-          initStatus.workflowUUID,
-          StatusString.RETRIES_EXCEEDED,
-          {},
-          { status: StatusString.PENDING },
-        );
+        await updateWorkflowStatus(client, initStatus.workflowUUID, StatusString.RETRIES_EXCEEDED, {
+          where: { status: StatusString.PENDING },
+          throwOnFailure: false,
+        });
         throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
@@ -621,7 +624,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await updateWorkflowStatus(client, workflowID, StatusString.SUCCESS, { output: status.output });
+      await updateWorkflowStatus(client, workflowID, StatusString.SUCCESS, { update: { output: status.output } });
     } finally {
       client.release();
     }
@@ -631,7 +634,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await updateWorkflowStatus(client, workflowID, StatusString.ERROR, { error: status.error });
+      await updateWorkflowStatus(client, workflowID, StatusString.ERROR, { update: { error: status.error } });
     } finally {
       client.release();
     }
@@ -1251,7 +1254,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await updateWorkflowStatus(client, workflowID, status, { resetRecoveryAttempts });
+      await updateWorkflowStatus(client, workflowID, status, { update: { resetRecoveryAttempts } });
     } finally {
       client.release();
     }
@@ -1333,8 +1336,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await deleteQueuedWorkflows(client, workflowID);
 
       await updateWorkflowStatus(client, workflowID, StatusString.ENQUEUED, {
-        queueName: INTERNAL_QUEUE_NAME,
-        resetRecoveryAttempts: true,
+        update: {
+          queueName: INTERNAL_QUEUE_NAME,
+          resetRecoveryAttempts: true,
+        },
+        throwOnFailure: false,
       });
 
       await enqueueWorkflow(client, workflowID, INTERNAL_QUEUE_NAME);
