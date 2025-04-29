@@ -712,7 +712,7 @@ export function registerAndWrapFunctionTakingContext<This, Args extends unknown[
   }
 
   const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, true);
-  descriptor.value = registration.registeredFunction;
+  descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
 
   return { descriptor, registration };
 }
@@ -728,7 +728,7 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
   }
 
   const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, false);
-  descriptor.value = registration.registeredFunction;
+  descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
 
   return { descriptor, registration };
 }

@@ -552,7 +552,6 @@ export class DBOS {
   static globalLogger?: DLogger;
   static dbosConfig?: DBOSConfig;
   static runtimeConfig?: DBOSRuntimeConfig = undefined;
-  static invokeWrappers: Map<unknown, unknown> = new Map();
 
   //////
   // Context
@@ -1709,7 +1708,6 @@ export class DBOS {
     };
 
     // TODO: CB - clean up
-    DBOS.invokeWrappers.set(invokeWrapper, registration.registeredFunction);
     registerFunctionWrapper(invokeWrapper, registration as MethodRegistration<unknown, unknown[], unknown>);
     Object.defineProperty(invokeWrapper, 'name', {
       value: registration.name,
@@ -1822,8 +1820,6 @@ export class DBOS {
       });
 
       registerFunctionWrapper(invokeWrapper, registration as MethodRegistration<unknown, unknown[], unknown>);
-      // TODO CTX this should not be in here already, or if it is we need to do something different...
-      DBOS.invokeWrappers.set(invokeWrapper, registration.registeredFunction);
 
       return descriptor;
     }
