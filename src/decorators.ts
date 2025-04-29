@@ -387,7 +387,7 @@ export abstract class ConfiguredInstance {
   }
 }
 
-export class ClassRegistration<CT extends { new (...args: unknown[]): object }> implements RegistrationDefaults {
+export class ClassRegistration implements RegistrationDefaults {
   name: string = '';
   requiredRole: string[] | undefined;
   argRequiredEnabled: boolean = false;
@@ -405,10 +405,7 @@ export class ClassRegistration<CT extends { new (...args: unknown[]): object }> 
 
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
 
-  ctor: CT;
-  constructor(ctor: CT) {
-    this.ctor = ctor;
-  }
+  constructor() {}
 }
 
 class StackGrabber extends Error {
@@ -709,8 +706,8 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
 }
 
 type AnyConstructor = new (...args: unknown[]) => object;
-const classesByName: Map<string, { reg: ClassRegistration<AnyConstructor>; ctor?: AnyConstructor }> = new Map();
-const classToName: Map<AnyConstructor, { name: string; reg: ClassRegistration<AnyConstructor> }> = new Map();
+const classesByName: Map<string, { reg: ClassRegistration; ctor?: AnyConstructor }> = new Map();
+const classToName: Map<AnyConstructor, { name: string; reg: ClassRegistration }> = new Map();
 export function getNameForClass(ctor: AnyConstructor): string {
   if (!classToName.has(ctor)) return ctor.name;
   return classToName.get(ctor)!.name;
@@ -728,7 +725,7 @@ export function getClassRegistrationByName(name: string) {
   if (!classesByName.has(name)) {
     throw new DBOSNotRegisteredError(name, `Class '${name}' is not registered`);
   }
-  const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!.reg;
+  const clsReg: ClassRegistration = classesByName.get(name)!.reg;
 
   if (clsReg.needsInitialized) {
     // TODO CB: This is probably something we can do at construction...
@@ -741,9 +738,9 @@ export function getClassRegistrationByName(name: string) {
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]): object }>(ctor: CT) {
   const name = ctor.name;
   if (!classesByName.has(name)) {
-    classesByName.set(name, { ctor, reg: new ClassRegistration<CT>(ctor) });
+    classesByName.set(name, { ctor, reg: new ClassRegistration() });
   }
-  const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!.reg;
+  const clsReg: ClassRegistration = classesByName.get(name)!.reg;
 
   if (clsReg.needsInitialized) {
     clsReg.name = name;
