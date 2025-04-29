@@ -501,9 +501,12 @@ export function getConfiguredInstance(clsname: string, cfgname: string): Configu
 
 const methodArgsByFunction: Map<string, MethodParameter[]> = new Map();
 
-export function getOrCreateMethodArgsRegistration(target: object, propertyKey: string | symbol): MethodParameter[] {
+export function getOrCreateMethodArgsRegistration(
+  target: object | undefined,
+  propertyKey: string | symbol,
+): MethodParameter[] {
   let regtarget = target;
-  if (typeof regtarget !== 'function') {
+  if (regtarget && typeof regtarget !== 'function') {
     regtarget = regtarget.constructor;
   }
 
@@ -513,7 +516,11 @@ export function getOrCreateMethodArgsRegistration(target: object, propertyKey: s
   let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(mkey);
   if (mParameters === undefined) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-    const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[] | undefined;
+    let designParamTypes: Function[] | undefined = undefined;
+    if (target) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[] | undefined;
+    }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
     } else {
@@ -536,30 +543,37 @@ function generateSaltedHash(data: string, salt: string): string {
 }
 
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
-  target: object,
+  target: object | undefined,
+  className: string | undefined,
   propertyKey: string | symbol,
-  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+  func: (this: This, ...args: Args) => Promise<Return>,
   passContext: boolean,
 ) {
-  let regtarget: AnyConstructor;
+  let regtarget: AnyConstructor | undefined = undefined;
   let isInstance = false;
-  if (typeof target === 'function') {
-    // Static method case
-    regtarget = target as AnyConstructor;
-  } else {
-    // Instance method case
-    regtarget = target.constructor as AnyConstructor;
-    isInstance = true;
+
+  if (target) {
+    if (typeof target === 'function') {
+      // Static method case
+      regtarget = target as AnyConstructor;
+    } else {
+      // Instance method case
+      regtarget = target.constructor as AnyConstructor;
+      isInstance = true;
+    }
+  }
+  if (!className) {
+    if (regtarget) className = regtarget.name;
+  }
+  if (!className) {
+    className = '';
   }
 
-  const classReg = getOrCreateClassRegistration(regtarget);
+  const classReg = getClassRegistrationByName(className, true);
 
   const fname = propertyKey.toString();
   if (!classReg.registeredOperations.has(fname)) {
-    classReg.registeredOperations.set(
-      fname,
-      new MethodRegistration<This, Args, Return>(descriptor.value!, isInstance, passContext),
-    );
+    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(func, isInstance, passContext));
   }
   const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(
     fname,
@@ -580,7 +594,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
     methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey);
 
-    const argNames = getArgNames(descriptor.value!);
+    const argNames = getArgNames(func);
     methReg.args.forEach((e) => {
       if (e.required !== ArgRequiredOptions.DEFAULT) {
         classReg.argRequiredEnabled = true;
@@ -665,7 +679,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       value: methReg.name,
     });
 
-    descriptor.value = wrappedMethod;
     methReg.registeredFunction = wrappedMethod;
 
     methodToRegistration.set(methReg.registeredFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
@@ -685,7 +698,8 @@ export function registerAndWrapFunctionTakingContext<This, Args extends unknown[
     throw Error('Use of decorator when original method is undefined');
   }
 
-  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, true);
+  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, true);
+  descriptor.value = registration.wrappedFunction;
 
   return { descriptor, registration };
 }
@@ -700,25 +714,24 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
     throw Error('Use of decorator when original method is undefined');
   }
 
-  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
+  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, false);
+  descriptor.value = registration.wrappedFunction;
 
   return { descriptor, registration };
 }
 
-/*
-export function registerAndWrapDBOSFunctionByName<Args extends unknown[], Return>(
+export function registerAndWrapDBOSFunctionByName<This, Args extends unknown[], Return>(
   target: object | undefined,
   className: string | undefined,
   funcName: string,
-  func: (...args: Args) => Return
+  func: (this: This, ...args: Args) => Promise<Return>,
 ) {
   ensureDBOSIsNotLaunched();
 
-  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
+  const registration = getOrCreateMethodRegistration(target, className, funcName, func, false);
 
   return { registration };
 }
-*/
 
 // Data structure notes:
 //  Everything is registered under a "className", but this may be blank.
@@ -730,9 +743,18 @@ export function registerAndWrapDBOSFunctionByName<Args extends unknown[], Return
 type AnyConstructor = new (...args: unknown[]) => object;
 const classesByName: Map<string, { reg: ClassRegistration; ctor?: AnyConstructor }> = new Map();
 const classesByCtor: Map<AnyConstructor, { name: string; reg: ClassRegistration }> = new Map();
-export function getNameForClass(ctor: AnyConstructor): string {
-  if (!classesByCtor.has(ctor)) return ctor.name;
-  return classesByCtor.get(ctor)!.name;
+export function getNameForClass(ctor: object): string {
+  let regtarget: AnyConstructor;
+  if (typeof ctor === 'function') {
+    // Static method case
+    regtarget = ctor as AnyConstructor;
+  } else {
+    // Instance method case
+    regtarget = ctor.constructor as AnyConstructor;
+  }
+
+  if (!classesByCtor.has(regtarget)) return regtarget.name;
+  return classesByCtor.get(regtarget)!.name;
 }
 
 export function getAllRegisteredClassNames() {
@@ -743,14 +765,18 @@ export function getAllRegisteredClassNames() {
   return cnames;
 }
 
-export function getClassRegistrationByName(name: string) {
-  if (!classesByName.has(name)) {
+export function getClassRegistrationByName(name: string, create: boolean = false) {
+  if (!classesByName.has(name) && !create) {
     throw new DBOSNotRegisteredError(name, `Class '${name}' is not registered`);
   }
+
+  if (!classesByName.has(name)) {
+    classesByName.set(name, { reg: new ClassRegistration() });
+  }
+
   const clsReg: ClassRegistration = classesByName.get(name)!.reg;
 
   if (clsReg.needsInitialized) {
-    // TODO CB: This is probably something we can do at construction...
     clsReg.name = name;
     clsReg.needsInitialized = false;
   }
@@ -758,7 +784,7 @@ export function getClassRegistrationByName(name: string) {
 }
 
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]): object }>(ctor: CT) {
-  const name = ctor.name;
+  const name = getNameForClass(ctor);
   if (!classesByName.has(name)) {
     classesByName.set(name, { ctor, reg: new ClassRegistration() });
   }

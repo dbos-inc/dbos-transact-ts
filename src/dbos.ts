@@ -1597,15 +1597,15 @@ export class DBOS {
     return scheddec;
   }
 
-  static registerWorkflow<T extends unknown[], R>(
-    func: (...args: T) => R,
+  static registerWorkflow<This, T extends unknown[], R>(
+    func: (this: This, ...args: T) => Promise<R>,
     _target: {
       classOrInst?: object;
       className?: string;
       funcName: string;
       config?: WorkflowConfig;
     },
-  ): (...args: T) => R {
+  ): (this: This, ...args: T) => Promise<R> {
     return func;
   }
 
@@ -1900,12 +1900,12 @@ export class DBOS {
   }
 
   static registerStep<This, T extends unknown[], R>(
-    func: (this: This, ...args: T) => R,
+    func: (this: This, ...args: T) => Promise<R>,
     _target: {
       name: string;
       config?: StepConfig;
     },
-  ): (this: This, ...args: T) => R {
+  ): (this: This, ...args: T) => Promise<R> {
     return func;
   }
 
