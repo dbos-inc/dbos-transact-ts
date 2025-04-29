@@ -298,8 +298,9 @@ export class DBOSHttpServer {
     const workflowRestartHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Restarting workflow: ${workflowId} with a new id`);
-      await DBOS.forkWorkflow(workflowId);
-      koaCtxt.status = 204;
+      const handle = await DBOS.forkWorkflow(workflowId);
+      koaCtxt.body = handle.workflowID;
+      koaCtxt.status = 200;
     };
     router.post(workflowResumeUrl, workflowRestartHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
@@ -320,7 +321,10 @@ export class DBOSHttpServer {
 
       dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${startStep} with a new id`);
       try {
-        await DBOS.forkWorkflow(workflowId, startStep);
+        const handle = await DBOS.forkWorkflow(workflowId, startStep);
+        koaCtxt.body = handle.workflowID;
+        koaCtxt.status = 200;
+        dbosExec.logger.info(`Forked workflow: ${workflowId} with a new id ${handle.workflowID}`);
       } catch (e) {
         let errorMessage = '';
         if (e instanceof DBOSError) {
@@ -335,8 +339,6 @@ export class DBOSHttpServer {
         };
         return;
       }
-      dbosExec.logger.info(`Forked workflow: ${workflowId} with a new id`);
-      koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowForkHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);

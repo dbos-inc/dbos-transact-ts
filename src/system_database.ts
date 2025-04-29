@@ -1282,11 +1282,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Remove workflow from queues table
       await deleteQueuedWorkflows(client, workflowID);
 
-      // const statusResult = await getWorkflowStatusValue(client, workflowID);
-      // if (!statusResult || statusResult === StatusString.SUCCESS || statusResult === StatusString.ERROR) {
-      //   await client.query('COMMIT');
-      //   return;
-      // }
+      const statusResult = await getWorkflowStatusValue(client, workflowID);
+      if (!statusResult || statusResult === StatusString.SUCCESS || statusResult === StatusString.ERROR) {
+        await client.query('COMMIT');
+        return;
+      }
 
       await updateWorkflowStatus(client, workflowID, StatusString.CANCELLED);
       await client.query('COMMIT');
@@ -1865,6 +1865,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
               status: StatusString.PENDING,
               executor_id: executorID,
               application_version: appVersion,
+              // recovery_attempts: trx.raw('recovery_attempts + 1'),
             });
 
           if (res > 0) {
