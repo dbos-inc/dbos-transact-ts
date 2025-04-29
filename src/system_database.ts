@@ -539,19 +539,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query('BEGIN');
 
       const resRow = await insertWorkflowStatus(client, initStatus);
-      initStatus.workflowConfigName = initStatus.workflowConfigName || '';
-      resRow.config_name = resRow.config_name || '';
-      resRow.queue_name = resRow.queue_name === null ? undefined : resRow.queue_name; // Convert null in SQL to undefined
       if (resRow.name !== initStatus.workflowName) {
         const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
       } else if (resRow.class_name !== initStatus.workflowClassName) {
         const msg = `Workflow already exists with a different class name: ${resRow.class_name}, but the provided class name is: ${initStatus.workflowClassName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-      } else if (resRow.config_name !== initStatus.workflowConfigName) {
+      } else if ((resRow.config_name || '') !== (initStatus.workflowConfigName || '')) {
         const msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.workflowConfigName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-      } else if (resRow.queue_name !== initStatus.queueName) {
+      } else if ((resRow.queue_name ?? undefined) !== initStatus.queueName) {
         // This is a warning because a different queue name is not necessarily an error.
         this.logger.warn(
           `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated. ${new Error().stack}`,
