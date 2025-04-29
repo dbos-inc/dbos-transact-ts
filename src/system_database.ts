@@ -387,6 +387,30 @@ async function recordWorkflowStatusChange(
   }
 }
 
+function mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStatusInternal {
+  return {
+    workflowUUID: row.workflow_uuid,
+    status: row.status,
+    workflowName: row.name,
+    output: row.output ? row.output : null,
+    error: row.error ? row.error : null,
+    workflowClassName: row.class_name ?? '',
+    workflowConfigName: row.config_name ?? '',
+    queueName: row.queue_name,
+    authenticatedUser: row.authenticated_user,
+    assumedRole: row.assumed_role,
+    authenticatedRoles: JSON.parse(row.authenticated_roles) as string[],
+    request: JSON.parse(row.request) as HTTPRequest,
+    executorId: row.executor_id,
+    createdAt: Number(row.created_at),
+    updatedAt: Number(row.updated_at),
+    applicationVersion: row.application_version,
+    applicationID: row.application_id,
+    recoveryAttempts: Number(row.recovery_attempts),
+    input: row.inputs,
+  };
+}
+
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
@@ -1528,7 +1552,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       query = query.offset(input.offset);
     }
     const rows = await query;
-    return rows.map(PostgresSystemDatabase.#mapWorkflowStatus);
+    return rows.map(mapWorkflowStatus);
   }
 
   async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
@@ -1571,31 +1595,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     const rows = await query;
-    return rows.map(PostgresSystemDatabase.#mapWorkflowStatus);
-  }
-
-  static #mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStatusInternal {
-    return {
-      workflowUUID: row.workflow_uuid,
-      status: row.status,
-      workflowName: row.name,
-      output: row.output ? row.output : null,
-      error: row.error ? row.error : null,
-      workflowClassName: row.class_name ?? '',
-      workflowConfigName: row.config_name ?? '',
-      queueName: row.queue_name,
-      authenticatedUser: row.authenticated_user,
-      assumedRole: row.assumed_role,
-      authenticatedRoles: JSON.parse(row.authenticated_roles) as string[],
-      request: JSON.parse(row.request) as HTTPRequest,
-      executorId: row.executor_id,
-      createdAt: Number(row.created_at),
-      updatedAt: Number(row.updated_at),
-      applicationVersion: row.application_version,
-      applicationID: row.application_id,
-      recoveryAttempts: Number(row.recovery_attempts),
-      input: row.inputs,
-    };
+    return rows.map(mapWorkflowStatus);
   }
 
   async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
