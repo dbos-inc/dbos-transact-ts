@@ -1279,11 +1279,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Remove workflow from queues table
       await deleteQueuedWorkflows(client, workflowID);
 
-      const statusResult = await getWorkflowStatusValue(client, workflowID);
-      if (!statusResult || statusResult === StatusString.SUCCESS || statusResult === StatusString.ERROR) {
-        await client.query('COMMIT');
-        return;
-      }
+      // const statusResult = await getWorkflowStatusValue(client, workflowID);
+      // if (!statusResult || statusResult === StatusString.SUCCESS || statusResult === StatusString.ERROR) {
+      //   await client.query('COMMIT');
+      //   return;
+      // }
 
       await updateWorkflowStatus(client, workflowID, StatusString.CANCELLED);
       await client.query('COMMIT');
@@ -1332,7 +1332,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Remove the workflow from the queues table so resume can safely be called on an ENQUEUED workflow
       await deleteQueuedWorkflows(client, workflowID);
 
-      await updateWorkflowStatus(client, workflowID, StatusString.ENQUEUED, { queueName: INTERNAL_QUEUE_NAME });
+      await updateWorkflowStatus(client, workflowID, StatusString.ENQUEUED, {
+        queueName: INTERNAL_QUEUE_NAME,
+        resetRecoveryAttempts: true,
+      });
 
       await enqueueWorkflow(client, workflowID, INTERNAL_QUEUE_NAME);
 
