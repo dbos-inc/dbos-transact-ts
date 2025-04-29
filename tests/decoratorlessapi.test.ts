@@ -5,19 +5,34 @@
 // registerStep ()
 // registerWorkflow ()
 
+// Do this on:
+//   Bare
+//   Static
+//   instance (wf must be configured)
+
 import { DBOS, DBOSConfig } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
-async function _stepFunctionGuts() {
+async function stepFunctionGuts() {
   return Promise.resolve('My second step result');
 }
+
+const stepFunction = DBOS.registerStep(
+  async () => {
+    return await stepFunctionGuts();
+  },
+  {
+    name: 'MySecondStep',
+  },
+);
 
 async function wfFunctionGuts() {
   const p1 = await DBOS.runAsWorkflowStep(async () => {
     return Promise.resolve('My first step result');
   }, 'MyFirstStep');
+  const p2 = await stepFunction();
 
-  return p1;
+  return p1 + '|' + p2;
 }
 
 const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
@@ -42,6 +57,6 @@ describe('decoratorless-api-tests', () => {
   });
 
   test('simple-functions', async () => {
-    await expect(wfFunction()).resolves.toBe('My first step result');
+    await expect(wfFunction()).resolves.toBe('My first step result|My second step result');
   });
 });

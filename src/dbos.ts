@@ -1599,7 +1599,7 @@ export class DBOS {
 
   static registerWorkflow<T extends unknown[], R>(
     func: (...args: T) => R,
-    target: {
+    _target: {
       classOrInst?: object;
       className?: string;
       funcName: string;
@@ -1897,6 +1897,16 @@ export class DBOS {
     }
 
     return decorator;
+  }
+
+  static registerStep<This, T extends unknown[], R>(
+    func: (this: This, ...args: T) => R,
+    _target: {
+      name: string;
+      config?: StepConfig;
+    },
+  ): (this: This, ...args: T) => R {
+    return func;
   }
 
   /**
