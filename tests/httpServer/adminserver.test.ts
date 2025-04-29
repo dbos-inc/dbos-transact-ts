@@ -103,7 +103,7 @@ describe('running-admin-server-tests', () => {
     @DBOS.workflow()
     static async simpleWorkflow(value: number) {
       testAdminWorkflow.counter++;
-      const msg = await DBOS.recv();
+      const msg = await DBOS.recv<string>();
       return `${value}-${msg}`;
     }
 

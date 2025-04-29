@@ -6,7 +6,7 @@ import { getWorkflow, listWorkflows, listQueuedWorkflows } from '../src/dbos-run
 import { Client } from 'pg';
 import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
-import { globalParams, sleepms } from '../src/utils';
+import { globalParams } from '../src/utils';
 import { DBOSInvalidStepIDError } from '../src/error';
 
 describe('workflow-management-tests', () => {
@@ -272,7 +272,7 @@ describe('workflow-management-tests', () => {
 
     const workflowID = `test-cancel-after-completion-${Date.now()}`;
     const handle = await DBOS.startWorkflow(TestEndpoints, { workflowID }).waitingWorkflow(42);
-    DBOS.send(workflowID, 'message');
+    await DBOS.send(workflowID, 'message');
     await expect(handle.getResult()).resolves.toEqual(`42-message`);
 
     let result = await systemDBClient.query<{ status: string; attempts: number }>(
@@ -317,7 +317,7 @@ describe('workflow-management-tests', () => {
 
     // Retry the workflow, resetting the attempts counter
     const handle2 = await DBOS.resumeWorkflow<number>(workflowID);
-    DBOS.send(workflowID, 'message');
+    await DBOS.send(workflowID, 'message');
     await expect(handle2.getResult()).resolves.toEqual(`42-message`);
 
     result = await systemDBClient.query<{ status: string; attempts: number }>(
