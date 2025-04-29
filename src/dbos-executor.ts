@@ -2231,6 +2231,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (DBOSExecutor.internalQueue !== undefined) {
       return;
     }
-    DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME);
+    DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME, {});
   }
 }
