@@ -1436,6 +1436,7 @@ export class DBOS {
                 DBOSExecutor.globalInstance!.callStepFunction(
                   op.registeredFunction as StepFunction<unknown[], unknown>,
                   undefined,
+                  undefined,
                   null,
                   wfctx,
                   ...args,
@@ -1476,6 +1477,7 @@ export class DBOS {
             ? (...args: unknown[]) =>
                 DBOSExecutor.globalInstance!.callStepFunction(
                   op.registeredFunction as StepFunction<unknown[], unknown>,
+                  undefined,
                   undefined,
                   targetInst,
                   wfctx,
@@ -2026,6 +2028,7 @@ export class DBOS {
         const wfctx = assertCurrentWorkflowContext();
         return await DBOSExecutor.globalInstance!.callStepFunction(
           func as unknown as StepFunction<Args, Return>,
+          target.name,
           target?.config ?? {},
           inst ?? null,
           wfctx,
@@ -2036,6 +2039,9 @@ export class DBOS {
       throw new DBOSInvalidWorkflowTransitionError(`Call to step '${target.name}' outside of a workflow`);
     };
 
+    Object.defineProperty(invokeWrapper, 'name', {
+      value: target.name,
+    });
     return invokeWrapper;
   }
 
@@ -2082,6 +2088,7 @@ export class DBOS {
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callStepFunction(
             registration.registeredFunction as unknown as StepFunction<Args, Return>,
+            undefined,
             undefined,
             inst ?? null,
             wfctx,

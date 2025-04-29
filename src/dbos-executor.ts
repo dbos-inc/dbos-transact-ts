@@ -1610,7 +1610,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await this.callStepFunction(stepFn, undefined, params.configuredInstance ?? null, ctxtImpl, ...args);
+      return await this.callStepFunction(
+        stepFn,
+        undefined,
+        undefined,
+        params.configuredInstance ?? null,
+        ctxtImpl,
+        ...args,
+      );
     };
 
     return await this.internalWorkflow(
@@ -1634,11 +1641,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
    */
   async callStepFunction<T extends unknown[], R>(
     stepFn: StepFunction<T, R>,
+    stepFnName: string | undefined,
     stepConfig: StepConfig | undefined,
     clsInst: ConfiguredInstance | null,
     wfCtx: WorkflowContextImpl,
     ...args: T
   ): Promise<R> {
+    stepFnName = stepFnName ?? stepFn.name ?? '<unnamed>';
     let passContext = false;
     if (!stepConfig) {
       const stepReg = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
@@ -1646,7 +1655,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       passContext = stepReg?.registration.passContext ?? true;
     }
     if (stepConfig === undefined) {
-      throw new DBOSNotRegisteredError(stepFn.name);
+      throw new DBOSNotRegisteredError(stepFnName);
     }
 
     await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
@@ -1655,7 +1664,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
     const span: Span = this.tracer.startSpan(
-      stepFn.name,
+      stepFnName,
       {
         operationUUID: wfCtx.workflowUUID,
         operationType: OperationType.COMMUNICATOR,
@@ -1670,7 +1679,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       wfCtx.span,
     );
 
-    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, stepConfig, stepFn.name);
+    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, stepConfig, stepFnName);
 
     // Check if this execution previously happened, returning its original result if it did.
     const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfCtx.workflowUUID, ctxt.functionID);
@@ -1767,7 +1776,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // `result` can only be dbosNull when the step timed out
     if (result === dbosNull) {
       // Record the error, then throw it.
-      err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFn.name, ctxt.maxAttempts, errors) : err;
+      err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, ctxt.maxAttempts, errors) : err;
       await this.systemDatabase.recordOperationResult(
         wfCtx.workflowUUID,
         ctxt.functionID,

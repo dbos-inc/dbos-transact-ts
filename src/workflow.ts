@@ -394,7 +394,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     clsInst: ConfiguredInstance | null,
     ...args: T
   ): Promise<R> {
-    return this.#dbosExec.callStepFunction(stepFn, undefined, clsInst, this, ...args);
+    return this.#dbosExec.callStepFunction(stepFn, undefined, undefined, clsInst, this, ...args);
   }
 
   /**
