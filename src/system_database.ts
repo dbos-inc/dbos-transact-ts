@@ -536,6 +536,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<{ serializedInputs: string; status: string }> {
     const client = await this.pool.connect();
     try {
+      await client.query('BEGIN');
+
       const resRow = await insertWorkflowStatus(client, initStatus);
       initStatus.workflowConfigName = initStatus.workflowConfigName || '';
       resRow.config_name = resRow.config_name || '';
@@ -562,7 +564,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
       const attempts = resRow.recovery_attempts;
       if (maxRetries && attempts > maxRetries + 1) {
-        await this.pool.query(
+        await client.query(
           `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status SET status=$1 WHERE workflow_uuid=$2 AND status=$3`,
           [StatusString.RETRIES_EXCEEDED, initStatus.workflowUUID, StatusString.PENDING],
         );
@@ -580,6 +582,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       return { serializedInputs: inputResult, status };
     } finally {
+      await client.query('COMMIT');
       client.release();
     }
   }
