@@ -1597,6 +1597,18 @@ export class DBOS {
     return scheddec;
   }
 
+  static registerWorkflow<T extends unknown[], R>(
+    func: (...args: T) => R,
+    target: {
+      classOrInst?: object;
+      className?: string;
+      funcName: string;
+      config?: WorkflowConfig;
+    },
+  ): (...args: T) => R {
+    return func;
+  }
+
   /**
    * Decorator designating a method as a DBOS workflow
    *   Durable execution will be applied within calls to the workflow function

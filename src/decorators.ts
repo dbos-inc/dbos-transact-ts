@@ -705,12 +705,34 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
   return { descriptor, registration };
 }
 
+/*
+export function registerAndWrapDBOSFunctionByName<Args extends unknown[], Return>(
+  target: object | undefined,
+  className: string | undefined,
+  funcName: string,
+  func: (...args: Args) => Return
+) {
+  ensureDBOSIsNotLaunched();
+
+  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
+
+  return { registration };
+}
+*/
+
+// Data structure notes:
+//  Everything is registered under a "className", but this may be blank.
+//   This often corresponds to a real `class`, but it does not have to, if the user
+//   registered stuff without decorators.  Or for a bare function.
+//  Thus, if you have a "class name", look it up in classesByName, as this is exhaustive
+//  If you have a class or instance, you can look that up in the classesByCtor map,
+//   this contains all decorator-registered classes, but may omit other things.
 type AnyConstructor = new (...args: unknown[]) => object;
 const classesByName: Map<string, { reg: ClassRegistration; ctor?: AnyConstructor }> = new Map();
-const classToName: Map<AnyConstructor, { name: string; reg: ClassRegistration }> = new Map();
+const classesByCtor: Map<AnyConstructor, { name: string; reg: ClassRegistration }> = new Map();
 export function getNameForClass(ctor: AnyConstructor): string {
-  if (!classToName.has(ctor)) return ctor.name;
-  return classToName.get(ctor)!.name;
+  if (!classesByCtor.has(ctor)) return ctor.name;
+  return classesByCtor.get(ctor)!.name;
 }
 
 export function getAllRegisteredClassNames() {
