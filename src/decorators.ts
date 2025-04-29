@@ -716,14 +716,6 @@ export function getNameForClass(ctor: AnyConstructor): string {
   return classToName.get(ctor)!.name;
 }
 
-export function getAllRegisteredClasses() {
-  const ctors: AnyConstructor[] = [];
-  for (const [_cn, creg] of classesByName) {
-    ctors.push(creg.reg.ctor);
-  }
-  return ctors;
-}
-
 export function getAllRegisteredClassNames() {
   const cnames: string[] = [];
   for (const [cn, _creg] of classesByName) {
