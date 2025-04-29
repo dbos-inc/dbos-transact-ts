@@ -503,15 +503,18 @@ const methodArgsByFunction: Map<string, MethodParameter[]> = new Map();
 
 export function getOrCreateMethodArgsRegistration(
   target: object | undefined,
+  className: string | undefined,
   propertyKey: string | symbol,
+  func?: (...args: unknown[]) => unknown,
 ): MethodParameter[] {
   let regtarget = target;
   if (regtarget && typeof regtarget !== 'function') {
     regtarget = regtarget.constructor;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  const mkey = (regtarget as Function).name + '|' + propertyKey.toString();
+  className = className ?? (target ? getNameForClass(target) : '');
+
+  const mkey = className + '|' + propertyKey.toString();
 
   let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(mkey);
   if (mParameters === undefined) {
@@ -524,10 +527,15 @@ export function getOrCreateMethodArgsRegistration(
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
     } else {
-      const descriptor = Object.getOwnPropertyDescriptor(target, propertyKey);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      const argnames = getArgNames(descriptor?.value as Function);
-      mParameters = argnames.map((_value, index) => new MethodParameter(index));
+      if (func) {
+        const argnames = getArgNames(func);
+        mParameters = argnames.map((_value, index) => new MethodParameter(index));
+      } else {
+        const descriptor = Object.getOwnPropertyDescriptor(target, propertyKey);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+        const argnames = getArgNames(descriptor?.value as Function);
+        mParameters = argnames.map((_value, index) => new MethodParameter(index));
+      }
     }
 
     methodArgsByFunction.set(mkey, mParameters);
@@ -592,7 +600,12 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     methReg.className = classReg.name;
     methReg.defaults = classReg;
 
-    methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey);
+    methReg.args = getOrCreateMethodArgsRegistration(
+      target,
+      className,
+      propertyKey,
+      func as (...args: unknown[]) => unknown,
+    );
 
     const argNames = getArgNames(func);
     methReg.args.forEach((e) => {
@@ -699,7 +712,7 @@ export function registerAndWrapFunctionTakingContext<This, Args extends unknown[
   }
 
   const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, true);
-  descriptor.value = registration.wrappedFunction;
+  descriptor.value = registration.registeredFunction;
 
   return { descriptor, registration };
 }
@@ -715,7 +728,7 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
   }
 
   const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, false);
-  descriptor.value = registration.wrappedFunction;
+  descriptor.value = registration.registeredFunction;
 
   return { descriptor, registration };
 }
@@ -846,21 +859,21 @@ export function associateMethodWithEventReceiver<This, Args extends unknown[], R
 //////////////////////////
 
 export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.required = ArgRequiredOptions.REQUIRED;
 }
 
 export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.required = ArgRequiredOptions.OPTIONAL;
 }
 
 export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.logMask = LogMasks.SKIP;
@@ -868,7 +881,7 @@ export function SkipLogging(target: object, propertyKey: string | symbol, parame
 
 export function LogMask(mask: LogMasks) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.logMask = mask;
@@ -877,7 +890,7 @@ export function LogMask(mask: LogMasks) {
 
 export function ArgName(name: string) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
@@ -887,7 +900,7 @@ export function ArgName(name: string) {
 export function ArgDate() {
   // TODO a little more info about it - is it a date or timestamp precision?
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     if (!curParam.dataType) curParam.dataType = new DBOSDataType();
@@ -897,7 +910,7 @@ export function ArgDate() {
 
 export function ArgVarchar(length: number) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.dataType = DBOSDataType.varchar(length);

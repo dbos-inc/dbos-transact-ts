@@ -57,6 +57,7 @@ describe('decoratorless-api-tests', () => {
   });
 
   test('simple-functions', async () => {
-    await expect(wfFunction()).resolves.toBe('My first step result|My second step result');
+    const res = await wfFunction();
+    expect(res).toBe('My first step result|My second step result');
   });
 });
