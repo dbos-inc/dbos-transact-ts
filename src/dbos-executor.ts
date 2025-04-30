@@ -685,10 +685,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
   // TODO: getProcedureInfoByNames??
 
   static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, success?: boolean) {
-    if (success === true || !r.err) {
-      return DBOSJSON.parse(r.res ?? null) as R;
+    if (success === true || !r.error) {
+      return DBOSJSON.parse(r.output ?? null) as R;
     } else {
-      throw deserializeError(DBOSJSON.parse(r.err));
+      throw deserializeError(DBOSJSON.parse(r.error));
     }
   }
 
@@ -775,9 +775,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       // TODO: Make this transactional (and with the queue step below)
       if (callerFunctionID !== undefined && callerID !== undefined) {
-        const cr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
-        if (cr.res !== undefined) {
-          return new RetrievedHandle(this.systemDatabase, cr.res.child!, callerID, callerFunctionID);
+        const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
+        if (result) {
+          return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!, callerID, callerFunctionID);
         }
       }
       const ires = await this.systemDatabase.initWorkflowStatus(
@@ -1664,16 +1664,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Check if this execution previously happened, returning its original result if it did.
     const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfCtx.workflowUUID, ctxt.functionID);
-    if (checkr.res !== undefined) {
-      if (checkr.res.functionName !== ctxt.operationName) {
+    if (checkr) {
+      if (checkr.functionName !== ctxt.operationName) {
         throw new DBOSUnexpectedStepError(
           ctxt.workflowUUID,
           ctxt.functionID,
           ctxt.operationName,
-          checkr.res.functionName ?? '?',
+          checkr.functionName ?? '?',
         );
       }
-      const check = DBOSExecutor.reviveResultOrError<R>(checkr.res);
+      const check = DBOSExecutor.reviveResultOrError<R>(checkr);
       ctxt.span.setAttribute('cached', true);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(ctxt.span);
@@ -1890,12 +1890,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
     childWfId?: string,
   ): Promise<T> {
     if (workflowID !== undefined && functionID !== undefined) {
-      const res = await this.systemDatabase.getOperationResultAndThrowIfCancelled(workflowID, functionID);
-      if (res.res !== undefined) {
-        if (res.res.functionName !== functionName) {
-          throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
+      const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(workflowID, functionID);
+      if (result) {
+        if (result.functionName !== functionName) {
+          throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, result.functionName!);
         }
-        return DBOSExecutor.reviveResultOrError<T>(res.res);
+        return DBOSExecutor.reviveResultOrError<T>(result);
       }
     }
     try {

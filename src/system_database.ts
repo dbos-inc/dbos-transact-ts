@@ -35,10 +35,10 @@ import { DBOSEventReceiverState } from './eventreceiver';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
-  res?: string | null;
-  err?: string | null;
+  output?: string | null;
+  error?: string | null;
   cancelled?: boolean;
-  child?: string | null;
+  childWorkflowID?: string | null;
   functionName?: string;
 }
 
@@ -80,7 +80,7 @@ export interface SystemDatabase {
   getOperationResultAndThrowIfCancelled(
     workflowID: string,
     functionID: number,
-  ): Promise<{ res?: SystemDatabaseStoredResult }>;
+  ): Promise<SystemDatabaseStoredResult | undefined>;
   getAllOperationResults(workflowID: string): Promise<operation_outputs[]>;
   recordOperationResult(
     workflowID: string,
@@ -430,7 +430,7 @@ async function recordOperationResult(
   functionName: string,
   checkConflict: boolean,
   options: {
-    childWfId?: string | null;
+    childWorkflowID?: string | null;
     output?: string | null;
     error?: string | null;
   } = {},
@@ -441,7 +441,14 @@ async function recordOperationResult(
        (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
        VALUES ($1, $2, $3, $4, $5, $6)
        ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'};`,
-      [workflowID, functionID, options.output ?? null, options.error ?? null, functionName, options.childWfId ?? null],
+      [
+        workflowID,
+        functionID,
+        options.output ?? null,
+        options.error ?? null,
+        functionName,
+        options.childWorkflowID ?? null,
+      ],
     );
   } catch (error) {
     const err: DatabaseError = error as DatabaseError;
@@ -512,6 +519,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly runningWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
+  // public done
   constructor(
     readonly pgPoolConfig: PoolConfig,
     readonly systemDatabaseName: string,
@@ -540,6 +548,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.knexDB = knex(knexConfig);
   }
 
+  // public done
   async init() {
     const pgSystemClient = new Client(this.pgPoolConfig);
     await pgSystemClient.connect();
@@ -573,6 +582,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  // public done
   async destroy() {
     await this.knexDB.destroy();
     if (this.notificationsClient) {
@@ -582,6 +592,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.pool.end();
   }
 
+  // public done
   static async dropSystemDB(dbosConfig: DBOSConfigInternal) {
     // Drop system database, for testing.
     const pgSystemClient = new Client({
@@ -701,45 +712,37 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows[0].inputs;
   }
 
+  // done (unique query)
   async #getOperationResultAndThrowIfCancelled(
     client: PoolClient,
     workflowID: string,
     functionID: number,
-  ): Promise<{ res?: SystemDatabaseStoredResult }> {
+  ): Promise<SystemDatabaseStoredResult | undefined> {
     await this.#checkIfCanceled(client, workflowID);
-    return await getOperationResult(client, workflowID, functionID);
 
-    async function getOperationResult(
-      client: PoolClient,
-      workflowID: string,
-      functionID: number,
-    ): Promise<{ res?: SystemDatabaseStoredResult }> {
-      const { rows } = await client.query<operation_outputs>(
-        `SELECT output, error, child_workflow_id, function_name
-         FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
-        WHERE workflow_uuid=$1 AND function_id=$2`,
-        [workflowID, functionID],
-      );
-      if (rows.length === 0) {
-        return {};
-      } else {
-        return {
-          res: {
-            res: rows[0].output,
-            err: rows[0].error,
-            child: rows[0].child_workflow_id,
-            functionName: rows[0].function_name,
-          },
-        };
-      }
+    const { rows } = await client.query<operation_outputs>(
+      `SELECT output, error, child_workflow_id, function_name
+       FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+      WHERE workflow_uuid=$1 AND function_id=$2`,
+      [workflowID, functionID],
+    );
+    if (rows.length === 0) {
+      return undefined;
+    } else {
+      return {
+        output: rows[0].output,
+        error: rows[0].error,
+        childWorkflowID: rows[0].child_workflow_id,
+        functionName: rows[0].function_name,
+      };
     }
   }
 
-  // public (need to remove pool client param)
+  // public done
   async getOperationResultAndThrowIfCancelled(
     workflowID: string,
     functionID: number,
-  ): Promise<{ res?: SystemDatabaseStoredResult }> {
+  ): Promise<SystemDatabaseStoredResult | undefined> {
     const client = await this.pool.connect();
     try {
       return await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
@@ -748,7 +751,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done (unique query)
   async getAllOperationResults(workflowID: string): Promise<operation_outputs[]> {
     const { rows } = await this.pool.query<operation_outputs>(
       `SELECT * FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
@@ -772,7 +775,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client = await this.pool.connect();
     try {
       await recordOperationResult(client, workflowID, functionID, rec.functionName, checkConflict, {
-        childWfId: rec.childWfId,
+        childWorkflowID: rec.childWfId,
         output: rec.serialOutput,
         error: rec.serialError,
       });
@@ -791,7 +794,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.length === 0 ? 0 : rows[0].max_function_id;
   }
 
-  // public done
+  // public done (unique query to copy operation outputs)
   async forkWorkflow(
     originalWorkflowID: string,
     forkedWorkflowId: string,
@@ -858,31 +861,27 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async #runAsStep(
+  // still need to investigate this
+  async #runAndRecordResult(
     client: PoolClient,
-    callback: () => Promise<string | null | undefined>,
     functionName: string,
-    workflowID?: string,
-    functionID?: number,
+    workflowID: string,
+    functionID: number,
+    func: () => Promise<string | null | undefined>,
   ): Promise<string | null | undefined> {
-    if (workflowID !== undefined && functionID !== undefined) {
-      const res = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
-      if (res.res !== undefined) {
-        if (res.res.functionName !== functionName) {
-          throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
-        }
-        await client?.query('ROLLBACK');
-        return res.res.res;
+    const result = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
+    if (result !== undefined) {
+      if (result.functionName !== functionName) {
+        throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, result.functionName!);
       }
+      return result.output;
     }
-    const serialOutput = await callback();
-    if (workflowID !== undefined && functionID !== undefined) {
-      await recordOperationResult(client, workflowID, functionID, functionName, true, { output: serialOutput });
-    }
-    return serialOutput;
+    const output = await func();
+    await recordOperationResult(client, workflowID, functionID, functionName, true, { output });
+    return output;
   }
 
-  // public
+  // public done
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
     let resolveNotification: () => void;
     const cancelPromise = new Promise<void>((resolve) => {
@@ -892,7 +891,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const cbr = this.cancelWakeupMap.registerCallback(workflowID, resolveNotification!);
     try {
       let timeoutPromise: Promise<void> = Promise.resolve();
-      const { promise, cancel: timeoutCancel } = await this.#durableSleepmsInternal(workflowID, functionID, durationMS);
+      const { promise, cancel: timeoutCancel } = await this.#durableSleep(workflowID, functionID, durationMS);
       timeoutPromise = promise;
 
       try {
@@ -907,7 +906,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.checkIfCanceled(workflowID);
   }
 
-  async #durableSleepmsInternal(
+  // done
+  async #durableSleep(
     workflowID: string,
     functionID: number,
     durationMS: number,
@@ -917,24 +917,27 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     const curTime = Date.now();
     let endTimeMs = curTime + durationMS;
-    const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID);
-    if (res.res !== undefined) {
-      if (res.res.functionName !== DBOS_FUNCNAME_SLEEP) {
-        throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SLEEP, res.res.functionName!);
+
+    const client = await this.pool.connect();
+    try {
+      const res = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
+      if (res) {
+        if (res.functionName !== DBOS_FUNCNAME_SLEEP) {
+          throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_SLEEP, res.functionName!);
+        }
+        endTimeMs = JSON.parse(res.output!) as number;
+      } else {
+        await recordOperationResult(client, workflowID, functionID, DBOS_FUNCNAME_SLEEP, false, {
+          output: JSON.stringify(endTimeMs),
+        });
       }
-      endTimeMs = JSON.parse(res.res.res!) as number;
-    } else {
-      await this.recordOperationResult(
-        workflowID,
-        functionID,
-        { serialOutput: JSON.stringify(endTimeMs), functionName: DBOS_FUNCNAME_SLEEP },
-        false,
-      );
+      return {
+        ...cancellableSleep(Math.max(Math.min(maxSleepPerIteration, endTimeMs - curTime), 0)),
+        endTime: endTimeMs,
+      };
+    } finally {
+      client.release();
     }
-    return {
-      ...cancellableSleep(Math.max(Math.min(maxSleepPerIteration, endTimeMs - curTime), 0)),
-      endTime: endTimeMs,
-    };
   }
 
   readonly nullTopic = '__null__topic__';
@@ -952,20 +955,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     try {
-      await this.#runAsStep(
-        client,
-        async () => {
-          await client.query(
-            `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
-            [destinationID, topic, message],
-          );
-          await client.query('COMMIT');
-          return undefined;
-        },
-        DBOS_FUNCNAME_SEND,
-        workflowID,
-        functionID,
-      );
+      await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
+        await client.query(
+          `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
+          [destinationID, topic, message],
+        );
+        await client.query('COMMIT');
+        return undefined;
+      });
     } catch (error) {
       await client.query('ROLLBACK');
       const err: DatabaseError = error as DatabaseError;
@@ -991,11 +988,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     topic = topic ?? this.nullTopic;
     // First, check for previous executions.
     const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID);
-    if (res.res) {
-      if (res.res.functionName !== DBOS_FUNCNAME_RECV) {
-        throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_RECV, res.res.functionName!);
+    if (res) {
+      if (res.functionName !== DBOS_FUNCNAME_RECV) {
+        throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_RECV, res.functionName!);
       }
-      return res.res.res!;
+      return res.output!;
     }
 
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
@@ -1032,7 +1029,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
         if (timeoutms) {
-          const { promise, cancel, endTime } = await this.#durableSleepmsInternal(
+          const { promise, cancel, endTime } = await this.#durableSleep(
             workflowID,
             timeoutFunctionID,
             timeoutms,
@@ -1108,24 +1105,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-      await this.#runAsStep(
-        client,
-        async () => {
-          await client.query(
-            `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_events (workflow_uuid, key, value)
+      await this.#runAndRecordResult(client, DBOS_FUNCNAME_SETEVENT, workflowID, functionID, async () => {
+        await client.query(
+          `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_events (workflow_uuid, key, value)
              VALUES ($1, $2, $3)
              ON CONFLICT (workflow_uuid, key)
              DO UPDATE SET value = $3
              RETURNING workflow_uuid;`,
-            [workflowID, key, message],
-          );
-          await client.query('COMMIT');
-          return undefined;
-        },
-        DBOS_FUNCNAME_SETEVENT,
-        workflowID,
-        functionID,
-      );
+          [workflowID, key, message],
+        );
+        await client.query('COMMIT');
+        return undefined;
+      });
     } catch (e) {
       this.logger.error(e);
       await client.query(`ROLLBACK`);
@@ -1152,16 +1143,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
         callerWorkflow.workflowID,
         callerWorkflow.functionID,
       );
-      if (res.res !== undefined) {
-        if (res.res.functionName !== DBOS_FUNCNAME_GETEVENT) {
+      if (res) {
+        if (res.functionName !== DBOS_FUNCNAME_GETEVENT) {
           throw new DBOSUnexpectedStepError(
             callerWorkflow.workflowID,
             callerWorkflow.functionID,
             DBOS_FUNCNAME_GETEVENT,
-            res.res.functionName!,
+            res.functionName!,
           );
         }
-        return res.res.res!;
+        return res.output!;
       }
     }
 
@@ -1210,7 +1201,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
         if (callerWorkflow && timeoutms) {
-          const { promise, cancel, endTime } = await this.#durableSleepmsInternal(
+          const { promise, cancel, endTime } = await this.#durableSleep(
             callerWorkflow.workflowID,
             callerWorkflow.timeoutFunctionID ?? -1,
             timeoutms,
@@ -1403,24 +1394,28 @@ export class PostgresSystemDatabase implements SystemDatabase {
     callerID?: string,
     callerFN?: number,
   ): Promise<WorkflowStatusInternal | null> {
-    const client = await this.pool.connect();
-    try {
-      // Check if the operation has been done before for OAOO (only do this inside a workflow).
-      const sv = await this.#runAsStep(
-        client,
-        async () => {
+    const funcGetStatus = async () => {
+      const statuses = await this.listWorkflows({ workflowIDs: [workflowID] });
+      const status = statuses.find((s) => s.workflowUUID === workflowID);
+      return status ? JSON.stringify(status) : null;
+    };
+
+    if (callerID && callerFN) {
+      const client = await this.pool.connect();
+      try {
+        // Check if the operation has been done before for OAOO (only do this inside a workflow).
+        const json = await this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, async () => {
           const statuses = await this.listWorkflows({ workflowIDs: [workflowID] });
           const status = statuses.find((s) => s.workflowUUID === workflowID);
           return status ? JSON.stringify(status) : null;
-        },
-        DBOS_FUNCNAME_GETSTATUS,
-        callerID,
-        callerFN,
-      );
-
-      return sv ? (JSON.parse(sv) as WorkflowStatusInternal) : null;
-    } finally {
-      client.release();
+        });
+        return json ? (JSON.parse(json) as WorkflowStatusInternal) : null;
+      } finally {
+        client.release();
+      }
+    } else {
+      const json = await funcGetStatus();
+      return json ? (JSON.parse(json) as WorkflowStatusInternal) : null;
     }
   }
 
@@ -1458,9 +1453,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
           if (rows.length > 0) {
             const status = rows[0].status;
             if (status === StatusString.SUCCESS) {
-              return { res: rows[0].output };
+              return { output: rows[0].output };
             } else if (status === StatusString.ERROR) {
-              return { err: rows[0].error };
+              return { error: rows[0].error };
             } else if (status === StatusString.CANCELLED) {
               return { cancelled: true };
             } else {
@@ -1479,7 +1474,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         let timeoutPromise: Promise<void> = Promise.resolve();
         let timeoutCancel: () => void = () => {};
         if (timerFuncID !== undefined && callerID !== undefined && timeoutms !== undefined) {
-          const { promise, cancel, endTime } = await this.#durableSleepmsInternal(
+          const { promise, cancel, endTime } = await this.#durableSleep(
             callerID,
             timerFuncID,
             timeoutms,
