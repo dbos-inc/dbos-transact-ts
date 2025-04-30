@@ -423,6 +423,37 @@ async function updateWorkflowStatus(
   }
 }
 
+async function recordOperationResult(
+  client: PoolClient,
+  workflowID: string,
+  functionID: number,
+  functionName: string,
+  checkConflict: boolean,
+  options: {
+    childWfId?: string | null;
+    output?: string | null;
+    error?: string | null;
+  } = {},
+): Promise<void> {
+  try {
+    await client.query<operation_outputs>(
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+       (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'};`,
+      [workflowID, functionID, options.output ?? null, options.error ?? null, functionName, options.childWfId ?? null],
+    );
+  } catch (error) {
+    const err: DatabaseError = error as DatabaseError;
+    if (err.code === '40001' || err.code === '23505') {
+      // Serialization and primary key conflict (Postgres).
+      throw new DBOSWorkflowConflictError(workflowID);
+    } else {
+      throw err;
+    }
+  }
+}
+
 function mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStatusInternal {
   return {
     workflowUUID: row.workflow_uuid,
@@ -565,7 +596,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await pgSystemClient.end();
   }
 
-  // public
+  // public done
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     serializedInputs: string,
@@ -620,7 +651,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -630,7 +661,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -640,7 +671,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done (unique query)
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
     const getWorkflows = await this.pool.query<workflow_status>(
       `SELECT workflow_uuid, queue_name 
@@ -657,7 +688,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  // public
+  // public done (unique query)
   async getWorkflowInputs(workflowID: string): Promise<string | null> {
     const { rows } = await this.pool.query<workflow_inputs>(
       `SELECT inputs FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs 
@@ -695,7 +726,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public (need to remove pool client param)
   async getOperationResultAndThrowIfCancelled(
     workflowID: string,
     functionID: number,
@@ -714,7 +745,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows;
   }
 
-  // public (probably shouldn't have PoolClient in interface)
+  // public done
   async recordOperationResult(
     workflowID: string,
     functionID: number,
@@ -725,32 +756,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
       functionName: string;
     },
     checkConflict: boolean,
-    client?: PoolClient,
   ): Promise<void> {
+    const client = await this.pool.connect();
     try {
-      await (client ?? this.pool).query<operation_outputs>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs
-          (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
-          VALUES ($1, $2, $3, $4, $5, $6)
-          ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'}
-          ;`,
-        [
-          workflowID,
-          functionID,
-          rec.serialOutput ?? null,
-          rec.serialError ?? null,
-          rec.functionName,
-          rec.childWfId ?? null,
-        ],
-      );
-    } catch (error) {
-      const err: DatabaseError = error as DatabaseError;
-      if (err.code === '40001' || err.code === '23505') {
-        // Serialization and primary key conflict (Postgres).
-        throw new DBOSWorkflowConflictError(workflowID);
-      } else {
-        throw err;
-      }
+      await recordOperationResult(client, workflowID, functionID, rec.functionName, checkConflict, {
+        childWfId: rec.childWfId,
+        output: rec.serialOutput,
+        error: rec.serialError,
+      });
+    } finally {
+      client.release();
     }
   }
 
@@ -846,11 +861,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async #runAsStep(
+    client: PoolClient,
     callback: () => Promise<string | null | undefined>,
     functionName: string,
     workflowID?: string,
     functionID?: number,
-    client?: PoolClient,
   ): Promise<string | null | undefined> {
     if (workflowID !== undefined && functionID !== undefined) {
       const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID, client);
@@ -864,7 +879,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     const serialOutput = await callback();
     if (workflowID !== undefined && functionID !== undefined) {
-      await this.recordOperationResult(workflowID, functionID, { serialOutput, functionName }, true, client);
+      await recordOperationResult(client, workflowID, functionID, functionName, true, { output: serialOutput });
     }
     return serialOutput;
   }
@@ -940,6 +955,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     try {
       await this.#runAsStep(
+        client,
         async () => {
           await client.query(
             `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
@@ -951,7 +967,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         DBOS_FUNCNAME_SEND,
         workflowID,
         functionID,
-        client,
       );
     } catch (error) {
       await client.query('ROLLBACK');
@@ -1076,13 +1091,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (finalRecvRows.length > 0) {
         message = finalRecvRows[0].message;
       }
-      await this.recordOperationResult(
-        workflowID,
-        functionID,
-        { serialOutput: message, functionName: DBOS_FUNCNAME_RECV },
-        true,
-        client,
-      );
+      await recordOperationResult(client, workflowID, functionID, DBOS_FUNCNAME_RECV, true, { output: message });
       await client.query(`COMMIT`);
     } catch (e) {
       this.logger.error(e);
@@ -1102,6 +1111,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAsStep(
+        client,
         async () => {
           await client.query(
             `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_events (workflow_uuid, key, value)
@@ -1117,7 +1127,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         DBOS_FUNCNAME_SETEVENT,
         workflowID,
         functionID,
-        client,
       );
     } catch (e) {
       this.logger.error(e);
@@ -1392,19 +1401,25 @@ export class PostgresSystemDatabase implements SystemDatabase {
     callerID?: string,
     callerFN?: number,
   ): Promise<WorkflowStatusInternal | null> {
-    // Check if the operation has been done before for OAOO (only do this inside a workflow).
-    const sv = await this.#runAsStep(
-      async () => {
-        const statuses = await this.listWorkflows({ workflowIDs: [workflowID] });
-        const status = statuses.find((s) => s.workflowUUID === workflowID);
-        return status ? JSON.stringify(status) : null;
-      },
-      DBOS_FUNCNAME_GETSTATUS,
-      callerID,
-      callerFN,
-    );
+    const client = await this.pool.connect();
+    try {
+      // Check if the operation has been done before for OAOO (only do this inside a workflow).
+      const sv = await this.#runAsStep(
+        client,
+        async () => {
+          const statuses = await this.listWorkflows({ workflowIDs: [workflowID] });
+          const status = statuses.find((s) => s.workflowUUID === workflowID);
+          return status ? JSON.stringify(status) : null;
+        },
+        DBOS_FUNCNAME_GETSTATUS,
+        callerID,
+        callerFN,
+      );
 
-    return sv ? (JSON.parse(sv) as WorkflowStatusInternal) : null;
+      return sv ? (JSON.parse(sv) as WorkflowStatusInternal) : null;
+    } finally {
+      client.release();
+    }
   }
 
   // public
