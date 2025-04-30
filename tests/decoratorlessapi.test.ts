@@ -22,14 +22,9 @@ async function stepFunctionGuts() {
   return Promise.resolve('My second step result');
 }
 
-const stepFunction = DBOS.registerStep(
-  async () => {
-    return await stepFunctionGuts();
-  },
-  {
-    name: 'MySecondStep',
-  },
-);
+const stepFunction = DBOS.registerStep(stepFunctionGuts, {
+  name: 'MySecondStep',
+});
 
 async function wfFunctionGuts() {
   // Step variant 2: Let DBOS run a code snippet as a step
