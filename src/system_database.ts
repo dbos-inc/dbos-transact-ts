@@ -85,13 +85,13 @@ export interface SystemDatabase {
   recordOperationResult(
     workflowID: string,
     functionID: number,
-    rec: {
+    functionName: string,
+    checkConflict: boolean,
+    options?: {
       childWorkflowId?: string | null;
       output?: string | null;
       error?: string | null;
-      functionName: string;
     },
-    checkConflict: boolean,
   ): Promise<void>;
 
   getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatusInternal | null>;
@@ -764,21 +764,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async recordOperationResult(
     workflowID: string,
     functionID: number,
-    rec: {
+    functionName: string,
+    checkConflict: boolean,
+    options: {
       childWorkflowID?: string | null;
       output?: string | null;
       error?: string | null;
-      functionName: string;
-    },
-    checkConflict: boolean,
+    } = {},
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await recordOperationResult(client, workflowID, functionID, rec.functionName, checkConflict, {
-        childWorkflowID: rec.childWorkflowID,
-        output: rec.output,
-        error: rec.error,
-      });
+      await recordOperationResult(client, workflowID, functionID, functionName, checkConflict, options);
     } finally {
       client.release();
     }
@@ -1234,11 +1230,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await this.recordOperationResult(
         callerWorkflow.workflowID,
         callerWorkflow.functionID,
-        {
-          output: value,
-          functionName: DBOS_FUNCNAME_GETEVENT,
-        },
+        DBOS_FUNCNAME_GETEVENT,
         true,
+        { output: value },
       );
     }
     return value;

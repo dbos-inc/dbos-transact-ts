@@ -787,15 +787,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       );
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
-        await this.systemDatabase.recordOperationResult(
-          callerID,
-          callerFunctionID,
-          {
-            childWorkflowId: workflowID,
-            functionName: internalStatus.workflowName,
-          },
-          true,
-        );
+        await this.systemDatabase.recordOperationResult(callerID, callerFunctionID, internalStatus.workflowName, true, {
+          childWorkflowId: workflowID,
+        });
       }
 
       args = DBOSJSON.parse(ires.serializedInputs) as T;
@@ -1758,29 +1752,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (result === dbosNull) {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFn.name, ctxt.maxAttempts, errors) : err;
-      await this.systemDatabase.recordOperationResult(
-        wfCtx.workflowUUID,
-        ctxt.functionID,
-        {
-          error: DBOSJSON.stringify(serializeError(err)),
-          functionName: ctxt.operationName,
-        },
-        true,
-      );
+      await this.systemDatabase.recordOperationResult(wfCtx.workflowUUID, ctxt.functionID, ctxt.operationName, true, {
+        error: DBOSJSON.stringify(serializeError(err)),
+      });
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(ctxt.span);
       throw err as Error;
     } else {
       // Record the execution and return.
-      await this.systemDatabase.recordOperationResult(
-        wfCtx.workflowUUID,
-        ctxt.functionID,
-        {
-          output: DBOSJSON.stringify(result),
-          functionName: ctxt.operationName,
-        },
-        true,
-      );
+      await this.systemDatabase.recordOperationResult(wfCtx.workflowUUID, ctxt.functionID, ctxt.operationName, true, {
+        output: DBOSJSON.stringify(result),
+      });
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(ctxt.span);
       return result as R;
@@ -1901,22 +1883,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
     try {
       const output: T = await callback();
       if (workflowID !== undefined && functionID !== undefined) {
-        await this.systemDatabase.recordOperationResult(
-          workflowID,
-          functionID,
-          { output: DBOSJSON.stringify(output), functionName, childWorkflowId: childWfId },
-          true,
-        );
+        await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, {
+          output: DBOSJSON.stringify(output),
+          childWorkflowId: childWfId,
+        });
       }
       return output;
     } catch (e) {
       if (workflowID !== undefined && functionID !== undefined) {
-        await this.systemDatabase.recordOperationResult(
-          workflowID,
-          functionID,
-          { error: DBOSJSON.stringify(serializeError(e)), functionName, childWorkflowId: childWfId },
-          false,
-        );
+        await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, {
+          error: DBOSJSON.stringify(serializeError(e)),
+          childWorkflowId: childWfId,
+        });
       }
 
       throw e;
