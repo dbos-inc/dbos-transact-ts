@@ -1,16 +1,3 @@
-// runAsStep
-// runAsStep no config instance
-// runAsTransaction (later)
-// registerTransaction ()
-// registerStep ()
-// registerWorkflow ()
-
-// Do this on:
-//   Bare
-//   Static
-//   instance (wf must be configured)
-// Do this with direct invocation, and with startWorkflow (in a new form)
-
 import { randomUUID } from 'node:crypto';
 import { DBOS, DBOSConfig } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
@@ -50,7 +37,7 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
   name: 'workflow',
 });
 
-describe('decoratorless-api-tests', () => {
+describe('decoratorless-api-basic-tests', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -83,3 +70,88 @@ describe('decoratorless-api-tests', () => {
     expect(wfsteps[1].function_name).toBe('MySecondStep');
   });
 });
+
+// Steps on static and instance methods,
+//  without bothering to configure the instance.
+class StaticAndInstanceSteps {
+  static staticVal = 0;
+  instanceVal: number;
+  constructor(iv: number) {
+    this.instanceVal = iv;
+  }
+
+  static callCount = 0;
+
+  static async getStaticVal() {
+    ++StaticAndInstanceSteps.callCount;
+    return Promise.resolve(StaticAndInstanceSteps.staticVal);
+  }
+
+  async getInstanceVal() {
+    ++StaticAndInstanceSteps.callCount;
+    return Promise.resolve(this.instanceVal);
+  }
+}
+
+StaticAndInstanceSteps.getStaticVal = DBOS.registerStep(StaticAndInstanceSteps.getStaticVal, { name: 'getStaticVal' });
+// eslint-disable-next-line @typescript-eslint/unbound-method
+StaticAndInstanceSteps.prototype.getInstanceVal = DBOS.registerStep(StaticAndInstanceSteps.prototype.getInstanceVal, {
+  name: 'getInstanceVal',
+});
+
+async function classStepsWFFuncGuts() {
+  StaticAndInstanceSteps.staticVal = 1;
+  const sais = new StaticAndInstanceSteps(2);
+  const rv1 = await StaticAndInstanceSteps.getStaticVal();
+  const rv2 = await sais.getInstanceVal();
+  return `${rv1}-${rv2}`;
+}
+
+const classStepsWF = DBOS.registerWorkflow(classStepsWFFuncGuts, { name: 'classStepsWF' });
+
+// runAsStep no config instance
+describe('decoratorless-api-class-tests', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('simple-functions', async () => {
+    const wfid = randomUUID();
+    StaticAndInstanceSteps.callCount = 0;
+
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await classStepsWF();
+      expect(res).toBe('1-2');
+    });
+
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    expect(wfsteps.length).toBe(2);
+    expect(wfsteps[0].function_id).toBe(0);
+    expect(wfsteps[0].function_name).toBe('getStaticVal');
+    expect(wfsteps[1].function_id).toBe(1);
+    expect(wfsteps[1].function_name).toBe('getInstanceVal');
+
+    expect(StaticAndInstanceSteps.callCount).toBe(2);
+  });
+});
+
+// Do this on:
+//   Bare
+//   Static
+//   instance (wf must be configured)
+// Do this with direct invocation, and with startWorkflow (in a new form)
+
+// registerTransaction ()
+// runAsTransaction (later)

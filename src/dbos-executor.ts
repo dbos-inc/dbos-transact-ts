@@ -1643,7 +1643,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     stepFn: StepFunction<T, R>,
     stepFnName: string | undefined,
     stepConfig: StepConfig | undefined,
-    clsInst: ConfiguredInstance | null,
+    clsInst: object | null,
     wfCtx: WorkflowContextImpl,
     ...args: T
   ): Promise<R> {

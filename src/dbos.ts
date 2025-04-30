@@ -2030,7 +2030,7 @@ export class DBOS {
           func as unknown as StepFunction<Args, Return>,
           target.name,
           target?.config ?? {},
-          inst ?? null,
+          inst ?? this ?? null,
           wfctx,
           ...rawArgs,
         );
