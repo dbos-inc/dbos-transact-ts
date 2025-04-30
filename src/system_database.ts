@@ -701,28 +701,37 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows[0].inputs;
   }
 
-  async #getOperationResult(
+  async #getOperationResultAndThrowIfCancelled(
+    client: PoolClient,
     workflowID: string,
     functionID: number,
-    client?: PoolClient,
   ): Promise<{ res?: SystemDatabaseStoredResult }> {
-    const { rows } = await (client ?? this.pool).query<operation_outputs>(
-      `SELECT output, error, child_workflow_id, function_name
-       FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
-      WHERE workflow_uuid=$1 AND function_id=$2`,
-      [workflowID, functionID],
-    );
-    if (rows.length === 0) {
-      return {};
-    } else {
-      return {
-        res: {
-          res: rows[0].output,
-          err: rows[0].error,
-          child: rows[0].child_workflow_id,
-          functionName: rows[0].function_name,
-        },
-      };
+    await this.#checkIfCanceled(client, workflowID);
+    return await getOperationResult(client, workflowID, functionID);
+
+    async function getOperationResult(
+      client: PoolClient,
+      workflowID: string,
+      functionID: number,
+    ): Promise<{ res?: SystemDatabaseStoredResult }> {
+      const { rows } = await client.query<operation_outputs>(
+        `SELECT output, error, child_workflow_id, function_name
+         FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
+        WHERE workflow_uuid=$1 AND function_id=$2`,
+        [workflowID, functionID],
+      );
+      if (rows.length === 0) {
+        return {};
+      } else {
+        return {
+          res: {
+            res: rows[0].output,
+            err: rows[0].error,
+            child: rows[0].child_workflow_id,
+            functionName: rows[0].function_name,
+          },
+        };
+      }
     }
   }
 
@@ -730,10 +739,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async getOperationResultAndThrowIfCancelled(
     workflowID: string,
     functionID: number,
-    client?: PoolClient,
   ): Promise<{ res?: SystemDatabaseStoredResult }> {
-    await this.checkIfCanceled(workflowID);
-    return await this.#getOperationResult(workflowID, functionID, client);
+    const client = await this.pool.connect();
+    try {
+      return await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
+    } finally {
+      client.release();
+    }
   }
 
   // public
@@ -769,7 +781,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done (unique query)
   async getMaxFunctionID(workflowID: string): Promise<number> {
     const { rows } = await this.pool.query<{ max_function_id: number }>(
       `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
@@ -779,7 +791,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.length === 0 ? 0 : rows[0].max_function_id;
   }
 
-  // public
+  // public done
   async forkWorkflow(
     originalWorkflowID: string,
     forkedWorkflowId: string,
@@ -827,24 +839,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       if (startStep > 0) {
         const query = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs 
-        (
-          workflow_uuid,
-          function_id,
-          output,
-          error,
-          function_name,
-          child_workflow_id
-        )
-        SELECT
-          $1 AS workflow_uuid,
-          function_id,
-          output,
-          error,
-          function_name,
-          child_workflow_id
+          (workflow_uuid, function_id, output, error, function_name, child_workflow_id )
+          SELECT $1 AS workflow_uuid, function_id, output, error, function_name, child_workflow_id
           FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
           WHERE workflow_uuid = $2 AND function_id < $3`;
-
         await client.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
       }
 
@@ -868,7 +866,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID?: number,
   ): Promise<string | null | undefined> {
     if (workflowID !== undefined && functionID !== undefined) {
-      const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID, client);
+      const res = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
       if (res.res !== undefined) {
         if (res.res.functionName !== functionName) {
           throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
@@ -1311,16 +1309,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   // public
-  async checkIfCanceled(workflowID: string): Promise<void> {
+  async #checkIfCanceled(client: PoolClient, workflowID: string): Promise<void> {
     if (this.workflowCancellationMap.get(workflowID) === true) {
       throw new DBOSWorkflowCancelledError(workflowID);
     }
+    const statusValue = await getWorkflowStatusValue(client, workflowID);
+    if (statusValue === StatusString.CANCELLED) {
+      throw new DBOSWorkflowCancelledError(workflowID);
+    }
+  }
+
+  async checkIfCanceled(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
-      const statusValue = await getWorkflowStatusValue(client, workflowID);
-      if (statusValue === StatusString.CANCELLED) {
-        throw new DBOSWorkflowCancelledError(workflowID);
-      }
+      await this.#checkIfCanceled(client, workflowID);
     } finally {
       client.release();
     }
