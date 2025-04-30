@@ -791,7 +791,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           callerID,
           callerFunctionID,
           {
-            childWfId: workflowID,
+            childWorkflowId: workflowID,
             functionName: internalStatus.workflowName,
           },
           true,
@@ -1762,7 +1762,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         wfCtx.workflowUUID,
         ctxt.functionID,
         {
-          serialError: DBOSJSON.stringify(serializeError(err)),
+          error: DBOSJSON.stringify(serializeError(err)),
           functionName: ctxt.operationName,
         },
         true,
@@ -1776,7 +1776,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         wfCtx.workflowUUID,
         ctxt.functionID,
         {
-          serialOutput: DBOSJSON.stringify(result),
+          output: DBOSJSON.stringify(result),
           functionName: ctxt.operationName,
         },
         true,
@@ -1904,7 +1904,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         await this.systemDatabase.recordOperationResult(
           workflowID,
           functionID,
-          { serialOutput: DBOSJSON.stringify(output), functionName, childWfId },
+          { output: DBOSJSON.stringify(output), functionName, childWorkflowId: childWfId },
           true,
         );
       }
@@ -1914,7 +1914,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         await this.systemDatabase.recordOperationResult(
           workflowID,
           functionID,
-          { serialError: DBOSJSON.stringify(serializeError(e)), functionName, childWfId },
+          { error: DBOSJSON.stringify(serializeError(e)), functionName, childWorkflowId: childWfId },
           false,
         );
       }

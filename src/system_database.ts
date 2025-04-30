@@ -86,9 +86,9 @@ export interface SystemDatabase {
     workflowID: string,
     functionID: number,
     rec: {
-      childWfId?: string | null;
-      serialOutput?: string | null;
-      serialError?: string | null;
+      childWorkflowId?: string | null;
+      output?: string | null;
+      error?: string | null;
       functionName: string;
     },
     checkConflict: boolean,
@@ -112,7 +112,7 @@ export interface SystemDatabase {
   resumeWorkflow(workflowID: string): Promise<void>;
   forkWorkflow(
     originalWorkflowID: string,
-    forkedWorkflowId: string,
+    newWorkflowID: string,
     startStep: number,
     applicationVersion?: string,
   ): Promise<string>;
@@ -122,9 +122,9 @@ export interface SystemDatabase {
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
 
   // Queues
-  enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
-  clearQueueAssignment(workflowId: string): Promise<boolean>;
-  dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
+  enqueueWorkflow(workflowID: string, queueName: string): Promise<void>;
+  clearQueueAssignment(workflowID: string): Promise<boolean>;
+  dequeueWorkflow(workflowID: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
   // Actions w/ durable records and notifications
@@ -765,9 +765,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     workflowID: string,
     functionID: number,
     rec: {
-      childWfId?: string | null;
-      serialOutput?: string | null;
-      serialError?: string | null;
+      childWorkflowID?: string | null;
+      output?: string | null;
+      error?: string | null;
       functionName: string;
     },
     checkConflict: boolean,
@@ -775,9 +775,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client = await this.pool.connect();
     try {
       await recordOperationResult(client, workflowID, functionID, rec.functionName, checkConflict, {
-        childWorkflowID: rec.childWfId,
-        output: rec.serialOutput,
-        error: rec.serialError,
+        childWorkflowID: rec.childWorkflowID,
+        output: rec.output,
+        error: rec.error,
       });
     } finally {
       client.release();
@@ -797,7 +797,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   // public done (unique query to copy operation outputs)
   async forkWorkflow(
     originalWorkflowID: string,
-    forkedWorkflowId: string,
+    newWorkflowID: string,
     startStep: number = 0,
     applicationVersion?: string,
   ): Promise<string> {
@@ -818,7 +818,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       const now = Date.now();
       await insertWorkflowStatus(client, {
-        workflowUUID: forkedWorkflowId,
+        workflowUUID: newWorkflowID,
         status: StatusString.ENQUEUED,
         workflowName: workflowStatus.workflowName,
         workflowClassName: workflowStatus.workflowClassName,
@@ -838,7 +838,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         updatedAt: now,
       });
 
-      await insertWorkflowInputs(client, forkedWorkflowId, workflowStatus.input);
+      await insertWorkflowInputs(client, newWorkflowID, workflowStatus.input);
 
       if (startStep > 0) {
         const query = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs 
@@ -846,13 +846,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
           SELECT $1 AS workflow_uuid, function_id, output, error, function_name, child_workflow_id
           FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
           WHERE workflow_uuid = $2 AND function_id < $3`;
-        await client.query(query, [forkedWorkflowId, originalWorkflowID, startStep]);
+        await client.query(query, [newWorkflowID, originalWorkflowID, startStep]);
       }
 
-      await enqueueWorkflow(client, forkedWorkflowId, INTERNAL_QUEUE_NAME);
+      await enqueueWorkflow(client, newWorkflowID, INTERNAL_QUEUE_NAME);
 
       await client.query('COMMIT');
-      return forkedWorkflowId;
+      return newWorkflowID;
     } catch (error) {
       await client.query('ROLLBACK');
       throw error;
@@ -861,7 +861,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // still need to investigate this
+  // done
   async #runAndRecordResult(
     client: PoolClient,
     functionName: string,
@@ -942,7 +942,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly nullTopic = '__null__topic__';
 
-  // public
+  // public done
   async send(
     workflowID: string,
     functionID: number,
@@ -1099,7 +1099,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  // public
+  // public done
   async setEvent(workflowID: string, functionID: number, key: string, message: string | null): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
@@ -1235,7 +1235,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         callerWorkflow.workflowID,
         callerWorkflow.functionID,
         {
-          serialOutput: value,
+          output: value,
           functionName: DBOS_FUNCNAME_GETEVENT,
         },
         true,
@@ -1244,7 +1244,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return value;
   }
 
-  // public
+  // public done
   async setWorkflowStatus(
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
@@ -1271,7 +1271,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   async cancelWorkflow(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -1299,7 +1299,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.#setWFCancelMap(workflowID);
   }
 
-  // public
+  // done
   async #checkIfCanceled(client: PoolClient, workflowID: string): Promise<void> {
     if (this.workflowCancellationMap.get(workflowID) === true) {
       throw new DBOSWorkflowCancelledError(workflowID);
@@ -1310,6 +1310,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  // public done
   async checkIfCanceled(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -1319,7 +1320,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   async resumeWorkflow(workflowID: string): Promise<void> {
     this.#clearWFCancelMap(workflowID);
     const client = await this.pool.connect();
@@ -1357,7 +1358,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>) {
     // Need to await for the workflow and capture errors.
     const awaitWorkflowPromise = workflowPromise
@@ -1372,7 +1373,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.runningWorkflowMap.set(workflowID, awaitWorkflowPromise);
   }
 
-  // public
+  // public done
   async awaitRunningWorkflows(): Promise<void> {
     if (this.runningWorkflowMap.size > 0) {
       this.logger.info('Waiting for pending workflows to finish.');
@@ -1419,7 +1420,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   async awaitWorkflowResult(
     workflowID: string,
     timeoutSeconds?: number,
@@ -1722,7 +1723,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { workflows };
   }
 
-  // public
+  // public done
   async enqueueWorkflow(workflowId: string, queueName: string): Promise<void> {
     const client: PoolClient = await this.pool.connect();
     try {
@@ -1764,7 +1765,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   async dequeueWorkflow(workflowID: string, queue: WorkflowQueue): Promise<void> {
     const client = await this.pool.connect();
     try {
