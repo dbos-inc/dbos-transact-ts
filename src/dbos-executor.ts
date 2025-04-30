@@ -788,7 +788,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(callerID, callerFunctionID, internalStatus.workflowName, true, {
-          childWorkflowId: workflowID,
+          childWorkflowID: workflowID,
         });
       }
 
@@ -1885,7 +1885,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       if (workflowID !== undefined && functionID !== undefined) {
         await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, {
           output: DBOSJSON.stringify(output),
-          childWorkflowId: childWfId,
+          childWorkflowID: childWfId,
         });
       }
       return output;
@@ -1893,7 +1893,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       if (workflowID !== undefined && functionID !== undefined) {
         await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, {
           error: DBOSJSON.stringify(serializeError(e)),
-          childWorkflowId: childWfId,
+          childWorkflowID: childWfId,
         });
       }
 

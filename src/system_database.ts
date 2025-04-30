@@ -88,7 +88,7 @@ export interface SystemDatabase {
     functionName: string,
     checkConflict: boolean,
     options?: {
-      childWorkflowId?: string | null;
+      childWorkflowID?: string | null;
       output?: string | null;
       error?: string | null;
     },
