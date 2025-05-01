@@ -180,7 +180,7 @@ workflowCommands
     'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)',
   )
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
-  .option('--request', 'Retrieve workflow request information')
+  .option('--request', 'Retrieve workflow request information (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
     async (options: {
@@ -195,6 +195,9 @@ workflowCommands
       request: boolean;
       silent: boolean;
     }) => {
+      if (options.request) {
+        console.warn('\x1b[33m%s\x1b[0m', 'The --request option has been deprecated.');
+      }
       options.silent = true;
       const [dbosConfig, _] = parseConfigFile(options);
       if (
@@ -218,7 +221,7 @@ workflowCommands
       }
       const client = await DBOSClient.create(dbosConfig.databaseUrl);
       try {
-        const output = await client.listWorkflows(input, options.request);
+        const output = await client.listWorkflows(input);
         console.log(JSON.stringify(output));
       } finally {
         await client.destroy();
@@ -231,8 +234,11 @@ workflowCommands
   .description('Retrieve the status of a workflow')
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .option('--request', 'Retrieve workflow request information')
+  .option('--request', 'Retrieve workflow request information (DEPRECATED)')
   .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
+    if (options.request) {
+      console.warn('\x1b[33m%s\x1b[0m', 'The --request option has been deprecated.');
+    }
     options.silent = true;
     const [dbosConfig, _] = parseConfigFile(options);
     if (dbosConfig.databaseUrl === undefined) {
@@ -240,7 +246,7 @@ workflowCommands
     }
     const client = await DBOSClient.create(dbosConfig.databaseUrl);
     try {
-      const output = await client.getWorkflow(uuid, options.request);
+      const output = await client.getWorkflow(uuid);
       console.log(JSON.stringify(output));
     } finally {
       await client.destroy();
@@ -337,7 +343,7 @@ queueCommands
   )
   .option('-l, --limit <number>', 'Limit the results returned')
   .option('-q, --queue <string>', 'Retrieve functions run on this queue')
-  .option('--request', 'Retrieve workflow request information')
+  .option('--request', 'Retrieve workflow request information (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
     async (options: {
@@ -351,6 +357,9 @@ queueCommands
       appDir?: string;
       silent: boolean;
     }) => {
+      if (options.request) {
+        console.warn('\x1b[33m%s\x1b[0m', 'The --request option has been deprecated.');
+      }
       options.silent = true;
       const [dbosConfig, _] = parseConfigFile(options);
       if (
@@ -374,7 +383,7 @@ queueCommands
       const client = await DBOSClient.create(dbosConfig.databaseUrl);
       try {
         // TOD: Review!
-        const output = await client.listQueuedWorkflows(input, options.request);
+        const output = await client.listQueuedWorkflows(input);
         console.log(JSON.stringify(output));
       } finally {
         await client.destroy();

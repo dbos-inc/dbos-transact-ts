@@ -200,16 +200,16 @@ export class DBOSClient {
     return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, options);
   }
 
-  getWorkflow(workflowID: string, getRequest: boolean = false): Promise<WorkflowStatus | undefined> {
-    return getWorkflow(this.systemDatabase, workflowID, getRequest);
+  getWorkflow(workflowID: string): Promise<WorkflowStatus | undefined> {
+    return getWorkflow(this.systemDatabase, workflowID);
   }
 
-  listWorkflows(input: GetWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
-    return listWorkflows(this.systemDatabase, input, getRequest);
+  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
+    return listWorkflows(this.systemDatabase, input);
   }
 
-  listQueuedWorkflows(input: GetQueuedWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
-    return listQueuedWorkflows(this.systemDatabase, input, getRequest);
+  listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
+    return listQueuedWorkflows(this.systemDatabase, input);
   }
 
   listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {

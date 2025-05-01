@@ -8,31 +8,19 @@ import { deserializeError } from 'serialize-error';
 import type { transaction_outputs } from '../../schemas/user_db_schema';
 import { randomUUID } from 'node:crypto';
 
-export async function listWorkflows(
-  sysdb: SystemDatabase,
-  input: GetWorkflowsInput,
-  getRequest: boolean = false,
-): Promise<WorkflowStatus[]> {
+export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
   const workflows = await sysdb.listWorkflows(input);
-  return workflows.map((wf) => toWorkflowStatus(wf, getRequest));
+  return workflows.map((wf) => toWorkflowStatus(wf));
 }
 
-export async function listQueuedWorkflows(
-  sysdb: SystemDatabase,
-  input: GetQueuedWorkflowsInput,
-  getRequest: boolean = false,
-) {
+export async function listQueuedWorkflows(sysdb: SystemDatabase, input: GetQueuedWorkflowsInput) {
   const workflows = await sysdb.listQueuedWorkflows(input);
-  return workflows.map((wf) => toWorkflowStatus(wf, getRequest));
+  return workflows.map((wf) => toWorkflowStatus(wf));
 }
 
-export async function getWorkflow(
-  sysdb: SystemDatabase,
-  workflowID: string,
-  getRequest: boolean = false,
-): Promise<WorkflowStatus | undefined> {
+export async function getWorkflow(sysdb: SystemDatabase, workflowID: string): Promise<WorkflowStatus | undefined> {
   const status = await sysdb.getWorkflowStatus(workflowID);
-  return status ? toWorkflowStatus(status, getRequest) : undefined;
+  return status ? toWorkflowStatus(status) : undefined;
 }
 
 export async function listWorkflowSteps(
@@ -107,7 +95,7 @@ export async function forkWorkflow(
   return newWorkflowID;
 }
 
-export function toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: boolean = true): WorkflowStatus {
+export function toWorkflowStatus(internal: WorkflowStatusInternal): WorkflowStatus {
   return {
     workflowID: internal.workflowUUID,
     status: internal.status,
@@ -124,7 +112,7 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, getRequest: b
     output: internal.output ? DBOSJSON.parse(internal.output ?? null) : undefined,
     error: internal.error ? deserializeError(DBOSJSON.parse(internal.error)) : undefined,
 
-    request: getRequest ? internal.request : undefined,
+    request: internal.request,
     executorId: internal.executorId,
     applicationVersion: internal.applicationVersion,
     applicationID: internal.applicationID,

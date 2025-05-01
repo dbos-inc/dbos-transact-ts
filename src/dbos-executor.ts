@@ -1870,23 +1870,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async getWorkflowStatus(
-    workflowID: string,
-    callerID?: string,
-    callerFN?: number,
-    getRequest: boolean = false,
-  ): Promise<WorkflowStatus | null> {
+  async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
     // use sysdb getWorkflowStatus directly in order to support caller ID/FN params
     const status = await this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
-    return status ? toWorkflowStatus(status, getRequest) : null;
+    return status ? toWorkflowStatus(status) : null;
   }
 
-  async listWorkflows(input: GetWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
-    return listWorkflows(this.systemDatabase, input, getRequest);
+  async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
+    return listWorkflows(this.systemDatabase, input);
   }
 
-  async listQueuedWorkflows(input: GetQueuedWorkflowsInput, getRequest: boolean = false): Promise<WorkflowStatus[]> {
-    return listQueuedWorkflows(this.systemDatabase, input, getRequest);
+  async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
+    return listQueuedWorkflows(this.systemDatabase, input);
   }
 
   async listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
