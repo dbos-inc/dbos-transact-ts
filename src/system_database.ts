@@ -519,7 +519,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly runningWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
-  // public done
   constructor(
     readonly pgPoolConfig: PoolConfig,
     readonly systemDatabaseName: string,
@@ -548,7 +547,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.knexDB = knex(knexConfig);
   }
 
-  // public done
   async init() {
     const pgSystemClient = new Client(this.pgPoolConfig);
     await pgSystemClient.connect();
@@ -582,7 +580,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async destroy() {
     await this.knexDB.destroy();
     if (this.notificationsClient) {
@@ -592,7 +589,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.pool.end();
   }
 
-  // public done
   static async dropSystemDB(dbosConfig: DBOSConfigInternal) {
     // Drop system database, for testing.
     const pgSystemClient = new Client({
@@ -607,7 +603,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await pgSystemClient.end();
   }
 
-  // public done
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     serializedInputs: string,
@@ -615,6 +610,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<{ serializedInputs: string; status: string }> {
     const client = await this.pool.connect();
     try {
+      // HAWK: Isolation level?
       await client.query('BEGIN');
 
       const resRow = await insertWorkflowStatus(client, initStatus);
@@ -662,7 +658,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -672,7 +667,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -682,7 +676,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done (unique query)
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
     const getWorkflows = await this.pool.query<workflow_status>(
       `SELECT workflow_uuid, queue_name 
@@ -699,7 +692,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
   }
 
-  // public done (unique query)
   async getWorkflowInputs(workflowID: string): Promise<string | null> {
     const { rows } = await this.pool.query<workflow_inputs>(
       `SELECT inputs FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs 
@@ -712,7 +704,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows[0].inputs;
   }
 
-  // done (unique query)
   async #getOperationResultAndThrowIfCancelled(
     client: PoolClient,
     workflowID: string,
@@ -738,7 +729,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async getOperationResultAndThrowIfCancelled(
     workflowID: string,
     functionID: number,
@@ -751,7 +741,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done (unique query)
   async getAllOperationResults(workflowID: string): Promise<operation_outputs[]> {
     const { rows } = await this.pool.query<operation_outputs>(
       `SELECT * FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
@@ -760,7 +749,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows;
   }
 
-  // public done
   async recordOperationResult(
     workflowID: string,
     functionID: number,
@@ -780,7 +768,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done (unique query)
   async getMaxFunctionID(workflowID: string): Promise<number> {
     const { rows } = await this.pool.query<{ max_function_id: number }>(
       `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
@@ -790,7 +777,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.length === 0 ? 0 : rows[0].max_function_id;
   }
 
-  // public done (unique query to copy operation outputs)
   async forkWorkflow(
     originalWorkflowID: string,
     newWorkflowID: string,
@@ -810,6 +796,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client = await this.pool.connect();
 
     try {
+      // HAWK: Isolation level?
       await client.query('BEGIN');
 
       const now = Date.now();
@@ -857,7 +844,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // done
   async #runAndRecordResult(
     client: PoolClient,
     functionName: string,
@@ -877,7 +863,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return output;
   }
 
-  // public done
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
     let resolveNotification: () => void;
     const cancelPromise = new Promise<void>((resolve) => {
@@ -902,7 +887,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.checkIfCanceled(workflowID);
   }
 
-  // done
   async #durableSleep(
     workflowID: string,
     functionID: number,
@@ -938,7 +922,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly nullTopic = '__null__topic__';
 
-  // public done
   async send(
     workflowID: string,
     functionID: number,
@@ -973,7 +956,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
   async recv(
     workflowID: string,
     functionID: number,
@@ -1095,7 +1077,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
-  // public done
   async setEvent(workflowID: string, functionID: number, key: string, message: string | null): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
@@ -1122,7 +1103,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
   async getEvent(
     workflowID: string,
     key: string,
@@ -1237,7 +1217,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return value;
   }
 
-  // public done
   async setWorkflowStatus(
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
@@ -1268,6 +1247,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async cancelWorkflow(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
+      // HAWK: Isolation level?
       await client.query('BEGIN');
 
       // Remove workflow from queues table
@@ -1292,7 +1272,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.#setWFCancelMap(workflowID);
   }
 
-  // done
   async #checkIfCanceled(client: PoolClient, workflowID: string): Promise<void> {
     if (this.workflowCancellationMap.get(workflowID) === true) {
       throw new DBOSWorkflowCancelledError(workflowID);
@@ -1303,7 +1282,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async checkIfCanceled(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -1313,13 +1291,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async resumeWorkflow(workflowID: string): Promise<void> {
     this.#clearWFCancelMap(workflowID);
     const client = await this.pool.connect();
     try {
-      await client.query('BEGIN');
-      await client.query('SET TRANSACTION ISOLATION LEVEL REPEATABLE READ');
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
 
       // Check workflow status. If it is complete, do nothing.
       const statusResult = await getWorkflowStatusValue(client, workflowID);
@@ -1351,7 +1327,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>) {
     // Need to await for the workflow and capture errors.
     const awaitWorkflowPromise = workflowPromise
@@ -1366,7 +1341,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.runningWorkflowMap.set(workflowID, awaitWorkflowPromise);
   }
 
-  // public done
   async awaitRunningWorkflows(): Promise<void> {
     if (this.runningWorkflowMap.size > 0) {
       this.logger.info('Waiting for pending workflows to finish.');
@@ -1382,7 +1356,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async getWorkflowStatus(
     workflowID: string,
     callerID?: string,
@@ -1417,7 +1390,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async awaitWorkflowResult(
     workflowID: string,
     timeoutSeconds?: number,
@@ -1526,7 +1498,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   // Event dispatcher queries / updates
-  // public done
   async getEventDispatchState(
     service: string,
     workflowName: string,
@@ -1553,7 +1524,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  // public done
   async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
     const res = await this.pool.query<event_dispatch_kv>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv (
@@ -1584,7 +1554,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  // public done
   async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]> {
     const schemaName = DBOSExecutor.systemDBSchemaName;
 
@@ -1630,7 +1599,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(mapWorkflowStatus);
   }
 
-  // public done
   async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
     const schemaName = DBOSExecutor.systemDBSchemaName;
 
@@ -1674,7 +1642,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(mapWorkflowStatus);
   }
 
-  // public done
   async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
     // Create the initial query with a join to workflow_status table to get executor_id
     let query = this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_queue as wq`)
@@ -1718,7 +1685,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { workflows };
   }
 
-  // public done
   async enqueueWorkflow(workflowId: string, queueName: string): Promise<void> {
     const client: PoolClient = await this.pool.connect();
     try {
@@ -1728,7 +1694,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
+  // HAWK: this method has commit/rollback but no begin
   async clearQueueAssignment(workflowID: string): Promise<boolean> {
     const client: PoolClient = await this.pool.connect();
     try {
@@ -1758,7 +1724,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async dequeueWorkflow(workflowID: string, queue: WorkflowQueue): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -1778,7 +1743,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
   async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]> {
     const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
