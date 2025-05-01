@@ -250,6 +250,12 @@ describe('decoratorless-api-class-tests', () => {
   });
 });
 
+async function argsWFFuncGuts(a: number, b: string) {
+  return Promise.resolve(`${a}-${b}`);
+}
+
+const argsWF = DBOS.registerWorkflow(argsWFFuncGuts, { name: 'argsWF' });
+
 // Do this with startWorkflow (in a new form)
 describe('start-workflow-function', () => {
   let config: DBOSConfig;
@@ -280,6 +286,31 @@ describe('start-workflow-function', () => {
 
     const wfh2 = await DBOS.startWorkflow(wfi, { workflowID: wfid2 }).instanceWF();
     await expect(wfh2.getResult()).resolves.toBe('5-6');
+  });
+
+  test('bare-wf-functions', async () => {
+    const wfid1 = randomUUID();
+    const wfid2 = randomUUID();
+    const wfid3 = randomUUID();
+    StaticAndInstanceSteps.staticVal = 1;
+    StaticAndInstanceWFs.staticVal = 2;
+    const wfi = wfi56;
+
+    const wfh1 = await DBOS.startWorkflowFunction(
+      { instance: StaticAndInstanceWFs, workflowID: wfid1 },
+      StaticAndInstanceWFs.staticWF,
+    );
+    await expect(wfh1.getResult()).resolves.toBe('1-2');
+
+    const wfh2 = await DBOS.startWorkflowFunction(
+      { instance: wfi, workflowID: wfid2 },
+      // eslint-disable-next-line @typescript-eslint/unbound-method
+      wfi.instanceWF,
+    );
+    await expect(wfh2.getResult()).resolves.toBe('5-6');
+
+    const wfh3 = await DBOS.startWorkflowFunction({ workflowID: wfid3 }, argsWF, 7, 'f');
+    await expect(wfh3.getResult()).resolves.toBe('7-f');
   });
 });
 

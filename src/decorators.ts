@@ -457,6 +457,9 @@ export function getRegisteredMethodName(func: unknown): string {
 export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<unknown, unknown[], unknown>) {
   methodToRegistration.set(func, reg);
 }
+export function getRegistrationForFunction(func: unknown): MethodRegistration<unknown, unknown[], unknown> | undefined {
+  return methodToRegistration.get(func);
+}
 
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
