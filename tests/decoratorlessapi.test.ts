@@ -54,7 +54,7 @@ describe('decoratorless-api-basic-tests', () => {
     await DBOS.shutdown();
   });
 
-  test('simple-functions', async () => {
+  test('bare-step-wf-functions', async () => {
     const wfid = randomUUID();
 
     await DBOS.withNextWorkflowID(wfid, async () => {
@@ -126,7 +126,7 @@ describe('decoratorless-api-class-tests', () => {
     await DBOS.shutdown();
   });
 
-  test('simple-functions', async () => {
+  test('class-step-functions', async () => {
     const wfid = randomUUID();
     StaticAndInstanceSteps.callCount = 0;
     StaticAndInstanceSteps.staticVal = 1;
@@ -201,7 +201,7 @@ describe('decoratorless-api-class-tests', () => {
     await DBOS.shutdown();
   });
 
-  test('simple-functions', async () => {
+  test('class-wf-functions', async () => {
     const wfid1 = randomUUID();
     const wfid2 = randomUUID();
     StaticAndInstanceSteps.callCount = 0;
@@ -248,6 +248,37 @@ describe('decoratorless-api-class-tests', () => {
 });
 
 // Do this with startWorkflow (in a new form)
+describe('start-workflow-function', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('class-wf-functions', async () => {
+    const wfid1 = randomUUID();
+    const wfid2 = randomUUID();
+    StaticAndInstanceSteps.staticVal = 1;
+    StaticAndInstanceWFs.staticVal = 2;
+    const wfi = new StaticAndInstanceWFs(6, 5);
+
+    const wfh1 = await DBOS.startWorkflow(StaticAndInstanceWFs, { workflowID: wfid1 }).staticWF();
+    await expect(wfh1.getResult()).resolves.toBe('1-2');
+
+    const wfh2 = await DBOS.startWorkflow(wfi, { workflowID: wfid2 }).instanceWF();
+    await expect(wfh2.getResult()).resolves.toBe('5-6');
+  });
+});
 
 // Later
 // registerTransaction ()
