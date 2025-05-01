@@ -170,14 +170,34 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(200);
-    const restartWFID = await response.text();
-    const restartHandle = DBOS.retrieveWorkflow(restartWFID);
+
+    const { workflow_id: restartWorkflowID } = (await response.json()) as { workflow_id: string };
+    const restartHandle = DBOS.retrieveWorkflow(restartWorkflowID);
     await expect(restartHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.ENQUEUED,
     });
 
-    await DBOS.send(restartWFID, 'restart-message');
+    await DBOS.send(restartWorkflowID, 'restart-message');
     await expect(restartHandle.getResult()).resolves.toEqual('42-restart-message');
+
+    // test fork
+    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/fork`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ start_step: 0 }),
+    });
+    expect(response.status).toBe(200);
+
+    const { workflow_id: forkWorkflowID } = (await response.json()) as { workflow_id: string };
+    const forkHandle = DBOS.retrieveWorkflow(forkWorkflowID);
+    await expect(forkHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+
+    await DBOS.send(forkWorkflowID, 'fork-message');
+    await expect(forkHandle.getResult()).resolves.toEqual('42-fork-message');
   });
 
   test('test-admin-list-workflow-steps', async () => {
