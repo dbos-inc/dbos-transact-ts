@@ -7,6 +7,7 @@ import {
   DBOSConflictingWorkflowError,
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
+  DBOSQueueDuplicatedError,
 } from './error';
 import {
   GetPendingWorkflowsOutput,
@@ -122,7 +123,7 @@ export interface SystemDatabase {
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
 
   // Queues
-  enqueueWorkflow(workflowId: string, queueName: string): Promise<void>;
+  enqueueWorkflow(workflowId: string, queueName: string, enqueOptions?: EnqueueOptionsInternal): Promise<void>;
   clearQueueAssignment(workflowId: string): Promise<boolean>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
@@ -202,6 +203,10 @@ export interface WorkflowStatusInternal {
   createdAt: number;
   updatedAt?: number;
   recoveryAttempts?: number;
+}
+
+export interface EnqueueOptionsInternal {
+  duplication_id?: string;
 }
 
 export interface ExistenceCheck {
@@ -1631,16 +1636,29 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { workflows };
   }
 
-  async enqueueWorkflow(workflowId: string, queueName: string): Promise<void> {
-    await this.pool.query<workflow_queue>(
-      `
-      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
-      VALUES ($1, $2)
-      ON CONFLICT (workflow_uuid)
-      DO NOTHING;
-    `,
-      [workflowId, queueName],
-    );
+  async enqueueWorkflow(workflowId: string, queueName: string, enqueueOptions?: EnqueueOptionsInternal): Promise<void> {
+    const deDupId = enqueueOptions?.duplication_id ?? '';
+
+    try {
+      await this.pool.query<workflow_queue>(
+        `
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+        VALUES ($1, $2)
+        ON CONFLICT (workflow_uuid)
+        DO NOTHING;
+      `,
+        [workflowId, queueName],
+      );
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '23505') {
+        // Foreign key constraint violation (only expected for the INSERT query)
+        throw new DBOSQueueDuplicatedError(workflowId, queueName, deDupId);
+      }
+
+      this.logger.error(`Error enqueuing workflow ${workflowId} to queue ${queueName}: ${error}`);
+      throw error;
+    }
   }
 
   async clearQueueAssignment(workflowId: string): Promise<boolean> {

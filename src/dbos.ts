@@ -1146,6 +1146,27 @@ export class DBOS {
   }
 
   /**
+   * Use queue named `queueName` for any workflows started within the `callback`.
+   * @param deDupId - De-duplication ID for the workflow enqueued
+   * @param callback - Function to run, which would call or start workflows
+   * @returns - Return value from `callback`
+   */
+  static async withEnqueueOptions<R>(callback: () => Promise<R>, deDupId?: string): Promise<R> {
+    const pctx = getCurrentContextStore();
+    if (pctx) {
+      const pcwfq = pctx.deDuplicationId;
+      try {
+        pctx.deDuplicationId = deDupId;
+        return callback();
+      } finally {
+        pctx.deDuplicationId = pcwfq;
+      }
+    } else {
+      return runWithTopContext({ deDuplicationId: deDupId }, callback);
+    }
+  }
+
+  /**
    * Start a workflow in the background, returning a handle that can be used to check status, await a result,
    *   or otherwise interact with the workflow.
    * The full syntax is:
