@@ -610,7 +610,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<{ serializedInputs: string; status: string }> {
     const client = await this.pool.connect();
     try {
-      // HAWK: Isolation level?
       await client.query('BEGIN');
 
       const resRow = await insertWorkflowStatus(client, initStatus);
@@ -796,7 +795,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client = await this.pool.connect();
 
     try {
-      // HAWK: Isolation level?
       await client.query('BEGIN');
 
       const now = Date.now();
@@ -1247,7 +1245,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async cancelWorkflow(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
-      // HAWK: Isolation level?
       await client.query('BEGIN');
 
       // Remove workflow from queues table
@@ -1697,7 +1694,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async clearQueueAssignment(workflowID: string): Promise<boolean> {
     const client: PoolClient = await this.pool.connect();
     try {
-      // HAWK: isolation level?
       await client.query('BEGIN');
 
       // Reset the start time in the queue to mark it as not started
