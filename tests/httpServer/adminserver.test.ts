@@ -167,10 +167,45 @@ describe('running-admin-server-tests', () => {
         'Content-Type': 'application/json',
       },
     });
-    expect(response.status).toBe(204);
-    await expect(handle.getStatus()).resolves.toMatchObject({
-      status: StatusString.ENQUEUED,
+    expect(response.status).toBe(200);
+
+    let new_workflowID_json = (await response.json()) as { workflow_id: string };
+    let new_workflowID = new_workflowID_json.workflow_id;
+
+    let succeeded = false;
+    for (let i = 0; i < 5; i++) {
+      const status = await DBOS.getWorkflowStatus(new_workflowID);
+      if (status !== null && status.status === StatusString.SUCCESS) {
+        succeeded = true;
+        break;
+      }
+      await sleepms(1000);
+    }
+
+    expect(succeeded).toBe(true);
+
+    // test fork
+    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/fork`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ start_step: 0 }),
     });
+    expect(response.status).toBe(200);
+
+    new_workflowID_json = (await response.json()) as { workflow_id: string };
+    new_workflowID = new_workflowID_json.workflow_id;
+
+    succeeded = false;
+    for (let i = 0; i < 5; i++) {
+      const status = await DBOS.getWorkflowStatus(new_workflowID);
+      if (status !== null && status.status === StatusString.SUCCESS) {
+        succeeded = true;
+        break;
+      }
+      await sleepms(1000);
+    }
   });
 
   test('test-admin-list-workflow-steps', async () => {
