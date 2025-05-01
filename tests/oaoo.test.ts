@@ -200,7 +200,7 @@ describe('oaoo-tests', () => {
 
     for (let i = 0; i < 10; i++) {
       const workflowHandle = await DBOS.startWorkflow(WorkflowOAOO).testTxWorkflow(username);
-      const workflowUUID: string = workflowHandle.getWorkflowUUID();
+      const workflowUUID: string = workflowHandle.workflowID;
       uuidArray.push(workflowUUID);
       workflowResult = await workflowHandle.getResult();
       expect(workflowResult).toEqual(i + 1);
