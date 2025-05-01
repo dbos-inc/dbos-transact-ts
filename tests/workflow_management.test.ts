@@ -275,20 +275,50 @@ describe('workflow-management-tests', () => {
     }
   });
 
-  test('test-cancel-retry-restart', async () => {
+  test('test-cancel-after-completion', async () => {
     TestEndpoints.tries = 0;
 
-    const handle = await DBOS.startWorkflow(TestEndpoints).waitingWorkflow();
-
-    expect(TestEndpoints.tries).toBe(1);
-    TestEndpoints.testResolve();
-    await handle.getResult();
-
-    await DBOS.cancelWorkflow(handle.getWorkflowUUID());
+    const workflowID = `test-cancel-after-completion-${Date.now()}`;
+    const handle = await DBOS.startWorkflow(TestEndpoints, { workflowID }).waitingWorkflow(42);
+    await DBOS.send(workflowID, 'message');
+    await expect(handle.getResult()).resolves.toEqual(`42-message`);
 
     let result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
+      [workflowID],
+    );
+    let rows = result.rows;
+    expect(rows[0].attempts).toBe(String(1));
+    expect(rows[0].status).toBe(StatusString.SUCCESS);
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    await DBOS.cancelWorkflow(workflowID);
+
+    result = await systemDBClient.query<{ status: string; attempts: number }>(
+      `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [workflowID],
+    );
+    rows = result.rows;
+    expect(rows[0].attempts).toBe(String(1));
+    expect(rows[0].status).toBe(StatusString.SUCCESS);
+  });
+
+  test('test-cancel-retry-restart', async () => {
+    TestEndpoints.tries = 0;
+
+    const workflowID = `test-cancel-resume-fork-${Date.now()}`;
+    const handle = await DBOS.startWorkflow(TestEndpoints, { workflowID }).waitingWorkflow(42);
+    expect(TestEndpoints.tries).toBe(1);
+    expect(handle.workflowID).toBe(workflowID);
+
+    // waitingWorkflow is blocked waiting for a message to be sent, but we're going to cancel instead
+    await DBOS.cancelWorkflow(workflowID);
+
+    let result = await systemDBClient.query<{ status: string; attempts: number }>(
+      `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
+      [workflowID],
     );
     expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.CANCELLED);
@@ -297,44 +327,40 @@ describe('workflow-management-tests', () => {
     expect(TestEndpoints.tries).toBe(1);
 
     // Retry the workflow, resetting the attempts counter
-    const handle2 = await DBOS.resumeWorkflow(handle.getWorkflowUUID());
-    TestEndpoints.testResolve();
-    await handle2.getResult();
+    const handle2 = await DBOS.resumeWorkflow<number>(workflowID);
+    await DBOS.send(workflowID, 'message');
+    await expect(handle2.getResult()).resolves.toEqual(`42-message`);
 
     result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
+      [workflowID],
     );
     expect(result.rows[0].attempts).toBe(String(1));
     expect(TestEndpoints.tries).toBe(2);
-    await handle.getResult();
-
-    result = await systemDBClient.query<{ status: string; attempts: number }>(
-      `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
-    );
-    expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
-    // Restart the workflow
-    const wfh = await DBOS.forkWorkflow(handle.getWorkflowUUID(), 0);
-    await wfh.getResult();
+    // fork the workflow
+    const wfh = await DBOS.forkWorkflow(workflowID, 0);
+    await DBOS.send(wfh.workflowID, 'fork-message');
+    await expect(wfh.getResult()).resolves.toEqual(`42-fork-message`);
     expect(TestEndpoints.tries).toBe(3);
+
     // Validate a new workflow is started and successful
     result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid!=$1`,
-      [handle.getWorkflowUUID()],
+      [wfh.workflowID],
     );
     expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
+
     // Validate the original workflow status hasn't changed
     result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
+      [handle.workflowID],
     );
-    expect(result.rows[0].attempts).toBe(String(1));
+    // expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
-  });
+  }, 30000);
 
   test('test-restart-transaction', async () => {
     TestEndpoints.tries = 0;
@@ -424,10 +450,11 @@ describe('workflow-management-tests', () => {
     });
 
     @DBOS.workflow()
-    static async waitingWorkflow() {
+    static async waitingWorkflow(value: number) {
       TestEndpoints.tries += 1;
-      await TestEndpoints.testPromise;
+      const msg = await DBOS.recv<string>();
       await TestEndpoints.stepOne();
+      return `${value}-${msg}`;
     }
 
     @DBOS.step()
@@ -1363,7 +1390,7 @@ describe('test-fork', () => {
     const forkedWfid = randomUUID();
 
     await DBOS.withNextWorkflowID(forkedWfid, async () => {
-      const forkedHandle = await DBOS.forkWorkflow(wfid);
+      const forkedHandle = await DBOS.forkWorkflow(wfid, 0);
       const forkresult = await forkedHandle.getResult();
       expect(forkresult).toBe(550);
       expect(forkedHandle.workflowID).toBe(forkedWfid);

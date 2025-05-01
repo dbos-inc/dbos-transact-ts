@@ -296,8 +296,11 @@ export class DBOSHttpServer {
     const workflowRestartHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Restarting workflow: ${workflowId} with a new id`);
-      await dbosExec.forkWorkflow(workflowId, 0);
-      koaCtxt.status = 204;
+      const workflowID = await dbosExec.forkWorkflow(workflowId, 0);
+      koaCtxt.body = {
+        workflow_id: workflowID,
+      };
+      koaCtxt.status = 200;
     };
     router.post(workflowResumeUrl, workflowRestartHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);
@@ -314,13 +317,16 @@ export class DBOSHttpServer {
     const workflowForkHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const body = koaCtxt.request.body as { start_step?: number; new_workflow_id?: string };
-      if (!body.start_step) {
+      if (body.start_step === undefined) {
         throw new DBOSDataValidationError('Missing start_step in request body');
       }
 
       dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${body.start_step} with a new id`);
       try {
-        await dbosExec.forkWorkflow(workflowId, body.start_step, body.new_workflow_id);
+        const workflowID = await dbosExec.forkWorkflow(workflowId, body.start_step, body.new_workflow_id);
+        koaCtxt.body = {
+          workflow_id: workflowID,
+        };
       } catch (e) {
         let errorMessage = '';
         if (e instanceof DBOSError) {
@@ -336,7 +342,7 @@ export class DBOSHttpServer {
         return;
       }
       dbosExec.logger.info(`Forked workflow: ${workflowId} with a new id`);
-      koaCtxt.status = 204;
+      koaCtxt.status = 200;
     };
     router.post(workflowResumeUrl, workflowForkHandler);
     dbosExec.logger.debug(`DBOS Server Registered Cancel Workflow POST ${workflowResumeUrl}`);

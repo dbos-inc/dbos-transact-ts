@@ -694,10 +694,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
   // TODO: getProcedureInfoByNames??
 
   static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, success?: boolean) {
-    if (success === true || !r.err) {
-      return DBOSJSON.parse(r.res ?? null) as R;
+    if (success === true || !r.error) {
+      return DBOSJSON.parse(r.output ?? null) as R;
     } else {
-      throw deserializeError(DBOSJSON.parse(r.err));
+      throw deserializeError(DBOSJSON.parse(r.error));
     }
   }
 
@@ -782,9 +782,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       // TODO: Make this transactional (and with the queue step below)
       if (callerFunctionID !== undefined && callerID !== undefined) {
-        const cr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
-        if (cr.res !== undefined) {
-          return new RetrievedHandle(this.systemDatabase, cr.res.child!, callerID, callerFunctionID);
+        const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
+        if (result) {
+          return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!, callerID, callerFunctionID);
         }
       }
       const ires = await this.systemDatabase.initWorkflowStatus(
@@ -794,15 +794,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       );
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
-        await this.systemDatabase.recordOperationResult(
-          callerID,
-          callerFunctionID,
-          {
-            childWfId: workflowID,
-            functionName: internalStatus.workflowName,
-          },
-          true,
-        );
+        await this.systemDatabase.recordOperationResult(callerID, callerFunctionID, internalStatus.workflowName, true, {
+          childWorkflowID: workflowID,
+        });
       }
 
       args = DBOSJSON.parse(ires.serializedInputs) as T;
@@ -1671,16 +1665,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Check if this execution previously happened, returning its original result if it did.
     const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfCtx.workflowUUID, ctxt.functionID);
-    if (checkr.res !== undefined) {
-      if (checkr.res.functionName !== ctxt.operationName) {
+    if (checkr) {
+      if (checkr.functionName !== ctxt.operationName) {
         throw new DBOSUnexpectedStepError(
           ctxt.workflowUUID,
           ctxt.functionID,
           ctxt.operationName,
-          checkr.res.functionName ?? '?',
+          checkr.functionName ?? '?',
         );
       }
-      const check = DBOSExecutor.reviveResultOrError<R>(checkr.res);
+      const check = DBOSExecutor.reviveResultOrError<R>(checkr);
       ctxt.span.setAttribute('cached', true);
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(ctxt.span);
@@ -1765,29 +1759,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (result === dbosNull) {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFn.name, ctxt.maxAttempts, errors) : err;
-      await this.systemDatabase.recordOperationResult(
-        wfCtx.workflowUUID,
-        ctxt.functionID,
-        {
-          serialError: DBOSJSON.stringify(serializeError(err)),
-          functionName: ctxt.operationName,
-        },
-        true,
-      );
+      await this.systemDatabase.recordOperationResult(wfCtx.workflowUUID, ctxt.functionID, ctxt.operationName, true, {
+        error: DBOSJSON.stringify(serializeError(err)),
+      });
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(ctxt.span);
       throw err as Error;
     } else {
       // Record the execution and return.
-      await this.systemDatabase.recordOperationResult(
-        wfCtx.workflowUUID,
-        ctxt.functionID,
-        {
-          serialOutput: DBOSJSON.stringify(result),
-          functionName: ctxt.operationName,
-        },
-        true,
-      );
+      await this.systemDatabase.recordOperationResult(wfCtx.workflowUUID, ctxt.functionID, ctxt.operationName, true, {
+        output: DBOSJSON.stringify(result),
+      });
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(ctxt.span);
       return result as R;
@@ -1835,13 +1817,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * The forked workflow will be assigned a new ID.
    */
 
-  forkWorkflow(
-    workflowID: string,
-    startStep: number,
-    newWorkflowID?: string,
-    applicationVersion?: string,
-  ): Promise<string> {
-    return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, newWorkflowID);
+  forkWorkflow(workflowID: string, startStep: number, applicationVersion?: string): Promise<string> {
+    const newWorkflowID = getNextWFID(undefined);
+    return forkWorkflow(
+      this.systemDatabase,
+      this.userDatabase,
+      workflowID,
+      startStep,
+      newWorkflowID,
+      applicationVersion,
+    );
   }
 
   /**
@@ -1859,33 +1844,29 @@ export class DBOSExecutor implements DBOSExecutorContext {
     childWfId?: string,
   ): Promise<T> {
     if (workflowID !== undefined && functionID !== undefined) {
-      const res = await this.systemDatabase.getOperationResultAndThrowIfCancelled(workflowID, functionID);
-      if (res.res !== undefined) {
-        if (res.res.functionName !== functionName) {
-          throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, res.res.functionName!);
+      const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(workflowID, functionID);
+      if (result) {
+        if (result.functionName !== functionName) {
+          throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, result.functionName!);
         }
-        return DBOSExecutor.reviveResultOrError<T>(res.res);
+        return DBOSExecutor.reviveResultOrError<T>(result);
       }
     }
     try {
       const output: T = await callback();
       if (workflowID !== undefined && functionID !== undefined) {
-        await this.systemDatabase.recordOperationResult(
-          workflowID,
-          functionID,
-          { serialOutput: DBOSJSON.stringify(output), functionName, childWfId },
-          true,
-        );
+        await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, {
+          output: DBOSJSON.stringify(output),
+          childWorkflowID: childWfId,
+        });
       }
       return output;
     } catch (e) {
       if (workflowID !== undefined && functionID !== undefined) {
-        await this.systemDatabase.recordOperationResult(
-          workflowID,
-          functionID,
-          { serialError: DBOSJSON.stringify(serializeError(e)), functionName, childWfId },
-          false,
-        );
+        await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, {
+          error: DBOSJSON.stringify(serializeError(e)),
+          childWorkflowID: childWfId,
+        });
       }
 
       throw e;

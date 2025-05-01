@@ -94,6 +94,7 @@ export async function forkWorkflow(
   workflowID: string,
   startStep: number,
   newWorkflowID?: string,
+  applicationVersion?: string,
 ): Promise<string> {
   newWorkflowID ??= randomUUID();
   const query = `
@@ -114,7 +115,7 @@ export async function forkWorkflow(
           function_name
       FROM dbos.transaction_outputs WHERE workflow_uuid= $2 AND function_id < $3`;
   await Promise.all([
-    sysdb.forkWorkflow(workflowID, startStep, newWorkflowID),
+    sysdb.forkWorkflow(workflowID, startStep, newWorkflowID, applicationVersion),
     userdb.query(query, newWorkflowID, workflowID, startStep),
   ]);
   return newWorkflowID;
