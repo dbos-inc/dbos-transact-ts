@@ -1177,10 +1177,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
           await this.pool.query<workflow_events>(
-            `
-          SELECT key, value
-          FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
-          WHERE workflow_uuid=$1 AND key=$2;`,
+            `SELECT key, value
+             FROM ${DBOSExecutor.systemDBSchemaName}.workflow_events
+             WHERE workflow_uuid=$1 AND key=$2;`,
             [workflowID, key],
           )
         ).rows;
@@ -1383,7 +1382,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   async getWorkflowStatus(
     workflowID: string,
     callerID?: string,
@@ -1404,12 +1403,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
           const status = statuses.find((s) => s.workflowUUID === workflowID);
           return status ? JSON.stringify(status) : null;
         });
-        return json ? (JSON.parse(json) as WorkflowStatusInternal) : null;
+        return parseStatus(json);
       } finally {
         client.release();
       }
     } else {
       const json = await funcGetStatus();
+      return parseStatus(json);
+    }
+
+    function parseStatus(json: string | null | undefined): WorkflowStatusInternal | null {
       return json ? (JSON.parse(json) as WorkflowStatusInternal) : null;
     }
   }
@@ -1523,17 +1526,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   // Event dispatcher queries / updates
-  // public
-  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {
+  // public done
+  async getEventDispatchState(
+    service: string,
+    workflowName: string,
+    key: string,
+  ): Promise<DBOSEventReceiverState | undefined> {
     const res = await this.pool.query<event_dispatch_kv>(
-      `
-      SELECT *
-      FROM ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv
-      WHERE workflow_fn_name = $1
-      AND service_name = $2
-      AND key = $3;
-    `,
-      [wfn, svc, key],
+      `SELECT * FROM ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv
+       WHERE workflow_fn_name = $1 AND service_name = $2 AND key = $3;`,
+      [workflowName, service, key],
     );
 
     if (res.rows.length === 0) return undefined;
@@ -1551,22 +1553,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  // public
+  // public done
   async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
     const res = await this.pool.query<event_dispatch_kv>(
-      `
-      INSERT INTO ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv (
+      `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv (
         service_name, workflow_fn_name, key, value, update_time, update_seq)
-      VALUES ($1, $2, $3, $4, $5, $6)
-      ON CONFLICT (service_name, workflow_fn_name, key)
-      DO UPDATE SET
-        update_time = GREATEST(EXCLUDED.update_time, event_dispatch_kv.update_time),
-        update_seq =  GREATEST(EXCLUDED.update_seq,  event_dispatch_kv.update_seq),
-        value = CASE WHEN (EXCLUDED.update_time > event_dispatch_kv.update_time OR EXCLUDED.update_seq > event_dispatch_kv.update_seq OR
-                            (event_dispatch_kv.update_time IS NULL and event_dispatch_kv.update_seq IS NULL))
-          THEN EXCLUDED.value ELSE event_dispatch_kv.value END
-      RETURNING value, update_time, update_seq;
-    `,
+       VALUES ($1, $2, $3, $4, $5, $6)
+       ON CONFLICT (service_name, workflow_fn_name, key)
+       DO UPDATE SET
+         update_time = GREATEST(EXCLUDED.update_time, event_dispatch_kv.update_time),
+         update_seq =  GREATEST(EXCLUDED.update_seq,  event_dispatch_kv.update_seq),
+         value = CASE WHEN (EXCLUDED.update_time > event_dispatch_kv.update_time 
+            OR EXCLUDED.update_seq > event_dispatch_kv.update_seq 
+            OR (event_dispatch_kv.update_time IS NULL and event_dispatch_kv.update_seq IS NULL)
+         ) THEN EXCLUDED.value ELSE event_dispatch_kv.value END
+       RETURNING value, update_time, update_seq;`,
       [state.service, state.workflowFnName, state.key, state.value, state.updateTime, state.updateSeq],
     );
 
@@ -1583,7 +1584,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  // public
+  // public done
   async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]> {
     const schemaName = DBOSExecutor.systemDBSchemaName;
 
@@ -1629,7 +1630,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(mapWorkflowStatus);
   }
 
-  // public
+  // public done
   async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
     const schemaName = DBOSExecutor.systemDBSchemaName;
 
@@ -1673,7 +1674,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map(mapWorkflowStatus);
   }
 
-  // public
+  // public done
   async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
     // Create the initial query with a join to workflow_status table to get executor_id
     let query = this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_queue as wq`)
@@ -1727,17 +1728,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   async clearQueueAssignment(workflowID: string): Promise<boolean> {
     const client: PoolClient = await this.pool.connect();
     try {
       // Reset the start time in the queue to mark it as not started
       const wqRes = await client.query<workflow_queue>(
-        `
-        UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
-        SET started_at_epoch_ms = NULL
-        WHERE workflow_uuid = $1 AND completed_at_epoch_ms IS NULL;
-      `,
+        `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
+         SET started_at_epoch_ms = NULL
+         WHERE workflow_uuid = $1 AND completed_at_epoch_ms IS NULL;`,
         [workflowID],
       );
       // If no rows were affected, the workflow is not anymore in the queue or was already completed
@@ -1745,11 +1744,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await client.query('ROLLBACK');
         return false;
       }
+
       // Reset the status of the task to "ENQUEUED"
       await updateWorkflowStatus(client, workflowID, StatusString.ENQUEUED);
 
       await client.query('COMMIT');
-
       return true;
     } catch (error) {
       await client.query('ROLLBACK');
@@ -1779,7 +1778,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public
+  // public done
   async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]> {
     const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
