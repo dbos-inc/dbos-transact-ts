@@ -96,7 +96,6 @@ import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
 import {
   forkWorkflow,
-  getMaxStepID,
   listQueuedWorkflows,
   listWorkflows,
   listWorkflowSteps,
@@ -1806,10 +1805,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
     return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
-  }
-
-  getMaxStepID(workflowID: string): Promise<number> {
-    return getMaxStepID(this.systemDatabase, this.userDatabase, workflowID);
   }
 
   /**

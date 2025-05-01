@@ -127,7 +127,6 @@ export interface DBOSExecutorContext {
     startStep: number,
     options?: { newWorkflowID?: string; applicationVersion?: string },
   ): Promise<string>;
-  getMaxStepID(workflowID: string): Promise<number>;
 
   // Event receiver state queries / updates
   /** @see DBOS.getEventDispatchState */
