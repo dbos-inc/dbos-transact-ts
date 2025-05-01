@@ -206,7 +206,7 @@ export interface WorkflowStatusInternal {
 }
 
 export interface EnqueueOptionsInternal {
-  duplication_id?: string;
+  deDuplicationID?: string;
 }
 
 export interface ExistenceCheck {
@@ -1637,23 +1637,23 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async enqueueWorkflow(workflowId: string, queueName: string, enqueueOptions?: EnqueueOptionsInternal): Promise<void> {
-    const deDupId = enqueueOptions?.duplication_id ?? '';
+    const deDupId = enqueueOptions?.deDuplicationID ?? null;
 
     try {
       await this.pool.query<workflow_queue>(
         `
         INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
-        VALUES ($1, $2)
+        VALUES ($1, $2, $3)
         ON CONFLICT (workflow_uuid)
         DO NOTHING;
       `,
-        [workflowId, queueName],
+        [workflowId, queueName, deDupId],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '23505') {
         // Foreign key constraint violation (only expected for the INSERT query)
-        throw new DBOSQueueDuplicatedError(workflowId, queueName, deDupId);
+        throw new DBOSQueueDuplicatedError(workflowId, queueName, deDupId ?? '');
       }
 
       this.logger.error(`Error enqueuing workflow ${workflowId} to queue ${queueName}: ${error}`);

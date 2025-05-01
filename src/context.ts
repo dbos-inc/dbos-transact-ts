@@ -104,6 +104,11 @@ export function getNextWFID(assignedID?: string) {
   return wfId;
 }
 
+export function getDeDuplicationId() {
+  const pctx = getCurrentContextStore();
+  return pctx?.deDuplicationId;
+}
+
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: () => Promise<R>) {
   return await asyncLocalCtx.run(
     {

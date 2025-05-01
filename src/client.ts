@@ -1,5 +1,10 @@
 import { PoolConfig } from 'pg';
-import { PostgresSystemDatabase, SystemDatabase, WorkflowStatusInternal } from './system_database';
+import {
+  PostgresSystemDatabase,
+  SystemDatabase,
+  WorkflowStatusInternal,
+  EnqueueOptionsInternal,
+} from './system_database';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
 import { RetrievedHandle, StatusString, WorkflowHandle } from './workflow';
@@ -33,6 +38,12 @@ interface EnqueueOptions {
    * If not provided, the version of the DBOS app that first dequeues the workflow will be used.
    */
   appVersion?: string;
+
+  /**
+   * An ID used to identify enqueues workflows that will be used for de-duplication.
+   * If not provided, no de-duplication will be performed.
+   */
+  deDuplicationID?: string;
 }
 
 /**
@@ -111,7 +122,12 @@ export class DBOSClient {
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
-    await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName);
+
+    const enqueOptions: EnqueueOptionsInternal = {
+      deDuplicationID: options.deDuplicationID,
+    };
+
+    await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName, enqueOptions);
     return new RetrievedHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
 

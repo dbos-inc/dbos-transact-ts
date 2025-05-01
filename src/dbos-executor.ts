@@ -42,6 +42,7 @@ import {
   PostgresSystemDatabase,
   WorkflowStatusInternal,
   SystemDatabaseStoredResult,
+  EnqueueOptionsInternal,
 } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
@@ -77,6 +78,7 @@ import {
   runWithStepContext,
   runWithStoredProcContext,
   getNextWFID,
+  getDeDuplicationId,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
@@ -901,7 +903,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name, callerID, callerFunctionID);
     } else {
       if (params.queueName && status === 'ENQUEUED' && !this.isDebugging) {
-        await this.systemDatabase.enqueueWorkflow(workflowID, this.#getQueueByName(params.queueName).name);
+        const dedupId = getDeDuplicationId();
+        const enqueOptions: EnqueueOptionsInternal = {
+          deDuplicationID: dedupId,
+        };
+        await this.systemDatabase.enqueueWorkflow(
+          workflowID,
+          this.#getQueueByName(params.queueName).name,
+          enqueOptions,
+        );
       }
       return new RetrievedHandle(this.systemDatabase, workflowID, callerID, callerFunctionID);
     }
