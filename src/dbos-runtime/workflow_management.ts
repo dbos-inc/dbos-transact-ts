@@ -98,26 +98,13 @@ export async function forkWorkflow(
 ): Promise<string> {
   newWorkflowID ??= randomUUID();
   const query = `
-      INSERT INTO dbos.transaction_outputs
-        (workflow_uuid,
-          function_id, 
-          output, 
-          error, 
-          txn_id, 
-          txn_snapshot,  
-          function_name)
-      SELECT $1 AS workflow_uuid, 
-          function_id, 
-          output, 
-          error, 
-          txn_id, 
-          txn_snapshot, 
-          function_name
-      FROM dbos.transaction_outputs WHERE workflow_uuid= $2 AND function_id < $3`;
-  await Promise.all([
-    sysdb.forkWorkflow(workflowID, startStep, newWorkflowID, applicationVersion),
-    userdb.query(query, newWorkflowID, workflowID, startStep),
-  ]);
+    INSERT INTO dbos.transaction_outputs
+      (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, function_name)
+    SELECT $1 AS workflow_uuid, function_id, output, error, txn_id, txn_snapshot, function_name
+      FROM dbos.transaction_outputs 
+      WHERE workflow_uuid= $2 AND function_id < $3`;
+  await userdb.query(query, newWorkflowID, workflowID, startStep);
+  await sysdb.forkWorkflow(workflowID, startStep, newWorkflowID, applicationVersion);
   return newWorkflowID;
 }
 
