@@ -171,6 +171,9 @@ class StaticAndInstanceWFs extends ConfiguredInstance {
   }
 }
 
+const wfi34 = new StaticAndInstanceWFs(4, 3);
+const wfi56 = new StaticAndInstanceWFs(6, 5);
+
 StaticAndInstanceWFs.staticWF = DBOS.registerWorkflow(StaticAndInstanceWFs.staticWF, {
   classOrInst: StaticAndInstanceWFs,
   className: 'StaticAndInstanceWFs',
@@ -207,7 +210,7 @@ describe('decoratorless-api-class-tests', () => {
     StaticAndInstanceSteps.callCount = 0;
     StaticAndInstanceSteps.staticVal = 1;
     StaticAndInstanceWFs.staticVal = 2;
-    const wfi = new StaticAndInstanceWFs(4, 3);
+    const wfi = wfi34;
 
     await DBOS.withNextWorkflowID(wfid1, async () => {
       const res = await StaticAndInstanceWFs.staticWF();
@@ -270,7 +273,7 @@ describe('start-workflow-function', () => {
     const wfid2 = randomUUID();
     StaticAndInstanceSteps.staticVal = 1;
     StaticAndInstanceWFs.staticVal = 2;
-    const wfi = new StaticAndInstanceWFs(6, 5);
+    const wfi = wfi56;
 
     const wfh1 = await DBOS.startWorkflow(StaticAndInstanceWFs, { workflowID: wfid1 }).staticWF();
     await expect(wfh1.getResult()).resolves.toBe('1-2');
