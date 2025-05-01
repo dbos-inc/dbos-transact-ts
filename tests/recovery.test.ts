@@ -104,7 +104,7 @@ describe('recovery-tests', () => {
     await recoverPendingWorkflows();
     let result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
+      [handle.workflowID],
     );
     // recovery_attempts is set before checking the number of attempts/retry
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
@@ -119,7 +119,7 @@ describe('recovery-tests', () => {
     const resumedHandle = await DBOS.resumeWorkflow(handle.workflowID);
     result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
+      [handle.workflowID],
     );
     expect(result.rows[0].recovery_attempts).toBe(String(0));
     expect(result.rows[0].status).toBe(StatusString.ENQUEUED);
@@ -135,7 +135,7 @@ describe('recovery-tests', () => {
     await resumedHandle.getResult();
     result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
+      [handle.workflowID],
     );
     expect(result.rows[0].recovery_attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
@@ -162,7 +162,7 @@ describe('recovery-tests', () => {
     await sleepms(2000); // Can't wait() because the workflow will land in the DLQ
     let result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
+      [handle.workflowID],
     );
     // recovery_attempts is set before checking the number of attempts/retry
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
@@ -173,7 +173,7 @@ describe('recovery-tests', () => {
 
     result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
+      [handle.workflowID],
     );
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);

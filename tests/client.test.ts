@@ -185,7 +185,7 @@ describe('DBOSClient', () => {
         'test',
         { first: 'John', last: 'Doe', age: 30 },
       );
-      wfid = handle.getWorkflowUUID();
+      wfid = handle.workflowID;
 
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
