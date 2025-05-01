@@ -1833,7 +1833,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
               status: StatusString.PENDING,
               executor_id: executorID,
               application_version: appVersion,
-              // recovery_attempts: trx.raw('recovery_attempts + 1'),
             });
 
           if (res > 0) {
