@@ -1694,10 +1694,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // HAWK: this method has commit/rollback but no begin
   async clearQueueAssignment(workflowID: string): Promise<boolean> {
     const client: PoolClient = await this.pool.connect();
     try {
+      // HAWK: isolation level?
+      await client.query('BEGIN');
+
       // Reset the start time in the queue to mark it as not started
       const wqRes = await client.query<workflow_queue>(
         `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
