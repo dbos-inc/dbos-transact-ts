@@ -282,6 +282,9 @@ describe('workflow-management-tests', () => {
     let rows = result.rows;
     expect(rows[0].attempts).toBe(String(1));
     expect(rows[0].status).toBe(StatusString.SUCCESS);
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
 
     await DBOS.cancelWorkflow(workflowID);
 
@@ -300,7 +303,7 @@ describe('workflow-management-tests', () => {
     const workflowID = `test-cancel-resume-fork-${Date.now()}`;
     const handle = await DBOS.startWorkflow(TestEndpoints, { workflowID }).waitingWorkflow(42);
     expect(TestEndpoints.tries).toBe(1);
-    expect(handle.getWorkflowUUID()).toBe(workflowID);
+    expect(handle.workflowID).toBe(workflowID);
 
     // waitingWorkflow is blocked waiting for a message to be sent, but we're going to cancel instead
     await DBOS.cancelWorkflow(workflowID);
@@ -330,14 +333,14 @@ describe('workflow-management-tests', () => {
 
     // fork the workflow
     const wfh = await DBOS.forkWorkflow(workflowID);
-    await DBOS.send(wfh.getWorkflowUUID(), 'fork-message');
+    await DBOS.send(wfh.workflowID, 'fork-message');
     await expect(wfh.getResult()).resolves.toEqual(`42-fork-message`);
     expect(TestEndpoints.tries).toBe(3);
 
     // Validate a new workflow is started and successful
     result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid!=$1`,
-      [wfh.getWorkflowUUID()],
+      [wfh.workflowID],
     );
     expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
@@ -345,7 +348,7 @@ describe('workflow-management-tests', () => {
     // Validate the original workflow status hasn't changed
     result = await systemDBClient.query<{ status: string; attempts: number }>(
       `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.getWorkflowUUID()],
+      [handle.workflowID],
     );
     // expect(result.rows[0].attempts).toBe(String(1));
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
