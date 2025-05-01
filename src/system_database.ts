@@ -610,7 +610,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<{ serializedInputs: string; status: string }> {
     const client = await this.pool.connect();
     try {
-      await client.query('BEGIN');
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
       const resRow = await insertWorkflowStatus(client, initStatus);
       if (resRow.name !== initStatus.workflowName) {
@@ -795,7 +795,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client = await this.pool.connect();
 
     try {
-      await client.query('BEGIN');
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
       const now = Date.now();
       await insertWorkflowStatus(client, {
@@ -1245,7 +1245,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async cancelWorkflow(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await client.query('BEGIN');
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
       // Remove workflow from queues table
       await deleteQueuedWorkflows(client, workflowID);
@@ -1694,7 +1694,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async clearQueueAssignment(workflowID: string): Promise<boolean> {
     const client: PoolClient = await this.pool.connect();
     try {
-      await client.query('BEGIN');
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
       // Reset the start time in the queue to mark it as not started
       const wqRes = await client.query<workflow_queue>(
