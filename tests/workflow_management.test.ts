@@ -1415,14 +1415,14 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFourCount).toBe(1);
     expect(ExampleWorkflow.stepFiveCount).toBe(1);
 
-    const version = 'newVersion';
+    const applicationVersion = 'newVersion';
 
-    globalParams.appVersion = version;
-    const forkedHandle = await DBOS.forkWorkflow(wfid, 0, version);
+    globalParams.appVersion = applicationVersion;
+    const forkedHandle = await DBOS.forkWorkflow(wfid, 0, { applicationVersion });
 
     const status = await forkedHandle.getStatus();
     const returnedVersion = status?.applicationVersion;
-    expect(returnedVersion).toBe(version);
+    expect(returnedVersion).toBe(applicationVersion);
 
     const forkresult = await forkedHandle.getResult();
     expect(forkresult).toBe(550);

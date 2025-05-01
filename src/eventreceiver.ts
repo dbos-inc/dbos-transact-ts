@@ -127,7 +127,11 @@ export interface DBOSExecutorContext {
   /** @deprecated Use functions on `DBOS` */
   resumeWorkflow(workflowID: string): Promise<void>;
   /** @deprecated Use functions on `DBOS` */
-  forkWorkflow(workflowID: string, startStep: number, applicationVersion?: string): Promise<string>;
+  forkWorkflow(
+    workflowID: string,
+    startStep: number,
+    options?: { newWorkflowID?: string; applicationVersion?: string },
+  ): Promise<string>;
   getMaxStepID(workflowID: string): Promise<number>;
 
   // Event receiver state queries / updates

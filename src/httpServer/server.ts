@@ -323,7 +323,9 @@ export class DBOSHttpServer {
 
       dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${body.start_step} with a new id`);
       try {
-        const workflowID = await dbosExec.forkWorkflow(workflowId, body.start_step, body.new_workflow_id);
+        const workflowID = await dbosExec.forkWorkflow(workflowId, body.start_step, {
+          newWorkflowID: body.new_workflow_id,
+        });
         koaCtxt.body = {
           workflow_id: workflowID,
         };

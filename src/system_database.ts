@@ -114,8 +114,7 @@ export interface SystemDatabase {
   forkWorkflow(
     workflowID: string,
     startStep: number,
-    newWorkflowID?: string,
-    applicationVersion?: string,
+    options?: { newWorkflowID?: string; applicationVersion?: string },
   ): Promise<string>;
   getMaxFunctionID(workflowID: string): Promise<number>;
   checkIfCanceled(workflowID: string): Promise<void>;
@@ -781,10 +780,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async forkWorkflow(
     workflowID: string,
     startStep: number,
-    newWorkflowID?: string,
-    applicationVersion?: string,
+    options: { newWorkflowID?: string; applicationVersion?: string } = {},
   ): Promise<string> {
-    newWorkflowID ??= randomUUID();
+    const newWorkflowID = options.newWorkflowID ?? randomUUID();
     const workflowStatus = await this.getWorkflowStatus(workflowID);
 
     if (workflowStatus === null) {
@@ -815,7 +813,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         error: null,
         request: workflowStatus.request,
         executorId: globalParams.executorID,
-        applicationVersion: applicationVersion ?? workflowStatus.applicationVersion,
+        applicationVersion: options.applicationVersion ?? workflowStatus.applicationVersion,
         applicationID: workflowStatus.applicationID,
         createdAt: now,
         recoveryAttempts: 0,

@@ -1817,16 +1817,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * The forked workflow will be assigned a new ID.
    */
 
-  forkWorkflow(workflowID: string, startStep: number, applicationVersion?: string): Promise<string> {
-    const newWorkflowID = getNextWFID(undefined);
-    return forkWorkflow(
-      this.systemDatabase,
-      this.userDatabase,
-      workflowID,
-      startStep,
-      newWorkflowID,
-      applicationVersion,
-    );
+  forkWorkflow(
+    workflowID: string,
+    startStep: number,
+    options: { newWorkflowID?: string; applicationVersion?: string } = {},
+  ): Promise<string> {
+    const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);
+    return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, { ...options, newWorkflowID });
   }
 
   /**

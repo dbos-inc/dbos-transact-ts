@@ -192,8 +192,12 @@ export class DBOSClient {
     return this.systemDatabase.resumeWorkflow(workflowID);
   }
 
-  forkWorkflow(workflowID: string, startStep: number, newWorkflowID?: string): Promise<string> {
-    return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, newWorkflowID);
+  forkWorkflow(
+    workflowID: string,
+    startStep: number,
+    options?: { newWorkflowID?: string; applicationVersion?: string },
+  ): Promise<string> {
+    return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, options);
   }
 
   getWorkflow(workflowID: string, getRequest: boolean = false): Promise<WorkflowStatus | undefined> {
