@@ -230,6 +230,7 @@ describe('DBOSClient', () => {
       );
       wfid = handle.workflowID;
 
+      let expectedError = false;
       try {
         await client.enqueue<EnqueueTest>(
           {
@@ -243,8 +244,10 @@ describe('DBOSClient', () => {
           { first: 'John', last: 'Doe', age: 30 },
         );
       } catch (e) {
+        expectedError = true;
         expect(e).toBeInstanceOf(DBOSQueueDuplicatedError);
       }
+      expect(expectedError).toBe(true);
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {

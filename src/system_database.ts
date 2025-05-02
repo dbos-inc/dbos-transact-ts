@@ -349,14 +349,6 @@ async function insertWorkflowInputs(client: PoolClient, workflowID: string, seri
   return rows[0].inputs;
 }
 
-/* async function enqueueWorkflow(client: PoolClient, workflowID: string, queueName: string): Promise<void> {
-  await client.query(
-    `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name) VALUES ($1, $2)
-     ON CONFLICT (workflow_uuid) DO NOTHING;`,
-    [workflowID, queueName],
-  );
-} */
-
 async function deleteQueuedWorkflows(client: PoolClient, workflowID: string): Promise<void> {
   await client.query(`DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_queue  WHERE workflow_uuid = $1`, [
     workflowID,
@@ -1711,7 +1703,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '23505') {
-        // Foreign key constraint violation (only expected for the INSERT query)
+        // unique constraint violation (only expected for the INSERT query)
         throw new DBOSQueueDuplicatedError(workflowId, queueName, deDupId ?? '');
       }
 

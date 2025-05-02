@@ -1002,7 +1002,6 @@ describe('queue-de-duplication', () => {
 
     @DBOS.workflow()
     static async parentWorkflow(input: string): Promise<string> {
-      console.log('mjjjjj Start parent workflow');
       const wfh1 = await DBOS.startWorkflow(TestExample, { queueName: childqueue.name }).childWorkflow(input);
 
       await TestExample.workflowEvent;
@@ -1023,8 +1022,6 @@ describe('queue-de-duplication', () => {
     const dedup_id = 'my_dedup_id';
 
     let wfh1 = undefined;
-
-    console.log('mjjjjj Start workflow');
 
     await DBOS.withEnqueueOptions(async () => {
       wfh1 = await DBOS.startWorkflow(TestExample, {
