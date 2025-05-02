@@ -25,7 +25,7 @@ import {
   // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
-import { DBOSConflictingWorkflowError, DBOSTargetWorkflowCancelledError } from '../src/error';
+import { DBOSConflictingWorkflowError, DBOSQueueDuplicatedError, DBOSTargetWorkflowCancelledError } from '../src/error';
 import Test from 'supertest/lib/test';
 
 const queue = new WorkflowQueue('testQ');
@@ -1049,6 +1049,20 @@ describe('queue-de-duplication', () => {
       workflowID: wfid3,
       queueName: TestExample.queue.name,
     }).parentWorkflow('jk1');
+
+    // same dedup id, but different workflowID
+    const wfid4 = randomUUID();
+
+    try {
+      await DBOS.withEnqueueOptions(async () => {
+        await DBOS.startWorkflow(TestExample, {
+          workflowID: wfid4,
+          queueName: TestExample.queue.name,
+        }).parentWorkflow('xyz');
+      }, dedup_id);
+    } catch (err) {
+      expect(err).toBeInstanceOf(DBOSQueueDuplicatedError);
+    }
 
     TestExample.resolveEvent();
 
