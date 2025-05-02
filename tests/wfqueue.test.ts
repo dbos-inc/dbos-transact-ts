@@ -967,3 +967,67 @@ async function runOneAtATime(queue: WorkflowQueue) {
   expect(TestWFs2.wfCounter).toBe(1);
   expect(await queueEntriesAreCleanedUp()).toBe(true);
 }
+
+describe('queue-de-duplication', () => {
+  let config: DBOSConfigInternal;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  class TestExample {
+    static resolveEvent: () => void;
+    static workflowEvent = new Promise<void>((resolve) => {
+      TestExample.resolveEvent = resolve;
+    });
+
+    static queue = new WorkflowQueue('test_dedup_queue', { concurrency: 1 });
+
+    @DBOS.workflow()
+    static async parentWorkflow(input: string): Promise<string> {
+      const wfh1 = await DBOS.startWorkflow(TestExample, { queueName: childqueue.name }).childWorkflow(input);
+
+      await TestExample.workflowEvent;
+      const result = await wfh1.getResult();
+      return Promise.resolve(result + '-p');
+    }
+
+    @DBOS.workflow()
+    static async childWorkflow(input: string): Promise<string> {
+      await TestExample.workflowEvent;
+      return Promise.resolve(input);
+    }
+  }
+
+  test('test_deduplication', async () => {
+    const wfid = randomUUID();
+    const dedup_id = 'my_dedup_id';
+
+    let wfh1 = undefined;
+
+    console.log('mjjjjj Start workflow');
+
+    DBOS.withEnqueueOptions(async () => {
+      wfh1 = await DBOS.startWorkflow(TestExample, {
+        workflowID: wfid,
+        queueName: TestExample.queue.name,
+      }).parentWorkflow('abc');
+    }, dedup_id);
+
+    TestExample.resolveEvent();
+
+    expect(wfh1).toBeDefined();
+    const result1 = await wfh1!.getResult();
+    expect(result1).toBe('abc-c-p');
+  });
+});

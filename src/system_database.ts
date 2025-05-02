@@ -1638,11 +1638,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async enqueueWorkflow(workflowId: string, queueName: string, enqueueOptions?: EnqueueOptionsInternal): Promise<void> {
     const deDupId = enqueueOptions?.deDuplicationID ?? null;
+    console.log('In Enqueueing workflow', workflowId, queueName, deDupId);
 
     try {
       await this.pool.query<workflow_queue>(
         `
-        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name)
+        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, deduplication_id)
         VALUES ($1, $2, $3)
         ON CONFLICT (workflow_uuid)
         DO NOTHING;
