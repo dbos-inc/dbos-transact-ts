@@ -1,7 +1,7 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS, DBOSConfig, DBOSClient, WorkflowQueue } from '../src';
 import { globalParams, sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
 
@@ -185,7 +185,7 @@ describe('DBOSClient', () => {
         'test',
         { first: 'John', last: 'Doe', age: 30 },
       );
-      wfid = handle.getWorkflowUUID();
+      wfid = handle.workflowID;
 
       const result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
@@ -369,7 +369,7 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
 
-    await DBOS.recoverPendingWorkflows();
+    await recoverPendingWorkflows();
     const handle = DBOS.retrieveWorkflow<string>(workflowID);
     const result = await handle.getResult();
     expect(result).toBe(message);
@@ -407,7 +407,7 @@ describe('DBOSClient', () => {
       await dbClient.end();
     }
 
-    await DBOS.recoverPendingWorkflows();
+    await recoverPendingWorkflows();
     const handle = DBOS.retrieveWorkflow<string>(workflowID);
     const result = await handle.getResult();
     expect(result).toBe(message);

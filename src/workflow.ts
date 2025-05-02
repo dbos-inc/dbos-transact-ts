@@ -138,6 +138,14 @@ export interface GetPendingWorkflowsOutput {
   queueName?: string;
 }
 
+export interface StepInfo {
+  readonly functionID: number;
+  readonly name: string;
+  readonly output: unknown;
+  readonly error: Error | null;
+  readonly childWorkflowID: string | null;
+}
+
 export interface PgTransactionId {
   txid: string;
 }
@@ -534,6 +542,7 @@ export interface WorkflowHandle<R> {
    */
   getResult(): Promise<R>;
   /**
+   * @deprecated use `.workflowID` instead of `.getWorkflowUUID()`
    * Return the workflow's ID, which may be a UUID (but not necessarily).
    */
   getWorkflowUUID(): string;

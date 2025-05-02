@@ -1,6 +1,12 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance } from '../src';
 import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb, Event, queueEntriesAreCleanedUp } from './helpers';
+import {
+  generateDBOSTestConfig,
+  setUpDBOSTestDb,
+  Event,
+  queueEntriesAreCleanedUp,
+  recoverPendingWorkflows,
+} from './helpers';
 import { WorkflowQueue } from '../src';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
@@ -436,7 +442,7 @@ describe('queued-wf-tests-simple', () => {
     expect(TestQueueRecovery.taskCount).toEqual(5);
 
     // Recover the workflow, then resume it. There should be one handle for the workflow and another for each task.
-    const recoveryHandles = await DBOS.recoverPendingWorkflows();
+    const recoveryHandles = await recoverPendingWorkflows();
     for (const e of TestQueueRecovery.taskEvents) {
       await e.wait();
     }
@@ -511,7 +517,7 @@ describe('queued-wf-tests-simple', () => {
       );
 
       // Trigger workflow recovery. The two first workflows should still be blocked but the 3rd one enqueued
-      const recovered_handles = await DBOS.recoverPendingWorkflows(['test-vmid-2']);
+      const recovered_handles = await recoverPendingWorkflows(['test-vmid-2']);
       expect(recovered_handles.length).toBe(1);
       expect(recovered_handles[0].workflowID).toBe(wfid3);
       expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
@@ -519,7 +525,7 @@ describe('queued-wf-tests-simple', () => {
       expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
       // Trigger workflow recovery for "local". The two first workflows should be re-enqueued then dequeued again
-      const recovered_handles_local = await DBOS.recoverPendingWorkflows(['local']);
+      const recovered_handles_local = await recoverPendingWorkflows(['local']);
       expect(recovered_handles_local.length).toBe(2);
       for (const h of recovered_handles_local) {
         expect([wfid1, wfid2]).toContain(h.workflowID);

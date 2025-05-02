@@ -101,9 +101,10 @@ describe('running-admin-server-tests', () => {
     static counter = 0;
 
     @DBOS.workflow()
-    static async simpleWorkflow() {
+    static async simpleWorkflow(value: number) {
       testAdminWorkflow.counter++;
-      return Promise.resolve();
+      const msg = await DBOS.recv<string>();
+      return `${value}-${msg}`;
     }
 
     @DBOS.step()
@@ -127,12 +128,7 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-workflow-management', async () => {
     // Run the workflow. Verify it succeeds.
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow();
-    await handle.getResult();
-    expect(testAdminWorkflow.counter).toBe(1);
-    await expect(handle.getStatus()).resolves.toMatchObject({
-      status: StatusString.SUCCESS,
-    });
+    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow(42);
 
     // Cancel the workflow. Verify it was cancelled.
     let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/cancel`, {
@@ -154,10 +150,16 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(204);
-    await handle.getResult();
 
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.ENQUEUED,
+    });
+
+    await DBOS.send(handle.workflowID, 'message');
+    const newHandle = DBOS.retrieveWorkflow(handle.workflowID);
+    await expect(newHandle.getResult()).resolves.toEqual('42-message');
+    await expect(newHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
     });
 
     // Restart the workflow. Verify it runs
@@ -169,20 +171,14 @@ describe('running-admin-server-tests', () => {
     });
     expect(response.status).toBe(200);
 
-    let new_workflowID_json = (await response.json()) as { workflow_id: string };
-    let new_workflowID = new_workflowID_json.workflow_id;
+    const { workflow_id: restartWorkflowID } = (await response.json()) as { workflow_id: string };
+    const restartHandle = DBOS.retrieveWorkflow(restartWorkflowID);
+    await expect(restartHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
 
-    let succeeded = false;
-    for (let i = 0; i < 5; i++) {
-      const status = await DBOS.getWorkflowStatus(new_workflowID);
-      if (status !== null && status.status === StatusString.SUCCESS) {
-        succeeded = true;
-        break;
-      }
-      await sleepms(1000);
-    }
-
-    expect(succeeded).toBe(true);
+    await DBOS.send(restartWorkflowID, 'restart-message');
+    await expect(restartHandle.getResult()).resolves.toEqual('42-restart-message');
 
     // test fork
     response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/fork`, {
@@ -194,18 +190,14 @@ describe('running-admin-server-tests', () => {
     });
     expect(response.status).toBe(200);
 
-    new_workflowID_json = (await response.json()) as { workflow_id: string };
-    new_workflowID = new_workflowID_json.workflow_id;
+    const { workflow_id: forkWorkflowID } = (await response.json()) as { workflow_id: string };
+    const forkHandle = DBOS.retrieveWorkflow(forkWorkflowID);
+    await expect(forkHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
 
-    succeeded = false;
-    for (let i = 0; i < 5; i++) {
-      const status = await DBOS.getWorkflowStatus(new_workflowID);
-      if (status !== null && status.status === StatusString.SUCCESS) {
-        succeeded = true;
-        break;
-      }
-      await sleepms(1000);
-    }
+    await DBOS.send(forkWorkflowID, 'fork-message');
+    await expect(forkHandle.getResult()).resolves.toEqual('42-fork-message');
   });
 
   test('test-admin-list-workflow-steps', async () => {
@@ -235,8 +227,9 @@ describe('running-admin-server-tests', () => {
     expect(globalParams.executorID).toBe('test-executor');
 
     // Run the workflow. Verify it succeeds.
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow();
-    await handle.getResult();
+    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow(42);
+    await DBOS.send(handle.workflowID, 'message');
+    await expect(handle.getResult()).resolves.toEqual('42-message');
     expect(testAdminWorkflow.counter).toBe(1);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -245,9 +238,9 @@ describe('running-admin-server-tests', () => {
     // Set the workflow back to pending and change the executor ID.
     await systemDBClient.query(
       `UPDATE dbos.workflow_status SET status='PENDING', executor_id=$1 WHERE workflow_uuid=$2`,
-      ['other-executor', handle.getWorkflowUUID()],
+      ['other-executor', handle.workflowID],
     );
-    const wfStatus = await DBOS.getWorkflowStatus(handle.getWorkflowUUID());
+    const wfStatus = await DBOS.getWorkflowStatus(handle.workflowID);
     expect(wfStatus).not.toBeNull();
     expect(wfStatus?.executorId).toBe('other-executor');
     expect(wfStatus?.status).toBe(StatusString.PENDING);
@@ -262,12 +255,12 @@ describe('running-admin-server-tests', () => {
       body: JSON.stringify(data),
     });
     expect(recoveryResponse.status).toBe(200);
-    expect(await recoveryResponse.json()).toEqual([handle.getWorkflowUUID()]);
+    expect(await recoveryResponse.json()).toEqual([handle.workflowID]);
 
     // Wait until it succeeds.
     let succeeded = false;
     for (let i = 0; i < 10; i++) {
-      const status = await DBOS.getWorkflowStatus(handle.getWorkflowUUID());
+      const status = await DBOS.getWorkflowStatus(handle.workflowID);
       if (status?.status === StatusString.SUCCESS) {
         expect(status.executorId).toBe('test-executor');
         expect(status.status).toBe(StatusString.SUCCESS);

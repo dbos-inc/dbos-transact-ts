@@ -1,4 +1,4 @@
-import { DBOSConfig, DBOSConfigInternal, isDeprecatedDBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSConfigInternal, DBOSExecutor, isDeprecatedDBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
@@ -148,4 +148,14 @@ export function uuidValidate(uuid: string) {
   const regex =
     /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
   return regex.test(uuid);
+}
+
+export function recoverPendingWorkflows(executorIDs: string[] = ['local']) {
+  expect(DBOSExecutor.globalInstance).toBeDefined();
+  return DBOSExecutor.globalInstance!.recoverPendingWorkflows(executorIDs);
+}
+
+export function executeWorkflowById(workflowId: string) {
+  expect(DBOSExecutor.globalInstance).toBeDefined();
+  return DBOSExecutor.globalInstance!.executeWorkflowUUID(workflowId);
 }
