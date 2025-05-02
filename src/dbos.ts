@@ -963,7 +963,7 @@ export class DBOS {
   /**
    * Retrieve the steps of a workflow
    * @param workflowID - ID of the workflow
-   * @returns `StepInfo` array listing the executed steps of the workflow
+   * @returns `StepInfo` array listing the executed steps of the workflow. If the workflow is not found, `undefined` is returned.
    */
   static async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
     return await DBOS.runAsWorkflowStep(async () => {
