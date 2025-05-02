@@ -313,7 +313,3 @@ describe('start-workflow-function', () => {
     await expect(wfh3.getResult()).resolves.toBe('7-f');
   });
 });
-
-// Later
-// registerTransaction ()
-// runAsTransaction (later)
