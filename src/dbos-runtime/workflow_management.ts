@@ -1,162 +1,129 @@
-import { createLogger } from 'winston';
-import { GetWorkflowsInput } from '..';
-import { DBOSConfigInternal, DBOSExecutor } from '../dbos-executor';
-import { PostgresSystemDatabase, SystemDatabase } from '../system_database';
-import { GlobalLogger } from '../telemetry/logs';
-import { GetQueuedWorkflowsInput, WorkflowStatus } from '../workflow';
-import axios from 'axios';
-import { DBOS } from '../dbos';
+import type { GetWorkflowsInput } from '..';
+import { DBOSExecutor } from '../dbos-executor';
+import type { SystemDatabase, WorkflowStatusInternal } from '../system_database';
+import type { GetQueuedWorkflowsInput, StepInfo, WorkflowStatus } from '../workflow';
+import type { UserDatabase } from '../user_database';
+import { DBOSJSON } from '../utils';
+import { deserializeError } from 'serialize-error';
+import type { transaction_outputs } from '../../schemas/user_db_schema';
+import { randomUUID } from 'node:crypto';
+import { DBOSInvalidStepIDError } from '../error';
 
-export async function listWorkflows(
-  config: DBOSConfigInternal,
-  input: GetWorkflowsInput,
-  getRequest: boolean,
-): Promise<WorkflowStatus[]> {
-  const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig,
-    config.system_database,
-    createLogger() as unknown as GlobalLogger,
-  );
-  try {
-    const workflows = await systemDatabase.listWorkflows(input);
-    return workflows.map((wf) => DBOSExecutor.toWorkflowStatus(wf, getRequest));
-  } finally {
-    await systemDatabase.destroy();
-  }
+export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
+  const workflows = await sysdb.listWorkflows(input);
+  return workflows.map((wf) => toWorkflowStatus(wf));
 }
 
-export async function listQueuedWorkflows(
-  config: DBOSConfigInternal,
-  input: GetQueuedWorkflowsInput,
-  getRequest: boolean,
-): Promise<WorkflowStatus[]> {
-  const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig,
-    config.system_database,
-    createLogger() as unknown as GlobalLogger,
-  );
-
-  try {
-    const workflows = await systemDatabase.listQueuedWorkflows(input);
-    return workflows.map((wf) => DBOSExecutor.toWorkflowStatus(wf, getRequest));
-  } finally {
-    await systemDatabase.destroy();
-  }
+export async function listQueuedWorkflows(sysdb: SystemDatabase, input: GetQueuedWorkflowsInput) {
+  const workflows = await sysdb.listQueuedWorkflows(input);
+  return workflows.map((wf) => toWorkflowStatus(wf));
 }
 
-export async function listWorkflowSteps(config: DBOSConfigInternal, workflowUUID: string) {
-  DBOS.setConfig(config);
-  await DBOS.launch();
-  const workflowSteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(workflowUUID);
-  await DBOS.shutdown();
-  return workflowSteps;
+export async function getWorkflow(sysdb: SystemDatabase, workflowID: string): Promise<WorkflowStatus | undefined> {
+  const status = await sysdb.getWorkflowStatus(workflowID);
+  return status ? toWorkflowStatus(status) : undefined;
 }
 
-export async function getWorkflowInfo(
-  systemDatabase: SystemDatabase,
+export async function listWorkflowSteps(
+  sysdb: SystemDatabase,
+  userdb: UserDatabase,
   workflowID: string,
-  getRequest: boolean,
-): Promise<WorkflowStatus | undefined> {
-  const statuses = await systemDatabase.listWorkflows({ workflowIDs: [workflowID] });
-  const status = statuses.find((s) => s.workflowUUID === workflowID);
-  return status ? DBOSExecutor.toWorkflowStatus(status, getRequest) : undefined;
+): Promise<StepInfo[]> {
+  type TxOutputs = Pick<transaction_outputs, 'function_id' | 'function_name' | 'output' | 'error'>;
+  const [$steps, $txs] = await Promise.all([
+    sysdb.getAllOperationResults(workflowID),
+    await userdb.query<TxOutputs, [string]>(
+      `SELECT function_id, function_name, output, error FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs 
+      WHERE workflow_uuid=$1`,
+      workflowID,
+    ),
+  ]);
+
+  const steps: StepInfo[] = $steps.map((step) => ({
+    functionID: step.function_id,
+    name: step.function_name ?? '',
+    //eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    output: step.output ? DBOSJSON.parse(step.output) : null,
+    error: step.error ? deserializeError(DBOSJSON.parse(step.error)) : null,
+    childWorkflowID: step.child_workflow_id,
+  }));
+  const txs: StepInfo[] = $txs.map((row) => ({
+    functionID: row.function_id,
+    name: row.function_name,
+    //eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
+    output: row.output ? DBOSJSON.parse(row.output) : null,
+    error: row.error ? deserializeError(DBOSJSON.parse(row.error)) : null,
+    childWorkflowID: null,
+  }));
+
+  return [...steps, ...txs].toSorted((a, b) => a.functionID - b.functionID);
 }
 
-export async function getWorkflow(config: DBOSConfigInternal, workflowID: string, getRequest: boolean) {
-  const systemDatabase = new PostgresSystemDatabase(
-    config.poolConfig,
-    config.system_database,
-    createLogger() as unknown as GlobalLogger,
-  );
-  try {
-    return await getWorkflowInfo(systemDatabase, workflowID, getRequest);
-  } finally {
-    await systemDatabase.destroy();
+async function getMaxStepID(sysdb: SystemDatabase, userdb: UserDatabase, workflowID: string): Promise<number> {
+  const [$stepMaxId, $txMaxId] = await Promise.all([
+    sysdb.getMaxFunctionID(workflowID),
+    getMaxTxFunctionId(userdb, workflowID),
+  ]);
+
+  return Math.max($stepMaxId, $txMaxId);
+
+  function getMaxTxFunctionId(userdb: UserDatabase, workflowID: string): Promise<number> {
+    return userdb
+      .query<
+        { max_function_id: number },
+        [string]
+      >(`SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`, workflowID)
+      .then((rows) => (rows.length === 0 ? 0 : rows[0].max_function_id));
   }
 }
 
-export async function cancelWorkflow(host: string, workflowID: string, logger: GlobalLogger) {
-  const url = `http://${host}:3001/workflows/${workflowID}/cancel`;
-  try {
-    const res = await axios.post(
-      url,
-      {},
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      },
-    );
-
-    if (res.status !== 204) {
-      logger.error(`Failed to cancel ${workflowID}`);
-      return 1;
-    }
-
-    logger.info(`Workflow ${workflowID} successfully cancelled!`);
-    return 0;
-  } catch (e) {
-    const errorLabel = `Failed to cancel workflow ${workflowID}. Please check that application is running.`;
-    logger.error(`${errorLabel}: ${(e as Error).message}`);
-
-    return 1;
+export async function forkWorkflow(
+  sysdb: SystemDatabase,
+  userdb: UserDatabase,
+  workflowID: string,
+  startStep: number,
+  options: { newWorkflowID?: string; applicationVersion?: string } = {},
+): Promise<string> {
+  const maxStepID = await getMaxStepID(sysdb, userdb, workflowID);
+  if (startStep > maxStepID) {
+    throw new DBOSInvalidStepIDError(workflowID, startStep, maxStepID);
   }
+
+  const newWorkflowID = options.newWorkflowID ?? randomUUID();
+  const query = `
+    INSERT INTO dbos.transaction_outputs
+      (workflow_uuid, function_id, output, error, txn_id, txn_snapshot, function_name)
+    SELECT $1 AS workflow_uuid, function_id, output, error, txn_id, txn_snapshot, function_name
+      FROM dbos.transaction_outputs 
+      WHERE workflow_uuid= $2 AND function_id < $3`;
+  await userdb.query(query, newWorkflowID, workflowID, startStep);
+  await sysdb.forkWorkflow(workflowID, startStep, { ...options, newWorkflowID });
+  return newWorkflowID;
 }
 
-export async function resumeWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {
-  const url = `http://${host}:3001/workflows/${workflowUUID}/resume`;
-  try {
-    const res = await axios.post(
-      url,
-      {},
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      },
-    );
+export function toWorkflowStatus(internal: WorkflowStatusInternal): WorkflowStatus {
+  return {
+    workflowID: internal.workflowUUID,
+    status: internal.status,
+    workflowName: internal.workflowName,
+    workflowClassName: internal.workflowClassName,
+    workflowConfigName: internal.workflowConfigName,
+    queueName: internal.queueName,
 
-    if (res.status !== 204) {
-      logger.error(`Failed to cancel ${workflowUUID}`);
-      return 1;
-    }
+    authenticatedUser: internal.authenticatedUser,
+    assumedRole: internal.assumedRole,
+    authenticatedRoles: internal.authenticatedRoles,
 
-    logger.info(`Workflow ${workflowUUID} successfully resume!`);
-    return 0;
-  } catch (e) {
-    const errorLabel = `Failed to resume workflow ${workflowUUID}. Please check that application is running.`;
+    input: internal.input ? (DBOSJSON.parse(internal.input) as unknown[]) : undefined,
+    output: internal.output ? DBOSJSON.parse(internal.output ?? null) : undefined,
+    error: internal.error ? deserializeError(DBOSJSON.parse(internal.error)) : undefined,
 
-    logger.error(`${errorLabel}: ${(e as Error).message}`);
-
-    return 1;
-  }
-}
-
-export async function restartWorkflow(host: string, workflowUUID: string, logger: GlobalLogger) {
-  const url = `http://${host}:3001/workflows/${workflowUUID}/restart`;
-  try {
-    const res = await axios.post(
-      url,
-      {},
-      {
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      },
-    );
-
-    if (res.status !== 204) {
-      logger.error(`Failed to restart ${workflowUUID}`);
-      return 1;
-    }
-
-    logger.info(`Workflow ${workflowUUID} successfully restart!`);
-    return 0;
-  } catch (e) {
-    const errorLabel = `Failed to restart workflow ${workflowUUID}. Please check that application is running.`;
-
-    logger.error(`${errorLabel}: ${(e as Error).message}`);
-
-    return 1;
-  }
+    request: internal.request,
+    executorId: internal.executorId,
+    applicationVersion: internal.applicationVersion,
+    applicationID: internal.applicationID,
+    recoveryAttempts: internal.recoveryAttempts,
+    createdAt: internal.createdAt,
+    updatedAt: internal.updatedAt,
+  };
 }

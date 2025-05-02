@@ -1,7 +1,6 @@
 import { serializeError } from 'serialize-error';
 import { DBOSJSON } from '../utils';
-import { step_info } from '../../schemas/system_db_schema';
-import { WorkflowStatus } from '../workflow';
+import type { StepInfo, WorkflowStatus } from '../workflow';
 
 export enum MessageType {
   EXECUTOR_INFO = 'executor_info',
@@ -184,12 +183,12 @@ export class WorkflowSteps {
   error?: string;
   child_workflow_id?: string;
 
-  constructor(info: step_info) {
-    this.function_id = info.function_id;
-    this.function_name = info.function_name;
+  constructor(info: StepInfo) {
+    this.function_id = info.functionID;
+    this.function_name = info.name;
     this.output = info.output ? DBOSJSON.stringify(info.output) : undefined;
     this.error = info.error ? DBOSJSON.stringify(serializeError(info.error)) : undefined;
-    this.child_workflow_id = info.child_workflow_id ? info.child_workflow_id : undefined;
+    this.child_workflow_id = info.childWorkflowID ?? undefined;
   }
 }
 

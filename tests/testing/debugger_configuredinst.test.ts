@@ -1,5 +1,5 @@
 import { ConfiguredInstance, DBOS } from '../../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { randomUUID } from 'node:crypto';
 import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
 
@@ -77,13 +77,13 @@ describe('debugger-test', () => {
     });
 
     // Execute again with the provided UUID.
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('configA23commcwf5-23');
+    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('configA23commcwf5-23');
     await DBOS.shutdown();
 
     // TT Mode
     DBOS.setConfig(debugProxyConfig);
     await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('configA23commcwf5-23');
+    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('configA23commcwf5-23');
     await DBOS.shutdown();
   });
 });

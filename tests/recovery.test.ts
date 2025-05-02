@@ -1,5 +1,5 @@
 import { WorkflowQueue, DBOS } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb, Event } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows } from './helpers';
 import { DBOSConfigInternal } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
@@ -96,12 +96,12 @@ describe('recovery-tests', () => {
     const handle = await DBOS.startWorkflow(LocalRecovery).deadLetterWorkflow();
 
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
-      await DBOS.recoverPendingWorkflows();
+      await recoverPendingWorkflows();
       expect(LocalRecovery.recoveryCount).toBe(i + 2);
     }
 
     // Send to DLQ and verify it enters the DLQ status.
-    await DBOS.recoverPendingWorkflows();
+    await recoverPendingWorkflows();
     let result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
       [handle.workflowID],
@@ -152,13 +152,13 @@ describe('recovery-tests', () => {
 
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
       LocalRecovery.startEvent.clear();
-      await DBOS.recoverPendingWorkflows();
+      await recoverPendingWorkflows();
       await LocalRecovery.startEvent.wait();
       expect(LocalRecovery.recoveryCount).toBe(i + 2);
     }
 
     // One more recovery attempt should move the workflow to the dead-letter queue.
-    await DBOS.recoverPendingWorkflows();
+    await recoverPendingWorkflows();
     await sleepms(2000); // Can't wait() because the workflow will land in the DLQ
     let result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
       `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
@@ -191,7 +191,7 @@ describe('recovery-tests', () => {
       async () => await DBOS.startWorkflow(LocalRecovery).testRecoveryWorkflow(5),
     );
 
-    const recoverHandles = await DBOS.recoverPendingWorkflows();
+    const recoverHandles = await recoverPendingWorkflows();
     await LocalRecovery.promise2; // Wait for the recovery to be done.
     LocalRecovery.resolve1(); // Both can finish now.
 

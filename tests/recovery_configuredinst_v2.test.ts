@@ -1,6 +1,6 @@
 import { configureInstance, ConfiguredInstance, DBOS } from '../src';
 
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
 
 type RF = () => void;
@@ -76,7 +76,7 @@ describe('recovery-cc-tests', () => {
     const handleA = await DBOS.startWorkflow(configA).testRecoveryWorkflow(5);
     const handleB = await DBOS.startWorkflow(configB).testRecoveryWorkflow(5);
 
-    const recoverHandles = await DBOS.recoverPendingWorkflows();
+    const recoverHandles = await recoverPendingWorkflows();
     await configA.config.promise2; // Wait for the recovery to be done.
     await configB.config.promise2; // Wait for the recovery to be done.
     configA.config.resolve1!(); // Both A can finish now.
