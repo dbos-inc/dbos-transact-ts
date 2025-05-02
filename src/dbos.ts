@@ -965,7 +965,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    * @returns `StepInfo` array listing the executed steps of the workflow
    */
-  static async listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
+  static async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
     return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.listWorkflowSteps(workflowID);
     }, 'DBOS.listWorkflowSteps');

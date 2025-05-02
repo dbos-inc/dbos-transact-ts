@@ -269,7 +269,7 @@ export class Conductor {
             let workflowSteps: protocol.WorkflowSteps[] | undefined = undefined;
             try {
               const stepsInfo = await this.dbosExec.listWorkflowSteps(listStepsMessage.workflow_id);
-              workflowSteps = stepsInfo.map((i) => new protocol.WorkflowSteps(i));
+              workflowSteps = stepsInfo?.map((i) => new protocol.WorkflowSteps(i));
             } catch (e) {
               errorMsg = `Exception encountered when listing steps ${listStepsMessage.workflow_id}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);

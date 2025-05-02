@@ -361,7 +361,7 @@ export class DBOSHttpServer {
     const workflowStepsHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const steps = await dbosExec.listWorkflowSteps(workflowId);
-      koaCtxt.body = steps.map((step) => ({
+      koaCtxt.body = steps?.map((step) => ({
         function_name: step.name,
         function_id: step.functionID,
         output: step.output ? DBOSJSON.stringify(step.output) : undefined,

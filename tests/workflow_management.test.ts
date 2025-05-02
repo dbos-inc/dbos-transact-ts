@@ -831,6 +831,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(3);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('stepOne');
@@ -838,6 +841,14 @@ describe('test-list-steps', () => {
     expect(wfsteps[1].name).toBe('stepTwo');
     expect(wfsteps[2].functionID).toBe(2);
     expect(wfsteps[2].name).toBe('DBOS.sleep');
+  });
+
+  test('test-list-steps-invalid-wfid', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
+    await handle.getResult();
+    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(randomUUID());
+    expect(wfsteps).toBeUndefined();
   });
 
   test('test-send-recv', async () => {
@@ -849,11 +860,17 @@ describe('test-list-steps', () => {
 
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid1);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(2);
     expect(wfsteps[1].name).toBe('DBOS.sleep');
     expect(wfsteps[0].name).toBe('DBOS.recv');
 
     const wfsteps2 = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid2);
+    if (!wfsteps2) {
+      throw new Error('wfsteps2 is undefined');
+    }
     expect(wfsteps2[0].functionID).toBe(0);
     expect(wfsteps2[0].name).toBe('DBOS.send');
   });
@@ -863,6 +880,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).setEventWorkflow();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(3);
     expect(wfsteps[0].name).toBe('DBOS.setEvent');
     expect(wfsteps[1].name).toBe('DBOS.getEvent');
@@ -873,6 +893,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowfirst();
     const childID = await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].name).toBe('testWorkflow');
     expect(wfsteps[0].functionID).toBe(0);
@@ -902,6 +925,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowMiddle();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].name).toBe('stepOne');
     expect(wfsteps[1].name).toBe('testWorkflow');
@@ -915,6 +941,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callChildWorkflowLast();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].name).toBe('stepOne');
     expect(wfsteps[1].name).toBe('stepTwo');
@@ -928,6 +957,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowFirst();
     const childID = await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].name).toBe('testWorkflow');
     expect(wfsteps[0].functionID).toBe(0);
@@ -949,6 +981,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowMiddle();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].name).toBe('stepOne');
     expect(wfsteps[1].name).toBe('testWorkflow');
@@ -962,6 +997,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).enqueueChildWorkflowLast();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(5);
     expect(wfsteps[0].name).toBe('stepOne');
     expect(wfsteps[1].name).toBe('stepTwo');
@@ -975,6 +1013,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).directCallWorkflow();
     const childID = await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(4);
     expect(wfsteps[0].name).toBe('testWorkflow');
     expect(wfsteps[0].functionID).toBe(0);
@@ -996,6 +1037,9 @@ describe('test-list-steps', () => {
     let handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).callFailingStep();
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
     let wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].name).toBe('failingStep');
     expect(wfsteps[0].output).toBe(null);
@@ -1006,6 +1050,9 @@ describe('test-list-steps', () => {
     handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).startFailingStep();
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
     wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(2);
     expect(wfsteps[0].name).toBe('temp_workflow-step-failingStep');
     expect(wfsteps[0].output).toBe(null);
@@ -1021,7 +1068,9 @@ describe('test-list-steps', () => {
     await expect(handle.getResult()).rejects.toThrow(new Error('fail'));
 
     wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(2);
     expect(wfsteps[0].name).toBe('temp_workflow-step-failingStep');
     expect(wfsteps[0].output).toBe(null);
@@ -1063,6 +1112,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransaction();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].name).toBe('transaction');
     expect(wfsteps[0].output).toBe(wfid);
@@ -1074,6 +1126,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransactionError();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].name).toBe('transactionWithError');
     expect(wfsteps[0].error).toBeInstanceOf(Error);
@@ -1085,6 +1140,9 @@ describe('test-list-steps', () => {
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransactionAndSteps();
     await handle.getResult();
     const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    if (!wfsteps) {
+      throw new Error('wfsteps is undefined');
+    }
     expect(wfsteps.length).toBe(3);
     expect(wfsteps[0].name).toBe('stepOne');
     expect(wfsteps[1].name).toBe('transaction');

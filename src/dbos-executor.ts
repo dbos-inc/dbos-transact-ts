@@ -1879,7 +1879,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return listQueuedWorkflows(this.systemDatabase, input);
   }
 
-  async listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
+  async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
     return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
   }
 

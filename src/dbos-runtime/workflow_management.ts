@@ -28,7 +28,12 @@ export async function listWorkflowSteps(
   sysdb: SystemDatabase,
   userdb: UserDatabase,
   workflowID: string,
-): Promise<StepInfo[]> {
+): Promise<StepInfo[] | undefined> {
+  const status = await sysdb.getWorkflowStatus(workflowID);
+  if (!status) {
+    return undefined;
+  }
+
   type TxOutputs = Pick<transaction_outputs, 'function_id' | 'function_name' | 'output' | 'error'>;
   const [$steps, $txs] = await Promise.all([
     sysdb.getAllOperationResults(workflowID),
