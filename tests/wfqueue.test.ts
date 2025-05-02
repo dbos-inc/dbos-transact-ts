@@ -26,6 +26,7 @@ import {
   setDebugTrigger,
 } from '../src/debugpoint';
 import { DBOSConflictingWorkflowError, DBOSTargetWorkflowCancelledError } from '../src/error';
+import Test from 'supertest/lib/test';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -1001,9 +1002,11 @@ describe('queue-de-duplication', () => {
 
     @DBOS.workflow()
     static async parentWorkflow(input: string): Promise<string> {
+      console.log('mjjjjj Start parent workflow');
       const wfh1 = await DBOS.startWorkflow(TestExample, { queueName: childqueue.name }).childWorkflow(input);
 
       await TestExample.workflowEvent;
+
       const result = await wfh1.getResult();
       return Promise.resolve(result + '-p');
     }
@@ -1011,7 +1014,7 @@ describe('queue-de-duplication', () => {
     @DBOS.workflow()
     static async childWorkflow(input: string): Promise<string> {
       await TestExample.workflowEvent;
-      return Promise.resolve(input);
+      return Promise.resolve(input + '-c');
     }
   }
 
@@ -1023,17 +1026,41 @@ describe('queue-de-duplication', () => {
 
     console.log('mjjjjj Start workflow');
 
-    DBOS.withEnqueueOptions(async () => {
+    await DBOS.withEnqueueOptions(async () => {
       wfh1 = await DBOS.startWorkflow(TestExample, {
         workflowID: wfid,
         queueName: TestExample.queue.name,
       }).parentWorkflow('abc');
     }, dedup_id);
 
+    // different dup_id no issue
+    const wfid2 = randomUUID();
+    let wfh2 = undefined;
+    await DBOS.withEnqueueOptions(async () => {
+      wfh2 = await DBOS.startWorkflow(TestExample, {
+        workflowID: wfid2,
+        queueName: TestExample.queue.name,
+      }).parentWorkflow('ghi');
+    }, 'my_dedup_id2');
+
+    // no dedupid fine
+    const wfid3 = randomUUID();
+    const wfh3 = await DBOS.startWorkflow(TestExample, {
+      workflowID: wfid3,
+      queueName: TestExample.queue.name,
+    }).parentWorkflow('jk1');
+
     TestExample.resolveEvent();
 
     expect(wfh1).toBeDefined();
     const result1 = await wfh1!.getResult();
     expect(result1).toBe('abc-c-p');
-  });
+
+    expect(wfh2).toBeDefined();
+    const result2 = await wfh2!.getResult();
+    expect(result2).toBe('ghi-c-p');
+
+    const result3 = await wfh3!.getResult();
+    expect(result3).toBe('jk1-c-p');
+  }, 20000);
 });
