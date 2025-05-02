@@ -62,12 +62,12 @@ describe('decoratorless-api-basic-tests', () => {
       expect(res).toBe('My first step result|My second step result');
     });
 
-    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    const wfsteps = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid))!;
     expect(wfsteps.length).toBe(2);
-    expect(wfsteps[0].function_id).toBe(0);
-    expect(wfsteps[0].function_name).toBe('MyFirstStep');
-    expect(wfsteps[1].function_id).toBe(1);
-    expect(wfsteps[1].function_name).toBe('MySecondStep');
+    expect(wfsteps[0].functionID).toBe(0);
+    expect(wfsteps[0].name).toBe('MyFirstStep');
+    expect(wfsteps[1].functionID).toBe(1);
+    expect(wfsteps[1].name).toBe('MySecondStep');
   });
 });
 
@@ -136,12 +136,12 @@ describe('decoratorless-api-class-tests', () => {
       expect(res).toBe('1-2');
     });
 
-    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    const wfsteps = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid))!;
     expect(wfsteps.length).toBe(2);
-    expect(wfsteps[0].function_id).toBe(0);
-    expect(wfsteps[0].function_name).toBe('getStaticVal');
-    expect(wfsteps[1].function_id).toBe(1);
-    expect(wfsteps[1].function_name).toBe('getInstanceVal');
+    expect(wfsteps[0].functionID).toBe(0);
+    expect(wfsteps[0].name).toBe('getStaticVal');
+    expect(wfsteps[1].functionID).toBe(1);
+    expect(wfsteps[1].name).toBe('getInstanceVal');
 
     expect(StaticAndInstanceSteps.callCount).toBe(2);
   });
@@ -228,12 +228,12 @@ describe('decoratorless-api-class-tests', () => {
     expect(stat1?.workflowName).toBe('staticWF');
     expect(stat1?.workflowID).toBe(wfid1);
 
-    const wfsteps1 = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid1);
+    const wfsteps1 = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid1))!;
     expect(wfsteps1.length).toBe(2);
-    expect(wfsteps1[0].function_id).toBe(0);
-    expect(wfsteps1[0].function_name).toBe('getStaticVal');
-    expect(wfsteps1[1].function_id).toBe(1);
-    expect(wfsteps1[1].function_name).toBe('step2');
+    expect(wfsteps1[0].functionID).toBe(0);
+    expect(wfsteps1[0].name).toBe('getStaticVal');
+    expect(wfsteps1[1].functionID).toBe(1);
+    expect(wfsteps1[1].name).toBe('step2');
 
     const stat2 = await DBOS.getWorkflowStatus(wfid2);
     expect(stat2?.workflowClassName).toBe('StaticAndInstanceWFs');
@@ -241,12 +241,12 @@ describe('decoratorless-api-class-tests', () => {
     expect(stat2?.workflowName).toBe('instanceWF');
     expect(stat2?.workflowID).toBe(wfid2);
 
-    const wfsteps2 = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid2);
+    const wfsteps2 = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid2))!;
     expect(wfsteps2.length).toBe(2);
-    expect(wfsteps2[0].function_id).toBe(0);
-    expect(wfsteps2[0].function_name).toBe('getInstanceVal');
-    expect(wfsteps2[1].function_id).toBe(1);
-    expect(wfsteps2[1].function_name).toBe('step2');
+    expect(wfsteps2[0].functionID).toBe(0);
+    expect(wfsteps2[0].name).toBe('getInstanceVal');
+    expect(wfsteps2[1].functionID).toBe(1);
+    expect(wfsteps2[1].name).toBe('step2');
   });
 });
 

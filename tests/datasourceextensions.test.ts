@@ -59,7 +59,7 @@ export const txnOutputIndexExistsQuery = `SELECT EXISTS (SELECT FROM pg_indexes 
 
 export interface transaction_outputs {
   workflow_uuid: string;
-  function_id: number;
+  functionID: number;
   output: string | null;
   error: string | null;
   txn_id: string | null;
@@ -72,14 +72,14 @@ export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 export const userDBSchema = `
   CREATE TABLE IF NOT EXISTS dbos.transaction_outputs (
     workflow_uuid TEXT NOT NULL,
-    function_id INT NOT NULL,
+    functionID INT NOT NULL,
     output TEXT,
     error TEXT,
     txn_id TEXT,
     txn_snapshot TEXT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
     function_name TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (workflow_uuid, function_id)
+    PRIMARY KEY (workflow_uuid, functionID)
   );
 `;
 
@@ -333,12 +333,12 @@ describe('decoratorless-api-tests', () => {
       expect(res).toBe('My first tx result'); //|My second step result');
     });
 
-    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
+    const wfsteps = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid))!;
     expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].function_id).toBe(0);
-    expect(wfsteps[0].function_name).toBe('MyFirstTx');
+    expect(wfsteps[0].functionID).toBe(0);
+    expect(wfsteps[0].name).toBe('MyFirstTx');
     // TODO
-    //expect(wfsteps[1].function_id).toBe(1);
+    //expect(wfsteps[1].functionID).toBe(1);
     //expect(wfsteps[1].function_name).toBe('MySecondStep');
   });
 });
