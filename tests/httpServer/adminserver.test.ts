@@ -238,9 +238,9 @@ describe('running-admin-server-tests', () => {
     // Set the workflow back to pending and change the executor ID.
     await systemDBClient.query(
       `UPDATE dbos.workflow_status SET status='PENDING', executor_id=$1 WHERE workflow_uuid=$2`,
-      ['other-executor', handle.getWorkflowUUID()],
+      ['other-executor', handle.workflowID],
     );
-    const wfStatus = await DBOS.getWorkflowStatus(handle.getWorkflowUUID());
+    const wfStatus = await DBOS.getWorkflowStatus(handle.workflowID);
     expect(wfStatus).not.toBeNull();
     expect(wfStatus?.executorId).toBe('other-executor');
     expect(wfStatus?.status).toBe(StatusString.PENDING);
@@ -255,12 +255,12 @@ describe('running-admin-server-tests', () => {
       body: JSON.stringify(data),
     });
     expect(recoveryResponse.status).toBe(200);
-    expect(await recoveryResponse.json()).toEqual([handle.getWorkflowUUID()]);
+    expect(await recoveryResponse.json()).toEqual([handle.workflowID]);
 
     // Wait until it succeeds.
     let succeeded = false;
     for (let i = 0; i < 10; i++) {
-      const status = await DBOS.getWorkflowStatus(handle.getWorkflowUUID());
+      const status = await DBOS.getWorkflowStatus(handle.workflowID);
       if (status?.status === StatusString.SUCCESS) {
         expect(status.executorId).toBe('test-executor');
         expect(status.status).toBe(StatusString.SUCCESS);

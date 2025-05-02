@@ -73,11 +73,7 @@ describe('test-app-version', () => {
     await DBOS.launch();
     const handle = await DBOS.startWorkflow(TestAppVersionRecovery).testWorkflow();
     await expect(handle.getResult()).resolves.toEqual(0);
-    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
-      handle.getWorkflowUUID(),
-      StatusString.PENDING,
-      true,
-    );
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(handle.workflowID, StatusString.PENDING, true);
 
     // Shutdown and restart with the same source code, verify it recovers correctly. Set status to PENDING again
     process.env.DBOS__VMID = 'test-app-version-recovery';
@@ -87,11 +83,7 @@ describe('test-app-version', () => {
     expect(handles.length).toBe(1);
     expect(handles[0].workflowID).toBe(handle.workflowID);
     await expect(handles[0].getResult()).resolves.toEqual(0);
-    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
-      handle.getWorkflowUUID(),
-      StatusString.PENDING,
-      true,
-    );
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(handle.workflowID, StatusString.PENDING, true);
 
     // Shutdown and restart with different source code. Verify it does not recover.
     await DBOS.shutdown();
