@@ -212,7 +212,7 @@ export class DBOSClient {
     return listQueuedWorkflows(this.systemDatabase, input);
   }
 
-  listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
+  listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
     return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
   }
 }

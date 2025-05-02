@@ -25,6 +25,7 @@ import {
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
   GetWorkflowsOutput,
+  StepInfo,
   WorkflowConfig,
   WorkflowFunction,
   WorkflowParams,
@@ -940,7 +941,7 @@ export class DBOS {
   /**
    * Query the system database for all workflows matching the provided predicate
    * @param input - `GetWorkflowsInput` predicate for filtering returned workflows
-   * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
+   * @returns `WorkflowStatus` array containing details of the matching workflows
    */
   static async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
     return await DBOS.runAsWorkflowStep(async () => {
@@ -948,18 +949,35 @@ export class DBOS {
     }, 'DBOS.listWorkflows');
   }
 
+  /**
+   * Query the system database for all queued workflows matching the provided predicate
+   * @param input - `GetQueuedWorkflowsInput` predicate for filtering returned workflows
+   * @returns `WorkflowStatus` array containing details of the matching workflows
+   */
   static async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
     return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.listQueuedWorkflows(input);
     }, 'DBOS.listQueuedWorkflows');
   }
+
+  /**
+   * Retrieve the steps of a workflow
+   * @param workflowID - ID of the workflow
+   * @returns `StepInfo` array listing the executed steps of the workflow. If the workflow is not found, `undefined` is returned.
+   */
+  static async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
+    return await DBOS.runAsWorkflowStep(async () => {
+      return await DBOS.executor.listWorkflowSteps(workflowID);
+    }, 'DBOS.listWorkflowSteps');
+  }
+
   /**
    * Cancel a workflow given its ID.
    * If the workflow is currently running, `DBOSWorkflowCancelledError` will be
    *   thrown from its next DBOS call.
    * @param workflowID - ID of the workflow
    */
-  static async cancelWorkflow(workflowID: string) {
+  static async cancelWorkflow(workflowID: string): Promise<void> {
     return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.cancelWorkflow(workflowID);
     }, 'DBOS.cancelWorkflow');
