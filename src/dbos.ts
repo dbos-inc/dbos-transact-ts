@@ -25,6 +25,7 @@ import {
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
   GetWorkflowsOutput,
+  StepInfo,
   WorkflowConfig,
   WorkflowFunction,
   WorkflowParams,
@@ -953,13 +954,20 @@ export class DBOS {
       return await DBOS.executor.listQueuedWorkflows(input);
     }, 'DBOS.listQueuedWorkflows');
   }
+
+  static async listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
+    return await DBOS.runAsWorkflowStep(async () => {
+      return await DBOS.executor.listWorkflowSteps(workflowID);
+    }, 'DBOS.listWorkflowSteps');
+  }
+
   /**
    * Cancel a workflow given its ID.
    * If the workflow is currently running, `DBOSWorkflowCancelledError` will be
    *   thrown from its next DBOS call.
    * @param workflowID - ID of the workflow
    */
-  static async cancelWorkflow(workflowID: string) {
+  static async cancelWorkflow(workflowID: string): Promise<void> {
     return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.cancelWorkflow(workflowID);
     }, 'DBOS.cancelWorkflow');
