@@ -25,6 +25,7 @@ import {
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
   GetWorkflowsOutput,
+  StepInfo,
   WorkflowConfig,
   WorkflowFunction,
   WorkflowParams,
@@ -39,7 +40,6 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
   DBOSTargetWorkflowCancelledError,
-  DBOSInvalidStepIDError,
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
@@ -946,7 +946,7 @@ export class DBOS {
   /**
    * Query the system database for all workflows matching the provided predicate
    * @param input - `GetWorkflowsInput` predicate for filtering returned workflows
-   * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
+   * @returns `WorkflowStatus` array containing details of the matching workflows
    */
   static async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
     return await DBOS.runAsWorkflowStep(async () => {
@@ -954,18 +954,35 @@ export class DBOS {
     }, 'DBOS.listWorkflows');
   }
 
+  /**
+   * Query the system database for all queued workflows matching the provided predicate
+   * @param input - `GetQueuedWorkflowsInput` predicate for filtering returned workflows
+   * @returns `WorkflowStatus` array containing details of the matching workflows
+   */
   static async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
     return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.listQueuedWorkflows(input);
     }, 'DBOS.listQueuedWorkflows');
   }
+
+  /**
+   * Retrieve the steps of a workflow
+   * @param workflowID - ID of the workflow
+   * @returns `StepInfo` array listing the executed steps of the workflow. If the workflow is not found, `undefined` is returned.
+   */
+  static async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
+    return await DBOS.runAsWorkflowStep(async () => {
+      return await DBOS.executor.listWorkflowSteps(workflowID);
+    }, 'DBOS.listWorkflowSteps');
+  }
+
   /**
    * Cancel a workflow given its ID.
    * If the workflow is currently running, `DBOSWorkflowCancelledError` will be
    *   thrown from its next DBOS call.
    * @param workflowID - ID of the workflow
    */
-  static async cancelWorkflow(workflowID: string) {
+  static async cancelWorkflow(workflowID: string): Promise<void> {
     return await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.cancelWorkflow(workflowID);
     }, 'DBOS.cancelWorkflow');
@@ -992,17 +1009,11 @@ export class DBOS {
    */
   static async forkWorkflow<T>(
     workflowID: string,
-    startStep: number = 0,
-    applicationVersion?: string,
+    startStep: number,
+    options?: { newWorkflowID?: string; applicationVersion?: string },
   ): Promise<WorkflowHandle<Awaited<T>>> {
-    const maxStepID = await DBOS.executor.getMaxStepID(workflowID);
-
-    if (startStep > maxStepID) {
-      throw new DBOSInvalidStepIDError(workflowID, startStep, maxStepID);
-    }
-
     const forkedID = await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.forkWorkflow(workflowID, startStep, applicationVersion);
+      return await DBOS.executor.forkWorkflow(workflowID, startStep, options);
     }, 'DBOS.forkWorkflow');
 
     return this.retrieveWorkflow(forkedID);
@@ -2324,34 +2335,6 @@ export class DBOS {
     ...args: T
   ): R {
     return configureInstance(cls, name, ...args);
-  }
-
-  // Function registration - for internal use
-  static registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-  ) {
-    return registerAndWrapDBOSFunction(target, propertyKey, descriptor);
-  }
-
-  // For internal and testing purposes
-  static async executeWorkflowById(
-    workflowId: string,
-    startNewWorkflow: boolean = false,
-  ): Promise<WorkflowHandle<unknown>> {
-    if (!DBOSExecutor.globalInstance) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    return DBOSExecutor.globalInstance.executeWorkflowUUID(workflowId, startNewWorkflow);
-  }
-
-  // For internal and testing purposes
-  static async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
-    if (!DBOSExecutor.globalInstance) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    return DBOSExecutor.globalInstance.recoverPendingWorkflows(executorIDs);
   }
 }
 

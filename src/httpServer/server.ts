@@ -18,9 +18,7 @@ import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
 import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
-import { step_info } from '../../schemas/system_db_schema';
 export type QueueMetadataResponse = QueueParameters & { name: string };
-import { DBOS } from '../dbos';
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
 export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
@@ -280,7 +278,7 @@ export class DBOSHttpServer {
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Resuming workflow with ID: ${workflowId}`);
-      await DBOS.resumeWorkflow(workflowId);
+      await dbosExec.resumeWorkflow(workflowId);
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
@@ -298,9 +296,9 @@ export class DBOSHttpServer {
     const workflowRestartHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Restarting workflow: ${workflowId} with a new id`);
-      const handle = await DBOS.forkWorkflow(workflowId);
+      const workflowID = await dbosExec.forkWorkflow(workflowId, 0);
       koaCtxt.body = {
-        workflow_id: handle.workflowID,
+        workflow_id: workflowID,
       };
       koaCtxt.status = 200;
     };
@@ -318,14 +316,18 @@ export class DBOSHttpServer {
     const workflowResumeUrl = '/workflows/:workflow_id/fork';
     const workflowForkHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      const body = koaCtxt.request.body as { start_step?: number };
-      const startStep = body?.start_step ?? 1;
+      const body = koaCtxt.request.body as { start_step?: number; new_workflow_id?: string };
+      if (body.start_step === undefined) {
+        throw new DBOSDataValidationError('Missing start_step in request body');
+      }
 
-      dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${startStep} with a new id`);
+      dbosExec.logger.info(`Forking workflow: ${workflowId} from step ${body.start_step} with a new id`);
       try {
-        const handle = await DBOS.forkWorkflow(workflowId, startStep);
+        const workflowID = await dbosExec.forkWorkflow(workflowId, body.start_step, {
+          newWorkflowID: body.new_workflow_id,
+        });
         koaCtxt.body = {
-          workflow_id: handle.workflowID,
+          workflow_id: workflowID,
         };
       } catch (e) {
         let errorMessage = '';
@@ -359,12 +361,12 @@ export class DBOSHttpServer {
     const workflowStepsHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const steps = await dbosExec.listWorkflowSteps(workflowId);
-      koaCtxt.body = steps.map((step: step_info) => ({
-        function_name: step.function_name,
-        function_id: step.function_id,
+      koaCtxt.body = steps?.map((step) => ({
+        function_name: step.name,
+        function_id: step.functionID,
         output: step.output ? DBOSJSON.stringify(step.output) : undefined,
         error: step.error ? DBOSJSON.stringify(serializeError(step.error)) : undefined,
-        child_workflow_id: step.child_workflow_id ? step.child_workflow_id : undefined,
+        child_workflow_id: step.childWorkflowID,
       }));
       koaCtxt.status = 200;
     };

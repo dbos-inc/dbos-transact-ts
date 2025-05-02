@@ -1,6 +1,12 @@
 import { DBOS, ConfiguredInstance, WorkflowHandle } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestDb, Event } from './helpers';
+import {
+  generateDBOSTestConfig,
+  queueEntriesAreCleanedUp,
+  setUpDBOSTestDb,
+  Event,
+  recoverPendingWorkflows,
+} from './helpers';
 import { WorkflowQueue } from '../src';
 import { randomUUID } from 'node:crypto';
 
@@ -324,7 +330,7 @@ describe('queued-wf-tests-simple', () => {
     expect(tqrInst.taskCount).toEqual(TestQueueRecoveryInst.queuedSteps);
 
     // Recover the workflow, then resume it. There should be one handle for the workflow and another for each task.
-    const recoveryHandles = await DBOS.recoverPendingWorkflows();
+    const recoveryHandles = await recoverPendingWorkflows();
     for (const e of tqrInst.taskEvents) {
       await e.wait();
     }

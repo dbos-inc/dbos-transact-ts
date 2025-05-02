@@ -1,20 +1,21 @@
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
-import {
+import type {
   GetQueuedWorkflowsInput,
   GetWorkflowQueueInput,
   GetWorkflowQueueOutput,
   GetWorkflowsInput,
+  StepInfo,
   WorkflowFunction,
   WorkflowHandle,
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
-import { TransactionFunction } from './transaction';
-import { MethodRegistrationBase } from './decorators';
-import { StepFunction } from './step';
-import { Notification } from 'pg';
-import { StoredProcedure } from './procedure';
+import type { TransactionFunction } from './transaction';
+import type { MethodRegistrationBase } from './decorators';
+import type { StepFunction } from './step';
+import type { Notification } from 'pg';
+import type { StoredProcedure } from './procedure';
 
 export type DBNotification = Notification;
 export type DBNotificationCallback = (n: DBNotification) => void;
@@ -113,14 +114,19 @@ export interface DBOSExecutorContext {
   /** @deprecated Use functions on `DBOS` */
   listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]>;
   /** @deprecated Use functions on `DBOS` */
+  listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined>;
+  /** @deprecated Use functions on `DBOS` */
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
   /** @deprecated Use functions on `DBOS` */
   cancelWorkflow(workflowID: string): Promise<void>;
   /** @deprecated Use functions on `DBOS` */
   resumeWorkflow(workflowID: string): Promise<void>;
   /** @deprecated Use functions on `DBOS` */
-  forkWorkflow(workflowID: string, startStep?: number, applicationVersion?: string): Promise<string>;
-  getMaxStepID(workflowID: string): Promise<number>;
+  forkWorkflow(
+    workflowID: string,
+    startStep: number,
+    options?: { newWorkflowID?: string; applicationVersion?: string },
+  ): Promise<string>;
 
   // Event receiver state queries / updates
   /** @see DBOS.getEventDispatchState */

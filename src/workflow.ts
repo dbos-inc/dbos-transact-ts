@@ -138,6 +138,14 @@ export interface GetPendingWorkflowsOutput {
   queueName?: string;
 }
 
+export interface StepInfo {
+  readonly functionID: number;
+  readonly name: string;
+  readonly output: unknown;
+  readonly error: Error | null;
+  readonly childWorkflowID: string | null;
+}
+
 export interface PgTransactionId {
   txid: string;
 }

@@ -1,5 +1,5 @@
 import { DBOS, OrmEntities } from '../../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { randomUUID } from 'node:crypto';
 import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
 import { Column, Entity, EntityManager, PrimaryColumn } from 'typeorm';
@@ -64,7 +64,7 @@ describe('typeorm-debugger-test', () => {
     });
 
     // Execute again with the provided UUID.
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('test');
+    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('test');
     await DBOS.shutdown();
   });
 });

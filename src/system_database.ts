@@ -32,6 +32,7 @@ import knex, { Knex } from 'knex';
 import path from 'path';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSEventReceiverState } from './eventreceiver';
+import { randomUUID } from 'crypto';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -111,10 +112,9 @@ export interface SystemDatabase {
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
   forkWorkflow(
-    originalWorkflowID: string,
-    newWorkflowID: string,
+    workflowID: string,
     startStep: number,
-    applicationVersion?: string,
+    options?: { newWorkflowID?: string; applicationVersion?: string },
   ): Promise<string>;
   getMaxFunctionID(workflowID: string): Promise<number>;
   checkIfCanceled(workflowID: string): Promise<void>;
@@ -488,6 +488,7 @@ function mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStat
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
+  // TODO: remove Knex connection in favor of just using Pool
   readonly knexDB: Knex;
 
   /*
@@ -777,19 +778,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async forkWorkflow(
-    originalWorkflowID: string,
-    newWorkflowID: string,
-    startStep: number = 0,
-    applicationVersion?: string,
+    workflowID: string,
+    startStep: number,
+    options: { newWorkflowID?: string; applicationVersion?: string } = {},
   ): Promise<string> {
-    const workflowStatus = await this.getWorkflowStatus(originalWorkflowID);
+    const newWorkflowID = options.newWorkflowID ?? randomUUID();
+    const workflowStatus = await this.getWorkflowStatus(workflowID);
 
     if (workflowStatus === null) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} does not exist`);
+      throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
     }
 
     if (!workflowStatus.input) {
-      throw new DBOSNonExistentWorkflowError(`Workflow ${originalWorkflowID} has no input`);
+      throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} has no input`);
     }
 
     const client = await this.pool.connect();
@@ -812,7 +813,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         error: null,
         request: workflowStatus.request,
         executorId: globalParams.executorID,
-        applicationVersion: applicationVersion ?? workflowStatus.applicationVersion,
+        applicationVersion: options.applicationVersion ?? workflowStatus.applicationVersion,
         applicationID: workflowStatus.applicationID,
         createdAt: now,
         recoveryAttempts: 0,
@@ -827,7 +828,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           SELECT $1 AS workflow_uuid, function_id, output, error, function_name, child_workflow_id
           FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs
           WHERE workflow_uuid = $2 AND function_id < $3`;
-        await client.query(query, [newWorkflowID, originalWorkflowID, startStep]);
+        await client.query(query, [newWorkflowID, workflowID, startStep]);
       }
 
       await enqueueWorkflow(client, newWorkflowID, INTERNAL_QUEUE_NAME);

@@ -1,5 +1,5 @@
 import { DBOSInitializer, DBOS } from '../../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
+import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { randomUUID } from 'node:crypto';
 import { DBOSConfigInternal, DebugMode } from '../../src/dbos-executor';
 import { Client } from 'pg';
@@ -172,14 +172,14 @@ describe('debugger-test', () => {
     // Execute again with the provided UUID.
     DBOS.setConfig(debugConfig);
     await DBOS.launch({ debugMode: DebugMode.ENABLED });
-    const debugRes1 = await (await DBOS.executeWorkflowById(wfUUID)).getResult();
+    const debugRes1 = await (await executeWorkflowById(wfUUID)).getResult();
     expect(debugRes1).toBe(1);
     await DBOS.shutdown();
 
     // And as time travel
     DBOS.setConfig(debugProxyConfig);
     await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    const debugRestt = await (await DBOS.executeWorkflowById(wfUUID)).getResult();
+    const debugRestt = await (await executeWorkflowById(wfUUID)).getResult();
     expect(debugRestt).toBe(1);
     await DBOS.shutdown();
 
@@ -297,7 +297,7 @@ describe('debugger-test', () => {
     expect(DebuggerTest.count).toBe(1);
 
     // Execute again with the provided UUID.
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBeFalsy();
+    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBeFalsy();
     expect(DebuggerTest.count).toBe(1);
     await DBOS.shutdown();
 
@@ -331,7 +331,7 @@ describe('debugger-test', () => {
     });
 
     // Execute again with the provided UUID.
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = randomUUID();
@@ -350,7 +350,7 @@ describe('debugger-test', () => {
     // Proxy mode should return the same result.
     DBOS.setConfig(debugProxyConfig);
     await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
     await DBOS.shutdown();
   });
 
@@ -375,7 +375,7 @@ describe('debugger-test', () => {
     });
 
     // Execute again with the provided UUID.
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
 
     // Execute a non-exist UUID should fail.
     const wfUUID2 = randomUUID();
@@ -467,7 +467,7 @@ describe('debugger-test', () => {
     // Execute again with the provided UUID, should still get the same output.
     DBOS.setConfig(debugConfig);
     await DBOS.launch({ debugMode: DebugMode.ENABLED });
-    await expect(DBOS.executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
+    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
     expect(DebuggerTest.count).toBe(2);
 
     // Execute again with different input, should still get the same output.
