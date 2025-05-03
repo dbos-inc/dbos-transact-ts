@@ -278,7 +278,22 @@ export class DBOSHttpServer {
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Resuming workflow with ID: ${workflowId}`);
-      await dbosExec.resumeWorkflow(workflowId);
+      try {
+        await dbosExec.resumeWorkflow(workflowId);
+      } catch (e) {
+        let errorMessage = '';
+        if (e instanceof DBOSError) {
+          errorMessage = e.message;
+        } else {
+          errorMessage = `Unknown error`;
+        }
+        dbosExec.logger.error(`Error resuming workflow ${workflowId}: ${errorMessage}`);
+        koaCtxt.status = 500;
+        koaCtxt.body = {
+          error: `Error resuming workflow ${workflowId}: ${errorMessage}`,
+        };
+        return;
+      }
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
