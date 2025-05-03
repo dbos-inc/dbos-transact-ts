@@ -1242,7 +1242,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
+  // TODO: make cancel throw an error if the workflow doesn't exist.
   async cancelWorkflow(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -1299,6 +1299,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const statusResult = await getWorkflowStatusValue(client, workflowID);
       if (!statusResult || statusResult === StatusString.SUCCESS || statusResult === StatusString.ERROR) {
         await client.query('ROLLBACK');
+        if (!statusResult) {
+          if (statusResult === undefined) {
+            throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
+          }
+        }
         return;
       }
 

@@ -9,7 +9,7 @@ import { globalParams } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { GlobalLogger as Logger } from '../src/telemetry/logs';
 import { getWorkflow, listQueuedWorkflows, listWorkflows } from '../src/dbos-runtime/workflow_management';
-import { DBOSInvalidStepIDError } from '../src/error';
+import { DBOSInvalidStepIDError, DBOSNonExistentWorkflowError } from '../src/error';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -338,6 +338,11 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].attempts).toBe(String(1));
     expect(TestEndpoints.tries).toBe(2);
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
+
+    // Resume a non-existant workflow should throw an error
+    await expect(DBOS.resumeWorkflow('fake-workflow')).rejects.toThrow(
+      new DBOSNonExistentWorkflowError(`Workflow fake-workflow does not exist`),
+    );
 
     // fork the workflow
     const wfh = await DBOS.forkWorkflow(workflowID, 0);

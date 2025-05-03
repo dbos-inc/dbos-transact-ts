@@ -151,6 +151,15 @@ describe('running-admin-server-tests', () => {
     });
     expect(response.status).toBe(204);
 
+    // Resume a non-existent workflow should fail
+    response = await fetch(`http://localhost:3001/workflows/invalid-workflow-id/resume`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(response.status).toBe(500);
+
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.ENQUEUED,
     });

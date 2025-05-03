@@ -13,6 +13,7 @@ export enum MessageType {
   GET_WORKFLOW = 'get_workflow',
   EXIST_PENDING_WORKFLOWS = 'exist_pending_workflows',
   LIST_STEPS = 'list_steps',
+  FORK_WORKFLOW = 'fork_workflow',
 }
 
 export interface BaseMessage {
@@ -292,5 +293,30 @@ export class ListStepsResponse extends BaseResponse {
   constructor(request_id: string, output?: WorkflowSteps[], error_message?: string) {
     super(MessageType.LIST_STEPS, request_id, error_message);
     this.output = output;
+  }
+}
+
+export interface ForkWorkflowBody {
+  workflow_id: string;
+  start_step: number;
+  application_version?: string;
+  new_workflow_id?: string;
+}
+
+export class ForkWorkflowRequest implements BaseMessage {
+  type = MessageType.FORK_WORKFLOW;
+  request_id: string;
+  body: ForkWorkflowBody;
+  constructor(request_id: string, body: ForkWorkflowBody) {
+    this.request_id = request_id;
+    this.body = body;
+  }
+}
+
+export class ForkWorkflowResponse extends BaseResponse {
+  new_workflow_id?: string;
+  constructor(request_id: string, new_workflow_id?: string, error_message?: string) {
+    super(MessageType.FORK_WORKFLOW, request_id, error_message);
+    this.new_workflow_id = new_workflow_id;
   }
 }
