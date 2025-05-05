@@ -1374,11 +1374,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const client = await this.pool.connect();
       try {
         // Check if the operation has been done before for OAOO (only do this inside a workflow).
-        const json = await this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, async () => {
-          const statuses = await this.listWorkflows({ workflowIDs: [workflowID] });
-          const status = statuses.find((s) => s.workflowUUID === workflowID);
-          return status ? JSON.stringify(status) : null;
-        });
+        const json = await this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, funcGetStatus);
         return parseStatus(json);
       } finally {
         client.release();
