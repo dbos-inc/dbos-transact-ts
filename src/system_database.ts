@@ -202,6 +202,8 @@ export interface WorkflowStatusInternal {
   createdAt: number;
   updatedAt?: number;
   recoveryAttempts?: number;
+  timeout?: number;
+  deadline?: number;
 }
 
 export interface ExistenceCheck {
@@ -292,8 +294,10 @@ async function insertWorkflowStatus(
       application_id,
       created_at,
       recovery_attempts,
-      updated_at
-    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+      updated_at,
+      workflow_timeout_ms,
+      workflow_deadline_epoch_ms
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
      ON CONFLICT (workflow_uuid)
       DO UPDATE SET
         recovery_attempts = workflow_status.recovery_attempts + 1,
@@ -317,6 +321,8 @@ async function insertWorkflowStatus(
       initStatus.createdAt,
       initStatus.status === StatusString.ENQUEUED ? 0 : 1,
       initStatus.updatedAt ?? Date.now(),
+      initStatus.timeout ?? null,
+      initStatus.deadline ?? null,
     ],
   );
 
@@ -482,6 +488,8 @@ function mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStat
     applicationID: row.application_id,
     recoveryAttempts: Number(row.recovery_attempts),
     input: row.inputs,
+    timeout: row.workflow_timeout_ms ?? undefined,
+    deadline: row.workflow_deadline_epoch_ms ?? undefined,
   };
 }
 

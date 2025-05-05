@@ -17,6 +17,8 @@ export interface workflow_status {
   updated_at: number;
   application_id: string;
   recovery_attempts: number;
+  workflow_timeout_ms?: number;
+  workflow_deadline_epoch_ms?: number;
 }
 
 export interface notifications {
