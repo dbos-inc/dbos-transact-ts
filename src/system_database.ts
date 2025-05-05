@@ -1707,12 +1707,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throw new DBOSQueueDuplicatedError(workflowId, queueName, deDupId ?? '');
       }
 
-      this.logger.error(`Error enqueuing workflow ${workflowId} to queue ${queueName}: ${error}`);
+      this.logger.error(`Error enqueuing workflow ${workflowId} to queue ${queueName}`);
       throw error;
     }
   }
 
-  async enqueueWorkflow(workflowId: string, queueName: string, enqueueOptions?: EnqueueOptionsInternal): Promise<void> {
+  async enqueueWorkflow(workflowId: string, queueName: string, enqueueOptions?: EnqueueOptionsInternal) {
     const client: PoolClient = await this.pool.connect();
     try {
       await this.enqueueWorkflowInternal(client, workflowId, queueName, enqueueOptions);

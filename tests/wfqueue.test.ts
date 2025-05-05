@@ -26,7 +26,6 @@ import {
   setDebugTrigger,
 } from '../src/debugpoint';
 import { DBOSConflictingWorkflowError, DBOSQueueDuplicatedError, DBOSTargetWorkflowCancelledError } from '../src/error';
-import Test from 'supertest/lib/test';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -1021,7 +1020,7 @@ describe('queue-de-duplication', () => {
     const wfid = randomUUID();
     const dedup_id = 'my_dedup_id';
 
-    let wfh1 = undefined;
+    let wfh1: WorkflowHandle<string> | undefined;
 
     await DBOS.withEnqueueOptions(async () => {
       wfh1 = await DBOS.startWorkflow(TestExample, {
@@ -1032,7 +1031,7 @@ describe('queue-de-duplication', () => {
 
     // different dup_id no issue
     const wfid2 = randomUUID();
-    let wfh2 = undefined;
+    let wfh2: WorkflowHandle<string> | undefined;
     await DBOS.withEnqueueOptions(async () => {
       wfh2 = await DBOS.startWorkflow(TestExample, {
         workflowID: wfid2,
@@ -1071,7 +1070,7 @@ describe('queue-de-duplication', () => {
     const result2 = await wfh2!.getResult();
     expect(result2).toBe('ghi-c-p');
 
-    const result3 = await wfh3!.getResult();
+    const result3 = await wfh3.getResult();
     expect(result3).toBe('jk1-c-p');
   }, 20000);
 });
