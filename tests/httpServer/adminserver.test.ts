@@ -124,6 +124,11 @@ describe('running-admin-server-tests', () => {
       await testAdminWorkflow.stepTwo();
       return Promise.resolve();
     }
+
+    @DBOS.workflow()
+    static async exampleWorkflow(input: number) {
+      return Promise.resolve(input);
+    }
   }
 
   test('test-admin-workflow-management', async () => {
@@ -339,5 +344,31 @@ describe('running-admin-server-tests', () => {
       method: 'POST',
     });
     expect(postNotFoundResponse.status).toBe(404);
+  });
+
+  const queue = new WorkflowQueue('test-admin-deactivate', {});
+
+  test('test-admin-deactivate', async () => {
+    const value = 5;
+    let handle = await DBOS.startWorkflow(testAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
+    await expect(handle.getResult()).resolves.toBe(value);
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    const response = await fetch(`http://localhost:3001/deactivate`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(response.status).toBe(200);
+
+    // Verify queues still work after deactivation
+    handle = await DBOS.startWorkflow(testAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
+    await expect(handle.getResult()).resolves.toBe(value);
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
   });
 });
