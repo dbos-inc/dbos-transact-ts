@@ -237,12 +237,11 @@ export class DBOSHttpServer {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       if (!DBOSHttpServer.isDeactivated) {
         dbosExec.logger.info(
-          `Deactivating DBOS executor ${globalParams.executorID} with version ${globalParams.appVersion}. This executor will complete existing workflows but will not start new workflows.`,
+          `Deactivating DBOS executor ${globalParams.executorID} with version ${globalParams.appVersion}. This executor will complete existing workflows but will not create new workflows.`,
         );
         DBOSHttpServer.isDeactivated = true;
       }
-      await dbosExec.deactivateEventReceivers();
-      dbosExec.logger.info('Deactivating Event Receivers');
+      await dbosExec.deactivateEventReceivers(false);
       koaCtxt.body = 'Deactivated';
       await koaNext();
     };
