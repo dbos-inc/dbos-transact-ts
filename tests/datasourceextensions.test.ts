@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import knex, { Knex } from 'knex';
-import { DBOS, DBOSConfig } from '../src';
+import { DBOS } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSInvalidWorkflowTransitionError, DBOSNotRegisteredError } from '../src/error';
@@ -11,7 +11,8 @@ import { DBOSExecutor } from '../src/dbos-executor';
 
 // Data source implementation (to be moved to DBOS core)
 interface DBOSTransactionalDataStore {
-  getName(): string;
+  name: string;
+  get dsType(): string;
 
   /**
    * Will be called by DBOS during launch.
@@ -25,10 +26,14 @@ interface DBOSTransactionalDataStore {
   destroy(): Promise<void>;
 
   /**
-   * Register a function.
+   * Wrap a function.  This is part of the registration process
    *   This may also do advance wrapping
-   *   (invoke wrapper will also be created outside of this)
+   *   (DBOS invoke wrapper will also be created outside of this)
    */
+  wrapTransactionFunction<This, Args extends unknown[], Return>(
+    config: unknown,
+    func: (this: This, ...args: Args) => Promise<Return>,
+  ): (this: This, ...args: Args) => Promise<Return>;
 
   /**
    * Invoke a transaction function
@@ -138,7 +143,10 @@ export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
 export class DBOSKnexDS implements DBOSTransactionalDataStore {
   // User will set this up, in this case
-  constructor(readonly config: PoolConfig) {}
+  constructor(
+    readonly name: string,
+    readonly config: PoolConfig,
+  ) {}
   knexInstance: Knex | undefined;
   get knex(): Knex {
     if (!this.knexInstance) throw new Error('Not initialized');
@@ -197,25 +205,25 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
     await this.knex.destroy();
   }
 
-  getName() {
+  get dsType(): string {
     return 'DBOSKnex';
   }
 
   // TODO: This is in charge of retrying retriable errors
   // TODO: Put the transaction sentinel in here,
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
-    reg: MethodRegistration<This, Args, Return>,
-    config: KnexTransactionConfig,
+    _reg: MethodRegistration<This, Args, Return> | undefined,
+    config: KnexTransactionConfig | undefined,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
   ): Promise<Return> {
     let isolationLevel: Knex.IsolationLevels;
-    if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
+    if (config?.isolationLevel === IsolationLevel.ReadUncommitted) {
       isolationLevel = 'read uncommitted';
-    } else if (config.isolationLevel === IsolationLevel.ReadCommitted) {
+    } else if (config?.isolationLevel === IsolationLevel.ReadCommitted) {
       isolationLevel = 'read committed';
-    } else if (config.isolationLevel === IsolationLevel.RepeatableRead) {
+    } else if (config?.isolationLevel === IsolationLevel.RepeatableRead) {
       isolationLevel = 'repeatable read';
     } else {
       isolationLevel = 'serializable';
@@ -229,6 +237,35 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
       { isolationLevel: isolationLevel },
     );
     return result;
+  }
+
+  wrapTransactionFunction<This, Args extends unknown[], Return>(
+    config: unknown,
+    func: (this: This, ...args: Args) => Promise<Return>,
+  ): (this: This, ...args: Args) => Promise<Return> {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ds = this;
+    const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+      return await ds.invokeTransactionFunction(undefined, config as KnexTransactionConfig, this, func, ...rawArgs);
+    };
+
+    Object.defineProperty(invokeWrapper, 'name', {
+      value: func.name,
+    });
+
+    return invokeWrapper;
+  }
+
+  // Think of this as part of the API of the specific transaction provider, not
+  //  the interface.  It could also be the internals of a decorator.
+  registerTransaction<This, Args extends unknown[], Return>(
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      name: string;
+    },
+    config?: KnexTransactionConfig,
+  ): (this: This, ...args: Args) => Promise<Return> {
+    return registerTransaction(this.name, func, target, config);
   }
 
   getPostgresErrorCode(error: unknown): string | null {
@@ -252,8 +289,6 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
 // Register data source (user version)
 const userDataSources: Map<string, DBOSTransactionalDataStore> = new Map();
 
-// Transaction wrapper - let's start w/ end user utility
-
 // This is the version that needs no existing transaction registration.  Just goes with it.
 async function runAsWorkflowTransaction<T>(callback: () => Promise<T>, funcName: string, dsName?: string) {
   if (!DBOS.isWithinWorkflow) {
@@ -273,9 +308,56 @@ async function runAsWorkflowTransaction<T>(callback: () => Promise<T>, funcName:
   }, funcName);
 }
 
+// Transaction wrapper
+function registerTransaction<This, Args extends unknown[], Return>(
+  dsName: string,
+  func: (this: This, ...args: Args) => Promise<Return>,
+  target: {
+    name: string;
+  },
+  config?: unknown,
+): (this: This, ...args: Args) => Promise<Return> {
+  const dsn = dsName ?? '<default>';
+  const ds = userDataSources.get(dsn);
+  if (!ds) throw new DBOSNotRegisteredError(dsn, `Transactional Data Source ${dsn} not registered`);
+  const dsfunc = ds.wrapTransactionFunction(config, func);
+
+  const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+    if (!DBOS.isWithinWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(`Call to transaction '${target.name}' outside of a workflow`);
+    }
+
+    if (DBOS.isInTransaction() || DBOS.isInStep()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Invalid call to a `trasaction` function from within a `step` or `transaction`',
+      );
+    }
+
+    return await DBOS.runAsWorkflowStep(async () => {
+      return await dsfunc.call(this, ...rawArgs);
+    }, target.name);
+  };
+
+  Object.defineProperty(invokeWrapper, 'name', {
+    value: target.name,
+  });
+  return invokeWrapper;
+}
+
 ////
 /// App logic to test
 ////
+
+const config = generateDBOSTestConfig();
+const dsa = new DBOSKnexDS('knexA', config.poolConfig);
+userDataSources.set('knexA', dsa);
+
+async function txFunctionGuts() {
+  return Promise.resolve('Tx2 result');
+}
+
+const txFunc = registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
+
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
   const p1 = await runAsWorkflowTransaction(
@@ -287,10 +369,9 @@ async function wfFunctionGuts() {
   );
 
   // Transaction variant 1: Use a registered DBOS transaction function
-  // TODO
-  // const p2 = await stepFunction();
+  const p2 = await txFunc();
 
-  return p1; // + '|' + p2;
+  return p1 + '|' + p2;
 }
 
 // Workflow functions must always be registered before launch; this
@@ -300,13 +381,9 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
 });
 
 describe('decoratorless-api-tests', () => {
-  let config: DBOSConfig;
-
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    userDataSources.set('knexA', new DBOSKnexDS(config.poolConfig!));
   });
 
   beforeEach(async () => {
@@ -330,21 +407,17 @@ describe('decoratorless-api-tests', () => {
 
     await DBOS.withNextWorkflowID(wfid, async () => {
       const res = await wfFunction();
-      expect(res).toBe('My first tx result'); //|My second step result');
+      expect(res).toBe('My first tx result|Tx2 result');
     });
 
     const wfsteps = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid))!;
-    expect(wfsteps.length).toBe(1);
+    expect(wfsteps.length).toBe(2);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('MyFirstTx');
-    // TODO
-    //expect(wfsteps[1].functionID).toBe(1);
-    //expect(wfsteps[1].function_name).toBe('MySecondStep');
+    expect(wfsteps[1].functionID).toBe(1);
+    expect(wfsteps[1].name).toBe('MySecondTx');
   });
 });
 
 // Later
-// registerTransaction ()
-// runAsTransaction (later)
-
 // MikroORM example
