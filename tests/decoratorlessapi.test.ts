@@ -6,6 +6,8 @@ import { DBOSExecutor } from '../src/dbos-executor';
 // Step variant 1: Let DBOS provide the step wrapper making
 //  a reusable function that can be called from multiple places
 async function stepFunctionGuts() {
+  expect(DBOS.isInStep()).toBe(true);
+  expect(DBOS.isWithinWorkflow()).toBe(true);
   return Promise.resolve('My second step result');
 }
 

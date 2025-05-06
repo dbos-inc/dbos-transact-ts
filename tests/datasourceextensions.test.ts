@@ -8,6 +8,7 @@ import { DBOSInvalidWorkflowTransitionError, DBOSNotRegisteredError } from '../s
 import { ValuesOf } from '../src/utils';
 import { MethodRegistration } from '../src/decorators';
 import { DBOSExecutor } from '../src/dbos-executor';
+import { assertCurrentWorkflowContext, getCurrentContextStore, runWithDSContext } from '../src/context';
 
 // Data source implementation (to be moved to DBOS core)
 interface DBOSTransactionalDataStore {
@@ -111,12 +112,12 @@ interface DBOSKnexLocalCtx {
 }
 const asyncLocalCtx = new AsyncLocalStorage<DBOSKnexLocalCtx>();
 
-function getCurrentContextStore(): DBOSKnexLocalCtx | undefined {
+function getCurrentDSContextStore(): DBOSKnexLocalCtx | undefined {
   return asyncLocalCtx.getStore();
 }
 
-function assertCurrentContextStore(): DBOSKnexLocalCtx {
-  const ctx = getCurrentContextStore();
+function assertCurrentDSContextStore(): DBOSKnexLocalCtx {
+  const ctx = getCurrentDSContextStore();
   if (!ctx)
     throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOSKnexDS.knexClient` outside of a `transaction`');
   return ctx;
@@ -155,7 +156,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
 
   // User calls this... DBOS not directly involved...
   static get knexClient(): Knex {
-    const ctx = assertCurrentContextStore();
+    const ctx = assertCurrentDSContextStore();
     if (!DBOS.isInTransaction())
       throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
     return ctx.knexClient;
@@ -303,9 +304,18 @@ async function runAsWorkflowTransaction<T>(callback: () => Promise<T>, funcName:
   const ds = userDataSources.get(dsn);
   if (!ds) throw new DBOSNotRegisteredError(dsn, `Transactional Data Source ${dsn} not registered`);
 
-  return await DBOS.runAsWorkflowStep(async () => {
-    return await ds.invokeTransactionFunction(undefined, {}, undefined, callback);
-  }, funcName);
+  const wfctx = assertCurrentWorkflowContext();
+  const callnum = wfctx.functionIDGetIncrement();
+  return DBOSExecutor.globalInstance!.runAsStep<T>(
+    async () => {
+      return await runWithDSContext(getCurrentContextStore()!.curStepFunctionId!, async () => {
+        return await ds.invokeTransactionFunction(undefined, {}, undefined, callback);
+      });
+    },
+    funcName,
+    DBOS.workflowID,
+    callnum,
+  );
 }
 
 // Transaction wrapper
@@ -333,9 +343,18 @@ function registerTransaction<This, Args extends unknown[], Return>(
       );
     }
 
-    return await DBOS.runAsWorkflowStep(async () => {
-      return await dsfunc.call(this, ...rawArgs);
-    }, target.name);
+    const wfctx = assertCurrentWorkflowContext();
+    const callnum = wfctx.functionIDGetIncrement();
+    return DBOSExecutor.globalInstance!.runAsStep<Return>(
+      async () => {
+        return await runWithDSContext(callnum, async () => {
+          return await dsfunc.call(this, ...rawArgs);
+        });
+      },
+      target.name,
+      DBOS.workflowID,
+      callnum,
+    );
   };
 
   Object.defineProperty(invokeWrapper, 'name', {
@@ -353,7 +372,10 @@ const dsa = new DBOSKnexDS('knexA', config.poolConfig);
 userDataSources.set('knexA', dsa);
 
 async function txFunctionGuts() {
-  return Promise.resolve('Tx2 result');
+  expect(DBOS.isInTransaction()).toBe(true);
+  expect(DBOS.isWithinWorkflow()).toBe(true);
+  const res = await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Tx2 result' as a");
+  return res.rows[0].a;
 }
 
 const txFunc = registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
