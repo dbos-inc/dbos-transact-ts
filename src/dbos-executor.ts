@@ -718,6 +718,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
   ): Promise<WorkflowHandle<R>> {
     const workflowID: string = params.workflowUUID ? params.workflowUUID : randomUUID();
     const presetID: boolean = params.workflowUUID ? true : false;
+    const timeout = params.timeout;
+    // If a timeout is explicitly specified, use it over any propagated deadline
+    const deadline = params.timeout
+      ? // Queued workflows are assigned a deadline on dequeue. Otherwise, compute the deadline immediately
+        params.queueName
+        ? undefined
+        : Date.now() + params.timeout
+      : // if no timeout is specified, use the propagated deadline (if any)
+        params.deadline;
 
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
@@ -726,13 +735,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const wConfig = wInfo.config;
 
     const passContext = wInfo.registration?.passContext ?? true;
-    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(
+    const wCtxt = new WorkflowContextImpl(
       this,
       params.parentCtx,
       workflowID,
       wConfig,
       wf.name,
       presetID,
+      timeout,
+      deadline,
       params.tempWfType,
       params.tempWfName,
     );
@@ -753,7 +764,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       executorId: wCtxt.executorID,
       applicationVersion: globalParams.appVersion,
       applicationID: wCtxt.applicationID,
-      createdAt: Date.now(), // Remember the start time of this workflow
+      createdAt: Date.now(), // Remember the start time of this workflow,
+      timeout: timeout,
+      deadline: deadline,
     };
 
     if (wCtxt.isTempWorkflow) {

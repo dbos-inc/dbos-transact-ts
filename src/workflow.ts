@@ -50,6 +50,8 @@ export interface WorkflowParams {
   configuredInstance?: ConfiguredInstance | null;
   queueName?: string;
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
+  timeout?: number;
+  deadline?: number;
 }
 
 /**
@@ -198,6 +200,9 @@ export type WfInvokeWfsInstAsync<T> = T extends ConfiguredInstance
  *   Adjust callers to call the function directly, or to use `DBOS.startWorkflow`
  */
 export interface WorkflowContext extends DBOSContext {
+  readonly timeout?: number;
+  readonly deadline?: number;
+
   invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
 
@@ -218,8 +223,6 @@ export interface WorkflowContext extends DBOSContext {
     queue?: WorkflowQueue,
   ): WfInvokeWfsInstAsync<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T>;
-
-  // These are subject to change...
 
   send<T>(destinationID: string, message: T, topic?: string): Promise<void>;
   recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
@@ -245,6 +248,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     readonly workflowConfig: WorkflowConfig,
     workflowName: string,
     readonly presetUUID: boolean,
+    readonly timeout: number | undefined,
+    readonly deadline: number | undefined,
     readonly tempWfOperationType: string = '', // "transaction", "procedure", "external", or "send"
     readonly tempWfOperationName: string = '', // Name for the temporary workflow operation
   ) {
