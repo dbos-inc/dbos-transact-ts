@@ -237,12 +237,11 @@ export class DBOSHttpServer {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       if (!DBOSHttpServer.isDeactivated) {
         dbosExec.logger.info(
-          `Deactivating DBOS executor ${globalParams.executorID} with version ${globalParams.appVersion}. This executor will complete existing workflows but will not start new workflows.`,
+          `Deactivating DBOS executor ${globalParams.executorID} with version ${globalParams.appVersion}. This executor will complete existing workflows but will not create new workflows.`,
         );
         DBOSHttpServer.isDeactivated = true;
       }
-      await dbosExec.deactivateEventReceivers();
-      dbosExec.logger.info('Deactivating Event Receivers');
+      await dbosExec.deactivateEventReceivers(false);
       koaCtxt.body = 'Deactivated';
       await koaNext();
     };
@@ -278,7 +277,22 @@ export class DBOSHttpServer {
     const workflowResumeHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       dbosExec.logger.info(`Resuming workflow with ID: ${workflowId}`);
-      await dbosExec.resumeWorkflow(workflowId);
+      try {
+        await dbosExec.resumeWorkflow(workflowId);
+      } catch (e) {
+        let errorMessage = '';
+        if (e instanceof DBOSError) {
+          errorMessage = e.message;
+        } else {
+          errorMessage = `Unknown error`;
+        }
+        dbosExec.logger.error(`Error resuming workflow ${workflowId}: ${errorMessage}`);
+        koaCtxt.status = 500;
+        koaCtxt.body = {
+          error: `Error resuming workflow ${workflowId}: ${errorMessage}`,
+        };
+        return;
+      }
       koaCtxt.status = 204;
     };
     router.post(workflowResumeUrl, workflowResumeHandler);
@@ -361,7 +375,7 @@ export class DBOSHttpServer {
     const workflowStepsHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const steps = await dbosExec.listWorkflowSteps(workflowId);
-      koaCtxt.body = steps.map((step) => ({
+      koaCtxt.body = steps?.map((step) => ({
         function_name: step.name,
         function_id: step.functionID,
         output: step.output ? DBOSJSON.stringify(step.output) : undefined,

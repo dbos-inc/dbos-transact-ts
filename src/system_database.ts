@@ -1240,7 +1240,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // public done
+  // TODO: make cancel throw an error if the workflow doesn't exist.
   async cancelWorkflow(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -1297,6 +1297,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const statusResult = await getWorkflowStatusValue(client, workflowID);
       if (!statusResult || statusResult === StatusString.SUCCESS || statusResult === StatusString.ERROR) {
         await client.query('ROLLBACK');
+        if (!statusResult) {
+          if (statusResult === undefined) {
+            throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
+          }
+        }
         return;
       }
 
@@ -1367,11 +1372,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const client = await this.pool.connect();
       try {
         // Check if the operation has been done before for OAOO (only do this inside a workflow).
-        const json = await this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, async () => {
-          const statuses = await this.listWorkflows({ workflowIDs: [workflowID] });
-          const status = statuses.find((s) => s.workflowUUID === workflowID);
-          return status ? JSON.stringify(status) : null;
-        });
+        const json = await this.#runAndRecordResult(client, DBOS_FUNCNAME_GETSTATUS, callerID, callerFN, funcGetStatus);
         return parseStatus(json);
       } finally {
         client.release();
@@ -1831,17 +1832,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
 
         // Lookup tasks
-        let query = trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-          .whereNull('completed_at_epoch_ms') // not completed
-          .whereNull('started_at_epoch_ms') // not started
-          .andWhere('queue_name', queue.name)
-          .orderBy('created_at_epoch_ms', 'asc')
+        let query = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_queue as wq`)
+          .join(`${DBOSExecutor.systemDBSchemaName}.workflow_status as ws`, 'wq.workflow_uuid', '=', 'ws.workflow_uuid')
+          .whereNull('wq.completed_at_epoch_ms') // not completed
+          .whereNull('wq.started_at_epoch_ms') // not started
+          .andWhere('wq.queue_name', queue.name)
+          .andWhere((b) => {
+            b.whereNull('ws.application_version').orWhere('ws.application_version', appVersion);
+          })
+          .orderBy('wq.created_at_epoch_ms', 'asc')
           .forUpdate()
           .noWait();
         if (maxTasks !== Infinity) {
           query = query.limit(maxTasks);
         }
-        const rows = await query.select(['workflow_uuid']);
+        const rows = (await query.select(['wq.workflow_uuid as workflow_uuid'])) as { workflow_uuid: string }[];
 
         // Start the workflows
         const workflowIDs = rows.map((row) => row.workflow_uuid);
@@ -1856,9 +1861,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
           const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
             .where('workflow_uuid', id)
             .andWhere('status', StatusString.ENQUEUED)
-            .andWhere((b) => {
-              b.whereNull('application_version').orWhere('application_version', appVersion);
-            })
             .update({
               status: StatusString.PENDING,
               executor_id: executorID,

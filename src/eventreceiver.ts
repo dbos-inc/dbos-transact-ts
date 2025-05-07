@@ -113,8 +113,8 @@ export interface DBOSExecutorContext {
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]>;
   /** @deprecated Use functions on `DBOS` */
   listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]>;
-
-  listWorkflowSteps(workflowID: string): Promise<StepInfo[]>;
+  /** @deprecated Use functions on `DBOS` */
+  listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined>;
   /** @deprecated Use functions on `DBOS` */
   getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput>;
   /** @deprecated Use functions on `DBOS` */

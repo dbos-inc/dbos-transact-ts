@@ -1889,7 +1889,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return listQueuedWorkflows(this.systemDatabase, input);
   }
 
-  async listWorkflowSteps(workflowID: string): Promise<StepInfo[]> {
+  async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
     return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
   }
 
@@ -1984,7 +1984,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async deactivateEventReceivers() {
+  async deactivateEventReceivers(stopQueueThread: boolean = true) {
     this.logger.debug('Deactivating event receivers');
     for (const evtRcvr of this.eventReceivers || []) {
       try {
@@ -2000,13 +2000,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const e = err as Error;
       this.logger.warn(`Error destroying scheduler: ${e.message}`);
     }
-
-    try {
-      wfQueueRunner.stop();
-      await this.wfqEnded;
-    } catch (err) {
-      const e = err as Error;
-      this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
+    if (stopQueueThread) {
+      try {
+        wfQueueRunner.stop();
+        await this.wfqEnded;
+      } catch (err) {
+        const e = err as Error;
+        this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
+      }
     }
   }
 

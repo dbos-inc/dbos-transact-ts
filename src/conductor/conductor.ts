@@ -175,6 +175,22 @@ export class Conductor {
             const restartResp = new protocol.RestartResponse(baseMsg.request_id, restartSuccess, errorMsg);
             this.websocket!.send(DBOSJSON.stringify(restartResp));
             break;
+          case protocol.MessageType.FORK_WORKFLOW:
+            const forkMsg = baseMsg as protocol.ForkWorkflowRequest;
+            let newWorkflowID = forkMsg.body.new_workflow_id;
+            try {
+              newWorkflowID = await this.dbosExec.forkWorkflow(forkMsg.body.workflow_id, forkMsg.body.start_step, {
+                newWorkflowID: newWorkflowID,
+                applicationVersion: forkMsg.body.application_version,
+              });
+            } catch (e) {
+              errorMsg = `Exception encountered when forking workflow ${forkMsg.body.workflow_id} to new workflow ${newWorkflowID} on step ${forkMsg.body.start_step}, app version ${forkMsg.body.application_version}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+              newWorkflowID = undefined;
+            }
+            const forkResp = new protocol.ForkWorkflowResponse(baseMsg.request_id, newWorkflowID, errorMsg);
+            this.websocket!.send(DBOSJSON.stringify(forkResp));
+            break;
           case protocol.MessageType.LIST_WORKFLOWS:
             const listWFMsg = baseMsg as protocol.ListWorkflowsRequest;
             const body = listWFMsg.body;
@@ -269,7 +285,7 @@ export class Conductor {
             let workflowSteps: protocol.WorkflowSteps[] | undefined = undefined;
             try {
               const stepsInfo = await this.dbosExec.listWorkflowSteps(listStepsMessage.workflow_id);
-              workflowSteps = stepsInfo.map((i) => new protocol.WorkflowSteps(i));
+              workflowSteps = stepsInfo?.map((i) => new protocol.WorkflowSteps(i));
             } catch (e) {
               errorMsg = `Exception encountered when listing steps ${listStepsMessage.workflow_id}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
