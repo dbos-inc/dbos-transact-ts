@@ -60,7 +60,7 @@ interface EnqueueOptions {
    * An ID used to identify enqueues workflows that will be used for de-duplication.
    * If not provided, no de-duplication will be performed.
    */
-  deDuplicationID?: string;
+  deduplicationID?: string;
 }
 
 /**
