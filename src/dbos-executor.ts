@@ -775,6 +775,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     let status: string | undefined = undefined;
+    let $deadline: number | undefined = undefined;
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
@@ -813,6 +814,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       args = DBOSJSON.parse(ires.serializedInputs) as T;
       status = ires.status;
+      $deadline = ires.deadline;
       await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
     }
 
@@ -821,11 +823,19 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       // Execute the workflow.
       try {
-        const callResult = await runWithWorkflowContext(wCtxt, async () => {
+        const callResult = await runWithWorkflowContext(wCtxt, () => {
           const callPromise = passContext
             ? wf.call(params.configuredInstance, wCtxt, ...args)
             : (wf as unknown as ContextFreeFunction<T, R>).call(params.configuredInstance, ...args);
-          return await callPromise;
+
+          if ($deadline === undefined) {
+            return callPromise;
+          } else {
+            const timeoutPromise = new Promise<R>((_, reject) => {
+              setTimeout(() => reject(new DBOSWorkflowCancelledError(workflowID)), $deadline - Date.now());
+            });
+            return Promise.race([callPromise, timeoutPromise]);
+          }
         });
 
         if (this.isDebugging) {
