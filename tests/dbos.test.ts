@@ -295,6 +295,24 @@ describe('dbos-tests', () => {
         .then((h) => h.getResult()),
     ).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
   });
+
+  test('parent-workflow-withWorkflowTimeout', async () => {
+    const workflowID: string = randomUUID();
+    await DBOS.withNextWorkflowID(workflowID, async () => {
+      await DBOS.withWorkflowTimeout(100, async () => {
+        await expect(DBOSTimeoutTestClass.parentWorkflow()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+      });
+    });
+  });
+
+  test('parent-workflow-timeout-startWorkflow-params', async () => {
+    const workflowID = randomUUID();
+    await expect(
+      DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 })
+        .parentWorkflow()
+        .then((h) => h.getResult()),
+    ).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+  });
 });
 
 class DBOSTimeoutTestClass {
@@ -303,6 +321,13 @@ class DBOSTimeoutTestClass {
     while (true) {
       await DBOS.sleep(100);
     }
+  }
+
+  @DBOS.workflow()
+  static async parentWorkflow() {
+    await DBOS.startWorkflow(DBOSTimeoutTestClass)
+      .blockedWorkflow()
+      .then((h) => h.getResult());
   }
 }
 
