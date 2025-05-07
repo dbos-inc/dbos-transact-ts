@@ -289,29 +289,42 @@ describe('dbos-tests', () => {
 
   test('workflow-timeout-startWorkflow-params', async () => {
     const workflowID = randomUUID();
-    await expect(
-      DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 })
-        .blockedWorkflow()
-        .then((h) => h.getResult()),
-    ).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 }).blockedWorkflow();
+    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
   });
 
   test('parent-workflow-withWorkflowTimeout', async () => {
     const workflowID: string = randomUUID();
     await DBOS.withNextWorkflowID(workflowID, async () => {
       await DBOS.withWorkflowTimeout(100, async () => {
-        await expect(DBOSTimeoutTestClass.parentWorkflow()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+        await expect(DBOSTimeoutTestClass.blockingParentStartWF()).rejects.toThrow(
+          new DBOSWorkflowCancelledError(workflowID),
+        );
       });
     });
   });
 
   test('parent-workflow-timeout-startWorkflow-params', async () => {
     const workflowID = randomUUID();
-    await expect(
-      DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 })
-        .parentWorkflow()
-        .then((h) => h.getResult()),
-    ).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 }).blockingParentStartWF();
+    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+  });
+
+  test('direct-parent-workflow-withWorkflowTimeout', async () => {
+    const workflowID: string = randomUUID();
+    await DBOS.withNextWorkflowID(workflowID, async () => {
+      await DBOS.withWorkflowTimeout(100, async () => {
+        await expect(DBOSTimeoutTestClass.blockingParentDirect()).rejects.toThrow(
+          new DBOSWorkflowCancelledError(workflowID),
+        );
+      });
+    });
+  });
+
+  test('direct-parent-workflow-timeout-startWorkflow-params', async () => {
+    const workflowID = randomUUID();
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 }).blockingParentDirect();
+    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
   });
 });
 
@@ -324,10 +337,15 @@ class DBOSTimeoutTestClass {
   }
 
   @DBOS.workflow()
-  static async parentWorkflow() {
+  static async blockingParentStartWF() {
     await DBOS.startWorkflow(DBOSTimeoutTestClass)
       .blockedWorkflow()
       .then((h) => h.getResult());
+  }
+
+  @DBOS.workflow()
+  static async blockingParentDirect() {
+    await DBOSTimeoutTestClass.blockedWorkflow();
   }
 }
 
