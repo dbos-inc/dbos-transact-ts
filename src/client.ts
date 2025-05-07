@@ -49,6 +49,12 @@ interface EnqueueOptions {
    * If not provided, the version of the DBOS app that first dequeues the workflow will be used.
    */
   appVersion?: string;
+  /**
+   * Timeout for the workflow execution in milliseconds.
+   * Note, timeout starts when the workflow is dequeued.
+   * If not provided, the workflow timeout will not be set and the workflow will run to completion.
+   */
+  workflowTimeout?: number;
 }
 
 /**
@@ -127,6 +133,8 @@ export class DBOSClient {
       applicationVersion: appVersion,
       applicationID: '',
       createdAt: Date.now(),
+      timeout: options.workflowTimeout,
+      deadline: undefined,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
