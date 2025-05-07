@@ -1838,7 +1838,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   forkWorkflow(
     workflowID: string,
     startStep: number,
-    options: { newWorkflowID?: string; applicationVersion?: string } = {},
+    options: { newWorkflowID?: string; applicationVersion?: string; timeout?: number } = {},
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);
     return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, { ...options, newWorkflowID });

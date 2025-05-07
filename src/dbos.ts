@@ -1006,7 +1006,7 @@ export class DBOS {
   static async forkWorkflow<T>(
     workflowID: string,
     startStep: number,
-    options?: { newWorkflowID?: string; applicationVersion?: string },
+    options?: { newWorkflowID?: string; applicationVersion?: string; timeout?: number },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     const forkedID = await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.forkWorkflow(workflowID, startStep, options);

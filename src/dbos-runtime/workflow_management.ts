@@ -87,7 +87,7 @@ export async function forkWorkflow(
   userdb: UserDatabase,
   workflowID: string,
   startStep: number,
-  options: { newWorkflowID?: string; applicationVersion?: string } = {},
+  options: { newWorkflowID?: string; applicationVersion?: string; timeout?: number } = {},
 ): Promise<string> {
   const maxStepID = await getMaxStepID(sysdb, userdb, workflowID);
   if (startStep > maxStepID) {

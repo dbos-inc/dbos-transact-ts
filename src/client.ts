@@ -203,7 +203,7 @@ export class DBOSClient {
   forkWorkflow(
     workflowID: string,
     startStep: number,
-    options?: { newWorkflowID?: string; applicationVersion?: string },
+    options?: { newWorkflowID?: string; applicationVersion?: string; timeout?: number },
   ): Promise<string> {
     return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, options);
   }
