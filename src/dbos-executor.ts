@@ -2052,6 +2052,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           configuredInstance: configuredInst,
           queueName: wfStatus.queueName,
           executeWorkflow: true,
+          deadline: wfStatus.deadline,
         },
         ...inputs,
       );

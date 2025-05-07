@@ -899,7 +899,7 @@ export class DBOS {
           timerFuncID,
         );
         if (!rres) return null;
-        if (rres?.cancelled) throw new DBOSTargetWorkflowCancelledError(`Workflow ${workflowID} was cancelled`); // TODO: Make semantically meaningful
+        if (rres?.cancelled) throw new DBOSTargetWorkflowCancelledError(workflowID); // TODO: Make semantically meaningful
         return DBOSExecutor.reviveResultOrError<T>(rres);
       },
       'DBOS.getResult',
