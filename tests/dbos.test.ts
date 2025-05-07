@@ -338,9 +338,31 @@ describe('dbos-tests', () => {
     const status = await DBOS.getWorkflowStatus(workflowID);
     expect(status?.status).toBe(StatusString.CANCELLED);
   });
+
+  test('sleeping-workflow-timed-out', async () => {
+    const workflowID = randomUUID();
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 }).sleepingWorkflow(1000);
+    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.CANCELLED);
+  });
+
+  test('sleeping-workflow-not-timed-out', async () => {
+    const workflowID = randomUUID();
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 2000 }).sleepingWorkflow(1000);
+    await expect(handle.getResult()).resolves.toBe(42);
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.SUCCESS);
+  });
 });
 
 class DBOSTimeoutTestClass {
+  @DBOS.workflow()
+  static async sleepingWorkflow(duration: number) {
+    await DBOS.sleep(duration);
+    return 42;
+  }
+
   @DBOS.workflow()
   static async blockedWorkflow() {
     while (true) {
