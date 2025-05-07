@@ -1819,17 +1819,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
 
         // Lookup tasks
-        let query = trx<workflow_queue>(`${DBOSExecutor.systemDBSchemaName}.workflow_queue`)
-          .whereNull('completed_at_epoch_ms') // not completed
-          .whereNull('started_at_epoch_ms') // not started
-          .andWhere('queue_name', queue.name)
-          .orderBy('created_at_epoch_ms', 'asc')
+        let query = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_queue as wq`)
+          .join(`${DBOSExecutor.systemDBSchemaName}.workflow_status as ws`, 'wq.workflow_uuid', '=', 'ws.workflow_uuid')
+          .whereNull('wq.completed_at_epoch_ms') // not completed
+          .whereNull('wq.started_at_epoch_ms') // not started
+          .andWhere('wq.queue_name', queue.name)
+          .andWhere((b) => {
+            b.whereNull('ws.application_version').orWhere('ws.application_version', appVersion);
+          })
+          .orderBy('wq.created_at_epoch_ms', 'asc')
           .forUpdate()
           .noWait();
         if (maxTasks !== Infinity) {
           query = query.limit(maxTasks);
         }
-        const rows = await query.select(['workflow_uuid']);
+        const rows = (await query.select(['wq.workflow_uuid as workflow_uuid'])) as { workflow_uuid: string }[];
 
         // Start the workflows
         const workflowIDs = rows.map((row) => row.workflow_uuid);
@@ -1844,9 +1848,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
           const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
             .where('workflow_uuid', id)
             .andWhere('status', StatusString.ENQUEUED)
-            .andWhere((b) => {
-              b.whereNull('application_version').orWhere('application_version', appVersion);
-            })
             .update({
               status: StatusString.PENDING,
               executor_id: executorID,
