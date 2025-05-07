@@ -285,12 +285,16 @@ describe('dbos-tests', () => {
         );
       });
     });
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.CANCELLED);
   });
 
   test('workflow-timeout-startWorkflow-params', async () => {
     const workflowID = randomUUID();
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 }).blockedWorkflow();
     await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.CANCELLED);
   });
 
   test('parent-workflow-withWorkflowTimeout', async () => {
@@ -302,12 +306,16 @@ describe('dbos-tests', () => {
         );
       });
     });
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.CANCELLED);
   });
 
   test('parent-workflow-timeout-startWorkflow-params', async () => {
     const workflowID = randomUUID();
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 }).blockingParentStartWF();
     await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.CANCELLED);
   });
 
   test('direct-parent-workflow-withWorkflowTimeout', async () => {
@@ -319,12 +327,16 @@ describe('dbos-tests', () => {
         );
       });
     });
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.CANCELLED);
   });
 
   test('direct-parent-workflow-timeout-startWorkflow-params', async () => {
     const workflowID = randomUUID();
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 }).blockingParentDirect();
     await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.CANCELLED);
   });
 });
 

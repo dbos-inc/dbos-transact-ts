@@ -100,6 +100,9 @@ describe('DBOSClient', () => {
         workflowTimeout: 1000,
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
+
+      const wfstatus = await client.getWorkflow(wfid);
+      expect(wfstatus?.status).toBe('CANCELLED');
     } finally {
       await client.destroy();
     }
@@ -120,6 +123,9 @@ describe('DBOSClient', () => {
         workflowTimeout: 1000,
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
+
+      const wfstatus = await client.getWorkflow(wfid);
+      expect(wfstatus?.status).toBe('CANCELLED');
     } finally {
       await client.destroy();
     }
@@ -140,6 +146,9 @@ describe('DBOSClient', () => {
         workflowTimeout: 1000,
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
+
+      const wfstatus = await client.getWorkflow(wfid);
+      expect(wfstatus?.status).toBe('CANCELLED');
     } finally {
       await client.destroy();
     }
