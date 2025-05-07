@@ -16,115 +16,6 @@ import { assertCurrentWorkflowContext, runWithDSContext } from '../src/context';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { SpanStatusCode } from '@opentelemetry/api';
 
-/*
-     await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
- 
-     let retryWaitMillis = 1;
-     const backoffFactor = 1.5;
-     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
- 
-     while (true) {
-       await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
- 
-       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
-         const tCtxt = new TransactionContextImpl(
-           this.userDatabase.getName(),
-           client,
-           wfCtx,
-           span,
-           this.logger,
-           funcId,
-           txn.name,
-         );
- 
-         if (this.isDebugging) {
-           if (prevResult instanceof Error) {
-             throw prevResult;
-           }
- 
-           const prevResultJson = DBOSJSON.stringify(prevResult);
-           const resultJson = DBOSJSON.stringify(result);
-           if (prevResultJson !== resultJson) {
-             this.logger.error(
-               `Detected different transaction output than the original one!\n Result: ${resultJson}\n Original: ${DBOSJSON.stringify(prevResultJson)}`,
-             );
-           }
-           return prevResult as R;
-         }
- 
-         if (result instanceof Error) {
-           throw result;
-         }
- 
-         // Record the execution, commit, and return.
- 
-         try {
-           // Synchronously record the output of write transactions and obtain the transaction ID.
-           const pg_txn_id = await this.#recordOutput(
-             queryFunc,
-             wfCtx.workflowUUID,
-             funcId,
-             txn_snapshot,
-             result,
-             (error) => this.userDatabase.isKeyConflictError(error),
-             txn.name,
-           );
-           tCtxt.span.setAttribute('pg_txn_id', pg_txn_id);
-         } catch (error) {
-           if (this.userDatabase.isFailedSqlTransactionError(error)) {
-             this.logger.error(
-               `Postgres aborted the ${txn.name} @DBOS.transaction of Workflow ${workflowUUID}, but the function did not raise an exception.  Please ensure that the @DBOS.transaction method raises an exception if the database transaction is aborted.`,
-             );
-             throw new DBOSFailedSqlTransactionError(workflowUUID, txn.name);
-           } else {
-             throw error;
-           }
-         }
- 
-         return result;
-       };
-
-       try {
-         const result = await this.userDatabase.transaction(wrappedTransaction, txnInfo.config);
-         return result;
-       } catch (err) {
-         const e: Error = err as Error;
-         if (!this.debugMode && !(e instanceof DBOSUnexpectedStepError)) {
-           if (this.userDatabase.isRetriableTransactionError(err)) {
-             // serialization_failure in PostgreSQL
-             span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
-             // Retry serialization failures.
-             await sleepms(retryWaitMillis);
-             retryWaitMillis *= backoffFactor;
-             retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
-             continue;
-           }
- 
-           // Record and throw other errors.
-           const e: Error = err as Error;
-           await this.userDatabase.transaction(
-             async (client: UserDatabaseClient) => {
-               const func = <T>(sql: string, args: unknown[]) =>
-                 this.userDatabase.queryWithClient<T>(client, sql, ...args);
-               await this.#recordError(
-                 func,
-                 wfCtx.workflowUUID,
-                 funcId,
-                 txn_snapshot,
-                 e,
-                 (error) => this.userDatabase.isKeyConflictError(error),
-                 txn.name,
-               );
-             },
-             { isolationLevel: IsolationLevel.ReadCommitted },
-           );
-         }
-         throw err;
-       }
-     }
-   }
- */
-
 // Data source implementation (to be moved to DBOS core)
 interface DBOSTransactionalDataStore {
   name: string;
@@ -176,7 +67,6 @@ interface ExistenceCheck {
 
 export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
 export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'knex_transaction_outputs')`;
-export const txnOutputIndexExistsQuery = `SELECT EXISTS (SELECT FROM pg_indexes WHERE schemaname='dbos' AND tablename = 'knex_transaction_outputs' AND indexname = 'knex_transaction_outputs_created_at_index')`;
 
 export interface transaction_outputs {
   workflow_id: string;
@@ -357,6 +247,8 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
       isolationLevel = 'serializable';
     }
 
+    const readOnly = config?.readOnly ? true : false;
+
     const wfid = DBOS.workflowID!;
     const funcnum = DBOS.stepID!;
     const funcname = func.name;
@@ -380,12 +272,8 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
             // Optimistically, checkExection is not necessary on the first trip around,
             //   It can be run on a second iteration if insert has failed.
             // OTOH, to be pessimistic, this should be LOCK / SFU'd
-            // There is also no reason to record errors.  The system DB does this.
-            //   Presumably, the transaction was rolled back and therefore had no side-effects.
-            //   There is no reason why you'd get a different error if you re-ran the transaction,
-            //    but if you did, that's also presumed to be valid.
 
-            if (shouldCheckOutput) {
+            if (shouldCheckOutput && !readOnly) {
               const executionResult = await this.#checkExecution<Return>(transactionClient, wfid, funcnum);
 
               if (executionResult) {
@@ -401,7 +289,9 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
 
               // Save result
               try {
-                await this.#recordOutput(transactionClient, wfid, funcnum, res);
+                if (!readOnly) {
+                  await this.#recordOutput(transactionClient, wfid, funcnum, res);
+                }
               } catch (e) {
                 const error = e as Error;
                 // Aside from a connectivity error, two kinds of error are anticipated here:
@@ -426,13 +316,18 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
               }
               return res;
             } catch (e) {
-              // Save error?  Nope.  This goes in the system DB.
+              // There is no reason to record errors.  The system DB does this.
+              //   Presumably, the transaction was rolled back and therefore had no side-effects.
+              //   There is no reason why you'd get a different error if you re-ran the transaction,
+              //    but if you did, that's also presumed to be valid.
+              // There's also no suitable transaction to record the error in, so we'd need a new one.
+              //   Putting in the sysdb is no different.
               throw e;
             }
           },
           {
             isolationLevel: isolationLevel,
-            readOnly: false, // TODO
+            readOnly: readOnly,
           },
         );
         return result;
