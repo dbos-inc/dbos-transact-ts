@@ -609,7 +609,7 @@ export class DBOS {
 
   /** Get the current workflow ID */
   static get workflowID(): string | undefined {
-    return getCurrentDBOSContext()?.workflowUUID;
+    return getCurrentContextStore()?.workflowId ?? getCurrentDBOSContext()?.workflowUUID;
   }
 
   /** Get the current step number, within the current workflow */

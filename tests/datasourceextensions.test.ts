@@ -4,11 +4,126 @@ import knex, { Knex } from 'knex';
 import { DBOS } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
-import { DBOSInvalidWorkflowTransitionError, DBOSNotRegisteredError } from '../src/error';
-import { ValuesOf } from '../src/utils';
+import {
+  DBOSFailedSqlTransactionError,
+  DBOSInvalidWorkflowTransitionError,
+  DBOSNotRegisteredError,
+} from '../src/error';
+import { DBOSJSON, sleepms, ValuesOf } from '../src/utils';
 import { MethodRegistration } from '../src/decorators';
-import { DBOSExecutor } from '../src/dbos-executor';
-import { assertCurrentWorkflowContext, getCurrentContextStore, runWithDSContext } from '../src/context';
+import { DBOSExecutor, OperationType } from '../src/dbos-executor';
+import { assertCurrentWorkflowContext, runWithDSContext } from '../src/context';
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { SpanStatusCode } from '@opentelemetry/api';
+
+/*
+     await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
+ 
+     let retryWaitMillis = 1;
+     const backoffFactor = 1.5;
+     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
+ 
+     while (true) {
+       await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
+ 
+       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
+         const tCtxt = new TransactionContextImpl(
+           this.userDatabase.getName(),
+           client,
+           wfCtx,
+           span,
+           this.logger,
+           funcId,
+           txn.name,
+         );
+ 
+         if (this.isDebugging) {
+           if (prevResult instanceof Error) {
+             throw prevResult;
+           }
+ 
+           const prevResultJson = DBOSJSON.stringify(prevResult);
+           const resultJson = DBOSJSON.stringify(result);
+           if (prevResultJson !== resultJson) {
+             this.logger.error(
+               `Detected different transaction output than the original one!\n Result: ${resultJson}\n Original: ${DBOSJSON.stringify(prevResultJson)}`,
+             );
+           }
+           return prevResult as R;
+         }
+ 
+         if (result instanceof Error) {
+           throw result;
+         }
+ 
+         // Record the execution, commit, and return.
+ 
+         try {
+           // Synchronously record the output of write transactions and obtain the transaction ID.
+           const pg_txn_id = await this.#recordOutput(
+             queryFunc,
+             wfCtx.workflowUUID,
+             funcId,
+             txn_snapshot,
+             result,
+             (error) => this.userDatabase.isKeyConflictError(error),
+             txn.name,
+           );
+           tCtxt.span.setAttribute('pg_txn_id', pg_txn_id);
+         } catch (error) {
+           if (this.userDatabase.isFailedSqlTransactionError(error)) {
+             this.logger.error(
+               `Postgres aborted the ${txn.name} @DBOS.transaction of Workflow ${workflowUUID}, but the function did not raise an exception.  Please ensure that the @DBOS.transaction method raises an exception if the database transaction is aborted.`,
+             );
+             throw new DBOSFailedSqlTransactionError(workflowUUID, txn.name);
+           } else {
+             throw error;
+           }
+         }
+ 
+         return result;
+       };
+
+       try {
+         const result = await this.userDatabase.transaction(wrappedTransaction, txnInfo.config);
+         return result;
+       } catch (err) {
+         const e: Error = err as Error;
+         if (!this.debugMode && !(e instanceof DBOSUnexpectedStepError)) {
+           if (this.userDatabase.isRetriableTransactionError(err)) {
+             // serialization_failure in PostgreSQL
+             span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
+             // Retry serialization failures.
+             await sleepms(retryWaitMillis);
+             retryWaitMillis *= backoffFactor;
+             retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
+             continue;
+           }
+ 
+           // Record and throw other errors.
+           const e: Error = err as Error;
+           await this.userDatabase.transaction(
+             async (client: UserDatabaseClient) => {
+               const func = <T>(sql: string, args: unknown[]) =>
+                 this.userDatabase.queryWithClient<T>(client, sql, ...args);
+               await this.#recordError(
+                 func,
+                 wfCtx.workflowUUID,
+                 funcId,
+                 txn_snapshot,
+                 e,
+                 (error) => this.userDatabase.isKeyConflictError(error),
+                 txn.name,
+               );
+             },
+             { isolationLevel: IsolationLevel.ReadCommitted },
+           );
+         }
+         throw err;
+       }
+     }
+   }
+ */
 
 // Data source implementation (to be moved to DBOS core)
 interface DBOSTransactionalDataStore {
@@ -60,51 +175,25 @@ interface ExistenceCheck {
 }
 
 export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
-export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_outputs')`;
-export const txnOutputIndexExistsQuery = `SELECT EXISTS (SELECT FROM pg_indexes WHERE schemaname='dbos' AND tablename = 'transaction_outputs' AND indexname = 'transaction_outputs_created_at_index')`;
+export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'knex_transaction_outputs')`;
+export const txnOutputIndexExistsQuery = `SELECT EXISTS (SELECT FROM pg_indexes WHERE schemaname='dbos' AND tablename = 'knex_transaction_outputs' AND indexname = 'knex_transaction_outputs_created_at_index')`;
 
 export interface transaction_outputs {
-  workflow_uuid: string;
-  functionID: number;
+  workflow_id: string;
+  function_num: number;
   output: string | null;
-  error: string | null;
-  txn_id: string | null;
-  txn_snapshot: string;
-  function_name: string;
 }
 
 export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
 export const userDBSchema = `
-  CREATE TABLE IF NOT EXISTS dbos.transaction_outputs (
-    workflow_uuid TEXT NOT NULL,
-    functionID INT NOT NULL,
+  CREATE TABLE IF NOT EXISTS dbos.knex_transaction_outputs (
+    workflow_id TEXT NOT NULL,
+    function_num INT NOT NULL,
     output TEXT,
-    error TEXT,
-    txn_id TEXT,
-    txn_snapshot TEXT NOT NULL,
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
-    function_name TEXT NOT NULL DEFAULT '',
-    PRIMARY KEY (workflow_uuid, functionID)
+    PRIMARY KEY (workflow_id, function_num)
   );
-`;
-
-export const userDBIndex = `
-  CREATE INDEX IF NOT EXISTS transaction_outputs_created_at_index ON dbos.transaction_outputs (created_at);
-`;
-
-export const columnExistsQuery = `
-  SELECT EXISTS (
-    SELECT FROM information_schema.columns 
-    WHERE table_schema = 'dbos' 
-      AND table_name = 'transaction_outputs' 
-      AND column_name = 'function_name'
-  ) AS exists;
-`;
-
-export const addColumnQuery = `
-  ALTER TABLE dbos.transaction_outputs 
-    ADD COLUMN function_name TEXT NOT NULL DEFAULT '';
 `;
 
 interface DBOSKnexLocalCtx {
@@ -164,27 +253,24 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
 
   // initializeSchema - this is up to the user to call.  It's not part of DBOS lifecycle
   async initializeSchema(): Promise<void> {
-    const schemaExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
-    if (!schemaExists.rows[0].exists) {
-      await this.knex.raw(createUserDBSchema);
-    }
-    const txnOutputTableExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
-    if (!txnOutputTableExists.rows[0].exists) {
-      await this.knex.raw(userDBSchema);
-    } else {
-      const columnExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(columnExistsQuery);
-      if (!columnExists.rows[0].exists) {
-        await this.knex.raw(addColumnQuery);
+    const knex = this.createInstance();
+    try {
+      const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
+      if (!schemaExists.rows[0].exists) {
+        await knex.raw(createUserDBSchema);
       }
-    }
-
-    const txnIndexExists = await this.knex.raw<{ rows: ExistenceCheck[] }>(txnOutputIndexExistsQuery);
-    if (!txnIndexExists.rows[0].exists) {
-      await this.knex.raw(userDBIndex);
+      const txnOutputTableExists = await knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
+      if (!txnOutputTableExists.rows[0].exists) {
+        await knex.raw(userDBSchema);
+      }
+    } finally {
+      try {
+        await knex.destroy();
+      } catch (e) {}
     }
   }
 
-  async initialize(): Promise<void> {
+  createInstance() {
     const knexConfig: Knex.Config = {
       client: 'postgres',
       connection: {
@@ -197,7 +283,11 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
       },
     };
 
-    this.knexInstance = knex(knexConfig);
+    return knex(knexConfig);
+  }
+
+  async initialize(): Promise<void> {
+    this.knexInstance = this.createInstance();
 
     return Promise.resolve();
   }
@@ -210,8 +300,45 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
     return 'DBOSKnex';
   }
 
-  // TODO: This is in charge of retrying retriable errors
-  // TODO: Put the transaction sentinel in here,
+  async #checkExecution<R>(
+    client: Knex,
+    workflowID: string,
+    funcNum: number,
+  ): Promise<
+    | {
+        res: R;
+      }
+    | undefined
+  > {
+    type TxOutputRow = Pick<transaction_outputs, 'output'> & {
+      recorded: boolean;
+    };
+
+    const { rows } = await client.raw<{ rows: TxOutputRow[] }>(
+      `SELECT output
+          FROM dbos.knex_transaction_outputs
+          WHERE workflow_id=? AND function_num=?;`,
+      [workflowID, funcNum],
+    );
+
+    if (rows.length !== 1) {
+      return undefined;
+    }
+    return { res: DBOSJSON.parse(rows[1].output) as R };
+  }
+
+  async #recordOutput<R>(client: Knex, workflowID: string, funcNum: number, output: R): Promise<void> {
+    const serialOutput = DBOSJSON.stringify(output);
+    await client.raw<{ rows: transaction_outputs[] }>(
+      `INSERT INTO dbos.knex_transaction_outputs (
+        workflow_id, function_num,
+        output,
+        created_at
+      ) VALUES (?, ?, ?, ?)`,
+      [workflowID, funcNum, serialOutput, Date.now()],
+    );
+  }
+
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
     _reg: MethodRegistration<This, Args, Return> | undefined,
     config: KnexTransactionConfig | undefined,
@@ -229,15 +356,100 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
     } else {
       isolationLevel = 'serializable';
     }
-    const result = await this.knex.transaction<Return>(
-      async (transactionClient: Knex.Transaction) => {
-        return asyncLocalCtx.run({ knexClient: transactionClient }, async () => {
-          return await func.call(target, ...args);
-        });
-      },
-      { isolationLevel: isolationLevel },
-    );
-    return result;
+
+    const wfid = DBOS.workflowID!;
+    const funcnum = DBOS.stepID!;
+    const funcname = func.name;
+
+    // Retry loop if appropriate
+    let retryWaitMillis = 1;
+    const backoffFactor = 1.5;
+    const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
+    let shouldCheckOutput = false;
+
+    while (true) {
+      let failedForRetriableReasons = false;
+      try {
+        const result = await this.knex.transaction<Return>(
+          async (transactionClient: Knex.Transaction) => {
+            // TODO: serialization duties are based on DB logic here... but not app logic.  Is that right?
+
+            // Check for prior result / error
+            // TODO: Question the model here.
+            // This is an interesting question, as it fits neither of the 2 common DB patterns
+            // Optimistically, checkExection is not necessary on the first trip around,
+            //   It can be run on a second iteration if insert has failed.
+            // OTOH, to be pessimistic, this should be LOCK / SFU'd
+            // There is also no reason to record errors.  The system DB does this.
+            //   Presumably, the transaction was rolled back and therefore had no side-effects.
+            //   There is no reason why you'd get a different error if you re-ran the transaction,
+            //    but if you did, that's also presumed to be valid.
+
+            if (shouldCheckOutput) {
+              const executionResult = await this.#checkExecution<Return>(transactionClient, wfid, funcnum);
+
+              if (executionResult) {
+                DBOS.span?.setAttribute('cached', true);
+                return executionResult.res;
+              }
+            }
+
+            try {
+              const res = await asyncLocalCtx.run({ knexClient: transactionClient }, async () => {
+                return await func.call(target, ...args);
+              });
+
+              // Save result
+              try {
+                await this.#recordOutput(transactionClient, wfid, funcnum, res);
+              } catch (e) {
+                const error = e as Error;
+                // Aside from a connectivity error, two kinds of error are anticipated here:
+                //  1. The transaction is marked failed, but the user code did not throw.
+                //      Bad on them.  We will throw an error (this will get recorded) and not retry.
+                //  2. There was a key conflict in the statement, and we need to use the fetched output
+                if (this.isFailedSqlTransactionError(error)) {
+                  DBOS.logger.error(
+                    `In workflow ${wfid}, Postgres aborted a transaction but the function '${funcname}' did not raise an exception.  Please ensure that the transaction method raises an exception if the database transaction is aborted.`,
+                  );
+                  failedForRetriableReasons = false;
+                  throw new DBOSFailedSqlTransactionError(wfid, funcname);
+                } else if (this.isKeyConflictError(error)) {
+                  // Expected.  There is probably a result to return
+                  shouldCheckOutput = true;
+                  failedForRetriableReasons = true;
+                } else {
+                  DBOS.logger.error(`Unexpected error raised in transaction '${funcname}: ${error}`);
+                  failedForRetriableReasons = false;
+                  throw error;
+                }
+              }
+              return res;
+            } catch (e) {
+              // Save error?  Nope.  This goes in the system DB.
+              throw e;
+            }
+          },
+          {
+            isolationLevel: isolationLevel,
+            readOnly: false, // TODO
+          },
+        );
+        return result;
+      } catch (e) {
+        const err = e as Error;
+        if (failedForRetriableReasons || this.isRetriableTransactionError(err)) {
+          DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
+          // Retry serialization failures.
+          await sleepms(retryWaitMillis);
+          retryWaitMillis *= backoffFactor;
+          retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
+          continue;
+        } else {
+          throw err;
+        }
+      }
+    }
   }
 
   wrapTransactionFunction<This, Args extends unknown[], Return>(
@@ -306,16 +518,41 @@ async function runAsWorkflowTransaction<T>(callback: () => Promise<T>, funcName:
 
   const wfctx = assertCurrentWorkflowContext();
   const callnum = wfctx.functionIDGetIncrement();
-  return DBOSExecutor.globalInstance!.runAsStep<T>(
-    async () => {
-      return await runWithDSContext(getCurrentContextStore()!.curStepFunctionId!, async () => {
-        return await ds.invokeTransactionFunction(undefined, {}, undefined, callback);
-      });
-    },
+
+  const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
     funcName,
-    DBOS.workflowID,
-    callnum,
+    {
+      operationUUID: wfctx.workflowUUID,
+      operationType: OperationType.TRANSACTION,
+      authenticatedUser: wfctx.authenticatedUser,
+      assumedRole: wfctx.assumedRole,
+      authenticatedRoles: wfctx.authenticatedRoles,
+      // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
+    },
+    wfctx.span,
   );
+
+  try {
+    const res = DBOSExecutor.globalInstance!.runAsStep<T>(
+      async () => {
+        return await runWithDSContext(callnum, async () => {
+          return await ds.invokeTransactionFunction(undefined, {}, undefined, callback);
+        });
+      },
+      funcName,
+      DBOS.workflowID,
+      callnum,
+    );
+
+    span.setStatus({ code: SpanStatusCode.OK });
+    DBOSExecutor.globalInstance!.tracer.endSpan(span);
+    return res;
+  } catch (err) {
+    const e = err as Error;
+    span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+    DBOSExecutor.globalInstance!.tracer.endSpan(span);
+    throw err;
+  }
 }
 
 // Transaction wrapper
@@ -405,6 +642,7 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
     await setUpDBOSTestDb(config);
+    await dsa.initializeSchema();
     DBOS.setConfig(config);
   });
 
