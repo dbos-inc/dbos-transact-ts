@@ -208,6 +208,7 @@ export interface WorkflowStatusInternal {
 
 export interface EnqueueOptions {
   deduplicationID?: string;
+  priority?: number;
 }
 
 export interface ExistenceCheck {
@@ -1689,14 +1690,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
     enqueueOptions?: EnqueueOptions,
   ): Promise<void> {
     const dedupID = enqueueOptions?.deduplicationID ?? null;
+    const priority = enqueueOptions?.priority ?? 0;
 
     try {
       await client.query<workflow_queue>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, deduplication_id)
-        VALUES ($1, $2, $3)
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, deduplication_id, priority)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (workflow_uuid)
         DO NOTHING;`,
-        [workflowId, queueName, dedupID],
+        [workflowId, queueName, dedupID, priority],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
