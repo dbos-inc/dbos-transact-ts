@@ -1,10 +1,5 @@
 import type { PoolConfig } from 'pg';
-import {
-  PostgresSystemDatabase,
-  type SystemDatabase,
-  type WorkflowStatusInternal,
-  type EnqueueOptionsInternal,
-} from './system_database';
+import { PostgresSystemDatabase, type SystemDatabase, type WorkflowStatusInternal } from './system_database';
 
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
@@ -143,11 +138,14 @@ export class DBOSClient {
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
 
-    const enqueOptions: EnqueueOptionsInternal = {
+    /* const enqueOptions: EnqueueOptionsInternal = {
       deduplicationID: options.deduplicationID,
-    };
+    }; */
 
-    await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName, enqueOptions);
+    // await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName, enqueOptions);
+    await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName, {
+      deduplicationID: options.deduplicationID,
+    });
     return new RetrievedHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
 

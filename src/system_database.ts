@@ -123,7 +123,7 @@ export interface SystemDatabase {
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
 
   // Queues
-  enqueueWorkflow(workflowId: string, queueName: string, enqueOptions?: EnqueueOptionsInternal): Promise<void>;
+  enqueueWorkflow(workflowId: string, queueName: string, enqueOptions?: EnqueueOptions): Promise<void>;
   clearQueueAssignment(workflowId: string): Promise<boolean>;
   dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
 
@@ -206,7 +206,7 @@ export interface WorkflowStatusInternal {
   recoveryAttempts?: number;
 }
 
-export interface EnqueueOptionsInternal {
+export interface EnqueueOptions {
   deduplicationID?: string;
 }
 
@@ -1686,7 +1686,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     client: PoolClient,
     workflowId: string,
     queueName: string,
-    enqueueOptions?: EnqueueOptionsInternal,
+    enqueueOptions?: EnqueueOptions,
   ): Promise<void> {
     const dedupID = enqueueOptions?.deduplicationID ?? null;
 
@@ -1712,7 +1712,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async enqueueWorkflow(workflowId: string, queueName: string, enqueueOptions?: EnqueueOptionsInternal) {
+  async enqueueWorkflow(workflowId: string, queueName: string, enqueueOptions?: EnqueueOptions) {
     const client: PoolClient = await this.pool.connect();
     try {
       await this.#enqueueWorkflow(client, workflowId, queueName, enqueueOptions);

@@ -43,7 +43,7 @@ import {
   PostgresSystemDatabase,
   type WorkflowStatusInternal,
   type SystemDatabaseStoredResult,
-  type EnqueueOptionsInternal,
+  type EnqueueOptions,
 } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
@@ -904,7 +904,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       if (params.queueName && status === 'ENQUEUED' && !this.isDebugging) {
         const dedupId = getDeduplicationID();
-        const enqueOptions: EnqueueOptionsInternal = {
+        const enqueOptions: EnqueueOptions = {
           deduplicationID: dedupId,
         };
         await this.systemDatabase.enqueueWorkflow(
