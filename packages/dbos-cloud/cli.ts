@@ -180,8 +180,9 @@ applicationCommands
   .description('Update this application')
   .argument('[string]', 'application name (Default: name from package.json)')
   .option('--executors-memory-mib <number>', 'Specify the memory in MiB for the executors of this application')
-  .action(async (appName: string | undefined, options: { executorsMemoryMib?: number }) => {
-    const exitCode = await updateApp(DBOSCloudHost, appName, options.executorsMemoryMib);
+  .option('--set-microvms <number>', 'Specify the number of MicroVMs the apps should scale to')
+  .action(async (appName: string | undefined, options: { executorsMemoryMib?: number; setVms?: number }) => {
+    const exitCode = await updateApp(DBOSCloudHost, appName, options.executorsMemoryMib, options.setVms);
     process.exit(exitCode);
   });
 
