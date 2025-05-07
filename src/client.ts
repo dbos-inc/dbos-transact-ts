@@ -27,7 +27,7 @@ import { PGNodeUserDatabase, type UserDatabase } from './user_database';
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
  * This includes parameters like queue name, workflow name, workflow class name, and other optional settings.
  */
-interface EnqueueOptions {
+interface ClientEnqueueOptions {
   /**
    * The name of the queue to which the workflow will be enqueued.
    */
@@ -111,7 +111,7 @@ export class DBOSClient {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async enqueue<T extends (...args: any[]) => Promise<any>>(
-    options: EnqueueOptions,
+    options: ClientEnqueueOptions,
     ...args: Parameters<T>
   ): Promise<WorkflowHandle<Awaited<ReturnType<T>>>> {
     const { workflowName, workflowClassName, queueName, appVersion } = options;
