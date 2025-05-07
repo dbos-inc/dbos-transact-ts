@@ -270,8 +270,8 @@ interface InsertWorkflowResult {
   name: string;
   class_name: string;
   config_name: string;
-  queue_name?: string;
-  workflow_deadline_epoch_ms?: number;
+  queue_name: string | null;
+  workflow_deadline_epoch_ms: number | null;
 }
 
 async function insertWorkflowStatus(
@@ -657,7 +657,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       const status = resRow.status;
-      const deadline = resRow.workflow_deadline_epoch_ms;
+      const deadline = resRow.workflow_deadline_epoch_ms ?? undefined;
 
       const inputResult = await insertWorkflowInputs(client, initStatus.workflowUUID, serializedInputs);
       if (serializedInputs !== inputResult) {
