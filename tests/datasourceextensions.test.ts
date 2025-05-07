@@ -516,7 +516,7 @@ async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
   const p1 = await runAsWorkflowTransaction(
     async () => {
-      return Promise.resolve('My first tx result');
+      return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My first tx result' as a")).rows[0].a;
     },
     'MyFirstTx',
     'knexA',
