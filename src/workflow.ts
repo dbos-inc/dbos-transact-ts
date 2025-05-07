@@ -200,9 +200,6 @@ export type WfInvokeWfsInstAsync<T> = T extends ConfiguredInstance
  *   Adjust callers to call the function directly, or to use `DBOS.startWorkflow`
  */
 export interface WorkflowContext extends DBOSContext {
-  readonly timeout?: number;
-  readonly deadline?: number;
-
   invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
   invoke<T extends object>(targetClass: T): WFInvokeFuncs<T>;
 
