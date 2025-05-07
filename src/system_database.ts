@@ -829,7 +829,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await client.query(query, [newWorkflowID, workflowID, startStep]);
       }
 
-      await this.enqueueWorkflowInternal(client, newWorkflowID, INTERNAL_QUEUE_NAME);
+      await this.#enqueueWorkflow(client, newWorkflowID, INTERNAL_QUEUE_NAME);
 
       await client.query('COMMIT');
       return newWorkflowID;
@@ -1316,7 +1316,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throwOnFailure: false,
       });
 
-      await this.enqueueWorkflowInternal(client, workflowID, INTERNAL_QUEUE_NAME);
+      await this.#enqueueWorkflow(client, workflowID, INTERNAL_QUEUE_NAME);
 
       await client.query('COMMIT');
     } catch (error) {
@@ -1682,7 +1682,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { workflows };
   }
 
-  async enqueueWorkflowInternal(
+  async #enqueueWorkflow(
     client: PoolClient,
     workflowId: string,
     queueName: string,
@@ -1715,7 +1715,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async enqueueWorkflow(workflowId: string, queueName: string, enqueueOptions?: EnqueueOptionsInternal) {
     const client: PoolClient = await this.pool.connect();
     try {
-      await this.enqueueWorkflowInternal(client, workflowId, queueName, enqueueOptions);
+      await this.#enqueueWorkflow(client, workflowId, queueName, enqueueOptions);
     } finally {
       client.release();
     }
