@@ -5,7 +5,7 @@ import { StatusString } from '../src/workflow';
 import { DBOSConfigInternal } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
-import { DBOSFailedSqlTransactionError } from '../src/error';
+import { DBOSFailedSqlTransactionError, DBOSWorkflowCancelledError } from '../src/error';
 
 const testTableName = 'dbos_test_kv';
 
@@ -275,7 +275,36 @@ describe('dbos-tests', () => {
       );
     });
   });
+
+  test('workflow-withWorkflowTimeout', async () => {
+    const workflowID: string = randomUUID();
+    await DBOS.withNextWorkflowID(workflowID, async () => {
+      await DBOS.withWorkflowTimeout(100, async () => {
+        await expect(DBOSTimeoutTestClass.blockedWorkflow()).rejects.toThrow(
+          new DBOSWorkflowCancelledError(workflowID),
+        );
+      });
+    });
+  });
+
+  test('workflow-timeout-startWorkflow-params', async () => {
+    const workflowID = randomUUID();
+    await expect(
+      DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 })
+        .blockedWorkflow()
+        .then((h) => h.getResult()),
+    ).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+  });
 });
+
+class DBOSTimeoutTestClass {
+  @DBOS.workflow()
+  static async blockedWorkflow() {
+    while (true) {
+      await DBOS.sleep(100);
+    }
+  }
+}
 
 class DBOSTestClass {
   static initialized = false;
