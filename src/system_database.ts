@@ -1692,12 +1692,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     try {
       await client.query<workflow_queue>(
-        `
-        INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, deduplication_id)
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, deduplication_id)
         VALUES ($1, $2, $3)
         ON CONFLICT (workflow_uuid)
-        DO NOTHING;
-      `,
+        DO NOTHING;`,
         [workflowId, queueName, dedupID],
       );
     } catch (error) {
