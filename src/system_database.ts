@@ -207,7 +207,7 @@ export interface WorkflowStatusInternal {
 }
 
 export interface EnqueueOptionsInternal {
-  deDuplicationID?: string;
+  deduplicationID?: string;
 }
 
 export interface ExistenceCheck {
@@ -1688,8 +1688,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     queueName: string,
     enqueueOptions?: EnqueueOptionsInternal,
   ): Promise<void> {
-    const deDupId = enqueueOptions?.deDuplicationID ?? null;
-    console.log('In Enqueueing workflow', workflowId, queueName, deDupId);
+    const dedupID = enqueueOptions?.deduplicationID ?? null;
 
     try {
       await client.query<workflow_queue>(
@@ -1699,13 +1698,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
         ON CONFLICT (workflow_uuid)
         DO NOTHING;
       `,
-        [workflowId, queueName, deDupId],
+        [workflowId, queueName, dedupID],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '23505') {
         // unique constraint violation (only expected for the INSERT query)
-        throw new DBOSQueueDuplicatedError(workflowId, queueName, deDupId ?? '');
+        throw new DBOSQueueDuplicatedError(workflowId, queueName, dedupID ?? '');
       }
 
       this.logger.error(`Error enqueuing workflow ${workflowId} to queue ${queueName}`);

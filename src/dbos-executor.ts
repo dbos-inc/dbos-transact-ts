@@ -79,7 +79,7 @@ import {
   runWithStepContext,
   runWithStoredProcContext,
   getNextWFID,
-  getDeDuplicationId,
+  getDeduplicationID,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
@@ -903,9 +903,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name, callerID, callerFunctionID);
     } else {
       if (params.queueName && status === 'ENQUEUED' && !this.isDebugging) {
-        const dedupId = getDeDuplicationId();
+        const dedupId = getDeduplicationID();
         const enqueOptions: EnqueueOptionsInternal = {
-          deDuplicationID: dedupId,
+          deduplicationID: dedupId,
         };
         await this.systemDatabase.enqueueWorkflow(
           workflowID,

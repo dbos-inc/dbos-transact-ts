@@ -144,7 +144,7 @@ export class DBOSClient {
     await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
 
     const enqueOptions: EnqueueOptionsInternal = {
-      deDuplicationID: options.deduplicationID,
+      deduplicationID: options.deduplicationID,
     };
 
     await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName, enqueOptions);

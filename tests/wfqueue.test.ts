@@ -1048,7 +1048,7 @@ describe('queue-de-duplication', () => {
 
   test('test_deduplication', async () => {
     const wfid = randomUUID();
-    const dedup_id = 'my_dedup_id';
+    const dedupID = 'my_dedup_id';
 
     let wfh1: WorkflowHandle<string> | undefined;
 
@@ -1057,7 +1057,7 @@ describe('queue-de-duplication', () => {
         workflowID: wfid,
         queueName: TestExample.queue.name,
       }).parentWorkflow('abc');
-    }, dedup_id);
+    }, dedupID);
 
     // different dup_id no issue
     const wfid2 = randomUUID();
@@ -1085,7 +1085,7 @@ describe('queue-de-duplication', () => {
           workflowID: wfid4,
           queueName: TestExample.queue.name,
         }).parentWorkflow('xyz');
-      }, dedup_id);
+      }, dedupID);
     } catch (err) {
       expect(err).toBeInstanceOf(DBOSQueueDuplicatedError);
     }

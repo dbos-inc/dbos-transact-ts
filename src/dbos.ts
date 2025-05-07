@@ -1157,23 +1157,23 @@ export class DBOS {
   }
 
   /**
-   * Use queue named `queueName` for any workflows started within the `callback`.
-   * @param deDupId - De-duplication ID for the workflow enqueued
+   * Use dedupID to enqueue workflows started within the `callback`.
+   * @param dedupID - De-duplication ID for the workflow enqueued
    * @param callback - Function to run, which would call or start workflows
    * @returns - Return value from `callback`
    */
-  static async withEnqueueOptions<R>(callback: () => Promise<R>, deDupId?: string): Promise<R> {
+  static async withEnqueueOptions<R>(callback: () => Promise<R>, dedupID?: string): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
-      const pcwfq = pctx.deDuplicationId;
+      const pcwfq = pctx.deduplicationID;
       try {
-        pctx.deDuplicationId = deDupId;
+        pctx.deduplicationID = dedupID;
         return callback();
       } finally {
-        pctx.deDuplicationId = pcwfq;
+        pctx.deduplicationID = pcwfq;
       }
     } else {
-      return runWithTopContext({ deDuplicationId: deDupId }, callback);
+      return runWithTopContext({ deduplicationID: dedupID }, callback);
     }
   }
 
