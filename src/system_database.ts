@@ -382,6 +382,7 @@ async function updateWorkflowStatus(
       error?: string | null;
       resetRecoveryAttempts?: boolean;
       queueName?: string;
+      resetDeadline?: boolean;
     };
     where?: {
       status?: (typeof StatusString)[keyof typeof StatusString];
@@ -406,6 +407,10 @@ async function updateWorkflowStatus(
 
   if (update.resetRecoveryAttempts) {
     setClause += `, recovery_attempts = 0`;
+  }
+
+  if (update.resetDeadline) {
+    setClause += `, workflow_deadline_epoch_ms = NULL`;
   }
 
   if (update.queueName) {
@@ -1324,6 +1329,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         update: {
           queueName: INTERNAL_QUEUE_NAME,
           resetRecoveryAttempts: true,
+          resetDeadline: true,
         },
         throwOnFailure: false,
       });
@@ -1845,6 +1851,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
               status: StatusString.PENDING,
               executor_id: executorID,
               application_version: appVersion,
+              workflow_deadline_epoch_ms: trx.raw(
+                'CASE WHEN workflow_timeout_ms IS NULL THEN NULL ELSE (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms END',
+              ),
             });
 
           if (res > 0) {
