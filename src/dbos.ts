@@ -92,7 +92,7 @@ import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
-import { PostgresSystemDatabase } from './system_database';
+import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 
 // Declare all the options a user can pass to the DBOS object during launch()
@@ -1158,22 +1158,23 @@ export class DBOS {
 
   /**
    * Use dedupID to enqueue workflows started within the `callback`.
-   * @param dedupID - De-duplication ID for the workflow enqueued
+   * @param options - enqueueOptions for the workflow enqueued
    * @param callback - Function to run, which would call or start workflows
    * @returns - Return value from `callback`
    */
-  static async withEnqueueOptions<R>(callback: () => Promise<R>, dedupID?: string): Promise<R> {
+
+  static async withEnqueueOptions<R>(options: EnqueueOptions, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
-      const pcwfq = pctx.deduplicationID;
+      const pcwfq = pctx.enqueueOptions;
       try {
-        pctx.deduplicationID = dedupID;
+        pctx.enqueueOptions = options;
         return callback();
       } finally {
-        pctx.deduplicationID = pcwfq;
+        pctx.enqueueOptions = pcwfq;
       }
     } else {
-      return runWithTopContext({ deduplicationID: dedupID }, callback);
+      return runWithTopContext({ enqueueOptions: options }, callback);
     }
   }
 

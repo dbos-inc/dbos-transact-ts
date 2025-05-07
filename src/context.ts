@@ -13,6 +13,7 @@ import { DBOSInvalidWorkflowTransitionError } from './error';
 import { StoredProcedureContextImpl } from './procedure';
 import { HandlerContextImpl } from './httpServer/handler';
 import { globalParams } from './utils';
+import { EnqueueOptions } from './system_database';
 
 export interface StepStatus {
   stepID: number;
@@ -39,7 +40,7 @@ export interface DBOSLocalCtx {
   request?: HTTPRequest;
   operationType?: string; // A custom helper for users to set a operation type of their choice. Intended for functions setting a pctx to run DBOS operations from.
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
-  deduplicationID?: string;
+  enqueueOptions?: EnqueueOptions;
 }
 
 export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
@@ -106,7 +107,7 @@ export function getNextWFID(assignedID?: string) {
 
 export function getDeduplicationID() {
   const pctx = getCurrentContextStore();
-  return pctx?.deduplicationID;
+  return pctx?.enqueueOptions?.deduplicationID;
 }
 
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: () => Promise<R>) {
