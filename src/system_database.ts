@@ -69,7 +69,7 @@ export interface SystemDatabase {
     initStatus: WorkflowStatusInternal,
     serializedArgs: string,
     maxRetries?: number,
-  ): Promise<{ serializedInputs: string; status: string }>;
+  ): Promise<{ serializedInputs: string; status: string; deadline?: number }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
@@ -271,6 +271,7 @@ interface InsertWorkflowResult {
   class_name: string;
   config_name: string;
   queue_name?: string;
+  workflow_deadline_epoch_ms?: number;
 }
 
 async function insertWorkflowStatus(
@@ -303,7 +304,7 @@ async function insertWorkflowStatus(
         recovery_attempts = workflow_status.recovery_attempts + 1,
         updated_at = EXCLUDED.updated_at,
         executor_id = EXCLUDED.executor_id 
-      RETURNING recovery_attempts, status, name, class_name, config_name, queue_name`,
+      RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms`,
     [
       initStatus.workflowUUID,
       initStatus.status,
@@ -616,7 +617,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     initStatus: WorkflowStatusInternal,
     serializedInputs: string,
     maxRetries?: number,
-  ): Promise<{ serializedInputs: string; status: string }> {
+  ): Promise<{ serializedInputs: string; status: string; deadline?: number }> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -651,6 +652,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       const status = resRow.status;
+      const deadline = resRow.workflow_deadline_epoch_ms;
 
       const inputResult = await insertWorkflowInputs(client, initStatus.workflowUUID, serializedInputs);
       if (serializedInputs !== inputResult) {
@@ -659,7 +661,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         );
       }
 
-      return { serializedInputs: inputResult, status };
+      return { serializedInputs: inputResult, status, deadline };
     } finally {
       await client.query('COMMIT');
       client.release();
