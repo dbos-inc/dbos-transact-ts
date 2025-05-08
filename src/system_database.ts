@@ -123,9 +123,9 @@ export interface SystemDatabase {
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
 
   // Queues
-  enqueueWorkflow(workflowId: string, queueName: string, enqueOptions?: EnqueueOptions): Promise<void>;
-  clearQueueAssignment(workflowId: string): Promise<boolean>;
-  dequeueWorkflow(workflowId: string, queue: WorkflowQueue): Promise<void>;
+  enqueueWorkflow(workflowID: string, queueName: string, enqueueOptions?: EnqueueOptions): Promise<void>;
+  clearQueueAssignment(workflowID: string): Promise<boolean>;
+  dequeueWorkflow(workflowID: string, queue: WorkflowQueue): Promise<void>;
 
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
@@ -1684,7 +1684,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async #enqueueWorkflow(
     client: PoolClient,
-    workflowId: string,
+    workflowID: string,
     queueName: string,
     enqueueOptions?: EnqueueOptions,
   ): Promise<void> {
@@ -1696,16 +1696,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
         VALUES ($1, $2, $3)
         ON CONFLICT (workflow_uuid)
         DO NOTHING;`,
-        [workflowId, queueName, dedupID],
+        [workflowID, queueName, dedupID],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
       if (err.code === '23505') {
         // unique constraint violation (only expected for the INSERT query)
-        throw new DBOSQueueDuplicatedError(workflowId, queueName, dedupID ?? '');
+        throw new DBOSQueueDuplicatedError(workflowID, queueName, dedupID ?? '');
       }
 
-      this.logger.error(`Error enqueuing workflow ${workflowId} to queue ${queueName}`);
+      this.logger.error(`Error enqueuing workflow ${workflowID} to queue ${queueName}`);
       throw error;
     }
   }
