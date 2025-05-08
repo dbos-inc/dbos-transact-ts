@@ -13,7 +13,6 @@ import { DBOSInvalidWorkflowTransitionError } from './error';
 import { StoredProcedureContextImpl } from './procedure';
 import { HandlerContextImpl } from './httpServer/handler';
 import { globalParams } from './utils';
-import { EnqueueOptions } from './system_database';
 
 export interface StepStatus {
   stepID: number;

@@ -1101,11 +1101,11 @@ describe('queue-de-duplication', () => {
     TestExample.resolveEvent();
 
     expect(wfh1).toBeDefined();
-    const result1 = await wfh1!.getResult();
+    const result1 = await wfh1.getResult();
     expect(result1).toBe('abc-c-p');
 
     expect(wfh2).toBeDefined();
-    const result2 = await wfh2!.getResult();
+    const result2 = await wfh2.getResult();
     expect(result2).toBe('ghi-c-p');
 
     const result3 = await wfh3.getResult();

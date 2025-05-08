@@ -228,7 +228,6 @@ describe('DBOSClient', () => {
         'test',
         { first: 'John', last: 'Doe', age: 30 },
       );
-      wfid = handle.workflowID;
 
       let expectedError = false;
       try {
