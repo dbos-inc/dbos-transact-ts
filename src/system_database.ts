@@ -1839,6 +1839,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           .andWhere((b) => {
             b.whereNull('ws.application_version').orWhere('ws.application_version', appVersion);
           })
+          .orderBy('wq.priority', 'asc')
           .orderBy('wq.created_at_epoch_ms', 'asc')
           .forUpdate()
           .noWait();
