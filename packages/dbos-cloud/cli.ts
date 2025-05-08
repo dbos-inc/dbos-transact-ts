@@ -26,7 +26,7 @@ import {
   connect,
 } from './databases/databases.js';
 import { launchDashboard, getDashboardURL, deleteDashboard } from './dashboards/dashboards.js';
-import { DBOSCloudHost, credentialsExist, deleteCredentials, getLogger } from './cloudutils.js';
+import { DBOSCloudHost, credentialsExist, defaultConfigFilePath, deleteCredentials, getLogger } from './cloudutils.js';
 import { getAppInfo } from './applications/get-app-info.js';
 import promptSync from 'prompt-sync';
 import chalk from 'chalk';
@@ -201,10 +201,17 @@ applicationCommands
     false,
   )
   .option('--verbose', 'Verbose log of deployment step')
+  .option('--configFile <string>', 'DBOS Config file path', defaultConfigFilePath)
   .action(
     async (
       appName: string | undefined,
-      options: { verbose?: boolean; previousVersion?: string; database?: string; enableTimetravel: boolean },
+      options: {
+        verbose?: boolean;
+        previousVersion?: string;
+        database?: string;
+        enableTimetravel: boolean;
+        configFile: string;
+      },
     ) => {
       const exitCode = await deployAppCode(
         DBOSCloudHost,
@@ -213,6 +220,7 @@ applicationCommands
         options.verbose ?? false,
         null,
         appName,
+        options.configFile,
         options.database,
         options.enableTimetravel,
       );
@@ -227,8 +235,12 @@ applicationCommands
   .option('--verbose', 'Verbose log of deployment step')
   .option('-p, --previous-version <string>', 'Specify a previous version to restore')
   .requiredOption('-d, --database <string>', 'Specify the new database instance name for this application')
+  .option('--configFile', 'DBOS Config file path', defaultConfigFilePath)
   .action(
-    async (appName: string | undefined, options: { verbose?: boolean; previousVersion?: string; database: string }) => {
+    async (
+      appName: string | undefined,
+      options: { verbose?: boolean; previousVersion?: string; database: string; configFile: string },
+    ) => {
       const exitCode = await deployAppCode(
         DBOSCloudHost,
         false,
@@ -236,6 +248,7 @@ applicationCommands
         options.verbose ?? false,
         options.database,
         appName,
+        options.configFile,
       );
       process.exit(exitCode);
     },
