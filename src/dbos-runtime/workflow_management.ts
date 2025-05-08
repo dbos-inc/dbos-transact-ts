@@ -130,5 +130,7 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal): WorkflowStat
     recoveryAttempts: internal.recoveryAttempts,
     createdAt: internal.createdAt,
     updatedAt: internal.updatedAt,
+    timeout: internal.timeout,
+    deadline: internal.deadline,
   };
 }

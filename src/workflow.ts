@@ -86,6 +86,9 @@ export interface WorkflowStatus {
 
   readonly createdAt: number;
   readonly updatedAt?: number;
+
+  readonly timeout?: number;
+  readonly deadline?: number;
 }
 
 export interface GetWorkflowsInput {
