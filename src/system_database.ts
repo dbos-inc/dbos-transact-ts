@@ -1258,22 +1258,28 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  // TODO: make cancel throw an error if the workflow doesn't exist.
   async cancelWorkflow(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
-      // Remove workflow from queues table
-      await deleteQueuedWorkflows(client, workflowID);
-
       const statusResult = await getWorkflowStatusValue(client, workflowID);
-      if (!statusResult || statusResult === StatusString.SUCCESS || statusResult === StatusString.ERROR) {
-        await client.query('COMMIT');
+      if (!statusResult) {
+        throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
+      }
+      if (
+        statusResult === StatusString.SUCCESS ||
+        statusResult === StatusString.ERROR ||
+        statusResult === StatusString.CANCELLED
+      ) {
+        await client.query('ROLLBACK');
         return;
       }
 
+      // Remove workflow from queues table
+      await deleteQueuedWorkflows(client, workflowID);
       await updateWorkflowStatus(client, workflowID, StatusString.CANCELLED);
+
       await client.query('COMMIT');
     } catch (error) {
       this.logger.error(error);
