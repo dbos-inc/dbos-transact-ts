@@ -327,16 +327,22 @@ describe('dbos-tests', () => {
         );
       });
     });
-    const status = await DBOS.getWorkflowStatus(workflowID);
-    expect(status?.status).toBe(StatusString.CANCELLED);
+    const statuses = await DBOS.listWorkflows({ workflow_id_prefix: workflowID });
+    expect(statuses.length).toBe(2);
+    statuses.forEach((status) => {
+      expect(status.status).toBe('CANCELLED');
+    });
   });
 
   test('direct-parent-workflow-timeout-startWorkflow-params', async () => {
     const workflowID = randomUUID();
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeout: 100 }).blockingParentDirect();
     await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    const status = await DBOS.getWorkflowStatus(workflowID);
-    expect(status?.status).toBe(StatusString.CANCELLED);
+    const statuses = await DBOS.listWorkflows({ workflow_id_prefix: workflowID });
+    expect(statuses.length).toBe(2);
+    statuses.forEach((status) => {
+      expect(status.status).toBe('CANCELLED');
+    });
   });
 
   test('sleeping-workflow-timed-out', async () => {

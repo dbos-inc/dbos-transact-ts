@@ -124,14 +124,17 @@ describe('DBOSClient', () => {
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
 
-      const wfstatus = await client.getWorkflow(wfid);
-      expect(wfstatus?.status).toBe('CANCELLED');
+      const statuses = await client.listWorkflows({ workflow_id_prefix: wfid });
+      expect(statuses.length).toBe(2);
+      statuses.forEach((status) => {
+        expect(status.status).toBe('CANCELLED');
+      });
     } finally {
       await client.destroy();
     }
   });
 
-  test('startwf-parent-DBOSClient-enqueue-timeout', async () => {
+  test('enqueue-timeout-startwf-parent', async () => {
     const client = await DBOSClient.create(database_url);
     const wfid = randomUUID();
 
@@ -147,8 +150,11 @@ describe('DBOSClient', () => {
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
 
-      const wfstatus = await client.getWorkflow(wfid);
-      expect(wfstatus?.status).toBe('CANCELLED');
+      const statuses = await client.listWorkflows({ workflow_id_prefix: wfid });
+      expect(statuses.length).toBe(2);
+      statuses.forEach((status) => {
+        expect(status.status).toBe('CANCELLED');
+      });
     } finally {
       await client.destroy();
     }
