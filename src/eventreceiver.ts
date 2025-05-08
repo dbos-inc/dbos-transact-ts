@@ -125,7 +125,7 @@ export interface DBOSExecutorContext {
   forkWorkflow(
     workflowID: string,
     startStep: number,
-    options?: { newWorkflowID?: string; applicationVersion?: string; timeout?: number },
+    options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<string>;
 
   // Event receiver state queries / updates

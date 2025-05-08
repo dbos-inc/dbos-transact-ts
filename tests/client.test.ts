@@ -97,7 +97,7 @@ describe('DBOSClient', () => {
         workflowClassName: 'ClientTest',
         queueName: 'testQueue',
         workflowID: wfid,
-        workflowTimeout: 1000,
+        workflowTimeoutMS: 1000,
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
 
@@ -120,7 +120,7 @@ describe('DBOSClient', () => {
         workflowClassName: 'ClientTest',
         queueName: 'testQueue',
         workflowID: wfid,
-        workflowTimeout: 1000,
+        workflowTimeoutMS: 1000,
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
 
@@ -129,9 +129,9 @@ describe('DBOSClient', () => {
       statuses.forEach((status) => {
         expect(status.status).toBe('CANCELLED');
       });
-      const deadline = statuses[0].deadline;
+      const deadline = statuses[0].deadlineEpochMS;
       statuses.slice(1).forEach((status) => {
-        expect(status.deadline).toBe(deadline);
+        expect(status.deadlineEpochMS).toBe(deadline);
       });
     } finally {
       await client.destroy();
@@ -150,7 +150,7 @@ describe('DBOSClient', () => {
         workflowClassName: 'ClientTest',
         queueName: 'testQueue',
         workflowID: wfid,
-        workflowTimeout: 1000,
+        workflowTimeoutMS: 1000,
       });
       await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
 
@@ -159,9 +159,9 @@ describe('DBOSClient', () => {
       statuses.forEach((status) => {
         expect(status.status).toBe('CANCELLED');
       });
-      const deadline = statuses[0].deadline;
+      const deadline = statuses[0].deadlineEpochMS;
       statuses.slice(1).forEach((status) => {
-        expect(status.deadline).toBe(deadline);
+        expect(status.deadlineEpochMS).toBe(deadline);
       });
     } finally {
       await client.destroy();

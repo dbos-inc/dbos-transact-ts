@@ -69,7 +69,7 @@ export interface SystemDatabase {
     initStatus: WorkflowStatusInternal,
     serializedArgs: string,
     maxRetries?: number,
-  ): Promise<{ serializedInputs: string; status: string; deadline?: number }>;
+  ): Promise<{ serializedInputs: string; status: string; deadlineEpochMS?: number }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
@@ -114,7 +114,7 @@ export interface SystemDatabase {
   forkWorkflow(
     workflowID: string,
     startStep: number,
-    options?: { newWorkflowID?: string; applicationVersion?: string; timeout?: number },
+    options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<string>;
   getMaxFunctionID(workflowID: string): Promise<number>;
   checkIfCanceled(workflowID: string): Promise<void>;
@@ -202,8 +202,8 @@ export interface WorkflowStatusInternal {
   createdAt: number;
   updatedAt?: number;
   recoveryAttempts?: number;
-  timeout?: number;
-  deadline?: number;
+  timeoutMS?: number;
+  deadlineEpochMS?: number;
 }
 
 export interface ExistenceCheck {
@@ -322,8 +322,8 @@ async function insertWorkflowStatus(
       initStatus.createdAt,
       initStatus.status === StatusString.ENQUEUED ? 0 : 1,
       initStatus.updatedAt ?? Date.now(),
-      initStatus.timeout ?? null,
-      initStatus.deadline ?? null,
+      initStatus.timeoutMS ?? null,
+      initStatus.deadlineEpochMS ?? null,
     ],
   );
 
@@ -494,8 +494,8 @@ function mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStat
     applicationID: row.application_id,
     recoveryAttempts: Number(row.recovery_attempts),
     input: row.inputs,
-    timeout: row.workflow_timeout_ms ?? undefined,
-    deadline: row.workflow_deadline_epoch_ms ?? undefined,
+    timeoutMS: row.workflow_timeout_ms ?? undefined,
+    deadlineEpochMS: row.workflow_deadline_epoch_ms ?? undefined,
   };
 }
 
@@ -622,7 +622,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     initStatus: WorkflowStatusInternal,
     serializedInputs: string,
     maxRetries?: number,
-  ): Promise<{ serializedInputs: string; status: string; deadline?: number }> {
+  ): Promise<{ serializedInputs: string; status: string; deadlineEpochMS?: number }> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -657,7 +657,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       const status = resRow.status;
-      const deadline = resRow.workflow_deadline_epoch_ms ?? undefined;
+      const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
 
       const inputResult = await insertWorkflowInputs(client, initStatus.workflowUUID, serializedInputs);
       if (serializedInputs !== inputResult) {
@@ -666,7 +666,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         );
       }
 
-      return { serializedInputs: inputResult, status, deadline };
+      return { serializedInputs: inputResult, status, deadlineEpochMS };
     } finally {
       await client.query('COMMIT');
       client.release();
@@ -795,7 +795,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async forkWorkflow(
     workflowID: string,
     startStep: number,
-    options: { newWorkflowID?: string; applicationVersion?: string; timeout?: number } = {},
+    options: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number } = {},
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? randomUUID();
     const workflowStatus = await this.getWorkflowStatus(workflowID);
@@ -833,7 +833,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         createdAt: now,
         recoveryAttempts: 0,
         updatedAt: now,
-        timeout: options.timeout ?? workflowStatus.timeout,
+        timeoutMS: options.timeoutMS ?? workflowStatus.timeoutMS,
       });
 
       await insertWorkflowInputs(client, newWorkflowID, workflowStatus.input);

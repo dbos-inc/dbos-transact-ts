@@ -50,8 +50,8 @@ export interface WorkflowParams {
   configuredInstance?: ConfiguredInstance | null;
   queueName?: string;
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
-  timeout?: number;
-  deadline?: number;
+  timeoutMS?: number;
+  deadlineEpochMS?: number;
 }
 
 /**
@@ -87,8 +87,8 @@ export interface WorkflowStatus {
   readonly createdAt: number;
   readonly updatedAt?: number;
 
-  readonly timeout?: number;
-  readonly deadline?: number;
+  readonly timeoutMS?: number;
+  readonly deadlineEpochMS?: number;
 }
 
 export interface GetWorkflowsInput {
@@ -248,8 +248,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     readonly workflowConfig: WorkflowConfig,
     workflowName: string,
     readonly presetUUID: boolean,
-    readonly timeout: number | undefined,
-    readonly deadline: number | undefined,
+    readonly timeoutMS: number | undefined,
+    readonly deadlineEpochMS: number | undefined,
     readonly tempWfOperationType: string = '', // "transaction", "procedure", "external", or "send"
     readonly tempWfOperationName: string = '', // Name for the temporary workflow operation
   ) {
