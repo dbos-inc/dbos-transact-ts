@@ -43,7 +43,6 @@ import {
   PostgresSystemDatabase,
   type WorkflowStatusInternal,
   type SystemDatabaseStoredResult,
-  type EnqueueOptions,
 } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
@@ -79,7 +78,6 @@ import {
   runWithStepContext,
   runWithStoredProcContext,
   getNextWFID,
-  getDeduplicationID,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
