@@ -818,6 +818,31 @@ export class DBOSExecutor implements DBOSExecutorContext {
       await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
     }
 
+    async function callPromiseWithTimeout(
+      callPromise: Promise<R>,
+      deadline: number,
+      sysdb: SystemDatabase,
+    ): Promise<R> {
+      let timeoutID: ReturnType<typeof setTimeout> | undefined = undefined;
+      const timeoutResult = {};
+      const timeoutPromise = new Promise<R>((_, reject) => {
+        timeoutID = setTimeout(reject, deadline - Date.now(), timeoutResult);
+      });
+
+      try {
+        return await Promise.race([callPromise, timeoutPromise]);
+      } catch (err) {
+        if (err === timeoutResult) {
+          await sysdb.cancelWorkflow(workflowID);
+          await callPromise.catch(() => {});
+          throw new DBOSWorkflowCancelledError(workflowID);
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutID);
+      }
+    }
+
     const runWorkflow = async () => {
       let result: R;
 
@@ -831,17 +856,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           if ($deadline === undefined) {
             return callPromise;
           } else {
-            let timeoutID: ReturnType<typeof setTimeout> | undefined = undefined;
-            const timeoutPromise = new Promise<R>((_, reject) => {
-              timeoutID = setTimeout(() => reject(new DBOSWorkflowCancelledError(workflowID)), $deadline - Date.now());
-            });
-            const $callPromise = callPromise.finally(() => {
-              if (timeoutID) {
-                clearTimeout(timeoutID);
-                timeoutID = undefined;
-              }
-            });
-            return Promise.race([$callPromise, timeoutPromise]);
+            return callPromiseWithTimeout(callPromise, $deadline, this.systemDatabase);
           }
         });
 
