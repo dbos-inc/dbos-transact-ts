@@ -8,6 +8,7 @@ import {
   CloudAPIErrorResponse,
   retrieveApplicationLanguage,
   DBOSCloudCredentials,
+  defaultConfigFilePath,
 } from '../cloudutils.js';
 import chalk from 'chalk';
 
@@ -26,6 +27,7 @@ export async function registerApp(
   appName?: string,
   executorsMemoryMib?: number,
   userCredentials?: DBOSCloudCredentials,
+  registerConfigFile: string = defaultConfigFilePath,
 ): Promise<number> {
   const logger = getLogger();
   if (!userCredentials) {
@@ -33,11 +35,11 @@ export async function registerApp(
   }
   const bearerToken = 'Bearer ' + userCredentials.token;
 
-  appName = appName || retrieveApplicationName(logger);
+  appName = appName || retrieveApplicationName(logger, false, registerConfigFile);
   if (!appName) {
     return 1;
   }
-  const appLanguage = retrieveApplicationLanguage();
+  const appLanguage = retrieveApplicationLanguage(registerConfigFile);
 
   try {
     logger.info(`Registering application: ${appName}`);
