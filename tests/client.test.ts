@@ -215,7 +215,6 @@ describe('DBOSClient', () => {
 
     await DBOS.launch();
 
-    let wfid: string;
     try {
       const handle = await client.enqueue<EnqueueTest>(
         {
