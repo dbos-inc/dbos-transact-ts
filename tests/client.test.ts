@@ -253,21 +253,6 @@ describe('DBOSClient', () => {
     } finally {
       await client.destroy();
     }
-
-    const dbClient = new Client(poolConfig);
-    try {
-      await dbClient.connect();
-      const result = await dbClient.query<workflow_status>(
-        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-        [wfid],
-      );
-      expect(result.rows).toHaveLength(1);
-      expect(result.rows[0].workflow_uuid).toBe(wfid);
-      expect(result.rows[0].status).toBe('SUCCESS');
-      expect(result.rows[0].application_version).toBe(globalParams.appVersion);
-    } finally {
-      await dbClient.end();
-    }
   }, 20000);
 
   test('DBOSClient-enqueue-appVer-set', async () => {

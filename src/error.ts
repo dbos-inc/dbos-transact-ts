@@ -301,7 +301,7 @@ export class DBOSQueueDuplicatedError extends DBOSError {
     readonly deduplicationID: string,
   ) {
     super(
-      `Workflow {workflowID} was deduplicated due to an existing workflow in queue ${queue} with deduplication ID ${deduplicationID}.`,
+      `Workflow ${workflowID} was deduplicated due to an existing workflow in queue ${queue} with deduplication ID ${deduplicationID}.`,
       QueueDedupIDDuplicated,
     );
   }

@@ -1028,6 +1028,7 @@ describe('queue-de-duplication', () => {
     });
 
     static queue = new WorkflowQueue('test_dedup_queue', { concurrency: 1 });
+    static queue2 = new WorkflowQueue('queue2', { concurrency: 1 });
 
     @DBOS.workflow()
     static async parentWorkflow(input: string): Promise<string> {
@@ -1050,24 +1051,20 @@ describe('queue-de-duplication', () => {
     const wfid = randomUUID();
     const dedupID = 'my_dedup_id';
 
-    let wfh1: WorkflowHandle<string> | undefined;
-
-    await DBOS.withEnqueueOptions({ deduplicationID: dedupID }, async () => {
-      wfh1 = await DBOS.startWorkflow(TestExample, {
-        workflowID: wfid,
-        queueName: TestExample.queue.name,
-      }).parentWorkflow('abc');
-    });
+    const wfh1 = await DBOS.startWorkflow(TestExample, {
+      workflowID: wfid,
+      queueName: TestExample.queue.name,
+      enqueueOptions: { deduplicationID: dedupID },
+    }).parentWorkflow('abc');
 
     // different dup_id no issue
     const wfid2 = randomUUID();
-    let wfh2: WorkflowHandle<string> | undefined;
-    await DBOS.withEnqueueOptions({ deduplicationID: 'my_dedup_id2' }, async () => {
-      wfh2 = await DBOS.startWorkflow(TestExample, {
-        workflowID: wfid2,
-        queueName: TestExample.queue.name,
-      }).parentWorkflow('ghi');
-    });
+
+    const wfh2 = await DBOS.startWorkflow(TestExample, {
+      workflowID: wfid2,
+      queueName: TestExample.queue.name,
+      enqueueOptions: { deduplicationID: 'my_dedup_id2' },
+    }).parentWorkflow('ghi');
 
     // no dedupid fine
     const wfid3 = randomUUID();
@@ -1079,16 +1076,27 @@ describe('queue-de-duplication', () => {
     // same dedup id, but different workflowID
     const wfid4 = randomUUID();
 
+    let expectedError = false;
     try {
-      await DBOS.withEnqueueOptions({ deduplicationID: dedupID }, async () => {
-        await DBOS.startWorkflow(TestExample, {
-          workflowID: wfid4,
-          queueName: TestExample.queue.name,
-        }).parentWorkflow('xyz');
-      });
+      await DBOS.startWorkflow(TestExample, {
+        workflowID: wfid4,
+        queueName: TestExample.queue.name,
+        enqueueOptions: { deduplicationID: dedupID },
+      }).parentWorkflow('xyz');
     } catch (err) {
+      expectedError = true;
       expect(err).toBeInstanceOf(DBOSQueueDuplicatedError);
     }
+    expect(expectedError).toBe(true);
+
+    // same dedup id, but different queue
+    const wfid5 = randomUUID();
+    const wfh4 = await DBOS.startWorkflow(TestExample, {
+      workflowID: wfid5,
+      queueName: TestExample.queue2.name,
+      enqueueOptions: { deduplicationID: dedupID },
+    }).parentWorkflow('xyz');
+    expect((await wfh4.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
     TestExample.resolveEvent();
 
@@ -1102,5 +1110,8 @@ describe('queue-de-duplication', () => {
 
     const result3 = await wfh3.getResult();
     expect(result3).toBe('jk1-c-p');
+
+    const result4 = await wfh4.getResult();
+    expect(result4).toBe('xyz-c-p');
   }, 20000);
 });
