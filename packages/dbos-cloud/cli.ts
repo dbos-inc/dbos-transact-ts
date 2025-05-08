@@ -200,7 +200,7 @@ applicationCommands
     false,
   )
   .option('--verbose', 'Verbose log of deployment step')
-  .option('--configFile', 'DBOS Config file path', defaultConfigFilePath)
+  .option('--configFile <string>', 'DBOS Config file path', defaultConfigFilePath)
   .action(
     async (
       appName: string | undefined,

@@ -126,6 +126,7 @@ export async function deployAppCode(
 ): Promise<number> {
   const startTime = Date.now();
   const logger = getLogger(verbose);
+  logger.debug(`Using config file ${deployConfigFile}`);
   logger.debug('Getting cloud credentials...');
   const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = 'Bearer ' + userCredentials.token;
