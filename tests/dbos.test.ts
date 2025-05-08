@@ -332,6 +332,10 @@ describe('dbos-tests', () => {
     statuses.forEach((status) => {
       expect(status.status).toBe('CANCELLED');
     });
+    const deadline = statuses[0].deadline;
+    statuses.slice(1).forEach((status) => {
+      expect(status.deadline).toBe(deadline);
+    });
   });
 
   test('direct-parent-workflow-timeout-startWorkflow-params', async () => {
@@ -342,6 +346,10 @@ describe('dbos-tests', () => {
     expect(statuses.length).toBe(2);
     statuses.forEach((status) => {
       expect(status.status).toBe('CANCELLED');
+    });
+    const deadline = statuses[0].deadline;
+    statuses.slice(1).forEach((status) => {
+      expect(status.deadline).toBe(deadline);
     });
   });
 
