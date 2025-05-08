@@ -197,7 +197,7 @@ export async function deployAppCode(
     } else {
       logger.info('Time travel is disabled for this application');
     }
-    const ret = await registerApp(userDBName, host, enableTimeTravel, appName, deployConfigFile);
+    const ret = await registerApp(userDBName, host, enableTimeTravel, appName, undefined, undefined, deployConfigFile);
     if (ret !== 0) {
       return 1;
     }
