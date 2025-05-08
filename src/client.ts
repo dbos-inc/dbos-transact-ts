@@ -56,6 +56,12 @@ interface ClientEnqueueOptions {
    * If not provided, no de-duplication will be performed.
    */
   deduplicationID?: string;
+
+  /**
+   * An optional priority for the workflow.
+   * Workflows with higher priority will be dequeued first.
+   */
+  priority?: number;
 }
 
 /**

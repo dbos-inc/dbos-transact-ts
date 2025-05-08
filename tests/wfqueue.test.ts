@@ -26,6 +26,7 @@ import {
   setDebugTrigger,
 } from '../src/debugpoint';
 import { DBOSConflictingWorkflowError, DBOSQueueDuplicatedError, DBOSTargetWorkflowCancelledError } from '../src/error';
+import Test from 'supertest/lib/test';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -1004,7 +1005,7 @@ async function runOneAtATime(queue: WorkflowQueue) {
   expect(await queueEntriesAreCleanedUp()).toBe(true);
 }
 
-describe('queue-de-duplication', () => {
+describe('enqueue-options', () => {
   let config: DBOSConfigInternal;
 
   beforeAll(async () => {
@@ -1114,4 +1115,65 @@ describe('queue-de-duplication', () => {
     const result4 = await wfh4.getResult();
     expect(result4).toBe('xyz-c-p');
   }, 20000);
+
+  class TestPriority {
+    static resolveEvent: () => void;
+    static workflowEvent = new Promise<void>((resolve) => {
+      TestPriority.resolveEvent = resolve;
+    });
+
+    static wfPriorityList: number[] = [];
+
+    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1 });
+    static childqueue = new WorkflowQueue('child_queue', { concurrency: 1 });
+
+    @DBOS.workflow()
+    static async parentWorkflow(input: number): Promise<number> {
+      TestPriority.wfPriorityList.push(input);
+
+      const wfh1 = await DBOS.startWorkflow(TestPriority, {
+        queueName: childqueue.name,
+        enqueueOptions: { priority: input },
+      }).childWorkflow(input);
+
+      await TestPriority.workflowEvent;
+
+      const result = await wfh1.getResult();
+      return Promise.resolve(input + result);
+    }
+
+    @DBOS.workflow()
+    static async childWorkflow(priority: number): Promise<number> {
+      await TestPriority.workflowEvent;
+      return Promise.resolve(priority);
+    }
+  }
+
+  test('test_priorityqueue', async () => {
+    const wf_handles = [];
+
+    const handle = await DBOS.startWorkflow(TestPriority, { queueName: TestPriority.queue.name }).parentWorkflow(0);
+
+    wf_handles.push(handle);
+
+    for (let i = 1; i <= 5; i++) {
+      const handle = await DBOS.startWorkflow(TestPriority, {
+        queueName: TestPriority.queue.name,
+        enqueueOptions: { priority: i },
+      }).parentWorkflow(i);
+      wf_handles.push(handle);
+    }
+
+    wf_handles.push(await DBOS.startWorkflow(TestPriority, { queueName: TestPriority.queue.name }).parentWorkflow(6));
+    wf_handles.push(await DBOS.startWorkflow(TestPriority, { queueName: TestPriority.queue.name }).parentWorkflow(7));
+
+    TestPriority.resolveEvent();
+
+    for (let i = 0; i < wf_handles.length; i++) {
+      const res = await wf_handles[i].getResult();
+      expect(res).toBe(i * 2);
+    }
+
+    expect(TestPriority.wfPriorityList).toEqual([0, 6, 7, 1, 2, 3, 4, 5]);
+  }, 30000);
 });
