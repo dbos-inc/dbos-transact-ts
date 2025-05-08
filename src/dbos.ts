@@ -1137,6 +1137,7 @@ export class DBOS {
   }
 
   /**
+   * @deprecated
    * Use queue named `queueName` for any workflows started within the `callback`.
    * @param queueName - Name of queue upon which qll workflows called or started within `callback` will be run
    * @param callback - Function to run, which would call or start workflows
@@ -1154,28 +1155,6 @@ export class DBOS {
       }
     } else {
       return runWithTopContext({ queueAssignedForWorkflows: queueName }, callback);
-    }
-  }
-
-  /**
-   * Use dedupID to enqueue workflows started within the `callback`.
-   * @param options - enqueueOptions for the workflow enqueued
-   * @param callback - Function to run, which would call or start workflows
-   * @returns - Return value from `callback`
-   */
-
-  static async withEnqueueOptions<R>(options: EnqueueOptions, callback: () => Promise<R>): Promise<R> {
-    const pctx = getCurrentContextStore();
-    if (pctx) {
-      const pcwfq = pctx.enqueueOptions;
-      try {
-        pctx.enqueueOptions = options;
-        return callback();
-      } finally {
-        pctx.enqueueOptions = pcwfq;
-      }
-    } else {
-      return runWithTopContext({ enqueueOptions: options }, callback);
     }
   }
 
@@ -1239,7 +1218,7 @@ export class DBOS {
         parentCtx: wfctx,
         configuredInstance,
         queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
-        enqueueOptions: inParams?.enqueueOptions ?? pctx?.enqueueOptions,
+        enqueueOptions: inParams?.enqueueOptions,
       };
 
       for (const op of ops) {
@@ -1301,7 +1280,7 @@ export class DBOS {
     const wfParams: InternalWorkflowParams = {
       workflowUUID: wfId,
       queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
-      enqueueOptions: inParams?.enqueueOptions ?? pctx?.enqueueOptions,
+      enqueueOptions: inParams?.enqueueOptions,
       configuredInstance,
       parentCtx,
     };
@@ -1690,7 +1669,6 @@ export class DBOS {
             parentCtx: wfctx,
             configuredInstance: inst,
             queueName: pctx?.queueAssignedForWorkflows,
-            enqueueOptions: pctx?.enqueueOptions,
           };
 
           const cwfh = await DBOSExecutor.globalInstance!.internalWorkflow(
@@ -1728,7 +1706,6 @@ export class DBOS {
         const wfParams: InternalWorkflowParams = {
           workflowUUID: wfId,
           queueName: pctx?.queueAssignedForWorkflows,
-          enqueueOptions: pctx?.enqueueOptions,
           configuredInstance: inst,
           parentCtx,
         };

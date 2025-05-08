@@ -40,7 +40,6 @@ export interface DBOSLocalCtx {
   request?: HTTPRequest;
   operationType?: string; // A custom helper for users to set a operation type of their choice. Intended for functions setting a pctx to run DBOS operations from.
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
-  enqueueOptions?: EnqueueOptions;
 }
 
 export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
@@ -103,11 +102,6 @@ export function getNextWFID(assignedID?: string) {
     }
   }
   return wfId;
-}
-
-export function getDeduplicationID() {
-  const pctx = getCurrentContextStore();
-  return pctx?.enqueueOptions?.deduplicationID;
 }
 
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: () => Promise<R>) {
