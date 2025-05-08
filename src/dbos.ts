@@ -1238,7 +1238,7 @@ export class DBOS {
         parentCtx: wfctx,
         configuredInstance,
         queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
-        timeout: inParams?.timeout ?? pctx?.workflowTimeout ?? wfctx.timeout,
+        timeout: inParams?.timeout ?? pctx?.workflowTimeout,
         deadline: wfctx.deadline,
       };
 
@@ -1690,7 +1690,7 @@ export class DBOS {
             parentCtx: wfctx,
             configuredInstance: inst,
             queueName: pctx?.queueAssignedForWorkflows,
-            timeout: pctx?.workflowTimeout ?? wfctx.timeout,
+            timeout: pctx?.workflowTimeout,
             deadline: wfctx.deadline,
           };
 
