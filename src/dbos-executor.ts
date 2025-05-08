@@ -831,10 +831,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
           if ($deadline === undefined) {
             return callPromise;
           } else {
+            let timeoutID: ReturnType<typeof setTimeout> | undefined = undefined;
             const timeoutPromise = new Promise<R>((_, reject) => {
-              setTimeout(() => reject(new DBOSWorkflowCancelledError(workflowID)), $deadline - Date.now());
+              timeoutID = setTimeout(() => reject(new DBOSWorkflowCancelledError(workflowID)), $deadline - Date.now());
             });
-            return Promise.race([callPromise, timeoutPromise]);
+            const $callPromise = callPromise.finally(() => {
+              if (timeoutID) {
+                clearTimeout(timeoutID);
+                timeoutID = undefined;
+              }
+            });
+            return Promise.race([$callPromise, timeoutPromise]);
           }
         });
 
@@ -880,7 +887,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           internalStatus.status = StatusString.CANCELLED;
 
           if (!this.isDebugging) {
-            await this.systemDatabase.setWorkflowStatus(workflowID, StatusString.CANCELLED, false);
+            await this.systemDatabase.cancelWorkflow(workflowID);
           }
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
           this.logger.info(`Cancelled workflow ${workflowID}`);
