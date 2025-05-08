@@ -95,11 +95,10 @@ async function createZipData(logger: CLILogger, deployConfigFile: string): Promi
     zip.file(relativePath, fileData, { binary: true, unixPermissions: filePerms });
   });
 
-  // Add the interpolated config file at package root
-
+  // Add the interpolated config file at package root using the default config file path
   logger.debug(`    Interpreting configuration from ${deployConfigFile}`);
   const interpolatedConfig = readInterpolatedConfig(deployConfigFile, logger);
-  zip.file(deployConfigFile, interpolatedConfig, { binary: true });
+  zip.file(defaultConfigFilePath, interpolatedConfig, { binary: true });
 
   // Generate ZIP file as a Buffer
   logger.debug(`    Finalizing zip archive ...`);
