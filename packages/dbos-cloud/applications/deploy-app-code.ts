@@ -2,7 +2,7 @@ import axios, { AxiosError } from 'axios';
 import { statSync, existsSync, readFileSync } from 'fs';
 import {
   handleAPIErrors,
-  dbosConfigFilePath,
+  defaultConfigFilePath,
   getCloudCredentials,
   getLogger,
   checkReadFile,
@@ -74,7 +74,7 @@ async function createZipData(logger: CLILogger, deployConfigFile: string): Promi
     '**/node_modules/**',
     '**/dist/**',
     '**/.git/**',
-    `**/${dbosConfigFilePath}`,
+    `**/${defaultConfigFilePath}`,
     '**/venv/**',
     '**/.venv/**',
     '**/.python-version',
@@ -132,14 +132,14 @@ export async function deployAppCode(
   logger.debug('  ... got cloud credentials');
 
   logger.debug('Retrieving app name...');
-  appName = appName || retrieveApplicationName(logger);
+  appName = appName || retrieveApplicationName(logger, false, deployConfigFile);
   if (!appName) {
     logger.error('Failed to get app name.');
     return 1;
   }
   logger.debug(`  ... app name is ${appName}.`);
 
-  const appLanguage = retrieveApplicationLanguage();
+  const appLanguage = retrieveApplicationLanguage(deployConfigFile);
 
   if (appLanguage === (AppLanguages.Node as string)) {
     logger.debug('Checking for package.json...');
