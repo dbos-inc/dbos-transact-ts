@@ -271,6 +271,6 @@ describe('decoratorless-api-tests', () => {
   test('simple-functions', async () => {
     const response1 = await request(app.callback()).get('/foobar?arg=A');
     expect(response1.statusCode).toBe(200);
-    expect(response1.body).toBe('ARG: A');
+    expect(response1.text).toBe('ARG: A');
   });
 });
