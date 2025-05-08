@@ -1,4 +1,4 @@
-import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance } from '../src';
+import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
@@ -663,6 +663,36 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
+  });
+
+  class TestConcurrencyAcrossVersions {
+    static queue = new WorkflowQueue('TestAcrossVersions', { workerConcurrency: 1 });
+
+    @DBOS.workflow()
+    static async testWorkflow() {
+      return Promise.resolve(DBOS.workflowID);
+    }
+  }
+
+  test('test-concurrency-across-versions', async () => {
+    const client = await DBOSClient.create(DBOS.dbosConfig?.poolConfig?.connectionString as string);
+
+    const other_version = 'other_version';
+    const other_version_handle = await client.enqueue({
+      queueName: TestConcurrencyAcrossVersions.queue.name,
+      workflowName: 'testWorkflow',
+      workflowClassName: 'TestConcurrencyAcrossVersions',
+      appVersion: other_version,
+    });
+
+    const handle = await DBOS.startWorkflow(TestConcurrencyAcrossVersions, {
+      queueName: TestConcurrencyAcrossVersions.queue.name,
+    }).testWorkflow();
+    await expect(handle.getResult()).resolves.toBeTruthy();
+
+    globalParams.appVersion = other_version;
+    await expect(other_version_handle.getResult()).resolves.toBeTruthy();
+    await client.destroy();
   });
 });
 
