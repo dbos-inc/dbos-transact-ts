@@ -903,14 +903,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name, callerID, callerFunctionID);
     } else {
       if (params.queueName && status === 'ENQUEUED' && !this.isDebugging) {
-        const dedupId = getDeduplicationID();
-        const enqueOptions: EnqueueOptions = {
-          deduplicationID: dedupId,
-        };
         await this.systemDatabase.enqueueWorkflow(
           workflowID,
           this.#getQueueByName(params.queueName).name,
-          enqueOptions,
+          params.enqueueOptions,
         );
       }
       return new RetrievedHandle(this.systemDatabase, workflowID, callerID, callerFunctionID);

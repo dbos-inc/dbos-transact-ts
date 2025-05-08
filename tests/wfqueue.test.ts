@@ -1079,6 +1079,7 @@ describe('queue-de-duplication', () => {
     // same dedup id, but different workflowID
     const wfid4 = randomUUID();
 
+    let expectedError = false;
     try {
       await DBOS.withEnqueueOptions({ deduplicationID: dedupID }, async () => {
         await DBOS.startWorkflow(TestExample, {
@@ -1087,8 +1088,24 @@ describe('queue-de-duplication', () => {
         }).parentWorkflow('xyz');
       });
     } catch (err) {
+      expectedError = true;
       expect(err).toBeInstanceOf(DBOSQueueDuplicatedError);
     }
+    expect(expectedError).toBe(true);
+
+    // test same dedup id, new workflowID, but start api
+    expectedError = false;
+    try {
+      await DBOS.startWorkflow(TestExample, {
+        workflowID: wfid4,
+        queueName: TestExample.queue.name,
+        enqueueOptions: { deduplicationID: dedupID },
+      }).parentWorkflow('xyz');
+    } catch (err) {
+      expectedError = true;
+      expect(err).toBeInstanceOf(DBOSQueueDuplicatedError);
+    }
+    expect(expectedError).toBe(true);
 
     TestExample.resolveEvent();
 

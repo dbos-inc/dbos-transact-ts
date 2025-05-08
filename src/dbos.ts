@@ -209,6 +209,7 @@ function augmentProxy(target: object, proxy: Record<string, unknown>) {
 export interface StartWorkflowParams {
   workflowID?: string;
   queueName?: string;
+  enqueueOptions?: EnqueueOptions;
 }
 
 export class DBOS {
@@ -1238,6 +1239,7 @@ export class DBOS {
         parentCtx: wfctx,
         configuredInstance,
         queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
+        enqueueOptions: inParams?.enqueueOptions ?? pctx?.enqueueOptions,
       };
 
       for (const op of ops) {
@@ -1299,6 +1301,7 @@ export class DBOS {
     const wfParams: InternalWorkflowParams = {
       workflowUUID: wfId,
       queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
+      enqueueOptions: inParams?.enqueueOptions ?? pctx?.enqueueOptions,
       configuredInstance,
       parentCtx,
     };
@@ -1687,6 +1690,7 @@ export class DBOS {
             parentCtx: wfctx,
             configuredInstance: inst,
             queueName: pctx?.queueAssignedForWorkflows,
+            enqueueOptions: pctx?.enqueueOptions,
           };
 
           const cwfh = await DBOSExecutor.globalInstance!.internalWorkflow(
@@ -1724,6 +1728,7 @@ export class DBOS {
         const wfParams: InternalWorkflowParams = {
           workflowUUID: wfId,
           queueName: pctx?.queueAssignedForWorkflows,
+          enqueueOptions: pctx?.enqueueOptions,
           configuredInstance: inst,
           parentCtx,
         };

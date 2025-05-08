@@ -10,6 +10,7 @@ import { InvokeFuncsInst } from './httpServer/handler';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
 import { DBOS } from './dbos';
+import { EnqueueOptions } from './system_database';
 
 /** @deprecated */
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
@@ -50,6 +51,7 @@ export interface WorkflowParams {
   configuredInstance?: ConfiguredInstance | null;
   queueName?: string;
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
+  enqueueOptions?: EnqueueOptions; // Options for the workflow queue
 }
 
 /**
