@@ -54,7 +54,7 @@ function parseIgnoreFile(filePath: string) {
     .filter((line) => line && !line.startsWith('#')); // Exclude empty lines and comments
 }
 
-async function createZipData(logger: CLILogger): Promise<string> {
+async function createZipData(logger: CLILogger, deployConfigFile: string): Promise<string> {
   const zip = new JSZip();
 
   const globPattern = convertPathForGlob(path.join(process.cwd(), '**', '*'));
@@ -97,9 +97,9 @@ async function createZipData(logger: CLILogger): Promise<string> {
 
   // Add the interpolated config file at package root
 
-  logger.debug(`    Interpreting configuration from ${dbosConfigFilePath}`);
-  const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath, logger);
-  zip.file(dbosConfigFilePath, interpolatedConfig, { binary: true });
+  logger.debug(`    Interpreting configuration from ${deployConfigFile}`);
+  const interpolatedConfig = readInterpolatedConfig(deployConfigFile, logger);
+  zip.file(deployConfigFile, interpolatedConfig, { binary: true });
 
   // Generate ZIP file as a Buffer
   logger.debug(`    Finalizing zip archive ...`);
@@ -120,6 +120,7 @@ export async function deployAppCode(
   verbose: boolean,
   targetDatabaseName: string | null = null, // Used for changing database instance
   appName: string | undefined,
+  deployConfigFile: string,
   userDBName: string | undefined = undefined, // Used for registering the app
   enableTimeTravel: boolean = false,
 ): Promise<number> {
@@ -176,7 +177,7 @@ export async function deployAppCode(
   const appRegistered = await isAppRegistered(logger, host, appName, userCredentials);
 
   // If the app is not registered, register it.
-  const interpolatedConfig = readInterpolatedConfig(dbosConfigFilePath, logger);
+  const interpolatedConfig = readInterpolatedConfig(deployConfigFile, logger);
   const dbosConfig = YAML.parse(interpolatedConfig) as ConfigFile;
 
   if (appRegistered === undefined) {
@@ -215,7 +216,7 @@ export async function deployAppCode(
       dbosConfig.database.app_db_name !== appRegistered.ApplicationDatabaseName
     ) {
       logger.error(
-        `Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${dbosConfigFilePath} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${dbosConfigFilePath} to match the database name.`,
+        `Application ${chalk.bold(appName)} is deployed with app_db_name ${chalk.bold(appRegistered.ApplicationDatabaseName)}, but ${deployConfigFile} specifies ${chalk.bold(dbosConfig.database.app_db_name)}. Please update the app_db_name field in ${deployConfigFile} to match the database name.`,
       );
       return 1;
     }
@@ -225,7 +226,7 @@ export async function deployAppCode(
     const body: { application_archive?: string; previous_version?: string; target_database_name?: string } = {};
     if (previousVersion === null) {
       logger.debug('Creating application zip ...');
-      body.application_archive = await createZipData(logger);
+      body.application_archive = await createZipData(logger, deployConfigFile);
       logger.debug('  ... application zipped.');
     } else {
       logger.info(`Restoring previous version ${previousVersion}`);
