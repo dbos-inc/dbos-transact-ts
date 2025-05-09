@@ -59,14 +59,15 @@ import {
 } from './user_database';
 import {
   MethodRegistrationBase,
-  getRegisteredOperations,
-  getOrCreateClassRegistration,
   MethodRegistration,
   getRegisteredMethodClassName,
   getRegisteredMethodName,
   getConfiguredInstance,
   ConfiguredInstance,
-  getAllRegisteredClasses,
+  getNameForClass,
+  getClassRegistrationByName,
+  getAllRegisteredClassNames,
+  getRegisteredOperationsByClassname,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -398,8 +399,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  #registerClass(cls: object) {
-    const registeredClassOperations = getRegisteredOperations(cls);
+  #registerClass(clsname: string) {
+    const registeredClassOperations = getRegisteredOperationsByClassname(clsname);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
@@ -434,15 +435,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return;
     }
 
+    let classnames: string[] = [];
     if (!classes || !classes.length) {
-      classes = getAllRegisteredClasses();
+      classnames = getAllRegisteredClassNames();
+    } else {
+      classnames = classes.map((c) => getNameForClass(c as AnyConstructor));
     }
 
     type AnyConstructor = new (...args: unknown[]) => object;
     try {
       let length; // Track the length of the array (or number of keys of the object)
-      for (const cls of classes) {
-        const reg = getOrCreateClassRegistration(cls as AnyConstructor);
+      for (const clsname of classnames) {
+        const reg = getClassRegistrationByName(clsname);
         /**
          * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
          */
@@ -469,7 +473,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         throw new DBOSInitializationError('No user database configured!');
       }
 
-      for (const cls of classes) {
+      for (const cls of classnames) {
         this.#registerClass(cls);
       }
 
@@ -497,9 +501,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Only execute init code if under non-debug mode
     if (!this.isDebugging) {
-      for (const cls of classes) {
+      for (const cls of classnames) {
         // Init its configurations
-        const creg = getOrCreateClassRegistration(cls as AnyConstructor);
+        const creg = getClassRegistrationByName(cls);
         for (const [_cfgname, cfg] of creg.configuredInstances) {
           await cfg.initialize(new InitContext());
         }
@@ -1655,7 +1659,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await this.callStepFunction(stepFn, params.configuredInstance ?? null, ctxtImpl, ...args);
+      return await this.callStepFunction(
+        stepFn,
+        undefined,
+        undefined,
+        params.configuredInstance ?? null,
+        ctxtImpl,
+        ...args,
+      );
     };
 
     return await this.internalWorkflow(
@@ -1679,13 +1690,21 @@ export class DBOSExecutor implements DBOSExecutorContext {
    */
   async callStepFunction<T extends unknown[], R>(
     stepFn: StepFunction<T, R>,
-    clsInst: ConfiguredInstance | null,
+    stepFnName: string | undefined,
+    stepConfig: StepConfig | undefined,
+    clsInst: object | null,
     wfCtx: WorkflowContextImpl,
     ...args: T
   ): Promise<R> {
-    const commInfo = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
-    if (commInfo === undefined) {
-      throw new DBOSNotRegisteredError(stepFn.name);
+    stepFnName = stepFnName ?? stepFn.name ?? '<unnamed>';
+    let passContext = false;
+    if (!stepConfig) {
+      const stepReg = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
+      stepConfig = stepReg?.config;
+      passContext = stepReg?.registration.passContext ?? true;
+    }
+    if (stepConfig === undefined) {
+      throw new DBOSNotRegisteredError(stepFnName);
     }
 
     await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
@@ -1694,22 +1713,22 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
     const span: Span = this.tracer.startSpan(
-      stepFn.name,
+      stepFnName,
       {
         operationUUID: wfCtx.workflowUUID,
         operationType: OperationType.COMMUNICATOR,
         authenticatedUser: wfCtx.authenticatedUser,
         assumedRole: wfCtx.assumedRole,
         authenticatedRoles: wfCtx.authenticatedRoles,
-        retriesAllowed: commInfo.config.retriesAllowed,
-        intervalSeconds: commInfo.config.intervalSeconds,
-        maxAttempts: commInfo.config.maxAttempts,
-        backoffRate: commInfo.config.backoffRate,
+        retriesAllowed: stepConfig.retriesAllowed,
+        intervalSeconds: stepConfig.intervalSeconds,
+        maxAttempts: stepConfig.maxAttempts,
+        backoffRate: stepConfig.backoffRate,
       },
       wfCtx.span,
     );
 
-    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, commInfo.config, stepFn.name);
+    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, stepConfig, stepFnName);
 
     // Check if this execution previously happened, returning its original result if it did.
     const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfCtx.workflowUUID, ctxt.functionID);
@@ -1753,7 +1772,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
           let cresult: R | undefined;
-          if (commInfo.registration.passContext) {
+          if (passContext) {
             await runWithStepContext(ctxt, numAttempts, async () => {
               cresult = await stepFn.call(clsInst, ctxt, ...args);
             });
@@ -1787,7 +1806,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       try {
         let cresult: R | undefined;
-        if (commInfo.registration.passContext) {
+        if (passContext) {
           await runWithStepContext(ctxt, undefined, async () => {
             cresult = await stepFn.call(clsInst, ctxt, ...args);
           });
@@ -1806,7 +1825,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // `result` can only be dbosNull when the step timed out
     if (result === dbosNull) {
       // Record the error, then throw it.
-      err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFn.name, ctxt.maxAttempts, errors) : err;
+      err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, ctxt.maxAttempts, errors) : err;
       await this.systemDatabase.recordOperationResult(wfCtx.workflowUUID, ctxt.functionID, ctxt.operationName, true, {
         error: DBOSJSON.stringify(serializeError(err)),
       });

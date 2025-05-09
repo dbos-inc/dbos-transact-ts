@@ -58,18 +58,15 @@ export interface MiddlewareDefaults extends RegistrationDefaults {
   koaGlobalMiddlewares?: Koa.Middleware[];
 }
 
-export class MiddlewareClassRegistration<CT extends { new (...args: unknown[]): object }>
-  extends ClassRegistration<CT>
-  implements MiddlewareDefaults
-{
+export class MiddlewareClassRegistration extends ClassRegistration implements MiddlewareDefaults {
   authMiddleware?: DBOSHttpAuthMiddleware;
   koaBodyParser?: Koa.Middleware;
   koaCors?: Koa.Middleware;
   koaMiddlewares?: Koa.Middleware[];
   koaGlobalMiddlewares?: Koa.Middleware[];
 
-  constructor(ctor: CT) {
-    super(ctor);
+  constructor() {
+    super();
   }
 }
 
@@ -85,7 +82,7 @@ export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
     throw new DBOSUndefinedDecoratorInputError('Authentication');
   }
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.authMiddleware = authMiddleware;
   }
   return clsdec;
@@ -96,7 +93,7 @@ export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
  */
 export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.koaBodyParser = koaBodyParser;
   }
   return clsdec;
@@ -107,7 +104,7 @@ export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
  */
 export function KoaCors(koaCors: Koa.Middleware) {
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.koaCors = koaCors;
   }
   return clsdec;
@@ -123,7 +120,7 @@ export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
     }
   });
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.koaMiddlewares = koaMiddleware;
   }
   return clsdec;
@@ -140,7 +137,7 @@ export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
     }
   });
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.koaGlobalMiddlewares = koaMiddleware;
   }
   return clsdec;
