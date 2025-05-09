@@ -40,7 +40,7 @@ class ClientTest {
   @DBOS.workflow()
   static async priorityTest(input: string): Promise<string> {
     ClientTest.inorder_results.push(input);
-    return input;
+    return Promise.resolve(input);
   }
 
   @DBOS.workflow()
@@ -372,7 +372,6 @@ describe('DBOSClient', () => {
 
     type PriorityTest = typeof ClientTest.priorityTest;
 
-    let wfid: string;
     try {
       const handle1 = await client.enqueue<PriorityTest>(
         {
