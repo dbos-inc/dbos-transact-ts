@@ -92,7 +92,7 @@ import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
-import { PostgresSystemDatabase } from './system_database';
+import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 
 // Declare all the options a user can pass to the DBOS object during launch()
@@ -209,6 +209,7 @@ function augmentProxy(target: object, proxy: Record<string, unknown>) {
 export interface StartWorkflowParams {
   workflowID?: string;
   queueName?: string;
+  enqueueOptions?: EnqueueOptions;
 }
 
 export class DBOS {
@@ -1136,6 +1137,7 @@ export class DBOS {
   }
 
   /**
+   * @deprecated
    * Use queue named `queueName` for any workflows started within the `callback`.
    * @param queueName - Name of queue upon which qll workflows called or started within `callback` will be run
    * @param callback - Function to run, which would call or start workflows
@@ -1216,6 +1218,7 @@ export class DBOS {
         parentCtx: wfctx,
         configuredInstance,
         queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
+        enqueueOptions: inParams?.enqueueOptions,
       };
 
       for (const op of ops) {
@@ -1277,6 +1280,7 @@ export class DBOS {
     const wfParams: InternalWorkflowParams = {
       workflowUUID: wfId,
       queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
+      enqueueOptions: inParams?.enqueueOptions,
       configuredInstance,
       parentCtx,
     };

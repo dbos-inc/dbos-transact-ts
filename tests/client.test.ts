@@ -4,6 +4,7 @@ import { globalParams, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
+import { DBOSQueueDuplicatedError } from '../src/error';
 
 const _queue = new WorkflowQueue('testQueue');
 
@@ -206,6 +207,49 @@ describe('DBOSClient', () => {
       expect(result.rows[0].application_version).toBe(globalParams.appVersion);
     } finally {
       await dbClient.end();
+    }
+  }, 20000);
+
+  test('DBOSClient-enqueue-dedupid', async () => {
+    const client = await DBOSClient.create(database_url);
+
+    await DBOS.launch();
+
+    try {
+      const handle = await client.enqueue<EnqueueTest>(
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          deduplicationID: '12345',
+        },
+        42,
+        'test',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+
+      let expectedError = false;
+      try {
+        await client.enqueue<EnqueueTest>(
+          {
+            workflowName: 'enqueueTest',
+            workflowClassName: 'ClientTest',
+            queueName: 'testQueue',
+            deduplicationID: '12345',
+          },
+          42,
+          'test',
+          { first: 'John', last: 'Doe', age: 30 },
+        );
+      } catch (e) {
+        expectedError = true;
+        expect(e).toBeInstanceOf(DBOSQueueDuplicatedError);
+      }
+      expect(expectedError).toBe(true);
+      const result = await handle.getResult();
+      expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await client.destroy();
     }
   }, 20000);
 

@@ -7,6 +7,7 @@ import {
   DBOSConflictingWorkflowError,
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
+  DBOSQueueDuplicatedError,
 } from './error';
 import {
   GetPendingWorkflowsOutput,
@@ -122,9 +123,10 @@ export interface SystemDatabase {
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
 
   // Queues
-  enqueueWorkflow(workflowID: string, queueName: string): Promise<void>;
+  enqueueWorkflow(workflowID: string, queueName: string, enqueueOptions?: EnqueueOptions): Promise<void>;
   clearQueueAssignment(workflowID: string): Promise<boolean>;
   dequeueWorkflow(workflowID: string, queue: WorkflowQueue): Promise<void>;
+
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
   // Actions w/ durable records and notifications
@@ -202,6 +204,10 @@ export interface WorkflowStatusInternal {
   createdAt: number;
   updatedAt?: number;
   recoveryAttempts?: number;
+}
+
+export interface EnqueueOptions {
+  deduplicationID?: string;
 }
 
 export interface ExistenceCheck {
@@ -341,14 +347,6 @@ async function insertWorkflowInputs(client: PoolClient, workflowID: string, seri
   }
 
   return rows[0].inputs;
-}
-
-async function enqueueWorkflow(client: PoolClient, workflowID: string, queueName: string): Promise<void> {
-  await client.query(
-    `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name) VALUES ($1, $2)
-     ON CONFLICT (workflow_uuid) DO NOTHING;`,
-    [workflowID, queueName],
-  );
 }
 
 async function deleteQueuedWorkflows(client: PoolClient, workflowID: string): Promise<void> {
@@ -831,7 +829,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await client.query(query, [newWorkflowID, workflowID, startStep]);
       }
 
-      await enqueueWorkflow(client, newWorkflowID, INTERNAL_QUEUE_NAME);
+      await this.#enqueueWorkflow(client, newWorkflowID, INTERNAL_QUEUE_NAME);
 
       await client.query('COMMIT');
       return newWorkflowID;
@@ -1318,7 +1316,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throwOnFailure: false,
       });
 
-      await enqueueWorkflow(client, workflowID, INTERNAL_QUEUE_NAME);
+      await this.#enqueueWorkflow(client, workflowID, INTERNAL_QUEUE_NAME);
 
       await client.query('COMMIT');
     } catch (error) {
@@ -1684,10 +1682,38 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { workflows };
   }
 
-  async enqueueWorkflow(workflowId: string, queueName: string): Promise<void> {
+  async #enqueueWorkflow(
+    client: PoolClient,
+    workflowID: string,
+    queueName: string,
+    enqueueOptions?: EnqueueOptions,
+  ): Promise<void> {
+    const dedupID = enqueueOptions?.deduplicationID ?? null;
+
+    try {
+      await client.query<workflow_queue>(
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, deduplication_id)
+        VALUES ($1, $2, $3)
+        ON CONFLICT (workflow_uuid)
+        DO NOTHING;`,
+        [workflowID, queueName, dedupID],
+      );
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '23505') {
+        // unique constraint violation (only expected for the INSERT query)
+        throw new DBOSQueueDuplicatedError(workflowID, queueName, dedupID ?? '');
+      }
+
+      this.logger.error(`Error enqueuing workflow ${workflowID} to queue ${queueName}`);
+      throw error;
+    }
+  }
+
+  async enqueueWorkflow(workflowId: string, queueName: string, enqueueOptions?: EnqueueOptions) {
     const client: PoolClient = await this.pool.connect();
     try {
-      await enqueueWorkflow(client, workflowId, queueName);
+      await this.#enqueueWorkflow(client, workflowId, queueName, enqueueOptions);
     } finally {
       client.release();
     }
