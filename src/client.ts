@@ -50,14 +50,12 @@ interface ClientEnqueueOptions {
    * If not provided, the version of the DBOS app that first dequeues the workflow will be used.
    */
   appVersion?: string;
-
   /**
    * Timeout for the workflow execution in milliseconds.
    * Note, timeout starts when the workflow is dequeued.
    * If not provided, the workflow timeout will not be set and the workflow will run to completion.
    */
   workflowTimeoutMS?: number;
-
   /**
    * An ID used to identify enqueues workflows that will be used for de-duplication.
    * If not provided, no de-duplication will be performed.

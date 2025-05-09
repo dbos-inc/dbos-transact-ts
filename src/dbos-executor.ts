@@ -732,13 +732,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       : // if no timeout is specified, use the propagated deadline (if any)
         params.deadlineEpochMS;
 
-    if (params?.enqueueOptions?.priority !== undefined) {
-      if (
-        params.enqueueOptions.priority < DBOS_QUEUE_MIN_PRIORITY ||
-        params.enqueueOptions.priority > DBOS_QUEUE_MAX_PRIORITY
-      ) {
-        throw new DBOSInvalidQueuePriorityError(params.enqueueOptions.priority);
-      }
+    const priority = params?.enqueueOptions?.priority;
+    if (priority !== undefined && (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY)) {
+      throw new DBOSInvalidQueuePriorityError(priority);
     }
 
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
