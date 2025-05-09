@@ -1,5 +1,6 @@
 import type { PoolConfig } from 'pg';
 import { PostgresSystemDatabase, type SystemDatabase, type WorkflowStatusInternal } from './system_database';
+
 import { GlobalLogger as Logger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
 import {
@@ -26,7 +27,7 @@ import { PGNodeUserDatabase, type UserDatabase } from './user_database';
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
  * This includes parameters like queue name, workflow name, workflow class name, and other optional settings.
  */
-interface EnqueueOptions {
+interface ClientEnqueueOptions {
   /**
    * The name of the queue to which the workflow will be enqueued.
    */
@@ -55,6 +56,11 @@ interface EnqueueOptions {
    * If not provided, the workflow timeout will not be set and the workflow will run to completion.
    */
   workflowTimeoutMS?: number;
+  /**
+   * An ID used to identify enqueues workflows that will be used for de-duplication.
+   * If not provided, no de-duplication will be performed.
+   */
+  deduplicationID?: string;
 }
 
 /**
@@ -110,7 +116,7 @@ export class DBOSClient {
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async enqueue<T extends (...args: any[]) => Promise<any>>(
-    options: EnqueueOptions,
+    options: ClientEnqueueOptions,
     ...args: Parameters<T>
   ): Promise<WorkflowHandle<Awaited<ReturnType<T>>>> {
     const { workflowName, workflowClassName, queueName, appVersion } = options;
@@ -138,7 +144,10 @@ export class DBOSClient {
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
-    await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName);
+
+    await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName, {
+      deduplicationID: options.deduplicationID,
+    });
     return new RetrievedHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
 

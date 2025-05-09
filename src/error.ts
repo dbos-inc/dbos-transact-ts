@@ -291,3 +291,18 @@ export class DBOSInvalidStepIDError extends DBOSError {
     );
   }
 }
+
+const QueueDedupIDDuplicated = 28;
+/** Exception raised when a step has an unexpected recorded id */
+export class DBOSQueueDuplicatedError extends DBOSError {
+  constructor(
+    readonly workflowID: string,
+    readonly queue: string,
+    readonly deduplicationID: string,
+  ) {
+    super(
+      `Workflow ${workflowID} was deduplicated due to an existing workflow in queue ${queue} with deduplication ID ${deduplicationID}.`,
+      QueueDedupIDDuplicated,
+    );
+  }
+}

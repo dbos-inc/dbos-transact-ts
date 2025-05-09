@@ -92,7 +92,7 @@ import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
-import { PostgresSystemDatabase } from './system_database';
+import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 
 // Declare all the options a user can pass to the DBOS object during launch()
@@ -210,6 +210,7 @@ export interface StartWorkflowParams {
   workflowID?: string;
   queueName?: string;
   timeoutMS?: number;
+  enqueueOptions?: EnqueueOptions;
 }
 
 export class DBOS {
@@ -1137,6 +1138,7 @@ export class DBOS {
   }
 
   /**
+   * @deprecated
    * Use queue named `queueName` for any workflows started within the `callback`.
    * @param queueName - Name of queue upon which all workflows called or started within `callback` will be run
    * @param callback - Function to run, which would call or start workflows
@@ -1240,6 +1242,7 @@ export class DBOS {
         queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
         timeoutMS: inParams?.timeoutMS ?? pctx?.workflowTimeoutMS,
         deadlineEpochMS: wfctx.deadlineEpochMS,
+        enqueueOptions: inParams?.enqueueOptions,
       };
 
       for (const op of ops) {
@@ -1301,6 +1304,7 @@ export class DBOS {
     const wfParams: InternalWorkflowParams = {
       workflowUUID: wfId,
       queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
+      enqueueOptions: inParams?.enqueueOptions,
       configuredInstance,
       parentCtx,
       timeoutMS: inParams?.timeoutMS ?? pctx?.workflowTimeoutMS,
