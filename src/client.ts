@@ -52,6 +52,13 @@ interface ClientEnqueueOptions {
   appVersion?: string;
 
   /**
+   * Timeout for the workflow execution in milliseconds.
+   * Note, timeout starts when the workflow is dequeued.
+   * If not provided, the workflow timeout will not be set and the workflow will run to completion.
+   */
+  workflowTimeoutMS?: number;
+
+  /**
    * An ID used to identify enqueues workflows that will be used for de-duplication.
    * If not provided, no de-duplication will be performed.
    */
@@ -140,6 +147,8 @@ export class DBOSClient {
       applicationVersion: appVersion,
       applicationID: '',
       createdAt: Date.now(),
+      timeoutMS: options.workflowTimeoutMS,
+      deadlineEpochMS: undefined,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
@@ -211,7 +220,7 @@ export class DBOSClient {
   forkWorkflow(
     workflowID: string,
     startStep: number,
-    options?: { newWorkflowID?: string; applicationVersion?: string },
+    options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<string> {
     return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, options);
   }

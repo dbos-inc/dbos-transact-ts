@@ -209,6 +209,7 @@ function augmentProxy(target: object, proxy: Record<string, unknown>) {
 export interface StartWorkflowParams {
   workflowID?: string;
   queueName?: string;
+  timeoutMS?: number;
   enqueueOptions?: EnqueueOptions;
 }
 
@@ -899,7 +900,7 @@ export class DBOS {
           timerFuncID,
         );
         if (!rres) return null;
-        if (rres?.cancelled) throw new DBOSTargetWorkflowCancelledError(`Workflow ${workflowID} was cancelled`); // TODO: Make semantically meaningful
+        if (rres?.cancelled) throw new DBOSTargetWorkflowCancelledError(workflowID); // TODO: Make semantically meaningful
         return DBOSExecutor.reviveResultOrError<T>(rres);
       },
       'DBOS.getResult',
@@ -1006,7 +1007,7 @@ export class DBOS {
   static async forkWorkflow<T>(
     workflowID: string,
     startStep: number,
-    options?: { newWorkflowID?: string; applicationVersion?: string },
+    options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<WorkflowHandle<Awaited<T>>> {
     const forkedID = await DBOS.runAsWorkflowStep(async () => {
       return await DBOS.executor.forkWorkflow(workflowID, startStep, options);
@@ -1139,22 +1140,43 @@ export class DBOS {
   /**
    * @deprecated
    * Use queue named `queueName` for any workflows started within the `callback`.
-   * @param queueName - Name of queue upon which qll workflows called or started within `callback` will be run
+   * @param queueName - Name of queue upon which all workflows called or started within `callback` will be run
    * @param callback - Function to run, which would call or start workflows
    * @returns - Return value from `callback`
    */
   static async withWorkflowQueue<R>(queueName: string, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
-      const pcwfq = pctx.queueAssignedForWorkflows;
+      const originalQueueName = pctx.queueAssignedForWorkflows;
       try {
         pctx.queueAssignedForWorkflows = queueName;
         return callback();
       } finally {
-        pctx.queueAssignedForWorkflows = pcwfq;
+        pctx.queueAssignedForWorkflows = originalQueueName;
       }
     } else {
       return runWithTopContext({ queueAssignedForWorkflows: queueName }, callback);
+    }
+  }
+
+  /**
+   * Specify workflow timeout for any workflows started within the `callback`.
+   * @param timeoutMS - timeout length for all workflows started within `callback` will be run
+   * @param callback - Function to run, which would call or start workflows
+   * @returns - Return value from `callback`
+   */
+  static async withWorkflowTimeout<R>(timeoutMS: number, callback: () => Promise<R>): Promise<R> {
+    const pctx = getCurrentContextStore();
+    if (pctx) {
+      const originalTimeoutMS = pctx.workflowTimeoutMS;
+      try {
+        pctx.workflowTimeoutMS = timeoutMS;
+        return callback();
+      } finally {
+        pctx.workflowTimeoutMS = originalTimeoutMS;
+      }
+    } else {
+      return runWithTopContext({ workflowTimeoutMS: timeoutMS }, callback);
     }
   }
 
@@ -1183,13 +1205,13 @@ export class DBOS {
   static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
   static startWorkflow<T extends object>(target: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T> {
     if (typeof target === 'function') {
-      return DBOS.proxyInvokeWF(target, null, params) as unknown as InvokeFunctionsAsync<T>;
+      return DBOS.#proxyInvokeWF(target, null, params) as unknown as InvokeFunctionsAsync<T>;
     } else {
-      return DBOS.proxyInvokeWF(target, target as ConfiguredInstance, params) as unknown as InvokeFunctionsAsync<T>;
+      return DBOS.#proxyInvokeWF(target, target as ConfiguredInstance, params) as unknown as InvokeFunctionsAsync<T>;
     }
   }
 
-  static proxyInvokeWF<T extends object>(
+  static #proxyInvokeWF<T extends object>(
     object: T,
     configuredInstance: ConfiguredInstance | null,
     inParams?: StartWorkflowParams,
@@ -1218,6 +1240,8 @@ export class DBOS {
         parentCtx: wfctx,
         configuredInstance,
         queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
+        timeoutMS: inParams?.timeoutMS ?? pctx?.workflowTimeoutMS,
+        deadlineEpochMS: wfctx.deadlineEpochMS,
         enqueueOptions: inParams?.enqueueOptions,
       };
 
@@ -1283,6 +1307,7 @@ export class DBOS {
       enqueueOptions: inParams?.enqueueOptions,
       configuredInstance,
       parentCtx,
+      timeoutMS: inParams?.timeoutMS ?? pctx?.workflowTimeoutMS,
     };
 
     for (const op of ops) {
@@ -1669,6 +1694,8 @@ export class DBOS {
             parentCtx: wfctx,
             configuredInstance: inst,
             queueName: pctx?.queueAssignedForWorkflows,
+            timeoutMS: pctx?.workflowTimeoutMS,
+            deadlineEpochMS: wfctx.deadlineEpochMS,
           };
 
           const cwfh = await DBOSExecutor.globalInstance!.internalWorkflow(
@@ -1708,6 +1735,7 @@ export class DBOS {
           queueName: pctx?.queueAssignedForWorkflows,
           configuredInstance: inst,
           parentCtx,
+          timeoutMS: pctx?.workflowTimeoutMS,
         };
 
         const handle = await DBOS.executor.workflow(

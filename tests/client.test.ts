@@ -4,6 +4,8 @@ import { globalParams, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
+import { DBOSWorkflowCancelledError } from '../src/error';
+import { randomUUID } from 'crypto';
 import { DBOSQueueDuplicatedError } from '../src/error';
 
 const _queue = new WorkflowQueue('testQueue');
@@ -40,6 +42,25 @@ class ClientTest {
     ClientTest.inorder_results.push(input);
     return input;
   }
+
+  @DBOS.workflow()
+  static async blockingWorkflow() {
+    while (true) {
+      await DBOS.sleep(100);
+    }
+  }
+
+  @DBOS.workflow()
+  static async blockingParentStart() {
+    await DBOS.startWorkflow(ClientTest)
+      .blockingWorkflow()
+      .then((h) => h.getResult());
+  }
+
+  @DBOS.workflow()
+  static async blockingParentDirect() {
+    await ClientTest.blockingWorkflow();
+  }
 }
 
 type EnqueueTest = typeof ClientTest.enqueueTest;
@@ -71,6 +92,89 @@ describe('DBOSClient', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
+  });
+
+  test('enqueue-timeout-simple', async () => {
+    const client = await DBOSClient.create(database_url);
+    const wfid = randomUUID();
+
+    await DBOS.launch();
+
+    try {
+      const handle = await client.enqueue<typeof ClientTest.blockingWorkflow>({
+        workflowName: 'blockingWorkflow',
+        workflowClassName: 'ClientTest',
+        queueName: 'testQueue',
+        workflowID: wfid,
+        workflowTimeoutMS: 1000,
+      });
+      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
+
+      const wfstatus = await client.getWorkflow(wfid);
+      expect(wfstatus?.status).toBe('CANCELLED');
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('enqueue-timeout-direct-parent', async () => {
+    const client = await DBOSClient.create(database_url);
+    const wfid = randomUUID();
+
+    await DBOS.launch();
+
+    try {
+      const handle = await client.enqueue<typeof ClientTest.blockingParentDirect>({
+        workflowName: 'blockingParentDirect',
+        workflowClassName: 'ClientTest',
+        queueName: 'testQueue',
+        workflowID: wfid,
+        workflowTimeoutMS: 1000,
+      });
+      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
+
+      const statuses = await client.listWorkflows({ workflow_id_prefix: wfid });
+      expect(statuses.length).toBe(2);
+      statuses.forEach((status) => {
+        expect(status.status).toBe('CANCELLED');
+      });
+      const deadline = statuses[0].deadlineEpochMS;
+      statuses.slice(1).forEach((status) => {
+        expect(status.deadlineEpochMS).toBe(deadline);
+      });
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('enqueue-timeout-startwf-parent', async () => {
+    const client = await DBOSClient.create(database_url);
+    const wfid = randomUUID();
+
+    await DBOS.launch();
+
+    try {
+      const handle = await client.enqueue<typeof ClientTest.blockingParentStart>({
+        workflowName: 'blockingParentStart',
+        workflowClassName: 'ClientTest',
+        queueName: 'testQueue',
+        workflowID: wfid,
+        workflowTimeoutMS: 1000,
+      });
+      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
+
+      const statuses = await client.listWorkflows({ workflow_id_prefix: wfid });
+      expect(statuses.length).toBe(2);
+      statuses.forEach((status) => {
+        expect(status.status).toBe('CANCELLED');
+      });
+      const deadline = statuses[0].deadlineEpochMS;
+      statuses.slice(1).forEach((status) => {
+        expect(status.deadlineEpochMS).toBe(deadline);
+      });
+    } finally {
+      await client.destroy();
+    }
   });
 
   test('DBOSClient-enqueue-idempotent', async () => {
@@ -223,7 +327,6 @@ describe('DBOSClient', () => {
 
     await DBOS.launch();
 
-    let wfid: string;
     try {
       const handle = await client.enqueue<EnqueueTest>(
         {
@@ -236,7 +339,6 @@ describe('DBOSClient', () => {
         'test',
         { first: 'John', last: 'Doe', age: 30 },
       );
-      wfid = handle.workflowID;
 
       let expectedError = false;
       try {

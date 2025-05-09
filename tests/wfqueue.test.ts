@@ -27,7 +27,6 @@ import {
   setDebugTrigger,
 } from '../src/debugpoint';
 import { DBOSConflictingWorkflowError, DBOSQueueDuplicatedError, DBOSTargetWorkflowCancelledError } from '../src/error';
-import Test from 'supertest/lib/test';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -1103,11 +1102,13 @@ describe('enqueue-options', () => {
     TestExample.resolveEvent();
 
     expect(wfh1).toBeDefined();
-    const result1 = await wfh1!.getResult();
+
+    const result1 = await wfh1.getResult();
     expect(result1).toBe('abc-c-p');
 
     expect(wfh2).toBeDefined();
-    const result2 = await wfh2!.getResult();
+    const result2 = await wfh2.getResult();
+
     expect(result2).toBe('ghi-c-p');
 
     const result3 = await wfh3.getResult();
