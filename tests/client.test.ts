@@ -11,6 +11,8 @@ import { DBOSQueueDuplicatedError } from '../src/error';
 const _queue = new WorkflowQueue('testQueue');
 
 class ClientTest {
+  static inorder_results: string[] = [];
+
   @DBOS.workflow()
   static async enqueueTest(
     numVal: number,
@@ -33,6 +35,12 @@ class ClientTest {
       await DBOS.setEvent(key, `updated-${value}`);
     }
     return `${key}-${value}`;
+  }
+
+  @DBOS.workflow()
+  static async priorityTest(input: string): Promise<string> {
+    ClientTest.inorder_results.push(input);
+    return Promise.resolve(input);
   }
 
   @DBOS.workflow()
@@ -356,6 +364,56 @@ describe('DBOSClient', () => {
       await client.destroy();
     }
   }, 20000);
+
+  test('DBOSClient-enqueue-priority', async () => {
+    const client = await DBOSClient.create(database_url);
+
+    await DBOS.launch();
+
+    type PriorityTest = typeof ClientTest.priorityTest;
+
+    try {
+      const handle1 = await client.enqueue<PriorityTest>(
+        {
+          workflowName: 'priorityTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+        },
+        'abc',
+      );
+
+      const handle2 = await client.enqueue<PriorityTest>(
+        {
+          workflowName: 'priorityTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          priority: 5,
+        },
+        'def',
+      );
+
+      const handle3 = await client.enqueue<PriorityTest>(
+        {
+          workflowName: 'priorityTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          priority: 1,
+        },
+        'ghi',
+      );
+
+      const result1 = await handle1.getResult();
+      const result2 = await handle2.getResult();
+      const result3 = await handle3.getResult();
+
+      expect(result1).toBe('abc');
+      expect(result2).toBe('def');
+      expect(result3).toBe('ghi');
+      expect(ClientTest.inorder_results).toEqual(['abc', 'def', 'ghi']);
+    } finally {
+      await client.destroy();
+    }
+  }, 30000);
 
   test('DBOSClient-enqueue-appVer-set', async () => {
     const client = await DBOSClient.create(database_url);
