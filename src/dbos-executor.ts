@@ -718,6 +718,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
   ): Promise<WorkflowHandle<R>> {
     const workflowID: string = params.workflowUUID ? params.workflowUUID : randomUUID();
     const presetID: boolean = params.workflowUUID ? true : false;
+    const timeoutMS = params.timeoutMS;
+    // If a timeout is explicitly specified, use it over any propagated deadline
+    const deadlineEpochMS = params.timeoutMS
+      ? // Queued workflows are assigned a deadline on dequeue. Otherwise, compute the deadline immediately
+        params.queueName
+        ? undefined
+        : Date.now() + params.timeoutMS
+      : // if no timeout is specified, use the propagated deadline (if any)
+        params.deadlineEpochMS;
 
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
@@ -726,13 +735,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const wConfig = wInfo.config;
 
     const passContext = wInfo.registration?.passContext ?? true;
-    const wCtxt: WorkflowContextImpl = new WorkflowContextImpl(
+    const wCtxt = new WorkflowContextImpl(
       this,
       params.parentCtx,
       workflowID,
       wConfig,
       wf.name,
       presetID,
+      timeoutMS,
+      deadlineEpochMS,
       params.tempWfType,
       params.tempWfName,
     );
@@ -753,7 +764,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
       executorId: wCtxt.executorID,
       applicationVersion: globalParams.appVersion,
       applicationID: wCtxt.applicationID,
-      createdAt: Date.now(), // Remember the start time of this workflow
+      createdAt: Date.now(), // Remember the start time of this workflow,
+      timeoutMS: timeoutMS,
+      deadlineEpochMS: deadlineEpochMS,
     };
 
     if (wCtxt.isTempWorkflow) {
@@ -762,6 +775,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
 
     let status: string | undefined = undefined;
+    let $deadlineEpochMS: number | undefined = undefined;
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
@@ -800,7 +814,33 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       args = DBOSJSON.parse(ires.serializedInputs) as T;
       status = ires.status;
+      $deadlineEpochMS = ires.deadlineEpochMS;
       await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
+    }
+
+    async function callPromiseWithTimeout(
+      callPromise: Promise<R>,
+      deadlineEpochMS: number,
+      sysdb: SystemDatabase,
+    ): Promise<R> {
+      let timeoutID: ReturnType<typeof setTimeout> | undefined = undefined;
+      const timeoutResult = {};
+      const timeoutPromise = new Promise<R>((_, reject) => {
+        timeoutID = setTimeout(reject, deadlineEpochMS - Date.now(), timeoutResult);
+      });
+
+      try {
+        return await Promise.race([callPromise, timeoutPromise]);
+      } catch (err) {
+        if (err === timeoutResult) {
+          await sysdb.cancelWorkflow(workflowID);
+          await callPromise.catch(() => {});
+          throw new DBOSWorkflowCancelledError(workflowID);
+        }
+        throw err;
+      } finally {
+        clearTimeout(timeoutID);
+      }
     }
 
     const runWorkflow = async () => {
@@ -808,11 +848,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       // Execute the workflow.
       try {
-        const callResult = await runWithWorkflowContext(wCtxt, async () => {
+        const callResult = await runWithWorkflowContext(wCtxt, () => {
           const callPromise = passContext
             ? wf.call(params.configuredInstance, wCtxt, ...args)
             : (wf as unknown as ContextFreeFunction<T, R>).call(params.configuredInstance, ...args);
-          return await callPromise;
+
+          if ($deadlineEpochMS === undefined) {
+            return callPromise;
+          } else {
+            return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
+          }
         });
 
         if (this.isDebugging) {
@@ -857,7 +902,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           internalStatus.status = StatusString.CANCELLED;
 
           if (!this.isDebugging) {
-            await this.systemDatabase.setWorkflowStatus(workflowID, StatusString.CANCELLED, false);
+            await this.systemDatabase.cancelWorkflow(workflowID);
           }
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
           this.logger.info(`Cancelled workflow ${workflowID}`);
@@ -1819,7 +1864,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   forkWorkflow(
     workflowID: string,
     startStep: number,
-    options: { newWorkflowID?: string; applicationVersion?: string } = {},
+    options: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number } = {},
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);
     return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, { ...options, newWorkflowID });
@@ -2033,6 +2078,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           configuredInstance: configuredInst,
           queueName: wfStatus.queueName,
           executeWorkflow: true,
+          deadlineEpochMS: wfStatus.deadlineEpochMS,
         },
         ...inputs,
       );
