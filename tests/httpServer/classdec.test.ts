@@ -140,7 +140,7 @@ describe('httpserver-defsec-tests', () => {
 
   let middlewareCounter2 = 0;
   const testMiddleware2: Middleware = async (ctx, next) => {
-    middlewareCounter2 = middlewareCounter + 1;
+    middlewareCounter2 = middlewareCounter2 + 1;
     await next();
   };
 

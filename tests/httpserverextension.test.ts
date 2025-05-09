@@ -1,4 +1,5 @@
 import {
+  associateClassWithEventReceiver,
   associateMethodWithEventReceiver,
   DBOS,
   DBOSConfig,
@@ -8,7 +9,7 @@ import {
 import { DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
-import Koa from 'koa';
+import Koa, { Middleware } from 'koa';
 import Router from '@koa/router';
 
 import request from 'supertest';
@@ -42,6 +43,14 @@ export enum APITypes {
 interface DBOSHTTPReg {
   apiURL: string;
   apiType: APITypes;
+}
+
+interface DBOSHTTPClassReg {
+  //authMiddleware?: DBOSHttpAuthMiddleware;
+  koaBodyParser?: Koa.Middleware;
+  koaCors?: Koa.Middleware;
+  koaMiddlewares?: Koa.Middleware[];
+  koaGlobalMiddlewares?: Koa.Middleware[];
 }
 
 class DBOSHTTPBase implements DBOSEventReceiver {
@@ -110,10 +119,68 @@ class DBOSHTTPBase implements DBOSEventReceiver {
   deleteApi(url: string) {
     return this.httpApiDec(APITypes.DELETE, url);
   }
+
+  /**
+   * Define Koa middleware that is applied in order to each endpoint in this class.
+   */
+  koaMiddleware(...koaMiddleware: Koa.Middleware[]) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const er = this;
+    koaMiddleware.forEach((i) => {
+      if (i === undefined) {
+        throw new TypeError('undefined argument passed to koaMiddleware');
+      }
+    });
+    function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
+      const clsreg = associateClassWithEventReceiver(er, ctor) as DBOSHTTPClassReg;
+      clsreg.koaMiddlewares = [...(clsreg.koaMiddlewares ?? []), ...koaMiddleware];
+    }
+    return clsdec;
+  }
+
+  /**
+   * Define Koa middleware that is applied to all requests, including this class, other classes,
+   *   or requests that do not end up in DBOS handlers at all.
+   */
+  koaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const er = this;
+    koaMiddleware.forEach((i) => {
+      if (i === undefined) {
+        throw new TypeError('undefined argument passed to koaMiddleware');
+      }
+    });
+    function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
+      const clsreg = associateClassWithEventReceiver(er, ctor) as DBOSHTTPClassReg;
+      clsreg.koaGlobalMiddlewares = [...(clsreg.koaGlobalMiddlewares ?? []), ...koaMiddleware];
+    }
+    return clsdec;
+  }
 }
 
 const dhttp = new DBOSHTTPBase();
 
+let middlewareCounter = 0;
+const testMiddleware: Middleware = async (_ctx, next) => {
+  middlewareCounter++;
+  await next();
+};
+
+let middlewareCounter2 = 0;
+const testMiddleware2: Middleware = async (_ctx, next) => {
+  middlewareCounter2 = middlewareCounter2 + 1;
+  await next();
+};
+
+let middlewareCounterG = 0;
+const testMiddlewareG: Middleware = async (_ctx, next) => {
+  middlewareCounterG = middlewareCounterG + 1;
+  expect(DBOS.globalLogger).toBeDefined();
+  await next();
+};
+
+@dhttp.koaGlobalMiddleware(testMiddlewareG)
+@dhttp.koaGlobalMiddleware(testMiddleware, testMiddleware2)
 export class HTTPEndpoints {
   @dhttp.getApi('/foobar')
   static async foobar(arg: string) {
@@ -133,15 +200,31 @@ describe('decoratorless-api-tests', () => {
   });
 
   beforeEach(async () => {
+    middlewareCounter = middlewareCounter2 = middlewareCounterG = 0;
     await DBOS.launch();
     const eps = DBOSExecutor.globalInstance!.getRegistrationsFor(dhttp);
     app = new Koa();
     appRouter = new Router();
 
+    const globalMiddlewares: Set<Koa.Middleware> = new Set();
+
     for (const e of eps) {
-      const { methodConfig, classConfig: _classConfig, methodReg } = e;
+      const { methodConfig, classConfig, methodReg } = e;
       const ro = methodConfig as DBOSHTTPReg;
+      const defaults = classConfig as DBOSHTTPClassReg;
+
       // TODO: appRouter.all() on CORS, other middlewares
+      // Check if we need to apply any Koa global middleware.
+      if (defaults?.koaGlobalMiddlewares) {
+        defaults.koaGlobalMiddlewares.forEach((koaMiddleware) => {
+          if (globalMiddlewares.has(koaMiddleware)) {
+            return;
+          }
+          DBOS.logger.debug(`DBOS Koa Server applying middleware ${koaMiddleware.name} globally`);
+          globalMiddlewares.add(koaMiddleware);
+          app.use(koaMiddleware);
+        });
+      }
 
       const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
         try {
@@ -233,8 +316,7 @@ describe('decoratorless-api-tests', () => {
       };
 
       // Middleware functions are applied directly to router verb methods to prevent duplicate calls.
-      // TODO Class info such as middlewares
-      const routeMiddlewares = [bodyParser()].concat([]);
+      const routeMiddlewares = [defaults.koaBodyParser ?? bodyParser()].concat(defaults.koaMiddlewares ?? []);
       switch (ro.apiType) {
         case APITypes.GET:
           appRouter.get(ro.apiURL, ...routeMiddlewares, wrappedHandler);
@@ -272,5 +354,8 @@ describe('decoratorless-api-tests', () => {
     const response1 = await request(app.callback()).get('/foobar?arg=A');
     expect(response1.statusCode).toBe(200);
     expect(response1.text).toBe('ARG: A');
+    expect(middlewareCounter).toBe(1);
+    expect(middlewareCounter2).toBe(1);
+    expect(middlewareCounterG).toBe(1);
   });
 });
