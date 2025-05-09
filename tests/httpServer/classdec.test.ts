@@ -140,7 +140,8 @@ describe('httpserver-defsec-tests', () => {
 
   let middlewareCounter2 = 0;
   const testMiddleware2: Middleware = async (ctx, next) => {
-    middlewareCounter2 = middlewareCounter2 + 1;
+    // This is not a typo.  This is testing that middleware goes left to right
+    middlewareCounter2 = middlewareCounter + 1;
     await next();
   };
 
