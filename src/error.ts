@@ -309,7 +309,7 @@ export class DBOSQueueDuplicatedError extends DBOSError {
 
 const InvalidQueuePriority = 29;
 /** Exception raised queue priority is invalid */
-export class InvalidQueuePriorityError extends DBOSError {
+export class DBOSInvalidQueuePriorityError extends DBOSError {
   constructor(readonly priority: number) {
     super(`Invalid priority ${priority}. Priority must be between 0 and .`, InvalidQueuePriority);
   }

@@ -11,7 +11,7 @@ import {
   DBOSMaxStepRetriesError,
   DBOSWorkflowCancelledError,
   DBOSUnexpectedStepError,
-  InvalidQueuePriorityError,
+  DBOSInvalidQueuePriorityError,
 } from './error';
 import {
   InvokedHandle,
@@ -728,7 +728,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         params.enqueueOptions.priority < DBOS_QUEUE_MIN_PRIORITY ||
         params.enqueueOptions.priority > DBOS_QUEUE_MAX_PRIORITY
       ) {
-        throw new InvalidQueuePriorityError(params.enqueueOptions.priority);
+        throw new DBOSInvalidQueuePriorityError(params.enqueueOptions.priority);
       }
     }
 
