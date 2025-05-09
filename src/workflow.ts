@@ -10,6 +10,7 @@ import { InvokeFuncsInst } from './httpServer/handler';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
 import { DBOS } from './dbos';
+import { EnqueueOptions } from './system_database';
 
 /** @deprecated */
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
@@ -50,6 +51,9 @@ export interface WorkflowParams {
   configuredInstance?: ConfiguredInstance | null;
   queueName?: string;
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
+  timeoutMS?: number;
+  deadlineEpochMS?: number;
+  enqueueOptions?: EnqueueOptions; // Options for the workflow queue
 }
 
 /**
@@ -84,6 +88,9 @@ export interface WorkflowStatus {
 
   readonly createdAt: number;
   readonly updatedAt?: number;
+
+  readonly timeoutMS?: number;
+  readonly deadlineEpochMS?: number;
 }
 
 export interface GetWorkflowsInput {
@@ -219,8 +226,6 @@ export interface WorkflowContext extends DBOSContext {
   ): WfInvokeWfsInstAsync<T>;
   startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T>;
 
-  // These are subject to change...
-
   send<T>(destinationID: string, message: T, topic?: string): Promise<void>;
   recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
   setEvent<T>(key: string, value: T): Promise<void>;
@@ -245,6 +250,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     readonly workflowConfig: WorkflowConfig,
     workflowName: string,
     readonly presetUUID: boolean,
+    readonly timeoutMS: number | undefined,
+    readonly deadlineEpochMS: number | undefined,
     readonly tempWfOperationType: string = '', // "transaction", "procedure", "external", or "send"
     readonly tempWfOperationName: string = '', // Name for the temporary workflow operation
   ) {
