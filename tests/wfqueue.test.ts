@@ -1,5 +1,5 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
-import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestDb,
@@ -16,6 +16,7 @@ import { WF } from './wfqtestprocess';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { Client } from 'pg';
+import { InvalidQueuePriorityError } from '../src/error';
 
 const execFileAsync = promisify(execFile);
 
@@ -1175,5 +1176,21 @@ describe('enqueue-options', () => {
     }
 
     expect(TestPriority.wfPriorityList).toEqual([0, 6, 7, 1, 2, 3, 4, 5]);
+
+    // test invalid priority
+
+    await expect(
+      DBOS.startWorkflow(TestPriority, {
+        queueName: TestPriority.queue.name,
+        enqueueOptions: { priority: -1 },
+      }).parentWorkflow(7),
+    ).rejects.toBeInstanceOf(InvalidQueuePriorityError);
+
+    await expect(
+      DBOS.startWorkflow(TestPriority, {
+        queueName: TestPriority.queue.name,
+        enqueueOptions: { priority: DBOS_QUEUE_MAX_PRIORITY + 1 },
+      }).parentWorkflow(7),
+    ).rejects.toBeInstanceOf(InvalidQueuePriorityError);
   }, 30000);
 });
