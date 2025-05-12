@@ -29,8 +29,25 @@ import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } 
 //  You register a context provider, this allows it to save and load
 //   stuff from the system DB to accompany the workflow
 
-// TODO: Also instances
-// How to do tracing/logging is a bit trickier
+// OK, what I'm doing today:
+//  Registration of arbitrary classes/instances -> associated items
+//  Class / class name -> registration; registration has key->items
+//    This is really so ... aspects work together?  To pass context around?
+//  The open goal:
+//   DBOSHttp collects up all the functions; this names and registers them
+//   DBOSHttp has a list of all its functions (or retrieves it; that's TBD)
+//     It can make you a router of these functions
+//   Each function:
+//     HTTP dispatches it with request context
+//     Some glue gets the request/response stuff and makes args; this can do validation
+//       (or is validation based on interceptors); this has auth, request, OAOO key, etc...
+//       Hence, it runs with the local storage
+//         This hits a DBOS workflow (which may be enqueued); that saves the context
+//         The dequeued workflow has to run in same context; do we make a function for it... yes
+//     For the first rev, we will just use the auth and request fields in the existing record
+//         Once this is working, we'll fix it
+//   How to do tracing/logging is a bit trickier
+// TODO: Also instances; no reason why not.
 
 export enum APITypes {
   GET = 'GET',
