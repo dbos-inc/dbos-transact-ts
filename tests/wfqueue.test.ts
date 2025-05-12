@@ -1,5 +1,10 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
-import { DBOSConfigInternal, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY } from '../src/dbos-executor';
+import {
+  DBOSConfigInternal,
+  DBOSExecutor,
+  DBOS_QUEUE_MAX_PRIORITY,
+  DBOS_QUEUE_MIN_PRIORITY,
+} from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestDb,
@@ -1131,11 +1136,12 @@ describe('enqueue-options', () => {
 
     @DBOS.workflow()
     static async parentWorkflow(input: number): Promise<number> {
+      // 0 means no priority
       TestPriority.wfPriorityList.push(input);
 
       const wfh1 = await DBOS.startWorkflow(TestPriority, {
         queueName: childqueue.name,
-        enqueueOptions: { priority: input },
+        enqueueOptions: input !== 0 ? { priority: input } : undefined,
       }).childWorkflow(input);
 
       await TestPriority.workflowEvent;
@@ -1183,7 +1189,7 @@ describe('enqueue-options', () => {
     await expect(
       DBOS.startWorkflow(TestPriority, {
         queueName: TestPriority.queue.name,
-        enqueueOptions: { priority: -1 },
+        enqueueOptions: { priority: DBOS_QUEUE_MIN_PRIORITY - 10 },
       }).parentWorkflow(7),
     ).rejects.toBeInstanceOf(DBOSInvalidQueuePriorityError);
 

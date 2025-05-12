@@ -1,4 +1,5 @@
 import { DatabaseError } from 'pg';
+import { DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from './dbos-executor';
 
 function formatPgDatabaseError(err: DatabaseError): string {
   let msg = '';
@@ -311,6 +312,9 @@ const InvalidQueuePriority = 29;
 /** Exception raised queue priority is invalid */
 export class DBOSInvalidQueuePriorityError extends DBOSError {
   constructor(readonly priority: number) {
-    super(`Invalid priority ${priority}. Priority must be between 0 and .`, InvalidQueuePriority);
+    super(
+      `Invalid priority ${priority}. Priority must be between ${DBOS_QUEUE_MIN_PRIORITY} and ${DBOS_QUEUE_MAX_PRIORITY}.`,
+      InvalidQueuePriority,
+    );
   }
 }
