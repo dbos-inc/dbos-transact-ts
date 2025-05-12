@@ -10,6 +10,7 @@ import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
+import { DBOSTransactionalDataSource } from './transactionsource';
 
 /**
  * Any column type column can be.
@@ -509,6 +510,28 @@ export interface DBOSContextProvider {
   captureContext(ctx: DBOSStoredWFContext, explicitContxt?: DBOSContext): void;
   needsToRestoreContext(ctx: DBOSStoredWFContext): boolean;
   runInRestoredContext<T>(ctx: DBOSStoredWFContext, callback: () => Promise<T>): Promise<T>;
+}
+
+/////
+// Transactional data source registration
+/////
+export const transactionalDataSources: Map<string, DBOSTransactionalDataSource> = new Map();
+
+// Register data source (user version)
+export function registerTransactionalDataSource(name: string, ds: DBOSTransactionalDataSource) {
+  if (transactionalDataSources.has(name)) {
+    if (transactionalDataSources.get(name) !== ds) {
+      throw new DBOSConflictingRegistrationError(`Data source with name ${name} is already registered`);
+    }
+    return;
+  }
+  ensureDBOSIsNotLaunched();
+  transactionalDataSources.set(name, ds);
+}
+
+export function getTransactionalDataSource(name: string) {
+  if (transactionalDataSources.has(name)) return transactionalDataSources.get(name)!;
+  throw new DBOSNotRegisteredError(name, `Data source '${name}' is not registered`);
 }
 
 ////////////////////////////////////////////////////////////////////////////////

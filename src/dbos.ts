@@ -9,6 +9,7 @@ import {
   DBOSContextImpl,
   getNextWFID,
   StepStatus,
+  runWithDSContext,
 } from './context';
 import {
   DBOSConfig,
@@ -17,6 +18,7 @@ import {
   DBOSExecutor,
   DebugMode,
   InternalWorkflowParams,
+  OperationType,
 } from './dbos-executor';
 import { Tracer } from './telemetry/traces';
 import {
@@ -49,12 +51,15 @@ import {
   getOrCreateClassRegistration,
   getRegisteredOperations,
   getRegistrationForFunction,
+  getTransactionalDataSource,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
   registerAndWrapDBOSFunction,
   registerAndWrapDBOSFunctionByName,
   registerFunctionWrapper,
+  registerTransactionalDataSource,
+  transactionalDataSources,
 } from './decorators';
 import { globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
@@ -80,6 +85,7 @@ import { PoolClient } from 'pg';
 import { Knex } from 'knex';
 import { StepConfig, StepFunction } from './step';
 import {
+  DBOSTransactionalDataSource,
   HandlerContext,
   StepContext,
   StoredProcedureContext,
@@ -96,6 +102,7 @@ import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
+import { SpanStatusCode } from '@opentelemetry/api';
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -363,6 +370,10 @@ export class DBOS {
     }
 
     await DBOSExecutor.globalInstance.initEventReceivers();
+    // TODO: Move this to launch
+    for (const [_n, ds] of transactionalDataSources) {
+      await ds.initialize();
+    }
 
     if (options?.conductorKey) {
       if (!options.conductorURL) {
@@ -472,6 +483,11 @@ export class DBOS {
       await DBOSExecutor.globalInstance.deactivateEventReceivers();
       await DBOSExecutor.globalInstance.destroy();
       DBOSExecutor.globalInstance = undefined;
+    }
+
+    // TODO: Move this to shutdown
+    for (const [_n, ds] of transactionalDataSources) {
+      await ds.destroy();
     }
 
     // Reset the global app version and executor ID
@@ -1973,6 +1989,112 @@ export class DBOS {
       return descriptor;
     }
     return decorator;
+  }
+
+  /**
+   * Register a transactional data source, that helps DBOS provide
+   *  transactional access to user databases
+   * @param name - Registered name for the data source
+   * @param ds - Transactional data source provider
+   */
+  static registerDataSource(name: string, ds: DBOSTransactionalDataSource) {
+    registerTransactionalDataSource(name, ds);
+  }
+
+  // This is the version that needs no existing transaction registration.  Just goes with it.
+  static async runAsWorkflowTransaction<T>(callback: () => Promise<T>, funcName: string, dsName?: string) {
+    if (!DBOS.isWithinWorkflow) {
+      throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` outside of a workflow`);
+    }
+    if (!DBOS.isInWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Invalid call to \`${funcName}\` inside a \`step\`, \`transaction\`, or \`procedure\``,
+      );
+    }
+    const dsn = dsName ?? '<default>';
+    const ds = getTransactionalDataSource(dsn);
+
+    const wfctx = assertCurrentWorkflowContext();
+    const callnum = wfctx.functionIDGetIncrement();
+
+    const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
+      funcName,
+      {
+        operationUUID: wfctx.workflowUUID,
+        operationType: OperationType.TRANSACTION,
+        authenticatedUser: wfctx.authenticatedUser,
+        assumedRole: wfctx.assumedRole,
+        authenticatedRoles: wfctx.authenticatedRoles,
+        // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
+      },
+      wfctx.span,
+    );
+
+    try {
+      const res = DBOSExecutor.globalInstance!.runAsStep<T>(
+        async () => {
+          return await runWithDSContext(callnum, async () => {
+            return await ds.invokeTransactionFunction(undefined, {}, undefined, callback);
+          });
+        },
+        funcName,
+        DBOS.workflowID,
+        callnum,
+      );
+
+      span.setStatus({ code: SpanStatusCode.OK });
+      DBOSExecutor.globalInstance!.tracer.endSpan(span);
+      return res;
+    } catch (err) {
+      const e = err as Error;
+      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+      DBOSExecutor.globalInstance!.tracer.endSpan(span);
+      throw err;
+    }
+  }
+
+  // Transaction wrapper
+  static registerTransaction<This, Args extends unknown[], Return>(
+    dsName: string,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      name: string;
+    },
+    config?: unknown,
+  ): (this: This, ...args: Args) => Promise<Return> {
+    const dsn = dsName ?? '<default>';
+    const ds = getTransactionalDataSource(dsn);
+    const dsfunc = ds.wrapTransactionFunction(config, func);
+
+    const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+      if (!DBOS.isWithinWorkflow()) {
+        throw new DBOSInvalidWorkflowTransitionError(`Call to transaction '${target.name}' outside of a workflow`);
+      }
+
+      if (DBOS.isInTransaction() || DBOS.isInStep()) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to a `trasaction` function from within a `step` or `transaction`',
+        );
+      }
+
+      const wfctx = assertCurrentWorkflowContext();
+      const callnum = wfctx.functionIDGetIncrement();
+      return DBOSExecutor.globalInstance!.runAsStep<Return>(
+        async () => {
+          return await runWithDSContext(callnum, async () => {
+            return await dsfunc.call(this, ...rawArgs);
+          });
+        },
+        target.name,
+        DBOS.workflowID,
+        callnum,
+      );
+    };
+
+    Object.defineProperty(invokeWrapper, 'name', {
+      value: target.name,
+    });
+    return invokeWrapper;
   }
 
   /**

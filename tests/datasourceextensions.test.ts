@@ -1,58 +1,13 @@
 import { randomUUID } from 'node:crypto';
 import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import knex, { Knex } from 'knex';
-import { DBOS } from '../src';
+import { DBOS, DBOSTransactionalDataSource } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
-import {
-  DBOSFailedSqlTransactionError,
-  DBOSInvalidWorkflowTransitionError,
-  DBOSNotRegisteredError,
-} from '../src/error';
+import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';
 import { DBOSJSON, sleepms, ValuesOf } from '../src/utils';
 import { MethodRegistration } from '../src/decorators';
-import { DBOSExecutor, OperationType } from '../src/dbos-executor';
-import { assertCurrentWorkflowContext, runWithDSContext } from '../src/context';
-import { Span } from '@opentelemetry/sdk-trace-base';
-import { SpanStatusCode } from '@opentelemetry/api';
-
-// Data source implementation (to be moved to DBOS core)
-interface DBOSTransactionalDataStore {
-  name: string;
-  get dsType(): string;
-
-  /**
-   * Will be called by DBOS during launch.
-   * This may be a no-op if the DS is initialized before telling DBOS about the DS at all.
-   */
-  initialize(): Promise<void>;
-
-  /**
-   * Will be called by DBOS during attempt at clean shutdown (generally in testing scenarios).
-   */
-  destroy(): Promise<void>;
-
-  /**
-   * Wrap a function.  This is part of the registration process
-   *   This may also do advance wrapping
-   *   (DBOS invoke wrapper will also be created outside of this)
-   */
-  wrapTransactionFunction<This, Args extends unknown[], Return>(
-    config: unknown,
-    func: (this: This, ...args: Args) => Promise<Return>,
-  ): (this: This, ...args: Args) => Promise<Return>;
-
-  /**
-   * Invoke a transaction function
-   */
-  invokeTransactionFunction<This, Args extends unknown[], Return>(
-    reg: MethodRegistration<This, Args, Return> | undefined,
-    config: unknown,
-    target: This,
-    func: (this: This, ...args: Args) => Promise<Return>,
-    ...args: Args
-  ): Promise<Return>;
-}
+import { DBOSExecutor } from '../src/dbos-executor';
 
 /*
  * Knex user data access interface
@@ -121,7 +76,7 @@ export const IsolationLevel = {
 } as const;
 export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
-export class DBOSKnexDS implements DBOSTransactionalDataStore {
+export class DBOSKnexDS implements DBOSTransactionalDataSource {
   // User will set this up, in this case
   constructor(
     readonly name: string,
@@ -373,7 +328,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
     },
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, target, config);
+    return DBOS.registerTransaction(this.name, func, target, config);
   }
 
   getPostgresErrorCode(error: unknown): string | null {
@@ -394,114 +349,13 @@ export class DBOSKnexDS implements DBOSTransactionalDataStore {
   }
 }
 
-// Register data source (user version)
-const userDataSources: Map<string, DBOSTransactionalDataStore> = new Map();
-
-// This is the version that needs no existing transaction registration.  Just goes with it.
-async function runAsWorkflowTransaction<T>(callback: () => Promise<T>, funcName: string, dsName?: string) {
-  if (!DBOS.isWithinWorkflow) {
-    throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` outside of a workflow`);
-  }
-  if (!DBOS.isInWorkflow()) {
-    throw new DBOSInvalidWorkflowTransitionError(
-      `Invalid call to \`${funcName}\` inside a \`step\`, \`transaction\`, or \`procedure\``,
-    );
-  }
-  const dsn = dsName ?? '<default>';
-  const ds = userDataSources.get(dsn);
-  if (!ds) throw new DBOSNotRegisteredError(dsn, `Transactional Data Source ${dsn} not registered`);
-
-  const wfctx = assertCurrentWorkflowContext();
-  const callnum = wfctx.functionIDGetIncrement();
-
-  const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
-    funcName,
-    {
-      operationUUID: wfctx.workflowUUID,
-      operationType: OperationType.TRANSACTION,
-      authenticatedUser: wfctx.authenticatedUser,
-      assumedRole: wfctx.assumedRole,
-      authenticatedRoles: wfctx.authenticatedRoles,
-      // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
-    },
-    wfctx.span,
-  );
-
-  try {
-    const res = DBOSExecutor.globalInstance!.runAsStep<T>(
-      async () => {
-        return await runWithDSContext(callnum, async () => {
-          return await ds.invokeTransactionFunction(undefined, {}, undefined, callback);
-        });
-      },
-      funcName,
-      DBOS.workflowID,
-      callnum,
-    );
-
-    span.setStatus({ code: SpanStatusCode.OK });
-    DBOSExecutor.globalInstance!.tracer.endSpan(span);
-    return res;
-  } catch (err) {
-    const e = err as Error;
-    span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-    DBOSExecutor.globalInstance!.tracer.endSpan(span);
-    throw err;
-  }
-}
-
-// Transaction wrapper
-function registerTransaction<This, Args extends unknown[], Return>(
-  dsName: string,
-  func: (this: This, ...args: Args) => Promise<Return>,
-  target: {
-    name: string;
-  },
-  config?: unknown,
-): (this: This, ...args: Args) => Promise<Return> {
-  const dsn = dsName ?? '<default>';
-  const ds = userDataSources.get(dsn);
-  if (!ds) throw new DBOSNotRegisteredError(dsn, `Transactional Data Source ${dsn} not registered`);
-  const dsfunc = ds.wrapTransactionFunction(config, func);
-
-  const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-    if (!DBOS.isWithinWorkflow()) {
-      throw new DBOSInvalidWorkflowTransitionError(`Call to transaction '${target.name}' outside of a workflow`);
-    }
-
-    if (DBOS.isInTransaction() || DBOS.isInStep()) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        'Invalid call to a `trasaction` function from within a `step` or `transaction`',
-      );
-    }
-
-    const wfctx = assertCurrentWorkflowContext();
-    const callnum = wfctx.functionIDGetIncrement();
-    return DBOSExecutor.globalInstance!.runAsStep<Return>(
-      async () => {
-        return await runWithDSContext(callnum, async () => {
-          return await dsfunc.call(this, ...rawArgs);
-        });
-      },
-      target.name,
-      DBOS.workflowID,
-      callnum,
-    );
-  };
-
-  Object.defineProperty(invokeWrapper, 'name', {
-    value: target.name,
-  });
-  return invokeWrapper;
-}
-
 ////
 /// App logic to test
 ////
 
 const config = generateDBOSTestConfig();
 const dsa = new DBOSKnexDS('knexA', config.poolConfig);
-userDataSources.set('knexA', dsa);
+DBOS.registerDataSource('knexA', dsa);
 
 async function txFunctionGuts() {
   expect(DBOS.isInTransaction()).toBe(true);
@@ -510,11 +364,11 @@ async function txFunctionGuts() {
   return res.rows[0].a;
 }
 
-const txFunc = registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
+const txFunc = DBOS.registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
-  const p1 = await runAsWorkflowTransaction(
+  const p1 = await DBOS.runAsWorkflowTransaction(
     async () => {
       return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My first tx result' as a")).rows[0].a;
     },
@@ -542,19 +396,11 @@ describe('decoratorless-api-tests', () => {
   });
 
   beforeEach(async () => {
-    // TODO: Move this to launch
-    for (const [_n, ds] of userDataSources) {
-      await ds.initialize();
-    }
     await DBOS.launch();
   });
 
   afterEach(async () => {
     await DBOS.shutdown();
-    // TODO: Move this to shutdown
-    for (const [_n, ds] of userDataSources) {
-      await ds.destroy();
-    }
   });
 
   test('bare-tx-wf-functions', async () => {
