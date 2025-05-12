@@ -27,12 +27,16 @@ export enum AppLanguages {
   Python = 'python',
 }
 
-export const dbosConfigFilePath = 'dbos-config.yaml';
+export const defaultConfigFilePath = 'dbos-config.yaml';
 export const DBOSCloudHost = process.env.DBOS_DOMAIN || 'cloud.dbos.dev';
 export const dbosEnvPath = '.dbos';
 
-export function retrieveApplicationName(logger: Logger, silent: boolean = false): string | undefined {
-  const configFile = loadConfigFile(dbosConfigFilePath);
+export function retrieveApplicationName(
+  logger: Logger,
+  silent: boolean = false,
+  configFilePath: string = defaultConfigFilePath,
+): string | undefined {
+  const configFile = loadConfigFile(configFilePath);
   let appName = configFile.name;
   if (appName !== undefined) {
     if (!silent) {
@@ -56,8 +60,8 @@ export function retrieveApplicationName(logger: Logger, silent: boolean = false)
   return appName;
 }
 
-export function retrieveApplicationLanguage() {
-  const configFile = loadConfigFile(dbosConfigFilePath);
+export function retrieveApplicationLanguage(configFilePath: string = defaultConfigFilePath) {
+  const configFile = loadConfigFile(configFilePath);
   return configFile.language || AppLanguages.Node;
 }
 

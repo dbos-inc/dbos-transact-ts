@@ -330,7 +330,7 @@ export class DBOSHttpServer {
     const workflowResumeUrl = '/workflows/:workflow_id/fork';
     const workflowForkHandler = async (koaCtxt: Koa.Context) => {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
-      const body = koaCtxt.request.body as { start_step?: number; new_workflow_id?: string };
+      const body = koaCtxt.request.body as { start_step?: number; new_workflow_id?: string; timeout_ms?: number };
       if (body.start_step === undefined) {
         throw new DBOSDataValidationError('Missing start_step in request body');
       }
@@ -339,6 +339,7 @@ export class DBOSHttpServer {
       try {
         const workflowID = await dbosExec.forkWorkflow(workflowId, body.start_step, {
           newWorkflowID: body.new_workflow_id,
+          timeoutMS: body.timeout_ms,
         });
         koaCtxt.body = {
           workflow_id: workflowID,
