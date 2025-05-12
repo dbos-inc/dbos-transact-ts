@@ -68,6 +68,8 @@ import {
   getClassRegistrationByName,
   getAllRegisteredClassNames,
   getRegisteredOperationsByClassname,
+  DBOSContextProvider,
+  DBOSStoredWFContext,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -79,6 +81,8 @@ import {
   runWithStepContext,
   runWithStoredProcContext,
   getNextWFID,
+  getCurrentDBOSContext,
+  getCurrentContextStore,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
@@ -86,7 +90,7 @@ import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
+import { DBOSContext, DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
 
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -641,6 +645,28 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.logger.debug(`Registered stored proc ${cfn}`);
   }
 
+  contextProviders: DBOSContextProvider[] = [
+    {
+      captureContext(ctx: DBOSStoredWFContext, explicitCtx?: DBOSContext): void {
+        const lctx = getCurrentContextStore();
+        const dctx = getCurrentDBOSContext();
+        ctx.request = explicitCtx?.request ?? lctx?.request ?? dctx?.request ?? {};
+        ctx.assumedRole = explicitCtx?.assumedRole ?? lctx?.assumedRole ?? dctx?.assumedRole ?? '';
+        ctx.authenticatedRoles =
+          explicitCtx?.authenticatedRoles ?? lctx?.authenticatedRoles ?? dctx?.authenticatedRoles ?? [];
+        ctx.authenticatedUser =
+          explicitCtx?.authenticatedUser ?? lctx?.authenticatedUser ?? dctx?.authenticatedUser ?? '';
+      },
+      needsToRestoreContext(ctx: DBOSStoredWFContext): boolean {
+        if (ctx.request || ctx.assumedRole || ctx.authenticatedUser || ctx.authenticatedRoles) return true;
+        return false;
+      },
+      async runInRestoredContext<T>(ctx: DBOSStoredWFContext, callback: () => Promise<T>): Promise<T> {
+        return await callback();
+      },
+    },
+  ];
+
   getWorkflowInfo(wf: Workflow<unknown[], unknown>) {
     const wfname =
       wf.name === DBOSExecutor.tempWorkflowName ? wf.name : getRegisteredMethodClassName(wf) + '.' + wf.name;
@@ -751,6 +777,29 @@ export class DBOSExecutor implements DBOSExecutorContext {
       params.tempWfType,
       params.tempWfName,
     );
+
+    const storeCtx: DBOSStoredWFContext = { contextData: {} };
+    for (const cp of this.contextProviders) {
+      cp.captureContext(storeCtx, params.parentCtx);
+    }
+    /*
+    if (wCtxt.request) {
+      if (JSON.stringify(wCtxt.request) !== JSON.stringify(storeCtx.request)) {
+        throw new TypeError(`Request does not match: ${JSON.stringify(wCtxt.request)} ${JSON.stringify(storeCtx.request)}`);
+      }
+    }
+    if (wCtxt.authenticatedRoles) {
+      if (JSON.stringify(wCtxt.authenticatedRoles) !== JSON.stringify(storeCtx.authenticatedRoles)) {
+        throw new TypeError('Roles does not match');
+      }  
+      if (JSON.stringify(wCtxt.authenticatedUser) !== JSON.stringify(storeCtx.assumedRole)) {
+        throw new TypeError('User does not match');
+      }  
+      if (JSON.stringify(wCtxt.assumedRole) !== JSON.stringify(storeCtx.assumedRole)) {
+        throw new TypeError('Role does not match');
+      }  
+    }
+    */
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,

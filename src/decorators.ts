@@ -3,7 +3,7 @@ import 'reflect-metadata';
 import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
-import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext } from './context';
+import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, HTTPRequest } from './context';
 import { StepConfig, StepContext } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError, DBOSNotRegisteredError } from './error';
 import { validateMethodArgs } from './data_validation';
@@ -493,6 +493,22 @@ export function getConfiguredInstance(clsname: string, cfgname: string): Configu
   const classReg = classesByName.get(clsname)?.reg;
   if (!classReg) return null;
   return classReg.configuredInstances.get(cfgname) ?? null;
+}
+
+/////
+// Context provider registration
+////
+export class DBOSStoredWFContext {
+  authenticatedUser?: string;
+  authenticatedRoles?: string[];
+  assumedRole?: string;
+  request?: HTTPRequest;
+  contextData: { [key: string]: unknown } = {};
+}
+export interface DBOSContextProvider {
+  captureContext(ctx: DBOSStoredWFContext, explicitContxt?: DBOSContext): void;
+  needsToRestoreContext(ctx: DBOSStoredWFContext): boolean;
+  runInRestoredContext<T>(ctx: DBOSStoredWFContext, callback: () => Promise<T>): Promise<T>;
 }
 
 ////////////////////////////////////////////////////////////////////////////////
