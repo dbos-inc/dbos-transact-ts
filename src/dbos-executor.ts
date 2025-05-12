@@ -734,7 +734,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const priority = params?.enqueueOptions?.priority;
     if (priority !== undefined && (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY)) {
-      throw new DBOSInvalidQueuePriorityError(priority);
+      throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
     }
 
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
