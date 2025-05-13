@@ -276,6 +276,10 @@ describe('dbos-tests', () => {
     });
   });
 
+  /**
+   *  WORKFLOW TIMEOUTS
+   */
+
   test('workflow-withWorkflowTimeout', async () => {
     const workflowID: string = randomUUID();
     await DBOS.withNextWorkflowID(workflowID, async () => {
@@ -415,6 +419,42 @@ describe('dbos-tests', () => {
     const status = await DBOS.getWorkflowStatus(workflowID);
     expect(status?.status).toBe(StatusString.SUCCESS);
   });
+
+  test('child-wf-detach-deadline', async () => {
+    const workflowID = randomUUID();
+    const childID = `${workflowID}-0`;
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+      workflowID,
+      timeoutMS: 100,
+    }).timeoutParentStartDetachedChild(100);
+    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+    });
+    const childHandle = DBOS.retrieveWorkflow(childID);
+    await expect(childHandle.getResult()).resolves.toBe(42);
+    await expect(childHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+  });
+
+  test('child-wf-detach-deadline-with-syntax', async () => {
+    const workflowID = randomUUID();
+    const childID = `${workflowID}-0`;
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+      workflowID,
+      timeoutMS: 100,
+    }).timeoutParentStartDetachedChildWithSyntax(100);
+    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+    });
+    const childHandle = DBOS.retrieveWorkflow(childID);
+    await expect(childHandle.getResult()).resolves.toBe(42);
+    await expect(childHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+  });
 });
 
 class DBOSTimeoutTestClass {
@@ -448,6 +488,20 @@ class DBOSTimeoutTestClass {
     await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: timeout })
       .blockedWorkflow()
       .then((h) => h.getResult());
+  }
+
+  @DBOS.workflow()
+  static async timeoutParentStartDetachedChild(duration: number) {
+    await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: undefined })
+      .sleepingWorkflow(duration * 2)
+      .then((h) => h.getResult());
+  }
+
+  @DBOS.workflow()
+  static async timeoutParentStartDetachedChildWithSyntax(duration: number) {
+    await DBOS.withWorkflowTimeout(undefined, async () => {
+      await DBOSTimeoutTestClass.sleepingWorkflow(duration * 2);
+    });
   }
 }
 
