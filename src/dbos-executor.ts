@@ -11,6 +11,7 @@ import {
   DBOSMaxStepRetriesError,
   DBOSWorkflowCancelledError,
   DBOSUnexpectedStepError,
+  DBOSInvalidQueuePriorityError,
 } from './error';
 import {
   InvokedHandle,
@@ -110,6 +111,9 @@ import {
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
 export const dbosNull: DBOSNull = {};
+
+export const DBOS_QUEUE_MIN_PRIORITY = 1;
+export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
@@ -757,6 +761,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
         : Date.now() + params.timeoutMS
       : // if no timeout is specified, use the propagated deadline (if any)
         params.deadlineEpochMS;
+
+    const priority = params?.enqueueOptions?.priority;
+    if (priority !== undefined && (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY)) {
+      throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
+    }
 
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {

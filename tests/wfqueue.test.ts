@@ -1,5 +1,10 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
-import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
+import {
+  DBOSConfigInternal,
+  DBOSExecutor,
+  DBOS_QUEUE_MAX_PRIORITY,
+  DBOS_QUEUE_MIN_PRIORITY,
+} from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestDb,
@@ -16,6 +21,7 @@ import { WF } from './wfqtestprocess';
 import { execFile, spawn } from 'child_process';
 import { promisify } from 'util';
 import { Client } from 'pg';
+import { DBOSInvalidQueuePriorityError } from '../src/error';
 
 const execFileAsync = promisify(execFile);
 
@@ -1004,7 +1010,7 @@ async function runOneAtATime(queue: WorkflowQueue) {
   expect(await queueEntriesAreCleanedUp()).toBe(true);
 }
 
-describe('queue-de-duplication', () => {
+describe('enqueue-options', () => {
   let config: DBOSConfigInternal;
 
   beforeAll(async () => {
@@ -1101,11 +1107,13 @@ describe('queue-de-duplication', () => {
     TestExample.resolveEvent();
 
     expect(wfh1).toBeDefined();
+
     const result1 = await wfh1.getResult();
     expect(result1).toBe('abc-c-p');
 
     expect(wfh2).toBeDefined();
     const result2 = await wfh2.getResult();
+
     expect(result2).toBe('ghi-c-p');
 
     const result3 = await wfh3.getResult();
@@ -1114,4 +1122,82 @@ describe('queue-de-duplication', () => {
     const result4 = await wfh4.getResult();
     expect(result4).toBe('xyz-c-p');
   }, 20000);
+
+  class TestPriority {
+    static resolveEvent: () => void;
+    static workflowEvent = new Promise<void>((resolve) => {
+      TestPriority.resolveEvent = resolve;
+    });
+
+    static wfPriorityList: number[] = [];
+
+    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1 });
+    static childqueue = new WorkflowQueue('child_queue', { concurrency: 1 });
+
+    @DBOS.workflow()
+    static async parentWorkflow(input: number): Promise<number> {
+      // 0 means no priority
+      TestPriority.wfPriorityList.push(input);
+
+      const wfh1 = await DBOS.startWorkflow(TestPriority, {
+        queueName: childqueue.name,
+        enqueueOptions: input !== 0 ? { priority: input } : undefined,
+      }).childWorkflow(input);
+
+      await TestPriority.workflowEvent;
+
+      const result = await wfh1.getResult();
+      return Promise.resolve(input + result);
+    }
+
+    @DBOS.workflow()
+    static async childWorkflow(priority: number): Promise<number> {
+      await TestPriority.workflowEvent;
+      return Promise.resolve(priority);
+    }
+  }
+
+  test('test_priorityqueue', async () => {
+    const wf_handles = [];
+
+    const handle = await DBOS.startWorkflow(TestPriority, { queueName: TestPriority.queue.name }).parentWorkflow(0);
+
+    wf_handles.push(handle);
+
+    for (let i = 1; i <= 5; i++) {
+      const handle = await DBOS.startWorkflow(TestPriority, {
+        queueName: TestPriority.queue.name,
+        enqueueOptions: { priority: i },
+      }).parentWorkflow(i);
+      wf_handles.push(handle);
+    }
+
+    wf_handles.push(await DBOS.startWorkflow(TestPriority, { queueName: TestPriority.queue.name }).parentWorkflow(6));
+    wf_handles.push(await DBOS.startWorkflow(TestPriority, { queueName: TestPriority.queue.name }).parentWorkflow(7));
+
+    TestPriority.resolveEvent();
+
+    for (let i = 0; i < wf_handles.length; i++) {
+      const res = await wf_handles[i].getResult();
+      expect(res).toBe(i * 2);
+    }
+
+    expect(TestPriority.wfPriorityList).toEqual([0, 6, 7, 1, 2, 3, 4, 5]);
+
+    // test invalid priority
+
+    await expect(
+      DBOS.startWorkflow(TestPriority, {
+        queueName: TestPriority.queue.name,
+        enqueueOptions: { priority: DBOS_QUEUE_MIN_PRIORITY - 10 },
+      }).parentWorkflow(7),
+    ).rejects.toBeInstanceOf(DBOSInvalidQueuePriorityError);
+
+    await expect(
+      DBOS.startWorkflow(TestPriority, {
+        queueName: TestPriority.queue.name,
+        enqueueOptions: { priority: DBOS_QUEUE_MAX_PRIORITY + 1 },
+      }).parentWorkflow(7),
+    ).rejects.toBeInstanceOf(DBOSInvalidQueuePriorityError);
+  }, 30000);
 });

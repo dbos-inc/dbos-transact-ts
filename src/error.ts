@@ -293,7 +293,7 @@ export class DBOSInvalidStepIDError extends DBOSError {
 }
 
 const QueueDedupIDDuplicated = 28;
-/** Exception raised when a step has an unexpected recorded id */
+/** Exception raised when workflow with same dedupid is queued*/
 export class DBOSQueueDuplicatedError extends DBOSError {
   constructor(
     readonly workflowID: string,
@@ -304,5 +304,17 @@ export class DBOSQueueDuplicatedError extends DBOSError {
       `Workflow ${workflowID} was deduplicated due to an existing workflow in queue ${queue} with deduplication ID ${deduplicationID}.`,
       QueueDedupIDDuplicated,
     );
+  }
+}
+
+const InvalidQueuePriority = 29;
+/** Exception raised queue priority is invalid */
+export class DBOSInvalidQueuePriorityError extends DBOSError {
+  constructor(
+    readonly priority: number,
+    readonly min: number,
+    readonly max: number,
+  ) {
+    super(`Invalid priority ${priority}. Priority must be between ${min} and ${max}.`, InvalidQueuePriority);
   }
 }
