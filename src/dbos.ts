@@ -39,7 +39,7 @@ import {
   DBOSExecutorNotInitializedError,
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
-  DBOSTargetWorkflowCancelledError,
+  DBOSAwaitedWorkflowCancelledError,
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
@@ -908,7 +908,7 @@ export class DBOS {
           timerFuncID,
         );
         if (!rres) return null;
-        if (rres?.cancelled) throw new DBOSTargetWorkflowCancelledError(workflowID); // TODO: Make semantically meaningful
+        if (rres?.cancelled) throw new DBOSAwaitedWorkflowCancelledError(workflowID); // TODO: Make semantically meaningful
         return DBOSExecutor.reviveResultOrError<T>(rres);
       },
       'DBOS.getResult',

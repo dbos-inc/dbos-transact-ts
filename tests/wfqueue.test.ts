@@ -613,7 +613,7 @@ describe('queued-wf-tests-simple', () => {
 
     // Complete the blocked workflow
     TestCancelQueues.blockingEvent.set();
-    await expect(blockedHandle.getResult()).rejects.toThrow(DBOSTargetWorkflowCancelledError);
+    await expect(blockedHandle.getResult()).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
