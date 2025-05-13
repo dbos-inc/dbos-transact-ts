@@ -17,16 +17,6 @@ export interface DBOSTransactionalDataSource {
   destroy(): Promise<void>;
 
   /**
-   * Wrap a function.  This is part of the registration process
-   *   This may also do advance wrapping
-   *   (DBOS invoke wrapper will also be created outside of this)
-   */
-  wrapTransactionFunction<This, Args extends unknown[], Return>(
-    config: unknown,
-    func: (this: This, ...args: Args) => Promise<Return>,
-  ): (this: This, ...args: Args) => Promise<Return>;
-
-  /**
    * Invoke a transaction function
    */
   invokeTransactionFunction<This, Args extends unknown[], Return>(

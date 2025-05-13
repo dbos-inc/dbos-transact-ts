@@ -302,23 +302,6 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     }
   }
 
-  wrapTransactionFunction<This, Args extends unknown[], Return>(
-    config: unknown,
-    func: (this: This, ...args: Args) => Promise<Return>,
-  ): (this: This, ...args: Args) => Promise<Return> {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const ds = this;
-    const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-      return await ds.invokeTransactionFunction(undefined, config as KnexTransactionConfig, this, func, ...rawArgs);
-    };
-
-    Object.defineProperty(invokeWrapper, 'name', {
-      value: func.name,
-    });
-
-    return invokeWrapper;
-  }
-
   // Think of this as part of the API of the specific transaction provider, not
   //  the interface.  It could also be the internals of a decorator.
   registerTransaction<This, Args extends unknown[], Return>(
@@ -354,8 +337,6 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
 ////
 
 const config = generateDBOSTestConfig();
-const dsa = new DBOSKnexDS('knexA', config.poolConfig);
-DBOS.registerDataSource('knexA', dsa);
 
 async function txFunctionGuts() {
   expect(DBOS.isInTransaction()).toBe(true);
@@ -387,6 +368,10 @@ async function wfFunctionGuts() {
 const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
   name: 'workflow',
 });
+
+// Intentionally initialize DS after we've already tried to register a transaction to it
+const dsa = new DBOSKnexDS('knexA', config.poolConfig);
+DBOS.registerDataSource('knexA', dsa);
 
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
@@ -421,4 +406,6 @@ describe('decoratorless-api-tests', () => {
 });
 
 // Later
+// Other DSs
+// Test the tracing
 // MikroORM example

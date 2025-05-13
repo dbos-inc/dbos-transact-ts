@@ -2063,8 +2063,6 @@ export class DBOS {
     config?: unknown,
   ): (this: This, ...args: Args) => Promise<Return> {
     const dsn = dsName ?? '<default>';
-    const ds = getTransactionalDataSource(dsn);
-    const dsfunc = ds.wrapTransactionFunction(config, func);
 
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
       if (!DBOS.isWithinWorkflow()) {
@@ -2077,12 +2075,14 @@ export class DBOS {
         );
       }
 
+      const ds = getTransactionalDataSource(dsn);
+
       const wfctx = assertCurrentWorkflowContext();
       const callnum = wfctx.functionIDGetIncrement();
       return DBOSExecutor.globalInstance!.runAsStep<Return>(
         async () => {
           return await runWithDSContext(callnum, async () => {
-            return await dsfunc.call(this, ...rawArgs);
+            return await ds.invokeTransactionFunction(undefined /*method reg*/, config, this, func, ...rawArgs);
           });
         },
         target.name,
