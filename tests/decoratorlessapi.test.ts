@@ -1,7 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ConfiguredInstance, DBOS, DBOSConfig } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSExecutor } from '../src/dbos-executor';
 
 // Step variant 1: Let DBOS provide the step wrapper making
 //  a reusable function that can be called from multiple places
@@ -64,7 +63,7 @@ describe('decoratorless-api-basic-tests', () => {
       expect(res).toBe('My first step result|My second step result');
     });
 
-    const wfsteps = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid))!;
+    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(wfsteps.length).toBe(2);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('MyFirstStep');
@@ -138,7 +137,7 @@ describe('decoratorless-api-class-tests', () => {
       expect(res).toBe('1-2');
     });
 
-    const wfsteps = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid))!;
+    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(wfsteps.length).toBe(2);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('getStaticVal');
@@ -230,7 +229,7 @@ describe('decoratorless-api-class-tests', () => {
     expect(stat1?.workflowName).toBe('staticWF');
     expect(stat1?.workflowID).toBe(wfid1);
 
-    const wfsteps1 = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid1))!;
+    const wfsteps1 = (await DBOS.listWorkflowSteps(wfid1))!;
     expect(wfsteps1.length).toBe(2);
     expect(wfsteps1[0].functionID).toBe(0);
     expect(wfsteps1[0].name).toBe('getStaticVal');
@@ -243,7 +242,7 @@ describe('decoratorless-api-class-tests', () => {
     expect(stat2?.workflowName).toBe('instanceWF');
     expect(stat2?.workflowID).toBe(wfid2);
 
-    const wfsteps2 = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid2))!;
+    const wfsteps2 = (await DBOS.listWorkflowSteps(wfid2))!;
     expect(wfsteps2.length).toBe(2);
     expect(wfsteps2[0].functionID).toBe(0);
     expect(wfsteps2[0].name).toBe('getInstanceVal');

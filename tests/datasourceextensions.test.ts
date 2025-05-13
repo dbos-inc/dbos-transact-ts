@@ -7,7 +7,6 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';
 import { DBOSJSON, sleepms, ValuesOf } from '../src/utils';
 import { MethodRegistration } from '../src/decorators';
-import { DBOSExecutor } from '../src/dbos-executor';
 
 /*
  * Knex user data access interface
@@ -314,6 +313,25 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     return DBOS.registerTransaction(this.name, func, target, config);
   }
 
+  // Custom TX decorator
+  transaction(config?: KnexTransactionConfig) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ds = this;
+    return function decorator<This, Args extends unknown[], Return>(
+      _target: object,
+      propertyKey: string,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+    ) {
+      if (!descriptor.value) {
+        throw Error('Use of decorator when original method is undefined');
+      }
+
+      descriptor.value = ds.registerTransaction(descriptor.value, { name: propertyKey.toString() }, config);
+
+      return descriptor;
+    };
+  }
+
   getPostgresErrorCode(error: unknown): string | null {
     const dbErr: PGDatabaseError = error as PGDatabaseError;
     return dbErr.code ? dbErr.code : null;
@@ -373,6 +391,20 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
 const dsa = new DBOSKnexDS('knexA', config.poolConfig);
 DBOS.registerDataSource('knexA', dsa);
 
+// Decoratory example
+class DBWFI {
+  @dsa.transaction({ readOnly: true })
+  static async tx() {
+    return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My decorated tx result' as a")).rows[0]
+      .a;
+  }
+
+  @DBOS.workflow()
+  static async wf() {
+    return await DBWFI.tx();
+  }
+}
+
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
     await setUpDBOSTestDb(config);
@@ -396,12 +428,26 @@ describe('decoratorless-api-tests', () => {
       expect(res).toBe('My first tx result|Tx2 result');
     });
 
-    const wfsteps = (await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid))!;
+    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(wfsteps.length).toBe(2);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('MyFirstTx');
     expect(wfsteps[1].functionID).toBe(1);
     expect(wfsteps[1].name).toBe('MySecondTx');
+  });
+
+  test('decorated-tx-wf-functions', async () => {
+    const wfid = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await DBWFI.wf();
+      expect(res).toBe('My decorated tx result');
+    });
+
+    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(wfsteps.length).toBe(1);
+    expect(wfsteps[0].functionID).toBe(0);
+    expect(wfsteps[0].name).toBe('tx');
   });
 });
 
