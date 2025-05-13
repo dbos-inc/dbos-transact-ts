@@ -7,7 +7,7 @@ import { DBOSUndefinedDecoratorInputError } from '../error';
 import { Logger as DBOSLogger } from '../telemetry/logs';
 import { UserDatabaseClient } from '../user_database';
 import { OperationType } from '../dbos-executor';
-import { DBOS } from '../dbos';
+import { DBOS, getExecutor } from '../dbos';
 import { HTTPRequest } from '../context';
 import { Context as HonoContext, Next as HonoNext } from 'hono';
 
@@ -189,10 +189,10 @@ export function createHTTPSpan(request: HTTPRequest, httpTracer: W3CTraceContext
   };
   if (extractedSpanContext === undefined) {
     // request.url should be defined by now. Let's cast it to string
-    span = DBOS.executor.tracer.startSpan(request.url as string, spanAttributes);
+    span = getExecutor().tracer.startSpan(request.url as string, spanAttributes);
   } else {
     extractedSpanContext.isRemote = true;
-    span = DBOS.executor.tracer.startSpanWithContext(extractedSpanContext, request.url as string, spanAttributes);
+    span = getExecutor().tracer.startSpanWithContext(extractedSpanContext, request.url as string, spanAttributes);
   }
   return span;
 }
@@ -229,7 +229,7 @@ export async function koaTracingMiddleware(ctx: Koa.Context, next: Koa.Next) {
     }
     throw e;
   } finally {
-    DBOS.executor.tracer.endSpan(span);
+    getExecutor().tracer.endSpan(span);
   }
 }
 
@@ -269,7 +269,7 @@ export async function expressTracingMiddleware(req: Request, res: Response, next
     }
     throw e;
   } finally {
-    DBOS.executor.tracer.endSpan(span);
+    getExecutor().tracer.endSpan(span);
   }
 }
 
@@ -310,6 +310,6 @@ export async function honoTracingMiddleware(ctx: HonoContext, next: HonoNext) {
     }
     throw e;
   } finally {
-    DBOS.executor.tracer.endSpan(span);
+    getExecutor().tracer.endSpan(span);
   }
 }

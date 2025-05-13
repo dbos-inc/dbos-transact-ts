@@ -213,6 +213,36 @@ export interface StartWorkflowParams {
   enqueueOptions?: EnqueueOptions;
 }
 
+export function getExecutor() {
+  if (!DBOSExecutor.globalInstance) {
+    throw new DBOSExecutorNotInitializedError();
+  }
+  return DBOSExecutor.globalInstance as DBOSExecutorContext;
+}
+
+export function runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string, childWFID?: string): Promise<T> {
+  if (DBOS.isWithinWorkflow()) {
+    if (DBOS.isInStep()) {
+      // OK to use directly
+      return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
+    } else if (DBOS.isInWorkflow()) {
+      const wfctx = assertCurrentWorkflowContext();
+      return DBOSExecutor.globalInstance!.runAsStep<T>(
+        callback,
+        funcName,
+        DBOS.workflowID,
+        wfctx.functionIDGetIncrement(),
+        childWFID,
+      );
+    } else {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Invalid call to \`${funcName}\` inside a \`transaction\` or \`procedure\``,
+      );
+    }
+  }
+  return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
+}
+
 export class DBOS {
   ///////
   // Lifecycle
@@ -238,18 +268,18 @@ export class DBOS {
    */
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
     DBOS.dbosConfig = config;
-    DBOS.runtimeConfig = runtimeConfig;
+    DBOS.#runtimeConfig = runtimeConfig;
     DBOS.translateConfig();
   }
 
   private static translateConfig() {
     if (DBOS.dbosConfig && !isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
       const isDebugging = DBOS.getDebugModeFromEnv() !== DebugMode.DISABLED;
-      [DBOS.dbosConfig, DBOS.runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
+      [DBOS.dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
       if (process.env.DBOS__CLOUD === 'true') {
-        [DBOS.dbosConfig, DBOS.runtimeConfig] = overwrite_config(
+        [DBOS.dbosConfig, DBOS.#runtimeConfig] = overwrite_config(
           DBOS.dbosConfig as DBOSConfigInternal,
-          DBOS.runtimeConfig,
+          DBOS.#runtimeConfig,
         );
       }
     }
@@ -327,7 +357,7 @@ export class DBOS {
 
     // Initialize the DBOS executor
     if (!DBOS.dbosConfig) {
-      [DBOS.dbosConfig, DBOS.runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
+      [DBOS.dbosConfig, DBOS.#runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
     } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
       DBOS.translateConfig(); // This is a defensive measure for users who'd do DBOS.config = X instead of using DBOS.setConfig()
     }
@@ -369,14 +399,14 @@ export class DBOS {
 
     // Start the DBOS admin server
     const logger = DBOS.logger;
-    if (DBOS.runtimeConfig && DBOS.runtimeConfig.runAdminServer) {
+    if (DBOS.#runtimeConfig && DBOS.#runtimeConfig.runAdminServer) {
       const adminApp = DBOSHttpServer.setupAdminApp(executor);
       try {
-        await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.runtimeConfig.admin_port, logger as GlobalLogger);
+        await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.#runtimeConfig.admin_port, logger as GlobalLogger);
         // Wrap the listen call in a promise to properly catch errors
         DBOS.adminServer = await new Promise((resolve, reject) => {
-          const server = adminApp.listen(DBOS.runtimeConfig?.admin_port, () => {
-            DBOS.logger.debug(`DBOS Admin Server is running at http://localhost:${DBOS.runtimeConfig?.admin_port}`);
+          const server = adminApp.listen(DBOS.#runtimeConfig?.admin_port, () => {
+            DBOS.logger.debug(`DBOS Admin Server is running at http://localhost:${DBOS.#runtimeConfig?.admin_port}`);
             resolve(server);
           });
           server.on('error', (err) => {
@@ -384,7 +414,7 @@ export class DBOS {
           });
         });
       } catch (e) {
-        logger.warn(`Unable to start DBOS admin server on port ${DBOS.runtimeConfig.admin_port}`);
+        logger.warn(`Unable to start DBOS admin server on port ${DBOS.#runtimeConfig.admin_port}`);
       }
     }
 
@@ -490,11 +520,8 @@ export class DBOS {
   /**
    * Global DBOS executor instance
    */
-  static get executor() {
-    if (!DBOSExecutor.globalInstance) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    return DBOSExecutor.globalInstance as DBOSExecutorContext;
+  static get #executor() {
+    return getExecutor();
   }
 
   /**
@@ -520,9 +547,9 @@ export class DBOS {
    */
   static async launchAppHTTPServer() {
     const server = DBOS.setUpHandlerCallback();
-    if (DBOS.runtimeConfig) {
+    if (DBOS.#runtimeConfig) {
       // This will not listen if there's no decorated endpoint
-      DBOS.appServer = await server.appListen(DBOS.runtimeConfig.port);
+      DBOS.appServer = await server.appListen(DBOS.#runtimeConfig.port);
     }
   }
 
@@ -552,8 +579,8 @@ export class DBOS {
   //////
   static globalLogger?: DLogger;
   static dbosConfig?: DBOSConfig;
-  static runtimeConfig?: DBOSRuntimeConfig = undefined;
-  static invokeWrappers: Map<unknown, unknown> = new Map();
+  static #runtimeConfig?: DBOSRuntimeConfig = undefined;
+  static #invokeWrappers: Map<unknown, unknown> = new Map();
 
   //////
   // Context
@@ -772,7 +799,7 @@ export class DBOS {
     const ctx = getCurrentDBOSContext();
     if (ctx && defaultValue) return ctx.getConfig<T>(key, defaultValue);
     if (ctx) return ctx.getConfig<T>(key);
-    if (DBOS.executor) return DBOS.executor.getConfig(key, defaultValue);
+    if (DBOS.#executor) return DBOS.#executor.getConfig(key, defaultValue);
     return defaultValue;
   }
 
@@ -790,7 +817,7 @@ export class DBOS {
       );
     }
 
-    return DBOS.executor.queryUserDB(sql, params) as Promise<T[]>;
+    return DBOS.#executor.queryUserDB(sql, params) as Promise<T[]>;
   }
 
   //////
@@ -816,7 +843,7 @@ export class DBOS {
     wfn: string,
     key: string,
   ): Promise<DBOSEventReceiverState | undefined> {
-    return await DBOS.executor.getEventDispatchState(svc, wfn, key);
+    return await DBOS.#executor.getEventDispatchState(svc, wfn, key);
   }
   /**
    * Set a state item into the system database, which provides a key/value store interface for event dispatchers.
@@ -828,34 +855,15 @@ export class DBOS {
    * @returns The upsert returns the current record, which may be useful if it is more recent than the `state` provided.
    */
   static async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
-    return await DBOS.executor.upsertEventDispatchState(state);
+    return await DBOS.#executor.upsertEventDispatchState(state);
   }
 
   //////
   // Workflow and other operations
   //////
 
-  static runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string, childWFID?: string): Promise<T> {
-    if (DBOS.isWithinWorkflow()) {
-      if (DBOS.isInStep()) {
-        // OK to use directly
-        return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
-      } else if (DBOS.isInWorkflow()) {
-        const wfctx = assertCurrentWorkflowContext();
-        return DBOSExecutor.globalInstance!.runAsStep<T>(
-          callback,
-          funcName,
-          DBOS.workflowID,
-          wfctx.functionIDGetIncrement(),
-          childWFID,
-        );
-      } else {
-        throw new DBOSInvalidWorkflowTransitionError(
-          `Invalid call to \`${funcName}\` inside a \`transaction\` or \`procedure\``,
-        );
-      }
-    }
-    return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
+  static #runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string): Promise<T> {
+    return runAsWorkflowStep(callback, funcName);
   }
 
   /**
@@ -867,17 +875,17 @@ export class DBOS {
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInStep()) {
         // OK to use directly
-        return DBOS.executor.getWorkflowStatus(workflowID);
+        return DBOS.#executor.getWorkflowStatus(workflowID);
       } else if (DBOS.isInWorkflow()) {
         const wfctx = assertCurrentWorkflowContext();
-        return DBOS.executor.getWorkflowStatus(workflowID, DBOS.workflowID, wfctx.functionIDGetIncrement());
+        return DBOS.#executor.getWorkflowStatus(workflowID, DBOS.workflowID, wfctx.functionIDGetIncrement());
       } else {
         throw new DBOSInvalidWorkflowTransitionError(
           'Invalid call to `getWorkflowStatus` inside a `transaction` or `procedure`',
         );
       }
     }
-    return DBOS.executor.getWorkflowStatus(workflowID);
+    return DBOS.#executor.getWorkflowStatus(workflowID);
   }
 
   /**
@@ -891,7 +899,7 @@ export class DBOS {
     if (DBOS.isWithinWorkflow() && timeoutSeconds !== undefined) {
       timerFuncID = assertCurrentWorkflowContext().functionIDGetIncrement();
     }
-    return await DBOS.runAsWorkflowStep(
+    return await runAsWorkflowStep(
       async () => {
         const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
           workflowID,
@@ -924,7 +932,7 @@ export class DBOS {
       }
       return (getCurrentDBOSContext()! as WorkflowContext).retrieveWorkflow(workflowID);
     }
-    return DBOS.executor.retrieveWorkflow(workflowID);
+    return DBOS.#executor.retrieveWorkflow(workflowID);
   }
 
   /**
@@ -934,8 +942,8 @@ export class DBOS {
    * @deprecated Use `DBOS.listWorkflows` instead
    */
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    return await DBOS.runAsWorkflowStep(async () => {
-      const wfs = await DBOS.executor.listWorkflows(input);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      const wfs = await DBOS.#executor.listWorkflows(input);
       return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
     }, 'DBOS.getWorkflows');
   }
@@ -946,8 +954,8 @@ export class DBOS {
    * @returns `WorkflowStatus` array containing details of the matching workflows
    */
   static async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    return await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.listWorkflows(input);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.#executor.listWorkflows(input);
     }, 'DBOS.listWorkflows');
   }
 
@@ -957,8 +965,8 @@ export class DBOS {
    * @returns `WorkflowStatus` array containing details of the matching workflows
    */
   static async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
-    return await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.listQueuedWorkflows(input);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.#executor.listQueuedWorkflows(input);
     }, 'DBOS.listQueuedWorkflows');
   }
 
@@ -968,8 +976,8 @@ export class DBOS {
    * @returns `StepInfo` array listing the executed steps of the workflow. If the workflow is not found, `undefined` is returned.
    */
   static async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
-    return await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.listWorkflowSteps(workflowID);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.#executor.listWorkflowSteps(workflowID);
     }, 'DBOS.listWorkflowSteps');
   }
 
@@ -980,8 +988,8 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async cancelWorkflow(workflowID: string): Promise<void> {
-    return await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.cancelWorkflow(workflowID);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.#executor.cancelWorkflow(workflowID);
     }, 'DBOS.cancelWorkflow');
   }
 
@@ -990,8 +998,8 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async resumeWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
-    await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.resumeWorkflow(workflowID);
+    await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.#executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
     return this.retrieveWorkflow(workflowID);
   }
@@ -1009,8 +1017,8 @@ export class DBOS {
     startStep: number,
     options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<WorkflowHandle<Awaited<T>>> {
-    const forkedID = await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.forkWorkflow(workflowID, startStep, options);
+    const forkedID = await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.#executor.forkWorkflow(workflowID, startStep, options);
     }, 'DBOS.forkWorkflow');
 
     return this.retrieveWorkflow(forkedID);
@@ -1021,8 +1029,8 @@ export class DBOS {
    * @param input - Filter predicate, containing the queue name and other criteria
    */
   static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
-    return await DBOS.runAsWorkflowStep(async () => {
-      return await DBOS.executor.getWorkflowQueue(input);
+    return await DBOS.#runAsWorkflowStep(async () => {
+      return await DBOS.#executor.getWorkflowQueue(input);
     }, 'DBOS.getWorkflowQueue');
   }
 
@@ -1285,7 +1293,7 @@ export class DBOS {
       // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
       let span = pctx.span;
       if (!span) {
-        span = DBOS.executor.tracer.startSpan(pctx.operationCaller || 'startWorkflow', {
+        span = DBOS.#executor.tracer.startSpan(pctx.operationCaller || 'startWorkflow', {
           operationUUID: wfId,
           operationType: pctx.operationType,
           authenticatedUser: pctx.authenticatedUser,
@@ -1313,7 +1321,7 @@ export class DBOS {
     for (const op of ops) {
       if (op.workflowConfig) {
         proxy[op.name] = (...args: unknown[]) =>
-          DBOS.executor.workflow(op.registeredFunction as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
+          DBOS.#executor.workflow(op.registeredFunction as WorkflowFunction<unknown[], unknown>, wfParams, ...args);
       } else if (op.txnConfig) {
         const txn = op.registeredFunction as TransactionFunction<unknown[], unknown>;
         proxy[op.name] = (...args: unknown[]) =>
@@ -1345,7 +1353,7 @@ export class DBOS {
       const pctx = getCurrentContextStore();
       let span = pctx?.span;
       if (!span) {
-        span = DBOS.executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+        span = DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
           operationType: pctx?.operationType,
           authenticatedUser: pctx?.authenticatedUser,
           assumedRole: pctx?.assumedRole,
@@ -1551,7 +1559,7 @@ export class DBOS {
       }
       return (getCurrentDBOSContext() as WorkflowContext).send(destinationID, message, topic);
     }
-    return DBOS.executor.send(destinationID, message, topic, idempotencyKey);
+    return DBOS.#executor.send(destinationID, message, topic, idempotencyKey);
   }
 
   /**
@@ -1620,7 +1628,7 @@ export class DBOS {
       }
       return (getCurrentDBOSContext() as WorkflowContext).getEvent(workflowID, key, timeoutSeconds);
     }
-    return DBOS.executor.getEvent(workflowID, key, timeoutSeconds);
+    return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
   }
 
   //////
@@ -1714,7 +1722,7 @@ export class DBOS {
           // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
           let span = pctx.span;
           if (!span) {
-            span = DBOS.executor.tracer.startSpan(pctx.operationCaller || 'workflowCaller', {
+            span = DBOS.#executor.tracer.startSpan(pctx.operationCaller || 'workflowCaller', {
               operationUUID: wfId,
               operationType: pctx.operationType,
               authenticatedUser: pctx.authenticatedUser,
@@ -1738,7 +1746,7 @@ export class DBOS {
           timeoutMS: pctx?.workflowTimeoutMS,
         };
 
-        const handle = await DBOS.executor.workflow(
+        const handle = await DBOS.#executor.workflow(
           registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
           wfParams,
           ...rawArgs,
@@ -1754,7 +1762,7 @@ export class DBOS {
 
       registerFunctionWrapper(invokeWrapper, registration as MethodRegistration<unknown, unknown[], unknown>);
       // TODO CTX this should not be in here already, or if it is we need to do something different...
-      DBOS.invokeWrappers.set(invokeWrapper, registration.registeredFunction);
+      DBOS.#invokeWrappers.set(invokeWrapper, registration.registeredFunction);
 
       return descriptor;
     }
@@ -1815,7 +1823,7 @@ export class DBOS {
         const pctx = getCurrentContextStore();
         let span = pctx?.span;
         if (!span) {
-          span = DBOS.executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+          span = DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
             operationType: pctx?.operationType,
             authenticatedUser: pctx?.authenticatedUser,
             assumedRole: pctx?.assumedRole,
@@ -1840,7 +1848,7 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.executor.transaction(
+        return await DBOS.#executor.transaction(
           registration.registeredFunction as unknown as TransactionFunction<Args, Return>,
           wfParams,
           ...rawArgs,
@@ -1893,7 +1901,7 @@ export class DBOS {
         const pctx = getCurrentContextStore();
         let span = pctx?.span;
         if (!span) {
-          span = DBOS.executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+          span = DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
             operationType: pctx?.operationType,
             authenticatedUser: pctx?.authenticatedUser,
             assumedRole: pctx?.assumedRole,
@@ -1918,7 +1926,7 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.executor.procedure(
+        return await DBOS.#executor.procedure(
           registration.registeredFunction as unknown as StoredProcedure<Args, Return>,
           wfParams,
           ...rawArgs,
@@ -1992,7 +2000,7 @@ export class DBOS {
         const pctx = getCurrentContextStore();
         let span = pctx?.span;
         if (!span) {
-          span = DBOS.executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+          span = DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
             operationType: pctx?.operationType,
             authenticatedUser: pctx?.authenticatedUser,
             assumedRole: pctx?.assumedRole,
@@ -2017,7 +2025,7 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.executor.external(
+        return await DBOS.#executor.external(
           registration.registeredFunction as unknown as StepFunction<Args, Return>,
           wfParams,
           ...rawArgs,
