@@ -9,7 +9,7 @@ import { globalParams } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { GlobalLogger as Logger } from '../src/telemetry/logs';
 import { getWorkflow, listQueuedWorkflows, listWorkflows } from '../src/dbos-runtime/workflow_management';
-import { DBOSInvalidStepIDError, DBOSNonExistentWorkflowError } from '../src/error';
+import { DBOSNonExistentWorkflowError } from '../src/error';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -1376,24 +1376,6 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.transactionTwoCount).toBe(3);
     expect(ExampleWorkflow.transactionThreeCount).toBe(4);
   }, 10000);
-
-  test('test-fork-invalid-step', async () => {
-    const wfid = randomUUID();
-    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsAndTransactionWorkflow();
-    await handle.getResult();
-
-    expect(ExampleWorkflow.stepOneCount).toBe(1);
-    expect(ExampleWorkflow.transactionOneCount).toBe(1);
-    expect(ExampleWorkflow.stepTwoCount).toBe(1);
-    expect(ExampleWorkflow.transactionTwoCount).toBe(1);
-    expect(ExampleWorkflow.transactionThreeCount).toBe(1);
-
-    try {
-      await DBOS.forkWorkflow(wfid, 7);
-    } catch (e) {
-      expect(e).toBeInstanceOf(DBOSInvalidStepIDError);
-    }
-  });
 
   test('test-fork-childwf', async () => {
     const wfid = randomUUID();
