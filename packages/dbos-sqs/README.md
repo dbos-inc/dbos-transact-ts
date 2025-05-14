@@ -49,7 +49,7 @@ const sqsCfg = new DBOS_SQS('default', { awscfgname: 'aws_config' });
 
 ### Sending With Standard Queues
 
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call the `DBOS_SQS` function from the workflow context:
+Within a [DBOS Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call the `DBOS_SQS` function from the workflow context:
 
 ```typescript
 const sendRes = await sqsCfg.sendMessage({
@@ -71,7 +71,7 @@ const sendRes = await sqsCfg.sendMessage({
 
 ## Receiving Messages
 
-The DBOS SQS receiver provides the capability of running DBOS Transact workflows exactly once per SQS message, even on standard "at-least-once" SQS queues.
+The DBOS SQS receiver provides the capability of running DBOS workflows exactly once per SQS message, even on standard "at-least-once" SQS queues.
 
 The package uses decorators to configure message receipt and identify the functions that will be invoked during message dispatch.
 
@@ -85,7 +85,7 @@ import { SQSMessageConsumer, SQSConfigure } from '@dbos-inc/dbos-sqs';
 
 ### Receiver Configuration
 
-The `@SQSConfigure` decorator should be applied at the class level to identify the credentials useed by receiver functions in the class:
+The `@SQSConfigure` decorator should be applied at the class level to identify the credentials used by receiver functions in the class:
 
 ```typescript
 interface SQSConfig {
@@ -150,5 +150,5 @@ The `sqs.test.ts` file included in the source repository demonstrates sending an
 ## Next Steps
 
 - To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
-- For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
+- For DBOS programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).

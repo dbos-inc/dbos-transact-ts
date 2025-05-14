@@ -29,5 +29,5 @@ const isValid = await BcryptStep.bcryptCompare(password, hashedPassword);
 ## Next Steps
 
 - To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
-- For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
+- For DBOS programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
