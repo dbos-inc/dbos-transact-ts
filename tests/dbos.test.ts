@@ -5,7 +5,11 @@ import { StatusString } from '../src/workflow';
 import { DBOSConfigInternal } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
-import { DBOSFailedSqlTransactionError, DBOSWorkflowCancelledError } from '../src/error';
+import {
+  DBOSFailedSqlTransactionError,
+  DBOSWorkflowCancelledError,
+  DBOSAwaitedWorkflowCancelledError,
+} from '../src/error';
 
 const testTableName = 'dbos_test_kv';
 
@@ -276,183 +280,216 @@ describe('dbos-tests', () => {
     });
   });
 
-  /**
-   *  WORKFLOW TIMEOUTS
-   */
+  describe('workflow-timeout', () => {
+    test('workflow-withWorkflowTimeout', async () => {
+      const workflowID: string = randomUUID();
+      await DBOS.withNextWorkflowID(workflowID, async () => {
+        await DBOS.withWorkflowTimeout(100, async () => {
+          await expect(DBOSTimeoutTestClass.blockedWorkflow()).rejects.toThrow(
+            new DBOSWorkflowCancelledError(workflowID),
+          );
+        });
+      });
+      const status = await DBOS.getWorkflowStatus(workflowID);
+    });
 
-  test('workflow-withWorkflowTimeout', async () => {
-    const workflowID: string = randomUUID();
-    await DBOS.withNextWorkflowID(workflowID, async () => {
-      await DBOS.withWorkflowTimeout(100, async () => {
-        await expect(DBOSTimeoutTestClass.blockedWorkflow()).rejects.toThrow(
-          new DBOSWorkflowCancelledError(workflowID),
-        );
+    test('workflow-timeout-startWorkflow-params', async () => {
+      const workflowID = randomUUID();
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeoutMS: 100 }).blockedWorkflow();
+      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect(status?.status).toBe(StatusString.CANCELLED);
+    });
+
+    test('parent-workflow-withWorkflowTimeout', async () => {
+      const workflowID: string = randomUUID();
+      const childID = `${workflowID}-0`;
+      await DBOS.withNextWorkflowID(workflowID, async () => {
+        await DBOS.withWorkflowTimeout(100, async () => {
+          // The parent may or may not be cancelled
+          const expected1 = new DBOSAwaitedWorkflowCancelledError(workflowID);
+          const expected2 = new DBOSWorkflowCancelledError(workflowID);
+          await expect(DBOSTimeoutTestClass.blockingParentStartWF()).rejects.toEqual(
+            expect.objectContaining({
+              message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`),
+              workflowID: workflowID,
+            }),
+          );
+        });
+      });
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect([StatusString.ERROR, StatusString.CANCELLED]).toContain(status?.status);
+      const childStatus = await DBOS.getWorkflowStatus(childID);
+      expect(childStatus?.status).toBe(StatusString.CANCELLED);
+      expect(status?.deadlineEpochMS).toBe(childStatus?.deadlineEpochMS);
+    });
+
+    test('parent-workflow-timeout-startWorkflow-params', async () => {
+      const workflowID = randomUUID();
+      const childID = `${workflowID}-0`;
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+        workflowID,
+        timeoutMS: 100,
+      }).blockingParentStartWF();
+      const expected1 = new DBOSAwaitedWorkflowCancelledError(workflowID);
+      const expected2 = new DBOSWorkflowCancelledError(workflowID);
+      await expect(handle.getResult()).rejects.toEqual(
+        expect.objectContaining({
+          message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`),
+          workflowID: workflowID,
+        }),
+      );
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect([StatusString.ERROR, StatusString.CANCELLED]).toContain(status?.status);
+      const childStatus = await DBOS.getWorkflowStatus(childID);
+      expect(childStatus?.status).toBe(StatusString.CANCELLED);
+      expect(status?.deadlineEpochMS).toBe(childStatus?.deadlineEpochMS);
+    });
+
+    test('direct-parent-workflow-withWorkflowTimeout', async () => {
+      const workflowID: string = randomUUID();
+      const childID = `${workflowID}-0`;
+      await DBOS.withNextWorkflowID(workflowID, async () => {
+        await DBOS.withWorkflowTimeout(100, async () => {
+          const expected1 = new DBOSAwaitedWorkflowCancelledError(workflowID);
+          const expected2 = new DBOSWorkflowCancelledError(workflowID);
+          await expect(DBOSTimeoutTestClass.blockingParentDirect()).rejects.toEqual(
+            expect.objectContaining({
+              message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`),
+              workflowID: workflowID,
+            }),
+          );
+        });
+      });
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect([StatusString.ERROR, StatusString.CANCELLED]).toContain(status?.status);
+      const childStatus = await DBOS.getWorkflowStatus(childID);
+      expect(childStatus?.status).toBe(StatusString.CANCELLED);
+      expect(status?.deadlineEpochMS).toBe(childStatus?.deadlineEpochMS);
+    });
+
+    test('direct-parent-workflow-timeout-startWorkflow-params', async () => {
+      const workflowID = randomUUID();
+      const childID = `${workflowID}-0`;
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+        workflowID,
+        timeoutMS: 100,
+      }).blockingParentDirect();
+      const expected1 = new DBOSAwaitedWorkflowCancelledError(workflowID);
+      const expected2 = new DBOSWorkflowCancelledError(workflowID);
+      await expect(handle.getResult()).rejects.toEqual(
+        expect.objectContaining({
+          message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`),
+          workflowID: workflowID,
+        }),
+      );
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect([StatusString.ERROR, StatusString.CANCELLED]).toContain(status?.status);
+      const childStatus = await DBOS.getWorkflowStatus(childID);
+      expect(childStatus?.status).toBe(StatusString.CANCELLED);
+      expect(status?.deadlineEpochMS).toBe(childStatus?.deadlineEpochMS);
+    });
+
+    test('child-wf-timeout-simple', async () => {
+      const workflowID = randomUUID();
+      const childID = `${workflowID}-0`;
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID }).timeoutParentStartWF(100);
+      await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect(status?.status).toBe(StatusString.ERROR);
+      const childStatus = await DBOS.getWorkflowStatus(childID);
+      expect(childStatus?.status).toBe(StatusString.CANCELLED);
+      expect(status?.deadlineEpochMS).toBe(undefined);
+    });
+
+    test('child-wf-timeout-before-parent', async () => {
+      const workflowID = randomUUID();
+      const childID = `${workflowID}-0`;
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+        workflowID,
+        timeoutMS: 1000,
+      }).timeoutParentStartWF(100);
+      await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect(status?.status).toBe(StatusString.ERROR);
+      const childStatus = await DBOS.getWorkflowStatus(childID);
+      expect(childStatus?.status).toBe(StatusString.CANCELLED);
+      expect(parseInt(status?.deadlineEpochMS as unknown as string, 10)).toBeGreaterThan(
+        parseInt(childStatus?.deadlineEpochMS as unknown as string, 10),
+      );
+    });
+
+    test('child-wf-timeout-after-parent', async () => {
+      const workflowID = randomUUID();
+      const childID = `${workflowID}-0`;
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+        workflowID,
+        timeoutMS: 100,
+      }).timeoutParentStartWF(1000);
+      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect(status?.status).toBe(StatusString.CANCELLED);
+      const childStatus = await DBOS.getWorkflowStatus(childID);
+      expect(childStatus?.status).toBe(StatusString.CANCELLED);
+      expect(parseInt(childStatus?.deadlineEpochMS as unknown as string, 10)).toBeGreaterThan(
+        parseInt(status?.deadlineEpochMS as unknown as string, 10),
+      );
+    });
+
+    test('sleeping-workflow-timed-out', async () => {
+      const workflowID = randomUUID();
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeoutMS: 100 }).sleepingWorkflow(
+        1000,
+      );
+      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect(status?.status).toBe(StatusString.CANCELLED);
+    });
+
+    test('sleeping-workflow-not-timed-out', async () => {
+      const workflowID = randomUUID();
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeoutMS: 2000 }).sleepingWorkflow(
+        1000,
+      );
+      await expect(handle.getResult()).resolves.toBe(42);
+      const status = await DBOS.getWorkflowStatus(workflowID);
+      expect(status?.status).toBe(StatusString.SUCCESS);
+    });
+
+    test('child-wf-detach-deadline', async () => {
+      const workflowID = randomUUID();
+      const childID = `${workflowID}-0`;
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+        workflowID,
+        timeoutMS: 100,
+      }).timeoutParentStartDetachedChild(100);
+      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+      await expect(handle.getStatus()).resolves.toMatchObject({
+        status: StatusString.CANCELLED,
+      });
+      const childHandle = DBOS.retrieveWorkflow(childID);
+      await expect(childHandle.getResult()).resolves.toBe(42);
+      await expect(childHandle.getStatus()).resolves.toMatchObject({
+        status: StatusString.SUCCESS,
       });
     });
-    const status = await DBOS.getWorkflowStatus(workflowID);
-    expect(status?.status).toBe(StatusString.CANCELLED);
-  });
 
-  test('workflow-timeout-startWorkflow-params', async () => {
-    const workflowID = randomUUID();
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeoutMS: 100 }).blockedWorkflow();
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    const status = await DBOS.getWorkflowStatus(workflowID);
-    expect(status?.status).toBe(StatusString.CANCELLED);
-  });
-
-  test('parent-workflow-withWorkflowTimeout', async () => {
-    const workflowID: string = randomUUID();
-    await DBOS.withNextWorkflowID(workflowID, async () => {
-      await DBOS.withWorkflowTimeout(100, async () => {
-        await expect(DBOSTimeoutTestClass.blockingParentStartWF()).rejects.toThrow(
-          new DBOSWorkflowCancelledError(workflowID),
-        );
+    test('child-wf-detach-deadline-with-syntax', async () => {
+      const workflowID = randomUUID();
+      const childID = `${workflowID}-0`;
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+        workflowID,
+        timeoutMS: 100,
+      }).timeoutParentStartDetachedChildWithSyntax(100);
+      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+      await expect(handle.getStatus()).resolves.toMatchObject({
+        status: StatusString.CANCELLED,
       });
-    });
-    const status = await DBOS.getWorkflowStatus(workflowID);
-    expect(status?.status).toBe(StatusString.CANCELLED);
-  });
-
-  test('parent-workflow-timeout-startWorkflow-params', async () => {
-    const workflowID = randomUUID();
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
-      workflowID,
-      timeoutMS: 100,
-    }).blockingParentStartWF();
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    const status = await DBOS.getWorkflowStatus(workflowID);
-    expect(status?.status).toBe(StatusString.CANCELLED);
-  });
-
-  test('direct-parent-workflow-withWorkflowTimeout', async () => {
-    const workflowID: string = randomUUID();
-    await DBOS.withNextWorkflowID(workflowID, async () => {
-      await DBOS.withWorkflowTimeout(100, async () => {
-        await expect(DBOSTimeoutTestClass.blockingParentDirect()).rejects.toThrow(
-          new DBOSWorkflowCancelledError(workflowID),
-        );
+      const childHandle = DBOS.retrieveWorkflow(childID);
+      await expect(childHandle.getResult()).resolves.toBe(42);
+      await expect(childHandle.getStatus()).resolves.toMatchObject({
+        status: StatusString.SUCCESS,
       });
-    });
-    const statuses = await DBOS.listWorkflows({ workflow_id_prefix: workflowID });
-    expect(statuses.length).toBe(2);
-    statuses.forEach((status) => {
-      expect(status.status).toBe('CANCELLED');
-    });
-    const deadline = statuses[0].deadlineEpochMS;
-    statuses.slice(1).forEach((status) => {
-      expect(status.deadlineEpochMS).toBe(deadline);
-    });
-  });
-
-  test('direct-parent-workflow-timeout-startWorkflow-params', async () => {
-    const workflowID = randomUUID();
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
-      workflowID,
-      timeoutMS: 100,
-    }).blockingParentDirect();
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    const statuses = await DBOS.listWorkflows({ workflow_id_prefix: workflowID });
-    expect(statuses.length).toBe(2);
-    statuses.forEach((status) => {
-      expect(status.status).toBe('CANCELLED');
-    });
-    const deadline = statuses[0].deadlineEpochMS;
-    statuses.slice(1).forEach((status) => {
-      expect(status.deadlineEpochMS).toBe(deadline);
-    });
-  });
-
-  test('child-wf-timeout-simple', async () => {
-    const workflowID = randomUUID();
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID }).timeoutParentStartWF(100);
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(`${workflowID}-0`));
-    const statuses = await DBOS.listWorkflows({ workflow_id_prefix: workflowID });
-    expect(statuses.length).toBe(2);
-    statuses.forEach((status) => {
-      expect(status.status).toBe('CANCELLED');
-    });
-  });
-
-  test('child-wf-timeout-before-parent', async () => {
-    const workflowID = randomUUID();
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeoutMS: 1000 }).timeoutParentStartWF(
-      100,
-    );
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(`${workflowID}-0`));
-    const statuses = await DBOS.listWorkflows({ workflow_id_prefix: workflowID });
-    expect(statuses.length).toBe(2);
-    statuses.forEach((status) => {
-      expect(status.status).toBe('CANCELLED');
-    });
-  });
-
-  test('child-wf-timeout-after-parent', async () => {
-    const workflowID = randomUUID();
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeoutMS: 100 }).timeoutParentStartWF(
-      1000,
-    );
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    const statuses = await DBOS.listWorkflows({ workflow_id_prefix: workflowID });
-    expect(statuses.length).toBe(2);
-    statuses.forEach((status) => {
-      expect(status.status).toBe('CANCELLED');
-    });
-  });
-
-  test('sleeping-workflow-timed-out', async () => {
-    const workflowID = randomUUID();
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeoutMS: 100 }).sleepingWorkflow(
-      1000,
-    );
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    const status = await DBOS.getWorkflowStatus(workflowID);
-    expect(status?.status).toBe(StatusString.CANCELLED);
-  });
-
-  test('sleeping-workflow-not-timed-out', async () => {
-    const workflowID = randomUUID();
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID, timeoutMS: 2000 }).sleepingWorkflow(
-      1000,
-    );
-    await expect(handle.getResult()).resolves.toBe(42);
-    const status = await DBOS.getWorkflowStatus(workflowID);
-    expect(status?.status).toBe(StatusString.SUCCESS);
-  });
-
-  test('child-wf-detach-deadline', async () => {
-    const workflowID = randomUUID();
-    const childID = `${workflowID}-0`;
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
-      workflowID,
-      timeoutMS: 100,
-    }).timeoutParentStartDetachedChild(100);
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    await expect(handle.getStatus()).resolves.toMatchObject({
-      status: StatusString.CANCELLED,
-    });
-    const childHandle = DBOS.retrieveWorkflow(childID);
-    await expect(childHandle.getResult()).resolves.toBe(42);
-    await expect(childHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.SUCCESS,
-    });
-  });
-
-  test('child-wf-detach-deadline-with-syntax', async () => {
-    const workflowID = randomUUID();
-    const childID = `${workflowID}-0`;
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
-      workflowID,
-      timeoutMS: 100,
-    }).timeoutParentStartDetachedChildWithSyntax(100);
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    await expect(handle.getStatus()).resolves.toMatchObject({
-      status: StatusString.CANCELLED,
-    });
-    const childHandle = DBOS.retrieveWorkflow(childID);
-    await expect(childHandle.getResult()).resolves.toBe(42);
-    await expect(childHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.SUCCESS,
     });
   });
 });

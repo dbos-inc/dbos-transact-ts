@@ -1273,13 +1273,6 @@ describe('queue-time-outs', () => {
         .sleepingWorkflow(duration * 2)
         .then((h) => h.getResult());
     }
-
-    @DBOS.workflow()
-    static async timeoutParentEnqueueDetachedChildWithSyntax(duration: number) {
-      await DBOS.withWorkflowTimeout(undefined, async () => {
-        await DBOSTimeoutTestClass.sleepingWorkflow(duration * 2);
-      });
-    }
   }
 
   beforeAll(async () => {
@@ -1296,6 +1289,7 @@ describe('queue-time-outs', () => {
     await DBOS.shutdown();
   });
 
+  // enqueue workflow with timeout
   test('enqueue-workflow-withWorkflowTimeout', async () => {
     const workflowID: string = randomUUID();
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
@@ -1303,9 +1297,74 @@ describe('queue-time-outs', () => {
       queueName: queue.name,
       timeoutMS: 100,
     }).blockedWorkflow();
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
     const status = await DBOS.getWorkflowStatus(workflowID);
     expect(status?.status).toBe(StatusString.CANCELLED);
+  });
+
+  // enqueue workflow with *no* timeout which calls a blocked child with timeout
+  test('enqueue-workflow-withChildTimeout', async () => {
+    const workflowID: string = randomUUID();
+    const childID: string = `${workflowID}-0`;
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+      workflowID,
+      queueName: queue.name,
+    }).timeoutParentStartWF(100);
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ERROR,
+    });
+    const childHandle = DBOS.retrieveWorkflow(childID);
+    await expect(childHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+    });
+  });
+
+  // enqueue workflow with timeout which enqueues a blocked child. Parent times out *before* the child. Both are cancelled
+  test('enqueue-workflow-withEnqueueChildTimeout', async () => {
+    const workflowID: string = randomUUID();
+    const childID: string = `${workflowID}-0`;
+    events_map.set(childID, new Event());
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+      workflowID,
+      queueName: queue.name,
+      timeoutMS: 1000,
+    }).timeoutParentEnqueueWF(100); // The trick here is that the child deadline starts at dequeue, which happens after the 1s dequeue polling interval
+    await events_map.get(childID)?.wait();
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+
+    // Because the deadline is set when we dequeue, there is actually some
+    const childHandle = DBOS.retrieveWorkflow(childID);
+    await expect(childHandle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
+
+    const statuses = await DBOS.listWorkflows({ workflow_id_prefix: workflowID });
+    expect(statuses.length).toBe(2);
+    statuses.forEach((status) => {
+      expect(status.status).toBe(StatusString.CANCELLED);
+    });
+  });
+
+  // enqueue workflow with timeout which enqueues a blocked child. Parent times out *after* the child. Only the child is cancelled and the parent errors
+  test('enqueue-workflow-withEnqueueChildTimeout', async () => {
+    const workflowID: string = randomUUID();
+    const childID: string = `${workflowID}-0`;
+    events_map.set(childID, new Event());
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+      workflowID,
+      queueName: queue.name,
+      timeoutMS: 2000, // allow a dequeue interval to pass
+    }).timeoutParentEnqueueWF(100);
+    await events_map.get(childID)?.wait();
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ERROR,
+    });
+
+    const childHandle = DBOS.retrieveWorkflow(childID);
+    await expect(childHandle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
+    await expect(childHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+    });
   });
 
   // enqueue a parent workflow with timeout which directly calls a detached child
@@ -1317,7 +1376,7 @@ describe('queue-time-outs', () => {
       queueName: queue.name,
       timeoutMS: 100,
     }).timeoutParentStartDetachedChild(100);
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
     });
@@ -1337,27 +1396,7 @@ describe('queue-time-outs', () => {
       queueName: queue.name,
       timeoutMS: 100,
     }).timeoutParentStartDetachedChildWithSyntax(100);
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    await expect(handle.getStatus()).resolves.toMatchObject({
-      status: StatusString.CANCELLED,
-    });
-    const childHandle = DBOS.retrieveWorkflow(childID);
-    await expect(childHandle.getResult()).resolves.toBe(42);
-    await expect(childHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.SUCCESS,
-    });
-  });
-
-  // enqueue a parent workflow with timeout which directly calls a detached child (with withWorkflowTimeout syntax)
-  test('enqueue-workflow-withDetachedChildTimeoutEnqueueWithSyntax', async () => {
-    const workflowID: string = randomUUID();
-    const childID: string = `${workflowID}-0`;
-    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
-      workflowID,
-      queueName: queue.name,
-      timeoutMS: 100,
-    }).timeoutParentEnqueueDetachedChildWithSyntax(100);
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
     });
@@ -1377,7 +1416,7 @@ describe('queue-time-outs', () => {
       queueName: queue.name,
       timeoutMS: 100,
     }).timeoutParentEnqueueDetached(100);
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
     });
@@ -1407,8 +1446,8 @@ describe('queue-time-outs', () => {
     expect(recoveryStatus?.timeoutMS).toBe('3000');
     expect(status?.deadlineEpochMS).toBe(recoveryStatus?.deadlineEpochMS);
 
-    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
-    await expect(recoveryHandles[0].getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+    await expect(recoveryHandles[0].getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
     });

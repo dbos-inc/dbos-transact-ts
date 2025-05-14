@@ -1,12 +1,11 @@
 import { workflow_status } from '../schemas/system_db_schema';
-import { DBOS, DBOSConfig, DBOSClient, WorkflowQueue } from '../src';
+import { DBOS, DBOSConfig, DBOSClient, WorkflowQueue, StatusString } from '../src';
 import { globalParams, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
-import { DBOSWorkflowCancelledError } from '../src/error';
+import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import { randomUUID } from 'crypto';
-import { DBOSQueueDuplicatedError } from '../src/error';
 
 const _queue = new WorkflowQueue('testQueue');
 
@@ -108,10 +107,10 @@ describe('DBOSClient', () => {
         workflowID: wfid,
         workflowTimeoutMS: 1000,
       });
-      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
+      await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(wfid));
 
       const wfstatus = await client.getWorkflow(wfid);
-      expect(wfstatus?.status).toBe('CANCELLED');
+      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
     } finally {
       await client.destroy();
     }
@@ -131,12 +130,12 @@ describe('DBOSClient', () => {
         workflowID: wfid,
         workflowTimeoutMS: 1000,
       });
-      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
+      await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(wfid));
 
       const statuses = await client.listWorkflows({ workflow_id_prefix: wfid });
       expect(statuses.length).toBe(2);
       statuses.forEach((status) => {
-        expect(status.status).toBe('CANCELLED');
+        expect(status.status).toBe(StatusString.CANCELLED);
       });
       const deadline = statuses[0].deadlineEpochMS;
       statuses.slice(1).forEach((status) => {
@@ -161,12 +160,12 @@ describe('DBOSClient', () => {
         workflowID: wfid,
         workflowTimeoutMS: 1000,
       });
-      await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(wfid));
+      await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(wfid));
 
       const statuses = await client.listWorkflows({ workflow_id_prefix: wfid });
       expect(statuses.length).toBe(2);
       statuses.forEach((status) => {
-        expect(status.status).toBe('CANCELLED');
+        expect(status.status).toBe(StatusString.CANCELLED);
       });
       const deadline = statuses[0].deadlineEpochMS;
       statuses.slice(1).forEach((status) => {
