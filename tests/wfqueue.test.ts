@@ -23,7 +23,6 @@ import { promisify } from 'util';
 import { Client } from 'pg';
 import {
   DBOSInvalidQueuePriorityError,
-  DBOSWorkflowCancelledError,
   DBOSConflictingWorkflowError,
   DBOSQueueDuplicatedError,
   DBOSAwaitedWorkflowCancelledError,

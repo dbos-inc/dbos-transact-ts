@@ -11,7 +11,6 @@ import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
 import { DBOS, runAsWorkflowStep } from './dbos';
 import { EnqueueOptions } from './system_database';
-import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError } from './error';
 
 /** @deprecated */
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;

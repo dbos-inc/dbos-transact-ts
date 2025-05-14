@@ -291,6 +291,7 @@ describe('dbos-tests', () => {
         });
       });
       const status = await DBOS.getWorkflowStatus(workflowID);
+      expect(status?.status).toBe(StatusString.CANCELLED);
     });
 
     test('workflow-timeout-startWorkflow-params', async () => {
@@ -311,7 +312,7 @@ describe('dbos-tests', () => {
           const expected2 = new DBOSWorkflowCancelledError(workflowID);
           await expect(DBOSTimeoutTestClass.blockingParentStartWF()).rejects.toEqual(
             expect.objectContaining({
-              message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`),
+              message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`) as string,
               workflowID: workflowID,
             }),
           );
@@ -335,7 +336,7 @@ describe('dbos-tests', () => {
       const expected2 = new DBOSWorkflowCancelledError(workflowID);
       await expect(handle.getResult()).rejects.toEqual(
         expect.objectContaining({
-          message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`),
+          message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`) as string,
           workflowID: workflowID,
         }),
       );
@@ -355,7 +356,7 @@ describe('dbos-tests', () => {
           const expected2 = new DBOSWorkflowCancelledError(workflowID);
           await expect(DBOSTimeoutTestClass.blockingParentDirect()).rejects.toEqual(
             expect.objectContaining({
-              message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`),
+              message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`) as string,
               workflowID: workflowID,
             }),
           );
@@ -379,7 +380,7 @@ describe('dbos-tests', () => {
       const expected2 = new DBOSWorkflowCancelledError(workflowID);
       await expect(handle.getResult()).rejects.toEqual(
         expect.objectContaining({
-          message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`),
+          message: expect.stringMatching(`^${expected1.message}$|^${expected2.message}$`) as string,
           workflowID: workflowID,
         }),
       );
