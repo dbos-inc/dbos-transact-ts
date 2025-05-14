@@ -1309,7 +1309,7 @@ describe('queue-time-outs', () => {
       workflowID,
       queueName: queue.name,
     }).timeoutParentStartWF(100);
-    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
     });

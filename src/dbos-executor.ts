@@ -937,7 +937,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             this.logger.info(`Cancelled workflow ${workflowID}`);
             throw err;
           } else {
-            const e = new DBOSAwaitedWorkflowCancelledError(workflowID);
+            const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
             await handleWorkflowError(e as Error);
             throw e;
           }

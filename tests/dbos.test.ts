@@ -370,7 +370,7 @@ describe('dbos-tests', () => {
       const workflowID = randomUUID();
       const childID = `${workflowID}-0`;
       const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, { workflowID }).timeoutParentStartWF(100);
-      await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+      await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
       const status = await DBOS.getWorkflowStatus(workflowID);
       expect(status?.status).toBe(StatusString.ERROR);
       const childStatus = await DBOS.getWorkflowStatus(childID);
@@ -385,7 +385,7 @@ describe('dbos-tests', () => {
         workflowID,
         timeoutMS: 1000,
       }).timeoutParentStartWF(100);
-      await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+      await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
       const status = await DBOS.getWorkflowStatus(workflowID);
       expect(status?.status).toBe(StatusString.ERROR);
       const childStatus = await DBOS.getWorkflowStatus(childID);
