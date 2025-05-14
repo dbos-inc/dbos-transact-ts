@@ -1232,29 +1232,31 @@ describe('queue-time-outs', () => {
     }
 
     @DBOS.workflow()
-    static async blockingParentStartWF() {
-      await DBOS.startWorkflow(DBOSTimeoutTestClass)
-        .blockedWorkflow()
-        .then((h) => h.getResult());
-    }
-
-    @DBOS.workflow()
-    static async blockingParentDirect() {
-      await DBOSTimeoutTestClass.blockedWorkflow();
-    }
-
-    @DBOS.workflow()
-    static async timeoutParentStartWF(timeout: number | undefined) {
+    static async timeoutParentStartWF(timeout: number) {
       await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: timeout })
         .blockedWorkflow()
         .then((h) => h.getResult());
     }
 
     @DBOS.workflow()
-    static async timeoutParentEnqueueWF(timeout: number | undefined) {
+    static async timeoutParentEnqueueWF(timeout: number) {
       await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: timeout, queueName: queue.name })
         .blockedWorkflow()
         .then((h) => h.getResult());
+    }
+
+    @DBOS.workflow()
+    static async timeoutParentStartDetachedChild(duration: number) {
+      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: undefined })
+        .sleepingWorkflow(duration * 2)
+        .then((h) => h.getResult());
+    }
+
+    @DBOS.workflow()
+    static async timeoutParentStartDetachedChildWithSyntax(duration: number) {
+      await DBOS.withWorkflowTimeout(undefined, async () => {
+        await DBOSTimeoutTestClass.sleepingWorkflow(duration * 2);
+      });
     }
 
     @DBOS.workflow()
@@ -1286,15 +1288,27 @@ describe('queue-time-outs', () => {
     await DBOS.shutdown();
   });
 
-  // enqueue parent workflow which times out and has a child which is detached
-  test('enqueue-workflow-withDetachedChildTimeoutEnqueue', async () => {
+  test('enqueue-workflow-withWorkflowTimeout', async () => {
+    const workflowID: string = randomUUID();
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+      workflowID,
+      queueName: queue.name,
+      timeoutMS: 100,
+    }).blockedWorkflow();
+    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    const status = await DBOS.getWorkflowStatus(workflowID);
+    expect(status?.status).toBe(StatusString.CANCELLED);
+  });
+
+  // enqueue a parent workflow with timeout which directly calls a detached child
+  test('enqueue-workflow-withDetachedChildTimeout', async () => {
     const workflowID: string = randomUUID();
     const childID: string = `${workflowID}-0`;
     const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
       workflowID,
       queueName: queue.name,
       timeoutMS: 100,
-    }).timeoutParentEnqueueDetached(100);
+    }).timeoutParentStartDetachedChild(100);
     await DBOSTimeoutTestClass.event.wait();
     await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
     await expect(handle.getStatus()).resolves.toMatchObject({
@@ -1307,6 +1321,28 @@ describe('queue-time-outs', () => {
     });
   });
 
+  // enqueue a parent workflow with timeout which directly calls a detached child (with withWorkflowTimeout syntax)
+  test('enqueue-workflow-withDetachedChildTimeoutWithSyntax', async () => {
+    const workflowID: string = randomUUID();
+    const childID: string = `${workflowID}-0`;
+    const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass, {
+      workflowID,
+      queueName: queue.name,
+      timeoutMS: 100,
+    }).timeoutParentStartDetachedChildWithSyntax(100);
+    await DBOSTimeoutTestClass.event.wait();
+    await expect(handle.getResult()).rejects.toThrow(new DBOSWorkflowCancelledError(workflowID));
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.CANCELLED,
+    });
+    const childHandle = DBOS.retrieveWorkflow(childID);
+    await expect(childHandle.getResult()).resolves.toBe(42);
+    await expect(childHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+  });
+
+  // enqueue a parent workflow with timeout which directly calls a detached child (with withWorkflowTimeout syntax)
   test('enqueue-workflow-withDetachedChildTimeoutEnqueueWithSyntax', async () => {
     const workflowID: string = randomUUID();
     const childID: string = `${workflowID}-0`;
