@@ -1,12 +1,4 @@
-import {
-  associateClassWithEventReceiver,
-  associateMethodWithEventReceiver,
-  DBOS,
-  DBOSConfig,
-  DBOSExecutorContext,
-  type DBOSEventReceiver,
-} from '../src';
-import { DBOSExecutor } from '../src/dbos-executor';
+import { DBOS, DBOSConfig, DBOSExecutorContext, type DBOSEventReceiver } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 import Koa, { Middleware } from 'koa';
@@ -91,23 +83,23 @@ class DBOSHTTPBase implements DBOSEventReceiver {
   // TODO The dispatch ... it needs its own wrapper over it, or is that central?
 
   httpApiDec(verb: APITypes, url: string) {
-    const er = this as unknown as DBOSEventReceiver;
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const er = this;
     return function apidec<This, Args extends unknown[], Return>(
       target: object,
       propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration, receiverInfo } = associateMethodWithEventReceiver(
-        er,
-        target,
-        propertyKey,
-        inDescriptor,
-      );
-      const handlerRegistration = receiverInfo as DBOSHTTPReg;
+      const { func, registration, regInfo } = DBOS.associateFunctionWithInfo(er, descriptor.value!, {
+        classOrInst: target,
+        name: propertyKey,
+      });
+      const handlerRegistration = regInfo as DBOSHTTPReg;
       handlerRegistration.apiURL = url;
       handlerRegistration.apiType = verb;
       registration.performArgValidation = true;
 
+      descriptor.value = func;
       return descriptor;
     };
   }
@@ -149,7 +141,7 @@ class DBOSHTTPBase implements DBOSEventReceiver {
       }
     });
     function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-      const clsreg = associateClassWithEventReceiver(er, ctor) as DBOSHTTPClassReg;
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
       clsreg.koaMiddlewares = [...(clsreg.koaMiddlewares ?? []), ...koaMiddleware];
     }
     return clsdec;
@@ -168,7 +160,7 @@ class DBOSHTTPBase implements DBOSEventReceiver {
       }
     });
     function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-      const clsreg = associateClassWithEventReceiver(er, ctor) as DBOSHTTPClassReg;
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
       clsreg.koaGlobalMiddlewares = [...(clsreg.koaGlobalMiddlewares ?? []), ...koaMiddleware];
     }
     return clsdec;
@@ -219,7 +211,7 @@ describe('decoratorless-api-tests', () => {
   beforeEach(async () => {
     middlewareCounter = middlewareCounter2 = middlewareCounterG = 0;
     await DBOS.launch();
-    const eps = DBOSExecutor.globalInstance!.getRegistrationsFor(dhttp);
+    const eps = DBOS.getAssociatedInfo(dhttp);
     app = new Koa();
     appRouter = new Router();
 

@@ -792,6 +792,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       cp.captureContext(storeCtx, params.parentCtx);
     }
     /*
+    // NB test2 fails
     if (wCtxt.request) {
       if (JSON.stringify(wCtxt.request) !== JSON.stringify(storeCtx.request)) {
         throw new TypeError(`Request does not match: ${JSON.stringify(wCtxt.request)} ${JSON.stringify(storeCtx.request)}`);

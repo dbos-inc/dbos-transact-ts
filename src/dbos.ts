@@ -47,10 +47,13 @@ import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
 import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
 import {
+  associateClassWithExternal,
+  associateMethodWithExternal,
   configureInstance,
   getOrCreateClassRegistration,
   getRegisteredOperations,
   getRegistrationForFunction,
+  getRegistrationsForExternal,
   getTransactionalDataSource,
   MethodRegistration,
   recordDBOSLaunch,
@@ -103,6 +106,8 @@ import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { SpanStatusCode } from '@opentelemetry/api';
+
+type AnyConstructor = new (...args: unknown[]) => object;
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -2489,6 +2494,33 @@ export class DBOS {
     ...args: T
   ): R {
     return configureInstance(cls, name, ...args);
+  }
+
+  /**
+   * Register information to be associated with a DBOS class
+   */
+  static associateClassWithInfo(external: AnyConstructor | object | string, cls: AnyConstructor | string): object {
+    return associateClassWithExternal(external, cls);
+  }
+
+  /**
+   * Register information to be associated with a DBOS function
+   */
+  static associateFunctionWithInfo<This, Args extends unknown[], Return>(
+    external: AnyConstructor | object | string,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      classOrInst?: object;
+      className?: string;
+      name: string;
+    },
+  ) {
+    return associateMethodWithExternal(external, target.classOrInst, target.className, target.name, func);
+  }
+
+  /** Get registrations */
+  static getAssociatedInfo(external: AnyConstructor | object | string) {
+    return getRegistrationsForExternal(external);
   }
 }
 

@@ -234,6 +234,7 @@ export interface RegistrationDefaults {
   defaultArgRequired: ArgRequiredOptions;
   defaultArgValidate: boolean;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
+  externalRegInfo: Map<AnyConstructor | object | string, unknown>;
 }
 
 export interface MethodRegistrationBase {
@@ -253,7 +254,10 @@ export interface MethodRegistrationBase {
   procConfig?: TransactionConfig;
   isInstance: boolean;
 
+  // This is for DBOSEventReceivers (an older approach) to keep stuff
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
+  // This is for any class or object to keep stuff associated with a class
+  externalRegInfo: Map<AnyConstructor | object | string, unknown>;
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   wrappedFunction: Function | undefined; // Function that is user-callable, including the WF engine transition
@@ -296,6 +300,7 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   procConfig?: TransactionConfig;
   regLocation?: string[];
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
+  externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
   getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | 'Procedure' | undefined {
     if (this.txnConfig) return 'Transaction';
@@ -405,6 +410,7 @@ export class ClassRegistration implements RegistrationDefaults {
   configuredInstanceRegLocs: Map<string, string[]> = new Map();
 
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
+  externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
   constructor() {}
 }
@@ -872,6 +878,18 @@ export function associateClassWithEventReceiver<CT extends { new (...args: unkno
   return clsReg.eventReceiverInfo.get(rcvr)!;
 }
 
+export function associateClassWithExternal(
+  external: AnyConstructor | object | string,
+  cls: AnyConstructor | string,
+): object {
+  const clsn: string = typeof cls === 'string' ? cls : (cls = getNameForClass(cls));
+  const clsreg = getClassRegistrationByName(clsn, true);
+  if (!clsreg.externalRegInfo.has(external)) {
+    clsreg.externalRegInfo.set(external, {});
+  }
+  return clsreg.externalRegInfo.get(external)!;
+}
+
 /**
  * Associates a workflow method with a `DBOSEventReceiver` which will be in charge of calling the method
  *   in response to received events.
@@ -894,6 +912,41 @@ export function associateMethodWithEventReceiver<This, Args extends unknown[], R
     registration.eventReceiverInfo.set(rcvr, {});
   }
   return { descriptor, registration, receiverInfo: registration.eventReceiverInfo.get(rcvr)! };
+}
+
+/*
+ * Associates a DBOS function or method with an external class or object.
+ *   Likely, this will be invoking or intercepting the method.
+ */
+export function associateMethodWithExternal<This, Args extends unknown[], Return>(
+  external: AnyConstructor | object | string,
+  target: object | undefined,
+  className: string | undefined,
+  funcName: string,
+  func: (this: This, ...args: Args) => Promise<Return>,
+): {
+  registration: MethodRegistration<This, Args, Return>;
+  func: (this: This, ...args: Args) => Promise<Return>;
+  regInfo: object;
+} {
+  const { registration } = registerAndWrapDBOSFunctionByName(target, className, funcName, func);
+  if (!registration.externalRegInfo.has(external)) {
+    registration.externalRegInfo.set(external, {});
+  }
+  return { func: registration.registeredFunction!, registration, regInfo: registration.externalRegInfo.get(external)! };
+}
+
+export function getRegistrationsForExternal(external: AnyConstructor | object | string) {
+  const res: { methodConfig: unknown; classConfig: unknown; methodReg: MethodRegistrationBase }[] = [];
+  for (const [_cn, c] of classesByName) {
+    for (const [_fn, f] of c.reg.registeredOperations) {
+      if (!f.externalRegInfo.has(external)) continue;
+      const methodConfig = f.externalRegInfo.get(external)!;
+      const classConfig = f.defaults?.externalRegInfo.get(external) ?? {};
+      res.push({ methodReg: f, methodConfig, classConfig });
+    }
+  }
+  return res;
 }
 
 //////////////////////////
