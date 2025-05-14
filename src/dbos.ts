@@ -372,7 +372,6 @@ export class DBOS {
     });
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
-    DBOS.globalLogger = executor.logger;
     await executor.init();
 
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
@@ -575,7 +574,6 @@ export class DBOS {
   //////
   // Globals
   //////
-  static globalLogger?: DLogger;
   static dbosConfig?: DBOSConfig;
   static #runtimeConfig?: DBOSRuntimeConfig = undefined;
   static #invokeWrappers: Map<unknown, unknown> = new Map();
