@@ -38,7 +38,7 @@ export class DBOSRuntime {
   ) {
     // Initialize workflow executor.
     this.dbosConfig = dbosConfig;
-    DBOS.dbosConfig = dbosConfig;
+    DBOS.setConfig(dbosConfig);
   }
 
   /**
@@ -50,7 +50,6 @@ export class DBOSRuntime {
         throw new Error('DBOS pool configuration is not initialized');
       }
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
-      DBOS.globalLogger = this.dbosExec.logger;
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
       await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);
       await this.dbosExec.init();

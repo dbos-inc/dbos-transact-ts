@@ -681,7 +681,11 @@ describe('queued-wf-tests-simple', () => {
   }
 
   test('test-concurrency-across-versions', async () => {
-    const client = await DBOSClient.create(DBOS.dbosConfig?.poolConfig?.connectionString as string);
+    const connectionString = DBOS.dbosConfig?.poolConfig?.connectionString;
+    if (!connectionString) {
+      throw new Error('DBOS is not configured with a connection string');
+    }
+    const client = await DBOSClient.create(connectionString);
 
     const other_version = 'other_version';
     const other_version_handle = await client.enqueue({

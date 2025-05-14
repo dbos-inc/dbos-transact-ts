@@ -1,5 +1,6 @@
 import { DBOS } from '../src';
-import { DBOSExecutor, DBOSConfigInternal } from '../src/dbos-executor';
+import { getExecutor } from '../src/dbos';
+import { DBOSExecutor } from '../src/dbos-executor';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { UserDatabaseName } from '../src/user_database';
 import { setUpDBOSTestDb } from './helpers';
@@ -7,10 +8,10 @@ import { setUpDBOSTestDb } from './helpers';
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
+    const pc = DBOS.dbosConfig?.poolConfig;
     const ds = DBOS.pgClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any)._connectionTimeoutMillis).toEqual(pc.connectionTimeoutMillis);
+    expect((ds as any)._connectionTimeoutMillis).toEqual(pc?.connectionTimeoutMillis);
     // PG doesn't expose the pool directly
     await Promise.resolve();
   }
@@ -28,7 +29,7 @@ describe('pgnode-engine-config-tests', () => {
     DBOS.setConfig(config);
     await DBOS.launch();
     try {
-      const sysDbClient = ((DBOS.executor as DBOSExecutor).systemDatabase as PostgresSystemDatabase).knexDB;
+      const sysDbClient = ((getExecutor() as DBOSExecutor).systemDatabase as PostgresSystemDatabase).knexDB;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
       expect((sysDbClient as any).context.client.config.pool.max).toEqual(42);
       await TestEngine.testEngine();

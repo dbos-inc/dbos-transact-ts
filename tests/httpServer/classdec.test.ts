@@ -147,7 +147,6 @@ describe('httpserver-defsec-tests', () => {
   let middlewareCounterG = 0;
   const testMiddlewareG: Middleware = async (ctx, next) => {
     middlewareCounterG = middlewareCounterG + 1;
-    expect(DBOS.globalLogger).toBeDefined();
     await next();
   };
 
