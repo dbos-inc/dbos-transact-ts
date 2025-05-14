@@ -143,7 +143,7 @@ async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
 
 In many cases, an application wants to keep track of objects that have been stored in S3. S3 is, as the name implies, simple storage, and it doesn't track file attributes, permissions, fine-grained ownership, dependencies, etc.
 
-Keeping an indexed set of file metadata records, including referential links to their owners, is a "database problem". And, while keeping the database in sync with the contents of S3 sounds like it may be tricky, [DBOS Transact Workflows](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial) provide the perfect tool for accomplishing this, even in the face of client or server failures.
+Keeping an indexed set of file metadata records, including referential links to their owners, is a "database problem". And, while keeping the database in sync with the contents of S3 sounds like it may be tricky, [DBOS Workflows](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial) provide the perfect tool for accomplishing this, even in the face of client or server failures.
 
 The `DBOS_S3` class provides workflows that can be used to ensure that a table of file records is maintained for an S3 bucket. This table can have any schema suitable to the application (an example table schema can be found in `s3_utils.test.ts`), because the application provides the code to maintain it as a set of callback functions that will be triggered from the workflow.
 
@@ -263,7 +263,7 @@ Do not reuse S3 keys. Assigning unique identifiers to files is a much better ide
 - S3 caches the key contents. Even a response of "this key doesn't exist" can be cached. If you reuse keys, you may get a stale value.
 - Workflow operations against an old use of a key may still be in process... for example a delete workflow may still be attempting to delete the old object at the same time a new file is being placed under the same key.
 
-DBOS Transact logs function parameters and return values to the system database. Some functions above treat the data contents of the S3 object as a parameter or return value, and are therefore only suitable for small data items (kilobytes, maybe megabytes, not gigabytes). For large data, use workflows where the data is sent directly to and from S3 using presigned URLs.
+DBOS logs function parameters and return values to the system database. Some functions above treat the data contents of the S3 object as a parameter or return value, and are therefore only suitable for small data items (kilobytes, maybe megabytes, not gigabytes). For large data, use workflows where the data is sent directly to and from S3 using presigned URLs.
 
 ## Simple Testing
 
@@ -277,5 +277,5 @@ The `s3_utils.test.ts` file included in the source repository can be used to upl
 ## Next Steps
 
 - To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
-- For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
+- For DBOS programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).

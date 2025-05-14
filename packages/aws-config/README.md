@@ -1,6 +1,6 @@
 # DBOS Config File Utilities for AWS
 
-Common utility for configuring AWS services in a DBOS Transact application.
+Common utility for configuring AWS services in a DBOS application.
 
 By default, services just use a configuration called 'aws_config'.
 
