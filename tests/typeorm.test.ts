@@ -5,7 +5,7 @@ import { EntityManager, Unique } from 'typeorm';
 
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { OrmEntities, Authentication, MiddlewareContext, DBOS } from '../src';
-import { DBOSConfig, DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOSInvalidWorkflowTransitionError, DBOSNotAuthorizedError } from '../src/error';
@@ -214,14 +214,14 @@ describe('typeorm-auth-tests', () => {
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
+    const pc = DBOS.dbosConfig?.poolConfig;
     const ds = DBOS.typeORMClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).connection.driver.master.options.connectionString).toBe(pc.connectionString);
+    expect((ds as any).connection.driver.master.options.connectionString).toBe(pc?.connectionString);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).connection.driver.master.options.max).toBe(pc.max);
+    expect((ds as any).connection.driver.master.options.max).toBe(pc?.max);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).queryRunner.databaseConnection._connectionTimeoutMillis).toBe(pc.connectionTimeoutMillis);
+    expect((ds as any).queryRunner.databaseConnection._connectionTimeoutMillis).toBe(pc?.connectionTimeoutMillis);
     await Promise.resolve();
   }
 }

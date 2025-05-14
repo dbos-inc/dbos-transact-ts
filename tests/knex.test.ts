@@ -2,7 +2,7 @@ import request from 'supertest';
 
 import { DBOS, Authentication, MiddlewareContext } from '../src';
 import { DBOSInvalidWorkflowTransitionError, DBOSNotAuthorizedError } from '../src/error';
-import { DBOSConfig, DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
@@ -191,14 +191,14 @@ describe('knex-auth-tests', () => {
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
+    const pc = DBOS.dbosConfig?.poolConfig;
     const ds = DBOS.knexClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.connectionSettings.connectionString).toEqual(pc.connectionString);
+    expect((ds as any).context.client.connectionSettings.connectionString).toEqual(pc?.connectionString);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.config.pool.max).toEqual(pc.max);
+    expect((ds as any).context.client.config.pool.max).toEqual(pc?.max);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.connectionSettings.connectionTimeoutMillis).toBe(pc.connectionTimeoutMillis);
+    expect((ds as any).context.client.connectionSettings.connectionTimeoutMillis).toBe(pc?.connectionTimeoutMillis);
     await Promise.resolve();
   }
 }

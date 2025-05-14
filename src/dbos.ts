@@ -267,18 +267,18 @@ export class DBOS {
    * @param runtimeConfig - configuration of runtime access to DBOS
    */
   static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
-    DBOS.dbosConfig = config;
+    DBOS.#dbosConfig = config;
     DBOS.#runtimeConfig = runtimeConfig;
     DBOS.translateConfig();
   }
 
   private static translateConfig() {
-    if (DBOS.dbosConfig && !isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
+    if (DBOS.#dbosConfig && !isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
       const isDebugging = DBOS.getDebugModeFromEnv() !== DebugMode.DISABLED;
-      [DBOS.dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.dbosConfig, isDebugging);
+      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.#dbosConfig, isDebugging);
       if (process.env.DBOS__CLOUD === 'true') {
-        [DBOS.dbosConfig, DBOS.#runtimeConfig] = overwrite_config(
-          DBOS.dbosConfig as DBOSConfigInternal,
+        [DBOS.#dbosConfig, DBOS.#runtimeConfig] = overwrite_config(
+          DBOS.#dbosConfig as DBOSConfigInternal,
           DBOS.#runtimeConfig,
         );
       }
@@ -290,7 +290,7 @@ export class DBOS {
    *   Use `setConfig`
    */
   static setAppConfig<T>(key: string, newValue: T): void {
-    const conf = DBOS.dbosConfig?.application;
+    const conf = DBOS.#dbosConfig?.application;
     if (!conf) throw new DBOSExecutorNotInitializedError();
     set(conf, key, newValue);
   }
@@ -300,12 +300,12 @@ export class DBOS {
    * USE IN TESTS ONLY - ALL WORKFLOWS, QUEUES, ETC. WILL BE LOST.
    */
   static async dropSystemDB(): Promise<void> {
-    if (!DBOS.dbosConfig) {
-      DBOS.dbosConfig = parseConfigFile()[0];
+    if (!DBOS.#dbosConfig) {
+      DBOS.#dbosConfig = parseConfigFile()[0];
     }
 
     DBOS.translateConfig();
-    return PostgresSystemDatabase.dropSystemDB(DBOS.dbosConfig as DBOSConfigInternal);
+    return PostgresSystemDatabase.dropSystemDB(DBOS.#dbosConfig as DBOSConfigInternal);
   }
 
   /**
@@ -356,18 +356,18 @@ export class DBOS {
     }
 
     // Initialize the DBOS executor
-    if (!DBOS.dbosConfig) {
-      [DBOS.dbosConfig, DBOS.#runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
-    } else if (!isDeprecatedDBOSConfig(DBOS.dbosConfig)) {
+    if (!DBOS.#dbosConfig) {
+      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
+    } else if (!isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
       DBOS.translateConfig(); // This is a defensive measure for users who'd do DBOS.config = X instead of using DBOS.setConfig()
     }
 
-    if (!DBOS.dbosConfig) {
+    if (!DBOS.#dbosConfig) {
       throw new DBOSError('DBOS configuration not set');
     }
 
     DBOSExecutor.createInternalQueue();
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.dbosConfig as DBOSConfigInternal, {
+    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.#dbosConfig as DBOSConfigInternal, {
       debugMode,
     });
 
@@ -574,9 +574,13 @@ export class DBOS {
   //////
   // Globals
   //////
-  static dbosConfig?: DBOSConfig;
+  static #dbosConfig?: DBOSConfig;
   static #runtimeConfig?: DBOSRuntimeConfig = undefined;
   static #invokeWrappers: Map<unknown, unknown> = new Map();
+
+  static get dbosConfig(): DBOSConfig | undefined {
+    return DBOS.#dbosConfig;
+  }
 
   //////
   // Context
@@ -707,9 +711,9 @@ export class DBOS {
    */
   static get pgClient(): PoolClient {
     const client = DBOS.sqlClient;
-    if (!DBOS.isInStoredProc() && DBOS.dbosConfig?.userDbclient !== UserDatabaseName.PGNODE) {
+    if (!DBOS.isInStoredProc() && DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.PGNODE) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
       );
     }
     return client as PoolClient;
@@ -723,9 +727,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.knexClient' from within a stored procedure`);
     }
-    if (DBOS.dbosConfig?.userDbclient !== UserDatabaseName.KNEX) {
+    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.KNEX) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -740,9 +744,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.prismaClient' from within a stored procedure`);
     }
-    if (DBOS.dbosConfig?.userDbclient !== UserDatabaseName.PRISMA) {
+    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.PRISMA) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -757,9 +761,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.typeORMClient' from within a stored procedure`);
     }
-    if (DBOS.dbosConfig?.userDbclient !== UserDatabaseName.TYPEORM) {
+    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.TYPEORM) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -774,9 +778,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.drizzleClient' from within a stored procedure`);
     }
-    if (DBOS.dbosConfig?.userDbclient !== UserDatabaseName.DRIZZLE) {
+    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.DRIZZLE) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
       );
     }
     const client = DBOS.sqlClient;

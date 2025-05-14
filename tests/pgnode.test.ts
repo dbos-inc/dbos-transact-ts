@@ -1,6 +1,6 @@
 import { DBOS } from '../src';
 import { getExecutor } from '../src/dbos';
-import { DBOSExecutor, DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSExecutor } from '../src/dbos-executor';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { UserDatabaseName } from '../src/user_database';
 import { setUpDBOSTestDb } from './helpers';
@@ -8,10 +8,10 @@ import { setUpDBOSTestDb } from './helpers';
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
+    const pc = DBOS.dbosConfig?.poolConfig;
     const ds = DBOS.pgClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any)._connectionTimeoutMillis).toEqual(pc.connectionTimeoutMillis);
+    expect((ds as any)._connectionTimeoutMillis).toEqual(pc?.connectionTimeoutMillis);
     // PG doesn't expose the pool directly
     await Promise.resolve();
   }

@@ -38,7 +38,7 @@ export class DBOSRuntime {
   ) {
     // Initialize workflow executor.
     this.dbosConfig = dbosConfig;
-    DBOS.dbosConfig = dbosConfig;
+    DBOS.setConfig(dbosConfig);
   }
 
   /**
