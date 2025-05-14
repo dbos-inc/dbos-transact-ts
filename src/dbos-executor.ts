@@ -71,6 +71,7 @@ import {
   getRegisteredOperationsByClassname,
   DBOSContextProvider,
   DBOSStoredWFContext,
+  getLifecycleListeners,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -2099,9 +2100,21 @@ export class DBOSExecutor implements DBOSExecutorContext {
     for (const evtRcvr of this.eventReceivers) {
       await evtRcvr.initialize(this);
     }
+    for (const lcl of getLifecycleListeners()) {
+      await lcl.initialize();
+    }
   }
 
   async deactivateEventReceivers(stopQueueThread: boolean = true) {
+    this.logger.debug('Deactivating lifecycle listeners');
+    for (const lcl of getLifecycleListeners()) {
+      try {
+        await lcl.destroy();
+      } catch (err) {
+        const e = err as Error;
+        this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
+      }
+    }
     this.logger.debug('Deactivating event receivers');
     for (const evtRcvr of this.eventReceivers || []) {
       try {

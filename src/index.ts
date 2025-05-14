@@ -19,6 +19,8 @@ export {
   DBOSEventReceiverState,
 } from './eventreceiver';
 
+export { DBOSLifecycleCallback } from './decorators';
+
 export { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';

@@ -1,4 +1,4 @@
-import { DBOS, DBOSConfig, DBOSExecutorContext, type DBOSEventReceiver } from '../src';
+import { DBOS, DBOSConfig, DBOSLifecycleCallback } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 import Koa, { Middleware } from 'koa';
@@ -62,22 +62,7 @@ interface DBOSHTTPClassReg {
   koaGlobalMiddlewares?: Koa.Middleware[];
 }
 
-class DBOSHTTPBase implements DBOSEventReceiver {
-  executor?: DBOSExecutorContext | undefined;
-
-  // TODO: Lifecycle not really relevant...
-  async destroy(): Promise<void> {
-    return Promise.resolve();
-  }
-
-  async initialize(_executor: DBOSExecutorContext): Promise<void> {
-    return Promise.resolve();
-  }
-
-  logRegisteredEndpoints(): void {
-    return;
-  }
-
+class DBOSHTTPBase extends DBOSLifecycleCallback {
   // TODO Register all endpoints into a routing tree to make a handler callback
   // TODO All interesting class stuff
   // TODO The dispatch ... it needs its own wrapper over it, or is that central?

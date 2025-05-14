@@ -13,6 +13,30 @@ import { InitContext } from './dbos';
 import { DBOSTransactionalDataSource } from './transactionsource';
 
 /**
+ * Interface for integrating into the DBOS startup/shutdown lifecycle
+ */
+export abstract class DBOSLifecycleCallback {
+  /** Called back during DBOS launch */
+  initialize(): Promise<void> {
+    return Promise.resolve();
+  }
+  /** Called back upon shutdown (usually in tests) to close connections and free resources */
+  destroy(): Promise<void> {
+    return Promise.resolve();
+  }
+  /** Called at launch; Implementers should emit a diagnostic list of all registrations */
+  logRegisteredEndpoints(): void {}
+}
+
+const lifecycleListeners: DBOSLifecycleCallback[] = [];
+export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
+  if (!lifecycleListeners.includes(lcl)) lifecycleListeners.push(lcl);
+}
+export function getLifecycleListeners() {
+  return lifecycleListeners;
+}
+
+/**
  * Any column type column can be.
  */
 export type DBOSFieldType =

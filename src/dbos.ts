@@ -50,6 +50,7 @@ import {
   associateClassWithExternal,
   associateMethodWithExternal,
   configureInstance,
+  getLifecycleListeners,
   getOrCreateClassRegistration,
   getRegisteredOperations,
   getRegistrationForFunction,
@@ -61,6 +62,7 @@ import {
   registerAndWrapDBOSFunction,
   registerAndWrapDBOSFunctionByName,
   registerFunctionWrapper,
+  registerLifecycleCallback,
   registerTransactionalDataSource,
   transactionalDataSources,
 } from './decorators';
@@ -88,6 +90,7 @@ import { PoolClient } from 'pg';
 import { Knex } from 'knex';
 import { StepConfig, StepFunction } from './step';
 import {
+  DBOSLifecycleCallback,
   DBOSTransactionalDataSource,
   HandlerContext,
   StepContext,
@@ -452,6 +455,9 @@ export class DBOS {
     wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
     for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
       evtRcvr.logRegisteredEndpoints();
+    }
+    for (const lcl of getLifecycleListeners()) {
+      lcl.logRegisteredEndpoints();
     }
   }
 
@@ -2494,6 +2500,13 @@ export class DBOS {
     ...args: T
   ): R {
     return configureInstance(cls, name, ...args);
+  }
+
+  /**
+   * Register a lifecycle listener
+   */
+  static registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
+    registerLifecycleCallback(lcl);
   }
 
   /**
