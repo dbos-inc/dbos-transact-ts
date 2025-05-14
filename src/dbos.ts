@@ -517,9 +517,7 @@ export class DBOS {
     return DBOSExecutor.globalInstance?.initEventReceivers();
   }
 
-  /**
-   * Global DBOS executor instance
-   */
+  // Global DBOS executor instance
   static get #executor() {
     return getExecutor();
   }
