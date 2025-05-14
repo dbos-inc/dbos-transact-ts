@@ -117,7 +117,6 @@ export interface SystemDatabase {
     startStep: number,
     options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<string>;
-  getMaxFunctionID(workflowID: string): Promise<number>;
   checkIfCanceled(workflowID: string): Promise<void>;
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
@@ -210,6 +209,11 @@ export interface WorkflowStatusInternal {
 
 export interface EnqueueOptions {
   deduplicationID?: string;
+}
+
+export interface EnqueueOptions {
+  deduplicationID?: string;
+  priority?: number;
 }
 
 export interface ExistenceCheck {
@@ -779,15 +783,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } finally {
       client.release();
     }
-  }
-
-  async getMaxFunctionID(workflowID: string): Promise<number> {
-    const { rows } = await this.pool.query<{ max_function_id: number }>(
-      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
-      [workflowID],
-    );
-
-    return rows.length === 0 ? 0 : rows[0].max_function_id;
   }
 
   async forkWorkflow(
@@ -1713,13 +1708,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<void> {
     const dedupID = enqueueOptions?.deduplicationID ?? null;
 
+    const priority = enqueueOptions?.priority ?? 0;
+
     try {
       await client.query<workflow_queue>(
-        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, deduplication_id)
-        VALUES ($1, $2, $3)
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_queue (workflow_uuid, queue_name, deduplication_id, priority)
+        VALUES ($1, $2, $3, $4)
         ON CONFLICT (workflow_uuid)
         DO NOTHING;`,
-        [workflowID, queueName, dedupID],
+        [workflowID, queueName, dedupID, priority],
       );
     } catch (error) {
       const err: DatabaseError = error as DatabaseError;
@@ -1860,6 +1857,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           .andWhere((b) => {
             b.whereNull('ws.application_version').orWhere('ws.application_version', appVersion);
           })
+          .orderBy('wq.priority', 'asc')
           .orderBy('wq.created_at_epoch_ms', 'asc')
           .forUpdate()
           .noWait();

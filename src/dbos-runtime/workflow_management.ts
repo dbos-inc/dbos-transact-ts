@@ -7,7 +7,6 @@ import { DBOSJSON } from '../utils';
 import { deserializeError } from 'serialize-error';
 import type { transaction_outputs } from '../../schemas/user_db_schema';
 import { randomUUID } from 'node:crypto';
-import { DBOSInvalidStepIDError } from '../error';
 
 export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
   const workflows = await sysdb.listWorkflows(input);
@@ -64,24 +63,6 @@ export async function listWorkflowSteps(
   return [...steps, ...txs].toSorted((a, b) => a.functionID - b.functionID);
 }
 
-async function getMaxStepID(sysdb: SystemDatabase, userdb: UserDatabase, workflowID: string): Promise<number> {
-  const [$stepMaxId, $txMaxId] = await Promise.all([
-    sysdb.getMaxFunctionID(workflowID),
-    getMaxTxFunctionId(userdb, workflowID),
-  ]);
-
-  return Math.max($stepMaxId, $txMaxId);
-
-  function getMaxTxFunctionId(userdb: UserDatabase, workflowID: string): Promise<number> {
-    return userdb
-      .query<
-        { max_function_id: number },
-        [string]
-      >(`SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`, workflowID)
-      .then((rows) => (rows.length === 0 ? 0 : rows[0].max_function_id));
-  }
-}
-
 export async function forkWorkflow(
   sysdb: SystemDatabase,
   userdb: UserDatabase,
@@ -89,11 +70,6 @@ export async function forkWorkflow(
   startStep: number,
   options: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number } = {},
 ): Promise<string> {
-  const maxStepID = await getMaxStepID(sysdb, userdb, workflowID);
-  if (startStep > maxStepID) {
-    throw new DBOSInvalidStepIDError(workflowID, startStep, maxStepID);
-  }
-
   const newWorkflowID = options.newWorkflowID ?? randomUUID();
   const query = `
     INSERT INTO dbos.transaction_outputs

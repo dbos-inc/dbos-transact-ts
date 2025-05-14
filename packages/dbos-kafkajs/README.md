@@ -47,7 +47,7 @@ kafkaCfg = new KafkaProduceStep('defKafka', kafkaConfig, defTopic, {
 
 ### Sending
 
-Within a [DBOS Transact Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call the `KafkaProduceStep` function from a workflow:
+Within a [DBOS Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call the `KafkaProduceStep` function from a workflow:
 
 ```typescript
 const sendRes = await kafkaCfg.send({ value: ourMessage });
@@ -55,7 +55,7 @@ const sendRes = await kafkaCfg.send({ value: ourMessage });
 
 ## Receiving Messages
 
-A tutorial for receiving and processing Kafka messages can be found [here](https://docs.dbos.dev/tutorials/requestsandevents/kafka-integration). This library provides an alternate implementation of the Kafka consumer that can be updated independently of the DBOS Transact core packages.
+A tutorial for receiving and processing Kafka messages can be found [here](https://docs.dbos.dev/typescript/tutorials/requestsandevents/kafka-integration). This library provides an alternate implementation of the Kafka consumer that can be updated independently of the DBOS Transact core packages.
 
 ## Simple Testing
 
@@ -66,5 +66,5 @@ The `kafkajs.test.ts` file included in the source repository demonstrates sendin
 ## Next Steps
 
 - To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
-- For DBOS Transact programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
+- For DBOS programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
 - To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
