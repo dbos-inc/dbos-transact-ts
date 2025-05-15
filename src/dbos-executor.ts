@@ -853,24 +853,24 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
 
-    const handleWorkflowError = async (err: Error) => {
+    async function handleWorkflowError(err: Error, exec: DBOSExecutor) {
       // Record the error.
       const e = err as Error & { dbos_already_logged?: boolean };
-      this.logger.error(e);
+      exec.logger.error(e);
       e.dbos_already_logged = true;
       if (wCtxt.isTempWorkflow) {
         internalStatus.workflowName = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
       }
       internalStatus.error = DBOSJSON.stringify(serializeError(e));
       internalStatus.status = StatusString.ERROR;
-      if (internalStatus.queueName && !this.isDebugging) {
-        await this.systemDatabase.dequeueWorkflow(workflowID, this.#getQueueByName(internalStatus.queueName));
+      if (internalStatus.queueName && !exec.isDebugging) {
+        await exec.systemDatabase.dequeueWorkflow(workflowID, exec.#getQueueByName(internalStatus.queueName));
       }
-      if (!this.isDebugging) {
-        await this.systemDatabase.recordWorkflowError(workflowID, internalStatus);
+      if (!exec.isDebugging) {
+        await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       }
       wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-    };
+    }
 
     const runWorkflow = async () => {
       let result: R;
