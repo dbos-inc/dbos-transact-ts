@@ -39,7 +39,7 @@ export interface DBOSLocalCtx {
   request?: HTTPRequest;
   operationType?: string; // A custom helper for users to set a operation type of their choice. Intended for functions setting a pctx to run DBOS operations from.
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
-  workflowTimeoutMS?: number;
+  workflowTimeoutMS?: number | null;
 }
 
 export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {

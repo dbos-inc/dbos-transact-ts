@@ -39,7 +39,7 @@ import {
   DBOSExecutorNotInitializedError,
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
-  DBOSTargetWorkflowCancelledError,
+  DBOSAwaitedWorkflowCancelledError,
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
@@ -209,7 +209,7 @@ function augmentProxy(target: object, proxy: Record<string, unknown>) {
 export interface StartWorkflowParams {
   workflowID?: string;
   queueName?: string;
-  timeoutMS?: number;
+  timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
 }
 
@@ -908,7 +908,9 @@ export class DBOS {
           timerFuncID,
         );
         if (!rres) return null;
-        if (rres?.cancelled) throw new DBOSTargetWorkflowCancelledError(workflowID); // TODO: Make semantically meaningful
+        if (rres?.cancelled) {
+          throw new DBOSAwaitedWorkflowCancelledError(workflowID);
+        }
         return DBOSExecutor.reviveResultOrError<T>(rres);
       },
       'DBOS.getResult',
@@ -1173,7 +1175,7 @@ export class DBOS {
    * @param callback - Function to run, which would call or start workflows
    * @returns - Return value from `callback`
    */
-  static async withWorkflowTimeout<R>(timeoutMS: number, callback: () => Promise<R>): Promise<R> {
+  static async withWorkflowTimeout<R>(timeoutMS: number | null, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
       const originalTimeoutMS = pctx.workflowTimeoutMS;
@@ -1252,6 +1254,11 @@ export class DBOS {
         deadlineEpochMS: wfctx.deadlineEpochMS,
         enqueueOptions: inParams?.enqueueOptions,
       };
+      // Detach child deadline if a null timeout is configured
+      // We must check the inParams but also pctx (if the workflow was called withWorkflowTimeout)
+      if (inParams?.timeoutMS === null || pctx?.workflowTimeoutMS === null) {
+        wfParams.deadlineEpochMS = undefined;
+      }
 
       for (const op of ops) {
         if (op.workflowConfig) {
@@ -1705,6 +1712,10 @@ export class DBOS {
             timeoutMS: pctx?.workflowTimeoutMS,
             deadlineEpochMS: wfctx.deadlineEpochMS,
           };
+          // Detach child deadline if a null timeout is configured
+          if (pctx?.workflowTimeoutMS === null) {
+            params.deadlineEpochMS = undefined;
+          }
 
           const cwfh = await DBOSExecutor.globalInstance!.internalWorkflow(
             registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
