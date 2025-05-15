@@ -1,13 +1,14 @@
 import { DBOS, DBOSConfig, DBOSLifecycleCallback } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
-import Koa, { Middleware } from 'koa';
+import Koa, { Context, Middleware } from 'koa';
 import Router from '@koa/router';
 
 import request from 'supertest';
 import bodyParser from '@koa/bodyparser';
 import { exhaustiveCheckGuard } from '../src/utils';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../src/error';
+import cors from '@koa/cors';
 
 // Basic idea:
 //  Web points are decorated - this registers them
@@ -49,24 +50,48 @@ export enum APITypes {
   DELETE = 'DELETE',
 }
 
+// Context for auth middleware
+export interface DBOSHTTPAuthContext {
+  readonly koaContext: Koa.Context;
+  readonly name: string; // Method (handler, transaction, workflow) name
+  readonly requiredRole: string[]; // Roles required for the invoked operation, if empty perhaps auth is not required
+}
+
+export interface DBOSHTTPAuthReturn {
+  authenticatedUser: string;
+  authenticatedRoles: string[];
+}
+
+/**
+ * Authentication middleware that executes before a request reaches a function.
+ * This is expected to:
+ *   - Validate the request found in the handler context and extract auth information from the request.
+ *   - Map the HTTP request to the user identity and roles defined in app.
+ * If this succeeds, return the current authenticated user and a list of roles.
+ * If any step fails, throw an error.
+ */
+export type DBOSHTTPAuthMiddleware = (ctx: DBOSHTTPAuthContext) => Promise<DBOSHTTPAuthReturn | void>;
+
 interface DBOSHTTPReg {
   apiURL: string;
   apiType: APITypes;
 }
 
 interface DBOSHTTPClassReg {
-  //authMiddleware?: DBOSHttpAuthMiddleware;
+  authMiddleware?: DBOSHTTPAuthMiddleware;
   koaBodyParser?: Koa.Middleware;
   koaCors?: Koa.Middleware;
   koaMiddlewares?: Koa.Middleware[];
   koaGlobalMiddlewares?: Koa.Middleware[];
 }
 
-class DBOSHTTPBase extends DBOSLifecycleCallback {
-  // TODO Register all endpoints into a routing tree to make a handler callback
-  // TODO All interesting class stuff
-  // TODO The dispatch ... it needs its own wrapper over it, or is that central?
+interface DBOSHTTPConfig {
+  corsMiddleware?: boolean;
+  credentials?: boolean;
+  allowedOrigins?: string[];
+}
 
+class DBOSHTTPBase extends DBOSLifecycleCallback {
   httpApiDec(verb: APITypes, url: string) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const er = this;
@@ -115,6 +140,39 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
   }
 
   /**
+   * Define an authentication function for each endpoint in this class.
+   */
+  authentication(authMiddleware: DBOSHTTPAuthMiddleware) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const er = this;
+    function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
+      clsreg.authMiddleware = authMiddleware;
+    }
+    return clsdec;
+  }
+
+  koaBodyParser(koaBodyParser: Koa.Middleware) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const er = this;
+    function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
+      clsreg.koaBodyParser = koaBodyParser;
+    }
+    return clsdec;
+  }
+
+  koaCors(koaCors: Koa.Middleware) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const er = this;
+    function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
+      clsreg.koaCors = koaCors;
+    }
+    return clsdec;
+  }
+
+  /**
    * Define Koa middleware that is applied in order to each endpoint in this class.
    */
   koaMiddleware(...koaMiddleware: Koa.Middleware[]) {
@@ -150,64 +208,60 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
     }
     return clsdec;
   }
-}
 
-const dhttp = new DBOSHTTPBase();
+  app?: Koa;
+  appRouter?: Router;
 
-let middlewareCounter = 0;
-const testMiddleware: Middleware = async (_ctx, next) => {
-  middlewareCounter++;
-  await next();
-};
-
-let middlewareCounter2 = 0;
-const testMiddleware2: Middleware = async (_ctx, next) => {
-  middlewareCounter2 = middlewareCounter2 + 1;
-  await next();
-};
-
-let middlewareCounterG = 0;
-const testMiddlewareG: Middleware = async (_ctx, next) => {
-  middlewareCounterG = middlewareCounterG + 1;
-  expect(DBOS.globalLogger).toBeDefined();
-  await next();
-};
-
-@dhttp.koaGlobalMiddleware(testMiddlewareG)
-@dhttp.koaGlobalMiddleware(testMiddleware, testMiddleware2)
-export class HTTPEndpoints {
-  @dhttp.getApi('/foobar')
-  static async foobar(arg: string) {
-    return Promise.resolve(`ARG: ${arg}`);
+  createApp(config?: DBOSHTTPConfig) {
+    this.app = new Koa();
+    this.appRouter = new Router();
+    this.registerWithApp(this.app, this.appRouter, config);
   }
-}
 
-describe('decoratorless-api-tests', () => {
-  let config: DBOSConfig;
-  let app: Koa;
-  let appRouter: Router;
-
-  beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
-    DBOS.setConfig(config);
-  });
-
-  beforeEach(async () => {
-    middlewareCounter = middlewareCounter2 = middlewareCounterG = 0;
-    await DBOS.launch();
-    const eps = DBOS.getAssociatedInfo(dhttp);
-    app = new Koa();
-    appRouter = new Router();
-
+  registerWithApp(app: Koa, appRouter: Router, config?: DBOSHTTPConfig) {
     const globalMiddlewares: Set<Koa.Middleware> = new Set();
 
+    const eps = DBOS.getAssociatedInfo(this);
     for (const e of eps) {
       const { methodConfig, classConfig, methodReg } = e;
       const ro = methodConfig as DBOSHTTPReg;
       const defaults = classConfig as DBOSHTTPClassReg;
 
-      // TODO: appRouter.all() on CORS, other middlewares
+      // TODO: What about instance methods?
+      //   Those would have to be registered another way that accepted the instances.
+      if (methodReg.isInstance) {
+        DBOS.logger.warn(
+          `Operation ${methodReg.className}/${methodReg.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked without an instance.`,
+        );
+        return;
+      }
+
+      // Apply CORS, bodyParser, and other middlewares
+      // Check if we need to apply a custom CORS
+      // TODO give this the right home...
+      if (defaults.koaCors) {
+        appRouter.all(ro.apiURL, defaults.koaCors); // Use router.all to register with all methods including preflight requests
+      } else {
+        if (config?.corsMiddleware ?? true) {
+          appRouter.all(
+            ro.apiURL,
+            cors({
+              credentials: config?.credentials ?? true,
+              origin: (o: Context) => {
+                const whitelist = config?.allowedOrigins;
+                const origin = o.request.header.origin ?? '*';
+                if (whitelist && whitelist.length > 0) {
+                  return whitelist.includes(origin) ? origin : '';
+                }
+                return o.request.header.origin || '*';
+              },
+              allowMethods: 'GET,HEAD,PUT,POST,DELETE,PATCH,OPTIONS',
+              allowHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+            }),
+          );
+        }
+      }
+
       // Check if we need to apply any Koa global middleware.
       if (defaults?.koaGlobalMiddlewares) {
         defaults.koaGlobalMiddlewares.forEach((koaMiddleware) => {
@@ -338,6 +392,56 @@ describe('decoratorless-api-tests', () => {
     }
 
     app.use(appRouter.routes()).use(appRouter.allowedMethods());
+  }
+}
+
+const dhttp = new DBOSHTTPBase();
+
+let middlewareCounter = 0;
+const testMiddleware: Middleware = async (_ctx, next) => {
+  middlewareCounter++;
+  await next();
+};
+
+let middlewareCounter2 = 0;
+const testMiddleware2: Middleware = async (_ctx, next) => {
+  middlewareCounter2 = middlewareCounter2 + 1;
+  await next();
+};
+
+let middlewareCounterG = 0;
+const testMiddlewareG: Middleware = async (_ctx, next) => {
+  middlewareCounterG = middlewareCounterG + 1;
+  expect(DBOS.globalLogger).toBeDefined();
+  await next();
+};
+
+@dhttp.koaGlobalMiddleware(testMiddlewareG)
+@dhttp.koaGlobalMiddleware(testMiddleware, testMiddleware2)
+export class HTTPEndpoints {
+  @dhttp.getApi('/foobar')
+  static async foobar(arg: string) {
+    return Promise.resolve(`ARG: ${arg}`);
+  }
+}
+
+describe('decoratorless-api-tests', () => {
+  let config: DBOSConfig;
+  let app: Koa;
+  let appRouter: Router;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    middlewareCounter = middlewareCounter2 = middlewareCounterG = 0;
+    await DBOS.launch();
+    app = new Koa();
+    appRouter = new Router();
+    dhttp.registerWithApp(app, appRouter);
   });
 
   afterEach(async () => {
