@@ -41,15 +41,17 @@ export class WorkflowQueue {
   readonly rateLimit?: QueueRateLimit;
   readonly workerConcurrency?: number;
 
+  constructor(name: string);
+
+  /** @deprecated @see QueueParameters */
+  constructor(name: string, concurrency?: number, rateLimit?: QueueRateLimit);
+
   /**
    *
    * @param name - Name to give the `WorkflowQueue`, accepted by `DBOS.startWorkflow`
    * @param queueParameters - Policy for limiting workflow initiation rate and execution concurrency
    */
   constructor(name: string, queueParameters: QueueParameters);
-
-  /** @deprecated @see QueueParameters */
-  constructor(name: string, concurrency?: number, rateLimit?: QueueRateLimit);
 
   constructor(name: string, arg2?: QueueParameters | number, rateLimit?: QueueRateLimit) {
     this.name = name;
