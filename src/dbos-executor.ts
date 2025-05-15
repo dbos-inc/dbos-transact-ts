@@ -934,11 +934,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
             throw err;
           } else {
             const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
-            await handleWorkflowError(e as Error);
+            await handleWorkflowError(e as Error, this);
             throw e;
           }
         } else {
-          await handleWorkflowError(err as Error);
+          await handleWorkflowError(err as Error, this);
           throw err;
         }
       } finally {
