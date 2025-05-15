@@ -792,25 +792,25 @@ export class DBOSExecutor implements DBOSExecutorContext {
     for (const cp of this.contextProviders) {
       cp.captureContext(storeCtx, params.parentCtx);
     }
-    /*
-    // NB test2 fails
+
     if (wCtxt.request) {
       if (JSON.stringify(wCtxt.request) !== JSON.stringify(storeCtx.request)) {
-        throw new TypeError(`Request does not match: ${JSON.stringify(wCtxt.request)} ${JSON.stringify(storeCtx.request)}`);
+        throw new TypeError(
+          `Request does not match: ${JSON.stringify(wCtxt.request)} ${JSON.stringify(storeCtx.request)}`,
+        );
       }
     }
     if (wCtxt.authenticatedRoles) {
       if (JSON.stringify(wCtxt.authenticatedRoles) !== JSON.stringify(storeCtx.authenticatedRoles)) {
         throw new TypeError('Roles does not match');
-      }  
-      if (JSON.stringify(wCtxt.authenticatedUser) !== JSON.stringify(storeCtx.assumedRole)) {
+      }
+      if (JSON.stringify(wCtxt.authenticatedUser) !== JSON.stringify(storeCtx.authenticatedUser)) {
         throw new TypeError('User does not match');
-      }  
+      }
       if (JSON.stringify(wCtxt.assumedRole) !== JSON.stringify(storeCtx.assumedRole)) {
         throw new TypeError('Role does not match');
-      }  
+      }
     }
-    */
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
