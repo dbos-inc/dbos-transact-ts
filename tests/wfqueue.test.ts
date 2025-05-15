@@ -1354,7 +1354,7 @@ describe('queue-time-outs', () => {
       timeoutMS: 2000, // allow a dequeue interval to pass
     }).timeoutParentEnqueueWF(100);
     await events_map.get(childID)?.wait();
-    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
+    await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(childID));
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.ERROR,
     });
