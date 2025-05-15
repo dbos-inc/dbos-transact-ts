@@ -909,7 +909,7 @@ export class DBOS {
         );
         if (!rres) return null;
         if (rres?.cancelled) {
-          throw new DBOSAwaitedWorkflowCancelledError(DBOS.workflowID ? DBOS.workflowID : workflowID);
+          throw new DBOSAwaitedWorkflowCancelledError(workflowID);
         }
         return DBOSExecutor.reviveResultOrError<T>(rres);
       },
