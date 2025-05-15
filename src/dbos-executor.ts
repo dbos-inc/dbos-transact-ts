@@ -931,10 +931,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
           internalStatus.error = err.message;
           if (err.workflowID === workflowID) {
             internalStatus.status = StatusString.CANCELLED;
-            if (!this.isDebugging) {
-              await this.systemDatabase.cancelWorkflow(workflowID);
-            }
-            this.logger.info(`Cancelled workflow ${workflowID}`);
             throw err;
           } else {
             const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
