@@ -19,7 +19,7 @@ import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
 import { PrismaClientKnownRequestError } from '@prisma/client/runtime/library';
 import { UserDatabaseName } from '../src/user_database';
-import { DBOSConfig, DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 
 interface PrismaPGError {
   code: string;
@@ -240,9 +240,9 @@ describe('prisma-auth-tests', () => {
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = (DBOS.dbosConfig as DBOSConfigInternal).poolConfig;
+    const pc = DBOS.dbosConfig?.poolConfig;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((DBOS.prismaClient as any)._engineConfig.overrideDatasources.db.url).toBe(pc.connectionString);
+    expect((DBOS.prismaClient as any)._engineConfig.overrideDatasources.db.url).toBe(pc?.connectionString);
     const r = await DBOS.prismaClient.$queryRawUnsafe('SELECT 1');
     expect(r.length).toBe(1);
     await Promise.resolve();

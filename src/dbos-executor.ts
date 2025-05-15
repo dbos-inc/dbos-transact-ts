@@ -12,6 +12,7 @@ import {
   DBOSWorkflowCancelledError,
   DBOSUnexpectedStepError,
   DBOSInvalidQueuePriorityError,
+  DBOSAwaitedWorkflowCancelledError,
 } from './error';
 import {
   InvokedHandle,
@@ -907,6 +908,25 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
 
+    async function handleWorkflowError(err: Error, exec: DBOSExecutor) {
+      // Record the error.
+      const e = err as Error & { dbos_already_logged?: boolean };
+      exec.logger.error(e);
+      e.dbos_already_logged = true;
+      if (wCtxt.isTempWorkflow) {
+        internalStatus.workflowName = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+      }
+      internalStatus.error = DBOSJSON.stringify(serializeError(e));
+      internalStatus.status = StatusString.ERROR;
+      if (internalStatus.queueName && !exec.isDebugging) {
+        await exec.systemDatabase.dequeueWorkflow(workflowID, exec.#getQueueByName(internalStatus.queueName));
+      }
+      if (!exec.isDebugging) {
+        await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
+      }
+      wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+    }
+
     const runWorkflow = async () => {
       let result: R;
 
@@ -962,34 +982,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
           wCtxt.span.setAttribute('cached', true);
           wCtxt.span.setStatus({ code: SpanStatusCode.OK });
         } else if (err instanceof DBOSWorkflowCancelledError) {
-          internalStatus.error = err.message;
-          internalStatus.status = StatusString.CANCELLED;
-
-          if (!this.isDebugging) {
-            await this.systemDatabase.cancelWorkflow(workflowID);
-          }
           wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: err.message });
-          this.logger.info(`Cancelled workflow ${workflowID}`);
-
-          throw err;
+          internalStatus.error = err.message;
+          if (err.workflowID === workflowID) {
+            internalStatus.status = StatusString.CANCELLED;
+            throw err;
+          } else {
+            const e = new DBOSAwaitedWorkflowCancelledError(err.workflowID);
+            await handleWorkflowError(e as Error, this);
+            throw e;
+          }
         } else {
-          // Record the error.
-          const e = err as Error & { dbos_already_logged?: boolean };
-          this.logger.error(e);
-          e.dbos_already_logged = true;
-          if (wCtxt.isTempWorkflow) {
-            internalStatus.workflowName = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
-          }
-          internalStatus.error = DBOSJSON.stringify(serializeError(e));
-          internalStatus.status = StatusString.ERROR;
-          if (internalStatus.queueName && !this.isDebugging) {
-            await this.systemDatabase.dequeueWorkflow(workflowID, this.#getQueueByName(internalStatus.queueName));
-          }
-          if (!this.isDebugging) {
-            await this.systemDatabase.recordWorkflowError(workflowID, internalStatus);
-          }
-          // TODO: Log errors, but not in the tests when they're expected.
-          wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+          await handleWorkflowError(err as Error, this);
           throw err;
         }
       } finally {

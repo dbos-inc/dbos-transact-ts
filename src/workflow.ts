@@ -9,7 +9,7 @@ import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
-import { DBOS } from './dbos';
+import { DBOS, runAsWorkflowStep } from './dbos';
 import { EnqueueOptions } from './system_database';
 
 /** @deprecated */
@@ -51,7 +51,7 @@ export interface WorkflowParams {
   configuredInstance?: ConfiguredInstance | null;
   queueName?: string;
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
-  timeoutMS?: number;
+  timeoutMS?: number | null;
   deadlineEpochMS?: number;
   enqueueOptions?: EnqueueOptions; // Options for the workflow queue
 }
@@ -89,7 +89,7 @@ export interface WorkflowStatus {
   readonly createdAt: number;
   readonly updatedAt?: number;
 
-  readonly timeoutMS?: number;
+  readonly timeoutMS?: number | null;
   readonly deadlineEpochMS?: number;
 }
 
@@ -250,7 +250,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     readonly workflowConfig: WorkflowConfig,
     workflowName: string,
     readonly presetUUID: boolean,
-    readonly timeoutMS: number | undefined,
+    readonly timeoutMS: number | undefined | null,
     readonly deadlineEpochMS: number | undefined,
     readonly tempWfOperationType: string = '', // "transaction", "procedure", "external", or "send"
     readonly tempWfOperationName: string = '', // Name for the temporary workflow operation
@@ -589,7 +589,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
-    return await DBOS.runAsWorkflowStep(
+    return await runAsWorkflowStep(
       async () => {
         return await this.workflowPromise;
       },

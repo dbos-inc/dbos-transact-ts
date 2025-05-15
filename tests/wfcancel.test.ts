@@ -1,6 +1,6 @@
 import { StatusString, DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { DBOSTargetWorkflowCancelledError, DBOSWorkflowCancelledError } from '../src/error';
+import { DBOSAwaitedWorkflowCancelledError, DBOSWorkflowCancelledError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
@@ -122,7 +122,7 @@ describe('wf-cancel-tests', () => {
     await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
     await DBOS.cancelWorkflow(wfid);
 
-    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSTargetWorkflowCancelledError);
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
     await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 
@@ -133,7 +133,7 @@ describe('wf-cancel-tests', () => {
     await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
     await DBOS.cancelWorkflow(wfid);
 
-    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSTargetWorkflowCancelledError);
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
     await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 
@@ -144,7 +144,7 @@ describe('wf-cancel-tests', () => {
     await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
     await DBOS.cancelWorkflow(wfid);
 
-    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSTargetWorkflowCancelledError);
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
     await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 
@@ -155,7 +155,7 @@ describe('wf-cancel-tests', () => {
     await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
     await DBOS.cancelWorkflow(wfid);
 
-    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSTargetWorkflowCancelledError);
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
     await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 

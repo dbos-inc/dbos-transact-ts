@@ -205,13 +205,30 @@ describe('running-admin-server-tests', () => {
     expect(response.status).toBe(200);
 
     const { workflow_id: forkWorkflowID } = (await response.json()) as { workflow_id: string };
-    const forkHandle = DBOS.retrieveWorkflow(forkWorkflowID);
-    await expect(forkHandle.getStatus()).resolves.toMatchObject({
-      status: StatusString.ENQUEUED,
-    });
+    const forkStatus = await DBOS.getWorkflowStatus(forkWorkflowID);
+    expect(forkStatus?.status).toBe(StatusString.ENQUEUED);
 
-    await DBOS.send(forkWorkflowID, 'fork-message');
-    await expect(forkHandle.getResult()).resolves.toEqual('42-fork-message');
+    // test fork with new workflow ID, version
+    const applicationVersion = 'newVersion';
+    globalParams.appVersion = applicationVersion;
+    response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/fork`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ start_step: 0, new_workflow_id: '123456', application_version: applicationVersion }),
+    });
+    expect(response.status).toBe(200);
+
+    const { workflow_id: forkWorkflowID2 } = (await response.json()) as { workflow_id: string };
+    expect(forkWorkflowID2).toBe('123456');
+    const forkHandle2 = DBOS.retrieveWorkflow(forkWorkflowID2);
+    const forkStatus2 = await DBOS.getWorkflowStatus(forkWorkflowID2);
+    expect(forkStatus2?.status).toBe(StatusString.ENQUEUED);
+    expect(forkStatus2?.applicationVersion).toBe(applicationVersion);
+
+    await DBOS.send(forkWorkflowID2, 'fork-message');
+    await expect(forkHandle2.getResult()).resolves.toEqual('42-fork-message');
   });
 
   test('test-admin-list-workflow-steps', async () => {

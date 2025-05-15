@@ -117,7 +117,6 @@ export interface SystemDatabase {
     startStep: number,
     options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<string>;
-  getMaxFunctionID(workflowID: string): Promise<number>;
   checkIfCanceled(workflowID: string): Promise<void>;
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
@@ -204,7 +203,7 @@ export interface WorkflowStatusInternal {
   createdAt: number;
   updatedAt?: number;
   recoveryAttempts?: number;
-  timeoutMS?: number;
+  timeoutMS?: number | null;
   deadlineEpochMS?: number;
 }
 
@@ -784,15 +783,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } finally {
       client.release();
     }
-  }
-
-  async getMaxFunctionID(workflowID: string): Promise<number> {
-    const { rows } = await this.pool.query<{ max_function_id: number }>(
-      `SELECT max(function_id) as max_function_id FROM ${DBOSExecutor.systemDBSchemaName}.operation_outputs WHERE workflow_uuid=$1`,
-      [workflowID],
-    );
-
-    return rows.length === 0 ? 0 : rows[0].max_function_id;
   }
 
   async forkWorkflow(
@@ -1894,7 +1884,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
               executor_id: executorID,
               application_version: appVersion,
               workflow_deadline_epoch_ms: trx.raw(
-                'CASE WHEN workflow_timeout_ms IS NULL THEN NULL ELSE (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms END',
+                'CASE WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms ELSE workflow_deadline_epoch_ms END',
               ),
             });
 

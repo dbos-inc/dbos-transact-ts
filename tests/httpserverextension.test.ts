@@ -507,7 +507,7 @@ const testMiddleware2: Middleware = async (_ctx, next) => {
 let middlewareCounterG = 0;
 const testMiddlewareG: Middleware = async (_ctx, next) => {
   middlewareCounterG = middlewareCounterG + 1;
-  expect(DBOS.globalLogger).toBeDefined();
+  expect(DBOS.logger).toBeDefined();
   await next();
 };
 
