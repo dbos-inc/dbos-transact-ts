@@ -209,7 +209,7 @@ function augmentProxy(target: object, proxy: Record<string, unknown>) {
 export interface StartWorkflowParams {
   workflowID?: string;
   queueName?: string;
-  timeoutMS?: number;
+  timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
 }
 
@@ -1175,7 +1175,7 @@ export class DBOS {
    * @param callback - Function to run, which would call or start workflows
    * @returns - Return value from `callback`
    */
-  static async withWorkflowTimeout<R>(timeoutMS: number | undefined, callback: () => Promise<R>): Promise<R> {
+  static async withWorkflowTimeout<R>(timeoutMS: number | null, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
       const originalTimeoutMS = pctx.workflowTimeoutMS;
@@ -1243,21 +1243,6 @@ export class DBOS {
 
       const wfctx = assertCurrentWorkflowContext();
 
-      // Set child deadline if a timeout is configured
-      // Explicitly set to undefined means "detach the child from the parent's deadline"
-      // We must check the inParams but also the pctx (if the workflow was called withWorkflowTimeout)
-      let deadlineEpochMS: number | undefined = wfctx.deadlineEpochMS;
-      if (Object.prototype.hasOwnProperty.call(inParams || {}, 'timeoutMS') && inParams?.timeoutMS === undefined) {
-        deadlineEpochMS = undefined;
-      } else if (
-        Object.prototype.hasOwnProperty.call(pctx || {}, 'workflowTimeoutMS') &&
-        pctx?.workflowTimeoutMS === undefined
-      ) {
-        deadlineEpochMS = undefined;
-      } else {
-        deadlineEpochMS = wfctx.deadlineEpochMS;
-      }
-
       const funcId = wfctx.functionIDGetIncrement();
       wfId = wfId || wfctx.workflowUUID + '-' + funcId;
       const wfParams: WorkflowParams = {
@@ -1266,9 +1251,14 @@ export class DBOS {
         configuredInstance,
         queueName: inParams?.queueName ?? pctx?.queueAssignedForWorkflows,
         timeoutMS: inParams?.timeoutMS ?? pctx?.workflowTimeoutMS,
-        deadlineEpochMS: deadlineEpochMS,
+        deadlineEpochMS: wfctx.deadlineEpochMS,
         enqueueOptions: inParams?.enqueueOptions,
       };
+      // Detach child deadline if a null timeout is configured
+      // We must check the inParams but also pctx (if the workflow was called withWorkflowTimeout)
+      if (inParams?.timeoutMS === null || pctx?.workflowTimeoutMS === null) {
+        wfParams.deadlineEpochMS = undefined;
+      }
 
       for (const op of ops) {
         if (op.workflowConfig) {
@@ -1712,18 +1702,6 @@ export class DBOS {
 
           const wfctx = assertCurrentWorkflowContext();
 
-          // Set child deadline if a timeout is configured
-          // Explicitly set to undefined in the context (set through withWorkflowTimeout()) means "detach the child from the parent's deadline"
-          let deadlineEpochMS: number | undefined = wfctx.deadlineEpochMS;
-          if (
-            Object.prototype.hasOwnProperty.call(pctx || {}, 'workflowTimeoutMS') &&
-            pctx?.workflowTimeoutMS === undefined
-          ) {
-            deadlineEpochMS = undefined;
-          } else {
-            deadlineEpochMS = wfctx.deadlineEpochMS;
-          }
-
           const funcId = wfctx.functionIDGetIncrement();
           wfId = wfId || wfctx.workflowUUID + '-' + funcId;
           const params: WorkflowParams = {
@@ -1732,8 +1710,12 @@ export class DBOS {
             configuredInstance: inst,
             queueName: pctx?.queueAssignedForWorkflows,
             timeoutMS: pctx?.workflowTimeoutMS,
-            deadlineEpochMS: deadlineEpochMS,
+            deadlineEpochMS: wfctx.deadlineEpochMS,
           };
+          // Detach child deadline if a null timeout is configured
+          if (pctx?.workflowTimeoutMS === null) {
+            params.deadlineEpochMS = undefined;
+          }
 
           const cwfh = await DBOSExecutor.globalInstance!.internalWorkflow(
             registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,

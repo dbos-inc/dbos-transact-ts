@@ -203,7 +203,7 @@ export interface WorkflowStatusInternal {
   createdAt: number;
   updatedAt?: number;
   recoveryAttempts?: number;
-  timeoutMS?: number;
+  timeoutMS?: number | null;
   deadlineEpochMS?: number;
 }
 

@@ -505,14 +505,14 @@ class DBOSTimeoutTestClass {
 
   @DBOS.workflow()
   static async timeoutParentStartDetachedChild(duration: number) {
-    await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: undefined })
+    await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: null })
       .sleepingWorkflow(duration * 2)
       .then((h) => h.getResult());
   }
 
   @DBOS.workflow()
   static async timeoutParentStartDetachedChildWithSyntax(duration: number) {
-    await DBOS.withWorkflowTimeout(undefined, async () => {
+    await DBOS.withWorkflowTimeout(null, async () => {
       await DBOSTimeoutTestClass.sleepingWorkflow(duration * 2);
     });
   }

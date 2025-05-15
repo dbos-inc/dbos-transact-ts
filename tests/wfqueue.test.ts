@@ -1254,21 +1254,21 @@ describe('queue-time-outs', () => {
 
     @DBOS.workflow()
     static async timeoutParentStartDetachedChild(duration: number) {
-      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: undefined })
+      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: null })
         .sleepingWorkflow(duration * 2)
         .then((h) => h.getResult());
     }
 
     @DBOS.workflow()
     static async timeoutParentStartDetachedChildWithSyntax(duration: number) {
-      await DBOS.withWorkflowTimeout(undefined, async () => {
+      await DBOS.withWorkflowTimeout(null, async () => {
         await DBOSTimeoutTestClass.sleepingWorkflow(duration * 2);
       });
     }
 
     @DBOS.workflow()
     static async timeoutParentEnqueueDetached(duration: number) {
-      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: undefined, queueName: queue.name })
+      await DBOS.startWorkflow(DBOSTimeoutTestClass, { timeoutMS: null, queueName: queue.name })
         .sleepingWorkflow(duration * 2)
         .then((h) => h.getResult());
     }
