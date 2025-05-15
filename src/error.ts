@@ -271,9 +271,9 @@ export class DBOSUnexpectedStepError extends DBOSError {
 }
 
 const TargetWorkFlowCancelled = 27;
-export class DBOSTargetWorkflowCancelledError extends DBOSError {
+export class DBOSAwaitedWorkflowCancelledError extends DBOSError {
   constructor(readonly workflowID: string) {
-    super(`Workflow ${workflowID} has been cancelled`, TargetWorkFlowCancelled);
+    super(`Awaited ${workflowID} was cancelled`, TargetWorkFlowCancelled);
   }
 }
 

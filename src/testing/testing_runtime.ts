@@ -151,10 +151,9 @@ export class TestingRuntimeImpl implements TestingRuntime {
    */
   async init(userClasses?: object[], testConfig?: DBOSConfigInternal, options: DBOSExecutorOptions = {}) {
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
-    DBOS.dbosConfig = dbosConfig[0];
+    DBOS.setConfig(dbosConfig[0]);
     this.#dbosExec = new DBOSExecutor(dbosConfig[0], options);
     this.#applicationConfig = this.#dbosExec.config.application ?? {};
-    DBOS.globalLogger = this.#dbosExec.logger;
     await this.#dbosExec.init(userClasses);
     this.#server = new DBOSHttpServer(this.#dbosExec);
     await this.initEventReceivers();

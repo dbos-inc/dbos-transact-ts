@@ -203,7 +203,7 @@ export interface WorkflowStatusInternal {
   createdAt: number;
   updatedAt?: number;
   recoveryAttempts?: number;
-  timeoutMS?: number;
+  timeoutMS?: number | null;
   deadlineEpochMS?: number;
 }
 
@@ -1884,7 +1884,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
               executor_id: executorID,
               application_version: appVersion,
               workflow_deadline_epoch_ms: trx.raw(
-                'CASE WHEN workflow_timeout_ms IS NULL THEN NULL ELSE (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms END',
+                'CASE WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms ELSE workflow_deadline_epoch_ms END',
               ),
             });
 
