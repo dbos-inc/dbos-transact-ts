@@ -6,9 +6,18 @@ import Router from '@koa/router';
 
 import request from 'supertest';
 import bodyParser from '@koa/bodyparser';
-import { exhaustiveCheckGuard } from '../src/utils';
+import { DBOSJSON, exhaustiveCheckGuard } from '../src/utils';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../src/error';
 import cors from '@koa/cors';
+import { runWithTopContext } from '../src/context';
+
+import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { SpanStatusCode, trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
+import { Span } from '@opentelemetry/sdk-trace-base';
+
+import { IncomingHttpHeaders } from 'http';
+import { randomUUID } from 'node:crypto';
+import { OperationType } from '../src/dbos-executor';
 
 // Basic idea:
 //  Web points are decorated - this registers them
@@ -75,6 +84,19 @@ export type DBOSHTTPAuthMiddleware = (ctx: DBOSHTTPAuthContext) => Promise<DBOSH
 interface DBOSHTTPReg {
   apiURL: string;
   apiType: APITypes;
+}
+
+export const WorkflowIDHeader = 'dbos-idempotency-key';
+
+export const RequestIDHeader = 'X-Request-ID';
+export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
+  const reqID = headers[RequestIDHeader.toLowerCase()] as string | undefined; // RequestIDHeader is expected to be a single value, so we dismiss the possible string[] returned type.
+  if (reqID) {
+    return reqID;
+  }
+  const newID = randomUUID();
+  headers[RequestIDHeader.toLowerCase()] = newID; // This does not carry through the response
+  return newID;
 }
 
 interface DBOSHTTPClassReg {
@@ -275,8 +297,24 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
       }
 
       const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+        let authenticatedUser: string | undefined = undefined;
+        let authenticatedRoles: string[] | undefined = undefined;
+        let span: Span | undefined;
+        const httpTracer = new W3CTraceContextPropagator();
+
         try {
-          // TODO: Auth first
+          // Auth first
+          if (defaults?.authMiddleware) {
+            const res = await defaults.authMiddleware({
+              name: methodReg.name,
+              requiredRole: methodReg.getRequiredRoles(),
+              koaContext: koaCtxt,
+            });
+            if (res) {
+              authenticatedUser = res.authenticatedUser;
+              authenticatedRoles = res.authenticatedRoles;
+            }
+          }
 
           // Parse the arguments.
           const args: unknown[] = [];
@@ -311,30 +349,68 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
             //console.log(`found arg ${marg.name} ${idx} ${args[idx-1]}`);
           });
 
-          // TODO: Extract workflow UUID from headers (if any).
+          // Extract workflow ID from headers (if any).
+          // We pass in the specified workflow ID in for any workflow started, should handler happen to do so.
+          const headerWorkflowID = koaCtxt.get(WorkflowIDHeader);
+
+          // Retrieve or generate the tracing request ID
+          const requestID = getOrGenerateRequestID(koaCtxt.request.headers);
+          koaCtxt.set(RequestIDHeader, requestID);
+
+          // If present, retrieve the trace context from the request
+          const extractedSpanContext = trace.getSpanContext(
+            httpTracer.extract(ROOT_CONTEXT, koaCtxt.request.headers, defaultTextMapGetter),
+          );
+          const spanAttributes = {
+            operationType: OperationType.HANDLER,
+            requestID: requestID,
+            requestIP: koaCtxt.request.ip,
+            requestURL: koaCtxt.request.url,
+            requestMethod: koaCtxt.request.method,
+          };
+          if (extractedSpanContext === undefined) {
+            span = DBOS.tracer?.startSpan(koaCtxt.url, spanAttributes);
+          } else {
+            extractedSpanContext.isRemote = true;
+            span = DBOS.tracer?.startSpanWithContext(extractedSpanContext, koaCtxt.url, spanAttributes);
+          }
 
           // Finally, invoke the function and properly set HTTP response.
-          // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
+          // If functions return successfully and hasn't set the body, we set the body to the function return value.
+          //   The status code will be automatically set to 200 or 204 (if the body is null/undefined).
           // In case of an exception:
           // - If a client-side error is thrown, we return 400.
           // - If an error contains a `status` field, we return the specified status code.
           // - Otherwise, we return 500.
-          // TODO: configuredInstance is currently null; we don't allow configured handlers now.
           // TODO: Run with context
           // TODO: Tracing
-          const cresult = await methodReg.invoke(undefined, [...args]);
+          const cresult = await runWithTopContext(
+            {
+              authenticatedUser,
+              authenticatedRoles,
+              idAssignedForNextWorkflow: headerWorkflowID,
+              span,
+              request: koaCtxt.request,
+            },
+            async () => {
+              const f = methodReg.wrappedFunction ?? methodReg.registeredFunction ?? methodReg.origFunction;
+              return (await f.call(undefined, ...args)) as unknown;
+            },
+          );
           const retValue = cresult!;
 
           // Set the body to the return value unless the body is already set by the handler.
           if (koaCtxt.body === undefined) {
             koaCtxt.body = retValue;
           }
+          span?.setStatus({ code: SpanStatusCode.OK });
         } catch (e) {
           if (e instanceof Error) {
             const annotated_e = e as Error & { dbos_already_logged?: boolean };
             if (annotated_e.dbos_already_logged !== true) {
               DBOS.logger.error(e);
             }
+            span?.setStatus({ code: SpanStatusCode.ERROR, message: annotated_e.message });
             let st = (e as DBOSResponseError)?.status || 500;
             const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
             if (dbosErrorCode && isClientError(dbosErrorCode)) {
@@ -351,14 +427,33 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
             // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
             // using stringify() will not produce a pretty output, because our format function uses stringify() too.
             DBOS.logger.error(e);
+            span?.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
+
             koaCtxt.body = e;
             koaCtxt.status = 500;
           }
         } finally {
-          // TODO: Inject trace context into response headers.
+          // Inject trace context into response headers.
           // We cannot use the defaultTextMapSetter to set headers through Koa
           // So we provide a custom setter that sets headers through Koa's context.
           // See https://github.com/open-telemetry/opentelemetry-js/blob/868f75e448c7c3a0efd75d72c448269f1375a996/packages/opentelemetry-core/src/trace/W3CTraceContextPropagator.ts#L74
+          interface Carrier {
+            context: Koa.Context;
+          }
+          if (span) {
+            httpTracer.inject(
+              trace.setSpanContext(ROOT_CONTEXT, span.spanContext()),
+              {
+                context: koaCtxt,
+              },
+              {
+                set: (carrier: Carrier, key: string, value: string) => {
+                  carrier.context.set(key, value);
+                },
+              },
+            );
+            DBOS.tracer?.endSpan(span);
+          }
           await koaNext();
         }
       };
