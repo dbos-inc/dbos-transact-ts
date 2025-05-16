@@ -1,6 +1,6 @@
 import { DatabaseError } from 'pg';
 
-function formatPgDatabaseError(err: DatabaseError): string {
+function _formatPgDatabaseError(err: DatabaseError): string {
   let msg = '';
   if (err.severity) {
     msg = msg.concat(`severity: ${err.severity} \n`);
@@ -50,16 +50,13 @@ function formatPgDatabaseError(err: DatabaseError): string {
   return msg;
 }
 
-// Return if the error is caused by client request or by server internal.
-export function isClientError(dbosErrorCode: number) {
-  return (
-    dbosErrorCode === DataValidationError ||
-    dbosErrorCode === WorkflowPermissionDeniedError ||
-    dbosErrorCode === TopicPermissionDeniedError ||
-    dbosErrorCode === ConflictingWFIDError ||
-    dbosErrorCode === NotRegisteredError ||
-    dbosErrorCode === ConflictingWorkflowError
-  );
+export function isDataValidationError(e: Error) {
+  const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
+  if (!dbosErrorCode) return false;
+  if (dbosErrorCode === DataValidationError) {
+    return true;
+  }
+  return false;
 }
 
 export class DBOSError extends Error {
@@ -72,13 +69,7 @@ export class DBOSError extends Error {
   }
 }
 
-const WorkflowPermissionDeniedError = 2;
-export class DBOSWorkflowPermissionDeniedError extends DBOSError {
-  constructor(runAs: string, workflowName: string) {
-    const msg = `Subject ${runAs} does not have permission to run workflow ${workflowName}`;
-    super(msg, WorkflowPermissionDeniedError);
-  }
-}
+//const WorkflowPermissionDeniedError = 2;
 
 const InitializationError = 3;
 export class DBOSInitializationError extends DBOSError {
@@ -87,15 +78,7 @@ export class DBOSInitializationError extends DBOSError {
   }
 }
 
-const TopicPermissionDeniedError = 4;
-export class DBOSTopicPermissionDeniedError extends DBOSError {
-  constructor(destinationID: string, workflowID: string, functionID: number, runAs: string) {
-    const msg =
-      `Subject ${runAs} does not have permission on destination ID ${destinationID}.` +
-      `(workflow ID: ${workflowID}, function ID: ${functionID})`;
-    super(msg, TopicPermissionDeniedError);
-  }
-}
+//const TopicPermissionDeniedError = 4;
 
 const ConflictingWFIDError = 5;
 export class DBOSWorkflowConflictError extends DBOSError {
@@ -112,16 +95,7 @@ export class DBOSNotRegisteredError extends DBOSError {
   }
 }
 
-const PostgresExporterError = 7;
-export class DBOSPostgresExporterError extends DBOSError {
-  constructor(err: Error) {
-    let msg = `PostgresExporter error: ${err.message} \n`;
-    if (err instanceof DatabaseError) {
-      msg = msg.concat(formatPgDatabaseError(err));
-    }
-    super(msg, PostgresExporterError);
-  }
-}
+//const PostgresExporterError = 7;
 
 const DataValidationError = 9;
 export class DBOSDataValidationError extends DBOSError {
@@ -154,12 +128,7 @@ export class DBOSNotAuthorizedError extends DBOSError {
   }
 }
 
-const UndefinedDecoratorInputError = 13;
-export class DBOSUndefinedDecoratorInputError extends DBOSError {
-  constructor(decoratorName: string) {
-    super(`${decoratorName} received undefined input. Possible circular dependency?`, UndefinedDecoratorInputError);
-  }
-}
+//const UndefinedDecoratorInputError = 13;
 
 const ConfigKeyTypeError = 14;
 export class DBOSConfigKeyTypeError extends DBOSError {

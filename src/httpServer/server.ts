@@ -6,7 +6,7 @@ import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
 import { Workflow } from '../workflow';
-import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../error';
+import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor } from '../dbos-executor';
 import { GlobalLogger as Logger } from '../telemetry/logs';
 import { MiddlewareDefaults } from './middleware';
@@ -569,8 +569,7 @@ export class DBOSHttpServer {
               }
               oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
               let st = (e as DBOSResponseError)?.status || 500;
-              const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
-              if (dbosErrorCode && isClientError(dbosErrorCode)) {
+              if (isDataValidationError(e)) {
                 st = 400; // Set to 400: client-side error.
               }
               koaCtxt.status = st;
