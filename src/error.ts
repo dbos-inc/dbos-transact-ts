@@ -50,16 +50,6 @@ function _formatPgDatabaseError(err: DatabaseError): string {
   return msg;
 }
 
-// Return if the error is caused by client request or by server internal.
-export function isClientError(dbosErrorCode: number) {
-  return (
-    dbosErrorCode === DataValidationError
-    //dbosErrorCode === ConflictingWFIDError ||
-    //dbosErrorCode === NotRegisteredError ||
-    //dbosErrorCode === ConflictingWorkflowError
-  );
-}
-
 export function isDataValidationError(e: Error) {
   const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
   if (!dbosErrorCode) return false;
