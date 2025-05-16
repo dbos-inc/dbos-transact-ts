@@ -184,7 +184,6 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
   }
 
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
-    _reg: MethodRegistration<This, Args, Return> | undefined,
     config: KnexTransactionConfig | undefined,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
@@ -372,7 +371,7 @@ async function wfFunctionGuts() {
       return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My first tx result' as a")).rows[0].a;
     },
     'MyFirstTx',
-    'knexA',
+    { dsName: 'knexA' },
   );
 
   // Transaction variant 1: Use a registered DBOS transaction function
