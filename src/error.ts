@@ -1,55 +1,3 @@
-import { DatabaseError } from 'pg';
-
-function _formatPgDatabaseError(err: DatabaseError): string {
-  let msg = '';
-  if (err.severity) {
-    msg = msg.concat(`severity: ${err.severity} \n`);
-  }
-  if (err.code) {
-    msg = msg.concat(`code: ${err.code} \n`);
-  }
-  if (err.detail) {
-    msg = msg.concat(`detail: ${err.detail} \n`);
-  }
-  if (err.hint) {
-    msg = msg.concat(`hint: ${err.hint} \n`);
-  }
-  if (err.position) {
-    msg = msg.concat(`position: ${err.position} \n`);
-  }
-  if (err.internalPosition) {
-    msg = msg.concat(`internalPosition: ${err.internalPosition} \n`);
-  }
-  if (err.internalQuery) {
-    msg = msg.concat(`internalQuery: ${err.internalQuery} \n`);
-  }
-  if (err.where) {
-    msg = msg.concat(`where: ${err.where} \n`);
-  }
-  if (err.schema) {
-    msg = msg.concat(`schema: ${err.schema} \n`);
-  }
-  if (err.table) {
-    msg = msg.concat(`table: ${err.table} \n`);
-  }
-  if (err.column) {
-    msg = msg.concat(`column: ${err.column} \n`);
-  }
-  if (err.dataType) {
-    msg = msg.concat(`dataType: ${err.dataType} \n`);
-  }
-  if (err.constraint) {
-    msg = msg.concat(`constraint: ${err.constraint} \n`);
-  }
-  if (err.file) {
-    msg = msg.concat(`file: ${err.file} \n`);
-  }
-  if (err.line) {
-    msg = msg.concat(`line: ${err.line} \n`);
-  }
-  return msg;
-}
-
 export function isDataValidationError(e: Error) {
   const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
   if (!dbosErrorCode) return false;
@@ -69,16 +17,12 @@ export class DBOSError extends Error {
   }
 }
 
-//const WorkflowPermissionDeniedError = 2;
-
 const InitializationError = 3;
 export class DBOSInitializationError extends DBOSError {
   constructor(msg: string) {
     super(msg, InitializationError);
   }
 }
-
-//const TopicPermissionDeniedError = 4;
 
 const ConflictingWFIDError = 5;
 export class DBOSWorkflowConflictError extends DBOSError {
@@ -94,8 +38,6 @@ export class DBOSNotRegisteredError extends DBOSError {
     super(msg, NotRegisteredError);
   }
 }
-
-//const PostgresExporterError = 7;
 
 const DataValidationError = 9;
 export class DBOSDataValidationError extends DBOSError {
@@ -127,8 +69,6 @@ export class DBOSNotAuthorizedError extends DBOSError {
     super(msg, NotAuthorizedError);
   }
 }
-
-//const UndefinedDecoratorInputError = 13;
 
 const ConfigKeyTypeError = 14;
 export class DBOSConfigKeyTypeError extends DBOSError {
