@@ -2043,7 +2043,11 @@ export class DBOS {
   }
 
   // This is the version that needs no existing transaction registration.  Just goes with it.
-  static async runAsWorkflowTransaction<T>(callback: () => Promise<T>, funcName: string, dsName?: string) {
+  static async runAsWorkflowTransaction<T>(
+    callback: () => Promise<T>,
+    funcName: string,
+    options: { dsName?: string; config?: unknown } = {},
+  ) {
     if (!DBOS.isWithinWorkflow) {
       throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` outside of a workflow`);
     }
@@ -2052,7 +2056,7 @@ export class DBOS {
         `Invalid call to \`${funcName}\` inside a \`step\`, \`transaction\`, or \`procedure\``,
       );
     }
-    const dsn = dsName ?? '<default>';
+    const dsn = options.dsName ?? '<default>';
     const ds = getTransactionalDataSource(dsn);
 
     const wfctx = assertCurrentWorkflowContext();
@@ -2075,7 +2079,7 @@ export class DBOS {
       const res = DBOSExecutor.globalInstance!.runAsStep<T>(
         async () => {
           return await runWithDSContext(callnum, async () => {
-            return await ds.invokeTransactionFunction(undefined, {}, undefined, callback);
+            return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
           });
         },
         funcName,
@@ -2123,7 +2127,7 @@ export class DBOS {
       return DBOSExecutor.globalInstance!.runAsStep<Return>(
         async () => {
           return await runWithDSContext(callnum, async () => {
-            return await ds.invokeTransactionFunction(undefined /*method reg*/, config, this, func, ...rawArgs);
+            return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
           });
         },
         target.name,
