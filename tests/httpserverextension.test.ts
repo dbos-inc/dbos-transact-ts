@@ -3,12 +3,12 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 import Koa, { Context, Middleware } from 'koa';
 import Router from '@koa/router';
+import bodyParser from '@koa/bodyparser';
+import cors from '@koa/cors';
 
 import request from 'supertest';
-import bodyParser from '@koa/bodyparser';
 import { DBOSJSON, exhaustiveCheckGuard } from '../src/utils';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../src/error';
-import cors from '@koa/cors';
 import { runWithTopContext } from '../src/context';
 
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
@@ -17,7 +17,6 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 
 import { IncomingHttpHeaders } from 'http';
 import { randomUUID } from 'node:crypto';
-import { OperationType } from '../src/dbos-executor';
 
 // Basic idea:
 //  Web points are decorated - this registers them
@@ -58,6 +57,8 @@ export enum APITypes {
   PATCH = 'PATCH',
   DELETE = 'DELETE',
 }
+
+const HTTP_OPERATION_TYPE = 'http';
 
 // Context for auth middleware
 export interface DBOSHTTPAuthContext {
@@ -362,7 +363,7 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
             httpTracer.extract(ROOT_CONTEXT, koaCtxt.request.headers, defaultTextMapGetter),
           );
           const spanAttributes = {
-            operationType: OperationType.HANDLER,
+            operationType: HTTP_OPERATION_TYPE,
             requestID: requestID,
             requestIP: koaCtxt.request.ip,
             requestURL: koaCtxt.request.url,
