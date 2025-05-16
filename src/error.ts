@@ -1,6 +1,6 @@
 import { DatabaseError } from 'pg';
 
-function formatPgDatabaseError(err: DatabaseError): string {
+function _formatPgDatabaseError(err: DatabaseError): string {
   let msg = '';
   if (err.severity) {
     msg = msg.concat(`severity: ${err.severity} \n`);
@@ -53,11 +53,20 @@ function formatPgDatabaseError(err: DatabaseError): string {
 // Return if the error is caused by client request or by server internal.
 export function isClientError(dbosErrorCode: number) {
   return (
-    dbosErrorCode === DataValidationError ||
-    dbosErrorCode === ConflictingWFIDError ||
-    dbosErrorCode === NotRegisteredError ||
-    dbosErrorCode === ConflictingWorkflowError
+    dbosErrorCode === DataValidationError
+    //dbosErrorCode === ConflictingWFIDError ||
+    //dbosErrorCode === NotRegisteredError ||
+    //dbosErrorCode === ConflictingWorkflowError
   );
+}
+
+export function isDataValidationError(e: Error) {
+  const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
+  if (!dbosErrorCode) return false;
+  if (dbosErrorCode === DataValidationError) {
+    return true;
+  }
+  return false;
 }
 
 export class DBOSError extends Error {

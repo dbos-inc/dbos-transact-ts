@@ -1,15 +1,7 @@
-import { DBOS, DBOSConfig, DBOSLifecycleCallback } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-
 import Koa, { Context, Middleware } from 'koa';
 import Router from '@koa/router';
 import bodyParser from '@koa/bodyparser';
 import cors from '@koa/cors';
-
-import request from 'supertest';
-import { DBOSJSON, exhaustiveCheckGuard } from '../src/utils';
-import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../src/error';
-import { runWithTopContext } from '../src/context';
 
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { SpanStatusCode, trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
@@ -17,6 +9,15 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 
 import { IncomingHttpHeaders } from 'http';
 import { randomUUID } from 'node:crypto';
+
+import { DBOS, DBOSConfig, DBOSLifecycleCallback, Error as DBOSErrors } from '../src';
+
+import { DBOSJSON, exhaustiveCheckGuard } from '../src/utils';
+import { runWithTopContext } from '../src/context';
+
+// Test stuff
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import request from 'supertest';
 
 // Basic idea:
 //  Web points are decorated - this registers them
@@ -98,6 +99,10 @@ export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
   const newID = randomUUID();
   headers[RequestIDHeader.toLowerCase()] = newID; // This does not carry through the response
   return newID;
+}
+
+export function isClientRequestError(e: Error) {
+  return DBOSErrors.isDataValidationError(e);
 }
 
 interface DBOSHTTPClassReg {
@@ -332,7 +337,7 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
               }
             } else if (isBodyMethod) {
               if (!koaCtxt.request.body) {
-                throw new DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
+                throw new DBOSErrors.DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
               }
               // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
               foundArg = koaCtxt.request.body[marg.name];
@@ -412,9 +417,8 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
               DBOS.logger.error(e);
             }
             span?.setStatus({ code: SpanStatusCode.ERROR, message: annotated_e.message });
-            let st = (e as DBOSResponseError)?.status || 500;
-            const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
-            if (dbosErrorCode && isClientError(dbosErrorCode)) {
+            let st = (e as DBOSErrors.DBOSResponseError)?.status || 500;
+            if (isClientRequestError(e)) {
               st = 400; // Set to 400: client-side error.
             }
             koaCtxt.status = st;
