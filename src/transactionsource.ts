@@ -2,8 +2,8 @@ import { MethodRegistration } from './decorators';
 
 // Data source implementation (to be moved to DBOS core)
 export interface DBOSTransactionalDataSource {
-  name: string;
-  get dsType(): string;
+  readonly name: string;
+  readonly dsType: string;
 
   /**
    * Will be called by DBOS during launch.

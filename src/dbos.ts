@@ -2038,8 +2038,8 @@ export class DBOS {
    * @param name - Registered name for the data source
    * @param ds - Transactional data source provider
    */
-  static registerDataSource(name: string, ds: DBOSTransactionalDataSource) {
-    registerTransactionalDataSource(name, ds);
+  static registerDataSource(ds: DBOSTransactionalDataSource) {
+    registerTransactionalDataSource(ds.name, ds);
   }
 
   // This is the version that needs no existing transaction registration.  Just goes with it.
@@ -2102,7 +2102,7 @@ export class DBOS {
   static registerTransaction<This, Args extends unknown[], Return>(
     dsName: string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
+    options: {
       name: string;
     },
     config?: unknown,
@@ -2111,7 +2111,7 @@ export class DBOS {
 
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
       if (!DBOS.isWithinWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError(`Call to transaction '${target.name}' outside of a workflow`);
+        throw new DBOSInvalidWorkflowTransitionError(`Call to transaction '${options.name}' outside of a workflow`);
       }
 
       if (DBOS.isInTransaction() || DBOS.isInStep()) {
@@ -2130,14 +2130,14 @@ export class DBOS {
             return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
           });
         },
-        target.name,
+        options.name,
         DBOS.workflowID,
         callnum,
       );
     };
 
     Object.defineProperty(invokeWrapper, 'name', {
-      value: target.name,
+      value: options.name,
     });
     return invokeWrapper;
   }
@@ -2321,7 +2321,7 @@ export class DBOS {
 
   static registerStep<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
+    options: {
       name: string;
       config?: StepConfig;
     },
@@ -2345,19 +2345,19 @@ export class DBOS {
         const wfctx = assertCurrentWorkflowContext();
         return await DBOSExecutor.globalInstance!.callStepFunction(
           func as unknown as StepFunction<Args, Return>,
-          target.name,
-          target?.config ?? {},
+          options.name,
+          options?.config ?? {},
           inst ?? this ?? null,
           wfctx,
           ...rawArgs,
         );
       }
 
-      throw new DBOSInvalidWorkflowTransitionError(`Call to step '${target.name}' outside of a workflow`);
+      throw new DBOSInvalidWorkflowTransitionError(`Call to step '${options.name}' outside of a workflow`);
     };
 
     Object.defineProperty(invokeWrapper, 'name', {
-      value: target.name,
+      value: options.name,
     });
     return invokeWrapper;
   }
