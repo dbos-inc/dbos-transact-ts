@@ -12,8 +12,6 @@ import { randomUUID } from 'node:crypto';
 
 import { DBOS, DBOSConfig, DBOSLifecycleCallback, Error as DBOSErrors } from '../src';
 
-import { runWithTopContext } from '../src/context';
-
 // Test stuff
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import request from 'supertest';
@@ -391,9 +389,7 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
           // - If a client-side error is thrown, we return 400.
           // - If an error contains a `status` field, we return the specified status code.
           // - Otherwise, we return 500.
-          // TODO: Run with context
-          // TODO: Tracing
-          const cresult = await runWithTopContext(
+          const cresult = await DBOS.withTopContext(
             {
               authenticatedUser,
               authenticatedRoles,
