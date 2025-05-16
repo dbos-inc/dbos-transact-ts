@@ -905,6 +905,7 @@ export class DBOS {
    * @param name - Name of step to record, this will be used in traces and introspection
    * @returns - result (either obtained from invoking function, or retrieved if run before)
    */
+  // TODO: shouldn't this have a StepConfig param?
   static async runAsWorkflowStep<T>(callback: () => Promise<T>, name: string): Promise<T> {
     return await runAsWorkflowStep(callback, name);
   }
