@@ -12,7 +12,6 @@ import { randomUUID } from 'node:crypto';
 
 import { DBOS, DBOSConfig, DBOSLifecycleCallback, Error as DBOSErrors } from '../src';
 
-import { DBOSJSON, exhaustiveCheckGuard } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 
 // Test stuff
@@ -103,6 +102,10 @@ export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
 
 export function isClientRequestError(e: Error) {
   return DBOSErrors.isDataValidationError(e);
+}
+
+function exhaustiveCheckGuard(_: never): never {
+  throw new Error('Exaustive matching is not applied');
 }
 
 interface DBOSHTTPClassReg {
@@ -412,11 +415,7 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
           span?.setStatus({ code: SpanStatusCode.OK });
         } catch (e) {
           if (e instanceof Error) {
-            const annotated_e = e as Error & { dbos_already_logged?: boolean };
-            if (annotated_e.dbos_already_logged !== true) {
-              DBOS.logger.error(e);
-            }
-            span?.setStatus({ code: SpanStatusCode.ERROR, message: annotated_e.message });
+            span?.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
             let st = (e as DBOSErrors.DBOSResponseError)?.status || 500;
             if (isClientRequestError(e)) {
               st = 400; // Set to 400: client-side error.
@@ -429,10 +428,10 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
               details: e,
             };
           } else {
-            // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
+            // Thrown item was not an Error, which is poor form.
             // using stringify() will not produce a pretty output, because our format function uses stringify() too.
             DBOS.logger.error(e);
-            span?.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
+            span?.setStatus({ code: SpanStatusCode.ERROR, message: JSON.stringify(e) });
 
             koaCtxt.body = e;
             koaCtxt.status = 500;
