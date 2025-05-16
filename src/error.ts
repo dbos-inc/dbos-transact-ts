@@ -1,65 +1,10 @@
-import { DatabaseError } from 'pg';
-
-function formatPgDatabaseError(err: DatabaseError): string {
-  let msg = '';
-  if (err.severity) {
-    msg = msg.concat(`severity: ${err.severity} \n`);
+export function isDataValidationError(e: Error) {
+  const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
+  if (!dbosErrorCode) return false;
+  if (dbosErrorCode === DataValidationError) {
+    return true;
   }
-  if (err.code) {
-    msg = msg.concat(`code: ${err.code} \n`);
-  }
-  if (err.detail) {
-    msg = msg.concat(`detail: ${err.detail} \n`);
-  }
-  if (err.hint) {
-    msg = msg.concat(`hint: ${err.hint} \n`);
-  }
-  if (err.position) {
-    msg = msg.concat(`position: ${err.position} \n`);
-  }
-  if (err.internalPosition) {
-    msg = msg.concat(`internalPosition: ${err.internalPosition} \n`);
-  }
-  if (err.internalQuery) {
-    msg = msg.concat(`internalQuery: ${err.internalQuery} \n`);
-  }
-  if (err.where) {
-    msg = msg.concat(`where: ${err.where} \n`);
-  }
-  if (err.schema) {
-    msg = msg.concat(`schema: ${err.schema} \n`);
-  }
-  if (err.table) {
-    msg = msg.concat(`table: ${err.table} \n`);
-  }
-  if (err.column) {
-    msg = msg.concat(`column: ${err.column} \n`);
-  }
-  if (err.dataType) {
-    msg = msg.concat(`dataType: ${err.dataType} \n`);
-  }
-  if (err.constraint) {
-    msg = msg.concat(`constraint: ${err.constraint} \n`);
-  }
-  if (err.file) {
-    msg = msg.concat(`file: ${err.file} \n`);
-  }
-  if (err.line) {
-    msg = msg.concat(`line: ${err.line} \n`);
-  }
-  return msg;
-}
-
-// Return if the error is caused by client request or by server internal.
-export function isClientError(dbosErrorCode: number) {
-  return (
-    dbosErrorCode === DataValidationError ||
-    dbosErrorCode === WorkflowPermissionDeniedError ||
-    dbosErrorCode === TopicPermissionDeniedError ||
-    dbosErrorCode === ConflictingWFIDError ||
-    dbosErrorCode === NotRegisteredError ||
-    dbosErrorCode === ConflictingWorkflowError
-  );
+  return false;
 }
 
 export class DBOSError extends Error {
@@ -72,28 +17,10 @@ export class DBOSError extends Error {
   }
 }
 
-const WorkflowPermissionDeniedError = 2;
-export class DBOSWorkflowPermissionDeniedError extends DBOSError {
-  constructor(runAs: string, workflowName: string) {
-    const msg = `Subject ${runAs} does not have permission to run workflow ${workflowName}`;
-    super(msg, WorkflowPermissionDeniedError);
-  }
-}
-
 const InitializationError = 3;
 export class DBOSInitializationError extends DBOSError {
   constructor(msg: string) {
     super(msg, InitializationError);
-  }
-}
-
-const TopicPermissionDeniedError = 4;
-export class DBOSTopicPermissionDeniedError extends DBOSError {
-  constructor(destinationID: string, workflowID: string, functionID: number, runAs: string) {
-    const msg =
-      `Subject ${runAs} does not have permission on destination ID ${destinationID}.` +
-      `(workflow ID: ${workflowID}, function ID: ${functionID})`;
-    super(msg, TopicPermissionDeniedError);
   }
 }
 
@@ -109,17 +36,6 @@ export class DBOSNotRegisteredError extends DBOSError {
   constructor(name: string, fullmsg?: string) {
     const msg = fullmsg ?? `Operation (Name: ${name}) not registered`;
     super(msg, NotRegisteredError);
-  }
-}
-
-const PostgresExporterError = 7;
-export class DBOSPostgresExporterError extends DBOSError {
-  constructor(err: Error) {
-    let msg = `PostgresExporter error: ${err.message} \n`;
-    if (err instanceof DatabaseError) {
-      msg = msg.concat(formatPgDatabaseError(err));
-    }
-    super(msg, PostgresExporterError);
   }
 }
 
@@ -151,13 +67,6 @@ export class DBOSNotAuthorizedError extends DBOSError {
     readonly status: number = 403,
   ) {
     super(msg, NotAuthorizedError);
-  }
-}
-
-const UndefinedDecoratorInputError = 13;
-export class DBOSUndefinedDecoratorInputError extends DBOSError {
-  constructor(decoratorName: string) {
-    super(`${decoratorName} received undefined input. Possible circular dependency?`, UndefinedDecoratorInputError);
   }
 }
 

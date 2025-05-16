@@ -3,7 +3,6 @@ import { Request, Response, NextFunction } from 'express';
 import { IncomingHttpHeaders } from 'http';
 
 import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from '../decorators';
-import { DBOSUndefinedDecoratorInputError } from '../error';
 import { Logger as DBOSLogger } from '../telemetry/logs';
 import { UserDatabaseClient } from '../user_database';
 import { OperationType } from '../dbos-executor';
@@ -82,7 +81,7 @@ export class MiddlewareClassRegistration<CT extends { new (...args: unknown[]): 
  */
 export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
   if (authMiddleware === undefined) {
-    throw new DBOSUndefinedDecoratorInputError('Authentication');
+    throw TypeError(`'Authentication' received undefined input. Possible circular dependency?`);
   }
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
@@ -119,7 +118,7 @@ export function KoaCors(koaCors: Koa.Middleware) {
 export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
     if (i === undefined) {
-      throw new DBOSUndefinedDecoratorInputError('KoaMiddleware');
+      throw new TypeError(`'KoaMiddleware' received undefined input. Possible circular dependency?`);
     }
   });
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
@@ -136,7 +135,7 @@ export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
 export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
     if (i === undefined) {
-      throw new DBOSUndefinedDecoratorInputError('KoaGlobalMiddleware');
+      throw new TypeError(`'KoaGlobalMiddleware' received undefined input. Possible circular dependency?`);
     }
   });
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
