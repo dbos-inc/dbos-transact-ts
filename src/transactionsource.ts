@@ -20,7 +20,6 @@ export interface DBOSTransactionalDataSource {
    * Invoke a transaction function
    */
   invokeTransactionFunction<This, Args extends unknown[], Return>(
-    reg: MethodRegistration<This, Args, Return> | undefined,
     config: unknown,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
