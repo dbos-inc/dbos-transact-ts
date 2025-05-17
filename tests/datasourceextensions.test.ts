@@ -388,7 +388,7 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
 
 // Intentionally initialize DS after we've already tried to register a transaction to it
 const dsa = new DBOSKnexDS('knexA', config.poolConfig);
-DBOS.registerDataSource('knexA', dsa);
+DBOS.registerDataSource(dsa);
 
 // Decoratory example
 class DBWFI {
