@@ -3,13 +3,38 @@ import 'reflect-metadata';
 import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
-import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext } from './context';
+import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, HTTPRequest } from './context';
 import { StepConfig, StepContext } from './step';
-import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError } from './error';
+import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError, DBOSNotRegisteredError } from './error';
 import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
+import { DBOSTransactionalDataSource } from './transactionsource';
+
+/**
+ * Interface for integrating into the DBOS startup/shutdown lifecycle
+ */
+export abstract class DBOSLifecycleCallback {
+  /** Called back during DBOS launch */
+  initialize(): Promise<void> {
+    return Promise.resolve();
+  }
+  /** Called back upon shutdown (usually in tests) to close connections and free resources */
+  destroy(): Promise<void> {
+    return Promise.resolve();
+  }
+  /** Called at launch; Implementers should emit a diagnostic list of all registrations */
+  logRegisteredEndpoints(): void {}
+}
+
+const lifecycleListeners: DBOSLifecycleCallback[] = [];
+export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
+  if (!lifecycleListeners.includes(lcl)) lifecycleListeners.push(lcl);
+}
+export function getLifecycleListeners() {
+  return lifecycleListeners;
+}
 
 /**
  * Any column type column can be.
@@ -233,6 +258,7 @@ export interface RegistrationDefaults {
   defaultArgRequired: ArgRequiredOptions;
   defaultArgValidate: boolean;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
+  externalRegInfo: Map<AnyConstructor | object | string, unknown>;
 }
 
 export interface MethodRegistrationBase {
@@ -252,7 +278,10 @@ export interface MethodRegistrationBase {
   procConfig?: TransactionConfig;
   isInstance: boolean;
 
+  // This is for DBOSEventReceivers (an older approach) to keep stuff
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
+  // This is for any class or object to keep stuff associated with a class
+  externalRegInfo: Map<AnyConstructor | object | string, unknown>;
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   wrappedFunction: Function | undefined; // Function that is user-callable, including the WF engine transition
@@ -295,6 +324,7 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   procConfig?: TransactionConfig;
   regLocation?: string[];
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
+  externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
   getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | 'Procedure' | undefined {
     if (this.txnConfig) return 'Transaction';
@@ -387,7 +417,7 @@ export abstract class ConfiguredInstance {
   }
 }
 
-export class ClassRegistration<CT extends { new (...args: unknown[]): object }> implements RegistrationDefaults {
+export class ClassRegistration implements RegistrationDefaults {
   name: string = '';
   requiredRole: string[] | undefined;
   argRequiredEnabled: boolean = false;
@@ -404,11 +434,9 @@ export class ClassRegistration<CT extends { new (...args: unknown[]): object }> 
   configuredInstanceRegLocs: Map<string, string[]> = new Map();
 
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
+  externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
-  ctor: CT;
-  constructor(ctor: CT) {
-    this.ctor = ctor;
-  }
+  constructor() {}
 }
 
 class StackGrabber extends Error {
@@ -460,6 +488,9 @@ export function getRegisteredMethodName(func: unknown): string {
 export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<unknown, unknown[], unknown>) {
   methodToRegistration.set(func, reg);
 }
+export function getRegistrationForFunction(func: unknown): MethodRegistration<unknown, unknown[], unknown> | undefined {
+  return methodToRegistration.get(func);
+}
 
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
@@ -467,7 +498,7 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
   if (typeof target === 'function') {
     // Constructor case
     const classReg = classesByName.get(target.name);
-    classReg?.registeredOperations?.forEach((m) => registeredOperations.push(m));
+    classReg?.reg?.registeredOperations?.forEach((m) => registeredOperations.push(m));
   } else {
     let current: object | undefined = target;
     while (current) {
@@ -482,10 +513,55 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
   return registeredOperations;
 }
 
+export function getRegisteredOperationsByClassname(target: string): ReadonlyArray<MethodRegistrationBase> {
+  const registeredOperations: MethodRegistrationBase[] = [];
+  const cls = getClassRegistrationByName(target);
+  cls.registeredOperations?.forEach((m) => registeredOperations.push(m));
+  return registeredOperations;
+}
+
 export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
-  const classReg = classesByName.get(clsname);
+  const classReg = classesByName.get(clsname)?.reg;
   if (!classReg) return null;
   return classReg.configuredInstances.get(cfgname) ?? null;
+}
+
+/////
+// Context provider registration
+////
+export class DBOSStoredWFContext {
+  authenticatedUser?: string;
+  authenticatedRoles?: string[];
+  assumedRole?: string;
+  request?: HTTPRequest;
+  contextData: { [key: string]: unknown } = {};
+}
+export interface DBOSContextProvider {
+  captureContext(ctx: DBOSStoredWFContext, explicitContxt?: DBOSContext): void;
+  needsToRestoreContext(ctx: DBOSStoredWFContext): boolean;
+  runInRestoredContext<T>(ctx: DBOSStoredWFContext, callback: () => Promise<T>): Promise<T>;
+}
+
+/////
+// Transactional data source registration
+/////
+export const transactionalDataSources: Map<string, DBOSTransactionalDataSource> = new Map();
+
+// Register data source (user version)
+export function registerTransactionalDataSource(name: string, ds: DBOSTransactionalDataSource) {
+  if (transactionalDataSources.has(name)) {
+    if (transactionalDataSources.get(name) !== ds) {
+      throw new DBOSConflictingRegistrationError(`Data source with name ${name} is already registered`);
+    }
+    return;
+  }
+  ensureDBOSIsNotLaunched();
+  transactionalDataSources.set(name, ds);
+}
+
+export function getTransactionalDataSource(name: string) {
+  if (transactionalDataSources.has(name)) return transactionalDataSources.get(name)!;
+  throw new DBOSNotRegisteredError(name, `Data source '${name}' is not registered`);
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -497,26 +573,41 @@ export function getConfiguredInstance(clsname: string, cfgname: string): Configu
 
 const methodArgsByFunction: Map<string, MethodParameter[]> = new Map();
 
-export function getOrCreateMethodArgsRegistration(target: object, propertyKey: string | symbol): MethodParameter[] {
+export function getOrCreateMethodArgsRegistration(
+  target: object | undefined,
+  className: string | undefined,
+  propertyKey: string | symbol,
+  func?: (...args: unknown[]) => unknown,
+): MethodParameter[] {
   let regtarget = target;
-  if (typeof regtarget !== 'function') {
+  if (regtarget && typeof regtarget !== 'function') {
     regtarget = regtarget.constructor;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  const mkey = (regtarget as Function).name + '|' + propertyKey.toString();
+  className = className ?? (target ? getNameForClass(target) : '');
+
+  const mkey = className + '|' + propertyKey.toString();
 
   let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(mkey);
   if (mParameters === undefined) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-    const designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[] | undefined;
+    let designParamTypes: Function[] | undefined = undefined;
+    if (target) {
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[] | undefined;
+    }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
     } else {
-      const descriptor = Object.getOwnPropertyDescriptor(target, propertyKey);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      const argnames = getArgNames(descriptor?.value as Function);
-      mParameters = argnames.map((_value, index) => new MethodParameter(index));
+      if (func) {
+        const argnames = getArgNames(func);
+        mParameters = argnames.map((_value, index) => new MethodParameter(index));
+      } else {
+        const descriptor = Object.getOwnPropertyDescriptor(target, propertyKey);
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+        const argnames = getArgNames(descriptor?.value as Function);
+        mParameters = argnames.map((_value, index) => new MethodParameter(index));
+      }
     }
 
     methodArgsByFunction.set(mkey, mParameters);
@@ -532,30 +623,37 @@ function generateSaltedHash(data: string, salt: string): string {
 }
 
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
-  target: object,
+  target: object | undefined,
+  className: string | undefined,
   propertyKey: string | symbol,
-  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+  func: (this: This, ...args: Args) => Promise<Return>,
   passContext: boolean,
 ) {
-  let regtarget: AnyConstructor;
+  let regtarget: AnyConstructor | undefined = undefined;
   let isInstance = false;
-  if (typeof target === 'function') {
-    // Static method case
-    regtarget = target as AnyConstructor;
-  } else {
-    // Instance method case
-    regtarget = target.constructor as AnyConstructor;
-    isInstance = true;
+
+  if (target) {
+    if (typeof target === 'function') {
+      // Static method case
+      regtarget = target as AnyConstructor;
+    } else {
+      // Instance method case
+      regtarget = target.constructor as AnyConstructor;
+      isInstance = true;
+    }
+  }
+  if (!className) {
+    if (regtarget) className = regtarget.name;
+  }
+  if (!className) {
+    className = '';
   }
 
-  const classReg = getOrCreateClassRegistration(regtarget);
+  const classReg = getClassRegistrationByName(className, true);
 
   const fname = propertyKey.toString();
   if (!classReg.registeredOperations.has(fname)) {
-    classReg.registeredOperations.set(
-      fname,
-      new MethodRegistration<This, Args, Return>(descriptor.value!, isInstance, passContext),
-    );
+    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(func, isInstance, passContext));
   }
   const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(
     fname,
@@ -574,9 +672,14 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     methReg.className = classReg.name;
     methReg.defaults = classReg;
 
-    methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey);
+    methReg.args = getOrCreateMethodArgsRegistration(
+      target,
+      className,
+      propertyKey,
+      func as (...args: unknown[]) => unknown,
+    );
 
-    const argNames = getArgNames(descriptor.value!);
+    const argNames = getArgNames(func);
     methReg.args.forEach((e) => {
       if (e.required !== ArgRequiredOptions.DEFAULT) {
         classReg.argRequiredEnabled = true;
@@ -661,7 +764,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       value: methReg.name,
     });
 
-    descriptor.value = wrappedMethod;
     methReg.registeredFunction = wrappedMethod;
 
     methodToRegistration.set(methReg.registeredFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
@@ -681,7 +783,8 @@ export function registerAndWrapFunctionTakingContext<This, Args extends unknown[
     throw Error('Use of decorator when original method is undefined');
   }
 
-  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, true);
+  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, true);
+  descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
 
   return { descriptor, registration };
 }
@@ -696,28 +799,81 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
     throw Error('Use of decorator when original method is undefined');
   }
 
-  const registration = getOrCreateMethodRegistration(target, propertyKey, descriptor, false);
+  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, false);
+  descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
 
   return { descriptor, registration };
 }
 
-type AnyConstructor = new (...args: unknown[]) => object;
-const classesByName: Map<string, ClassRegistration<AnyConstructor>> = new Map();
+export function registerAndWrapDBOSFunctionByName<This, Args extends unknown[], Return>(
+  target: object | undefined,
+  className: string | undefined,
+  funcName: string,
+  func: (this: This, ...args: Args) => Promise<Return>,
+) {
+  ensureDBOSIsNotLaunched();
 
-export function getAllRegisteredClasses() {
-  const ctors: AnyConstructor[] = [];
-  for (const [_cn, creg] of classesByName) {
-    ctors.push(creg.ctor);
+  const registration = getOrCreateMethodRegistration(target, className, funcName, func, false);
+
+  return { registration };
+}
+
+// Data structure notes:
+//  Everything is registered under a "className", but this may be blank.
+//   This often corresponds to a real `class`, but it does not have to, if the user
+//   registered stuff without decorators.  Or for a bare function.
+//  Thus, if you have a "class name", look it up in classesByName, as this is exhaustive
+//  If you have a class or instance, you can look that up in the classesByCtor map,
+//   this contains all decorator-registered classes, but may omit other things.
+type AnyConstructor = new (...args: unknown[]) => object;
+const classesByName: Map<string, { reg: ClassRegistration; ctor?: AnyConstructor }> = new Map();
+const classesByCtor: Map<AnyConstructor, { name: string; reg: ClassRegistration }> = new Map();
+export function getNameForClass(ctor: object): string {
+  let regtarget: AnyConstructor;
+  if (typeof ctor === 'function') {
+    // Static method case
+    regtarget = ctor as AnyConstructor;
+  } else {
+    // Instance method case
+    regtarget = ctor.constructor as AnyConstructor;
   }
-  return ctors;
+
+  if (!classesByCtor.has(regtarget)) return regtarget.name;
+  return classesByCtor.get(regtarget)!.name;
+}
+
+export function getAllRegisteredClassNames() {
+  const cnames: string[] = [];
+  for (const [cn, _creg] of classesByName) {
+    cnames.push(cn);
+  }
+  return cnames;
+}
+
+export function getClassRegistrationByName(name: string, create: boolean = false) {
+  if (!classesByName.has(name) && !create) {
+    throw new DBOSNotRegisteredError(name, `Class '${name}' is not registered`);
+  }
+
+  if (!classesByName.has(name)) {
+    classesByName.set(name, { reg: new ClassRegistration() });
+  }
+
+  const clsReg: ClassRegistration = classesByName.get(name)!.reg;
+
+  if (clsReg.needsInitialized) {
+    clsReg.name = name;
+    clsReg.needsInitialized = false;
+  }
+  return clsReg;
 }
 
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]): object }>(ctor: CT) {
-  const name = ctor.name;
+  const name = getNameForClass(ctor);
   if (!classesByName.has(name)) {
-    classesByName.set(name, new ClassRegistration<CT>(ctor));
+    classesByName.set(name, { ctor, reg: new ClassRegistration() });
   }
-  const clsReg: ClassRegistration<AnyConstructor> = classesByName.get(name)!;
+  const clsReg: ClassRegistration = classesByName.get(name)!.reg;
 
   if (clsReg.needsInitialized) {
     clsReg.name = name;
@@ -746,6 +902,18 @@ export function associateClassWithEventReceiver<CT extends { new (...args: unkno
   return clsReg.eventReceiverInfo.get(rcvr)!;
 }
 
+export function associateClassWithExternal(
+  external: AnyConstructor | object | string,
+  cls: AnyConstructor | string,
+): object {
+  const clsn: string = typeof cls === 'string' ? cls : (cls = getNameForClass(cls));
+  const clsreg = getClassRegistrationByName(clsn, true);
+  if (!clsreg.externalRegInfo.has(external)) {
+    clsreg.externalRegInfo.set(external, {});
+  }
+  return clsreg.externalRegInfo.get(external)!;
+}
+
 /**
  * Associates a workflow method with a `DBOSEventReceiver` which will be in charge of calling the method
  *   in response to received events.
@@ -770,26 +938,61 @@ export function associateMethodWithEventReceiver<This, Args extends unknown[], R
   return { descriptor, registration, receiverInfo: registration.eventReceiverInfo.get(rcvr)! };
 }
 
+/*
+ * Associates a DBOS function or method with an external class or object.
+ *   Likely, this will be invoking or intercepting the method.
+ */
+export function associateMethodWithExternal<This, Args extends unknown[], Return>(
+  external: AnyConstructor | object | string,
+  target: object | undefined,
+  className: string | undefined,
+  funcName: string,
+  func: (this: This, ...args: Args) => Promise<Return>,
+): {
+  registration: MethodRegistration<This, Args, Return>;
+  func: (this: This, ...args: Args) => Promise<Return>;
+  regInfo: object;
+} {
+  const { registration } = registerAndWrapDBOSFunctionByName(target, className, funcName, func);
+  if (!registration.externalRegInfo.has(external)) {
+    registration.externalRegInfo.set(external, {});
+  }
+  return { func: registration.registeredFunction!, registration, regInfo: registration.externalRegInfo.get(external)! };
+}
+
+export function getRegistrationsForExternal(external: AnyConstructor | object | string) {
+  const res: { methodConfig: unknown; classConfig: unknown; methodReg: MethodRegistrationBase }[] = [];
+  for (const [_cn, c] of classesByName) {
+    for (const [_fn, f] of c.reg.registeredOperations) {
+      if (!f.externalRegInfo.has(external)) continue;
+      const methodConfig = f.externalRegInfo.get(external)!;
+      const classConfig = f.defaults?.externalRegInfo.get(external) ?? {};
+      res.push({ methodReg: f, methodConfig, classConfig });
+    }
+  }
+  return res;
+}
+
 //////////////////////////
 /* PARAMETER DECORATORS */
 //////////////////////////
 
 export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.required = ArgRequiredOptions.REQUIRED;
 }
 
 export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.required = ArgRequiredOptions.OPTIONAL;
 }
 
 export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
   const curParam = existingParameters[parameterIndex];
   curParam.logMask = LogMasks.SKIP;
@@ -797,7 +1000,7 @@ export function SkipLogging(target: object, propertyKey: string | symbol, parame
 
 export function LogMask(mask: LogMasks) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.logMask = mask;
@@ -806,7 +1009,7 @@ export function LogMask(mask: LogMasks) {
 
 export function ArgName(name: string) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
@@ -816,7 +1019,7 @@ export function ArgName(name: string) {
 export function ArgDate() {
   // TODO a little more info about it - is it a date or timestamp precision?
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     if (!curParam.dataType) curParam.dataType = new DBOSDataType();
@@ -826,7 +1029,7 @@ export function ArgDate() {
 
 export function ArgVarchar(length: number) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.dataType = DBOSDataType.varchar(length);
