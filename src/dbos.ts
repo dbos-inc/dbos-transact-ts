@@ -9,6 +9,7 @@ import {
   DBOSContextImpl,
   getNextWFID,
   StepStatus,
+  DBOSContextOptions,
 } from './context';
 import {
   DBOSConfig,
@@ -1070,18 +1071,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withNextWorkflowID<R>(workflowID: string, callback: () => Promise<R>): Promise<R> {
-    const pctx = getCurrentContextStore();
-    if (pctx) {
-      const pcwfid = pctx.idAssignedForNextWorkflow;
-      try {
-        pctx.idAssignedForNextWorkflow = workflowID;
-        return callback();
-      } finally {
-        pctx.idAssignedForNextWorkflow = pcwfid;
-      }
-    } else {
-      return runWithTopContext({ idAssignedForNextWorkflow: workflowID }, callback);
-    }
+    return DBOS.#withTopContext({ idAssignedForNextWorkflow: workflowID }, callback);
   }
 
   /**
@@ -1099,15 +1089,14 @@ export class DBOS {
     request: HTTPRequest,
     callback: () => Promise<R>,
   ): Promise<R> {
-    const pctx = getCurrentContextStore();
-    if (pctx) {
-      pctx.operationCaller = callerName;
-      pctx.span = span;
-      pctx.request = request;
-      return callback();
-    } else {
-      return runWithTopContext({ span, request }, callback);
-    }
+    return DBOS.#withTopContext(
+      {
+        operationCaller: callerName,
+        span,
+        request,
+      },
+      callback,
+    );
   }
 
   /**
@@ -1120,14 +1109,13 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withAuthedContext<R>(authedUser: string, authedRoles: string[], callback: () => Promise<R>): Promise<R> {
-    const pctx = getCurrentContextStore();
-    if (pctx) {
-      pctx.authenticatedUser = authedUser;
-      pctx.authenticatedRoles = authedRoles;
-      return callback();
-    } else {
-      return runWithTopContext({ authenticatedUser: authedUser, authenticatedRoles: authedRoles }, callback);
-    }
+    return DBOS.#withTopContext(
+      {
+        authenticatedUser: authedUser,
+        authenticatedRoles: authedRoles,
+      },
+      callback,
+    );
   }
 
   /**
@@ -1138,13 +1126,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withNamedContext<R>(callerName: string, callback: () => Promise<R>): Promise<R> {
-    const pctx = getCurrentContextStore();
-    if (pctx) {
-      pctx.operationCaller = callerName;
-      return callback();
-    } else {
-      return runWithTopContext({ operationCaller: callerName }, callback);
-    }
+    return DBOS.#withTopContext({ operationCaller: callerName }, callback);
   }
 
   /**
@@ -1155,18 +1137,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withWorkflowQueue<R>(queueName: string, callback: () => Promise<R>): Promise<R> {
-    const pctx = getCurrentContextStore();
-    if (pctx) {
-      const originalQueueName = pctx.queueAssignedForWorkflows;
-      try {
-        pctx.queueAssignedForWorkflows = queueName;
-        return callback();
-      } finally {
-        pctx.queueAssignedForWorkflows = originalQueueName;
-      }
-    } else {
-      return runWithTopContext({ queueAssignedForWorkflows: queueName }, callback);
-    }
+    return DBOS.#withTopContext({ queueAssignedForWorkflows: queueName }, callback);
   }
 
   /**
@@ -1176,17 +1147,43 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withWorkflowTimeout<R>(timeoutMS: number | null, callback: () => Promise<R>): Promise<R> {
+    return DBOS.#withTopContext({ workflowTimeoutMS: timeoutMS }, callback);
+  }
+
+  /**
+   * Run a workflow with the option to set any of the contextual items
+   *
+   * @param options - Overrides for options
+   * @param callback - Function to run, which would call or start workflows
+   * @returns - Return value from `callback`
+   */
+  static async #withTopContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
-      const originalTimeoutMS = pctx.workflowTimeoutMS;
+      // Save existing values and overwrite with new; hard to do cleanly but is actually type correct
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const existing: any = {};
+      for (const k of Object.keys(options) as (keyof DBOSContextOptions)[]) {
+        if (Object.hasOwn(pctx, k))
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+          existing[k] = options[k];
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+        (pctx as any)[k] = options[k];
+      }
+
       try {
-        pctx.workflowTimeoutMS = timeoutMS;
-        return callback();
+        return await callback();
       } finally {
-        pctx.workflowTimeoutMS = originalTimeoutMS;
+        for (const k of Object.keys(options) as (keyof DBOSContextOptions)[]) {
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+          if (Object.hasOwn(existing, k))
+            // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-assignment
+            (pctx as any)[k] = existing[k];
+          else delete pctx[k];
+        }
       }
     } else {
-      return runWithTopContext({ workflowTimeoutMS: timeoutMS }, callback);
+      return runWithTopContext(options, callback);
     }
   }
 

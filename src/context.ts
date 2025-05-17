@@ -20,18 +20,9 @@ export interface StepStatus {
   maxAttempts?: number;
 }
 
-export interface DBOSLocalCtx {
-  ctx?: DBOSContext;
-  parentCtx?: DBOSLocalCtx;
+export interface DBOSContextOptions {
   idAssignedForNextWorkflow?: string;
   queueAssignedForWorkflows?: string;
-  workflowId?: string;
-  inRecovery?: boolean;
-  curStepFunctionId?: number; // If currently in a step, its function ID
-  stepStatus?: StepStatus; // If currently in a step, its public status object
-  curTxFunctionId?: number;
-  isInStoredProc?: boolean;
-  sqlClient?: UserDatabaseClient;
   span?: Span;
   authenticatedUser?: string;
   authenticatedRoles?: string[];
@@ -40,6 +31,18 @@ export interface DBOSLocalCtx {
   operationType?: string; // A custom helper for users to set a operation type of their choice. Intended for functions setting a pctx to run DBOS operations from.
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
   workflowTimeoutMS?: number | null;
+}
+
+export interface DBOSLocalCtx extends DBOSContextOptions {
+  ctx?: DBOSContext;
+  parentCtx?: DBOSLocalCtx;
+  workflowId?: string;
+  inRecovery?: boolean;
+  curStepFunctionId?: number; // If currently in a step, its function ID
+  stepStatus?: StepStatus; // If currently in a step, its public status object
+  curTxFunctionId?: number;
+  isInStoredProc?: boolean;
+  sqlClient?: UserDatabaseClient;
 }
 
 export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
