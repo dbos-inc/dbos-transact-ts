@@ -11,6 +11,7 @@ import { IsolationLevel, TransactionConfig } from './transaction';
 import { ValuesOf } from './utils';
 import { Knex } from 'knex';
 import { GlobalLogger as Logger } from './telemetry/logs';
+import { MikroORM, EntityManager } from '@mikro-orm/core';
 
 export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Logger) {
   const pgUserClient = new Client(poolConfig);
@@ -96,7 +97,13 @@ export interface UserDatabase {
 type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (ctxt: C, ...args: T) => Promise<R>;
 type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
-export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex | DrizzleClient;
+export type UserDatabaseClient =
+  | PoolClient
+  | PrismaClient
+  | TypeORMEntityManager
+  | Knex
+  | DrizzleClient
+  | EntityManager;
 
 export const UserDatabaseName = {
   PGNODE: 'pg-node',
@@ -104,6 +111,7 @@ export const UserDatabaseName = {
   TYPEORM: 'typeorm',
   KNEX: 'knex',
   DRIZZLE: 'drizzle',
+  MIKROORM: 'mikroorm',
 } as const;
 export type UserDatabaseName = ValuesOf<typeof UserDatabaseName>;
 
@@ -748,5 +756,113 @@ export class DrizzleUserDatabase implements UserDatabase {
 
   async dropSchema(): Promise<void> {
     return Promise.reject(new Error('dropSchema() is not supported in Drizzle user database.'));
+  }
+}
+
+/**
+ * TypeORM user data access interface
+ */
+export class MikroORMDatabase implements UserDatabase {
+  readonly dataSource: MikroORM;
+  readonly em: EntityManager;
+
+  constructor(readonly ds: MikroORM) {
+    this.dataSource = ds;
+    this.em = ds.em.fork();
+  }
+
+  async init(debugMode: boolean = false): Promise<void> {
+    if (!debugMode) {
+      const schemaExists = await this.em.getConnection().execute(schemaExistsQuery);
+      if (!schemaExists[0].exists) {
+        await this.em.getConnection().execute(createUserDBSchema);
+      }
+      const txnOutputTableExists = await this.em.getConnection().execute<ExistenceCheck[]>(txnOutputTableExistsQuery);
+      if (!txnOutputTableExists[0].exists) {
+        await this.em.getConnection().execute(userDBSchema);
+      } else {
+        const columnExists = await this.em.getConnection().execute<ExistenceCheck[]>(columnExistsQuery);
+        if (!columnExists[0].exists) {
+          await this.em.getConnection().execute(addColumnQuery);
+        }
+      }
+
+      const txnIndexExists = await this.em.getConnection().execute<ExistenceCheck[]>(txnOutputIndexExistsQuery);
+      if (!txnIndexExists[0].exists) {
+        await this.em.getConnection().execute(userDBIndex);
+      }
+    }
+  }
+
+  async destroy(): Promise<void> {
+    await this.dataSource.close();
+  }
+
+  getName() {
+    return UserDatabaseName.MIKROORM;
+  }
+
+  async transaction<R, T extends unknown[]>(
+    txn: UserDatabaseTransaction<R, T>,
+    config: TransactionConfig,
+    ...args: T
+  ): Promise<R> {
+    const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
+
+    return this.em.transactional(async (em: EntityManager) => {
+      return txn(em, ...args);
+    }, {});
+  }
+
+  async queryFunction<C extends UserDatabaseClient, R, T extends unknown[]>(
+    func: UserDatabaseQuery<C, R, T>,
+    ...args: T
+  ): Promise<R> {
+    return func(this.em as C, ...args);
+  }
+
+  async query<R>(sql: string, ...params: unknown[]): Promise<R[]> {
+    return this.em
+      .getConnection()
+      .execute(sql, params)
+      .then((value) => {
+        return value as R[];
+      });
+  }
+
+  async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
+    const tClient = client as TypeORMEntityManager;
+    return tClient.query(sql, params).then((value) => {
+      return value as R[];
+    });
+  }
+
+  getPostgresErrorCode(error: unknown): string | null {
+    const typeormErr = error as QueryFailedError<PGDatabaseError>;
+    if (typeormErr.driverError) {
+      const dbErr = typeormErr.driverError;
+      return dbErr.code ? dbErr.code : null;
+    } else {
+      return null;
+    }
+  }
+
+  isRetriableTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === '40001';
+  }
+
+  isKeyConflictError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === '23505';
+  }
+
+  isFailedSqlTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === '25P02';
+  }
+
+  async createSchema(): Promise<void> {
+    await this.dataSource.getSchemaGenerator().refreshDatabase();
+  }
+  async dropSchema(): Promise<void> {
+    return this.dataSource.getSchemaGenerator().dropDatabase();
   }
 }
