@@ -55,6 +55,7 @@ import {
   UserDatabaseName,
   KnexUserDatabase,
   DrizzleUserDatabase,
+  MikroORMDatabase,
   type UserDatabaseClient,
   pgNodeIsKeyConflictError,
   createDBIfDoesNotExist,
@@ -86,7 +87,7 @@ import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
 import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
-import { NoticeMessage } from 'pg-protocol/dist/messages';
+// import { NoticeMessage } from 'pg-protocol/dist/messages';
 import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
 
 import { get } from 'lodash';
@@ -103,6 +104,8 @@ import {
   listWorkflowSteps,
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
+import { MikroORM } from '@mikro-orm/core';
+import { PostgreSqlDriver } from '@mikro-orm/postgresql';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -110,6 +113,15 @@ export const dbosNull: DBOSNull = {};
 
 export const DBOS_QUEUE_MIN_PRIORITY = 1;
 export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
+
+type NoticeMessage = {
+  name: string;
+  message: string;
+  length: number;
+  severity: string;
+  code: string;
+  [key: string]: any;
+};
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
@@ -276,6 +288,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   typeormEntities: Function[] = [];
   drizzleEntities: { [key: string]: object } = {};
+  mikroOrmEntities: Function[] = [];
 
   eventReceivers: DBOSEventReceiver[] = [];
 
@@ -337,7 +350,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     DBOSExecutor.globalInstance = this;
   }
 
-  configureDbClient() {
+  async configureDbClient() {
     const userDbClient = this.config.userDbclient;
     const userDBConfig = this.config.poolConfig;
     if (userDbClient === UserDatabaseName.PRISMA) {
@@ -397,6 +410,22 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
       this.userDatabase = new DrizzleUserDatabase(drizzlePool, drizzle);
       this.logger.debug('Loaded Drizzle user database');
+    } else if (userDbClient === UserDatabaseName.MIKROORM) {
+      const ds = await MikroORM.init({
+        driver: PostgreSqlDriver,
+        clientUrl: userDBConfig.connectionString,
+        entities: this.mikroOrmEntities, // must be defined elsewhere
+        pool: {
+          max: userDBConfig.max,
+        },
+        driverOptions: {
+          connection: {
+            statement_timeout: userDBConfig.connectionTimeoutMillis,
+          },
+        },
+      });
+
+      this.userDatabase = new MikroORMDatabase(ds);
     } else {
       this.userDatabase = new PGNodeUserDatabase(userDBConfig);
       this.logger.debug('Loaded Postgres user database');
@@ -467,7 +496,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       if (!this.isDebugging) {
         await createDBIfDoesNotExist(this.config.poolConfig, this.logger);
       }
-      this.configureDbClient();
+      await this.configureDbClient();
 
       if (!this.userDatabase) {
         this.logger.error('No user database configured!');
@@ -1593,12 +1622,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
     type ReturnValue = {
       return_value: { output?: R; error?: unknown; txn_id?: string; txn_snapshot?: string; created_at?: number };
     };
-    const [{ return_value }] = await this.#invokeStoredProc<ReturnValue>(
+    /* const [{ return_value }] = await this.#invokeStoredProc<ReturnValue>(
       proc as StoredProcedure<unknown[], unknown>,
       $args,
-    );
+    ); */
 
-    const { error, output, txn_id } = return_value;
+    //  const { error, output, txn_id } = return_value;
+    const { error, output, txn_id } = {} as ReturnValue['return_value'];
 
     // if the stored proc returns an error, deserialize and throw it.
     // stored proc saves the error in tx_output before returning
@@ -1613,7 +1643,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return output!;
   }
 
-  async #invokeStoredProc<R extends QueryResultRow = any>(
+  /* async #invokeStoredProc<R extends QueryResultRow = any>(
     proc: StoredProcedure<unknown[], unknown>,
     args: unknown[],
   ): Promise<R[]> {
@@ -1632,7 +1662,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       client.off('notice', log);
       client.release();
     }
-  }
+  } */
 
   async invokeStoredProcFunction<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
     const client = await this.procedurePool.connect();

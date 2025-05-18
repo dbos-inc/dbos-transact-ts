@@ -62,6 +62,7 @@
     "@koa/cors": "5.0.0",
     "@koa/router": "13.1.0",
     "@mikro-orm/core": "^6.4.15",
+    "@mikro-orm/postgresql": "^6.4.15",
     "@mikro-orm/reflection": "^6.4.15",
     "@mikro-orm/sqlite": "^6.4.15",
     "@opentelemetry/api": "1.8.0",
