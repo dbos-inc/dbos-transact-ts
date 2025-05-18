@@ -397,6 +397,8 @@ export class ClassRegistration<CT extends { new (...args: unknown[]): object }> 
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   ormEntities: Function[] | { [key: string]: object } = [];
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  mikroOrmEntities: Function[] | { [key: string]: object } = [];
 
   registeredOperations: Map<string, MethodRegistrationBase> = new Map();
 
@@ -981,6 +983,16 @@ export function OrmEntities(entities: Function[] | { [key: string]: object } = [
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
     const clsreg = getOrCreateClassRegistration(ctor);
     clsreg.ormEntities = entities;
+  }
+  return clsdec;
+}
+
+export function MikroOrmEntities(entities: Function[] | { [key: string]: object } = []) {
+  function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
+    console.log('MikroOrmEntities decorator');
+    console.log('entities', entities);
+    const clsreg = getOrCreateClassRegistration(ctor);
+    clsreg.mikroOrmEntities = entities;
   }
   return clsdec;
 }

@@ -477,9 +477,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
       let length; // Track the length of the array (or number of keys of the object)
       for (const cls of classes) {
         const reg = getOrCreateClassRegistration(cls as AnyConstructor);
+        console.log('In init', reg.mikroOrmEntities);
         /**
          * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
          */
+        if (Array.isArray(reg.mikroOrmEntities)) {
+          console.log('setting up mikroOrmEntities');
+          this.mikroOrmEntities = this.mikroOrmEntities.concat(reg.mikroOrmEntities as any[]);
+          length = reg.mikroOrmEntities.length;
+        }
+
         if (Array.isArray(reg.ormEntities)) {
           this.typeormEntities = this.typeormEntities.concat(reg.ormEntities as any[]);
           length = reg.ormEntities.length;
@@ -1290,6 +1297,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         try {
           // Synchronously record the output of write transactions and obtain the transaction ID.
+          console.log('Recording transaction output', wfCtx.workflowUUID, funcId, txn_snapshot);
           const pg_txn_id = await this.#recordOutput(
             queryFunc,
             wfCtx.workflowUUID,

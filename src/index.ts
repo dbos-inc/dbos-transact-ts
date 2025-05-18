@@ -76,6 +76,7 @@ export {
 
   // ORM Class Decorators
   OrmEntities,
+  MikroOrmEntities,
 } from './decorators';
 
 export { ParseOptions, parseConfigFile } from './dbos-runtime/config';

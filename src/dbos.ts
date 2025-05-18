@@ -94,6 +94,7 @@ import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
+import { EntityManager } from '@mikro-orm/core';
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -768,6 +769,19 @@ export class DBOS {
     }
     const client = DBOS.sqlClient;
     return client as TypeORMEntityManager;
+  }
+
+  static get mikroORMClient(): EntityManager {
+    if (DBOS.isInStoredProc()) {
+      throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.typeORMClient' from within a stored procedure`);
+    }
+    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.MIKROORM) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+      );
+    }
+    const client = DBOS.sqlClient;
+    return client as EntityManager;
   }
 
   /**

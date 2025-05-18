@@ -14,6 +14,7 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 import { MikroORM, EntityManager } from '@mikro-orm/core';
 
 export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Logger) {
+  console.log('Creating database if it does not exist ');
   const pgUserClient = new Client(poolConfig);
   try {
     await pgUserClient.connect(); // Try to establish a connection
@@ -25,6 +26,7 @@ export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Log
   // Craft a db string from the app db string, replacing the database name:
   const pgDbConnectionString = new URL(poolConfig.connectionString!);
   const app_database = pgDbConnectionString.pathname.substring(1);
+  console;
   pgDbConnectionString.pathname = '/postgres';
 
   const postgresConfig = {
@@ -773,24 +775,32 @@ export class MikroORMDatabase implements UserDatabase {
 
   async init(debugMode: boolean = false): Promise<void> {
     if (!debugMode) {
-      const schemaExists = await this.em.getConnection().execute(schemaExistsQuery);
+      console.log('Mikro Orm init');
+
+      const conn = this.em.getConnection();
+
+      conn.execute('BEGIN');
+
+      const schemaExists = await conn.execute(schemaExistsQuery);
       if (!schemaExists[0].exists) {
-        await this.em.getConnection().execute(createUserDBSchema);
+        await conn.execute(createUserDBSchema);
       }
-      const txnOutputTableExists = await this.em.getConnection().execute<ExistenceCheck[]>(txnOutputTableExistsQuery);
+      const txnOutputTableExists = await conn.execute<ExistenceCheck[]>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists[0].exists) {
-        await this.em.getConnection().execute(userDBSchema);
+        await conn.execute(userDBSchema);
       } else {
-        const columnExists = await this.em.getConnection().execute<ExistenceCheck[]>(columnExistsQuery);
+        const columnExists = await conn.execute<ExistenceCheck[]>(columnExistsQuery);
         if (!columnExists[0].exists) {
-          await this.em.getConnection().execute(addColumnQuery);
+          await conn.execute(addColumnQuery);
         }
       }
 
-      const txnIndexExists = await this.em.getConnection().execute<ExistenceCheck[]>(txnOutputIndexExistsQuery);
+      const txnIndexExists = await conn.execute<ExistenceCheck[]>(txnOutputIndexExistsQuery);
       if (!txnIndexExists[0].exists) {
-        await this.em.getConnection().execute(userDBIndex);
+        await conn.execute(userDBIndex);
       }
+
+      conn.execute('COMMIT');
     }
   }
 
@@ -831,10 +841,17 @@ export class MikroORMDatabase implements UserDatabase {
   }
 
   async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
-    const tClient = client as TypeORMEntityManager;
-    return tClient.query(sql, params).then((value) => {
+    const tClient = client as EntityManager;
+    console.log('Mikro Orm queryWithClient', sql, params);
+    /* return tClient.getConnection().execute(sql, params).then((value) => {
       return value as R[];
-    });
+    }); */
+    return tClient
+      .getConnection()
+      .execute(sql, [...params])
+      .then((value) => {
+        return value as R[];
+      });
   }
 
   getPostgresErrorCode(error: unknown): string | null {
@@ -863,6 +880,7 @@ export class MikroORMDatabase implements UserDatabase {
     await this.dataSource.getSchemaGenerator().refreshDatabase();
   }
   async dropSchema(): Promise<void> {
+    console.log('Mikro Orm Dropping database');
     return this.dataSource.getSchemaGenerator().dropDatabase();
   }
 }
