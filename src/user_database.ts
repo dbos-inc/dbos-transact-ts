@@ -843,15 +843,18 @@ export class MikroORMDatabase implements UserDatabase {
   async queryWithClient<R, T extends unknown[]>(client: UserDatabaseClient, sql: string, ...params: T): Promise<R[]> {
     const tClient = client as EntityManager;
     console.log('Mikro Orm queryWithClient', sql, params);
-    /* return tClient.getConnection().execute(sql, params).then((value) => {
-      return value as R[];
-    }); */
     return tClient
+      .getConnection()
+      .execute(sql, params)
+      .then((value) => {
+        return value as R[];
+      });
+    /* return tClient
       .getConnection()
       .execute(sql, [...params])
       .then((value) => {
         return value as R[];
-      });
+      }); */
   }
 
   getPostgresErrorCode(error: unknown): string | null {
