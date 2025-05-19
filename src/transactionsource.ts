@@ -1,5 +1,3 @@
-import { MethodRegistration } from './decorators';
-
 // Data source implementation (to be moved to DBOS core)
 export interface DBOSTransactionalDataSource {
   readonly name: string;

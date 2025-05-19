@@ -6,7 +6,6 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';
 import { DBOSJSON, sleepms, ValuesOf } from '../src/utils';
-import { MethodRegistration } from '../src/decorators';
 
 /*
  * Knex user data access interface
