@@ -389,7 +389,7 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
           // - If a client-side error is thrown, we return 400.
           // - If an error contains a `status` field, we return the specified status code.
           // - Otherwise, we return 500.
-          const cresult = await DBOS.withTopContext(
+          const cresult = await DBOS.runWithContext(
             {
               authenticatedUser,
               authenticatedRoles,

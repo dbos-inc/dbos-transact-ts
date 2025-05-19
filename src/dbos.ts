@@ -1115,7 +1115,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withNextWorkflowID<R>(workflowID: string, callback: () => Promise<R>): Promise<R> {
-    return DBOS.withTopContext({ idAssignedForNextWorkflow: workflowID }, callback);
+    return DBOS.#withTopContext({ idAssignedForNextWorkflow: workflowID }, callback);
   }
 
   /**
@@ -1133,7 +1133,7 @@ export class DBOS {
     request: HTTPRequest,
     callback: () => Promise<R>,
   ): Promise<R> {
-    return DBOS.withTopContext(
+    return DBOS.#withTopContext(
       {
         operationCaller: callerName,
         span,
@@ -1153,7 +1153,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withAuthedContext<R>(authedUser: string, authedRoles: string[], callback: () => Promise<R>): Promise<R> {
-    return DBOS.withTopContext(
+    return DBOS.#withTopContext(
       {
         authenticatedUser: authedUser,
         authenticatedRoles: authedRoles,
@@ -1170,7 +1170,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withNamedContext<R>(callerName: string, callback: () => Promise<R>): Promise<R> {
-    return DBOS.withTopContext({ operationCaller: callerName }, callback);
+    return DBOS.#withTopContext({ operationCaller: callerName }, callback);
   }
 
   /**
@@ -1181,7 +1181,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withWorkflowQueue<R>(queueName: string, callback: () => Promise<R>): Promise<R> {
-    return DBOS.withTopContext({ queueAssignedForWorkflows: queueName }, callback);
+    return DBOS.#withTopContext({ queueAssignedForWorkflows: queueName }, callback);
   }
 
   /**
@@ -1191,7 +1191,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withWorkflowTimeout<R>(timeoutMS: number | null, callback: () => Promise<R>): Promise<R> {
-    return DBOS.withTopContext({ workflowTimeoutMS: timeoutMS }, callback);
+    return DBOS.#withTopContext({ workflowTimeoutMS: timeoutMS }, callback);
   }
 
   /**
@@ -1201,7 +1201,11 @@ export class DBOS {
    * @param callback - Function to run, which would call or start workflows
    * @returns - Return value from `callback`
    */
-  static async withTopContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
+  static async runWithContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
+    return DBOS.#withTopContext(options, callback);
+  }
+
+  static async #withTopContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
       // Save existing values and overwrite with new; hard to do cleanly but is actually type correct
