@@ -1,4 +1,5 @@
 import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
+import { DBOS, type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk';
 
 interface ExistenceCheck {
   exists: boolean;
@@ -43,3 +44,31 @@ export const addColumnQuery = `
 export const userDBIndex = `
   CREATE INDEX IF NOT EXISTS transaction_outputs_created_at_index ON dbos.transaction_outputs (created_at);
 `;
+
+export class TypeOrmDS implements DBOSTransactionalDataSource {
+  readonly name = 'TypeOrmDS';
+  readonly dsType = 'TypeOrm';
+
+  initialize(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Will be called by DBOS during attempt at clean shutdown (generally in testing scenarios).
+   */
+  destroy(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  /**
+   * Invoke a transaction function
+   */
+  invokeTransactionFunction<This, Args extends unknown[], Return>(
+    config: unknown,
+    target: This,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    ...args: Args
+  ): Promise<Return> {
+    return 'foo' as any; // TODO: Implement this method;
+  }
+}
