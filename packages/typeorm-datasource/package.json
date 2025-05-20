@@ -3,6 +3,7 @@
   "version": "0.0.0-placeholder",
   "main": "index.js",
   "scripts": {
+    "build": "tsc --project tsconfig.json",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "keywords": [],
@@ -10,9 +11,10 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "pg": "^8.16.0",
+    "@dbos-inc/dbos-sdk": "file:../../dbos-inc-dbos-sdk-0.0.0-placeholder.tgz",
     "reflect-metadata": "^0.2.2",
-    "typeorm": "^0.3.24"
+    "typeorm": "^0.3.24",
+    "pg": "8.11.3"
   },
   "devDependencies": {
     "@types/node": "^22.15.19"

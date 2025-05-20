@@ -43,38 +43,3 @@ export const addColumnQuery = `
 export const userDBIndex = `
   CREATE INDEX IF NOT EXISTS transaction_outputs_created_at_index ON dbos.transaction_outputs (created_at);
 `;
-
-interface DBOSKnexLocalCtx {
-  knexClient: Knex;
-}
-const asyncLocalCtx = new AsyncLocalStorage<DBOSKnexLocalCtx>();
-
-function getCurrentDSContextStore(): DBOSKnexLocalCtx | undefined {
-  return asyncLocalCtx.getStore();
-}
-
-function assertCurrentDSContextStore(): DBOSKnexLocalCtx {
-  const ctx = getCurrentDSContextStore();
-  if (!ctx)
-    throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOSKnexDS.knexClient` outside of a `transaction`');
-  return ctx;
-}
-
-/**
- * Configuration for `DBOSKnexDS` functions
- */
-export interface KnexTransactionConfig {
-  /** Isolation level to request from underlying app database */
-  isolationLevel?: IsolationLevel;
-  /** If set, request read-only transaction from underlying app database */
-  readOnly?: boolean;
-}
-
-/** Isolation typically supported by application databases */
-export const IsolationLevel = {
-  ReadUncommitted: 'READ UNCOMMITTED',
-  ReadCommitted: 'READ COMMITTED',
-  RepeatableRead: 'REPEATABLE READ',
-  Serializable: 'SERIALIZABLE',
-} as const;
-export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
