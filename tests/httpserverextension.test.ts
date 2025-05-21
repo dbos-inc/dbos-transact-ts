@@ -16,38 +16,6 @@ import { DBOS, DBOSConfig, DBOSLifecycleCallback, Error as DBOSErrors } from '..
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import request from 'supertest';
 
-// Basic idea:
-//  Web points are decorated - this registers them
-//  Middleware can be decorated - or not.
-
-// At some point, in a main file / function, you launch() DBOS
-//  and create and start your own web server.
-//  Creating the server can consult the DBOS method registries
-
-// How request, auth, and other context works:
-//  You register a context provider, this allows it to save and load
-//   stuff from the system DB to accompany the workflow
-
-// OK, what I'm doing today:
-//  Registration of arbitrary classes/instances -> associated items
-//  Class / class name -> registration; registration has key->items
-//    This is really so ... aspects work together?  To pass context around?
-//  The open goal:
-//   DBOSHttp collects up all the functions; this names and registers them
-//   DBOSHttp has a list of all its functions (or retrieves it; that's TBD)
-//     It can make you a router of these functions
-//   Each function:
-//     HTTP dispatches it with request context
-//     Some glue gets the request/response stuff and makes args; this can do validation
-//       (or is validation based on interceptors); this has auth, request, OAOO key, etc...
-//       Hence, it runs with the local storage
-//         This hits a DBOS workflow (which may be enqueued); that saves the context
-//         The dequeued workflow has to run in same context; do we make a function for it... yes
-//     For the first rev, we will just use the auth and request fields in the existing record
-//         Once this is working, we'll fix it
-//   How to do tracing/logging is a bit trickier
-// TODO: Also instances; no reason why not.
-
 export enum APITypes {
   GET = 'GET',
   POST = 'POST',
@@ -58,27 +26,10 @@ export enum APITypes {
 
 const HTTP_OPERATION_TYPE = 'http';
 
-// Context for auth middleware
-export interface DBOSHTTPAuthContext {
-  readonly koaContext: Koa.Context;
-  readonly name: string; // Method (handler, transaction, workflow) name
-  readonly requiredRole: string[]; // Roles required for the invoked operation, if empty perhaps auth is not required
-}
-
 export interface DBOSHTTPAuthReturn {
   authenticatedUser: string;
   authenticatedRoles: string[];
 }
-
-/**
- * Authentication middleware that executes before a request reaches a function.
- * This is expected to:
- *   - Validate the request found in the handler context and extract auth information from the request.
- *   - Map the HTTP request to the user identity and roles defined in app.
- * If this succeeds, return the current authenticated user and a list of roles.
- * If any step fails, throw an error.
- */
-export type DBOSHTTPAuthMiddleware = (ctx: DBOSHTTPAuthContext) => Promise<DBOSHTTPAuthReturn | void>;
 
 interface DBOSHTTPReg {
   apiURL: string;
@@ -108,14 +59,6 @@ export function isClientRequestError(e: Error) {
 
 function exhaustiveCheckGuard(_: never): never {
   throw new Error('Exaustive matching is not applied');
-}
-
-interface DBOSHTTPClassReg {
-  authMiddleware?: DBOSHTTPAuthMiddleware;
-  koaBodyParser?: Koa.Middleware;
-  koaCors?: Koa.Middleware;
-  koaMiddlewares?: Koa.Middleware[];
-  koaGlobalMiddlewares?: Koa.Middleware[];
 }
 
 interface DBOSHTTPConfig {
@@ -175,10 +118,58 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
     return this.httpApiDec(APITypes.DELETE, url);
   }
 
+  override logRegisteredEndpoints(): void {
+    DBOS.logger.info('HTTP endpoints supported:');
+    const eps = DBOS.getAssociatedInfo(this);
+
+    for (const e of eps) {
+      const { methodConfig, methodReg } = e;
+      const httpmethod = methodConfig as DBOSHTTPMethodInfo;
+      for (const ro of httpmethod.registrations ?? []) {
+        if (ro.apiURL) {
+          DBOS.logger.info('    ' + ro.apiType.padEnd(6) + '  :  ' + ro.apiURL);
+          const roles = methodReg.getRequiredRoles();
+          if (roles.length > 0) {
+            DBOS.logger.info('        Required Roles: ' + JSON.stringify(roles));
+          }
+        }
+      }
+    }
+  }
+}
+
+// Context for auth middleware
+export interface DBOSKoaAuthContext {
+  readonly koaContext: Koa.Context;
+  readonly name: string; // Method (handler, transaction, workflow) name
+  readonly requiredRole: string[]; // Roles required for the invoked operation, if empty perhaps auth is not required
+}
+
+/**
+ * Authentication middleware that executes before a request reaches a function.
+ * This is expected to:
+ *   - Validate the request found in the handler context and extract auth information from the request.
+ *   - Map the HTTP request to the user identity and roles defined in app.
+ * If this succeeds, return the current authenticated user and a list of roles.
+ * If any step fails, throw an error.
+ */
+export type DBOSKoaAuthMiddleware = (ctx: DBOSKoaAuthContext) => Promise<DBOSHTTPAuthReturn | void>;
+
+export type DBOSKoaConfig = DBOSHTTPConfig;
+
+interface DBOSHTTPClassReg {
+  authMiddleware?: DBOSKoaAuthMiddleware;
+  koaBodyParser?: Koa.Middleware;
+  koaCors?: Koa.Middleware;
+  koaMiddlewares?: Koa.Middleware[];
+  koaGlobalMiddlewares?: Koa.Middleware[];
+}
+
+class DBOSKoa extends DBOSHTTPBase {
   /**
    * Define an authentication function for each endpoint in this class.
    */
-  authentication(authMiddleware: DBOSHTTPAuthMiddleware) {
+  authentication(authMiddleware: DBOSKoaAuthMiddleware) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const er = this;
     function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
@@ -229,6 +220,7 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
   /**
    * Define Koa middleware that is applied to all requests, including this class, other classes,
    *   or requests that do not end up in DBOS handlers at all.
+   * @deprecated Apply global middleware to your application router directly
    */
   koaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
@@ -248,33 +240,13 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
   app?: Koa;
   appRouter?: Router;
 
-  createApp(config?: DBOSHTTPConfig) {
+  createApp(config?: DBOSKoaConfig) {
     this.app = new Koa();
     this.appRouter = new Router();
     this.registerWithApp(this.app, this.appRouter, config);
   }
 
-  override logRegisteredEndpoints(): void {
-    DBOS.logger.info('HTTP endpoints supported:');
-    const eps = DBOS.getAssociatedInfo(this);
-
-    for (const e of eps) {
-      const { methodConfig, classConfig, methodReg } = e;
-      const _defaults = classConfig as DBOSHTTPClassReg;
-      const httpmethod = methodConfig as DBOSHTTPMethodInfo;
-      for (const ro of httpmethod.registrations ?? []) {
-        if (ro.apiURL) {
-          DBOS.logger.info('    ' + ro.apiType.padEnd(6) + '  :  ' + ro.apiURL);
-          const roles = methodReg.getRequiredRoles();
-          if (roles.length > 0) {
-            DBOS.logger.info('        Required Roles: ' + JSON.stringify(roles));
-          }
-        }
-      }
-    }
-  }
-
-  registerWithApp(app: Koa, appRouter: Router, config?: DBOSHTTPConfig) {
+  registerWithApp(app: Koa, appRouter: Router, config?: DBOSKoaConfig) {
     const globalMiddlewares: Set<Koa.Middleware> = new Set();
 
     const eps = DBOS.getAssociatedInfo(this);
@@ -519,7 +491,7 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
   }
 }
 
-const dhttp = new DBOSHTTPBase();
+const dhttp = new DBOSKoa();
 
 let middlewareCounter = 0;
 const testMiddleware: Middleware = async (_ctx, next) => {
