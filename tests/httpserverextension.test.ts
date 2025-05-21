@@ -554,6 +554,7 @@ describe('decoratorless-api-tests', () => {
     middlewareCounter = middlewareCounter2 = middlewareCounterG = 0;
     DBOS.registerLifecycleCallback(dhttp);
     await DBOS.launch();
+    DBOS.logRegisteredEndpoints();
     app = new Koa();
     appRouter = new Router();
     dhttp.registerWithApp(app, appRouter);
