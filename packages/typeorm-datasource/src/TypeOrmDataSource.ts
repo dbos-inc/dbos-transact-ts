@@ -86,7 +86,8 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   /**
    * Will be called by DBOS during attempt at clean shutdown (generally in testing scenarios).
    */
-  destroy(): Promise<void> {
+  async destroy(): Promise<void> {
+    await this.dataSource?.destroy();
     return Promise.resolve();
   }
 
