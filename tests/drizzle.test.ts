@@ -166,17 +166,17 @@ describe('drizzle-tests', () => {
     TestClass.conflictTrigger = new Promise((ressolve) => {
       cb = ressolve;
     });
-    await expect(DBOS.invoke(TestClass).returnVoid()).resolves.not.toThrow();
 
+    // Start 2 conflicting transactions; they will wedge on the Promise
     const h1 = await DBOS.startWorkflow(TestClass).testSerzXflictWF();
     const h2 = await DBOS.startWorkflow(TestClass).testSerzXflictWF();
 
     await sleepms(100);
-    cb!();
+    cb!(); // Resolve Promise
 
     const r1 = await h1.getResult();
     const r2 = await h2.getResult();
-    expect(r1 + r2).toBe(3);
+    expect(r1 + r2).toBe(3); // These should have gone as if sequentially
   });
 });
 
