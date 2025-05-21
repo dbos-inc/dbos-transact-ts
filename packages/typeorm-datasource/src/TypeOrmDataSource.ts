@@ -48,6 +48,7 @@ export const userDBIndex = `
 
 export class TypeOrmDS implements DBOSTransactionalDataSource {
   readonly dsType = 'TypeOrm';
+  dataSource: DataSource | undefined;
 
   constructor(
     readonly name: string,
@@ -56,7 +57,14 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   ) {}
 
   async initialize(): Promise<void> {
+    this.dataSource = this.createInstance();
+
+    return Promise.resolve();
+  }
+
+  async InitializeSchema(): Promise<void> {
     const ds = this.createInstance();
+
     try {
       const schemaExists = await ds.query<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
       if (!schemaExists.rows[0].exists) {
