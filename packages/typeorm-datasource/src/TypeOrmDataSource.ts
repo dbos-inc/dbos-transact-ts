@@ -46,6 +46,24 @@ export const userDBIndex = `
   CREATE INDEX IF NOT EXISTS transaction_outputs_created_at_index ON dbos.transaction_outputs (created_at);
 `;
 
+/** Isolation typically supported by application databases */
+export const IsolationLevel = {
+  ReadUncommitted: 'READ UNCOMMITTED',
+  ReadCommitted: 'READ COMMITTED',
+  RepeatableRead: 'REPEATABLE READ',
+  Serializable: 'SERIALIZABLE',
+} as const;
+
+type ValuesOf<T> = T[keyof T];
+type IsolationLevel = ValuesOf<typeof IsolationLevel>;
+
+export interface TypeOrmTransactionConfig {
+  /** Isolation level to request from underlying app database */
+  isolationLevel?: IsolationLevel;
+  /** If set, request read-only transaction from underlying app database */
+  readOnly?: boolean;
+}
+
 export class TypeOrmDS implements DBOSTransactionalDataSource {
   readonly dsType = 'TypeOrm';
   dataSource: DataSource | undefined;
@@ -108,11 +126,15 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
    * Invoke a transaction function
    */
   invokeTransactionFunction<This, Args extends unknown[], Return>(
-    config: unknown,
+    config: TypeOrmTransactionConfig,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
   ): Promise<Return> {
+    const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
+
+    while (true) {}
+
     return 'foo' as any; // TODO: Implement this method;
   }
 
