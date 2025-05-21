@@ -1,5 +1,6 @@
 import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import { DBOS, type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk';
+import { DataSource } from 'typeorm';
 
 interface ExistenceCheck {
   exists: boolean;
@@ -46,10 +47,31 @@ export const userDBIndex = `
 `;
 
 export class TypeOrmDS implements DBOSTransactionalDataSource {
-  readonly name = 'TypeOrmDS';
   readonly dsType = 'TypeOrm';
 
-  initialize(): Promise<void> {
+  constructor(
+    readonly name: string,
+    readonly config: PoolConfig,
+    readonly entities: Function[],
+  ) {}
+
+  async initialize(): Promise<void> {
+    const ds = this.createInstance();
+    try {
+      const schemaExists = await ds.query<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
+      if (!schemaExists.rows[0].exists) {
+        await ds.query(createUserDBSchema);
+      }
+      const txnOutputTableExists = await ds.query<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
+      if (!txnOutputTableExists.rows[0].exists) {
+        await ds.query(userDBSchema);
+      }
+    } finally {
+      try {
+        await ds.destroy();
+      } catch (e) {}
+    }
+
     return Promise.resolve();
   }
 
@@ -70,5 +92,15 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     ...args: Args
   ): Promise<Return> {
     return 'foo' as any; // TODO: Implement this method;
+  }
+
+  createInstance(): DataSource {
+    return new DataSource({
+      type: 'postgres',
+      url: this.config.connectionString,
+      connectTimeoutMS: this.config.connectionTimeoutMillis,
+      entities: this.entities,
+      poolSize: this.config.max,
+    });
   }
 }
