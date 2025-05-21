@@ -73,7 +73,20 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
       const txnOutputTableExists = await ds.query<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
         await ds.query(userDBSchema);
+      } else {
+        const columnExists = await ds.query<{ rows: ExistenceCheck[] }>(columnExistsQuery);
+        if (!columnExists.rows[0].exists) {
+          await ds.query(addColumnQuery);
+        }
       }
+
+      const txnOutputIndexExists = await ds.query<{ rows: ExistenceCheck[] }>(txnOutputIndexExistsQuery);
+      if (!txnOutputIndexExists.rows[0].exists) {
+        await ds.query(userDBIndex);
+      }
+    } catch (e) {
+      console.error(`Unexpected error initializing schema: ${e}`);
+      throw new Error(`Unexpected error initializing schema: ${e}`);
     } finally {
       try {
         await ds.destroy();
