@@ -247,6 +247,25 @@ class DBOSHTTPBase extends DBOSLifecycleCallback {
     this.registerWithApp(this.app, this.appRouter, config);
   }
 
+  override logRegisteredEndpoints(): void {
+    DBOS.logger.info('HTTP endpoints supported:');
+    const eps = DBOS.getAssociatedInfo(this);
+
+    for (const e of eps) {
+      const { methodConfig, classConfig, methodReg } = e;
+      const ro = methodConfig as DBOSHTTPReg;
+      const _defaults = classConfig as DBOSHTTPClassReg;
+
+      if (ro.apiURL) {
+        DBOS.logger.info('    ' + ro.apiType.padEnd(6) + '  :  ' + ro.apiURL);
+        const roles = methodReg.getRequiredRoles();
+        if (roles.length > 0) {
+          DBOS.logger.info('        Required Roles: ' + JSON.stringify(roles));
+        }
+      }
+    }
+  }
+
   registerWithApp(app: Koa, appRouter: Router, config?: DBOSHTTPConfig) {
     const globalMiddlewares: Set<Koa.Middleware> = new Set();
 
@@ -533,6 +552,7 @@ describe('decoratorless-api-tests', () => {
 
   beforeEach(async () => {
     middlewareCounter = middlewareCounter2 = middlewareCounterG = 0;
+    DBOS.registerLifecycleCallback(dhttp);
     await DBOS.launch();
     app = new Koa();
     appRouter = new Router();
