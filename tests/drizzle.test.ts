@@ -1,26 +1,17 @@
 import request from 'supertest';
 
-import {
-  Authentication,
-  DBOS,
-  GetApi,
-  HandlerContext,
-  MiddlewareContext,
-  OrmEntities,
-  PostApi,
-  RequiredRole,
-  Transaction,
-  TransactionContext,
-} from '../src';
+import { Authentication, DBOS, MiddlewareContext, OrmEntities } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { pgTable, serial, text } from 'drizzle-orm/pg-core';
+import { pgTable, serial, text, integer, varchar } from 'drizzle-orm/pg-core';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
 import { DatabaseError } from 'pg';
 import { DBOSNotAuthorizedError } from '../src/error';
+import { sleepms } from '../src/utils';
+import { IsolationLevel } from '../src/transaction';
 
 const testTableName = 'dbos_test_kv';
 
@@ -29,47 +20,78 @@ const testTable = pgTable(testTableName, {
   value: text('value'),
 });
 
+const countersTable = pgTable('counters', {
+  id: serial('id').primaryKey(),
+  name: varchar('name', { length: 255 }),
+  value: integer('value').notNull().default(0),
+});
+
 let insertCount = 0;
 
 @OrmEntities()
 export class NoEntities {}
 
-@OrmEntities({ testTable })
+type DrizzleDB = NodePgDatabase<{ testTable: typeof testTable; counters: typeof countersTable }>;
+const getDrizzleDB = () => DBOS.drizzleClient as DrizzleDB;
+
+@OrmEntities({ testTable, countersDb: countersTable })
 class TestClass {
-  @Transaction()
-  static async testInsert(txnCtxt: TransactionContext<NodePgDatabase>, value: string) {
+  @DBOS.transaction()
+  static async testInsert(value: string) {
     insertCount++;
-    const result = await txnCtxt.client.insert(testTable).values({ value }).returning({ id: testTable.id });
+    const result = await getDrizzleDB().insert(testTable).values({ value }).returning({ id: testTable.id });
     return result[0].id;
   }
 
-  @Transaction()
-  static async testSelect(txnCtxt: TransactionContext<NodePgDatabase>, id: number) {
-    const result = await txnCtxt.client.select().from(testTable).where(eq(testTable.id, id));
+  @DBOS.transaction()
+  static async testSelect(id: number) {
+    const result = await getDrizzleDB().select().from(testTable).where(eq(testTable.id, id));
     return result[0].value;
   }
 
-  @Transaction()
-  static async testQuery(ctx: TransactionContext<NodePgDatabase<{ testTable: typeof testTable }>>) {
-    const result = await ctx.client.query.testTable.findMany();
+  @DBOS.transaction()
+  static async testQuery() {
+    const result = await getDrizzleDB().query.testTable.findMany();
     return result[0].value;
   }
 
   @DBOS.workflow()
   static async testWf(value: string) {
-    const id = await DBOS.invoke(TestClass).testInsert(value);
-    const result = await DBOS.invoke(TestClass).testSelect(id);
+    const id = await TestClass.testInsert(value);
+    const result = await TestClass.testSelect(id);
     return result;
   }
 
-  @Transaction()
-  static async returnVoid(_ctxt: TransactionContext<NodePgDatabase>) {}
+  @DBOS.transaction()
+  static async returnVoid() {}
 
-  @Transaction()
-  static async unsafeInsert(txnCtxt: TransactionContext<NodePgDatabase>, key: number, value: string) {
+  @DBOS.transaction()
+  static async unsafeInsert(key: number, value: string) {
     insertCount++;
-    const result = await txnCtxt.client.insert(testTable).values({ id: key, value }).returning({ id: testTable.id });
+    const result = await getDrizzleDB().insert(testTable).values({ id: key, value }).returning({ id: testTable.id });
     return result[0].id;
+  }
+
+  static conflictTrigger: Promise<void> | undefined = undefined;
+
+  @DBOS.transaction({ isolationLevel: IsolationLevel.Serializable })
+  static async testSerzConflict() {
+    const res = await getDrizzleDB().select().from(countersTable).where(eq(countersTable.name, 'conflict'));
+    const value = res[0].value;
+
+    await TestClass.conflictTrigger; // simulate work
+
+    console.log(`Setting value from ${value} => ${value + 1} in ${DBOS.workflowID}`);
+    await getDrizzleDB()
+      .update(countersTable)
+      .set({ value: value + 1 })
+      .where(eq(countersTable.name, 'conflict'));
+
+    return value + 1;
+  }
+  @DBOS.workflow()
+  static async testSerzXflictWF() {
+    return await TestClass.testSerzConflict();
   }
 }
 
@@ -86,6 +108,17 @@ describe('drizzle-tests', () => {
     await DBOS.launch();
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
+
+    await DBOS.queryUserDB('DROP TABLE IF EXISTS counters');
+    await DBOS.queryUserDB(`
+      CREATE TABLE counters (
+        id SERIAL PRIMARY KEY,
+        name VARCHAR(255),
+        value INTEGER NOT NULL DEFAULT 0
+      )
+    `);
+    await DBOS.queryUserDB(`INSERT INTO counters (name, value) VALUES ('conflict', 0)`);
+
     insertCount = 0;
   });
 
@@ -94,12 +127,12 @@ describe('drizzle-tests', () => {
   });
 
   test('simple-drizzle', async () => {
-    await expect(DBOS.invoke(TestClass).testInsert('test-one')).resolves.toBe(1);
+    await expect(TestClass.testInsert('test-one')).resolves.toBe(1);
   });
 
   test('drizzle-query', async () => {
-    await DBOS.invoke(TestClass).testInsert('test-query');
-    await expect(DBOS.invoke(TestClass).testQuery()).resolves.toBe('test-query');
+    await TestClass.testInsert('test-query');
+    await expect(TestClass.testQuery()).resolves.toBe('test-query');
   });
 
   test('drizzle-return-void', async () => {
@@ -118,14 +151,32 @@ describe('drizzle-tests', () => {
   });
 
   test('drizzle-key-conflict', async () => {
-    await DBOS.invoke(TestClass).unsafeInsert(1, 'test-one');
+    await TestClass.unsafeInsert(1, 'test-one');
     try {
-      await DBOS.invoke(TestClass).unsafeInsert(1, 'test-two');
+      await TestClass.unsafeInsert(1, 'test-two');
       expect(true).toBe(false); // Fail if no error is thrown.
     } catch (e) {
       const err: DatabaseError = e as DatabaseError;
       expect(err.code).toBe('23505');
     }
+  });
+
+  test('drizzle-serz-xflict', async () => {
+    let cb: () => void | undefined;
+    TestClass.conflictTrigger = new Promise((ressolve) => {
+      cb = ressolve;
+    });
+    await expect(DBOS.invoke(TestClass).returnVoid()).resolves.not.toThrow();
+
+    const h1 = await DBOS.startWorkflow(TestClass).testSerzXflictWF();
+    const h2 = await DBOS.startWorkflow(TestClass).testSerzXflictWF();
+
+    await sleepms(100);
+    cb!();
+
+    const r1 = await h1.getResult();
+    const r2 = await h2.getResult();
+    expect(r1 + r2).toBe(3);
   });
 });
 
@@ -138,16 +189,16 @@ const userTable = pgTable(userTableName, {
 
 @Authentication(DUserManager.authMiddlware)
 export class DUserManager {
-  @Transaction()
-  @PostApi('/register')
-  static async createUser(ctx: TransactionContext<NodePgDatabase>, uname: string) {
-    return await ctx.client.insert(userTable).values({ username: uname }).returning({ id: userTable.id });
+  @DBOS.transaction()
+  @DBOS.postApi('/register')
+  static async createUser(uname: string) {
+    return await getDrizzleDB().insert(userTable).values({ username: uname }).returning({ id: userTable.id });
   }
 
-  @GetApi('/hello')
-  @RequiredRole(['user'])
-  static async hello(hCtxt: HandlerContext) {
-    return Promise.resolve({ messge: 'hello ' + hCtxt.authenticatedUser });
+  @DBOS.getApi('/hello')
+  @DBOS.requiredRole(['user'])
+  static async hello() {
+    return Promise.resolve({ messge: 'hello ' + DBOS.authenticatedUser });
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
