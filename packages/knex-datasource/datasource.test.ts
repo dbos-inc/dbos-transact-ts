@@ -47,7 +47,7 @@ describe('KnexDataSource', () => {
   });
 
   test('test dataSource.register function', async () => {
-    const user = 'test1';
+    const user = 'helloTest1';
 
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
@@ -65,7 +65,7 @@ describe('KnexDataSource', () => {
   });
 
   test('test dataSource.runAsTx function', async () => {
-    const user = 'test2';
+    const user = 'helloTest2';
 
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
@@ -80,6 +80,38 @@ describe('KnexDataSource', () => {
     expect(rows[0].workflow_id).toBe(workflowID);
     expect(rows[0].function_num).toBe(0);
     expect(JSON.parse(rows[0].output)).toEqual({ user, greet_count: 1 });
+  });
+
+  test('test readonly dataSource.register function', async () => {
+    const user = 'readTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regReadWorkflow1(user))).resolves.toEqual({
+      user,
+      greet_count: 10,
+    });
+
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    expect(rows.length).toBe(0);
+  });
+
+  test('test readonly dataSource.runAsTx function', async () => {
+    const user = 'readTest2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regReadWorkflow2(user))).resolves.toEqual({
+      user,
+      greet_count: 10,
+    });
+
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    expect(rows.length).toBe(0);
   });
 });
 
@@ -101,6 +133,13 @@ async function helloFunction(user: string) {
 
 const regHelloFunction = dataSource.register(helloFunction, 'helloFunction');
 
+async function readFunction(user: string) {
+  const row = await KnexDataSource.client<greetings>('greetings').select('greet_count').where('name', user).first();
+  return { user, greet_count: row?.greet_count };
+}
+
+const regReadFunction = dataSource.register(readFunction, 'readFunction', { readOnly: true });
+
 async function helloWorkflow1(user: string) {
   return await regHelloFunction(user);
 }
@@ -112,3 +151,15 @@ async function helloWorkflow2(user: string) {
 }
 
 const regHelloWorkflow2 = DBOS.registerWorkflow(helloWorkflow2, { name: 'helloWorkflow2' });
+
+async function readWorkflow1(user: string) {
+  return await regReadFunction(user);
+}
+
+const regReadWorkflow1 = DBOS.registerWorkflow(readWorkflow1, { name: 'readWorkflow1' });
+
+async function readWorkflow2(user: string) {
+  return await dataSource.runTxStep(() => readFunction(user), 'readFunction', { readOnly: true });
+}
+
+const regReadWorkflow2 = DBOS.registerWorkflow(readWorkflow2, { name: 'readWorkflow2' });
