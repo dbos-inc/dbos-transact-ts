@@ -302,4 +302,33 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   isFailedSqlTransactionError(error: unknown): boolean {
     return this.getPostgresErrorCode(error) === '25P02';
   }
+
+  registerTransaction<This, Args extends unknown[], Return>(
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      name: string;
+    },
+    config?: TypeOrmTransactionConfig,
+  ): (this: This, ...args: Args) => Promise<Return> {
+    return DBOS.registerTransaction(this.name, func, target, config);
+  }
+
+  // decorator
+  transaction(config?: TypeOrmTransactionConfig) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ds = this;
+    return function decorator<This, Args extends unknown[], Return>(
+      _target: object,
+      propertyKey: string,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+    ) {
+      if (!descriptor.value) {
+        throw new Error.DBOSError('Use of decorator when original method is undefined');
+      }
+
+      descriptor.value = ds.registerTransaction(descriptor.value, { name: propertyKey.toString() }, config);
+
+      return descriptor;
+    };
+  }
 }
