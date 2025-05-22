@@ -276,11 +276,7 @@ export class DBOS {
 
   private static translateConfig() {
     if (DBOS.#dbosConfig) {
-      if (isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
-        throw new DBOSInitializationError(
-          'Invalid DBOSConfig. Valid fields are: name, databaseUrl, userDbclient, userDbPoolSize, sysDbName, sysDbPoolSize, logLevel, otlpTracesEndpoints, otlpLogsEndpoints, adminPort, runAdminServer',
-        );
-      } else {
+      if (!isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
         const isDebugging = DBOS.getDebugModeFromEnv() !== DebugMode.DISABLED;
         [DBOS.#dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.#dbosConfig, isDebugging);
         if (process.env.DBOS__CLOUD === 'true') {
