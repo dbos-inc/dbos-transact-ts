@@ -6,7 +6,6 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';
 import { DBOSJSON, sleepms, ValuesOf } from '../src/utils';
-import { MethodRegistration } from '../src/decorators';
 
 /*
  * Knex user data access interface
@@ -331,6 +330,10 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     };
   }
 
+  async runTransactionStep<T>(callback: () => Promise<T>, funcName: string, config?: KnexTransactionConfig) {
+    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+  }
+
   getPostgresErrorCode(error: unknown): string | null {
     const dbErr: PGDatabaseError = error as PGDatabaseError;
     return dbErr.code ? dbErr.code : null;
@@ -366,12 +369,12 @@ const txFunc = DBOS.registerTransaction('knexA', txFunctionGuts, { name: 'MySeco
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
-  const p1 = await DBOS.runAsWorkflowTransaction(
+  const p1 = await dsa.runTransactionStep(
     async () => {
       return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My first tx result' as a")).rows[0].a;
     },
     'MyFirstTx',
-    { dsName: 'knexA' },
+    { readOnly: true },
   );
 
   // Transaction variant 1: Use a registered DBOS transaction function
