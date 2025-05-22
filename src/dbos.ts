@@ -41,6 +41,7 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
+  DBOSInitializationError,
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
@@ -274,14 +275,20 @@ export class DBOS {
   }
 
   private static translateConfig() {
-    if (DBOS.#dbosConfig && !isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
-      const isDebugging = DBOS.getDebugModeFromEnv() !== DebugMode.DISABLED;
-      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.#dbosConfig, isDebugging);
-      if (process.env.DBOS__CLOUD === 'true') {
-        [DBOS.#dbosConfig, DBOS.#runtimeConfig] = overwrite_config(
-          DBOS.#dbosConfig as DBOSConfigInternal,
-          DBOS.#runtimeConfig,
+    if (DBOS.#dbosConfig) {
+      if (isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
+        throw new DBOSInitializationError(
+          'Invalid DBOSConfig. Valid fields are: name, databaseUrl, userDbclient, userDbPoolSize, sysDbName, sysDbPoolSize, logLevel, otlpTracesEndpoints, otlpLogsEndpoints, adminPort, runAdminServer',
         );
+      } else {
+        const isDebugging = DBOS.getDebugModeFromEnv() !== DebugMode.DISABLED;
+        [DBOS.#dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.#dbosConfig, isDebugging);
+        if (process.env.DBOS__CLOUD === 'true') {
+          [DBOS.#dbosConfig, DBOS.#runtimeConfig] = overwrite_config(
+            DBOS.#dbosConfig as DBOSConfigInternal,
+            DBOS.#runtimeConfig,
+          );
+        }
       }
     }
   }
