@@ -1,4 +1,4 @@
-import Koa, { Context, Middleware } from 'koa';
+import Koa from 'koa';
 import Router from '@koa/router';
 import bodyParser from '@koa/bodyparser';
 import cors from '@koa/cors';
@@ -7,136 +7,18 @@ import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { SpanStatusCode, trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { Span } from '@opentelemetry/sdk-trace-base';
 
-import { IncomingHttpHeaders } from 'http';
-import { randomUUID } from 'node:crypto';
-
-import { DBOS, DBOSConfig, DBOSLifecycleCallback, Error as DBOSErrors } from '../src';
-
-// Test stuff
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import request from 'supertest';
-
-export enum APITypes {
-  GET = 'GET',
-  POST = 'POST',
-  PUT = 'PUT',
-  PATCH = 'PATCH',
-  DELETE = 'DELETE',
-}
-
-const HTTP_OPERATION_TYPE = 'http';
-
-export interface DBOSHTTPAuthReturn {
-  authenticatedUser: string;
-  authenticatedRoles: string[];
-}
-
-interface DBOSHTTPReg {
-  apiURL: string;
-  apiType: APITypes;
-}
-
-interface DBOSHTTPMethodInfo {
-  registrations?: DBOSHTTPReg[];
-}
-
-export const WorkflowIDHeader = 'dbos-idempotency-key';
-
-export const RequestIDHeader = 'X-Request-ID';
-export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
-  const reqID = headers[RequestIDHeader.toLowerCase()] as string | undefined; // RequestIDHeader is expected to be a single value, so we dismiss the possible string[] returned type.
-  if (reqID) {
-    return reqID;
-  }
-  const newID = randomUUID();
-  headers[RequestIDHeader.toLowerCase()] = newID; // This does not carry through the response
-  return newID;
-}
-
-export function isClientRequestError(e: Error) {
-  return DBOSErrors.isDataValidationError(e);
-}
-
-function exhaustiveCheckGuard(_: never): never {
-  throw new Error('Exaustive matching is not applied');
-}
-
-interface DBOSHTTPConfig {
-  corsMiddleware?: boolean;
-  credentials?: boolean;
-  allowedOrigins?: string[];
-}
-
-class DBOSHTTPBase extends DBOSLifecycleCallback {
-  httpApiDec(verb: APITypes, url: string) {
-    // eslint-disable-next-line @typescript-eslint/no-this-alias
-    const er = this;
-    return function apidec<This, Args extends unknown[], Return>(
-      target: object,
-      propertyKey: string,
-      descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-    ) {
-      const { func, registration, regInfo } = DBOS.associateFunctionWithInfo(er, descriptor.value!, {
-        classOrInst: target,
-        name: propertyKey,
-      });
-      const handlerRegistration = regInfo as DBOSHTTPMethodInfo;
-      if (!handlerRegistration.registrations) handlerRegistration.registrations = [];
-      handlerRegistration.registrations.push({
-        apiURL: url,
-        apiType: verb,
-      });
-      registration.performArgValidation = true;
-
-      descriptor.value = func;
-      return descriptor;
-    };
-  }
-
-  /** Decorator indicating that the method is the target of HTTP GET operations for `url` */
-  getApi(url: string) {
-    return this.httpApiDec(APITypes.GET, url);
-  }
-
-  /** Decorator indicating that the method is the target of HTTP POST operations for `url` */
-  postApi(url: string) {
-    return this.httpApiDec(APITypes.POST, url);
-  }
-
-  /** Decorator indicating that the method is the target of HTTP PUT operations for `url` */
-  putApi(url: string) {
-    return this.httpApiDec(APITypes.PUT, url);
-  }
-
-  /** Decorator indicating that the method is the target of HTTP PATCH operations for `url` */
-  patchApi(url: string) {
-    return this.httpApiDec(APITypes.PATCH, url);
-  }
-
-  /** Decorator indicating that the method is the target of HTTP DELETE operations for `url` */
-  deleteApi(url: string) {
-    return this.httpApiDec(APITypes.DELETE, url);
-  }
-
-  override logRegisteredEndpoints(): void {
-    DBOS.logger.info('HTTP endpoints supported:');
-    const eps = DBOS.getAssociatedInfo(this);
-
-    for (const e of eps) {
-      const { methodConfig, methodReg } = e;
-      const httpmethod = methodConfig as DBOSHTTPMethodInfo;
-      for (const ro of httpmethod.registrations ?? []) {
-        if (ro.apiURL) {
-          DBOS.logger.info('    ' + ro.apiType.padEnd(6) + '  :  ' + ro.apiURL);
-          const roles = methodReg.getRequiredRoles();
-          if (roles.length > 0) {
-            DBOS.logger.info('        Required Roles: ' + JSON.stringify(roles));
-          }
-        }
-      }
-    }
-  }
-}
+import { DBOS, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
+import {
+  APITypes,
+  DBOSHTTPAuthReturn,
+  DBOSHTTPBase,
+  DBOSHTTPConfig,
+  DBOSHTTPMethodInfo,
+  getOrGenerateRequestID,
+  isClientRequestError,
+  RequestIDHeader,
+  WorkflowIDHeader,
+} from './dboshttp';
 
 // Context for auth middleware
 export interface DBOSKoaAuthContext {
@@ -165,7 +47,11 @@ interface DBOSHTTPClassReg {
   koaGlobalMiddlewares?: Koa.Middleware[];
 }
 
-class DBOSKoa extends DBOSHTTPBase {
+function exhaustiveCheckGuard(_: never): never {
+  throw new Error('Exaustive matching is not applied');
+}
+
+export class DBOSKoa extends DBOSHTTPBase {
   /**
    * Define an authentication function for each endpoint in this class.
    */
@@ -276,7 +162,7 @@ class DBOSKoa extends DBOSHTTPBase {
               ro.apiURL,
               cors({
                 credentials: config?.credentials ?? true,
-                origin: (o: Context) => {
+                origin: (o: Koa.Context) => {
                   const whitelist = config?.allowedOrigins;
                   const origin = o.request.header.origin ?? '*';
                   if (whitelist && whitelist.length > 0) {
@@ -369,7 +255,7 @@ class DBOSKoa extends DBOSHTTPBase {
               httpTracer.extract(ROOT_CONTEXT, koaCtxt.request.headers, defaultTextMapGetter),
             );
             const spanAttributes = {
-              operationType: HTTP_OPERATION_TYPE,
+              operationType: DBOSHTTPBase.HTTP_OPERATION_TYPE,
               requestID: requestID,
               requestIP: koaCtxt.request.ip,
               requestURL: koaCtxt.request.url,
@@ -490,68 +376,3 @@ class DBOSKoa extends DBOSHTTPBase {
     app.use(appRouter.routes()).use(appRouter.allowedMethods());
   }
 }
-
-const dhttp = new DBOSKoa();
-
-let middlewareCounter = 0;
-const testMiddleware: Middleware = async (_ctx, next) => {
-  middlewareCounter++;
-  await next();
-};
-
-let middlewareCounter2 = 0;
-const testMiddleware2: Middleware = async (_ctx, next) => {
-  middlewareCounter2 = middlewareCounter2 + 1;
-  await next();
-};
-
-let middlewareCounterG = 0;
-const testMiddlewareG: Middleware = async (_ctx, next) => {
-  middlewareCounterG = middlewareCounterG + 1;
-  expect(DBOS.logger).toBeDefined();
-  await next();
-};
-
-@dhttp.koaGlobalMiddleware(testMiddlewareG)
-@dhttp.koaGlobalMiddleware(testMiddleware, testMiddleware2)
-export class HTTPEndpoints {
-  @dhttp.getApi('/foobar')
-  static async foobar(arg: string) {
-    return Promise.resolve(`ARG: ${arg}`);
-  }
-}
-
-describe('decoratorless-api-tests', () => {
-  let config: DBOSConfig;
-  let app: Koa;
-  let appRouter: Router;
-
-  beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
-    DBOS.setConfig(config);
-  });
-
-  beforeEach(async () => {
-    middlewareCounter = middlewareCounter2 = middlewareCounterG = 0;
-    DBOS.registerLifecycleCallback(dhttp);
-    await DBOS.launch();
-    DBOS.logRegisteredEndpoints();
-    app = new Koa();
-    appRouter = new Router();
-    dhttp.registerWithApp(app, appRouter);
-  });
-
-  afterEach(async () => {
-    await DBOS.shutdown();
-  });
-
-  test('simple-functions', async () => {
-    const response1 = await request(app.callback()).get('/foobar?arg=A');
-    expect(response1.statusCode).toBe(200);
-    expect(response1.text).toBe('ARG: A');
-    expect(middlewareCounter).toBe(1);
-    expect(middlewareCounter2).toBe(1);
-    expect(middlewareCounterG).toBe(1);
-  });
-});
