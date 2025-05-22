@@ -389,7 +389,6 @@ describe('dbos-tests', () => {
       const status = await DBOS.getWorkflowStatus(workflowID);
       expect(status?.status).toBe(StatusString.ERROR);
       const childStatus = await DBOS.getWorkflowStatus(childID);
-      console.log(childStatus);
       expect(childStatus?.status).toBe(StatusString.CANCELLED);
       expect(status?.deadlineEpochMS).toBeGreaterThan(childStatus?.deadlineEpochMS!);
     });
