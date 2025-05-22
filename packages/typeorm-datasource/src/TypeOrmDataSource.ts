@@ -186,7 +186,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   /**
    * Invoke a transaction function
    */
-  invokeTransactionFunction<This, Args extends unknown[], Return>(
+  async invokeTransactionFunction<This, Args extends unknown[], Return>(
     config: TypeOrmTransactionConfig,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
@@ -206,18 +206,74 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
     let shouldCheckOutput = false;
 
+    if (this.dataSource === undefined) {
+      throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of Datasource');
+    }
+
     while (true) {
       let failedForRetriableReasons = false;
 
-      const result = this.dataSource?.transaction(isolationLevel, async (transactionEntityManager: EntityManager) => {
-        const result = await asyncLocalCtx.run({ typeOrmEntityManager: transactionEntityManager }, async () => {
-          return await func.call(target, ...args);
-        });
-        return result;
-      });
-    }
+      if (shouldCheckOutput && !readOnly) {
+        const executionResult = await this.checkExecution<Return>(this.dataSource, wfid, funcnum);
 
-    return 'foo' as any; // TODO: Implement this method;
+        if (executionResult) {
+          DBOS.span?.setAttribute('cached', true);
+          return executionResult.res;
+        }
+      }
+
+      try {
+        const result = this.dataSource?.transaction(isolationLevel, async (transactionEntityManager: EntityManager) => {
+          const result = await asyncLocalCtx.run({ typeOrmEntityManager: transactionEntityManager }, async () => {
+            return await func.call(target, ...args);
+          });
+          return result;
+        });
+
+        // Save result
+        try {
+          if (!readOnly) {
+            await this.recordOutput(this.dataSource, wfid, funcnum, result);
+          }
+        } catch (e) {
+          const error = e as Error;
+
+          // Aside from a connectivity error, two kinds of error are anticipated here:
+          //  1. The transaction is marked failed, but the user code did not throw.
+          //      Bad on them.  We will throw an error (this will get recorded) and not retry.
+          //  2. There was a key conflict in the statement, and we need to use the fetched output
+          if (this.isFailedSqlTransactionError(error)) {
+            DBOS.logger.error(
+              `In workflow ${wfid}, Postgres aborted a transaction but the function '${funcname}' did not raise an exception.  Please ensure that the transaction method raises an exception if the database transaction is aborted.`,
+            );
+            failedForRetriableReasons = false;
+            throw new Error.DBOSFailedSqlTransactionError(wfid, funcname);
+          } else if (this.isKeyConflictError(error)) {
+            // Expected.  There is probably a result to return
+            shouldCheckOutput = true;
+            failedForRetriableReasons = true;
+          } else {
+            DBOS.logger.error(`Unexpected error raised in transaction '${funcname}: ${error}`);
+            failedForRetriableReasons = false;
+            throw error;
+          }
+        }
+
+        return result;
+      } catch (e) {
+        const err = e as Error;
+        if (failedForRetriableReasons || this.isRetriableTransactionError(err)) {
+          DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
+          // Retry serialization failures.
+          await DBOS.sleepms(retryWaitMillis);
+          retryWaitMillis *= backoffFactor;
+          retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
+          continue;
+        } else {
+          throw err;
+        }
+      }
+    }
   }
 
   createInstance(): DataSource {
@@ -228,5 +284,22 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
       entities: this.entities,
       poolSize: this.config.max,
     });
+  }
+
+  getPostgresErrorCode(error: unknown): string | null {
+    const dbErr: PGDatabaseError = error as PGDatabaseError;
+    return dbErr.code ? dbErr.code : null;
+  }
+
+  isRetriableTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === '40001';
+  }
+
+  isKeyConflictError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === '23505';
+  }
+
+  isFailedSqlTransactionError(error: unknown): boolean {
+    return this.getPostgresErrorCode(error) === '25P02';
   }
 }
