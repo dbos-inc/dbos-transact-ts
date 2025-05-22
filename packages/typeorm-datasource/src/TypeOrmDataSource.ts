@@ -1,6 +1,27 @@
 import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
-import { DBOS, type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk';
-import { DataSource } from 'typeorm';
+import { DBOS, type DBOSTransactionalDataSource, DBOSJSON, Error } from '@dbos-inc/dbos-sdk';
+import { DataSource, EntityManager } from 'typeorm';
+import { Type } from '@nestjs/common';
+import { Data } from 'ws';
+import { AsyncLocalStorage } from 'async_hooks';
+
+interface DBOSTypeOrmLocalCtx {
+  typeOrmEntityManager: EntityManager;
+}
+const asyncLocalCtx = new AsyncLocalStorage<DBOSTypeOrmLocalCtx>();
+
+function getCurrentDSContextStore(): DBOSTypeOrmLocalCtx | undefined {
+  return asyncLocalCtx.getStore();
+}
+
+function assertCurrentDSContextStore(): DBOSTypeOrmLocalCtx {
+  const ctx = getCurrentDSContextStore();
+  if (!ctx)
+    throw new Error.DBOSInvalidWorkflowTransitionError(
+      'Invalid use of `DBOSKnexDS.knexClient` outside of a `transaction`',
+    );
+  return ctx;
+}
 
 interface ExistenceCheck {
   exists: boolean;
@@ -19,7 +40,7 @@ export interface transaction_outputs {
 export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
 export const userDBSchema = `
-  CREATE TABLE IF NOT EXISTS dbos.knex_transaction_outputs (
+  CREATE TABLE IF NOT EXISTS dbos.transaction_outputs (
     workflow_id TEXT NOT NULL,
     function_num INT NOT NULL,
     output TEXT,
@@ -104,7 +125,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
       }
     } catch (e) {
       console.error(`Unexpected error initializing schema: ${e}`);
-      throw new Error(`Unexpected error initializing schema: ${e}`);
+      throw new Error.DBOSError(`Unexpected error initializing schema: ${e}`);
     } finally {
       try {
         await ds.destroy();
@@ -122,6 +143,46 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     return Promise.resolve();
   }
 
+  async checkExecution<R>(
+    client: DataSource,
+    workflowID: string,
+    funcNum: number,
+  ): Promise<
+    | {
+        res: R;
+      }
+    | undefined
+  > {
+    type TxOutputRow = Pick<transaction_outputs, 'output'> & {
+      recorded: boolean;
+    };
+
+    const { rows } = await client.query<{ rows: TxOutputRow[] }>(
+      `SELECT output
+          FROM dbos.knex_transaction_outputs
+          WHERE workflow_id=? AND function_num=?;`,
+      [workflowID, funcNum],
+    );
+
+    if (rows.length !== 1) {
+      return undefined;
+    }
+    return { res: DBOSJSON.parse(rows[1].output) as R };
+    // return rows[1].output as any;
+  }
+
+  async recordOutput<R>(client: DataSource, workflowID: string, funcNum: number, output: R): Promise<void> {
+    const serialOutput = DBOSJSON.stringify(output);
+    await client.query<{ rows: transaction_outputs[] }>(
+      `INSERT INTO dbos.transaction_outputs (
+        workflow_id, function_num,
+        output,
+        created_at
+      ) VALUES (?, ?, ?, ?)`,
+      [workflowID, funcNum, serialOutput, Date.now()],
+    );
+  }
+
   /**
    * Invoke a transaction function
    */
@@ -131,9 +192,30 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
   ): Promise<Return> {
-    const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
+    const isolationLevel = config.isolationLevel ? config.isolationLevel : 'SERIALIZABLE';
 
-    while (true) {}
+    const readOnly = config?.readOnly ? true : false;
+
+    const wfid = DBOS.workflowID!;
+    const funcnum = DBOS.stepID!;
+    const funcname = func.name;
+
+    // Retry loop if appropriate
+    let retryWaitMillis = 1;
+    const backoffFactor = 1.5;
+    const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
+    let shouldCheckOutput = false;
+
+    while (true) {
+      let failedForRetriableReasons = false;
+
+      const result = this.dataSource?.transaction(isolationLevel, async (transactionEntityManager: EntityManager) => {
+        const result = await asyncLocalCtx.run({ typeOrmEntityManager: transactionEntityManager }, async () => {
+          return await func.call(target, ...args);
+        });
+        return result;
+      });
+    }
 
     return 'foo' as any; // TODO: Implement this method;
   }
