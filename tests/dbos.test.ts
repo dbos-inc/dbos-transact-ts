@@ -390,7 +390,7 @@ describe('dbos-tests', () => {
       expect(status?.status).toBe(StatusString.ERROR);
       const childStatus = await DBOS.getWorkflowStatus(childID);
       expect(childStatus?.status).toBe(StatusString.CANCELLED);
-      expect(status?.deadlineEpochMS).toBeGreaterThan(childStatus?.deadlineEpochMS!);
+      expect(status?.deadlineEpochMS).toBeGreaterThan(childStatus?.deadlineEpochMS as number);
     });
 
     test('child-wf-timeout-after-parent', async () => {
@@ -405,7 +405,7 @@ describe('dbos-tests', () => {
       expect(status?.status).toBe(StatusString.CANCELLED);
       const childStatus = await DBOS.getWorkflowStatus(childID);
       expect(childStatus?.status).toBe(StatusString.CANCELLED);
-      expect(childStatus?.deadlineEpochMS).toBeGreaterThan(status?.deadlineEpochMS!);
+      expect(childStatus?.deadlineEpochMS).toBeGreaterThan(status?.deadlineEpochMS as number);
     });
 
     test('sleeping-workflow-timed-out', async () => {
