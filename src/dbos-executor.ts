@@ -858,9 +858,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       const e = err as Error & { dbos_already_logged?: boolean };
       exec.logger.error(e);
       e.dbos_already_logged = true;
-      if (wCtxt.isTempWorkflow) {
-        internalStatus.workflowName = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
-      }
       internalStatus.error = DBOSJSON.stringify(serializeError(e));
       internalStatus.status = StatusString.ERROR;
       if (internalStatus.queueName && !exec.isDebugging) {
