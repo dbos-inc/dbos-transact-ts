@@ -1,0 +1,26 @@
+{
+  "name": "@dbos-inc/dbos-knex",
+  "version": "0.0.0-placeholder",
+  "description": "",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-transact",
+    "directory": "packages/knex-datasource"
+  },
+  "homepage": "https://docs.dbos.dev/",
+  "main": "index.js",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "dependencies": {
+    "knex": "^3.1.0"
+  },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "*"
+  },
+  "devDependencies": {
+    "typescript": "^5.4.5"
+  }
+}
