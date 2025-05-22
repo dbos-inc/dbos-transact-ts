@@ -42,12 +42,15 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     const knexDB = knex(config);
     try {
       await knexDB.schema.createSchemaIfNotExists('dbos');
-      await knexDB.schema.withSchema('dbos').createTableIfNotExists('transaction_outputs', (table) => {
-        table.string('workflow_id').notNullable();
-        table.integer('function_num').notNullable();
-        table.string('output').nullable();
-        table.primary(['workflow_id', 'function_num']);
-      });
+      const exists = await knexDB.schema.withSchema('dbos').hasTable('transaction_outputs');
+      if (!exists) {
+        await knexDB.schema.withSchema('dbos').createTable('transaction_outputs', (table) => {
+          table.string('workflow_id').notNullable();
+          table.integer('function_num').notNullable();
+          table.string('output').nullable();
+          table.primary(['workflow_id', 'function_num']);
+        });
+      }
     } finally {
       await knexDB.destroy();
     }
@@ -122,11 +125,11 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     ...args: Args
   ): Promise<Return> {
     const workflowID = DBOS.workflowID;
-    if (!workflowID) {
+    if (workflowID === undefined) {
       throw new Error('Workflow ID is not set.');
     }
     const functionNum = DBOS.stepID;
-    if (!functionNum) {
+    if (functionNum === undefined) {
       throw new Error('Function Number is not set.');
     }
 

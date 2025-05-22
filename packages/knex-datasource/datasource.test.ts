@@ -1,0 +1,114 @@
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import { Client, Pool } from 'pg';
+import { KnexDataSource } from './index';
+import { dropDB, ensureDB } from './test-helpers';
+import { randomUUID } from 'crypto';
+
+const config = { client: 'pg', connection: { user: 'postgres', database: 'knex_ds_test_userdb' } };
+const dataSource = new KnexDataSource('app-db', config);
+DBOS.registerDataSource(dataSource);
+
+describe('KnexDataSource', () => {
+  const userDB = new Pool(config.connection);
+
+  beforeAll(async () => {
+    {
+      const client = new Client({ ...config.connection, database: 'postgres' });
+      try {
+        await client.connect();
+        await dropDB(client, 'knex_ds_test');
+        await dropDB(client, 'knex_ds_test_dbos_sys');
+        await dropDB(client, config.connection.database);
+        await ensureDB(client, config.connection.database);
+      } finally {
+        await client.end();
+      }
+    }
+
+    {
+      const client = await userDB.connect();
+      try {
+        await client.query(
+          'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
+        );
+      } finally {
+        client.release();
+      }
+    }
+
+    await KnexDataSource.configure(config);
+    DBOS.setConfig({ name: 'knex-ds-test' });
+    await DBOS.launch();
+  });
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+    await userDB.end();
+  });
+
+  test('test dataSource.register function', async () => {
+    const user = 'test1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regHelloWorkflow1(user))).resolves.toEqual({
+      user,
+      greet_count: 1,
+    });
+
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    expect(rows.length).toBe(1);
+    expect(rows[0].workflow_id).toBe(workflowID);
+    expect(rows[0].function_num).toBe(0);
+    expect(JSON.parse(rows[0].output)).toEqual({ user, greet_count: 1 });
+  });
+
+  test('test dataSource.runAsTx function', async () => {
+    const user = 'test2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regHelloWorkflow2(user))).resolves.toEqual({
+      user,
+      greet_count: 1,
+    });
+
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    expect(rows.length).toBe(1);
+    expect(rows[0].workflow_id).toBe(workflowID);
+    expect(rows[0].function_num).toBe(0);
+    expect(JSON.parse(rows[0].output)).toEqual({ user, greet_count: 1 });
+  });
+});
+
+export interface greetings {
+  name: string;
+  greet_count: number;
+}
+
+async function helloFunction(user: string) {
+  const rows = await KnexDataSource.client<greetings>('greetings')
+    .insert({ name: user, greet_count: 1 })
+    .onConflict('name')
+    .merge({ greet_count: KnexDataSource.client.raw('greetings.greet_count + 1') })
+    .returning('greet_count');
+  const row = rows.length > 0 ? rows[0] : undefined;
+
+  return { user, greet_count: row?.greet_count };
+}
+
+const regHelloFunction = dataSource.register(helloFunction, 'helloFunction');
+
+async function helloWorkflow1(user: string) {
+  return await regHelloFunction(user);
+}
+
+const regHelloWorkflow1 = DBOS.registerWorkflow(helloWorkflow1, { name: 'helloWorkflow1' });
+
+async function helloWorkflow2(user: string) {
+  return await dataSource.runTxStep(() => helloFunction(user), 'helloFunction');
+}
+
+const regHelloWorkflow2 = DBOS.registerWorkflow(helloWorkflow2, { name: 'helloWorkflow2' });
