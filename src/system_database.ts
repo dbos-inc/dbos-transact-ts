@@ -484,7 +484,7 @@ function mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStat
     error: row.error ? row.error : null,
     workflowClassName: row.class_name ?? '',
     workflowConfigName: row.config_name ?? '',
-    queueName: row.queue_name,
+    queueName: row.queue_name ?? undefined,
     authenticatedUser: row.authenticated_user,
     assumedRole: row.assumed_role,
     authenticatedRoles: JSON.parse(row.authenticated_roles) as string[],
@@ -639,7 +639,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       } else if ((resRow.config_name || '') !== (initStatus.workflowConfigName || '')) {
         const msg = `Workflow already exists with a different class configuration: ${resRow.config_name}, but the provided class configuration is: ${initStatus.workflowConfigName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
-      } else if ((resRow.queue_name ?? undefined) !== initStatus.queueName) {
+      } else if ((resRow.queue_name ?? undefined) !== (initStatus.queueName ?? undefined)) {
         // This is a warning because a different queue name is not necessarily an error.
         this.logger.warn(
           `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated. ${new Error().stack}`,
