@@ -1,5 +1,5 @@
 import { Client } from 'pg';
-import { KnexDataSource } from './index';
+import { KnexDataSource } from '../index';
 import { dropDB, ensureDB } from './test-helpers';
 
 describe('KnexDataSource.configure', () => {
