@@ -1,17 +1,8 @@
 // using https://github.com/brianc/node-postgres
 
 import { DBOS, type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk';
-import {
-  Client,
-  type ClientBase,
-  type ClientConfig,
-  DatabaseError,
-  Pool,
-  type PoolConfig,
-  type QueryResultRow,
-} from 'pg';
+import { Client, type ClientBase, type ClientConfig, DatabaseError, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
-import { NoticeMessage } from 'pg-protocol/dist/messages.js';
 
 export const IsolationLevel = Object.freeze({
   serializable: 'SERIALIZABLE',
@@ -26,7 +17,6 @@ type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 export interface NodePostgresTransactionOptions {
   isolationLevel?: IsolationLevel;
   readOnly?: boolean;
-  storedProc?: string;
 }
 
 interface NodePostgresDataSourceContext {
@@ -58,16 +48,12 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
   static async runTxStep<T>(
     callback: () => Promise<T>,
     funcName: string,
-    options: { dsName?: string; config?: Omit<NodePostgresTransactionOptions, 'storedProc'> } = {},
+    options: { dsName?: string; config?: NodePostgresTransactionOptions } = {},
   ) {
     return await DBOS.runAsWorkflowTransaction(callback, funcName, options);
   }
 
-  async runTxStep<T>(
-    callback: () => Promise<T>,
-    funcName: string,
-    config?: Omit<NodePostgresTransactionOptions, 'storedProc'>,
-  ) {
+  async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
     return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
   }
 
@@ -88,45 +74,43 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
   }
 
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
-    config: NodePostgresTransactionOptions,
+    config: NodePostgresTransactionOptions | undefined,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
   ): Promise<Return> {
     const workflowID = DBOS.workflowID;
-    const functionNum = DBOS.stepID;
-
-    if (!workflowID) {
+    if (workflowID === undefined) {
       throw new Error('Workflow ID is not set.');
     }
-    if (!functionNum) {
+    const functionNum = DBOS.stepID;
+    if (functionNum === undefined) {
       throw new Error('Function Number is not set.');
     }
 
-    if (config.storedProc !== undefined) {
-      return this.#runRemote<Return>(config.storedProc, args, workflowID, functionNum);
-    } else {
-      return this.#runLocal(() => func.call(target, ...args), workflowID, functionNum, config);
-    }
+    return this.#runLocal(() => func.call(target, ...args), workflowID, functionNum, config);
   }
 
   async #runLocal<Return>(
     func: () => Promise<Return>,
     workflowID: string,
     functionNum: number,
-    config: NodePostgresTransactionOptions,
+    config: NodePostgresTransactionOptions | undefined,
   ): Promise<Return> {
-    const isolationLevel = config.isolationLevel ? `ISOLATION LEVEL ${config.isolationLevel}` : '';
-    const accessMode = config.readOnly === undefined ? '' : config.readOnly ? 'READ ONLY' : 'READ WRITE';
+    const isolationLevel = config?.isolationLevel ? `ISOLATION LEVEL ${config.isolationLevel}` : '';
+    const readOnly = config?.readOnly ?? false;
+    const accessMode = config?.readOnly === undefined ? '' : readOnly ? 'READ ONLY' : 'READ WRITE';
 
     while (true) {
-      const { rows } = await this.#pool.query<{ output: string }> /*sql*/(
-        `SELECT output FROM dbos.transaction_outputs
+      if (!readOnly) {
+        const { rows } = await this.#pool.query<{ output: string }>(
+          /*sql*/ `SELECT output FROM dbos.transaction_outputs
                  WHERE workflow_id = $1 AND function_num = $2`,
-        [workflowID, functionNum],
-      );
-      if (rows.length > 0) {
-        return JSON.parse(rows[0].output) as Return;
+          [workflowID, functionNum],
+        );
+        if (rows.length > 0) {
+          return JSON.parse(rows[0].output) as Return;
+        }
       }
 
       const client = await this.#pool.connect();
@@ -135,7 +119,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
 
         const output = await asyncLocalCtx.run({ client }, func);
 
-        if (!config.readOnly) {
+        if (!readOnly) {
           try {
             await client.query(
               /*sql*/
@@ -164,38 +148,6 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     }
   }
 
-  async #runRemote<Return>(name: string, args: unknown[], workflowID: string, functionNum: number): Promise<Return> {
-    const context = {};
-    const $args = [workflowID, functionNum, JSON.stringify(args), context, null];
-    const sql = `CALL "${name}_p"(${$args.map((_v, i) => `$${i + 1}`).join()});`;
-    const client = await this.#pool.connect();
-    try {
-      client.on('notice', logNotice);
-
-      type QueryResult = { return_value: { output?: Return; error?: Error } };
-      const [{ return_value }] = await client.query<QueryResult>(sql, $args).then((value) => value.rows);
-      const { output, error } = return_value;
-      if (error) {
-        throw new Error(error.message, { cause: error.cause });
-      } else {
-        return output!;
-      }
-    } finally {
-      client.off('notice', logNotice);
-      client.release();
-    }
-  }
-
-  static async ensureDatabase(name: string, config: ClientConfig): Promise<void> {
-    const client = new Client(config);
-    try {
-      await client.connect();
-      await ensureDB(client, name);
-    } finally {
-      await client.end();
-    }
-  }
-
   static async configure(config: ClientConfig): Promise<void> {
     const client = new Client(config);
     try {
@@ -213,48 +165,5 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     } finally {
       await client.end();
     }
-  }
-}
-
-function logNotice(msg: NoticeMessage) {
-  switch (msg.severity) {
-    case 'INFO':
-    case 'LOG':
-    case 'NOTICE':
-      DBOS.logger.info(msg.message);
-      break;
-    case 'WARNING':
-      DBOS.logger.warn(msg.message);
-      break;
-    case 'DEBUG':
-      DBOS.logger.debug(msg.message);
-      break;
-    case 'ERROR':
-    case 'FATAL':
-    case 'PANIC':
-      DBOS.logger.error(msg.message);
-      break;
-    default:
-      DBOS.logger.error(`Unknown notice severity: ${msg.severity} - ${msg.message}`);
-  }
-}
-
-// helper functions to create/drop the database
-async function checkDB(sql: ClientBase, name: string) {
-  const results = await sql.query(/*sql*/ `SELECT 1 FROM pg_database WHERE datname = $1`, [name]);
-  return results.rows.length > 0;
-}
-
-export async function ensureDB(sql: ClientBase, name: string) {
-  const exists = await checkDB(sql, name);
-  if (!exists) {
-    await sql.query(/*sql*/ `CREATE DATABASE ${name}`);
-  }
-}
-
-export async function dropDB(sql: ClientBase, name: string) {
-  const exists = await checkDB(sql, name);
-  if (exists) {
-    await sql.query(/*sql*/ `DROP DATABASE ${name}`);
   }
 }
