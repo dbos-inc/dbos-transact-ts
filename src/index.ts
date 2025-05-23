@@ -19,6 +19,8 @@ export {
   DBOSEventReceiverState,
 } from './eventreceiver';
 
+export { DBOSLifecycleCallback } from './decorators';
+
 export { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';
@@ -26,6 +28,8 @@ export * as Error from './error';
 export { DBOSResponseError } from './error';
 
 export { TransactionConfig, TransactionFunction } from './transaction';
+
+export { DBOSTransactionalDataSource } from './transactionsource';
 
 export { StoredProcedureContext, StoredProcedureConfig } from './procedure';
 

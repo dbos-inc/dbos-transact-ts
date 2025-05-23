@@ -1,0 +1,9 @@
+/* Visit https://aka.ms/tsconfig to read more about this file */
+{
+  "extends": "../../tsconfig.shared.json",
+  "compilerOptions": {
+    "outDir": "./dist"
+  },
+  "include": ["index.ts"],
+  "exclude": ["dist", "tests"]
+}

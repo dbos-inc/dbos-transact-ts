@@ -61,14 +61,18 @@ import {
 } from './user_database';
 import {
   MethodRegistrationBase,
-  getRegisteredOperations,
-  getOrCreateClassRegistration,
   MethodRegistration,
   getRegisteredMethodClassName,
   getRegisteredMethodName,
   getConfiguredInstance,
   ConfiguredInstance,
-  getAllRegisteredClasses,
+  getNameForClass,
+  getClassRegistrationByName,
+  getAllRegisteredClassNames,
+  getRegisteredOperationsByClassname,
+  DBOSContextProvider,
+  DBOSStoredWFContext,
+  getLifecycleListeners,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -80,6 +84,8 @@ import {
   runWithStepContext,
   runWithStoredProcContext,
   getNextWFID,
+  getCurrentDBOSContext,
+  getCurrentContextStore,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
@@ -87,7 +93,7 @@ import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
+import { DBOSContext, DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
 
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -403,8 +409,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  #registerClass(cls: object) {
-    const registeredClassOperations = getRegisteredOperations(cls);
+  #registerClass(clsname: string) {
+    const registeredClassOperations = getRegisteredOperationsByClassname(clsname);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
@@ -439,15 +445,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return;
     }
 
+    let classnames: string[] = [];
     if (!classes || !classes.length) {
-      classes = getAllRegisteredClasses();
+      classnames = getAllRegisteredClassNames();
+    } else {
+      classnames = classes.map((c) => getNameForClass(c as AnyConstructor));
     }
 
     type AnyConstructor = new (...args: unknown[]) => object;
     try {
       let length; // Track the length of the array (or number of keys of the object)
-      for (const cls of classes) {
-        const reg = getOrCreateClassRegistration(cls as AnyConstructor);
+      for (const clsname of classnames) {
+        const reg = getClassRegistrationByName(clsname);
         /**
          * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
          */
@@ -474,7 +483,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         throw new DBOSInitializationError('No user database configured!');
       }
 
-      for (const cls of classes) {
+      for (const cls of classnames) {
         this.#registerClass(cls);
       }
 
@@ -502,9 +511,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Only execute init code if under non-debug mode
     if (!this.isDebugging) {
-      for (const cls of classes) {
+      for (const cls of classnames) {
         // Init its configurations
-        const creg = getOrCreateClassRegistration(cls as AnyConstructor);
+        const creg = getClassRegistrationByName(cls);
         for (const [_cfgname, cfg] of creg.configuredInstances) {
           await cfg.initialize(new InitContext());
         }
@@ -642,6 +651,28 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.logger.debug(`Registered stored proc ${cfn}`);
   }
 
+  contextProviders: DBOSContextProvider[] = [
+    {
+      captureContext(ctx: DBOSStoredWFContext, explicitCtx?: DBOSContext): void {
+        const lctx = getCurrentContextStore();
+        const dctx = getCurrentDBOSContext();
+        ctx.request = explicitCtx?.request ?? lctx?.request ?? dctx?.request ?? {};
+        ctx.assumedRole = explicitCtx?.assumedRole ?? lctx?.assumedRole ?? dctx?.assumedRole ?? '';
+        ctx.authenticatedRoles =
+          explicitCtx?.authenticatedRoles ?? lctx?.authenticatedRoles ?? dctx?.authenticatedRoles ?? [];
+        ctx.authenticatedUser =
+          explicitCtx?.authenticatedUser ?? lctx?.authenticatedUser ?? dctx?.authenticatedUser ?? '';
+      },
+      needsToRestoreContext(ctx: DBOSStoredWFContext): boolean {
+        if (ctx.request || ctx.assumedRole || ctx.authenticatedUser || ctx.authenticatedRoles) return true;
+        return false;
+      },
+      async runInRestoredContext<T>(ctx: DBOSStoredWFContext, callback: () => Promise<T>): Promise<T> {
+        return await callback();
+      },
+    },
+  ];
+
   getWorkflowInfo(wf: Workflow<unknown[], unknown>) {
     const wfname =
       wf.name === DBOSExecutor.tempWorkflowName ? wf.name : getRegisteredMethodClassName(wf) + '.' + wf.name;
@@ -757,6 +788,30 @@ export class DBOSExecutor implements DBOSExecutorContext {
       params.tempWfType,
       params.tempWfName,
     );
+
+    const storeCtx: DBOSStoredWFContext = { contextData: {} };
+    for (const cp of this.contextProviders) {
+      cp.captureContext(storeCtx, params.parentCtx);
+    }
+
+    if (wCtxt.request) {
+      if (JSON.stringify(wCtxt.request) !== JSON.stringify(storeCtx.request)) {
+        throw new TypeError(
+          `Request does not match: ${JSON.stringify(wCtxt.request)} ${JSON.stringify(storeCtx.request)}`,
+        );
+      }
+    }
+    if (wCtxt.authenticatedRoles) {
+      if (JSON.stringify(wCtxt.authenticatedRoles) !== JSON.stringify(storeCtx.authenticatedRoles)) {
+        throw new TypeError('Roles does not match');
+      }
+      if (JSON.stringify(wCtxt.authenticatedUser) !== JSON.stringify(storeCtx.authenticatedUser)) {
+        throw new TypeError('User does not match');
+      }
+      if (JSON.stringify(wCtxt.assumedRole) !== JSON.stringify(storeCtx.assumedRole)) {
+        throw new TypeError('Role does not match');
+      }
+    }
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
@@ -1665,7 +1720,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // Create a workflow and call external.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
-      return await this.callStepFunction(stepFn, params.configuredInstance ?? null, ctxtImpl, ...args);
+      return await this.callStepFunction(
+        stepFn,
+        undefined,
+        undefined,
+        params.configuredInstance ?? null,
+        ctxtImpl,
+        ...args,
+      );
     };
 
     return await this.internalWorkflow(
@@ -1689,13 +1751,21 @@ export class DBOSExecutor implements DBOSExecutorContext {
    */
   async callStepFunction<T extends unknown[], R>(
     stepFn: StepFunction<T, R>,
-    clsInst: ConfiguredInstance | null,
+    stepFnName: string | undefined,
+    stepConfig: StepConfig | undefined,
+    clsInst: object | null,
     wfCtx: WorkflowContextImpl,
     ...args: T
   ): Promise<R> {
-    const commInfo = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
-    if (commInfo === undefined) {
-      throw new DBOSNotRegisteredError(stepFn.name);
+    stepFnName = stepFnName ?? stepFn.name ?? '<unnamed>';
+    let passContext = false;
+    if (!stepConfig) {
+      const stepReg = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
+      stepConfig = stepReg?.config;
+      passContext = stepReg?.registration.passContext ?? true;
+    }
+    if (stepConfig === undefined) {
+      throw new DBOSNotRegisteredError(stepFnName);
     }
 
     await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
@@ -1704,22 +1774,22 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
     const span: Span = this.tracer.startSpan(
-      stepFn.name,
+      stepFnName,
       {
         operationUUID: wfCtx.workflowUUID,
         operationType: OperationType.COMMUNICATOR,
         authenticatedUser: wfCtx.authenticatedUser,
         assumedRole: wfCtx.assumedRole,
         authenticatedRoles: wfCtx.authenticatedRoles,
-        retriesAllowed: commInfo.config.retriesAllowed,
-        intervalSeconds: commInfo.config.intervalSeconds,
-        maxAttempts: commInfo.config.maxAttempts,
-        backoffRate: commInfo.config.backoffRate,
+        retriesAllowed: stepConfig.retriesAllowed,
+        intervalSeconds: stepConfig.intervalSeconds,
+        maxAttempts: stepConfig.maxAttempts,
+        backoffRate: stepConfig.backoffRate,
       },
       wfCtx.span,
     );
 
-    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, commInfo.config, stepFn.name);
+    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, stepConfig, stepFnName);
 
     // Check if this execution previously happened, returning its original result if it did.
     const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfCtx.workflowUUID, ctxt.functionID);
@@ -1763,7 +1833,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
           let cresult: R | undefined;
-          if (commInfo.registration.passContext) {
+          if (passContext) {
             await runWithStepContext(ctxt, numAttempts, async () => {
               cresult = await stepFn.call(clsInst, ctxt, ...args);
             });
@@ -1797,7 +1867,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       try {
         let cresult: R | undefined;
-        if (commInfo.registration.passContext) {
+        if (passContext) {
           await runWithStepContext(ctxt, undefined, async () => {
             cresult = await stepFn.call(clsInst, ctxt, ...args);
           });
@@ -1816,7 +1886,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // `result` can only be dbosNull when the step timed out
     if (result === dbosNull) {
       // Record the error, then throw it.
-      err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFn.name, ctxt.maxAttempts, errors) : err;
+      err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, ctxt.maxAttempts, errors) : err;
       await this.systemDatabase.recordOperationResult(wfCtx.workflowUUID, ctxt.functionID, ctxt.operationName, true, {
         error: DBOSJSON.stringify(serializeError(err)),
       });
@@ -2031,9 +2101,21 @@ export class DBOSExecutor implements DBOSExecutorContext {
     for (const evtRcvr of this.eventReceivers) {
       await evtRcvr.initialize(this);
     }
+    for (const lcl of getLifecycleListeners()) {
+      await lcl.initialize();
+    }
   }
 
   async deactivateEventReceivers(stopQueueThread: boolean = true) {
+    this.logger.debug('Deactivating lifecycle listeners');
+    for (const lcl of getLifecycleListeners()) {
+      try {
+        await lcl.destroy();
+      } catch (err) {
+        const e = err as Error;
+        this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
+      }
+    }
     this.logger.debug('Deactivating event receivers');
     for (const evtRcvr of this.eventReceivers || []) {
       try {
