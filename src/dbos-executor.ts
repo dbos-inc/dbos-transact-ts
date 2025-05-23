@@ -860,11 +860,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       e.dbos_already_logged = true;
       internalStatus.error = DBOSJSON.stringify(serializeError(e));
       internalStatus.status = StatusString.ERROR;
-      if (internalStatus.queueName && !exec.isDebugging) {
-        await exec.systemDatabase.dequeueWorkflow(workflowID, exec.#getQueueByName(internalStatus.queueName));
-      }
       if (!exec.isDebugging) {
-        await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
+        await exec.systemDatabase.recordWorkflowErrorAndDequeueIfNeeded(workflowID, internalStatus);
       }
       wCtxt.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
     }

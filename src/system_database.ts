@@ -72,7 +72,7 @@ export interface SystemDatabase {
     maxRetries?: number,
   ): Promise<{ serializedInputs: string; status: string; deadlineEpochMS?: number }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
-  recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
+  recordWorkflowErrorAndDequeueIfNeeded(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
   getWorkflowInputs(workflowID: string): Promise<string | null>;
@@ -684,10 +684,26 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
+  async recordWorkflowErrorAndDequeueIfNeeded(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      if (status.queueName) {
+        await client.query(
+          `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_queue
+           SET completed_at_epoch_ms = $2
+           WHERE workflow_uuid = $1;`,
+          [workflowID, Date.now()],
+        );
+      } else {
+        await deleteQueuedWorkflows(client, workflowID);
+      }
+
       await updateWorkflowStatus(client, workflowID, StatusString.ERROR, { update: { error: status.error } });
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
     } finally {
       client.release();
     }
