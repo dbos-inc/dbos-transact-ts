@@ -207,13 +207,11 @@ describe('httpserver-tests', () => {
     expect(response.text).toBe('hello 1');
   });
 
-  /* TODO Debug
   test('endpoint-testInvokeWorkflow', async () => {
     const response = await request(app.callback()).get('/testInvokeWorkflow/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
   // This feels unclean, but supertest doesn't expose the error message the people we want. See:
   //   https://github.com/ladjs/supertest/issues/95
@@ -221,14 +219,12 @@ describe('httpserver-tests', () => {
     res: IncomingMessage;
   }
 
-  /* TODO Debug
   test('response-error', async () => {
     const response = await request(app.callback()).get('/dbos-error');
     expect(response.statusCode).toBe(503);
     expect((response as unknown as Res).res.statusMessage).toBe('customize error');
     expect(response.body.message).toBe('customize error');
   });
-  */
 
   test('datavalidation-error', async () => {
     const response = await request(app.callback()).get('/query');
