@@ -179,7 +179,7 @@ describe('httpserver-tests', () => {
     expect(response.text).toBe('alice');
   });
 
-  /* TODO Stack dec
+  /* TODO Post param
   test('endpoint-workflow', async () => {
     const response = await request(app.callback()).post('/workflow?name=alice');
     expect(response.statusCode).toBe(200);
@@ -195,21 +195,17 @@ describe('httpserver-tests', () => {
   });
   */
 
-  /* TODO Debug
   test('endpoint-handler', async () => {
     const response = await request(app.callback()).get('/handler/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
-  /* TODO Debug
   test('endpoint-testStartWorkflow', async () => {
     const response = await request(app.callback()).get('/testStartWorkflow/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
   /* TODO Debug
   test('endpoint-testInvokeWorkflow', async () => {
