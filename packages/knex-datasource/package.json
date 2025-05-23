@@ -1,5 +1,5 @@
 {
-  "name": "@dbos-inc/dbos-knex",
+  "name": "@dbos-inc/knex-datasource",
   "version": "0.0.0-placeholder",
   "description": "",
   "license": "MIT",
