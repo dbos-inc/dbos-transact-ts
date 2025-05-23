@@ -83,27 +83,29 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   }
 
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
-    config: PostgresTransactionOptions,
+    config: PostgresTransactionOptions | undefined,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
   ): Promise<Return> {
     const workflowID = DBOS.workflowID;
-    const functionNum = DBOS.stepID;
-    const isolationLevel = config.isolationLevel ? `ISOLATION LEVEL ${config.isolationLevel}` : '';
-    const accessMode = config.readOnly === undefined ? '' : config.readOnly ? 'READ ONLY' : 'READ WRITE';
-
-    if (!workflowID) {
+    if (workflowID === undefined) {
       throw new Error('Workflow ID is not set.');
     }
-    if (!functionNum) {
+    const functionNum = DBOS.stepID;
+    if (functionNum === undefined) {
       throw new Error('Function Number is not set.');
     }
+    const isolationLevel = config?.isolationLevel ? `ISOLATION LEVEL ${config.isolationLevel}` : '';
+    const readOnly = config?.readOnly ?? false;
+    const accessMode = config?.readOnly === undefined ? '' : readOnly ? 'READ ONLY' : 'READ WRITE';
 
     while (true) {
-      const result = await this.#getResult(workflowID, functionNum);
-      if (result) {
-        return JSON.parse(result) as Return;
+      if (!readOnly) {
+        const result = await this.#getResult(workflowID, functionNum);
+        if (result) {
+          return JSON.parse(result) as Return;
+        }
       }
 
       try {
@@ -112,7 +114,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
             return await func.call(target, ...args);
           });
 
-          if (config.readOnly) {
+          if (!readOnly) {
             try {
               await client/*sql*/ `
                             INSERT INTO dbos.transaction_outputs (workflow_id, function_num, output)
