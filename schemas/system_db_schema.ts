@@ -19,6 +19,7 @@ export interface workflow_status {
   recovery_attempts: number;
   workflow_timeout_ms: number | null;
   workflow_deadline_epoch_ms: number | null;
+  inputs: string;
 }
 
 export interface notifications {
@@ -40,11 +41,6 @@ export interface operation_outputs {
   error: string;
   child_workflow_id: string;
   function_name?: string;
-}
-
-export interface workflow_inputs {
-  workflow_uuid: string;
-  inputs: string;
 }
 
 export interface event_dispatch_kv {
