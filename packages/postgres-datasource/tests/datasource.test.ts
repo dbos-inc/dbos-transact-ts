@@ -1,11 +1,11 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
-import { KnexDataSource } from '../index';
+import { PostgresDataSource } from '../index';
 import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 
-const config = { client: 'pg', connection: { user: 'postgres', database: 'knex_ds_test_userdb' } };
-const dataSource = new KnexDataSource('app-db', config);
+const config = { user: 'postgres', database: 'pg_ds_test_userdb' };
+const dataSource = new PostgresDataSource('app-db', config);
 DBOS.registerDataSource(dataSource);
 
 interface transaction_outputs {
@@ -14,18 +14,18 @@ interface transaction_outputs {
   output: string | null;
 }
 
-describe('KnexDataSource', () => {
-  const userDB = new Pool(config.connection);
+describe('PostgresDataSource', () => {
+  const userDB = new Pool(config);
 
   beforeAll(async () => {
     {
-      const client = new Client({ ...config.connection, database: 'postgres' });
+      const client = new Client({ ...config, database: 'postgres' });
       try {
         await client.connect();
         await dropDB(client, 'knex_ds_test');
         await dropDB(client, 'knex_ds_test_dbos_sys');
-        await dropDB(client, config.connection.database);
-        await ensureDB(client, config.connection.database);
+        await dropDB(client, config.database);
+        await ensureDB(client, config.database);
       } finally {
         await client.end();
       }
@@ -42,7 +42,7 @@ describe('KnexDataSource', () => {
       }
     }
 
-    await KnexDataSource.configure(config);
+    await PostgresDataSource.configure(config);
     DBOS.setConfig({ name: 'knex-ds-test' });
     await DBOS.launch();
   });
@@ -105,10 +105,9 @@ describe('KnexDataSource', () => {
 
     await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user))).rejects.toThrow('test error');
 
-    const { rows: txOutput } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
-      [workflowID],
-    );
+    const { rows: txOutput } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [
+      workflowID,
+    ]);
     expect(txOutput.length).toBe(0);
 
     const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
@@ -148,10 +147,7 @@ describe('KnexDataSource', () => {
       greet_count: 10,
     });
 
-    const { rows } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
-      [workflowID],
-    );
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
     expect(rows.length).toBe(0);
   });
 
@@ -202,13 +198,13 @@ export interface greetings {
 }
 
 async function insertFunction(user: string) {
-  const rows = await KnexDataSource.client<greetings>('greetings')
-    .insert({ name: user, greet_count: 1 })
-    .onConflict('name')
-    .merge({ greet_count: KnexDataSource.client.raw('greetings.greet_count + 1') })
-    .returning('greet_count');
+  const rows = await PostgresDataSource.client<Pick<greetings, 'greet_count'>[]>`
+    INSERT INTO greetings(name, greet_count) 
+    VALUES(${user}, 1) 
+    ON CONFLICT(name)
+    DO UPDATE SET greet_count = greetings.greet_count + 1
+    RETURNING greet_count`;
   const row = rows.length > 0 ? rows[0] : undefined;
-
   return { user, greet_count: row?.greet_count };
 }
 
@@ -219,7 +215,11 @@ async function errorFunction(user: string) {
 }
 
 async function readFunction(user: string) {
-  const row = await KnexDataSource.client<greetings>('greetings').select('greet_count').where('name', user).first();
+  const rows = await PostgresDataSource.client<Pick<greetings, 'greet_count'>[]>`
+    SELECT greet_count
+    FROM greetings
+    WHERE name = ${user}`;
+  const row = rows.length > 0 ? rows[0] : undefined;
   return { user, greet_count: row?.greet_count };
 }
 

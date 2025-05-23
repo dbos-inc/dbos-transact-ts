@@ -119,7 +119,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
   }
 
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
-    config: Knex.TransactionConfig,
+    config: Knex.TransactionConfig | undefined,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
@@ -140,7 +140,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
         const result = await this.#getResult(workflowID, functionNum);
         // TODO: DBOSJSON
         if (result) {
-          return JSON.parse(result);
+          return JSON.parse(result) as Return;
         }
       }
 
