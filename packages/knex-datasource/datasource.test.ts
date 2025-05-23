@@ -82,6 +82,44 @@ describe('KnexDataSource', () => {
     expect(JSON.parse(rows[0].output)).toEqual({ user, greet_count: 1 });
   });
 
+  test('test erroring dataSource.register function', async () => {
+    const user = 'errorTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflow1(user))).rejects.toThrow('test error');
+
+    const { rows: txOutput } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [
+      workflowID,
+    ]);
+    expect(txOutput.length).toBe(0);
+
+    const { rows } = await userDB.query('SELECT * FROM greetings WHERE name = $1', [user]);
+    expect(rows.length).toBe(1);
+    expect(rows[0].greet_count).toBe(10);
+  });
+
+  test('test erroring dataSource.runAsTx function', async () => {
+    const user = 'errorTest2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflow2(user))).rejects.toThrow('test error');
+
+    const { rows: txOutput } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [
+      workflowID,
+    ]);
+    expect(txOutput.length).toBe(0);
+
+    const { rows } = await userDB.query('SELECT * FROM greetings WHERE name = $1', [user]);
+    expect(rows.length).toBe(1);
+    expect(rows[0].greet_count).toBe(10);
+  });
+
   test('test readonly dataSource.register function', async () => {
     const user = 'readTest1';
 
@@ -157,6 +195,14 @@ async function helloFunction(user: string) {
 
 const regHelloFunction = dataSource.register(helloFunction, 'helloFunction');
 
+async function errorFunction(user: string) {
+  const result = await helloFunction(user);
+  throw new Error('test error');
+  return result;
+}
+
+const regErrorFunction = dataSource.register(errorFunction, 'errorFunction');
+
 async function readFunction(user: string) {
   const row = await KnexDataSource.client<greetings>('greetings').select('greet_count').where('name', user).first();
   return { user, greet_count: row?.greet_count };
@@ -176,6 +222,18 @@ async function helloWorkflow2(user: string) {
 
 const regHelloWorkflow2 = DBOS.registerWorkflow(helloWorkflow2, { name: 'helloWorkflow2' });
 
+async function errorWorkflow1(user: string) {
+  return await regErrorFunction(user);
+}
+
+const regErrorWorkflow1 = DBOS.registerWorkflow(errorWorkflow1, { name: 'errorWorkflow1' });
+
+async function errorWorkflow2(user: string) {
+  return await dataSource.runTxStep(() => errorFunction(user), 'errorFunction');
+}
+
+const regErrorWorkflow2 = DBOS.registerWorkflow(errorWorkflow2, { name: 'errorWorkflow2' });
+
 async function readWorkflow1(user: string) {
   return await regReadFunction(user);
 }
@@ -187,6 +245,17 @@ async function readWorkflow2(user: string) {
 }
 
 const regReadWorkflow2 = DBOS.registerWorkflow(readWorkflow2, { name: 'readWorkflow2' });
+
+async function erroWorkflow1(user: string) {
+  const rows = await KnexDataSource.client<greetings>('greetings')
+    .insert({ name: user, greet_count: 1 })
+    .onConflict('name')
+    .merge({ greet_count: KnexDataSource.client.raw('greetings.greet_count + 1') })
+    .returning('greet_count');
+  const row = rows.length > 0 ? rows[0] : undefined;
+
+  throw new Error('test error');
+}
 
 class StaticClass {
   static async helloFunction(user: string) {
