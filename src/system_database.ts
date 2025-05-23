@@ -496,8 +496,8 @@ function mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStat
     applicationID: row.application_id,
     recoveryAttempts: Number(row.recovery_attempts),
     input: row.inputs,
-    timeoutMS: row.workflow_timeout_ms ?? undefined,
-    deadlineEpochMS: row.workflow_deadline_epoch_ms ?? undefined,
+    timeoutMS: row.workflow_timeout_ms ? Number(row.workflow_timeout_ms) : undefined,
+    deadlineEpochMS: row.workflow_deadline_epoch_ms ? Number(row.workflow_deadline_epoch_ms) : undefined,
   };
 }
 

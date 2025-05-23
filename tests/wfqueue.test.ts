@@ -1442,7 +1442,7 @@ describe('queue-time-outs', () => {
     const recoveryHandles = await recoverPendingWorkflows(['local']);
     expect(recoveryHandles.length).toBe(1);
     const recoveryStatus = await recoveryHandles[0].getStatus();
-    expect(recoveryStatus?.timeoutMS).toBe('3000');
+    expect(recoveryStatus?.timeoutMS).toBe(3000);
     expect(status?.deadlineEpochMS).toBe(recoveryStatus?.deadlineEpochMS);
 
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
