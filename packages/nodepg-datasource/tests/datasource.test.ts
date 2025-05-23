@@ -8,6 +8,12 @@ const config = { user: 'postgres', database: 'nodepg_ds_test_userdb' };
 const dataSource = new NodePostgresDataSource('app-db', config);
 DBOS.registerDataSource(dataSource);
 
+interface transaction_outputs {
+  workflow_id: string;
+  function_num: number;
+  output: string | null;
+}
+
 describe('NodePostgresDataSource', () => {
   const userDB = new Pool(config);
 
@@ -57,11 +63,15 @@ describe('NodePostgresDataSource', () => {
       greet_count: 1,
     });
 
-    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    const { rows } = await userDB.query<transaction_outputs>(
+      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+      [workflowID],
+    );
     expect(rows.length).toBe(1);
     expect(rows[0].workflow_id).toBe(workflowID);
     expect(rows[0].function_num).toBe(0);
-    expect(JSON.parse(rows[0].output)).toEqual({ user, greet_count: 1 });
+    expect(rows[0].output).not.toBeNull();
+    expect(JSON.parse(rows[0].output!)).toEqual({ user, greet_count: 1 });
   });
 
   test('insert dataSource.runAsTx function', async () => {
@@ -75,11 +85,15 @@ describe('NodePostgresDataSource', () => {
       greet_count: 1,
     });
 
-    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    const { rows } = await userDB.query<transaction_outputs>(
+      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+      [workflowID],
+    );
     expect(rows.length).toBe(1);
     expect(rows[0].workflow_id).toBe(workflowID);
     expect(rows[0].function_num).toBe(0);
-    expect(JSON.parse(rows[0].output)).toEqual({ user, greet_count: 1 });
+    expect(rows[0].output).not.toBeNull();
+    expect(JSON.parse(rows[0].output!)).toEqual({ user, greet_count: 1 });
   });
 
   test('error dataSource.register function', async () => {
@@ -96,7 +110,7 @@ describe('NodePostgresDataSource', () => {
     ]);
     expect(txOutput.length).toBe(0);
 
-    const { rows } = await userDB.query('SELECT * FROM greetings WHERE name = $1', [user]);
+    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
     expect(rows.length).toBe(1);
     expect(rows[0].greet_count).toBe(10);
   });
@@ -110,12 +124,13 @@ describe('NodePostgresDataSource', () => {
 
     await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user))).rejects.toThrow('test error');
 
-    const { rows: txOutput } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [
-      workflowID,
-    ]);
+    const { rows: txOutput } = await userDB.query<transaction_outputs>(
+      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+      [workflowID],
+    );
     expect(txOutput.length).toBe(0);
 
-    const { rows } = await userDB.query('SELECT * FROM greetings WHERE name = $1', [user]);
+    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
     expect(rows.length).toBe(1);
     expect(rows[0].greet_count).toBe(10);
   });
@@ -132,7 +147,10 @@ describe('NodePostgresDataSource', () => {
       greet_count: 10,
     });
 
-    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    const { rows } = await userDB.query<transaction_outputs>(
+      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+      [workflowID],
+    );
     expect(rows.length).toBe(0);
   });
 
@@ -148,7 +166,10 @@ describe('NodePostgresDataSource', () => {
       greet_count: 10,
     });
 
-    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    const { rows } = await userDB.query<transaction_outputs>(
+      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+      [workflowID],
+    );
     expect(rows.length).toBe(0);
   });
 
@@ -241,7 +262,9 @@ class InstanceClass {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/unbound-method
 InstanceClass.prototype.insertFunction = dataSource.register(InstanceClass.prototype.insertFunction, 'insertFunction');
+// eslint-disable-next-line @typescript-eslint/unbound-method
 InstanceClass.prototype.readFunction = dataSource.register(InstanceClass.prototype.readFunction, 'readFunction');
 
 async function insertWorkflowReg(user: string) {

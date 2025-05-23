@@ -140,7 +140,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
         const result = await this.#getResult(workflowID, functionNum);
         // TODO: DBOSJSON
         if (result) {
-          return JSON.parse(result);
+          return JSON.parse(result) as Return;
         }
       }
 

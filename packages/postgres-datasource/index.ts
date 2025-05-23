@@ -5,6 +5,7 @@ import { DBOS, type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk';
 import { AsyncLocalStorage } from 'node:async_hooks';
 
 interface PostgresDataSourceContext {
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   client: postgres.TransactionSql<{}>;
 }
 const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
@@ -30,11 +31,13 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   readonly dsType = 'PostgresDataSource';
   readonly #db: Sql;
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   constructor(name: string, options: postgres.Options<{}> = {}) {
     this.name = name;
     this.#db = postgres(options);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   static get client(): postgres.TransactionSql<{}> {
     if (!DBOS.isInTransaction()) {
       throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
@@ -145,6 +148,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   static async ensureDatabase(name: string, options: postgres.Options<{}> = {}): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
@@ -154,6 +158,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
     }
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   static async configure(options: postgres.Options<{}> = {}): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
