@@ -777,6 +777,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       createdAt: Date.now(), // Remember the start time of this workflow,
       timeoutMS: timeoutMS,
       deadlineEpochMS: deadlineEpochMS,
+      input: DBOSJSON.stringify(args),
     };
 
     if (wCtxt.isTempWorkflow) {
@@ -803,18 +804,13 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
       status = wfStatus.status;
     } else {
-      // TODO: Make this transactional (and with the queue step below)
       if (callerFunctionID !== undefined && callerID !== undefined) {
         const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
         if (result) {
           return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!, callerID, callerFunctionID);
         }
       }
-      const ires = await this.systemDatabase.initWorkflowStatus(
-        internalStatus,
-        DBOSJSON.stringify(args),
-        wCtxt.maxRecoveryAttempts,
-      );
+      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, wCtxt.maxRecoveryAttempts);
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(callerID, callerFunctionID, internalStatus.workflowName, true, {
@@ -822,7 +818,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         });
       }
 
-      args = DBOSJSON.parse(ires.serializedInputs) as T;
       status = ires.status;
       $deadlineEpochMS = ires.deadlineEpochMS;
       await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
