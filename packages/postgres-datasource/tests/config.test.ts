@@ -3,7 +3,7 @@ import { PostgresDataSource } from '../index';
 import { dropDB, ensureDB } from './test-helpers';
 
 describe('PostgresDataSource.configure', () => {
-  const config = { user: 'postgres', database: 'knex_ds_config_test' };
+  const config = { user: 'postgres', database: 'pg_ds_config_test' };
 
   beforeAll(async () => {
     const client = new Client({ ...config, database: 'postgres' });

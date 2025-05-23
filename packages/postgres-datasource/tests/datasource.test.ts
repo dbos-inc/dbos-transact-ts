@@ -4,22 +4,22 @@ import { PostgresDataSource } from '../index';
 import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 
-const config = { client: 'pg', connection: { user: 'postgres', database: 'knex_ds_test_userdb' } };
+const config = { user: 'postgres', database: 'pg_ds_test_userdb' };
 const dataSource = new PostgresDataSource('app-db', config);
 DBOS.registerDataSource(dataSource);
 
 describe('PostgresDataSource', () => {
-  const userDB = new Pool(config.connection);
+  const userDB = new Pool(config);
 
   beforeAll(async () => {
     {
-      const client = new Client({ ...config.connection, database: 'postgres' });
+      const client = new Client({ ...config, database: 'postgres' });
       try {
         await client.connect();
         await dropDB(client, 'knex_ds_test');
         await dropDB(client, 'knex_ds_test_dbos_sys');
-        await dropDB(client, config.connection.database);
-        await ensureDB(client, config.connection.database);
+        await dropDB(client, config.database);
+        await ensureDB(client, config.database);
       } finally {
         await client.end();
       }
