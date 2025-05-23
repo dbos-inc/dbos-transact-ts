@@ -59,7 +59,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
       propertyKey: string,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { func, registration, regInfo } = DBOS.associateFunctionWithInfo(er, descriptor.value!, {
+      const { registration, regInfo } = DBOS.associateFunctionWithInfo(er, descriptor.value!, {
         classOrInst: target,
         name: propertyKey,
       });
@@ -71,7 +71,6 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
       });
       registration.performArgValidation = true;
 
-      descriptor.value = func;
       return descriptor;
     };
   }

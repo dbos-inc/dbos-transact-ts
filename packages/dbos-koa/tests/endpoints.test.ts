@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import Koa from 'koa';
 import Router from '@koa/router';
@@ -79,13 +78,11 @@ describe('httpserver-tests', () => {
     expect(response.text).toBe('hello alice');
   });
 
-  /* TODO ArgSources
   test('get-querybody', async () => {
     const response = await request(app.callback()).get('/querybody').send({ name: 'alice' });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
-  */
 
   test('delete-query', async () => {
     const response = await request(app.callback()).delete('/testdeletequery?name=alice');
@@ -99,13 +96,11 @@ describe('httpserver-tests', () => {
     expect(response.text).toBe('hello alice');
   });
 
-  /* TODO ArgSources
   test('delete-body', async () => {
     const response = await request(app.callback()).delete('/testdeletebody').send({ name: 'alice' });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
-  */
 
   test('post-test', async () => {
     const response = await request(app.callback()).post('/testpost').send({ name: 'alice' });
@@ -167,61 +162,47 @@ describe('httpserver-tests', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  /* TODO Stack dec
   test('endpoint-transaction', async () => {
     const response = await request(app.callback()).post('/transaction/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
-  /* TODO Stack dec
   test('endpoint-step', async () => {
     const response = await request(app.callback()).get('/step/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('alice');
   });
-  */
 
-  /* TODO Stack dec
   test('endpoint-workflow', async () => {
     const response = await request(app.callback()).post('/workflow?name=alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
-  /* TODO Stack dec
   test('endpoint-error', async () => {
     const response = await request(app.callback()).post('/error').send({ name: 'alice' });
     expect(response.statusCode).toBe(500);
     expect(response.body.details.code).toBe('23505'); // Should be the expected error.
   });
-  */
 
-  /* TODO Debug
   test('endpoint-handler', async () => {
     const response = await request(app.callback()).get('/handler/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
-  /* TODO Debug
   test('endpoint-testStartWorkflow', async () => {
     const response = await request(app.callback()).get('/testStartWorkflow/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
-  /* TODO Debug
   test('endpoint-testInvokeWorkflow', async () => {
     const response = await request(app.callback()).get('/testInvokeWorkflow/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
   // This feels unclean, but supertest doesn't expose the error message the people we want. See:
   //   https://github.com/ladjs/supertest/issues/95
@@ -229,14 +210,12 @@ describe('httpserver-tests', () => {
     res: IncomingMessage;
   }
 
-  /* TODO Debug
   test('response-error', async () => {
     const response = await request(app.callback()).get('/dbos-error');
     expect(response.statusCode).toBe(503);
     expect((response as unknown as Res).res.statusMessage).toBe('customize error');
     expect(response.body.message).toBe('customize error');
   });
-  */
 
   test('datavalidation-error', async () => {
     const response = await request(app.callback()).get('/query');
@@ -290,43 +269,37 @@ describe('httpserver-tests', () => {
     expect(response.statusCode).toBe(200);
   });
 
-  /* TODO Stack dec
   test('test-workflowID-header', async () => {
-    const workflowUUID = randomUUID();
+    const workflowID = randomUUID();
     const response = await request(app.callback())
       .post('/workflow?name=bob')
-      .set({ 'dbos-idempotency-key': workflowUUID });
+      .set({ 'dbos-idempotency-key': workflowID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
 
-    // Retrieve the workflow with UUID.
-    const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
+    // Retrieve the workflow with WFID.
+    const retrievedHandle = DBOS.retrieveWorkflow(workflowID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
   });
-  */
 
-  /* TODO Debug
-  test('endpoint-handler-UUID', async () => {
-    const workflowUUID = randomUUID();
-    const response = await request(app.callback())
-      .get('/handler/bob')
-      .set({ 'dbos-idempotency-key': workflowUUID });
+  test('endpoint-handler-WFID', async () => {
+    const workflowID = randomUUID();
+    const response = await request(app.callback()).get('/handler/bob').set({ 'dbos-idempotency-key': workflowID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
 
-    // Retrieve the workflow with UUID.
-    const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
+    // Retrieve the workflow with WFID.
+    const retrievedHandle = DBOS.retrieveWorkflow(workflowID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
   });
-  */
 
   async function testAuthMiddlware(ctx: DBOSKoaAuthContext) {
     if (ctx.requiredRole.length > 0) {
@@ -435,7 +408,7 @@ describe('httpserver-tests', () => {
     @dhttp.getApi('/handler/:name')
     static async testHandler(name: string) {
       const workflowID: string = DBOSKoa.koaContext.get(WorkflowIDHeader);
-      // Invoke a workflow using the given UUID.
+      // Invoke a workflow using the given ID.
       return DBOS.startWorkflow(TestEndpoints, { workflowID })
         .testWorkflow(name)
         .then((x) => x.getResult());

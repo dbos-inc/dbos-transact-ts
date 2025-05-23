@@ -1850,7 +1850,7 @@ export class DBOS {
       const pctx = getCurrentContextStore();
       let inst: ConfiguredInstance | undefined = undefined;
       if (this) {
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as unknown as ConfiguredInstance;
@@ -1957,7 +1957,7 @@ export class DBOS {
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         const pctx = getCurrentContextStore();
         let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as ConfiguredInstance;
@@ -2184,7 +2184,7 @@ export class DBOS {
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as ConfiguredInstance;
@@ -2406,7 +2406,7 @@ export class DBOS {
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as ConfiguredInstance;

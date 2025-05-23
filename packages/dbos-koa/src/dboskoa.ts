@@ -243,9 +243,9 @@ export class DBOSKoa extends DBOSHTTPBase {
                   args.push(foundArg);
                 } else {
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-                  const bFoundArg = koaCtxt.request.body?.[marg.name];
-                  if (bFoundArg !== undefined) {
-                    args.push(bFoundArg);
+                  foundArg = koaCtxt.request.body?.[marg.name];
+                  if (foundArg !== undefined) {
+                    args.push(foundArg);
                   }
                 }
               } else if (isBodyMethod) {
@@ -254,9 +254,9 @@ export class DBOSKoa extends DBOSHTTPBase {
                 if (foundArg !== undefined) {
                   args.push(foundArg);
                 } else {
-                  const qFoundArg = koaCtxt.request.query[marg.name];
-                  if (qFoundArg !== undefined) {
-                    args.push(qFoundArg);
+                  foundArg = koaCtxt.request.query[marg.name];
+                  if (foundArg !== undefined) {
+                    args.push(foundArg);
                   } else {
                     if (!koaCtxt.request.body) {
                       throw new DBOSErrors.DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);

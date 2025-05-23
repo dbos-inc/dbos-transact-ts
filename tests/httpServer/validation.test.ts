@@ -1,21 +1,8 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import {
-  DBOS,
-  GetApi,
-  PostApi,
-  ArgVarchar,
-  ArgDate,
-  DefaultArgRequired,
-  DefaultArgOptional,
-  ArgRequired,
-  ArgOptional,
-  Workflow,
-} from '../../src';
+import { DBOS, ArgVarchar, ArgDate, DefaultArgRequired, DefaultArgOptional, ArgRequired, ArgOptional } from '../../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import request from 'supertest';
-import { HandlerContext } from '../../src/httpServer/handler';
 import { DBOSConfig } from '../../src/dbos-executor';
-import { WorkflowContext } from '../../src';
 
 describe('httpserver-datavalidation-tests', () => {
   let config: DBOSConfig;
@@ -344,85 +331,85 @@ describe('httpserver-datavalidation-tests', () => {
 
   @DefaultArgRequired
   class TestEndpointDataVal {
-    @GetApi('/hello')
-    static async hello(_ctx: HandlerContext) {
+    @DBOS.getApi('/hello')
+    static async hello() {
       return Promise.resolve({ message: 'hello!' });
     }
 
-    @GetApi('/string')
-    static async checkStringG(_ctx: HandlerContext, v: string) {
+    @DBOS.getApi('/string')
+    static async checkStringG(v: string) {
       if (typeof v !== 'string') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice string: ${v}` });
     }
 
-    @PostApi('/string')
-    static async checkStringP(_ctx: HandlerContext, v: string) {
+    @DBOS.postApi('/string')
+    static async checkStringP(v: string) {
       if (typeof v !== 'string') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice string: ${v}` });
     }
 
-    @GetApi('/varchar')
-    static async checkVarcharG(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
+    @DBOS.getApi('/varchar')
+    static async checkVarcharG(@ArgVarchar(10) v: string) {
       if (typeof v !== 'string') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice string (limited length): ${v}` });
     }
 
-    @PostApi('/varchar')
-    static async checkVarcharP(_ctx: HandlerContext, @ArgVarchar(10) v: string) {
+    @DBOS.postApi('/varchar')
+    static async checkVarcharP(@ArgVarchar(10) v: string) {
       if (typeof v !== 'string') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice string (limited length): ${v}` });
     }
 
-    @GetApi('/number')
-    static async checkNumberG(_ctx: HandlerContext, v: number) {
+    @DBOS.getApi('/number')
+    static async checkNumberG(v: number) {
       if (typeof v !== 'number') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice number: ${v}` });
     }
 
-    @PostApi('/number')
-    static async checkNumberP(_ctx: HandlerContext, v: number) {
+    @DBOS.postApi('/number')
+    static async checkNumberP(v: number) {
       if (typeof v !== 'number') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice number: ${v}` });
     }
 
-    @GetApi('/bigint')
-    static async checkBigintG(_ctx: HandlerContext, v: bigint) {
+    @DBOS.getApi('/bigint')
+    static async checkBigintG(v: bigint) {
       if (typeof v !== 'bigint') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice bigint: ${v}` });
     }
 
-    @PostApi('/bigint')
-    static async checkBigintP(_ctx: HandlerContext, v: bigint) {
+    @DBOS.postApi('/bigint')
+    static async checkBigintP(v: bigint) {
       if (typeof v !== 'bigint') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice bigint: ${v}` });
     }
 
-    @GetApi('/date')
-    static async checkDateG(_ctx: HandlerContext, @ArgDate() v: Date) {
+    @DBOS.getApi('/date')
+    static async checkDateG(@ArgDate() v: Date) {
       if (!(v instanceof Date)) {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice date: ${v.toISOString()}` });
     }
 
-    @PostApi('/date')
-    static async checkDateP(_ctx: HandlerContext, @ArgDate() v: Date) {
+    @DBOS.postApi('/date')
+    static async checkDateP(@ArgDate() v: Date) {
       if (!(v instanceof Date)) {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
@@ -430,16 +417,16 @@ describe('httpserver-datavalidation-tests', () => {
     }
 
     // This is in honor of Harry
-    @GetApi('/boolean')
-    static async checkBooleanG(_ctx: HandlerContext, v: boolean) {
+    @DBOS.getApi('/boolean')
+    static async checkBooleanG(v: boolean) {
       if (typeof v !== 'boolean') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
       return Promise.resolve({ message: `This is a really nice boolean: ${v}` });
     }
 
-    @PostApi('/boolean')
-    static async checkBooleanP(_ctx: HandlerContext, v: boolean) {
+    @DBOS.postApi('/boolean')
+    static async checkBooleanP(v: boolean) {
       if (typeof v !== 'boolean') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
@@ -455,65 +442,64 @@ describe('httpserver-datavalidation-tests', () => {
 
   @DefaultArgRequired
   class DefaultArgToRequired {
-    @PostApi('/rrequired')
-    static async checkReqValueR(_ctx: HandlerContext, @ArgRequired v: string) {
+    @DBOS.postApi('/rrequired')
+    static async checkReqValueR(@ArgRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    @PostApi('/roptional')
-    static async checkOptValueR(_ctx: HandlerContext, @ArgOptional v?: string) {
+    @DBOS.postApi('/roptional')
+    static async checkOptValueR(@ArgOptional v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    @PostApi('/rdefault')
-    static async checkDefValueR(_ctx: HandlerContext, v?: string) {
+    @DBOS.postApi('/rdefault')
+    static async checkDefValueR(v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
   }
 
   @DefaultArgOptional
   class DefaultArgToOptional {
-    @PostApi('/orequired')
-    static async checkReqValueO(_ctx: HandlerContext, @ArgRequired v: string) {
+    @DBOS.postApi('/orequired')
+    static async checkReqValueO(@ArgRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    @PostApi('/ooptional')
-    static async checkOptValueO(_ctx: HandlerContext, @ArgOptional v?: string) {
+    @DBOS.postApi('/ooptional')
+    static async checkOptValueO(@ArgOptional v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    @PostApi('/odefault')
-    static async checkDefValueO(_ctx: HandlerContext, v?: string) {
+    @DBOS.postApi('/odefault')
+    static async checkDefValueO(v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
   }
 
   class DefaultArgToDefault {
-    @PostApi('/drequired')
-    static async checkReqValueD(_ctx: HandlerContext, @ArgRequired v: string) {
+    @DBOS.postApi('/drequired')
+    static async checkReqValueD(@ArgRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    @PostApi('/doptional')
-    static async checkOptValueD(_ctx: HandlerContext, @ArgOptional v?: string) {
+    @DBOS.postApi('/doptional')
+    static async checkOptValueD(@ArgOptional v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    @PostApi('/ddefault')
-    static async checkDefValueD(_ctx: HandlerContext, v?: string) {
+    @DBOS.postApi('/ddefault')
+    static async checkDefValueD(v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
-    @Workflow()
-    static async opworkflow(_ctx: WorkflowContext, @ArgOptional v?: string) {
+    @DBOS.workflow()
+    static async opworkflow(@ArgOptional v?: string) {
       return Promise.resolve({ message: v });
     }
 
-    @PostApi('/doworkflow')
-    static async doWorkflow(ctx: HandlerContext, @ArgOptional v?: string) {
-      const wh = await ctx.invoke(DefaultArgToDefault).opworkflow(v);
-      return await wh.getResult();
+    @DBOS.postApi('/doworkflow')
+    static async doWorkflow(@ArgOptional v?: string) {
+      return await DefaultArgToDefault.opworkflow(v);
     }
   }
 

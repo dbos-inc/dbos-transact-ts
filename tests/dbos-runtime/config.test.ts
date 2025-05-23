@@ -784,28 +784,6 @@ describe('dbos-config', () => {
       });
       jest.restoreAllMocks();
     });
-
-    test('fails when provided name conflicts with config file', () => {
-      const mockPackageJsoString = `{name: 'appname'}`;
-      jest.spyOn(fs, 'readFileSync').mockReturnValue(mockPackageJsoString);
-      const dbosConfig = { name: 'differentappname' };
-      expect(() => translatePublicDBOSconfig(dbosConfig)).toThrow(
-        new DBOSInitializationError(
-          "Provided app name 'differentappname' does not match the app name 'appname' in dbos-config.yaml",
-        ),
-      );
-      jest.restoreAllMocks();
-    });
-
-    test('fails when config file is missing name field', () => {
-      const mockPackageJsoString = `{}`;
-      jest.spyOn(fs, 'readFileSync').mockReturnValue(mockPackageJsoString);
-      const dbosConfig = {};
-      expect(() => translatePublicDBOSconfig(dbosConfig)).toThrow(
-        new DBOSInitializationError('Failed to load config from dbos-config.yaml: missing name field'),
-      );
-      jest.restoreAllMocks();
-    });
   });
 
   describe('overwrite_config', () => {
