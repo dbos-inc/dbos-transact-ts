@@ -1,7 +1,6 @@
-import { GetApi, DBOS } from '../../src';
+import { DBOS } from '../../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import request from 'supertest';
-import { HandlerContext } from '../../src/httpServer/handler';
 import { KoaCors } from '../../src/httpServer/middleware';
 import { DBOSConfig } from '../../src/dbos-executor';
 import cors from '@koa/cors';
@@ -250,16 +249,16 @@ describe('http-cors-tests', () => {
 });
 
 export class TestEndpointsDefCORS {
-  @GetApi('/hellod')
-  static async hello(_ctx: HandlerContext) {
+  @DBOS.getApi('/hellod')
+  static async hello() {
     return Promise.resolve({ message: 'hello!' });
   }
 }
 
 @KoaCors(cors())
 export class TestEndpointsRegCORS {
-  @GetApi('/hellor')
-  static async hello(_ctx: HandlerContext) {
+  @DBOS.getApi('/hellor')
+  static async hello() {
     return Promise.resolve({ message: 'hello!' });
   }
 }
@@ -279,8 +278,8 @@ export class TestEndpointsRegCORS {
   }),
 )
 export class TestEndpointsSpecCORS {
-  @GetApi('/hellos')
-  static async hello(_ctx: HandlerContext) {
+  @DBOS.getApi('/hellos')
+  static async hello() {
     return Promise.resolve({ message: 'hello!' });
   }
 }
