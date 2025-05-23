@@ -276,7 +276,7 @@ describe('httpserver-tests', () => {
     expect(response.statusCode).toBe(200);
   });
 
-  /*
+  /* TODO
   test('test-workflowID-header', async () => {
     const workflowID = randomUUID();
     const response = await request(app.callback())
