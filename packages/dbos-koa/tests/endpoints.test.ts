@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-unused-vars */
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import Koa from 'koa';
 import Router from '@koa/router';
@@ -79,13 +78,11 @@ describe('httpserver-tests', () => {
     expect(response.text).toBe('hello alice');
   });
 
-  /* TODO ArgSources
   test('get-querybody', async () => {
     const response = await request(app.callback()).get('/querybody').send({ name: 'alice' });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
-  */
 
   test('delete-query', async () => {
     const response = await request(app.callback()).delete('/testdeletequery?name=alice');
@@ -99,13 +96,11 @@ describe('httpserver-tests', () => {
     expect(response.text).toBe('hello alice');
   });
 
-  /* TODO ArgSources
   test('delete-body', async () => {
     const response = await request(app.callback()).delete('/testdeletebody').send({ name: 'alice' });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
-  */
 
   test('post-test', async () => {
     const response = await request(app.callback()).post('/testpost').send({ name: 'alice' });
@@ -179,13 +174,11 @@ describe('httpserver-tests', () => {
     expect(response.text).toBe('alice');
   });
 
-  /* TODO Post param
   test('endpoint-workflow', async () => {
     const response = await request(app.callback()).post('/workflow?name=alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
   test('endpoint-error', async () => {
     const response = await request(app.callback()).post('/error').send({ name: 'alice' });
@@ -276,7 +269,6 @@ describe('httpserver-tests', () => {
     expect(response.statusCode).toBe(200);
   });
 
-  /* TODO
   test('test-workflowID-header', async () => {
     const workflowID = randomUUID();
     const response = await request(app.callback())
@@ -293,7 +285,6 @@ describe('httpserver-tests', () => {
       status: StatusString.SUCCESS,
     });
   });
-  */
 
   test('endpoint-handler-WFID', async () => {
     const workflowID = randomUUID();
