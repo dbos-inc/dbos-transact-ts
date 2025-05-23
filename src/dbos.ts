@@ -1231,7 +1231,30 @@ export class DBOS {
         }
       }
     } else {
-      return runWithTopContext(options, callback);
+      let span = options.span;
+      if (!span) {
+        span = DBOS.#executor.tracer.startSpan('topContext', {
+          operationUUID: options.idAssignedForNextWorkflow,
+          operationType: options.operationType,
+          authenticatedUser: options.authenticatedUser,
+          assumedRole: options.assumedRole,
+          authenticatedRoles: options.authenticatedRoles,
+        });
+      }
+      const ctx = new DBOSContextImpl(options.operationCaller || 'topContext', span, DBOS.logger as GlobalLogger);
+      ctx.request = options.request || {};
+      ctx.authenticatedUser = options.authenticatedUser || '';
+      ctx.assumedRole = options.assumedRole || '';
+      ctx.authenticatedRoles = options.authenticatedRoles || [];
+      ctx.workflowUUID = options.idAssignedForNextWorkflow || '';
+
+      return runWithTopContext(
+        {
+          ...options,
+          ctx,
+        },
+        callback,
+      );
     }
   }
 
