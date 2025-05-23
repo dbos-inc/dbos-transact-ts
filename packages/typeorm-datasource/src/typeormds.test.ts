@@ -1,0 +1,126 @@
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import { TypeOrmDS } from './TypeOrmDataSource';
+import { Entity, Column, PrimaryColumn, PrimaryGeneratedColumn } from 'typeorm';
+import { randomUUID } from 'node:crypto';
+
+@Entity()
+export class KV {
+  @PrimaryColumn()
+  id: string = 't';
+
+  @Column()
+  value: string = 'v';
+}
+
+const poolconfig = {
+  user: 'postgres',
+  password: 'postgres',
+  database: 'typeorm_testdb',
+  host: 'localhost',
+  port: 5432,
+};
+const typeOrmDS = new TypeOrmDS('app-db', poolconfig, [KV]);
+DBOS.registerDataSource(typeOrmDS);
+const dbosConfig = {
+  name: 'dbostest',
+  databaseUrl: 'postgresql://postgres:postgres@localhost:5432/dbostest?sslmode=disable',
+  application: {
+    counter: 3,
+    shouldExist: 'exists',
+  },
+  telemetry: {
+    logs: {
+      silent: true,
+    },
+  },
+};
+
+async function txFunctionGuts() {
+  expect(DBOS.isInTransaction()).toBe(true);
+  expect(DBOS.isWithinWorkflow()).toBe(true);
+  const res = await typeOrmDS.dataSource?.query<{ rows: { a: string }[] }>("SELECT 'Tx2 result' as a");
+  // return res.rows[0].a;
+  return res?.rows[0].a;
+}
+
+const txFunc = DBOS.registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
+
+/* async function wfFunctionGuts() {
+  // Transaction variant 2: Let DBOS run a code snippet as a step
+  const p1 = await dsa.runTransactionStep(
+    async () => {
+      return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My first tx result' as a")).rows[0].a;
+    },
+    'MyFirstTx',
+    { readOnly: true },
+  );
+
+  // Transaction variant 1: Use a registered DBOS transaction function
+  const p2 = await txFunc();
+
+  return p1 + '|' + p2;
+} 
+
+// Workflow functions must always be registered before launch; this
+//  allows recovery to occur.
+const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
+  name: 'workflow',
+}); */
+
+class DBWFI {
+  @typeOrmDS.transaction({ readOnly: true })
+  static async tx() {
+    return (await TypeOrmDS.entityManager.query<{ rows: { a: string }[] }>("SELECT 'My decorated tx result' as a"))
+      .rows[0].a;
+  }
+
+  @DBOS.workflow()
+  static async wf() {
+    return await DBWFI.tx();
+  }
+}
+
+describe('decoratorless-api-tests', () => {
+  beforeAll(async () => {
+    await typeOrmDS.InitializeSchema();
+    DBOS.setConfig(dbosConfig);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  /* test('bare-tx-wf-functions', async () => {
+    const wfid = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await wfFunction();
+      expect(res).toBe('My first tx result|Tx2 result');
+    });
+
+    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(wfsteps.length).toBe(2);
+    expect(wfsteps[0].functionID).toBe(0);
+    expect(wfsteps[0].name).toBe('MyFirstTx');
+    expect(wfsteps[1].functionID).toBe(1);
+    expect(wfsteps[1].name).toBe('MySecondTx');
+  }); */
+
+  test('decorated-tx-wf-functions', async () => {
+    const wfid = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await DBWFI.wf();
+      expect(res).toBe('My decorated tx result');
+    });
+
+    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(wfsteps.length).toBe(1);
+    expect(wfsteps[0].functionID).toBe(0);
+    expect(wfsteps[0].name).toBe('tx');
+  });
+});

@@ -95,6 +95,14 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     readonly entities: Function[],
   ) {}
 
+  // User calls this... DBOS not directly involved...
+  static get entityManager(): EntityManager {
+    const ctx = assertCurrentDSContextStore();
+    if (!DBOS.isInTransaction())
+      throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
+    return ctx.typeOrmEntityManager;
+  }
+
   async initialize(): Promise<void> {
     this.dataSource = this.createInstance();
 
@@ -301,6 +309,10 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
 
   isFailedSqlTransactionError(error: unknown): boolean {
     return this.getPostgresErrorCode(error) === '25P02';
+  }
+
+  async runTransactionStep<T>(callback: () => Promise<T>, funcName: string, config?: TypeOrmTransactionConfig) {
+    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(

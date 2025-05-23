@@ -1,15 +1,7 @@
 {
+  "extends": "../../tsconfig.shared.json",
   "compilerOptions": {
-    "module": "commonjs" /* Specify what module code is generated. */,
-
-    "esModuleInterop": true,
-
-    "forceConsistentCasingInFileNames": true,
-
-    /* Type Checking */
-    "strict": true /* Enable all strict type-checking options. */,
-
-    "skipLibCheck": true,
     "outDir": "./dist"
-  }
+  },
+  "exclude": ["dist", "*.test.ts", "test-helpers.ts"]
 }
