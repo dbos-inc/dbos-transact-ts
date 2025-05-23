@@ -1,22 +1,10 @@
-import {
-  GetApi,
-  RequiredRole,
-  DefaultRequiredRole,
-  MiddlewareContext,
-  Transaction,
-  Workflow,
-  TransactionContext,
-  WorkflowContext,
-  DBOS,
-} from '../../src';
+import { MiddlewareContext, DBOS } from '../../src';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import request from 'supertest';
-import { HandlerContext } from '../../src/httpServer/handler';
 import { Authentication, KoaGlobalMiddleware, KoaMiddleware } from '../../src/httpServer/middleware';
 import { Middleware } from 'koa';
 import { DBOSNotAuthorizedError } from '../../src/error';
 import { DBOSConfig } from '../../src/dbos-executor';
-import { PoolClient } from 'pg';
 
 describe('httpserver-defsec-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -102,12 +90,12 @@ describe('httpserver-defsec-tests', () => {
   // We can directly test a transaction with passed in authorizedRoles.
   test('direct-transaction-test', async () => {
     await DBOS.withAuthedContext('user', ['user'], async () => {
-      const res = await DBOS.invoke(TestEndpointDefSec).testTranscation('alice');
+      const res = await TestEndpointDefSec.testTranscation('alice');
       expect(res).toBe('hello 1');
     });
 
     // Unauthorized.
-    await expect(DBOS.invoke(TestEndpointDefSec).testTranscation('alice')).rejects.toThrow(
+    await expect(TestEndpointDefSec.testTranscation('alice')).rejects.toThrow(
       new DBOSNotAuthorizedError('User does not have a role with permission to call testTranscation', 403),
     );
   });
@@ -150,58 +138,58 @@ describe('httpserver-defsec-tests', () => {
     await next();
   };
 
-  @DefaultRequiredRole(['user'])
+  @DBOS.defaultRequiredRole(['user'])
   @Authentication(authTestMiddleware)
   @KoaMiddleware(testMiddleware, testMiddleware2)
   @KoaGlobalMiddleware(testMiddlewareG)
   class TestEndpointDefSec {
-    @RequiredRole([])
-    @GetApi('/hello')
-    static async hello(_ctx: HandlerContext) {
+    @DBOS.requiredRole([])
+    @DBOS.getApi('/hello')
+    static async hello() {
       return Promise.resolve({ message: 'hello!' });
     }
 
-    @RequiredRole([])
-    @GetApi('/hello/:name')
-    static async helloName(_ctx: HandlerContext, name: string) {
+    @DBOS.requiredRole([])
+    @DBOS.getApi('/hello/:name')
+    static async helloName(name: string) {
       return Promise.resolve({ message: `hello, ${name}!` });
     }
 
-    @GetApi('/requireduser')
-    static async testAuth(_ctxt: HandlerContext, name: string) {
+    @DBOS.getApi('/requireduser')
+    static async testAuth(name: string) {
       return Promise.resolve(`Please say hello to ${name}`);
     }
 
-    @Transaction()
-    static async testTranscation(txnCtxt: TransactionContext<PoolClient>, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(
+    @DBOS.transaction()
+    static async testTranscation(name: string) {
+      const { rows } = await DBOS.pgClient.query<TestKvTable>(
         `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
         [name],
       );
       return `hello ${rows[0].id}`;
     }
 
-    @Workflow()
-    static async testWorkflow(wfCtxt: WorkflowContext, name: string) {
-      const res = await wfCtxt.invoke(TestEndpointDefSec).testTranscation(name);
+    @DBOS.workflow()
+    static async testWorkflow(name: string) {
+      const res = await TestEndpointDefSec.testTranscation(name);
       return res;
     }
 
-    @GetApi('/workflow')
-    static async testWfEndpoint(ctxt: HandlerContext, name: string) {
-      return ctxt.invokeWorkflow(TestEndpointDefSec).testWorkflow(name);
+    @DBOS.getApi('/workflow')
+    static async testWfEndpoint(name: string) {
+      return TestEndpointDefSec.testWorkflow(name);
     }
 
-    @GetApi('/transaction')
-    static async testTxnEndpoint(ctxt: HandlerContext, name: string) {
-      return ctxt.invoke(TestEndpointDefSec).testTranscation(name);
+    @DBOS.getApi('/transaction')
+    static async testTxnEndpoint(name: string) {
+      return TestEndpointDefSec.testTranscation(name);
     }
   }
 
   class SecondClass {
-    @RequiredRole([])
-    @GetApi('/goodbye')
-    static async bye(_ctx: HandlerContext) {
+    @DBOS.requiredRole([])
+    @DBOS.getApi('/goodbye')
+    static async bye() {
       return Promise.resolve({ message: 'bye!' });
     }
   }
