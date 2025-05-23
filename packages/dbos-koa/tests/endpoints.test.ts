@@ -167,21 +167,17 @@ describe('httpserver-tests', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  /* TODO Stack dec
   test('endpoint-transaction', async () => {
     const response = await request(app.callback()).post('/transaction/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
-  */
 
-  /* TODO Stack dec
   test('endpoint-step', async () => {
     const response = await request(app.callback()).get('/step/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('alice');
   });
-  */
 
   /* TODO Stack dec
   test('endpoint-workflow', async () => {
