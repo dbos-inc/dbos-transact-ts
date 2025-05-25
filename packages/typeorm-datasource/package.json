@@ -11,12 +11,20 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "@dbos-inc/dbos-sdk": "file:../../dbos-inc-dbos-sdk-0.0.0-placeholder.tgz",
     "reflect-metadata": "^0.2.2",
     "typeorm": "^0.3.24",
     "pg": "8.11.3"
   },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "*"
+  },
   "devDependencies": {
-    "@types/node": "^22.15.19"
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.25",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.1.4",
+    "typescript": "^5.3.3"
   }
 }
