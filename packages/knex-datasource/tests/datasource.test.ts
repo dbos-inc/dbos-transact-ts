@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
 import { KnexDataSource } from '../index';
@@ -246,13 +248,13 @@ async function readWorkflow2(user: string) {
 
 const regReadWorkflow2 = DBOS.registerWorkflow(readWorkflow2, { name: 'readWorkflow2' });
 
-async function erroWorkflow1(user: string) {
+async function _erroWorkflow1(user: string) {
   const rows = await KnexDataSource.client<greetings>('greetings')
     .insert({ name: user, greet_count: 1 })
     .onConflict('name')
     .merge({ greet_count: KnexDataSource.client.raw('greetings.greet_count + 1') })
     .returning('greet_count');
-  const row = rows.length > 0 ? rows[0] : undefined;
+  const _row = rows.length > 0 ? rows[0] : undefined;
 
   throw new Error('test error');
 }
@@ -304,7 +306,9 @@ class InstanceClass {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/unbound-method
 InstanceClass.prototype.helloFunction = dataSource.register(InstanceClass.prototype.helloFunction, 'helloFunction');
+// eslint-disable-next-line @typescript-eslint/unbound-method
 InstanceClass.prototype.readFunction = dataSource.register(InstanceClass.prototype.readFunction, 'readFunction');
 
 async function instanceWorkflow(user: string) {
