@@ -228,24 +228,42 @@ export enum ArgRequiredOptions {
   DEFAULT = 'DEFAULT',
 }
 
+export interface ArgDataType {
+  required?: ArgRequiredOptions;
+  dataType?: DBOSDataType; // Also a very simplistic data type format... for native scalars or JSON
+}
+
 export class MethodParameter {
   name: string = '';
-  required: ArgRequiredOptions = ArgRequiredOptions.DEFAULT;
-  validate: boolean = true;
+  index: number = -1;
   logMask: LogMasks = LogMasks.NONE;
 
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  argType?: Function = undefined; // This comes from reflect-metadata, if we have it
-  dataType?: DBOSDataType;
-  index: number = -1;
-
   externalRegInfo: Map<AnyConstructor | object | string, object> = new Map();
+
+  get argDataType() {
+    return this.externalRegInfo.get('type') as ArgDataType | undefined;
+  }
+  get required() {
+    return this.argDataType?.required ?? ArgRequiredOptions.DEFAULT;
+  }
+  get dataType() {
+    return this.argDataType?.dataType;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+  initializeBaseType(at?: Function) {
+    if (!this.externalRegInfo.has('type')) {
+      this.externalRegInfo.set('type', {});
+    }
+    const adt = this.externalRegInfo.get('type') as ArgDataType;
+    adt.required = ArgRequiredOptions.DEFAULT;
+    adt.dataType = DBOSDataType.fromArg(at);
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   constructor(idx: number, at?: Function) {
     this.index = idx;
-    this.argType = at;
-    this.dataType = DBOSDataType.fromArg(at);
+    this.initializeBaseType(at);
   }
 }
 
@@ -970,9 +988,12 @@ export function associateParameterWithExternal<This, Args extends unknown[], Ret
   target: object | undefined,
   className: string | undefined,
   funcName: string,
-  func: (this: This, ...args: Args) => Promise<Return>,
+  func: ((this: This, ...args: Args) => Promise<Return>) | undefined,
   paramNum: number,
-) {
+): object | undefined {
+  if (!func) {
+    func = Object.getOwnPropertyDescriptor(target, funcName)!.value as (this: This, ...args: Args) => Promise<Return>;
+  }
   const { registration } = registerAndWrapDBOSFunctionByName(target, className, funcName, func);
   const param = registration.args[paramNum];
   if (!param) return undefined;
@@ -981,10 +1002,7 @@ export function associateParameterWithExternal<This, Args extends unknown[], Ret
     param.externalRegInfo.set(external, {});
   }
 
-  if (!registration.externalRegInfo.has(external)) {
-    registration.externalRegInfo.set(external, {});
-  }
-  return { regInfo: param.externalRegInfo.get(external)! };
+  return param.externalRegInfo.get(external)!;
 }
 
 export function getRegistrationsForExternal(
@@ -1049,17 +1067,35 @@ export function getRegistrationsForExternal(
 //////////////////////////
 
 export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
+  const curParam = associateParameterWithExternal(
+    'type',
+    target,
+    undefined,
+    propertyKey.toString(),
+    undefined,
+    parameterIndex,
+  ) as ArgDataType;
 
-  const curParam = existingParameters[parameterIndex];
   curParam.required = ArgRequiredOptions.REQUIRED;
+
+  const cr = getOrCreateClassRegistration(target as AnyConstructor);
+  cr.argRequiredEnabled = true;
 }
 
 export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
+  const curParam = associateParameterWithExternal(
+    'type',
+    target,
+    undefined,
+    propertyKey.toString(),
+    undefined,
+    parameterIndex,
+  ) as ArgDataType;
 
-  const curParam = existingParameters[parameterIndex];
   curParam.required = ArgRequiredOptions.OPTIONAL;
+
+  const cr = getOrCreateClassRegistration(target as AnyConstructor);
+  cr.argRequiredEnabled = true;
 }
 
 export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
@@ -1090,9 +1126,15 @@ export function ArgName(name: string) {
 export function ArgDate() {
   // TODO a little more info about it - is it a date or timestamp precision?
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
+    const curParam = associateParameterWithExternal(
+      'type',
+      target,
+      undefined,
+      propertyKey.toString(),
+      undefined,
+      parameterIndex,
+    ) as ArgDataType;
 
-    const curParam = existingParameters[parameterIndex];
     if (!curParam.dataType) curParam.dataType = new DBOSDataType();
     curParam.dataType.dataType = 'timestamp';
   };
@@ -1100,9 +1142,15 @@ export function ArgDate() {
 
 export function ArgVarchar(length: number) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
+    const curParam = associateParameterWithExternal(
+      'type',
+      target,
+      undefined,
+      propertyKey.toString(),
+      undefined,
+      parameterIndex,
+    ) as ArgDataType;
 
-    const curParam = existingParameters[parameterIndex];
     curParam.dataType = DBOSDataType.varchar(length);
   };
 }
