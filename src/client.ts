@@ -147,9 +147,10 @@ export class DBOSClient {
       createdAt: Date.now(),
       timeoutMS: options.workflowTimeoutMS,
       deadlineEpochMS: undefined,
+      input: DBOSJSON.stringify(args),
     };
 
-    await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify(args));
+    await this.systemDatabase.initWorkflowStatus(internalStatus);
 
     await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName, {
       deduplicationID: options.deduplicationID,
@@ -182,8 +183,9 @@ export class DBOSClient {
       executorId: '',
       applicationID: '',
       createdAt: Date.now(),
+      input: DBOSJSON.stringify([destinationID, message, topic]),
     };
-    await this.systemDatabase.initWorkflowStatus(internalStatus, DBOSJSON.stringify([destinationID, message, topic]));
+    await this.systemDatabase.initWorkflowStatus(internalStatus);
     await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, DBOSJSON.stringify(message), topic);
   }
 
