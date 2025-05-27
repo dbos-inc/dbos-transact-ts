@@ -239,6 +239,8 @@ export class MethodParameter {
   dataType?: DBOSDataType;
   index: number = -1;
 
+  externalRegInfo: Map<AnyConstructor | object | string, object> = new Map();
+
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   constructor(idx: number, at?: Function) {
     this.index = idx;
@@ -576,7 +578,7 @@ const methodArgsByFunction: Map<string, MethodParameter[]> = new Map();
 export function getOrCreateMethodArgsRegistration(
   target: object | undefined,
   className: string | undefined,
-  propertyKey: string | symbol,
+  funcName: string | symbol,
   func?: (...args: unknown[]) => unknown,
 ): MethodParameter[] {
   let regtarget = target;
@@ -586,7 +588,7 @@ export function getOrCreateMethodArgsRegistration(
 
   className = className ?? (target ? getNameForClass(target) : '');
 
-  const mkey = className + '|' + propertyKey.toString();
+  const mkey = className + '|' + funcName.toString();
 
   let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(mkey);
   if (mParameters === undefined) {
@@ -594,7 +596,7 @@ export function getOrCreateMethodArgsRegistration(
     let designParamTypes: Function[] | undefined = undefined;
     if (target) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[] | undefined;
+      designParamTypes = Reflect.getMetadata('design:paramtypes', target, funcName) as Function[] | undefined;
     }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
@@ -603,7 +605,7 @@ export function getOrCreateMethodArgsRegistration(
         const argnames = getArgNames(func);
         mParameters = argnames.map((_value, index) => new MethodParameter(index));
       } else {
-        const descriptor = Object.getOwnPropertyDescriptor(target, propertyKey);
+        const descriptor = Object.getOwnPropertyDescriptor(target, funcName);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
         const argnames = getArgNames(descriptor?.value as Function);
         mParameters = argnames.map((_value, index) => new MethodParameter(index));
@@ -959,14 +961,48 @@ export function associateMethodWithExternal<This, Args extends unknown[], Return
   return { registration, regInfo: registration.externalRegInfo.get(external)! };
 }
 
+/*
+ * Associates a DBOS function or method with an external class or object.
+ *   Likely, this will be invoking or intercepting the method.
+ */
+export function associateParameterWithExternal<This, Args extends unknown[], Return>(
+  external: AnyConstructor | object | string,
+  target: object | undefined,
+  className: string | undefined,
+  funcName: string,
+  func: (this: This, ...args: Args) => Promise<Return>,
+  paramNum: number,
+) {
+  const { registration } = registerAndWrapDBOSFunctionByName(target, className, funcName, func);
+  const param = registration.args[paramNum];
+  if (!param) return undefined;
+
+  if (!param.externalRegInfo.has(external)) {
+    param.externalRegInfo.set(external, {});
+  }
+
+  if (!registration.externalRegInfo.has(external)) {
+    registration.externalRegInfo.set(external, {});
+  }
+  return { regInfo: param.externalRegInfo.get(external)! };
+}
+
 export function getRegistrationsForExternal(external: AnyConstructor | object | string) {
   const res: { methodConfig: unknown; classConfig: unknown; methodReg: MethodRegistrationBase }[] = [];
   for (const [_cn, c] of classesByName) {
     for (const [_fn, f] of c.reg.registeredOperations) {
-      if (!f.externalRegInfo.has(external)) continue;
-      const methodConfig = f.externalRegInfo.get(external)!;
-      const classConfig = f.defaults?.externalRegInfo.get(external) ?? {};
-      res.push({ methodReg: f, methodConfig, classConfig });
+      const methodConfig = f.externalRegInfo.get(external);
+      const classConfig = f.defaults?.externalRegInfo.get(external);
+      const paramConfig: { name: string; index: number; paramConfig?: object }[] = [];
+      for (const arg of f.args) {
+        paramConfig.push({
+          name: arg.name,
+          index: arg.index,
+          paramConfig: arg.externalRegInfo.get(external),
+        });
+      }
+      if (!methodConfig && !classConfig) continue;
+      res.push({ methodReg: f, methodConfig, classConfig: classConfig ?? {} });
     }
   }
   return res;

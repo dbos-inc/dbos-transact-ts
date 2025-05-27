@@ -50,6 +50,7 @@ import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './sch
 import {
   associateClassWithExternal,
   associateMethodWithExternal,
+  associateParameterWithExternal,
   configureInstance,
   getLifecycleListeners,
   getOrCreateClassRegistration,
@@ -2588,6 +2589,29 @@ export class DBOS {
     },
   ) {
     return associateMethodWithExternal(external, target.classOrInst, target.className, target.name, func);
+  }
+
+  /**
+   * Register information to be associated with a DBOS function
+   */
+  static associateParamWithInfo<This, Args extends unknown[], Return>(
+    external: AnyConstructor | object | string,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      classOrInst?: object;
+      className?: string;
+      name: string;
+      param: number;
+    },
+  ) {
+    return associateParameterWithExternal(
+      external,
+      target.classOrInst,
+      target.className,
+      target.name,
+      func,
+      target.param,
+    );
   }
 
   /** Get registrations */
