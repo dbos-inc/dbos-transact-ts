@@ -2615,8 +2615,8 @@ export class DBOS {
   }
 
   /** Get registrations */
-  static getAssociatedInfo(external: AnyConstructor | object | string) {
-    return getRegistrationsForExternal(external);
+  static getAssociatedInfo(external: AnyConstructor | object | string, cls?: object | string, funcName?: string) {
+    return getRegistrationsForExternal(external, cls, funcName);
   }
 }
 

@@ -908,7 +908,7 @@ export function associateClassWithExternal(
   external: AnyConstructor | object | string,
   cls: AnyConstructor | string,
 ): object {
-  const clsn: string = typeof cls === 'string' ? cls : (cls = getNameForClass(cls));
+  const clsn: string = typeof cls === 'string' ? cls : getNameForClass(cls);
   const clsreg = getClassRegistrationByName(clsn, true);
   if (!clsreg.externalRegInfo.has(external)) {
     clsreg.externalRegInfo.set(external, {});
@@ -987,25 +987,61 @@ export function associateParameterWithExternal<This, Args extends unknown[], Ret
   return { regInfo: param.externalRegInfo.get(external)! };
 }
 
-export function getRegistrationsForExternal(external: AnyConstructor | object | string) {
-  const res: { methodConfig: unknown; classConfig: unknown; methodReg: MethodRegistrationBase }[] = [];
-  for (const [_cn, c] of classesByName) {
-    for (const [_fn, f] of c.reg.registeredOperations) {
-      const methodConfig = f.externalRegInfo.get(external);
-      const classConfig = f.defaults?.externalRegInfo.get(external);
-      const paramConfig: { name: string; index: number; paramConfig?: object }[] = [];
-      for (const arg of f.args) {
-        paramConfig.push({
-          name: arg.name,
-          index: arg.index,
-          paramConfig: arg.externalRegInfo.get(external),
-        });
+export function getRegistrationsForExternal(
+  external: AnyConstructor | object | string,
+  cls?: object | string,
+  funcName?: string,
+) {
+  const res: {
+    methodConfig: unknown;
+    classConfig: unknown;
+    methodReg: MethodRegistrationBase;
+    paramConfig: { name: string; index: number; paramConfig?: object }[];
+  }[] = [];
+
+  if (cls) {
+    const clsname = typeof cls === 'string' ? cls : getNameForClass(cls);
+    const c = classesByName.get(clsname);
+    if (c) {
+      if (funcName) {
+        const f = c.reg.registeredOperations.get(funcName);
+        if (f) {
+          collectRegForFunction(f);
+        }
+      } else {
+        collectRegForClass(c);
       }
-      if (!methodConfig && !classConfig) continue;
-      res.push({ methodReg: f, methodConfig, classConfig: classConfig ?? {} });
+    }
+  } else {
+    for (const [_cn, c] of classesByName) {
+      collectRegForClass(c);
     }
   }
   return res;
+
+  function collectRegForClass(c: { reg: ClassRegistration; ctor?: AnyConstructor }) {
+    for (const [_fn, f] of c.reg.registeredOperations) {
+      collectRegForFunction(f);
+    }
+  }
+
+  function collectRegForFunction(f: MethodRegistrationBase) {
+    const methodConfig = f.externalRegInfo.get(external);
+    const classConfig = f.defaults?.externalRegInfo.get(external);
+    const paramConfig: { name: string; index: number; paramConfig?: object }[] = [];
+    let hasParamConfig = false;
+    for (const arg of f.args) {
+      if (arg.externalRegInfo.has(external)) hasParamConfig = true;
+
+      paramConfig.push({
+        name: arg.name,
+        index: arg.index,
+        paramConfig: arg.externalRegInfo.get(external),
+      });
+    }
+    if (!methodConfig && !classConfig && !hasParamConfig) return;
+    res.push({ methodReg: f, methodConfig, classConfig: classConfig ?? {}, paramConfig });
+  }
 }
 
 //////////////////////////
