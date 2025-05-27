@@ -44,3 +44,4 @@ node_modules/
 *.swp
 *.swo
 packages/create/templates/hello-prisma/prisma/.env
+packages/knex-datasource/dbos-test.sqlite

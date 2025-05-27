@@ -39,12 +39,16 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
   }
 
   static async configure(config: Knex.Config) {
+    const schemaSupport = config.client === 'pg';
+    const tableName = schemaSupport ? 'transaction_outputs' : 'dbos_transaction_outputs';
     const knexDB = knex(config);
     try {
-      await knexDB.schema.createSchemaIfNotExists('dbos');
-      const exists = await knexDB.schema.withSchema('dbos').hasTable('transaction_outputs');
-      if (!exists) {
-        await knexDB.schema.withSchema('dbos').createTable('transaction_outputs', (table) => {
+      if (schemaSupport) {
+        await knexDB.schema.createSchemaIfNotExists('dbos');
+      }
+      const schemaBuilder = schemaSupport ? knexDB.schema.withSchema('dbos') : knexDB.schema;
+      if (!(await schemaBuilder.hasTable(tableName))) {
+        await schemaBuilder.createTable(tableName, (table) => {
           table.string('workflow_id').notNullable();
           table.integer('function_num').notNullable();
           table.string('output').nullable();
@@ -59,10 +63,12 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
   readonly name: string;
   readonly dsType = 'KnexDataSource';
   readonly #knexDB: Knex;
+  readonly #schemaSupport: boolean;
 
   constructor(name: string, config: Knex.Config) {
     this.name = name;
     this.#knexDB = knex(config);
+    this.#schemaSupport = config.client === 'pg';
   }
 
   initialize(): Promise<void> {
@@ -86,8 +92,11 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
   }
 
   async #getResult(workflowID: string, functionNum: number): Promise<string | undefined> {
-    const result = await this.#knexDB<transaction_outputs>('transaction_outputs')
-      .withSchema('dbos')
+    const txOutputs = this.#schemaSupport
+      ? this.#knexDB<transaction_outputs>('transaction_outputs').withSchema('dbos')
+      : this.#knexDB<transaction_outputs>('dbos_transaction_outputs');
+
+    const result = await txOutputs
       .select('output')
       .where({
         workflow_id: workflowID,
@@ -97,14 +106,13 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     return result?.output ?? undefined;
   }
 
-  static async #saveResult(
-    client: Knex.Transaction,
-    workflowID: string,
-    functionNum: number,
-    output: string,
-  ): Promise<void> {
+  async #saveResult(client: Knex.Transaction, workflowID: string, functionNum: number, output: string): Promise<void> {
     try {
-      await client<transaction_outputs>('transaction_outputs').withSchema('dbos').insert({
+      const txOutputs = this.#schemaSupport
+        ? client<transaction_outputs>('transaction_outputs').withSchema('dbos')
+        : client<transaction_outputs>('dbos_transaction_outputs');
+
+      await txOutputs.insert({
         workflow_id: workflowID,
         function_num: functionNum,
         output,
@@ -153,7 +161,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
 
             if (!readOnly) {
               // TODO: DBOSJSON
-              await KnexDataSource.#saveResult(client, workflowID, functionNum, JSON.stringify(output));
+              await this.#saveResult(client, workflowID, functionNum, JSON.stringify(output));
             }
             return output;
           },
