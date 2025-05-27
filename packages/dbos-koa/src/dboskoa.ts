@@ -161,7 +161,7 @@ export class DBOSKoa extends DBOSHTTPBase {
       const defaults = classConfig as DBOSHTTPClassReg;
       const httpmethod = methodConfig as DBOSHTTPMethodInfo;
 
-      for (const ro of httpmethod.registrations ?? []) {
+      for (const ro of httpmethod?.registrations ?? []) {
         // TODO: What about instance methods?
         //   Those would have to be registered another way that accepted the instances.
         if (methodReg.isInstance) {
