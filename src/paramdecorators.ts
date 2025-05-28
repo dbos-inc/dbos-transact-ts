@@ -150,7 +150,8 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
       if (
         argDescriptor.required === ArgRequiredOptions.REQUIRED ||
         ((argDescriptor.required ?? ArgRequiredOptions.DEFAULT) === ArgRequiredOptions.DEFAULT &&
-          methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED)
+          (methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED ||
+            methReg.defaults?.defaultArgValidate))
       ) {
         if (idx >= args.length) {
           throw validationError(
