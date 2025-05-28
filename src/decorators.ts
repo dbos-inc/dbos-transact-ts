@@ -36,6 +36,29 @@ export function getLifecycleListeners() {
   return lifecycleListeners;
 }
 
+// Middleware installation
+export abstract class DBOSMethodMiddlewareInserter {
+  abstract installMiddleware(methodReg: MethodRegistrationBase): void;
+}
+let installedMiddleware = false;
+const middlewareInserters: DBOSMethodMiddlewareInserter[] = [];
+export function registerMiddlewareInserter(i: DBOSMethodMiddlewareInserter) {
+  if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
+  if (!middlewareInserters.includes(i)) middlewareInserters.push(i);
+}
+export function insertAllMiddleware() {
+  if (installedMiddleware) return;
+  installedMiddleware = true;
+
+  for (const [_cn, c] of classesByName) {
+    for (const [_fn, f] of c.reg.registeredOperations) {
+      for (const i of middlewareInserters) {
+        i.installMiddleware(f);
+      }
+    }
+  }
+}
+
 /**
  * Any column type column can be.
  */
@@ -312,6 +335,9 @@ export interface MethodRegistrationBase {
   // Pass context as first arg?
   readonly passContext: boolean;
 
+  // Add an interceptor that, when function is run, get a chance to process arguments / throw errors
+  addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum?: number): void;
+
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
 
@@ -322,6 +348,13 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   className: string = '';
 
   requiredRole: string[] | undefined = undefined;
+
+  // Interceptors
+  onEnter: { seqNum: number; func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[] }[] = [];
+  addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum: number = 10) {
+    this.onEnter.push({ seqNum, func });
+    this.onEnter.sort((a, b) => a.seqNum - b.seqNum);
+  }
 
   performArgValidation: boolean = false;
   args: MethodParameter[] = [];
@@ -751,7 +784,10 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         }
       }
 
-      const validatedArgs = validateMethodArgs(methReg, rawArgs);
+      let validatedArgs = validateMethodArgs(methReg, rawArgs);
+      for (const vf of methReg.onEnter) {
+        validatedArgs = vf.func(methReg, validatedArgs) as Args;
+      }
 
       // Argument logging
       validatedArgs.forEach((argValue, idx) => {

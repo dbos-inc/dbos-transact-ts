@@ -58,6 +58,7 @@ import {
   getRegistrationForFunction,
   getRegistrationsForExternal,
   getTransactionalDataSource,
+  insertAllMiddleware,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
@@ -366,6 +367,7 @@ export class DBOS {
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
     // Do nothing is DBOS is already initialized
+    insertAllMiddleware();
 
     if (DBOS.isInitialized()) {
       return;
