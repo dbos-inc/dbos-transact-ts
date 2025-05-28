@@ -517,22 +517,12 @@ export function translatePublicDBOSconfig(
   config: DBOSConfig,
   isDebugging?: boolean,
 ): [DBOSConfigInternal, DBOSRuntimeConfig] {
-  // Check there is no discrepancy between provided name and dbos-config.yaml
   let appName = config.name;
+  // Opportunistically grab the name from the config file if none was provided
   try {
     const configFile: ConfigFile | undefined = loadConfigFile(dbosConfigFilePath);
-    if (!configFile.name) {
-      throw new DBOSInitializationError(`Failed to load config from ${dbosConfigFilePath}: missing name field`);
-    } else {
-      // Opportunistically grab the name from the config file if none was provided
-      if (!appName) {
-        appName = configFile.name;
-        // But throw if it was provided and is different from the one in config file
-      } else if (appName !== configFile.name) {
-        throw new DBOSInitializationError(
-          `Provided app name '${config.name}' does not match the app name '${configFile.name}' in ${dbosConfigFilePath}`,
-        );
-      }
+    if (configFile?.name && !appName) {
+      appName = configFile.name;
     }
   } catch (e) {
     // Ignore file not found errors

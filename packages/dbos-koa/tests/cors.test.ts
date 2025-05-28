@@ -1,23 +1,30 @@
-import { DBOS } from '../../src';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
-import request from 'supertest';
-import { KoaCors } from '../../src/httpServer/middleware';
-import { DBOSConfig } from '../../src/dbos-executor';
+import Koa from 'koa';
+import Router from '@koa/router';
 import cors from '@koa/cors';
-import { Context } from 'koa';
+
+import { DBOS } from '@dbos-inc/dbos-sdk';
+
+import { DBOSKoa } from '../src';
+
+import request from 'supertest';
+
+const dhttp = new DBOSKoa();
 
 describe('http-cors-tests', () => {
-  let config: DBOSConfig;
+  let app: Koa;
+  let appRouter: Router;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
-    DBOS.setConfig(config);
+    DBOS.setConfig({ name: 'koa-cors' });
+    return Promise.resolve();
   });
 
   beforeEach(async () => {
+    DBOS.registerLifecycleCallback(dhttp);
     await DBOS.launch();
-    DBOS.setUpHandlerCallback();
+    app = new Koa();
+    appRouter = new Router();
+    dhttp.registerWithApp(app, appRouter);
   });
 
   afterEach(async () => {
@@ -26,7 +33,7 @@ describe('http-cors-tests', () => {
 
   // Check get with us as origin
   it('should allow requests without credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellod') // Default CORS policy
       .set('Origin', 'https://us.com');
 
@@ -34,7 +41,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests without credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellor') // Regular cors() defaults from Koa
       .set('Origin', 'https://us.com');
 
@@ -42,7 +49,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests without credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellos') // Custom whitelist cors() implementation
       .set('Origin', 'https://us.com');
 
@@ -52,7 +59,7 @@ describe('http-cors-tests', () => {
 
   // Check get with partner as origin
   it('should allow requests without credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellod') // Default CORS policy
       .set('Origin', 'https://partner.com');
 
@@ -60,7 +67,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests without credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellor') // Regular cors() defaults from Koa
       .set('Origin', 'https://partner.com');
 
@@ -68,7 +75,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests without credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellos') // Custom whitelist cors() implementation
       .set('Origin', 'https://partner.com');
 
@@ -78,7 +85,7 @@ describe('http-cors-tests', () => {
 
   // Check get with another origin
   it('should allow requests without credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellod') // Default CORS policy
       .set('Origin', 'https://crimeware.com');
 
@@ -86,7 +93,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests without credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellor') // Regular cors() defaults from Koa
       .set('Origin', 'https://crimeware.com');
 
@@ -94,7 +101,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests without credentials from allowed origins - not this one', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellos') // Custom whitelist cors() implementation
       .set('Origin', 'https://crimeware.com');
 
@@ -104,7 +111,7 @@ describe('http-cors-tests', () => {
 
   // Check get with us as origin AND credentials
   it('should allow requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellod') // Default CORS policy
       .set('Origin', 'https://us.com')
       .set('Cookie', 'sessionId=abc123');
@@ -115,7 +122,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellor') // Regular cors() defaults from Koa
       .set('Origin', 'https://us.com')
       .set('Cookie', 'sessionId=abc123');
@@ -127,7 +134,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellos') // Custom whitelist cors() implementation
       .set('Origin', 'https://us.com')
       .set('Cookie', 'sessionId=abc123');
@@ -140,7 +147,7 @@ describe('http-cors-tests', () => {
 
   // Check get with partner as origin AND credentials
   it('should allow requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellod') // Default CORS policy
       .set('Origin', 'https://partner.com')
       .set('Cookie', 'sessionId=abc123');
@@ -151,7 +158,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellor') // Regular cors() defaults from Koa
       .set('Origin', 'https://partner.com')
       .set('Cookie', 'sessionId=abc123');
@@ -163,7 +170,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellos') // Custom whitelist cors() implementation
       .set('Origin', 'https://partner.com')
       .set('Cookie', 'sessionId=abc123');
@@ -175,7 +182,7 @@ describe('http-cors-tests', () => {
   });
 
   it('should allow preflight requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .options('/hellos') // Custom whitelist cors() implementation
       .set('Access-Control-Request-Method', 'GET')
       .set('Origin', 'https://partner.com')
@@ -186,7 +193,7 @@ describe('http-cors-tests', () => {
     expect(response.headers['access-control-allow-credentials']).toBe('true');
   });
   it('should allow preflight requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .options('/hellor') // Regular cors() defaults from Koa
       .set('Access-Control-Request-Method', 'GET')
       .set('Origin', 'https://crimewave.com')
@@ -197,7 +204,7 @@ describe('http-cors-tests', () => {
     expect(response.headers['access-control-allow-credentials']).toBeUndefined();
   });
   it('should allow preflight requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .options('/hellod') // Default CORS policy
       .set('Access-Control-Request-Method', 'GET')
       .set('Origin', 'https://crimewave.com')
@@ -213,7 +220,7 @@ describe('http-cors-tests', () => {
 
   // Check get with another origin AND credentials
   it('should allow requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellod') // Default CORS policy
       .set('Origin', 'https://crimewave.com')
       .set('Cookie', 'sessionId=abc123');
@@ -224,7 +231,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests with credentials from allowed origins', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellor') // Regular cors() defaults from Koa
       .set('Origin', 'https://crimewave.com')
       .set('Cookie', 'sessionId=abc123');
@@ -236,7 +243,7 @@ describe('http-cors-tests', () => {
     expect(response.status).toBe(200);
   });
   it('should allow requests with credentials from allowed origins - not this one', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+    const response = await request(app.callback())
       .get('/hellos') // Custom whitelist cors() implementation
       .set('Origin', 'https://crimewave.com')
       .set('Cookie', 'sessionId=abc123');
@@ -249,24 +256,24 @@ describe('http-cors-tests', () => {
 });
 
 export class TestEndpointsDefCORS {
-  @DBOS.getApi('/hellod')
+  @dhttp.getApi('/hellod')
   static async hello() {
     return Promise.resolve({ message: 'hello!' });
   }
 }
 
-@KoaCors(cors())
+@dhttp.koaCors(cors())
 export class TestEndpointsRegCORS {
-  @DBOS.getApi('/hellor')
+  @dhttp.getApi('/hellor')
   static async hello() {
     return Promise.resolve({ message: 'hello!' });
   }
 }
 
-@KoaCors(
+@dhttp.koaCors(
   cors({
     credentials: true,
-    origin: (o: Context) => {
+    origin: (o: Koa.Context) => {
       const whitelist = ['https://us.com', 'https://partner.com'];
       const origin = o.request.header.origin ?? '*';
       if (whitelist && whitelist.length > 0) {
@@ -278,7 +285,7 @@ export class TestEndpointsRegCORS {
   }),
 )
 export class TestEndpointsSpecCORS {
-  @DBOS.getApi('/hellos')
+  @dhttp.getApi('/hellos')
   static async hello() {
     return Promise.resolve({ message: 'hello!' });
   }

@@ -2,7 +2,7 @@
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
-import { SystemDatabase } from './system_database';
+import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { DBOSContext, DBOSContextImpl, HTTPRequest } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
@@ -599,7 +599,8 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    return DBOSJSON.parse(await this.systemDatabase.getWorkflowInputs(this.workflowUUID)) as T;
+    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
+    return DBOSJSON.parse(status.input) as T;
   }
 }
 
@@ -631,6 +632,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    return DBOSJSON.parse(await this.systemDatabase.getWorkflowInputs(this.workflowUUID)) as T;
+    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
+    return DBOSJSON.parse(status.input) as T;
   }
 }

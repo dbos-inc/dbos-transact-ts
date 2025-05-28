@@ -1,31 +1,45 @@
-import { MiddlewareContext, DBOS } from '../../src';
-import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import Koa from 'koa';
+import Router from '@koa/router';
+
+import { DBOS, Error as DBOSError } from '@dbos-inc/dbos-sdk';
+
+import { DBOSKoa, DBOSKoaAuthContext } from '../src';
+
 import request from 'supertest';
-import { Authentication, KoaGlobalMiddleware, KoaMiddleware } from '../../src/httpServer/middleware';
-import { Middleware } from 'koa';
-import { DBOSNotAuthorizedError } from '../../src/error';
-import { DBOSConfig } from '../../src/dbos-executor';
+
+const dhttp = new DBOSKoa();
+
+interface TestKvTable {
+  id?: number;
+  value?: string;
+}
 
 describe('httpserver-defsec-tests', () => {
+  let app: Koa;
+  let appRouter: Router;
+
   const testTableName = 'dbos_test_kv';
 
-  let config: DBOSConfig;
-
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
-    DBOS.setConfig(config);
+    DBOS.setConfig({
+      name: 'dbos-koa-test',
+      userDbclient: 'pg-node',
+    });
+    return Promise.resolve();
   });
 
   beforeEach(async () => {
+    DBOS.registerLifecycleCallback(dhttp);
     const _classes = [TestEndpointDefSec, SecondClass];
     await DBOS.launch();
-    DBOS.setUpHandlerCallback();
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     middlewareCounter = 0;
     middlewareCounter2 = 0;
     middlewareCounterG = 0;
+    app = new Koa();
+    appRouter = new Router();
+    dhttp.registerWithApp(app, appRouter);
   });
 
   afterEach(async () => {
@@ -34,21 +48,21 @@ describe('httpserver-defsec-tests', () => {
   });
 
   test('get-hello', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
+    const response = await request(app.callback()).get('/hello');
     expect(response.statusCode).toBe(200);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(response.body.message).toBe('hello!');
     expect(middlewareCounter).toBe(1);
     expect(middlewareCounter2).toBe(2); // Middleware runs from left to right.
     expect(middlewareCounterG).toBe(1);
-    await request(DBOS.getHTTPHandlersCallback()!).get('/goodbye');
+    await request(app.callback()).get('/goodbye');
     expect(middlewareCounterG).toBe(2);
-    await request(DBOS.getHTTPHandlersCallback()!).get('/nosuchendpoint');
+    await request(app.callback()).get('/nosuchendpoint');
     expect(middlewareCounterG).toBe(3);
   });
 
   test('get-hello-name', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello/alice');
+    const response = await request(app.callback()).get('/hello/alice');
     expect(response.statusCode).toBe(200);
     // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     expect(response.body.message).toBe('hello, alice!');
@@ -57,33 +71,31 @@ describe('httpserver-defsec-tests', () => {
   });
 
   test('not-authenticated', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice');
+    const response = await request(app.callback()).get('/requireduser?name=alice');
     expect(response.statusCode).toBe(401);
   });
 
   test('not-you', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice&userid=go_away');
+    const response = await request(app.callback()).get('/requireduser?name=alice&userid=go_away');
     expect(response.statusCode).toBe(401);
   });
 
   test('not-authorized', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice&userid=bob');
+    const response = await request(app.callback()).get('/requireduser?name=alice&userid=bob');
     expect(response.statusCode).toBe(403);
   });
 
   test('authorized', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice&userid=a_real_user');
+    const response = await request(app.callback()).get('/requireduser?name=alice&userid=a_real_user');
     expect(response.statusCode).toBe(200);
   });
 
   // The handler is authorized, then its child workflow and transaction should also be authroized.
   test('cascade-authorized', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/workflow?name=alice&userid=a_real_user');
+    const response = await request(app.callback()).get('/workflow?name=alice&userid=a_real_user');
     expect(response.statusCode).toBe(200);
 
-    const txnResponse = await request(DBOS.getHTTPHandlersCallback()!).get(
-      '/transaction?name=alice&userid=a_real_user',
-    );
+    const txnResponse = await request(app.callback()).get('/transaction?name=alice&userid=a_real_user');
     expect(txnResponse.statusCode).toBe(200);
   });
 
@@ -96,20 +108,20 @@ describe('httpserver-defsec-tests', () => {
 
     // Unauthorized.
     await expect(TestEndpointDefSec.testTranscation('alice')).rejects.toThrow(
-      new DBOSNotAuthorizedError('User does not have a role with permission to call testTranscation', 403),
+      new DBOSError.DBOSNotAuthorizedError('User does not have a role with permission to call testTranscation', 403),
     );
   });
 
-  async function authTestMiddleware(ctx: MiddlewareContext) {
+  async function authTestMiddleware(ctx: DBOSKoaAuthContext) {
     if (ctx.requiredRole.length > 0) {
       const { userid } = ctx.koaContext.request.query;
       const uid = userid?.toString();
 
       if (!uid || uid.length === 0) {
-        return Promise.reject(new DBOSNotAuthorizedError('Not logged in.', 401));
+        return Promise.reject(new DBOSError.DBOSNotAuthorizedError('Not logged in.', 401));
       } else {
         if (uid === 'go_away') {
-          return Promise.reject(new DBOSNotAuthorizedError('Go away.', 401));
+          return Promise.reject(new DBOSError.DBOSNotAuthorizedError('Go away.', 401));
         }
         return Promise.resolve({
           authenticatedUser: uid,
@@ -121,42 +133,41 @@ describe('httpserver-defsec-tests', () => {
   }
 
   let middlewareCounter = 0;
-  const testMiddleware: Middleware = async (ctx, next) => {
+  const testMiddleware: Koa.Middleware = async (ctx, next) => {
     middlewareCounter++;
     await next();
   };
 
   let middlewareCounter2 = 0;
-  const testMiddleware2: Middleware = async (ctx, next) => {
-    // This is not a typo.  This is testing that middleware goes left to right
+  const testMiddleware2: Koa.Middleware = async (ctx, next) => {
     middlewareCounter2 = middlewareCounter + 1;
     await next();
   };
 
   let middlewareCounterG = 0;
-  const testMiddlewareG: Middleware = async (ctx, next) => {
+  const testMiddlewareG: Koa.Middleware = async (ctx, next) => {
     middlewareCounterG = middlewareCounterG + 1;
     await next();
   };
 
   @DBOS.defaultRequiredRole(['user'])
-  @Authentication(authTestMiddleware)
-  @KoaMiddleware(testMiddleware, testMiddleware2)
-  @KoaGlobalMiddleware(testMiddlewareG)
+  @dhttp.authentication(authTestMiddleware)
+  @dhttp.koaMiddleware(testMiddleware, testMiddleware2)
+  @dhttp.koaGlobalMiddleware(testMiddlewareG)
   class TestEndpointDefSec {
     @DBOS.requiredRole([])
-    @DBOS.getApi('/hello')
+    @dhttp.getApi('/hello')
     static async hello() {
       return Promise.resolve({ message: 'hello!' });
     }
 
     @DBOS.requiredRole([])
-    @DBOS.getApi('/hello/:name')
+    @dhttp.getApi('/hello/:name')
     static async helloName(name: string) {
       return Promise.resolve({ message: `hello, ${name}!` });
     }
 
-    @DBOS.getApi('/requireduser')
+    @dhttp.getApi('/requireduser')
     static async testAuth(name: string) {
       return Promise.resolve(`Please say hello to ${name}`);
     }
@@ -176,20 +187,20 @@ describe('httpserver-defsec-tests', () => {
       return res;
     }
 
-    @DBOS.getApi('/workflow')
+    @dhttp.getApi('/workflow')
     static async testWfEndpoint(name: string) {
-      return TestEndpointDefSec.testWorkflow(name);
+      return await TestEndpointDefSec.testWorkflow(name);
     }
 
-    @DBOS.getApi('/transaction')
+    @dhttp.getApi('/transaction')
     static async testTxnEndpoint(name: string) {
-      return TestEndpointDefSec.testTranscation(name);
+      return await TestEndpointDefSec.testTranscation(name);
     }
   }
 
   class SecondClass {
     @DBOS.requiredRole([])
-    @DBOS.getApi('/goodbye')
+    @dhttp.getApi('/goodbye')
     static async bye() {
       return Promise.resolve({ message: 'bye!' });
     }

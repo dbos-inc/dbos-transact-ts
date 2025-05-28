@@ -19,6 +19,7 @@ import {
   RequestIDHeader,
   WorkflowIDHeader,
 } from './dboshttp';
+import { AsyncLocalStorage } from 'async_hooks';
 
 // Context for auth middleware
 export interface DBOSKoaAuthContext {
@@ -51,7 +52,26 @@ function exhaustiveCheckGuard(_: never): never {
   throw new Error('Exaustive matching is not applied');
 }
 
+interface DBOSKoaLocalCtx {
+  koaCtxt: Koa.Context;
+}
+const asyncLocalCtx = new AsyncLocalStorage<DBOSKoaLocalCtx>();
+
+function getCurrentKoaContextStore(): DBOSKoaLocalCtx | undefined {
+  return asyncLocalCtx.getStore();
+}
+
+function assertCurrentKoaContextStore(): DBOSKoaLocalCtx {
+  const ctx = getCurrentKoaContextStore();
+  if (!ctx) throw new TypeError('Invalid use of `DBOSKoa.koaContext` outside of a handler function');
+  return ctx;
+}
+
 export class DBOSKoa extends DBOSHTTPBase {
+  static get koaContext(): Koa.Context {
+    return assertCurrentKoaContextStore().koaCtxt;
+  }
+
   /**
    * Define an authentication function for each endpoint in this class.
    */
@@ -221,15 +241,27 @@ export class DBOSKoa extends DBOSHTTPBase {
                 foundArg = koaCtxt.request.query[marg.name];
                 if (foundArg !== undefined) {
                   args.push(foundArg);
+                } else {
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+                  foundArg = koaCtxt.request.body?.[marg.name];
+                  if (foundArg !== undefined) {
+                    args.push(foundArg);
+                  }
                 }
               } else if (isBodyMethod) {
-                if (!koaCtxt.request.body) {
-                  throw new DBOSErrors.DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
-                }
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-                foundArg = koaCtxt.request.body[marg.name];
+                foundArg = koaCtxt.request.body?.[marg.name];
                 if (foundArg !== undefined) {
                   args.push(foundArg);
+                } else {
+                  foundArg = koaCtxt.request.query[marg.name];
+                  if (foundArg !== undefined) {
+                    args.push(foundArg);
+                  } else {
+                    if (!koaCtxt.request.body) {
+                      throw new DBOSErrors.DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
+                    }
+                  }
                 }
               }
 
@@ -275,19 +307,21 @@ export class DBOSKoa extends DBOSHTTPBase {
             // - If a client-side error is thrown, we return 400.
             // - If an error contains a `status` field, we return the specified status code.
             // - Otherwise, we return 500.
-            const cresult = await DBOS.runWithContext(
-              {
-                authenticatedUser,
-                authenticatedRoles,
-                idAssignedForNextWorkflow: headerWorkflowID,
-                span,
-                request: koaCtxt.request,
-              },
-              async () => {
-                const f = methodReg.wrappedFunction ?? methodReg.registeredFunction ?? methodReg.origFunction;
-                return (await f.call(undefined, ...args)) as unknown;
-              },
-            );
+            const cresult = await asyncLocalCtx.run({ koaCtxt }, async () => {
+              return await DBOS.runWithContext(
+                {
+                  authenticatedUser,
+                  authenticatedRoles,
+                  idAssignedForNextWorkflow: headerWorkflowID,
+                  span,
+                  request: koaCtxt.request,
+                },
+                async () => {
+                  const f = methodReg.wrappedFunction ?? methodReg.registeredFunction ?? methodReg.origFunction;
+                  return (await f.call(undefined, ...args)) as unknown;
+                },
+              );
+            });
             const retValue = cresult!;
 
             // Set the body to the return value unless the body is already set by the handler.

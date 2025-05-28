@@ -1,34 +1,54 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import { MiddlewareContext, StatusString, DBOS, DefaultArgRequired } from '../../src';
-import { WorkflowUUIDHeader } from '../../src/httpServer/server';
-import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb, uuidValidate } from '../helpers';
+import Koa from 'koa';
+import Router from '@koa/router';
+
+import { DBOS, DBOSResponseError, Error as DBOSErrors, DefaultArgRequired, StatusString } from '@dbos-inc/dbos-sdk';
+
+import { DBOSKoa, DBOSKoaAuthContext, RequestIDHeader, WorkflowIDHeader } from '../src';
+
 import request from 'supertest';
-import { ArgSource } from '../../src/httpServer/handler';
-import { ArgSources } from '../../src/httpServer/handlerTypes';
-import { Authentication, KoaBodyParser, RequestIDHeader } from '../../src/httpServer/middleware';
+
+const dhttp = new DBOSKoa();
+
+interface TestKvTable {
+  id?: number;
+  value?: string;
+}
+
 import { randomUUID } from 'node:crypto';
-import { DBOSConfig } from '../../src/dbos-executor';
-import { DBOSNotAuthorizedError, DBOSResponseError } from '../../src/error';
 import { IncomingMessage } from 'http';
 import { bodyParser } from '@koa/bodyparser';
 
+// copied from https://github.com/uuidjs/uuid project
+function uuidValidate(uuid: string) {
+  const regex =
+    /^(?:[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}|00000000-0000-0000-0000-000000000000|ffffffff-ffff-ffff-ffff-ffffffffffff)$/i;
+  return regex.test(uuid);
+}
 describe('httpserver-tests', () => {
+  let app: Koa;
+  let appRouter: Router;
+
   const testTableName = 'dbos_test_kv';
 
-  let config: DBOSConfig;
-
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
-    DBOS.setConfig(config);
+    DBOS.setConfig({
+      name: 'dbos-koa-test',
+      userDbclient: 'pg-node',
+    });
+    return Promise.resolve();
   });
 
   beforeEach(async () => {
+    DBOS.registerLifecycleCallback(dhttp);
     const _classes = [TestEndpoints];
     await DBOS.launch();
     DBOS.setUpHandlerCallback();
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
+    app = new Koa();
+    appRouter = new Router();
+    dhttp.registerWithApp(app, appRouter);
   });
 
   afterEach(async () => {
@@ -36,7 +56,7 @@ describe('httpserver-tests', () => {
   });
 
   test('get-hello', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
+    const response = await request(app.callback()).get('/hello');
     expect(response.statusCode).toBe(200);
     expect(response.body.message).toBe('hello!');
     const requestID: string = response.headers[RequestIDHeader.toLowerCase()];
@@ -46,56 +66,56 @@ describe('httpserver-tests', () => {
 
   test('get-url', async () => {
     const requestID = 'my-request-id';
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello/alice').set(RequestIDHeader, requestID);
+    const response = await request(app.callback()).get('/hello/alice').set(RequestIDHeader, requestID);
     expect(response.statusCode).toBe(301);
     expect(response.text).toBe('wow alice');
     expect(response.headers[RequestIDHeader.toLowerCase()]).toBe(requestID);
   });
 
   test('get-query', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/query?name=alice');
+    const response = await request(app.callback()).get('/query?name=alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
 
   test('get-querybody', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/querybody').send({ name: 'alice' });
+    const response = await request(app.callback()).get('/querybody').send({ name: 'alice' });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
 
   test('delete-query', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).delete('/testdeletequery?name=alice');
+    const response = await request(app.callback()).delete('/testdeletequery?name=alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
 
   test('delete-url', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).delete('/testdeleteurl/alice');
+    const response = await request(app.callback()).delete('/testdeleteurl/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
 
   test('delete-body', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).delete('/testdeletebody').send({ name: 'alice' });
+    const response = await request(app.callback()).delete('/testdeletebody').send({ name: 'alice' });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
 
   test('post-test', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post('/testpost').send({ name: 'alice' });
+    const response = await request(app.callback()).post('/testpost').send({ name: 'alice' });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
 
   test('post-test-custom-body', async () => {
-    let response = await request(DBOS.getHTTPHandlersCallback()!)
+    let response = await request(app.callback())
       .post('/testpost')
       .set('Content-Type', 'application/custom-content-type')
       .send(JSON.stringify({ name: 'alice' }));
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
-    response = await request(DBOS.getHTTPHandlersCallback()!)
+    response = await request(app.callback())
       .post('/testpost')
       .set('Content-Type', 'application/rejected-custom-content-type')
       .send(JSON.stringify({ name: 'alice' }));
@@ -103,19 +123,19 @@ describe('httpserver-tests', () => {
   });
 
   test('put-test', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).put('/testput').send({ name: 'alice' });
+    const response = await request(app.callback()).put('/testput').send({ name: 'alice' });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
 
   test('put-test-custom-body', async () => {
-    let response = await request(DBOS.getHTTPHandlersCallback()!)
+    let response = await request(app.callback())
       .put('/testput')
       .set('Content-Type', 'application/custom-content-type')
       .send(JSON.stringify({ name: 'alice' }));
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
-    response = await request(DBOS.getHTTPHandlersCallback()!)
+    response = await request(app.callback())
       .put('/testput')
       .set('Content-Type', 'application/rejected-custom-content-type')
       .send(JSON.stringify({ name: 'alice' }));
@@ -123,19 +143,19 @@ describe('httpserver-tests', () => {
   });
 
   test('patch-test', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).patch('/testpatch').send({ name: 'alice' });
+    const response = await request(app.callback()).patch('/testpatch').send({ name: 'alice' });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
   });
 
   test('patch-test-custom-body', async () => {
-    let response = await request(DBOS.getHTTPHandlersCallback()!)
+    let response = await request(app.callback())
       .patch('/testpatch')
       .set('Content-Type', 'application/custom-content-type')
       .send(JSON.stringify({ name: 'alice' }));
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
-    response = await request(DBOS.getHTTPHandlersCallback()!)
+    response = await request(app.callback())
       .patch('/testpatch')
       .set('Content-Type', 'application/rejected-custom-content-type')
       .send(JSON.stringify({ name: 'alice' }));
@@ -143,43 +163,43 @@ describe('httpserver-tests', () => {
   });
 
   test('endpoint-transaction', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post('/transaction/alice');
+    const response = await request(app.callback()).post('/transaction/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
 
   test('endpoint-step', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/step/alice');
+    const response = await request(app.callback()).get('/step/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('alice');
   });
 
   test('endpoint-workflow', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow?name=alice');
+    const response = await request(app.callback()).post('/workflow?name=alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
 
   test('endpoint-error', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post('/error').send({ name: 'alice' });
+    const response = await request(app.callback()).post('/error').send({ name: 'alice' });
     expect(response.statusCode).toBe(500);
     expect(response.body.details.code).toBe('23505'); // Should be the expected error.
   });
 
   test('endpoint-handler', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/handler/alice');
+    const response = await request(app.callback()).get('/handler/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
 
   test('endpoint-testStartWorkflow', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/testStartWorkflow/alice');
+    const response = await request(app.callback()).get('/testStartWorkflow/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
 
   test('endpoint-testInvokeWorkflow', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/testInvokeWorkflow/alice');
+    const response = await request(app.callback()).get('/testInvokeWorkflow/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
   });
@@ -191,74 +211,74 @@ describe('httpserver-tests', () => {
   }
 
   test('response-error', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/dbos-error');
+    const response = await request(app.callback()).get('/dbos-error');
     expect(response.statusCode).toBe(503);
     expect((response as unknown as Res).res.statusMessage).toBe('customize error');
     expect(response.body.message).toBe('customize error');
   });
 
   test('datavalidation-error', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/query');
+    const response = await request(app.callback()).get('/query');
     expect(response.statusCode).toBe(400);
     expect(response.body.details.dbosErrorCode).toBe(9);
   });
 
   test('dbos-redirect', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/redirect');
+    const response = await request(app.callback()).get('/redirect');
     expect(response.statusCode).toBe(302);
     expect(response.headers.location).toBe('/redirect-dbos');
   });
 
   test('not-authenticated', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice');
+    const response = await request(app.callback()).get('/requireduser?name=alice');
     expect(response.statusCode).toBe(401);
   });
 
   test('not-you', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice&userid=go_away');
+    const response = await request(app.callback()).get('/requireduser?name=alice&userid=go_away');
     expect(response.statusCode).toBe(401);
   });
 
   test('not-authorized', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice&userid=bob');
+    const response = await request(app.callback()).get('/requireduser?name=alice&userid=bob');
     expect(response.statusCode).toBe(403);
   });
 
   test('authorized', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser?name=alice&userid=a_real_user');
+    const response = await request(app.callback()).get('/requireduser?name=alice&userid=a_real_user');
     expect(response.statusCode).toBe(200);
   });
 
   test('not-authenticated2', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser2?name=alice');
+    const response = await request(app.callback()).get('/requireduser2?name=alice');
     expect(response.statusCode).toBe(401);
   });
 
   test('not-you2', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser2?name=alice&userid=go_away');
+    const response = await request(app.callback()).get('/requireduser2?name=alice&userid=go_away');
     expect(response.statusCode).toBe(401);
   });
 
   test('not-authorized2', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser2?name=alice&userid=bob');
+    const response = await request(app.callback()).get('/requireduser2?name=alice&userid=bob');
     expect(response.statusCode).toBe(403);
   });
 
   test('authorized2', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).get('/requireduser2?name=alice&userid=a_real_user');
+    const response = await request(app.callback()).get('/requireduser2?name=alice&userid=a_real_user');
     expect(response.statusCode).toBe(200);
   });
 
-  test('test-workflowUUID-header', async () => {
-    const workflowUUID = randomUUID();
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
+  test('test-workflowID-header', async () => {
+    const workflowID = randomUUID();
+    const response = await request(app.callback())
       .post('/workflow?name=bob')
-      .set({ 'dbos-idempotency-key': workflowUUID });
+      .set({ 'dbos-idempotency-key': workflowID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
 
-    // Retrieve the workflow with UUID.
-    const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
+    // Retrieve the workflow with WFID.
+    const retrievedHandle = DBOS.retrieveWorkflow(workflowID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -266,16 +286,14 @@ describe('httpserver-tests', () => {
     });
   });
 
-  test('endpoint-handler-UUID', async () => {
-    const workflowUUID = randomUUID();
-    const response = await request(DBOS.getHTTPHandlersCallback()!)
-      .get('/handler/bob')
-      .set({ 'dbos-idempotency-key': workflowUUID });
+  test('endpoint-handler-WFID', async () => {
+    const workflowID = randomUUID();
+    const response = await request(app.callback()).get('/handler/bob').set({ 'dbos-idempotency-key': workflowID });
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello 1');
 
-    // Retrieve the workflow with UUID.
-    const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID);
+    // Retrieve the workflow with WFID.
+    const retrievedHandle = DBOS.retrieveWorkflow(workflowID);
     expect(retrievedHandle).not.toBeNull();
     await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
@@ -283,17 +301,17 @@ describe('httpserver-tests', () => {
     });
   });
 
-  async function testAuthMiddlware(ctx: MiddlewareContext) {
+  async function testAuthMiddlware(ctx: DBOSKoaAuthContext) {
     if (ctx.requiredRole.length > 0) {
       const { userid } = ctx.koaContext.request.query;
       const uid = userid?.toString();
 
       if (!uid || uid.length === 0) {
-        const err = new DBOSNotAuthorizedError('Not logged in.', 401);
+        const err = new DBOSErrors.DBOSNotAuthorizedError('Not logged in.', 401);
         throw err;
       } else {
         if (uid === 'go_away') {
-          throw new DBOSNotAuthorizedError('Go away.', 401);
+          throw new DBOSErrors.DBOSNotAuthorizedError('Go away.', 401);
         }
         return Promise.resolve({
           authenticatedUser: uid,
@@ -304,8 +322,8 @@ describe('httpserver-tests', () => {
     return;
   }
 
-  @Authentication(testAuthMiddlware)
-  @KoaBodyParser(
+  @dhttp.authentication(testAuthMiddlware)
+  @dhttp.koaBodyParser(
     bodyParser({
       extendTypes: {
         json: ['application/json', 'application/custom-content-type'],
@@ -316,99 +334,99 @@ describe('httpserver-tests', () => {
   )
   @DefaultArgRequired
   class TestEndpoints {
-    @DBOS.getApi('/hello')
+    @dhttp.getApi('/hello')
     static async hello() {
       return Promise.resolve({ message: 'hello!' });
     }
 
-    @DBOS.getApi('/hello/:id')
+    @dhttp.getApi('/hello/:id')
     static async helloUrl(id: string) {
       // Customize status code and response.
-      DBOS.koaContext.body = `wow ${id}`;
-      DBOS.koaContext.status = 301;
+      DBOSKoa.koaContext.body = `wow ${id}`;
+      DBOSKoa.koaContext.status = 301;
       return Promise.resolve(`hello ${id}`);
     }
 
-    @DBOS.getApi('/redirect')
+    @dhttp.getApi('/redirect')
     static async redirectUrl() {
       const url = DBOS.request.url || 'bad url'; // Get the raw url from request.
-      DBOS.koaContext.redirect(url + '-dbos');
+      DBOSKoa.koaContext.redirect(url + '-dbos');
       return Promise.resolve();
     }
 
-    @DBOS.getApi('/query')
+    @dhttp.getApi('/query')
     static async helloQuery(name: string) {
       DBOS.logger.info(`query with name ${name}`); // Test logging.
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DBOS.getApi('/querybody')
-    static async helloQueryBody(@ArgSource(ArgSources.BODY) name: string) {
+    @dhttp.getApi('/querybody')
+    static async helloQueryBody(name: string) {
       DBOS.logger.info(`query with name ${name}`); // Test logging.
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DBOS.deleteApi('/testdeletequery')
+    @dhttp.deleteApi('/testdeletequery')
     static async testdeletequeryparam(name: string) {
       DBOS.logger.info(`delete with param from query with name ${name}`);
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DBOS.deleteApi('/testdeleteurl/:name')
+    @dhttp.deleteApi('/testdeleteurl/:name')
     static async testdeleteurlparam(name: string) {
       DBOS.logger.info(`delete with param from url with name ${name}`);
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DBOS.deleteApi('/testdeletebody')
-    static async testdeletebodyparam(@ArgSource(ArgSources.BODY) name: string) {
+    @dhttp.deleteApi('/testdeletebody')
+    static async testdeletebodyparam(name: string) {
       DBOS.logger.info(`delete with param from url with name ${name}`);
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DBOS.postApi('/testpost')
+    @dhttp.postApi('/testpost')
     static async testpost(name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DBOS.putApi('/testput')
+    @dhttp.putApi('/testput')
     static async testput(name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DBOS.patchApi('/testpatch')
+    @dhttp.patchApi('/testpatch')
     static async testpatch(name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DBOS.getApi('/dbos-error')
+    @dhttp.getApi('/dbos-error')
     @DBOS.transaction()
     static async dbosErr() {
       return Promise.reject(new DBOSResponseError('customize error', 503));
     }
 
-    @DBOS.getApi('/handler/:name')
+    @dhttp.getApi('/handler/:name')
     static async testHandler(name: string) {
-      const workflowID = DBOS.koaContext.get(WorkflowUUIDHeader);
-      // Invoke a workflow using the given UUID.
+      const workflowID: string = DBOSKoa.koaContext.get(WorkflowIDHeader);
+      // Invoke a workflow using the given ID.
       return DBOS.startWorkflow(TestEndpoints, { workflowID })
         .testWorkflow(name)
         .then((x) => x.getResult());
     }
 
-    @DBOS.getApi('/testStartWorkflow/:name')
+    @dhttp.getApi('/testStartWorkflow/:name')
     static async testStartWorkflow(name: string): Promise<string> {
       return DBOS.startWorkflow(TestEndpoints)
         .testWorkflow(name)
         .then((x) => x.getResult());
     }
 
-    @DBOS.getApi('/testInvokeWorkflow/:name')
+    @dhttp.getApi('/testInvokeWorkflow/:name')
     static async testInvokeWorkflow(name: string): Promise<string> {
-      return TestEndpoints.testWorkflow(name);
+      return await TestEndpoints.testWorkflow(name);
     }
 
-    @DBOS.postApi('/transaction/:name')
+    @dhttp.postApi('/transaction/:name')
     @DBOS.transaction()
     static async testTransaction(name: string) {
       const { rows } = await DBOS.pgClient.query<TestKvTable>(
@@ -418,20 +436,20 @@ describe('httpserver-tests', () => {
       return `hello ${rows[0].id}`;
     }
 
-    @DBOS.getApi('/step/:input')
+    @dhttp.getApi('/step/:input')
     @DBOS.step()
     static async testStep(input: string) {
       return Promise.resolve(input);
     }
 
-    @DBOS.postApi('/workflow')
+    @dhttp.postApi('/workflow')
     @DBOS.workflow()
-    static async testWorkflow(@ArgSource(ArgSources.QUERY) name: string) {
+    static async testWorkflow(name: string) {
       const res = await TestEndpoints.testTransaction(name);
       return TestEndpoints.testStep(res);
     }
 
-    @DBOS.postApi('/error')
+    @dhttp.postApi('/error')
     @DBOS.workflow()
     static async testWorkflowError(name: string) {
       // This workflow should encounter duplicate primary key error.
@@ -440,7 +458,7 @@ describe('httpserver-tests', () => {
       return res;
     }
 
-    @DBOS.getApi('/requireduser')
+    @dhttp.getApi('/requireduser')
     @DBOS.requiredRole(['user'])
     static async testAuth(name: string) {
       if (DBOS.authenticatedUser !== 'a_real_user') {
@@ -455,7 +473,7 @@ describe('httpserver-tests', () => {
       return Promise.resolve(`Please say hello to ${name}`);
     }
 
-    @DBOS.getApi('/requireduser2')
+    @dhttp.getApi('/requireduser2')
     @DBOS.requiredRole(['user'])
     static async testAuth2(name: string) {
       if (DBOS.authenticatedUser !== 'a_real_user') {

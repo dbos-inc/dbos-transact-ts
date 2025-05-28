@@ -1231,7 +1231,30 @@ export class DBOS {
         }
       }
     } else {
-      return runWithTopContext(options, callback);
+      let span = options.span;
+      if (!span) {
+        span = DBOS.#executor.tracer.startSpan('topContext', {
+          operationUUID: options.idAssignedForNextWorkflow,
+          operationType: options.operationType,
+          authenticatedUser: options.authenticatedUser,
+          assumedRole: options.assumedRole,
+          authenticatedRoles: options.authenticatedRoles,
+        });
+      }
+      const ctx = new DBOSContextImpl(options.operationCaller || 'topContext', span, DBOS.logger as GlobalLogger);
+      ctx.request = options.request || {};
+      ctx.authenticatedUser = options.authenticatedUser || '';
+      ctx.assumedRole = options.assumedRole || '';
+      ctx.authenticatedRoles = options.authenticatedRoles || [];
+      ctx.workflowUUID = options.idAssignedForNextWorkflow || '';
+
+      return runWithTopContext(
+        {
+          ...options,
+          ctx,
+        },
+        callback,
+      );
     }
   }
 
@@ -1827,7 +1850,7 @@ export class DBOS {
       const pctx = getCurrentContextStore();
       let inst: ConfiguredInstance | undefined = undefined;
       if (this) {
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as unknown as ConfiguredInstance;
@@ -1934,7 +1957,7 @@ export class DBOS {
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         const pctx = getCurrentContextStore();
         let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as ConfiguredInstance;
@@ -2161,7 +2184,7 @@ export class DBOS {
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as ConfiguredInstance;
@@ -2383,7 +2406,7 @@ export class DBOS {
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as ConfiguredInstance;

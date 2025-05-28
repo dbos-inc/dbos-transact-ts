@@ -950,14 +950,13 @@ export function associateMethodWithExternal<This, Args extends unknown[], Return
   func: (this: This, ...args: Args) => Promise<Return>,
 ): {
   registration: MethodRegistration<This, Args, Return>;
-  func: (this: This, ...args: Args) => Promise<Return>;
   regInfo: object;
 } {
   const { registration } = registerAndWrapDBOSFunctionByName(target, className, funcName, func);
   if (!registration.externalRegInfo.has(external)) {
     registration.externalRegInfo.set(external, {});
   }
-  return { func: registration.registeredFunction!, registration, regInfo: registration.externalRegInfo.get(external)! };
+  return { registration, regInfo: registration.externalRegInfo.get(external)! };
 }
 
 export function getRegistrationsForExternal(external: AnyConstructor | object | string) {
