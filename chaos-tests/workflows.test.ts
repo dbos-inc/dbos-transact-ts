@@ -6,7 +6,7 @@ describe('chaos-tests', () => {
   let config: DBOSConfig;
   let chaosMonkey: PostgresChaosMonkey;
 
-  jest.setTimeout(30000);
+  jest.setTimeout(300000);
 
   beforeAll(() => {
     config = {
@@ -58,7 +58,14 @@ describe('chaos-tests', () => {
   test('test-workflow', async () => {
     const numWorkflows = 5000;
     for (let i = 0; i < numWorkflows; i++) {
-      await expect(TestWorkflow.workflow(i)).resolves.toEqual(i + 3);
+      await expect(TestWorkflow.workflow(i))
+        .resolves.toEqual(i + 3)
+        .catch((err) => {
+          console.error(`Workflow ${i} failed:`, err);
+          console.error('Full error object:', JSON.stringify(err, null, 2));
+          throw err;
+        });
+      console.log(i);
     }
   });
 });

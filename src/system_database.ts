@@ -25,7 +25,7 @@ import {
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME } from './utils';
+import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -479,6 +479,56 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
   };
 }
 
+/**
+ * If a workflow encounters a database connection issue while performing an operation,
+ * block the workflow and retry the operation until it reconnects and succeeds.
+ * In other words, if DBOS loses its database connection, everything pauses until the connection is recovered,
+ * trading off availability for correctness.
+ */
+function dbRetry(
+  options: {
+    initialBackoff?: number;
+    maxBackoff?: number;
+  } = {},
+) {
+  const { initialBackoff = 1.0, maxBackoff = 60.0 } = options;
+
+  return function <T extends (...args: any[]) => unknown>(
+    target: unknown,
+    propertyName: string,
+    descriptor: TypedPropertyDescriptor<T>,
+  ): TypedPropertyDescriptor<T> | void {
+    const method = descriptor.value!;
+
+    descriptor.value = async function (this: unknown, ...args: unknown[]) {
+      let retries = 0;
+      let backoff = initialBackoff;
+
+      while (true) {
+        try {
+          return await method.apply(this, args);
+        } catch (e) {
+          retries++;
+          // Calculate backoff with jitter
+          const actualBackoff = backoff * (0.5 + Math.random());
+
+          console.warn(
+            `Database connection failed: ${e}. ` + `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
+          );
+
+          // Sleep with backoff
+          await sleepms(actualBackoff * 1000); // Convert to milliseconds
+
+          // Increase backoff for next attempt (exponential)
+          backoff = Math.min(backoff * 2, maxBackoff);
+        }
+      }
+    } as T;
+
+    return descriptor;
+  };
+}
+
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
@@ -598,6 +648,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await pgSystemClient.end();
   }
 
+  @dbRetry()
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     maxRetries?: number,
@@ -645,6 +696,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -654,6 +706,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -704,6 +757,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async getOperationResultAndThrowIfCancelled(
     workflowID: string,
     functionID: number,
@@ -724,6 +778,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows;
   }
 
+  @dbRetry()
   async recordOperationResult(
     workflowID: string,
     functionID: number,
@@ -828,6 +883,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return output;
   }
 
+  @dbRetry()
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
     let resolveNotification: () => void;
     const cancelPromise = new Promise<void>((resolve) => {
@@ -887,6 +943,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly nullTopic = '__null__topic__';
 
+  @dbRetry()
   async send(
     workflowID: string,
     functionID: number,
@@ -921,6 +978,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async recv(
     workflowID: string,
     functionID: number,
@@ -1042,6 +1100,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
+  @dbRetry()
   async setEvent(workflowID: string, functionID: number, key: string, message: string | null): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
@@ -1068,6 +1127,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async getEvent(
     workflowID: string,
     key: string,
@@ -1239,6 +1299,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async checkIfCanceled(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -1319,6 +1380,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async getWorkflowStatus(
     workflowID: string,
     callerID?: string,
@@ -1349,6 +1411,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async awaitWorkflowResult(
     workflowID: string,
     timeoutSeconds?: number,
