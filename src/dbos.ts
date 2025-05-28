@@ -2601,7 +2601,7 @@ export class DBOS {
       classOrInst?: object;
       className?: string;
       name: string;
-      param: number;
+      param: number | string;
     },
   ) {
     return associateParameterWithExternal(

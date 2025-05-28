@@ -700,6 +700,8 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     );
 
     const argNames = getArgNames(func);
+
+    // TODO Remove this once things are done later.
     methReg.args.forEach((e) => {
       if (e.required !== ArgRequiredOptions.DEFAULT) {
         classReg.argRequiredEnabled = true;
@@ -716,6 +718,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       }
     });
 
+    // TODO Make these generic
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
       let opCtx: DBOSContextImpl | undefined = undefined;
       if (passContext) {
@@ -753,9 +756,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       // Argument logging
       validatedArgs.forEach((argValue, idx) => {
         let isCtx = false;
-        // TODO: we assume the first argument is always a context, need a more robust way to test it.
         if (idx === 0 && passContext) {
-          // Context -- I suppose we could just instanceof
           opCtx = validatedArgs[0] as DBOSContextImpl;
           isCtx = true;
         }
@@ -989,13 +990,19 @@ export function associateParameterWithExternal<This, Args extends unknown[], Ret
   className: string | undefined,
   funcName: string,
   func: ((this: This, ...args: Args) => Promise<Return>) | undefined,
-  paramNum: number,
+  paramId: number | string,
 ): object | undefined {
   if (!func) {
     func = Object.getOwnPropertyDescriptor(target, funcName)!.value as (this: This, ...args: Args) => Promise<Return>;
   }
   const { registration } = registerAndWrapDBOSFunctionByName(target, className, funcName, func);
-  const param = registration.args[paramNum];
+  let param: MethodParameter | undefined;
+  if (typeof paramId === 'number') {
+    param = registration.args[paramId];
+  } else {
+    param = registration.args.find((p) => p.name === paramId);
+  }
+
   if (!param) return undefined;
 
   if (!param.externalRegInfo.has(external)) {
