@@ -19,12 +19,27 @@ interface ValidatorClassInfo {
   defaultArgValidate?: boolean;
 }
 
+interface ValidatorFuncInfo {
+  performArgValidation?: boolean;
+}
+
 function getValidatorClassInfo(methReg: MethodRegistrationBase) {
   const valInfo = methReg.defaults?.getRegisteredInfo(VALIDATOR) as ValidatorClassInfo;
   return {
     defaultArgRequired: valInfo?.defaultArgRequired ?? ArgRequiredOptions.DEFAULT,
     defaultArgValidate: valInfo?.defaultArgValidate ?? false,
-  };
+  } satisfies ValidatorClassInfo;
+}
+
+export function requestArgValidation(methReg: MethodRegistrationBase) {
+  (methReg.getRegisteredInfo(VALIDATOR) as ValidatorFuncInfo).performArgValidation = true;
+}
+
+function getValidatorFuncInfo(methReg: MethodRegistrationBase) {
+  const valInfo = methReg.getRegisteredInfo(VALIDATOR) as ValidatorFuncInfo;
+  return {
+    performArgValidation: valInfo.performArgValidation ?? false,
+  } satisfies ValidatorFuncInfo;
 }
 
 class ValidationInserter extends DBOSMethodMiddlewareInserter {
@@ -34,7 +49,9 @@ class ValidationInserter extends DBOSMethodMiddlewareInserter {
     const defaultArgValidate = valInfo.defaultArgValidate;
 
     let shouldValidate =
-      methReg.performArgValidation || defaultArgRequired === ArgRequiredOptions.REQUIRED || defaultArgValidate;
+      getValidatorFuncInfo(methReg).performArgValidation ||
+      defaultArgRequired === ArgRequiredOptions.REQUIRED ||
+      defaultArgValidate;
 
     for (const a of methReg.args) {
       if (a.required === ArgRequiredOptions.REQUIRED) {
@@ -43,7 +60,7 @@ class ValidationInserter extends DBOSMethodMiddlewareInserter {
     }
 
     if (shouldValidate) {
-      methReg.performArgValidation = true;
+      requestArgValidation(methReg);
       methReg.addEntryInterceptor(validateMethodArgs, 20);
     }
   }

@@ -83,6 +83,7 @@ export {
   DefaultArgRequired,
   DefaultArgOptional,
   DefaultArgValidate,
+  requestArgValidation,
 } from './paramdecorators';
 
 export { ParseOptions, parseConfigFile } from './dbos-runtime/config';

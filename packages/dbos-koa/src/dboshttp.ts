@@ -1,7 +1,7 @@
 import { IncomingHttpHeaders } from 'http';
 import { randomUUID } from 'node:crypto';
 
-import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, requestArgValidation } from '@dbos-inc/dbos-sdk';
 
 export enum APITypes {
   GET = 'GET',
@@ -69,7 +69,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
         apiURL: url,
         apiType: verb,
       });
-      registration.performArgValidation = true;
+      requestArgValidation(registration);
 
       return descriptor;
     };

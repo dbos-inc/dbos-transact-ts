@@ -29,6 +29,7 @@ import { APITypes, ArgSources } from './handlerTypes';
 import { StoredProcedure } from '../procedure';
 import { WorkflowQueue } from '../wfqueue';
 import { getOrGenerateRequestID, RequestIDHeader } from './middleware';
+import { requestArgValidation } from '../paramdecorators';
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -316,7 +317,7 @@ function generateApiDec(verb: APITypes, url: string) {
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
-    registration.performArgValidation = true;
+    requestArgValidation(registration);
 
     return descriptor;
   };

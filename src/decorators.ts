@@ -308,9 +308,8 @@ export interface MethodRegistrationBase {
   className: string;
 
   args: MethodParameter[];
-  performArgValidation: boolean;
 
-  defaults?: RegistrationDefaults;
+  defaults?: RegistrationDefaults; // This is the class-level info
 
   getRequiredRoles(): string[];
 
@@ -337,6 +336,8 @@ export interface MethodRegistrationBase {
   // Add an interceptor that, when function is run, get a chance to process arguments / throw errors
   addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum?: number): void;
 
+  getRegisteredInfo(reg: AnyConstructor | object | string): unknown;
+
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
 
@@ -355,7 +356,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
     this.onEnter.sort((a, b) => a.seqNum - b.seqNum);
   }
 
-  performArgValidation: boolean = false;
   args: MethodParameter[] = [];
   passContext: boolean = false;
 
@@ -377,6 +377,13 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   regLocation?: string[];
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
+
+  getRegisteredInfo(reg: AnyConstructor | object | string) {
+    if (!this.externalRegInfo.has(reg)) {
+      this.externalRegInfo.set(reg, {});
+    }
+    return this.externalRegInfo.get(reg)!;
+  }
 
   getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | 'Procedure' | undefined {
     if (this.txnConfig) return 'Transaction';

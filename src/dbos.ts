@@ -96,6 +96,7 @@ import {
   DBOSLifecycleCallback,
   DBOSTransactionalDataSource,
   HandlerContext,
+  requestArgValidation,
   StepContext,
   StoredProcedureContext,
   TransactionContext,
@@ -197,7 +198,7 @@ function httpApiDec(verb: APITypes, url: string) {
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
-    registration.performArgValidation = true;
+    requestArgValidation(registration);
 
     return descriptor;
   };
