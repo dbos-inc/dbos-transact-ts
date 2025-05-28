@@ -576,10 +576,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
     this.pool = new Pool(this.systemPoolConfig);
 
-    this.pool.on('error', (err, _) => {
+    this.pool.on('error', (err: Error) => {
       console.error('Unexpected error in pool', err);
     });
-    this.pool.on('connect', (client) => {
+    this.pool.on('connect', (client: PoolClient) => {
       client.on('error', (err) => {
         console.error('Unexpected error in idle client:', err);
       });
