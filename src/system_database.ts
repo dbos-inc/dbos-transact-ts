@@ -492,18 +492,15 @@ function dbRetry(
   } = {},
 ) {
   const { initialBackoff = 1.0, maxBackoff = 60.0 } = options;
-
-  return function <T extends (...args: any[]) => unknown>(
+  return function <T extends (...args: never[]) => Promise<unknown>>(
     target: unknown,
     propertyName: string,
     descriptor: TypedPropertyDescriptor<T>,
-  ): TypedPropertyDescriptor<T> | void {
+  ): TypedPropertyDescriptor<T> {
     const method = descriptor.value!;
-
-    descriptor.value = async function (this: unknown, ...args: unknown[]) {
+    descriptor.value = async function (this: never, ...args: never): Promise<unknown> {
       let retries = 0;
       let backoff = initialBackoff;
-
       while (true) {
         try {
           return await method.apply(this, args);
@@ -511,20 +508,17 @@ function dbRetry(
           retries++;
           // Calculate backoff with jitter
           const actualBackoff = backoff * (0.5 + Math.random());
-
           console.warn(
-            `Database connection failed: ${e}. ` + `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
+            `Database connection failed: ${e instanceof Error ? e.message : String(e)}. ` +
+              `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
           );
-
           // Sleep with backoff
           await sleepms(actualBackoff * 1000); // Convert to milliseconds
-
           // Increase backoff for next attempt (exponential)
           backoff = Math.min(backoff * 2, maxBackoff);
         }
       }
     } as T;
-
     return descriptor;
   };
 }
