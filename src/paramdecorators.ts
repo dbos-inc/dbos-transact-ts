@@ -34,10 +34,7 @@ class ValidationInserter extends DBOSMethodMiddlewareInserter {
     const defaultArgValidate = valInfo.defaultArgValidate;
 
     let shouldValidate =
-      methReg.performArgValidation ||
-      defaultArgRequired === ArgRequiredOptions.REQUIRED ||
-      defaultArgRequired ||
-      defaultArgValidate;
+      methReg.performArgValidation || defaultArgRequired === ArgRequiredOptions.REQUIRED || defaultArgValidate;
 
     for (const a of methReg.args) {
       if (a.required === ArgRequiredOptions.REQUIRED) {
@@ -45,7 +42,6 @@ class ValidationInserter extends DBOSMethodMiddlewareInserter {
       }
     }
 
-    console.log(`${methReg.className}/${methReg.name} - ${shouldValidate}`);
     if (shouldValidate) {
       methReg.performArgValidation = true;
       methReg.addEntryInterceptor(validateMethodArgs, 20);
