@@ -26,19 +26,19 @@ function getErrorCode(error: unknown) {
   return error instanceof DatabaseError ? error.code : undefined;
 }
 
-function JsonReviver(_key: string, value: any): any {
+function JsonReviver(_key: string, value: unknown): unknown {
   if (value && typeof value === 'object' && 'json_type' in value && 'json_value' in value) {
-    if (value.json_type === 'Date') {
+    if (value.json_type === 'Date' && typeof value.json_value === 'string') {
       return new Date(value.json_value);
     }
-    if (value.json_type === 'BigInt') {
+    if (value.json_type === 'BigInt' && typeof value.json_value === 'string') {
       return BigInt(value.json_value);
     }
   }
   return value;
 }
 
-function JsonReplacer(_key: string, value: any): any {
+function JsonReplacer(_key: string, value: unknown): unknown {
   if (value instanceof Date) {
     return {
       json_type: 'Date',
@@ -129,8 +129,8 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     workflowID: string,
     functionNum: number,
   ): Promise<{ output: string | null } | undefined> {
-    const { rows } = await client.query<{ output: string }> /*sql*/(
-      `SELECT output FROM dbos.transaction_outputs
+    const { rows } = await client.query<{ output: string }>(
+      /*sql*/ `SELECT output FROM dbos.transaction_outputs
        WHERE workflow_id = $1 AND function_num = $2`,
       [workflowID, functionNum],
     );
