@@ -103,7 +103,6 @@ export function DefaultArgRequired<T extends { new (...args: unknown[]): object 
   // TODO NOT THIS
   const clsreg = getOrCreateClassRegistration(ctor);
   clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
-  clsreg.argRequiredEnabled = true;
 
   registerMiddlewareInserter(valInserter);
 }
@@ -119,7 +118,6 @@ export function DefaultArgValidate<T extends { new (...args: unknown[]): object 
 export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = getOrCreateClassRegistration(ctor);
   clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
-  clsreg.argRequiredEnabled = true;
 
   registerMiddlewareInserter(valInserter);
 }

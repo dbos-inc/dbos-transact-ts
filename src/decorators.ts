@@ -296,7 +296,6 @@ export class MethodParameter {
 export interface RegistrationDefaults {
   name: string;
   requiredRole: string[] | undefined;
-  argRequiredEnabled: boolean;
   defaultArgRequired: ArgRequiredOptions;
   defaultArgValidate: boolean;
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
@@ -472,7 +471,6 @@ export abstract class ConfiguredInstance {
 export class ClassRegistration implements RegistrationDefaults {
   name: string = '';
   requiredRole: string[] | undefined;
-  argRequiredEnabled: boolean = false;
   defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.DEFAULT;
   defaultArgValidate: boolean = false;
   needsInitialized: boolean = true;
@@ -735,9 +733,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
     // TODO Remove this once things are done later.
     methReg.args.forEach((e) => {
-      if (e.required !== ArgRequiredOptions.DEFAULT) {
-        classReg.argRequiredEnabled = true;
-      }
       if (!e.name) {
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
