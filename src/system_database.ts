@@ -102,11 +102,6 @@ export interface SystemDatabase {
   ): Promise<SystemDatabaseStoredResult | undefined>;
 
   // Workflow management
-  setWorkflowStatus(
-    workflowID: string,
-    status: (typeof StatusString)[keyof typeof StatusString],
-    resetRecoveryAttempts: boolean,
-  ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
   forkWorkflow(
@@ -1185,19 +1180,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       );
     }
     return value;
-  }
-
-  async setWorkflowStatus(
-    workflowID: string,
-    status: (typeof StatusString)[keyof typeof StatusString],
-    resetRecoveryAttempts: boolean,
-  ): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await updateWorkflowStatus(client, workflowID, status, { update: { resetRecoveryAttempts } });
-    } finally {
-      client.release();
-    }
   }
 
   #setWFCancelMap(workflowID: string) {
