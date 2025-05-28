@@ -581,6 +581,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
       application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
     };
     this.pool = new Pool(this.systemPoolConfig);
+
+    this.pool.on('error', (err, _) => {
+      console.error('Unexpected error in pool', err);
+    });
+    this.pool.on('connect', (client) => {
+      client.on('error', (err) => {
+        console.error('Unexpected error in connected client:', err);
+      });
+    });
     const knexConfig = {
       client: 'pg',
       connection: this.systemPoolConfig,
