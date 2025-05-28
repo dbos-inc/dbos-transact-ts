@@ -2,6 +2,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { TypeOrmDS } from './TypeOrmDataSource';
 import { Entity, Column, PrimaryColumn, PrimaryGeneratedColumn } from 'typeorm';
 import { randomUUID } from 'node:crypto';
+import { setUpDBOSTestDb } from './testutils';
 
 @Entity()
 export class KV {
@@ -13,9 +14,11 @@ export class KV {
 }
 
 const poolconfig = {
+  connectionString: 'postgresql://postgres:postgres@localhost:5432/dbostest?sslmode=disable',
   user: 'postgres',
   password: 'postgres',
   database: 'typeorm_testdb',
+
   host: 'localhost',
   port: 5432,
 };
@@ -24,6 +27,11 @@ DBOS.registerDataSource(typeOrmDS);
 const dbosConfig = {
   name: 'dbostest',
   databaseUrl: 'postgresql://postgres:postgres@localhost:5432/dbostest?sslmode=disable',
+  database: {
+    app_db_client: 'typeorm',
+  },
+  poolConfig: poolconfig,
+  system_database: 'typeorm_testdb_dbos_sys',
   application: {
     counter: 3,
     shouldExist: 'exists',
@@ -70,8 +78,10 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
 class DBWFI {
   @typeOrmDS.transaction({ readOnly: true })
   static async tx() {
-    return (await TypeOrmDS.entityManager.query<{ rows: { a: string }[] }>("SELECT 'My decorated tx result' as a"))
-      .rows[0].a;
+    let res = await TypeOrmDS.entityManager.query("SELECT 'My decorated tx result' as a");
+    console.log(res);
+    console.log(res[0].a);
+    return res[0].a;
   }
 
   @DBOS.workflow()
@@ -82,7 +92,10 @@ class DBWFI {
 
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
+    await setUpDBOSTestDb(dbosConfig);
+    console.log('DBOS test database setup complete');
     await typeOrmDS.InitializeSchema();
+    console.log('TypeORM schema initialized');
     DBOS.setConfig(dbosConfig);
   });
 

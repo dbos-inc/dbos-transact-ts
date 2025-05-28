@@ -28,7 +28,7 @@ interface ExistenceCheck {
 }
 
 export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
-export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'knex_transaction_outputs')`;
+export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_outputs')`;
 export const txnOutputIndexExistsQuery = `SELECT EXISTS (SELECT FROM pg_indexes WHERE schemaname='dbos' AND tablename = 'transaction_outputs' AND indexname = 'transaction_outputs_created_at_index')`;
 
 export interface transaction_outputs {
@@ -104,33 +104,41 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   }
 
   async initialize(): Promise<void> {
-    this.dataSource = this.createInstance();
+    this.dataSource = await this.createInstance();
 
     return Promise.resolve();
   }
 
   async InitializeSchema(): Promise<void> {
-    const ds = this.createInstance();
+    const ds = await this.createInstance();
+
+    console.log('created datasource');
 
     try {
       const schemaExists = await ds.query<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
-      if (!schemaExists.rows[0].exists) {
+      console.log('checking schema exists', schemaExists);
+      if (!schemaExists) {
         await ds.query(createUserDBSchema);
       }
+      console.log('created schema');
       const txnOutputTableExists = await ds.query<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
-      if (!txnOutputTableExists.rows[0].exists) {
+      console.log('checking txn output table exists', txnOutputTableExists);
+      if (!txnOutputTableExists) {
         await ds.query(userDBSchema);
       } else {
         const columnExists = await ds.query<{ rows: ExistenceCheck[] }>(columnExistsQuery);
-        if (!columnExists.rows[0].exists) {
+        console.log('checking column exists', columnExists);
+        if (!columnExists) {
           await ds.query(addColumnQuery);
         }
       }
+      console.log('created table');
 
       const txnOutputIndexExists = await ds.query<{ rows: ExistenceCheck[] }>(txnOutputIndexExistsQuery);
-      if (!txnOutputIndexExists.rows[0].exists) {
+      if (!txnOutputIndexExists) {
         await ds.query(userDBIndex);
       }
+      console.log('created index');
     } catch (e) {
       console.error(`Unexpected error initializing schema: ${e}`);
       throw new Error.DBOSError(`Unexpected error initializing schema: ${e}`);
@@ -284,14 +292,23 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     }
   }
 
-  createInstance(): DataSource {
-    return new DataSource({
+  async createInstance(): Promise<DataSource> {
+    console.log(`Creating TypeORM DataSource for ${this.name} with config:`, this.config);
+    console.log(`Entities:`, this.entities);
+
+    let ds = new DataSource({
       type: 'postgres',
-      url: this.config.connectionString,
+      host: this.config.host,
+      port: this.config.port,
+      username: this.config.user,
+      password: 'postgres',
       connectTimeoutMS: this.config.connectionTimeoutMillis,
       entities: this.entities,
       poolSize: this.config.max,
     });
+    await ds.initialize();
+    console.log('TypeORM DataSource initialized:', ds.isInitialized);
+    return ds;
   }
 
   getPostgresErrorCode(error: unknown): string | null {
