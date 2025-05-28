@@ -27,6 +27,8 @@ function getErrorCode(error: unknown) {
   return error instanceof postgres.PostgresError ? error.code : undefined;
 }
 
+// JsonReviver and JsonReplacer are duplicated across multiple data source packages
+// TODO: Should we DRY this out and/or use DBOSJSON instead?
 function JsonReviver(_key: string, value: unknown): unknown {
   if (value && typeof value === 'object' && 'json_type' in value && 'json_value' in value) {
     if (value.json_type === 'Date' && typeof value.json_value === 'string') {
