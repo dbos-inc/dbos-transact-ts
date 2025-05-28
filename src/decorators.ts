@@ -251,7 +251,6 @@ export enum ArgRequiredOptions {
 }
 
 export interface ArgDataType {
-  required?: ArgRequiredOptions;
   dataType?: DBOSDataType; // Also a very simplistic data type format... for native scalars or JSON
 }
 
@@ -262,14 +261,15 @@ export class MethodParameter {
 
   externalRegInfo: Map<AnyConstructor | object | string, object> = new Map();
 
-  get argDataType() {
-    return this.externalRegInfo.get('type') as ArgDataType | undefined;
+  getRegisteredInfo(reg: AnyConstructor | object | string) {
+    if (!this.externalRegInfo.has(reg)) {
+      this.externalRegInfo.set(reg, {});
+    }
+    return this.externalRegInfo.get(reg)!;
   }
-  get required() {
-    return this.argDataType?.required ?? ArgRequiredOptions.DEFAULT;
-  }
+
   get dataType() {
-    return this.argDataType?.dataType;
+    return (this.getRegisteredInfo('type') as ArgDataType).dataType;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
@@ -278,7 +278,6 @@ export class MethodParameter {
       this.externalRegInfo.set('type', {});
     }
     const adt = this.externalRegInfo.get('type') as ArgDataType;
-    adt.required = ArgRequiredOptions.DEFAULT;
     adt.dataType = DBOSDataType.fromArg(at);
   }
 

@@ -4,6 +4,7 @@ import {
   associateParameterWithExternal,
   DBOSDataType,
   DBOSMethodMiddlewareInserter,
+  MethodParameter,
   registerMiddlewareInserter,
 } from './decorators';
 
@@ -21,6 +22,10 @@ interface ValidatorClassInfo {
 
 interface ValidatorFuncInfo {
   performArgValidation?: boolean;
+}
+
+interface ValidatorArgInfo {
+  required?: ArgRequiredOptions;
 }
 
 function getValidatorClassInfo(methReg: MethodRegistrationBase) {
@@ -42,6 +47,13 @@ function getValidatorFuncInfo(methReg: MethodRegistrationBase) {
   } satisfies ValidatorFuncInfo;
 }
 
+function getValidatorArgInfo(param: MethodParameter) {
+  const valInfo = param.getRegisteredInfo(VALIDATOR) as ValidatorArgInfo;
+  return {
+    required: valInfo.required ?? ArgRequiredOptions.DEFAULT,
+  };
+}
+
 class ValidationInserter extends DBOSMethodMiddlewareInserter {
   installMiddleware(methReg: MethodRegistrationBase): void {
     const valInfo = getValidatorClassInfo(methReg);
@@ -54,7 +66,7 @@ class ValidationInserter extends DBOSMethodMiddlewareInserter {
       defaultArgValidate;
 
     for (const a of methReg.args) {
-      if (a.required === ArgRequiredOptions.REQUIRED) {
+      if (getValidatorArgInfo(a).required === ArgRequiredOptions.REQUIRED) {
         shouldValidate = true;
       }
     }
@@ -69,13 +81,13 @@ const valInserter = new ValidationInserter();
 
 export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const curParam = associateParameterWithExternal(
-    'type',
+    VALIDATOR,
     target,
     undefined,
     propertyKey.toString(),
     undefined,
     parameterIndex,
-  ) as ArgDataType;
+  ) as ValidatorArgInfo;
 
   curParam.required = ArgRequiredOptions.REQUIRED;
 
@@ -84,13 +96,13 @@ export function ArgRequired(target: object, propertyKey: string | symbol, parame
 
 export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const curParam = associateParameterWithExternal(
-    'type',
+    VALIDATOR,
     target,
     undefined,
     propertyKey.toString(),
     undefined,
     parameterIndex,
-  ) as ArgDataType;
+  ) as ValidatorArgInfo;
 
   curParam.required = ArgRequiredOptions.OPTIONAL;
 
@@ -180,9 +192,10 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
       const valInfo = getValidatorClassInfo(methReg);
       const defaultArgRequired = valInfo.defaultArgRequired;
       const defaultArgValidate = valInfo.defaultArgValidate;
+      const argRequired = getValidatorArgInfo(argDescriptor).required;
       if (
-        argDescriptor.required === ArgRequiredOptions.REQUIRED ||
-        ((argDescriptor.required ?? ArgRequiredOptions.DEFAULT) === ArgRequiredOptions.DEFAULT &&
+        argRequired === ArgRequiredOptions.REQUIRED ||
+        (argRequired === ArgRequiredOptions.DEFAULT &&
           (defaultArgRequired === ArgRequiredOptions.REQUIRED || defaultArgValidate))
       ) {
         if (idx >= args.length) {
