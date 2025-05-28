@@ -244,12 +244,6 @@ export enum LogMasks {
   SKIP = 'SKIP',
 }
 
-export enum ArgRequiredOptions {
-  REQUIRED = 'REQUIRED',
-  OPTIONAL = 'OPTIONAL',
-  DEFAULT = 'DEFAULT',
-}
-
 export interface ArgDataType {
   dataType?: DBOSDataType; // Also a very simplistic data type format... for native scalars or JSON
 }
@@ -743,17 +737,11 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
     const argNames = getArgNames(func);
 
-    // TODO Remove this once things are done later.
     methReg.args.forEach((e) => {
       if (!e.name) {
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
         }
-        if (e.index === 0 && passContext) {
-          // The first argument is always the context.
-          e.logMask = LogMasks.SKIP;
-        }
-        // TODO else warn/log something
       }
     });
 

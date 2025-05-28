@@ -1,6 +1,5 @@
 import {
   ArgDataType,
-  ArgRequiredOptions,
   associateParameterWithExternal,
   DBOSDataType,
   DBOSMethodMiddlewareInserter,
@@ -14,6 +13,12 @@ import { DBOSDataValidationError } from './error';
 import { DBOS } from './dbos';
 
 const VALIDATOR = 'validator';
+
+export enum ArgRequiredOptions {
+  REQUIRED = 'REQUIRED',
+  OPTIONAL = 'OPTIONAL',
+  DEFAULT = 'DEFAULT',
+}
 
 interface ValidatorClassInfo {
   defaultArgRequired?: ArgRequiredOptions;
