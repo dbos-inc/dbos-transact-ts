@@ -296,8 +296,9 @@ export class MethodParameter {
 export interface RegistrationDefaults {
   name: string;
   requiredRole: string[] | undefined;
-  defaultArgRequired: ArgRequiredOptions;
-  defaultArgValidate: boolean;
+
+  getRegisteredInfo(reg: AnyConstructor | object | string): unknown;
+
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
   externalRegInfo: Map<AnyConstructor | object | string, unknown>;
 }
@@ -471,8 +472,6 @@ export abstract class ConfiguredInstance {
 export class ClassRegistration implements RegistrationDefaults {
   name: string = '';
   requiredRole: string[] | undefined;
-  defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.DEFAULT;
-  defaultArgValidate: boolean = false;
   needsInitialized: boolean = true;
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
@@ -485,6 +484,13 @@ export class ClassRegistration implements RegistrationDefaults {
 
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
+
+  getRegisteredInfo(reg: AnyConstructor | object | string) {
+    if (!this.externalRegInfo.has(reg)) {
+      this.externalRegInfo.set(reg, {});
+    }
+    return this.externalRegInfo.get(reg)!;
+  }
 
   constructor() {}
 }
@@ -959,10 +965,7 @@ export function associateClassWithExternal(
 ): object {
   const clsn: string = typeof cls === 'string' ? cls : getNameForClass(cls);
   const clsreg = getClassRegistrationByName(clsn, true);
-  if (!clsreg.externalRegInfo.has(external)) {
-    clsreg.externalRegInfo.set(external, {});
-  }
-  return clsreg.externalRegInfo.get(external)!;
+  return clsreg.getRegisteredInfo(external);
 }
 
 /**

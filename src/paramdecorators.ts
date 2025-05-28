@@ -4,7 +4,6 @@ import {
   associateParameterWithExternal,
   DBOSDataType,
   DBOSMethodMiddlewareInserter,
-  getOrCreateClassRegistration,
   registerMiddlewareInserter,
 } from './decorators';
 
@@ -13,18 +12,40 @@ import { DBOSDataValidationError } from './error';
 
 import { DBOS } from './dbos';
 
+const VALIDATOR = 'validator';
+
+interface ValidatorClassInfo {
+  defaultArgRequired?: ArgRequiredOptions;
+  defaultArgValidate?: boolean;
+}
+
+function getValidatorClassInfo(methReg: MethodRegistrationBase) {
+  const valInfo = methReg.defaults?.getRegisteredInfo(VALIDATOR) as ValidatorClassInfo;
+  return {
+    defaultArgRequired: valInfo?.defaultArgRequired ?? ArgRequiredOptions.DEFAULT,
+    defaultArgValidate: valInfo?.defaultArgValidate ?? false,
+  };
+}
+
 class ValidationInserter extends DBOSMethodMiddlewareInserter {
   installMiddleware(methReg: MethodRegistrationBase): void {
-    const defaultArgRequired = methReg.defaults?.defaultArgRequired;
+    const valInfo = getValidatorClassInfo(methReg);
+    const defaultArgRequired = valInfo.defaultArgRequired;
+    const defaultArgValidate = valInfo.defaultArgValidate;
+
     let shouldValidate =
       methReg.performArgValidation ||
       defaultArgRequired === ArgRequiredOptions.REQUIRED ||
-      methReg.defaults?.defaultArgRequired;
+      defaultArgRequired ||
+      defaultArgValidate;
+
     for (const a of methReg.args) {
       if (a.required === ArgRequiredOptions.REQUIRED) {
         shouldValidate = true;
       }
     }
+
+    console.log(`${methReg.className}/${methReg.name} - ${shouldValidate}`);
     if (shouldValidate) {
       methReg.performArgValidation = true;
       methReg.addEntryInterceptor(validateMethodArgs, 20);
@@ -100,23 +121,21 @@ export function ArgVarchar(length: number) {
 }
 
 export function DefaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
-  // TODO NOT THIS
-  const clsreg = getOrCreateClassRegistration(ctor);
+  const clsreg = DBOS.associateClassWithInfo(VALIDATOR, ctor) as ValidatorClassInfo;
   clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
 
   registerMiddlewareInserter(valInserter);
 }
 
 export function DefaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
-  // TODO NOT THIS
-  const clsreg = getOrCreateClassRegistration(ctor);
+  const clsreg = DBOS.associateClassWithInfo(VALIDATOR, ctor) as ValidatorClassInfo;
   clsreg.defaultArgValidate = true;
 
   registerMiddlewareInserter(valInserter);
 }
 
 export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
-  const clsreg = getOrCreateClassRegistration(ctor);
+  const clsreg = DBOS.associateClassWithInfo(VALIDATOR, ctor) as ValidatorClassInfo;
   clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 
   registerMiddlewareInserter(valInserter);
@@ -145,11 +164,13 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
     }
 
     if (argValue === undefined) {
+      const valInfo = getValidatorClassInfo(methReg);
+      const defaultArgRequired = valInfo.defaultArgRequired;
+      const defaultArgValidate = valInfo.defaultArgValidate;
       if (
         argDescriptor.required === ArgRequiredOptions.REQUIRED ||
         ((argDescriptor.required ?? ArgRequiredOptions.DEFAULT) === ArgRequiredOptions.DEFAULT &&
-          (methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED ||
-            methReg.defaults?.defaultArgValidate))
+          (defaultArgRequired === ArgRequiredOptions.REQUIRED || defaultArgValidate))
       ) {
         if (idx >= args.length) {
           throw validationError(
