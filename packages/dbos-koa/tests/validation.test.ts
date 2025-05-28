@@ -322,7 +322,7 @@ describe('httpserver-datavalidation-tests', () => {
 
       ['/drequired', undefined, 400],
       ['/drequired', 'hasaval', 200],
-      ['/ddefault', undefined, 400],
+      ['/ddefault', undefined, 200],
       ['/ddefault', 'hasaval', 200],
       ['/doptional', undefined, 200],
       ['/doptional', 'hasaval', 200],

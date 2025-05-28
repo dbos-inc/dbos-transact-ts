@@ -1,46 +1,139 @@
-import { MethodRegistrationBase, ArgRequiredOptions } from './decorators';
-import { DBOSContextImpl, getCurrentDBOSContext } from './context';
+import {
+  ArgDataType,
+  ArgRequiredOptions,
+  associateParameterWithExternal,
+  DBOSDataType,
+  DBOSMethodMiddlewareInserter,
+  getOrCreateClassRegistration,
+  registerMiddlewareInserter,
+} from './decorators';
+
+import { MethodRegistrationBase } from './decorators';
 import { DBOSDataValidationError } from './error';
 
-export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args) {
-  let opCtx: DBOSContextImpl | undefined = undefined;
-  if (!methReg.passContext) {
-    opCtx = getCurrentDBOSContext() as DBOSContextImpl;
-  }
+import { DBOS } from './dbos';
 
+class ValidationInserter extends DBOSMethodMiddlewareInserter {
+  installMiddleware(methReg: MethodRegistrationBase): void {
+    const defaultArgRequired = methReg.defaults?.defaultArgRequired;
+    let shouldValidate =
+      methReg.performArgValidation ||
+      defaultArgRequired === ArgRequiredOptions.REQUIRED ||
+      methReg.defaults?.defaultArgRequired;
+    for (const a of methReg.args) {
+      if (a.required === ArgRequiredOptions.REQUIRED) {
+        shouldValidate = true;
+      }
+    }
+    if (shouldValidate) {
+      methReg.performArgValidation = true;
+      methReg.addEntryInterceptor(validateMethodArgs, 20);
+    }
+  }
+}
+const valInserter = new ValidationInserter();
+
+export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
+  const curParam = associateParameterWithExternal(
+    'type',
+    target,
+    undefined,
+    propertyKey.toString(),
+    undefined,
+    parameterIndex,
+  ) as ArgDataType;
+
+  curParam.required = ArgRequiredOptions.REQUIRED;
+
+  registerMiddlewareInserter(valInserter);
+}
+
+export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
+  const curParam = associateParameterWithExternal(
+    'type',
+    target,
+    undefined,
+    propertyKey.toString(),
+    undefined,
+    parameterIndex,
+  ) as ArgDataType;
+
+  curParam.required = ArgRequiredOptions.OPTIONAL;
+
+  registerMiddlewareInserter(valInserter);
+}
+
+export function ArgDate() {
+  // TODO a little more info about it - is it a date or timestamp precision?
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const curParam = associateParameterWithExternal(
+      'type',
+      target,
+      undefined,
+      propertyKey.toString(),
+      undefined,
+      parameterIndex,
+    ) as ArgDataType;
+
+    if (!curParam.dataType) curParam.dataType = new DBOSDataType();
+    curParam.dataType.dataType = 'timestamp';
+
+    registerMiddlewareInserter(valInserter);
+  };
+}
+
+export function ArgVarchar(length: number) {
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const curParam = associateParameterWithExternal(
+      'type',
+      target,
+      undefined,
+      propertyKey.toString(),
+      undefined,
+      parameterIndex,
+    ) as ArgDataType;
+
+    curParam.dataType = DBOSDataType.varchar(length);
+
+    registerMiddlewareInserter(valInserter);
+  };
+}
+
+export function DefaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
+  // TODO NOT THIS
+  const clsreg = getOrCreateClassRegistration(ctor);
+  clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
+  clsreg.argRequiredEnabled = true;
+
+  registerMiddlewareInserter(valInserter);
+}
+
+export function DefaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
+  // TODO NOT THIS
+  const clsreg = getOrCreateClassRegistration(ctor);
+  clsreg.defaultArgValidate = true;
+
+  registerMiddlewareInserter(valInserter);
+}
+
+export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
+  const clsreg = getOrCreateClassRegistration(ctor);
+  clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
+  clsreg.argRequiredEnabled = true;
+
+  registerMiddlewareInserter(valInserter);
+}
+
+export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args) {
   const validationError = (msg: string) => {
     const err = new DBOSDataValidationError(msg);
-    opCtx?.span?.addEvent('DataValidationError', { message: err.message });
+    DBOS.span?.addEvent('DataValidationError', { message: err.message });
     return err;
   };
 
   // Input validation
   methReg.args.forEach((argDescriptor, idx) => {
     if (idx === 0 && methReg.passContext) {
-      // Context, may find a more robust way.
-      opCtx = args[idx] as DBOSContextImpl;
-      return;
-    }
-
-    if (
-      !methReg.performArgValidation &&
-      !methReg.defaults?.defaultArgValidate &&
-      argDescriptor.required !== ArgRequiredOptions.REQUIRED
-    ) {
-      return;
-    }
-
-    // Do we have an arg at all
-    if (idx >= args.length) {
-      if (
-        argDescriptor.required === ArgRequiredOptions.REQUIRED ||
-        (argDescriptor.required === ArgRequiredOptions.DEFAULT &&
-          methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED)
-      ) {
-        throw validationError(
-          `Insufficient number of arguments calling ${methReg.name} - ${args.length}/${methReg.args.length}`,
-        );
-      }
       return;
     }
 
@@ -53,15 +146,22 @@ export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegist
       args[idx] = undefined;
     }
 
-    if (
-      argValue === undefined &&
-      methReg.defaults?.argRequiredEnabled &&
-      (argDescriptor.required === ArgRequiredOptions.REQUIRED ||
-        (argDescriptor.required === ArgRequiredOptions.DEFAULT &&
-          methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED))
-    ) {
-      throw validationError(`Missing required argument ${argDescriptor.name} of ${methReg.name}`);
+    if (argValue === undefined) {
+      if (
+        argDescriptor.required === ArgRequiredOptions.REQUIRED ||
+        ((argDescriptor.required ?? ArgRequiredOptions.DEFAULT) === ArgRequiredOptions.DEFAULT &&
+          methReg.defaults?.defaultArgRequired === ArgRequiredOptions.REQUIRED)
+      ) {
+        if (idx >= args.length) {
+          throw validationError(
+            `Insufficient number of arguments calling ${methReg.name} - ${args.length}/${methReg.args.length}`,
+          );
+        } else {
+          throw validationError(`Missing required argument ${argDescriptor.name} of ${methReg.name}`);
+        }
+      }
     }
+
     if (argValue === undefined) {
       return;
     }

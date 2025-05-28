@@ -64,23 +64,26 @@ export {
   LogMasks,
 
   // Parameter Decorators
-  ArgRequired,
-  ArgOptional,
   SkipLogging,
   LogMask,
   ArgName,
-  ArgDate,
-  ArgVarchar,
 
   // Class Decorators
   DefaultRequiredRole,
-  DefaultArgRequired,
-  DefaultArgOptional,
-  DefaultArgValidate,
 
   // ORM Class Decorators
   OrmEntities,
 } from './decorators';
+
+export {
+  ArgRequired,
+  ArgOptional,
+  ArgDate,
+  ArgVarchar,
+  DefaultArgRequired,
+  DefaultArgOptional,
+  DefaultArgValidate,
+} from './paramdecorators';
 
 export { ParseOptions, parseConfigFile } from './dbos-runtime/config';
 

@@ -6,7 +6,6 @@ import { WorkflowConfig, WorkflowContext } from './workflow';
 import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, HTTPRequest } from './context';
 import { StepConfig, StepContext } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError, DBOSNotRegisteredError } from './error';
-import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
@@ -474,7 +473,7 @@ export class ClassRegistration implements RegistrationDefaults {
   name: string = '';
   requiredRole: string[] | undefined;
   argRequiredEnabled: boolean = false;
-  defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
+  defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.DEFAULT;
   defaultArgValidate: boolean = false;
   needsInitialized: boolean = true;
 
@@ -784,7 +783,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         }
       }
 
-      let validatedArgs = validateMethodArgs(methReg, rawArgs);
+      let validatedArgs = rawArgs;
       for (const vf of methReg.onEnter) {
         validatedArgs = vf.func(methReg, validatedArgs) as Args;
       }
@@ -1109,38 +1108,6 @@ export function getRegistrationsForExternal(
 /* PARAMETER DECORATORS */
 //////////////////////////
 
-export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const curParam = associateParameterWithExternal(
-    'type',
-    target,
-    undefined,
-    propertyKey.toString(),
-    undefined,
-    parameterIndex,
-  ) as ArgDataType;
-
-  curParam.required = ArgRequiredOptions.REQUIRED;
-
-  const cr = getOrCreateClassRegistration(target as AnyConstructor);
-  cr.argRequiredEnabled = true;
-}
-
-export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const curParam = associateParameterWithExternal(
-    'type',
-    target,
-    undefined,
-    propertyKey.toString(),
-    undefined,
-    parameterIndex,
-  ) as ArgDataType;
-
-  curParam.required = ArgRequiredOptions.OPTIONAL;
-
-  const cr = getOrCreateClassRegistration(target as AnyConstructor);
-  cr.argRequiredEnabled = true;
-}
-
 export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
@@ -1166,38 +1133,6 @@ export function ArgName(name: string) {
   };
 }
 
-export function ArgDate() {
-  // TODO a little more info about it - is it a date or timestamp precision?
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const curParam = associateParameterWithExternal(
-      'type',
-      target,
-      undefined,
-      propertyKey.toString(),
-      undefined,
-      parameterIndex,
-    ) as ArgDataType;
-
-    if (!curParam.dataType) curParam.dataType = new DBOSDataType();
-    curParam.dataType.dataType = 'timestamp';
-  };
-}
-
-export function ArgVarchar(length: number) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const curParam = associateParameterWithExternal(
-      'type',
-      target,
-      undefined,
-      propertyKey.toString(),
-      undefined,
-      parameterIndex,
-    ) as ArgDataType;
-
-    curParam.dataType = DBOSDataType.varchar(length);
-  };
-}
-
 ///////////////////////
 /* CLASS DECORATORS */
 ///////////////////////
@@ -1209,23 +1144,6 @@ export function DefaultRequiredRole(anyOf: string[]) {
     clsreg.requiredRole = anyOf;
   }
   return clsdec;
-}
-
-export function DefaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
-  const clsreg = getOrCreateClassRegistration(ctor);
-  clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
-  clsreg.argRequiredEnabled = true;
-}
-
-export function DefaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
-  const clsreg = getOrCreateClassRegistration(ctor);
-  clsreg.defaultArgValidate = true;
-}
-
-export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
-  const clsreg = getOrCreateClassRegistration(ctor);
-  clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
-  clsreg.argRequiredEnabled = true;
 }
 
 /** @deprecated Use `new` */
