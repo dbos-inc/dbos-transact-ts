@@ -51,15 +51,20 @@ describe('chaos-tests', () => {
   }
 
   class TestWorkflow {
-    static async step_one(x: number) {
+    @DBOS.step()
+    static async stepOne(x: number) {
       return Promise.resolve(x + 1);
     }
-    static async step_two(x: number) {
+
+    @DBOS.step()
+    static async stepTwo(x: number) {
       return Promise.resolve(x + 2);
     }
+
+    @DBOS.workflow()
     static async workflow(x: number) {
-      x = await TestWorkflow.step_one(x);
-      x = await TestWorkflow.step_two(x);
+      x = await TestWorkflow.stepOne(x);
+      x = await TestWorkflow.stepTwo(x);
       return x;
     }
   }
