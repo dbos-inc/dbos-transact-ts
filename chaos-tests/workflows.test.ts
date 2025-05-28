@@ -1,8 +1,10 @@
 import { DBOS, DBOSConfig } from '../src/';
+import { startDockerPg, stopDockerPg } from '../src/dbos-runtime/docker_pg_helper';
 import { Client } from 'pg';
 
 describe('chaos-tests', () => {
   let config: DBOSConfig;
+  jest.setTimeout(30000);
 
   beforeAll(() => {
     config = {
@@ -13,13 +15,14 @@ describe('chaos-tests', () => {
   });
 
   beforeEach(async () => {
-    // Drop databases before each test
+    await startDockerPg();
     await dropDatabases();
     await DBOS.launch();
   });
 
   afterEach(async () => {
     await DBOS.shutdown();
+    await stopDockerPg();
   });
 
   async function dropDatabases() {
