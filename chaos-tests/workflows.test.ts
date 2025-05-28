@@ -1,53 +1,6 @@
 import { DBOS, DBOSConfig } from '../src/';
 import { startDockerPg, stopDockerPg } from '../src/dbos-runtime/docker_pg_helper';
-import { Client } from 'pg';
-
-class PostgresChaosMonkey {
-  private stopEvent: boolean = false;
-  private chaosTimeout: NodeJS.Timeout | null = null;
-
-  constructor() {}
-
-  start(): void {
-    const chaosLoop = async (): Promise<void> => {
-      while (!this.stopEvent) {
-        const waitTime = Math.random() * (40 - 5) + 5; // Random between 5-40 seconds
-
-        await new Promise<void>((resolve) => {
-          this.chaosTimeout = setTimeout(() => {
-            if (!this.stopEvent) {
-              resolve();
-            }
-          }, waitTime * 1000);
-        });
-
-        if (!this.stopEvent) {
-          console.log(`🐒 ChaosMonkey strikes after ${waitTime.toFixed(2)} seconds! Restarting Postgres...`);
-
-          try {
-            await stopDockerPg();
-            const downTime = Math.random() * 2; // Random between 0-2 seconds
-            await new Promise((resolve) => setTimeout(resolve, downTime * 1000));
-            await startDockerPg();
-          } catch (error) {
-            console.error('ChaosMonkey error:', error);
-          }
-        }
-      }
-    };
-
-    this.stopEvent = false;
-    chaosLoop().catch(console.error);
-  }
-
-  stop(): void {
-    this.stopEvent = true;
-    if (this.chaosTimeout) {
-      clearTimeout(this.chaosTimeout);
-      this.chaosTimeout = null;
-    }
-  }
-}
+import { dropDatabases, PostgresChaosMonkey } from './helpers';
 
 describe('chaos-tests', () => {
   let config: DBOSConfig;
@@ -65,7 +18,7 @@ describe('chaos-tests', () => {
 
   beforeEach(async () => {
     await startDockerPg();
-    await dropDatabases();
+    await dropDatabases(config);
     await DBOS.launch();
 
     // Start chaos monkey after setup
@@ -82,29 +35,6 @@ describe('chaos-tests', () => {
     await DBOS.shutdown();
     await stopDockerPg();
   });
-
-  async function dropDatabases() {
-    const dbUrl = new URL(config.databaseUrl as string);
-    const baseConnectionConfig = {
-      host: dbUrl.hostname,
-      port: parseInt(dbUrl.port) || 5432,
-      user: dbUrl.username,
-      password: dbUrl.password,
-    };
-    const adminClient = new Client({
-      ...baseConnectionConfig,
-      database: 'postgres',
-    });
-    try {
-      await adminClient.connect();
-      const dbName = 'dbostest';
-      const dbNameSys = `${dbName}_dbos_sys`;
-      await adminClient.query(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
-      await adminClient.query(`DROP DATABASE IF EXISTS "${dbNameSys}" WITH (FORCE)`);
-    } finally {
-      await adminClient.end();
-    }
-  }
 
   class TestWorkflow {
     @DBOS.step()
