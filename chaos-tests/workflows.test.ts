@@ -1,8 +1,11 @@
 import { DBOS, DBOSConfig } from '../src/';
+import { Client } from 'pg';
 
 describe('chaos-tests', () => {
+  let config: DBOSConfig;
+
   beforeAll(() => {
-    const config: DBOSConfig = {
+    config = {
       name: 'test-app',
       databaseUrl: `postgresql://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?sslmode=disable`,
     };
@@ -10,6 +13,8 @@ describe('chaos-tests', () => {
   });
 
   beforeEach(async () => {
+    // Drop databases before each test
+    await dropDatabases();
     await DBOS.launch();
   });
 
@@ -17,11 +22,35 @@ describe('chaos-tests', () => {
     await DBOS.shutdown();
   });
 
+  async function dropDatabases() {
+    const dbUrl = new URL(config.databaseUrl as string);
+    const baseConnectionConfig = {
+      host: dbUrl.hostname,
+      port: parseInt(dbUrl.port) || 5432,
+      user: dbUrl.username,
+      password: dbUrl.password,
+    };
+
+    const adminClient = new Client({
+      ...baseConnectionConfig,
+      database: 'postgres',
+    });
+
+    try {
+      await adminClient.connect();
+      const dbName = 'dbostest';
+      const dbNameSys = `${dbName}_dbos_sys`;
+      await adminClient.query(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
+      await adminClient.query(`DROP DATABASE IF EXISTS "${dbNameSys}" WITH (FORCE)`);
+    } finally {
+      await adminClient.end();
+    }
+  }
+
   class TestWorkflow {
     static async step_one(x: number) {
       return Promise.resolve(x + 1);
     }
-
     static async step_two(x: number) {
       return Promise.resolve(x + 2);
     }
