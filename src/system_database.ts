@@ -587,7 +587,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     });
     this.pool.on('connect', (client) => {
       client.on('error', (err) => {
-        console.error('Unexpected error in connected client:', err);
+        console.error('Unexpected error in idle client:', err);
       });
     });
     const knexConfig = {
