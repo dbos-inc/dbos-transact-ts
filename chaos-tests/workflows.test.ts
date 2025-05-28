@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { DBOS, DBOSConfig } from '../src/';
 import { startDockerPg, stopDockerPg } from '../src/dbos-runtime/docker_pg_helper';
 import { dropDatabases, PostgresChaosMonkey } from './helpers';
@@ -65,6 +66,26 @@ describe('chaos-tests', () => {
           console.error('Full error object:', JSON.stringify(err, null, 2));
           throw err;
         });
+      console.log(i);
+    }
+  });
+
+  class TestRecv {
+    static topic = 'test_topic';
+
+    @DBOS.workflow()
+    static async recvWorkflow() {
+      return DBOS.recv(TestRecv.topic, 10);
+    }
+  }
+
+  test('test-recv', async () => {
+    const numWorkflows = 5000;
+    for (let i = 0; i < numWorkflows; i++) {
+      const handle = await DBOS.startWorkflow(TestRecv).recvWorkflow();
+      const value = String(randomUUID());
+      await DBOS.send(handle.workflowID, value, TestRecv.topic);
+      await expect(handle.getResult()).resolves.toEqual(value);
       console.log(i);
     }
   });
