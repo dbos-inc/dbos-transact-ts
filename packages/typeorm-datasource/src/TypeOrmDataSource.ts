@@ -16,10 +16,7 @@ function getCurrentDSContextStore(): DBOSTypeOrmLocalCtx | undefined {
 
 function assertCurrentDSContextStore(): DBOSTypeOrmLocalCtx {
   const ctx = getCurrentDSContextStore();
-  if (!ctx)
-    throw new Error.DBOSInvalidWorkflowTransitionError(
-      'Invalid use of `DBOSKnexDS.knexClient` outside of a `transaction`',
-    );
+  if (!ctx) throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of TypeOrmDs outside of a `transaction`');
   return ctx;
 }
 
@@ -115,27 +112,30 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     console.log('created datasource');
 
     try {
-      const schemaExists = await ds.query<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
+      const schemaExists = await ds.query(schemaExistsQuery);
       console.log('checking schema exists', schemaExists);
-      if (!schemaExists) {
+      if (!schemaExists[0].exists) {
         await ds.query(createUserDBSchema);
       }
       console.log('created schema');
-      const txnOutputTableExists = await ds.query<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
+
+      const txnOutputTableExists = await ds.query(txnOutputTableExistsQuery);
       console.log('checking txn output table exists', txnOutputTableExists);
-      if (!txnOutputTableExists) {
+      if (txnOutputTableExists[0].exists === false) {
+        console.log(userDBSchema);
         await ds.query(userDBSchema);
       } else {
-        const columnExists = await ds.query<{ rows: ExistenceCheck[] }>(columnExistsQuery);
+        console.log('txn output table already exists');
+        const columnExists = await ds.query(columnExistsQuery);
         console.log('checking column exists', columnExists);
-        if (!columnExists) {
+        if (!columnExists[0].exists) {
           await ds.query(addColumnQuery);
         }
       }
       console.log('created table');
 
-      const txnOutputIndexExists = await ds.query<{ rows: ExistenceCheck[] }>(txnOutputIndexExistsQuery);
-      if (!txnOutputIndexExists) {
+      const txnOutputIndexExists = await ds.query(txnOutputIndexExistsQuery);
+      if (!txnOutputIndexExists[0].exists) {
         await ds.query(userDBIndex);
       }
       console.log('created index');
@@ -175,8 +175,8 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
 
     const { rows } = await client.query<{ rows: TxOutputRow[] }>(
       `SELECT output
-          FROM dbos.knex_transaction_outputs
-          WHERE workflow_id=? AND function_num=?;`,
+          FROM dbos.transaction_outputs
+          WHERE workflow_id=$1 AND function_num=$2;`,
       [workflowID, funcNum],
     );
 
@@ -188,13 +188,20 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   }
 
   async recordOutput<R>(client: DataSource, workflowID: string, funcNum: number, output: R): Promise<void> {
+    const result = await client.query(
+      'SELECT current_database() as db, current_schema() as schema, current_user as user;',
+    );
+    console.log('mjjjj Connected to:', result);
+
     const serialOutput = DBOSJSON.stringify(output);
     await client.query<{ rows: transaction_outputs[] }>(
+      // await TypeOrmDS.entityManager.query(
       `INSERT INTO dbos.transaction_outputs (
-        workflow_id, function_num,
+        workflow_id, 
+        function_num,
         output,
         created_at
-      ) VALUES (?, ?, ?, ?)`,
+      ) VALUES ($1, $2, $3, $4)`,
       [workflowID, funcNum, serialOutput, Date.now()],
     );
   }
@@ -300,6 +307,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
       type: 'postgres',
       host: this.config.host,
       port: this.config.port,
+      database: this.config.database,
       username: this.config.user,
       password: 'postgres',
       connectTimeoutMS: this.config.connectionTimeoutMillis,
