@@ -18,10 +18,6 @@ function assertCurrentDSContextStore(): DBOSTypeOrmLocalCtx {
   return ctx;
 }
 
-export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
-export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_completion')`;
-export const txnOutputIndexExistsQuery = `SELECT EXISTS (SELECT FROM pg_indexes WHERE schemaname='dbos' AND tablename = 'transaction_completion' AND indexname = 'transaction_completion_created_at_index')`;
-
 export interface transaction_completion {
   workflow_id: string;
   function_num: number;
@@ -71,6 +67,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   constructor(
     readonly name: string,
     readonly config: PoolConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     readonly entities: Function[],
   ) {}
 
@@ -92,22 +89,12 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     const ds = await this.createInstance();
 
     try {
-      const schemaExists = await ds.query(schemaExistsQuery);
-      if (!schemaExists[0].exists) {
-        await ds.query(createUserDBSchema);
-      }
-      const txnOutputTableExists = await ds.query(txnOutputTableExistsQuery);
-
-      if (txnOutputTableExists[0].exists === false) {
-        await ds.query(userDBSchema);
-      }
-
-      const txnOutputIndexExists = await ds.query(txnOutputIndexExistsQuery);
-      if (!txnOutputIndexExists[0].exists) {
-        await ds.query(userDBIndex);
-      }
+      await ds.query(createUserDBSchema);
+      await ds.query(userDBSchema);
+      await ds.query(userDBIndex);
     } catch (e) {
-      throw new Error.DBOSError(`Unexpected error initializing schema: ${e}`);
+      const error = e as Error;
+      throw new Error.DBOSError(`Unexpected error initializing schema: ${error.message}`);
     } finally {
       try {
         await ds.destroy();
@@ -197,7 +184,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
-    let shouldCheckOutput = false;
+    const shouldCheckOutput = false;
 
     if (this.dataSource === undefined) {
       throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of Datasource');
@@ -276,7 +263,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   }
 
   async createInstance(): Promise<DataSource> {
-    let ds = new DataSource({
+    const ds = new DataSource({
       type: 'postgres',
       url: this.config.connectionString,
       connectTimeoutMS: this.config.connectionTimeoutMillis,

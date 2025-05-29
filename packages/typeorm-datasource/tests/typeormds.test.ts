@@ -1,5 +1,6 @@
+/* eslint-disable */
 import { DBOS, OrmEntities } from '@dbos-inc/dbos-sdk';
-import { TypeOrmDS } from './TypeOrmDataSource';
+import { TypeOrmDS } from '../src/TypeOrmDataSource';
 import { Entity, Column, PrimaryColumn, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
@@ -85,19 +86,20 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
 
 class DBWFI {
   @typeOrmDS.transaction({ readOnly: true })
-  static async tx() {
+  static async tx(): Promise<string> {
     let res = await TypeOrmDS.entityManager.query("SELECT 'My decorated tx result' as a");
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     return res[0].a;
   }
 
   @DBOS.workflow()
-  static async wf() {
+  static async wf(): Promise<string> {
     return await DBWFI.tx();
   }
 }
 
 describe('decoratorless-api-tests', () => {
-  beforeAll(async () => {
+  beforeAll(() => {
     DBOS.setConfig(dbosConfig);
   });
 
@@ -143,7 +145,6 @@ describe('decoratorless-api-tests', () => {
   });
 });
 
-let globalCnt = 0;
 @OrmEntities([KV])
 class KVController {
   @typeOrmDS.transaction()
@@ -151,15 +152,13 @@ class KVController {
     const kv: KV = new KV();
     kv.id = id;
     kv.value = value;
-    const res = await (TypeOrmDS.entityManager as EntityManager).save(kv);
-    globalCnt += 1;
+    const res = await TypeOrmDS.entityManager.save(kv);
+
     return res.id;
   }
 
-  @typeOrmDS.transaction({ readOnly: true })
   static async readTxn(id: string) {
-    globalCnt += 1;
-    const kvp = await (TypeOrmDS.entityManager as EntityManager).findOneBy(KV, { id: id });
+    const kvp = await TypeOrmDS.entityManager.findOneBy(KV, { id: id });
     return Promise.resolve(kvp?.value || '<Not Found>');
   }
 
@@ -170,12 +169,11 @@ class KVController {
 }
 
 describe('typeorm-tests', () => {
-  beforeAll(async () => {
+  beforeAll(() => {
     DBOS.setConfig(dbosConfig);
   });
 
   beforeEach(async () => {
-    globalCnt = 0;
     await setUpDBOSTestDb(dbosConfig);
     await typeOrmDS.initializeSchema();
     await DBOS.launch();
@@ -188,5 +186,13 @@ describe('typeorm-tests', () => {
 
   test('simple-typeorm', async () => {
     await expect(KVController.wf('test', 'value')).resolves.toBe('test');
+  });
+
+  test('typeorm-register', async () => {
+    /* const txFunc = DBOS.registerTransaction('app-db', KVController.readTxn, { name: 'MySecondTx' }, {});
+
+    await expect(KVController.readTxn('test')).resolves.toBe('<Not Found>');
+    await KVController.testTxn('test', 'value');
+    await expect(KVController.readTxn('test')).resolves.toBe('value'); */
   });
 });
