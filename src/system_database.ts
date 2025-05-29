@@ -479,6 +479,30 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
   };
 }
 
+function retriablePostgresException(e: unknown) {
+  if (e instanceof DatabaseError && e.code) {
+    // Operator intervention
+    if (e.code.startsWith('57')) {
+      return true;
+    }
+    // Insufficent resources
+    if (e.code.startsWith('53')) {
+      return true;
+    }
+    // Connection exception
+    if (e.code.startsWith('53')) {
+      return true;
+    }
+  }
+  if (String(e).includes('ECONNREFUSED')) {
+    return true;
+  }
+  if (String(e).includes('connection timeout')) {
+    return true;
+  }
+  return false;
+}
+
 /**
  * If a workflow encounters a database connection issue while performing an operation,
  * block the workflow and retry the operation until it reconnects and succeeds.
@@ -505,17 +529,21 @@ function dbRetry(
         try {
           return await method.apply(this, args);
         } catch (e) {
-          retries++;
-          // Calculate backoff with jitter
-          const actualBackoff = backoff * (0.5 + Math.random());
-          DBOSExecutor.globalInstance?.logger.warn(
-            `Database connection failed: ${e instanceof Error ? e.message : String(e)}. ` +
-              `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
-          );
-          // Sleep with backoff
-          await sleepms(actualBackoff * 1000); // Convert to milliseconds
-          // Increase backoff for next attempt (exponential)
-          backoff = Math.min(backoff * 2, maxBackoff);
+          if (retriablePostgresException(e)) {
+            retries++;
+            // Calculate backoff with jitter
+            const actualBackoff = backoff * (0.5 + Math.random());
+            DBOSExecutor.globalInstance?.logger.warn(
+              `Database connection failed: ${e instanceof Error ? e.message : String(e)}. ` +
+                `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
+            );
+            // Sleep with backoff
+            await sleepms(actualBackoff * 1000); // Convert to milliseconds
+            // Increase backoff for next attempt (exponential)
+            backoff = Math.min(backoff * 2, maxBackoff);
+          } else {
+            throw e;
+          }
         }
       }
     } as T;
