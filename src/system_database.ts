@@ -485,9 +485,11 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
 }
 
 function retriablePostgresException(e: unknown): boolean {
+  // Recurse into AggregateErrors of various types
   if (e && typeof e === 'object' && 'errors' in e && Array.isArray((e as { errors: unknown }).errors)) {
     return (e as { errors: unknown[] }).errors.some((error: unknown) => retriablePostgresException(error));
   }
+  // For Postgres errors, check the code
   if (e instanceof DatabaseError && e.code) {
     // Operator intervention
     if (e.code.startsWith('57')) {
@@ -502,10 +504,8 @@ function retriablePostgresException(e: unknown): boolean {
       return true;
     }
   }
+  // Otherwise, check for network issues in the string
   const errorString = e instanceof Error ? e.stack || e.message : String(e);
-  console.log('ERROR', e);
-  console.log('ERROR STRING', errorString);
-  console.log('TYPE', e?.constructor?.name);
   if (errorString.includes('ECONNREFUSED')) {
     return true;
   }
@@ -596,7 +596,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
    *   The real problem is, if the pipes out of the server are full... then notifications can be
    *     dropped, and only the PG server log may note it.  For those reasons, we do occasional polling
    */
-  notificationsClient: PoolClient | null = null;
+  notificationsClient: Client | null = null;
   dbPollingIntervalResultMs: number = 1000;
   dbPollingIntervalEventMs: number = 10000;
   shouldUseDBNotifications: boolean = true;
@@ -682,7 +682,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (this.notificationsClient) {
       try {
         this.notificationsClient.removeAllListeners();
-        this.notificationsClient.release();
+        await this.notificationsClient.end();
       } catch (e) {
         this.logger.warn(`Error releasing notifications client: ${String(e)}`);
       }
@@ -1573,9 +1573,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
    */
   async #listenForNotifications() {
     const connect = async () => {
-      let client: PoolClient | null = null;
+      let client: Client | null = null;
       try {
-        client = await this.pool.connect();
+        client = new Client(this.systemPoolConfig);
+        await client.connect();
         await client.query('LISTEN dbos_notifications_channel;');
         await client.query('LISTEN dbos_workflow_events_channel;');
 
@@ -1592,7 +1593,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const restarted = { restarted: false };
         client.on('error', async (err: Error) => {
           if (!restarted['restarted']) {
-            client!.release(true);
+            await client!.end();
             restarted['restarted'] = true;
             this.logger.warn(`Error in notifications client: ${err}`);
             await new Promise((resolve) => setTimeout(resolve, 1000));
@@ -1603,7 +1604,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
         if (client) {
-          client.release(true);
+          await client.end();
         }
         setTimeout(connect, 1000);
       }
