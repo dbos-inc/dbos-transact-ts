@@ -22,7 +22,6 @@ import {
   operation_outputs,
   workflow_status,
   workflow_events,
-  workflow_inputs,
   workflow_queue,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
@@ -68,14 +67,12 @@ export interface SystemDatabase {
 
   initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    serializedArgs: string,
     maxRetries?: number,
-  ): Promise<{ serializedInputs: string; status: string; deadlineEpochMS?: number }>;
+  ): Promise<{ status: string; deadlineEpochMS?: number }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
   getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
-  getWorkflowInputs(workflowID: string): Promise<string | null>;
 
   // If there is no record, res will be undefined;
   //  otherwise will be defined (with potentially undefined contents)
@@ -193,7 +190,7 @@ export interface WorkflowStatusInternal {
   authenticatedUser: string;
   output: string | null;
   error: string | null; // Serialized error
-  input?: string;
+  input: string;
   assumedRole: string;
   authenticatedRoles: string[];
   request: HTTPRequest;
@@ -307,8 +304,9 @@ async function insertWorkflowStatus(
       recovery_attempts,
       updated_at,
       workflow_timeout_ms,
-      workflow_deadline_epoch_ms
-    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18)
+      workflow_deadline_epoch_ms,
+      inputs
+    ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)
      ON CONFLICT (workflow_uuid)
       DO UPDATE SET
         recovery_attempts = workflow_status.recovery_attempts + 1,
@@ -334,6 +332,7 @@ async function insertWorkflowStatus(
       initStatus.updatedAt ?? Date.now(),
       initStatus.timeoutMS ?? null,
       initStatus.deadlineEpochMS ?? null,
+      initStatus.input ?? null,
     ],
   );
 
@@ -342,22 +341,6 @@ async function insertWorkflowStatus(
   }
 
   return rows[0];
-}
-
-async function insertWorkflowInputs(client: PoolClient, workflowID: string, serializedInputs: string): Promise<string> {
-  const { rows } = await client.query<{ inputs: string }>(
-    `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.workflow_inputs 
-     (workflow_uuid, inputs) VALUES($1, $2) 
-     ON CONFLICT (workflow_uuid) DO UPDATE SET workflow_uuid = excluded.workflow_uuid  
-     RETURNING inputs`,
-    [workflowID, serializedInputs],
-  );
-
-  if (rows.length === 0) {
-    throw new Error(`Attempt to insert workflow ${workflowID} inputs failed`);
-  }
-
-  return rows[0].inputs;
 }
 
 async function deleteQueuedWorkflows(client: PoolClient, workflowID: string): Promise<void> {
@@ -475,7 +458,7 @@ async function recordOperationResult(
   }
 }
 
-function mapWorkflowStatus(row: workflow_status & workflow_inputs): WorkflowStatusInternal {
+function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
   return {
     workflowUUID: row.workflow_uuid,
     status: row.status,
@@ -622,9 +605,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    serializedInputs: string,
     maxRetries?: number,
-  ): Promise<{ serializedInputs: string; status: string; deadlineEpochMS?: number }> {
+  ): Promise<{ status: string; deadlineEpochMS?: number }> {
     const client = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -661,14 +643,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const status = resRow.status;
       const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
 
-      const inputResult = await insertWorkflowInputs(client, initStatus.workflowUUID, serializedInputs);
-      if (serializedInputs !== inputResult) {
-        this.logger.warn(
-          `Workflow inputs for ${initStatus.workflowUUID} changed since the first call! Use the original inputs.`,
-        );
-      }
-
-      return { serializedInputs: inputResult, status, deadlineEpochMS };
+      return { status, deadlineEpochMS };
     } finally {
       await client.query('COMMIT');
       client.release();
@@ -707,18 +682,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
           queueName: i.queue_name,
         },
     );
-  }
-
-  async getWorkflowInputs(workflowID: string): Promise<string | null> {
-    const { rows } = await this.pool.query<workflow_inputs>(
-      `SELECT inputs FROM ${DBOSExecutor.systemDBSchemaName}.workflow_inputs 
-      WHERE workflow_uuid=$1`,
-      [workflowID],
-    );
-    if (rows.length === 0) {
-      return null;
-    }
-    return rows[0].inputs;
   }
 
   async #getOperationResultAndThrowIfCancelled(
@@ -827,9 +790,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         recoveryAttempts: 0,
         updatedAt: now,
         timeoutMS: options.timeoutMS ?? workflowStatus.timeoutMS,
+        input: workflowStatus.input,
       });
-
-      await insertWorkflowInputs(client, newWorkflowID, workflowStatus.input);
 
       if (startStep > 0) {
         const query = `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs 
@@ -1573,13 +1535,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const schemaName = DBOSExecutor.systemDBSchemaName;
 
     input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
-      .join<workflow_inputs>(
-        `${schemaName}.workflow_inputs`,
-        `${schemaName}.workflow_status.workflow_uuid`,
-        `${schemaName}.workflow_inputs.workflow_uuid`,
-      )
-      .orderBy(`${schemaName}.workflow_status.created_at`, input.sortDesc ? 'desc' : 'asc');
+    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`).orderBy(
+      `${schemaName}.workflow_status.created_at`,
+      input.sortDesc ? 'desc' : 'asc',
+    );
     if (input.workflowName) {
       query = query.where(`${schemaName}.workflow_status.name`, input.workflowName);
     }
@@ -1619,11 +1578,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
     let query = this.knexDB<workflow_queue>(`${schemaName}.workflow_queue`)
-      .join<workflow_inputs>(
-        `${schemaName}.workflow_inputs`,
-        `${schemaName}.workflow_queue.workflow_uuid`,
-        `${schemaName}.workflow_inputs.workflow_uuid`,
-      )
       .join<workflow_status>(
         `${schemaName}.workflow_status`,
         `${schemaName}.workflow_queue.workflow_uuid`,

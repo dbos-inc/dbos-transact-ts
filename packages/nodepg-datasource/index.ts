@@ -1,23 +1,29 @@
-// using https://github.com/knex/knex
+// using https://github.com/brianc/node-postgres
 
-import { DBOS, type DBOSTransactionalDataSource, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
-import { AsyncLocalStorage } from 'async_hooks';
-import knex, { type Knex } from 'knex';
+import { DBOS, DBOSWorkflowConflictError, type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk';
+import { Client, type ClientBase, type ClientConfig, DatabaseError, Pool, type PoolConfig } from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
-interface transaction_outputs {
-  workflow_id: string;
-  function_num: number;
-  output: string | null;
+interface NodePostgresDataSourceContext {
+  client: ClientBase;
 }
 
-interface KnexDataSourceContext {
-  client: Knex.Transaction;
-}
+export const IsolationLevel = Object.freeze({
+  serializable: 'SERIALIZABLE',
+  repeatableRead: 'REPEATABLE READ',
+  readCommited: 'READ COMMITTED',
+  readUncommitted: 'READ UNCOMMITTED',
+});
 
-export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'>;
+type ValuesOf<T> = T[keyof T];
+
+export interface NodePostgresTransactionOptions {
+  isolationLevel?: ValuesOf<typeof IsolationLevel>;
+  readOnly?: boolean;
+}
 
 function getErrorCode(error: unknown) {
-  return error && typeof error === 'object' && 'code' in error ? error.code : undefined;
+  return error instanceof DatabaseError ? error.code : undefined;
 }
 
 // JsonReviver and JsonReplacer are duplicated across multiple data source packages
@@ -50,53 +56,54 @@ function JsonReplacer(_key: string, value: unknown): unknown {
   return value;
 }
 
-export class KnexDataSource implements DBOSTransactionalDataSource {
-  static readonly #asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
+export class NodePostgresDataSource implements DBOSTransactionalDataSource {
+  static readonly #asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
 
   static async runTxStep<T>(
     callback: () => Promise<T>,
     funcName: string,
-    options: { dsName?: string; config?: TransactionConfig } = {},
+    options: { dsName?: string; config?: NodePostgresTransactionOptions } = {},
   ) {
     return await DBOS.runAsWorkflowTransaction(callback, funcName, options);
   }
 
-  static get client(): Knex.Transaction {
+  static get client(): ClientBase {
     if (!DBOS.isInTransaction()) {
       throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
     }
-    const ctx = KnexDataSource.#asyncLocalCtx.getStore();
+    const ctx = NodePostgresDataSource.#asyncLocalCtx.getStore();
     if (!ctx) {
       throw new Error('No async local context found.');
     }
     return ctx.client;
   }
 
-  static async configure(config: Knex.Config) {
-    const knexDB = knex(config);
+  static async configure(config: ClientConfig): Promise<void> {
+    const client = new Client(config);
     try {
-      await knexDB.schema.createSchemaIfNotExists('dbos');
-      const exists = await knexDB.schema.withSchema('dbos').hasTable('transaction_outputs');
-      if (!exists) {
-        await knexDB.schema.withSchema('dbos').createTable('transaction_outputs', (table) => {
-          table.string('workflow_id').notNullable();
-          table.integer('function_num').notNullable();
-          table.string('output').nullable();
-          table.primary(['workflow_id', 'function_num']);
-        });
-      }
+      await client.connect();
+      await client.query(
+        /*sql*/
+        `CREATE SCHEMA IF NOT EXISTS dbos;
+         CREATE TABLE IF NOT EXISTS dbos.transaction_outputs (
+            workflow_id TEXT NOT NULL,
+            function_num INT NOT NULL,
+            output TEXT,
+            created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
+            PRIMARY KEY (workflow_id, function_num));`,
+      );
     } finally {
-      await knexDB.destroy();
+      await client.end();
     }
   }
 
   readonly name: string;
-  readonly dsType = 'KnexDataSource';
-  readonly #knexDB: Knex;
+  readonly dsType = 'NodePostgresDataSource';
+  readonly #pool: Pool;
 
-  constructor(name: string, config: Knex.Config) {
+  constructor(name: string, config: PoolConfig) {
     this.name = name;
-    this.#knexDB = knex(config);
+    this.#pool = new Pool(config);
   }
 
   initialize(): Promise<void> {
@@ -104,49 +111,47 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
   }
 
   destroy(): Promise<void> {
-    return this.#knexDB.destroy();
+    return this.#pool.end();
   }
 
-  async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
+  async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
     return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   register<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     name: string,
-    config?: TransactionConfig,
+    config?: NodePostgresTransactionOptions,
   ): (this: This, ...args: Args) => Promise<Return> {
     return DBOS.registerTransaction(this.name, func, { name }, config);
   }
 
   static async #checkExecution(
-    client: Knex.Transaction,
+    client: ClientBase,
     workflowID: string,
     functionNum: number,
   ): Promise<{ output: string | null } | undefined> {
-    const result = await client<transaction_outputs>('transaction_outputs')
-      .withSchema('dbos')
-      .select('output')
-      .where({
-        workflow_id: workflowID,
-        function_num: functionNum,
-      })
-      .first();
-    return result === undefined ? undefined : { output: result.output };
+    const { rows } = await client.query<{ output: string }>(
+      /*sql*/ `SELECT output FROM dbos.transaction_outputs
+       WHERE workflow_id = $1 AND function_num = $2`,
+      [workflowID, functionNum],
+    );
+    return rows.length > 0 ? { output: rows[0].output } : undefined;
   }
 
   static async #recordOutput(
-    client: Knex.Transaction,
+    client: ClientBase,
     workflowID: string,
     functionNum: number,
     output: string | null,
   ): Promise<void> {
     try {
-      await client<transaction_outputs>('transaction_outputs').withSchema('dbos').insert({
-        workflow_id: workflowID,
-        function_num: functionNum,
-        output,
-      });
+      await client.query(
+        /*sql*/
+        `INSERT INTO dbos.transaction_outputs (workflow_id, function_num, output) 
+         VALUES ($1, $2, $3)`,
+        [workflowID, functionNum, output],
+      );
     } catch (error) {
       // 24505 is a duplicate key error in PostgreSQL
       if (getErrorCode(error) === '23505') {
@@ -157,8 +162,30 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     }
   }
 
+  async #transaction<Return>(
+    func: (client: ClientBase) => Promise<Return>,
+    config: NodePostgresTransactionOptions = {},
+  ): Promise<Return> {
+    const isolationLevel = config?.isolationLevel ? `ISOLATION LEVEL ${config.isolationLevel}` : '';
+    const readOnly = config?.readOnly ?? false;
+    const accessMode = config?.readOnly === undefined ? '' : readOnly ? 'READ ONLY' : 'READ WRITE';
+
+    const client = await this.#pool.connect();
+    try {
+      await client.query(/*sql*/ `BEGIN ${isolationLevel} ${accessMode}`);
+      const result = await func(client);
+      await client.query(/*sql*/ `COMMIT`);
+      return result;
+    } catch (error) {
+      await client.query(/*sql*/ `ROLLBACK`);
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
-    config: TransactionConfig | undefined,
+    config: NodePostgresTransactionOptions | undefined,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
@@ -179,24 +206,29 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
 
     while (true) {
       try {
-        const result = await this.#knexDB.transaction<Return>(
+        const result = await this.#transaction<Return>(
           async (client) => {
             // Check to see if this tx has already been executed
             const previousResult = readOnly
               ? undefined
-              : await KnexDataSource.#checkExecution(client, workflowID, functionNum);
+              : await NodePostgresDataSource.#checkExecution(client, workflowID, functionNum);
             if (previousResult) {
               return (previousResult.output ? JSON.parse(previousResult.output, JsonReviver) : null) as Return;
             }
 
             // execute user's transaction function
-            const result = await KnexDataSource.#asyncLocalCtx.run({ client }, async () => {
+            const result = await NodePostgresDataSource.#asyncLocalCtx.run({ client }, async () => {
               return (await func.call(target, ...args)) as Return;
             });
 
             // save the output of read/write transactions
             if (!readOnly) {
-              await KnexDataSource.#recordOutput(client, workflowID, functionNum, JSON.stringify(result, JsonReplacer));
+              await NodePostgresDataSource.#recordOutput(
+                client,
+                workflowID,
+                functionNum,
+                JSON.stringify(result, JsonReplacer),
+              );
 
               // Note, existing code wraps #recordOutput call in a try/catch block that
               // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.

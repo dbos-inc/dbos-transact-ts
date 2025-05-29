@@ -25,7 +25,7 @@ export { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';
 
-export { DBOSResponseError } from './error';
+export { DBOSResponseError, DBOSWorkflowConflictError } from './error';
 
 export { TransactionConfig, TransactionFunction } from './transaction';
 
