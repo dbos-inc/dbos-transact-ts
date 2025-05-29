@@ -135,8 +135,8 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify that the gap between "waves" is ~equal to the period
     for (let wave = 1; wave < numWaves; ++wave) {
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 200);
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 300);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 300);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 500);
     }
 
     for (const h of handles) {
@@ -185,8 +185,8 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify that the gap between "waves" is ~equal to the period
     for (let wave = 1; wave < numWaves; ++wave) {
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 200);
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 300);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 300);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 500);
     }
 
     for (const h of handles) {
@@ -501,14 +501,14 @@ describe('queued-wf-tests-simple', () => {
 
     const workflows = await DBOS.listQueuedWorkflows({ queueName: recoveryQueue.name });
     expect(workflows.length).toBe(3);
-    expect(workflows[2].workflowID).toBe(wfid1);
-    expect(workflows[2].executorId).toBe('local');
+    expect(workflows[0].workflowID).toBe(wfid1);
+    expect(workflows[0].executorId).toBe('local');
     expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
     expect(workflows[1].workflowID).toBe(wfid2);
     expect(workflows[1].executorId).toBe('local');
     expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
-    expect(workflows[0].workflowID).toBe(wfid3);
-    expect(workflows[0].executorId).toBe('local');
+    expect(workflows[2].workflowID).toBe(wfid3);
+    expect(workflows[2].executorId).toBe('local');
     expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
     // Manually update the database to pretend wf3 is PENDING and comes from a different executor

@@ -132,8 +132,9 @@ export async function queueEntriesAreCleanedUp() {
   let maxTries = 10;
   let success = false;
   while (maxTries > 0) {
-    const r = await DBOS.listQueuedWorkflows({});
-    if (r.length === 0) {
+    const enqueued_tasks = await DBOS.listQueuedWorkflows({ status: 'ENQUEUED' });
+    const pending_tasks = await DBOS.listQueuedWorkflows({ status: 'PENDING' });
+    if (enqueued_tasks.length === 0 && pending_tasks.length === 0) {
       success = true;
       break;
     }
