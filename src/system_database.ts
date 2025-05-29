@@ -502,7 +502,7 @@ function retriablePostgresException(e: unknown): boolean {
       return true;
     }
   }
-  const errorString = e instanceof Error ? e.message : String(e);
+  const errorString = e instanceof Error ? e.stack || e.message : String(e);
   console.log('ERROR', e);
   console.log('ERROR STRING', errorString);
   console.log('TYPE', e?.constructor?.name);
