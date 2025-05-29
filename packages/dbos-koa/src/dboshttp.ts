@@ -1,8 +1,13 @@
 import { IncomingHttpHeaders } from 'http';
 import { randomUUID } from 'node:crypto';
 
-import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, requestArgValidation } from '@dbos-inc/dbos-sdk';
-import { MethodParameter } from '../../../dist/src/decorators';
+import {
+  DBOS,
+  DBOSLifecycleCallback,
+  Error as DBOSErrors,
+  MethodParameter,
+  requestArgValidation,
+} from '@dbos-inc/dbos-sdk';
 
 export enum APITypes {
   GET = 'GET',

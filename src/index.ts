@@ -61,6 +61,7 @@ export {
   ConfiguredInstance,
 
   // Parameter Decorators
+  MethodParameter,
   ArgName,
 
   // ORM Class Decorators
