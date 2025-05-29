@@ -66,7 +66,7 @@ describe('chaos-tests', () => {
           console.error('Full error object:', JSON.stringify(err, null, 2));
           throw err;
         });
-      console.log(i);
+      DBOS.logger.info(i);
     }
   });
 
@@ -86,7 +86,7 @@ describe('chaos-tests', () => {
       const value = String(randomUUID());
       await DBOS.send(handle.workflowID, value, TestRecv.topic);
       await expect(handle.getResult()).resolves.toEqual(value);
-      console.log(i);
+      DBOS.logger.info(i);
     }
   });
 });

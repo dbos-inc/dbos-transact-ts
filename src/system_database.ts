@@ -1506,10 +1506,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
    */
   async #listenForNotifications() {
     const connect = async () => {
+      let client: PoolClient | null = null;
       try {
-        this.notificationsClient = await this.pool.connect();
-        await this.notificationsClient.query('LISTEN dbos_notifications_channel;');
-        await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
+        client = await this.pool.connect();
+        await client.query('LISTEN dbos_notifications_channel;');
+        await client.query('LISTEN dbos_workflow_events_channel;');
 
         const handler = (msg: Notification) => {
           if (!this.shouldUseDBNotifications) return;
@@ -1520,22 +1521,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
           }
         };
 
-        this.notificationsClient.on('notification', handler);
+        client.on('notification', handler);
         const restarted = { restarted: false };
-        this.notificationsClient.on('error', async (err: Error) => {
+        client.on('error', async (err: Error) => {
           if (!restarted['restarted']) {
+            client!.release(true);
             restarted['restarted'] = true;
             this.logger.warn(`Error in notifications client: ${err}`);
             await new Promise((resolve) => setTimeout(resolve, 1000));
             await connect();
           }
         });
+        this.notificationsClient = client;
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
-        try {
-          this.notificationsClient?.release();
-        } catch (error) {
-          this.logger.warn(`Error releasing notifications client: ${String(error)}`);
+        if (client) {
+          client.release(true);
         }
         setTimeout(connect, 1000);
       }
