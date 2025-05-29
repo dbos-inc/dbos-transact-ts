@@ -484,7 +484,10 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
   };
 }
 
-function retriablePostgresException(e: unknown) {
+function retriablePostgresException(e: unknown): boolean {
+  if (e instanceof AggregateError) {
+    return e.errors.some((error) => retriablePostgresException(error));
+  }
   if (e instanceof DatabaseError && e.code) {
     // Operator intervention
     if (e.code.startsWith('57')) {
@@ -499,16 +502,20 @@ function retriablePostgresException(e: unknown) {
       return true;
     }
   }
-  if (String(e).includes('ECONNREFUSED')) {
+  const errorString = e instanceof Error ? e.message : String(e);
+  if (errorString.includes('ECONNREFUSED')) {
     return true;
   }
-  if (String(e).toLowerCase().includes('connection timeout')) {
+  if (errorString.includes('ECONNRESET')) {
     return true;
   }
-  if (String(e).toLowerCase().includes('connection terminated unexpectedly')) {
+  if (errorString.toLowerCase().includes('connection timeout')) {
     return true;
   }
-  if (String(e).toLowerCase().includes('client has encountered a connection error')) {
+  if (errorString.toLowerCase().includes('connection terminated unexpectedly')) {
+    return true;
+  }
+  if (errorString.toLowerCase().includes('client has encountered a connection error')) {
     return true;
   }
   return false;
@@ -553,8 +560,6 @@ function dbRetry(
             // Increase backoff for next attempt (exponential)
             backoff = Math.min(backoff * 2, maxBackoff);
           } else {
-            console.error('UNEXPECTED ERROR', e);
-            console.log(`UNEXPECTED ERROR STRING ${String(e)}`);
             throw e;
           }
         }
