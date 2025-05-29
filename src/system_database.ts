@@ -490,7 +490,7 @@ function retriablePostgresException(e: unknown) {
       return true;
     }
     // Connection exception
-    if (e.code.startsWith('53')) {
+    if (e.code.startsWith('08')) {
       return true;
     }
   }
