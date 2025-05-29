@@ -47,7 +47,7 @@ export async function createTestingRuntime(
       database: dbosConfig.poolConfig.database,
     });
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database} WITH (FORCE);`);
     await pgSystemClient.end();
   }
 

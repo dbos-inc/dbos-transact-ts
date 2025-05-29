@@ -148,13 +148,12 @@ export class DBOSClient {
       timeoutMS: options.workflowTimeoutMS,
       deadlineEpochMS: undefined,
       input: DBOSJSON.stringify(args),
+      deduplicationID: options.deduplicationID,
+      priority: options.priority ?? 0,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus);
 
-    await this.systemDatabase.enqueueWorkflow(workflowUUID, queueName, {
-      deduplicationID: options.deduplicationID,
-    });
     return new RetrievedHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
 
@@ -184,6 +183,8 @@ export class DBOSClient {
       applicationID: '',
       createdAt: Date.now(),
       input: DBOSJSON.stringify([destinationID, message, topic]),
+      deduplicationID: undefined,
+      priority: 0,
     };
     await this.systemDatabase.initWorkflowStatus(internalStatus);
     await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, DBOSJSON.stringify(message), topic);
