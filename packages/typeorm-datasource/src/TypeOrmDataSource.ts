@@ -86,7 +86,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     return Promise.resolve();
   }
 
-  async InitializeSchema(): Promise<void> {
+  async initializeSchema(): Promise<void> {
     const ds = await this.createInstance();
 
     try {

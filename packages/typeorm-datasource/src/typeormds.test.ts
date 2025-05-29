@@ -103,7 +103,7 @@ describe('decoratorless-api-tests', () => {
 
   beforeEach(async () => {
     await setUpDBOSTestDb(dbosConfig);
-    await typeOrmDS.InitializeSchema();
+    await typeOrmDS.initializeSchema();
     await DBOS.launch();
   });
 
@@ -176,7 +176,7 @@ describe('typeorm-tests', () => {
   beforeEach(async () => {
     globalCnt = 0;
     await setUpDBOSTestDb(dbosConfig);
-    await typeOrmDS.InitializeSchema();
+    await typeOrmDS.initializeSchema();
     await DBOS.launch();
     typeOrmDS.createSchema();
   });

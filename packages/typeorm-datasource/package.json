@@ -4,14 +4,13 @@
   "main": "index.js",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "test": "npm run build && jest --detectOpenHandles"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "reflect-metadata": "^0.2.2",
     "typeorm": "^0.3.24",
     "pg": "8.11.3"
   },
