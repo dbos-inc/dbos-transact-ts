@@ -1,4 +1,5 @@
 export {
+  ArgSources,
   DBOSHTTPAuthReturn,
   DBOSHTTPBase,
   DBOSHTTPConfig,

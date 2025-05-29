@@ -10,6 +10,7 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 import { DBOS, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
 import {
   APITypes,
+  ArgSources,
   DBOSHTTPAuthReturn,
   DBOSHTTPBase,
   DBOSHTTPConfig,
@@ -236,24 +237,25 @@ export class DBOSKoa extends DBOSHTTPBase {
               const isQueryMethod = ro.apiType === APITypes.GET || ro.apiType === APITypes.DELETE;
               const isBodyMethod =
                 ro.apiType === APITypes.POST || ro.apiType === APITypes.PUT || ro.apiType === APITypes.PATCH;
+              const argSource = this.getArgSource(marg);
 
-              if (isQueryMethod) {
+              if ((isQueryMethod && argSource !== ArgSources.BODY) || argSource === ArgSources.QUERY) {
                 foundArg = koaCtxt.request.query[marg.name];
                 if (foundArg !== undefined) {
                   args.push(foundArg);
-                } else {
+                } else if (argSource === ArgSources.AUTO) {
                   // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
                   foundArg = koaCtxt.request.body?.[marg.name];
                   if (foundArg !== undefined) {
                     args.push(foundArg);
                   }
                 }
-              } else if (isBodyMethod) {
+              } else if (isBodyMethod || argSource === ArgSources.BODY) {
                 // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
                 foundArg = koaCtxt.request.body?.[marg.name];
                 if (foundArg !== undefined) {
                   args.push(foundArg);
-                } else {
+                } else if (argSource === ArgSources.AUTO) {
                   foundArg = koaCtxt.request.query[marg.name];
                   if (foundArg !== undefined) {
                     args.push(foundArg);
