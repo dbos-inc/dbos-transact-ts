@@ -41,7 +41,7 @@ export const userDBSchema = `
 `;
 
 export const userDBIndex = `
-  CREATE INDEX IF NOT EXISTS transaction_outputs_created_at_index ON dbos.transaction_outputs (created_at);
+  CREATE INDEX IF NOT EXISTS transaction_completion_created_at_index ON dbos.transaction_completion (created_at);
 `;
 
 /** Isolation typically supported by application databases */
@@ -173,7 +173,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
   ): Promise<Return> {
-    const isolationLevel = config.isolationLevel ? config.isolationLevel : 'SERIALIZABLE';
+    const isolationLevel = config?.isolationLevel ?? 'SERIALIZABLE';
 
     const readOnly = config?.readOnly ? true : false;
 
@@ -317,5 +317,10 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
 
       return descriptor;
     };
+  }
+
+  createSchema() {
+    console.log('Creating TypeOrmDS schema by calling synchronize()');
+    this.dataSource?.synchronize();
   }
 }

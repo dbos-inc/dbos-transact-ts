@@ -1,6 +1,6 @@
-import { DBOS } from '@dbos-inc/dbos-sdk';
+import { DBOS, OrmEntities } from '@dbos-inc/dbos-sdk';
 import { TypeOrmDS } from './TypeOrmDataSource';
-import { Entity, Column, PrimaryColumn, PrimaryGeneratedColumn } from 'typeorm';
+import { Entity, Column, PrimaryColumn, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
 
@@ -17,7 +17,7 @@ if (!dbPassword) {
   throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
 }
 
-const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
+const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/typeorm_testdb?sslmode=disable`;
 
 const poolconfig = {
   connectionString: databaseUrl,
@@ -139,5 +139,53 @@ describe('decoratorless-api-tests', () => {
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('tx');
+  });
+});
+
+let globalCnt = 0;
+@OrmEntities([KV])
+class KVController {
+  @typeOrmDS.transaction()
+  static async testTxn(id: string, value: string) {
+    const kv: KV = new KV();
+    kv.id = id;
+    kv.value = value;
+    const res = await (TypeOrmDS.entityManager as EntityManager).save(kv);
+    globalCnt += 1;
+    return res.id;
+  }
+
+  @typeOrmDS.transaction({ readOnly: true })
+  static async readTxn(id: string) {
+    globalCnt += 1;
+    const kvp = await (TypeOrmDS.entityManager as EntityManager).findOneBy(KV, { id: id });
+    return Promise.resolve(kvp?.value || '<Not Found>');
+  }
+
+  @DBOS.workflow()
+  static async wf(id: string, value: string) {
+    return await KVController.testTxn(id, value);
+  }
+}
+
+describe('typeorm-tests', () => {
+  beforeAll(async () => {
+    DBOS.setConfig(dbosConfig);
+  });
+
+  beforeEach(async () => {
+    globalCnt = 0;
+    await setUpDBOSTestDb(dbosConfig);
+    await typeOrmDS.InitializeSchema();
+    await DBOS.launch();
+    typeOrmDS.createSchema();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('simple-typeorm', async () => {
+    await expect(KVController.wf('test', 'value')).resolves.toBe('test');
   });
 });
