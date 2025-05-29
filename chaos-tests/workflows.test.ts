@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { DBOS, DBOSConfig } from '../src/';
 import { startDockerPg, stopDockerPg } from '../src/dbos-runtime/docker_pg_helper';
 import { dropDatabases, PostgresChaosMonkey } from './helpers';
+import { sleepms } from '../src/utils';
 
 describe('chaos-tests', () => {
   let config: DBOSConfig;
@@ -109,5 +110,22 @@ describe('chaos-tests', () => {
       await expect(DBOS.getEvent(handle.workflowID, TestEvents.key, 0)).resolves.toEqual(value);
       DBOS.logger.info(i);
     }
+  });
+
+  class TestScheduled {
+    static value = 0;
+
+    @DBOS.workflow()
+    @DBOS.scheduled({ crontab: '* * * * * *' })
+    static async increment(scheduled: Date, _actual: Date) {
+      console.log(`Running scheduled workflow at ${String(scheduled)}`);
+      TestScheduled.value++;
+      return Promise.resolve();
+    }
+  }
+
+  test('test-scheduled', async () => {
+    await sleepms(120000);
+    expect(TestScheduled.value).toBeGreaterThan(60);
   });
 });

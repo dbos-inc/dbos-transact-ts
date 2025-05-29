@@ -1627,6 +1627,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   // Event dispatcher queries / updates
+  @dbRetry()
   async getEventDispatchState(
     service: string,
     workflowName: string,
@@ -1653,6 +1654,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
+  @dbRetry()
   async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
     const res = await this.pool.query<event_dispatch_kv>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv (
