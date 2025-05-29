@@ -2,7 +2,7 @@
 import { IncomingMessage } from 'http';
 import { StepFunction } from '../step';
 import { HTTPRequest, DBOSContextImpl } from '../context';
-import { ConfiguredInstance, getRegisteredOperations } from '../decorators';
+import { ConfiguredInstance, getRegisteredOperations, insertAllMiddleware } from '../decorators';
 import { DBOSConfigKeyTypeError, DBOSError } from '../error';
 import {
   AsyncHandlerWfFuncs,
@@ -150,6 +150,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * This should be the first function call before any subsequent calls.
    */
   async init(userClasses?: object[], testConfig?: DBOSConfigInternal, options: DBOSExecutorOptions = {}) {
+    insertAllMiddleware();
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
     DBOS.setConfig(dbosConfig[0]);
     this.#dbosExec = new DBOSExecutor(dbosConfig[0], options);

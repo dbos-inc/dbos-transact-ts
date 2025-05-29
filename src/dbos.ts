@@ -48,6 +48,7 @@ import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './sch
 import {
   associateClassWithExternal,
   associateMethodWithExternal,
+  associateParameterWithExternal,
   configureInstance,
   getLifecycleListeners,
   getOrCreateClassRegistration,
@@ -55,6 +56,7 @@ import {
   getRegistrationForFunction,
   getRegistrationsForExternal,
   getTransactionalDataSource,
+  insertAllMiddleware,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
@@ -92,6 +94,7 @@ import {
   DBOSLifecycleCallback,
   DBOSTransactionalDataSource,
   HandlerContext,
+  requestArgValidation,
   StepContext,
   StoredProcedureContext,
   TransactionContext,
@@ -193,7 +196,7 @@ function httpApiDec(verb: APITypes, url: string) {
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
-    registration.performArgValidation = true;
+    requestArgValidation(registration);
 
     return descriptor;
   };
@@ -363,6 +366,7 @@ export class DBOS {
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
     // Do nothing is DBOS is already initialized
+    insertAllMiddleware();
 
     if (DBOS.isInitialized()) {
       return;
@@ -2578,9 +2582,32 @@ export class DBOS {
     return associateMethodWithExternal(external, target.classOrInst, target.className, target.name, func);
   }
 
+  /**
+   * Register information to be associated with a DBOS function
+   */
+  static associateParamWithInfo<This, Args extends unknown[], Return>(
+    external: AnyConstructor | object | string,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      classOrInst?: object;
+      className?: string;
+      name: string;
+      param: number | string;
+    },
+  ) {
+    return associateParameterWithExternal(
+      external,
+      target.classOrInst,
+      target.className,
+      target.name,
+      func,
+      target.param,
+    );
+  }
+
   /** Get registrations */
-  static getAssociatedInfo(external: AnyConstructor | object | string) {
-    return getRegistrationsForExternal(external);
+  static getAssociatedInfo(external: AnyConstructor | object | string, cls?: object | string, funcName?: string) {
+    return getRegistrationsForExternal(external, cls, funcName);
   }
 }
 

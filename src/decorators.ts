@@ -1,12 +1,10 @@
 import 'reflect-metadata';
 
-import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
 import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, HTTPRequest } from './context';
 import { StepConfig, StepContext } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError, DBOSNotRegisteredError } from './error';
-import { validateMethodArgs } from './data_validation';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
@@ -34,6 +32,29 @@ export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
 }
 export function getLifecycleListeners() {
   return lifecycleListeners;
+}
+
+// Middleware installation
+export abstract class DBOSMethodMiddlewareInserter {
+  abstract installMiddleware(methodReg: MethodRegistrationBase): void;
+}
+let installedMiddleware = false;
+const middlewareInserters: DBOSMethodMiddlewareInserter[] = [];
+export function registerMiddlewareInserter(i: DBOSMethodMiddlewareInserter) {
+  if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
+  if (!middlewareInserters.includes(i)) middlewareInserters.push(i);
+}
+export function insertAllMiddleware() {
+  if (installedMiddleware) return;
+  installedMiddleware = true;
+
+  for (const [_cn, c] of classesByName) {
+    for (const [_fn, f] of c.reg.registeredOperations) {
+      for (const i of middlewareInserters) {
+        i.installMiddleware(f);
+      }
+    }
+  }
 }
 
 /**
@@ -216,34 +237,40 @@ function getArgNames(func: Function): string[] {
   return args;
 }
 
-export enum LogMasks {
-  NONE = 'NONE',
-  HASH = 'HASH',
-  SKIP = 'SKIP',
-}
-
-export enum ArgRequiredOptions {
-  REQUIRED = 'REQUIRED',
-  OPTIONAL = 'OPTIONAL',
-  DEFAULT = 'DEFAULT',
+export interface ArgDataType {
+  dataType?: DBOSDataType; // Also a very simplistic data type format... for native scalars or JSON
 }
 
 export class MethodParameter {
   name: string = '';
-  required: ArgRequiredOptions = ArgRequiredOptions.DEFAULT;
-  validate: boolean = true;
-  logMask: LogMasks = LogMasks.NONE;
+  index: number = -1;
+
+  externalRegInfo: Map<AnyConstructor | object | string, object> = new Map();
+
+  getRegisteredInfo(reg: AnyConstructor | object | string) {
+    if (!this.externalRegInfo.has(reg)) {
+      this.externalRegInfo.set(reg, {});
+    }
+    return this.externalRegInfo.get(reg)!;
+  }
+
+  get dataType() {
+    return (this.getRegisteredInfo('type') as ArgDataType).dataType;
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  argType?: Function = undefined; // This comes from reflect-metadata, if we have it
-  dataType?: DBOSDataType;
-  index: number = -1;
+  initializeBaseType(at?: Function) {
+    if (!this.externalRegInfo.has('type')) {
+      this.externalRegInfo.set('type', {});
+    }
+    const adt = this.externalRegInfo.get('type') as ArgDataType;
+    adt.dataType = DBOSDataType.fromArg(at);
+  }
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   constructor(idx: number, at?: Function) {
     this.index = idx;
-    this.argType = at;
-    this.dataType = DBOSDataType.fromArg(at);
+    this.initializeBaseType(at);
   }
 }
 
@@ -254,9 +281,9 @@ export class MethodParameter {
 export interface RegistrationDefaults {
   name: string;
   requiredRole: string[] | undefined;
-  argRequiredEnabled: boolean;
-  defaultArgRequired: ArgRequiredOptions;
-  defaultArgValidate: boolean;
+
+  getRegisteredInfo(reg: AnyConstructor | object | string): unknown;
+
   eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
   externalRegInfo: Map<AnyConstructor | object | string, unknown>;
 }
@@ -266,9 +293,8 @@ export interface MethodRegistrationBase {
   className: string;
 
   args: MethodParameter[];
-  performArgValidation: boolean;
 
-  defaults?: RegistrationDefaults;
+  defaults?: RegistrationDefaults; // This is the class-level info
 
   getRequiredRoles(): string[];
 
@@ -292,6 +318,11 @@ export interface MethodRegistrationBase {
   // Pass context as first arg?
   readonly passContext: boolean;
 
+  // Add an interceptor that, when function is run, get a chance to process arguments / throw errors
+  addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum?: number): void;
+
+  getRegisteredInfo(reg: AnyConstructor | object | string): unknown;
+
   invoke(pthis: unknown, args: unknown[]): unknown;
 }
 
@@ -303,7 +334,13 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
 
   requiredRole: string[] | undefined = undefined;
 
-  performArgValidation: boolean = false;
+  // Interceptors
+  onEnter: { seqNum: number; func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[] }[] = [];
+  addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum: number = 10) {
+    this.onEnter.push({ seqNum, func });
+    this.onEnter.sort((a, b) => a.seqNum - b.seqNum);
+  }
+
   args: MethodParameter[] = [];
   passContext: boolean = false;
 
@@ -325,6 +362,13 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   regLocation?: string[];
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
+
+  getRegisteredInfo(reg: AnyConstructor | object | string) {
+    if (!this.externalRegInfo.has(reg)) {
+      this.externalRegInfo.set(reg, {});
+    }
+    return this.externalRegInfo.get(reg)!;
+  }
 
   getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | 'Procedure' | undefined {
     if (this.txnConfig) return 'Transaction';
@@ -420,9 +464,6 @@ export abstract class ConfiguredInstance {
 export class ClassRegistration implements RegistrationDefaults {
   name: string = '';
   requiredRole: string[] | undefined;
-  argRequiredEnabled: boolean = false;
-  defaultArgRequired: ArgRequiredOptions = ArgRequiredOptions.REQUIRED;
-  defaultArgValidate: boolean = false;
   needsInitialized: boolean = true;
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
@@ -435,6 +476,13 @@ export class ClassRegistration implements RegistrationDefaults {
 
   eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
+
+  getRegisteredInfo(reg: AnyConstructor | object | string) {
+    if (!this.externalRegInfo.has(reg)) {
+      this.externalRegInfo.set(reg, {});
+    }
+    return this.externalRegInfo.get(reg)!;
+  }
 
   constructor() {}
 }
@@ -576,7 +624,7 @@ const methodArgsByFunction: Map<string, MethodParameter[]> = new Map();
 export function getOrCreateMethodArgsRegistration(
   target: object | undefined,
   className: string | undefined,
-  propertyKey: string | symbol,
+  funcName: string | symbol,
   func?: (...args: unknown[]) => unknown,
 ): MethodParameter[] {
   let regtarget = target;
@@ -586,7 +634,7 @@ export function getOrCreateMethodArgsRegistration(
 
   className = className ?? (target ? getNameForClass(target) : '');
 
-  const mkey = className + '|' + propertyKey.toString();
+  const mkey = className + '|' + funcName.toString();
 
   let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(mkey);
   if (mParameters === undefined) {
@@ -594,7 +642,7 @@ export function getOrCreateMethodArgsRegistration(
     let designParamTypes: Function[] | undefined = undefined;
     if (target) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      designParamTypes = Reflect.getMetadata('design:paramtypes', target, propertyKey) as Function[] | undefined;
+      designParamTypes = Reflect.getMetadata('design:paramtypes', target, funcName) as Function[] | undefined;
     }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
@@ -603,7 +651,7 @@ export function getOrCreateMethodArgsRegistration(
         const argnames = getArgNames(func);
         mParameters = argnames.map((_value, index) => new MethodParameter(index));
       } else {
-        const descriptor = Object.getOwnPropertyDescriptor(target, propertyKey);
+        const descriptor = Object.getOwnPropertyDescriptor(target, funcName);
         // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
         const argnames = getArgNames(descriptor?.value as Function);
         mParameters = argnames.map((_value, index) => new MethodParameter(index));
@@ -614,12 +662,6 @@ export function getOrCreateMethodArgsRegistration(
   }
 
   return mParameters;
-}
-
-function generateSaltedHash(data: string, salt: string): string {
-  const hash = crypto.createHash('sha256'); // You can use other algorithms like 'md5', 'sha512', etc.
-  hash.update(data + salt);
-  return hash.digest('hex');
 }
 
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
@@ -680,22 +722,16 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     );
 
     const argNames = getArgNames(func);
+
     methReg.args.forEach((e) => {
-      if (e.required !== ArgRequiredOptions.DEFAULT) {
-        classReg.argRequiredEnabled = true;
-      }
       if (!e.name) {
         if (e.index < argNames.length) {
           e.name = argNames[e.index];
         }
-        if (e.index === 0 && passContext) {
-          // The first argument is always the context.
-          e.logMask = LogMasks.SKIP;
-        }
-        // TODO else warn/log something
       }
     });
 
+    // TODO Make these generic
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
       let opCtx: DBOSContextImpl | undefined = undefined;
       if (passContext) {
@@ -728,35 +764,10 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
         }
       }
 
-      const validatedArgs = validateMethodArgs(methReg, rawArgs);
-
-      // Argument logging
-      validatedArgs.forEach((argValue, idx) => {
-        let isCtx = false;
-        // TODO: we assume the first argument is always a context, need a more robust way to test it.
-        if (idx === 0 && passContext) {
-          // Context -- I suppose we could just instanceof
-          opCtx = validatedArgs[0] as DBOSContextImpl;
-          isCtx = true;
-        }
-
-        let loggedArgValue = argValue;
-        if (isCtx || methReg.args[idx].logMask === LogMasks.SKIP) {
-          return;
-        } else {
-          if (methReg.args[idx].logMask !== LogMasks.NONE) {
-            // For now this means hash
-            if (methReg.args[idx].dataType?.dataType === 'json') {
-              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), 'JSONSALT');
-            } else {
-              // Yes, we are doing the same as above for now.
-              // It can be better if we have verified the type of the data
-              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), 'DBOSSALT');
-            }
-          }
-          opCtx?.span.setAttribute(methReg.args[idx].name, loggedArgValue as string);
-        }
-      });
+      let validatedArgs = rawArgs;
+      for (const vf of methReg.onEnter) {
+        validatedArgs = vf.func(methReg, validatedArgs) as Args;
+      }
 
       return methReg.origFunction.call(this, ...validatedArgs);
     };
@@ -906,12 +917,9 @@ export function associateClassWithExternal(
   external: AnyConstructor | object | string,
   cls: AnyConstructor | string,
 ): object {
-  const clsn: string = typeof cls === 'string' ? cls : (cls = getNameForClass(cls));
+  const clsn: string = typeof cls === 'string' ? cls : getNameForClass(cls);
   const clsreg = getClassRegistrationByName(clsn, true);
-  if (!clsreg.externalRegInfo.has(external)) {
-    clsreg.externalRegInfo.set(external, {});
-  }
-  return clsreg.externalRegInfo.get(external)!;
+  return clsreg.getRegisteredInfo(external);
 }
 
 /**
@@ -959,52 +967,98 @@ export function associateMethodWithExternal<This, Args extends unknown[], Return
   return { registration, regInfo: registration.externalRegInfo.get(external)! };
 }
 
-export function getRegistrationsForExternal(external: AnyConstructor | object | string) {
-  const res: { methodConfig: unknown; classConfig: unknown; methodReg: MethodRegistrationBase }[] = [];
-  for (const [_cn, c] of classesByName) {
-    for (const [_fn, f] of c.reg.registeredOperations) {
-      if (!f.externalRegInfo.has(external)) continue;
-      const methodConfig = f.externalRegInfo.get(external)!;
-      const classConfig = f.defaults?.externalRegInfo.get(external) ?? {};
-      res.push({ methodReg: f, methodConfig, classConfig });
+/*
+ * Associates a DBOS function or method with an external class or object.
+ *   Likely, this will be invoking or intercepting the method.
+ */
+export function associateParameterWithExternal<This, Args extends unknown[], Return>(
+  external: AnyConstructor | object | string,
+  target: object | undefined,
+  className: string | undefined,
+  funcName: string,
+  func: ((this: This, ...args: Args) => Promise<Return>) | undefined,
+  paramId: number | string,
+): object | undefined {
+  if (!func) {
+    func = Object.getOwnPropertyDescriptor(target, funcName)!.value as (this: This, ...args: Args) => Promise<Return>;
+  }
+  const { registration } = registerAndWrapDBOSFunctionByName(target, className, funcName, func);
+  let param: MethodParameter | undefined;
+  if (typeof paramId === 'number') {
+    param = registration.args[paramId];
+  } else {
+    param = registration.args.find((p) => p.name === paramId);
+  }
+
+  if (!param) return undefined;
+
+  if (!param.externalRegInfo.has(external)) {
+    param.externalRegInfo.set(external, {});
+  }
+
+  return param.externalRegInfo.get(external)!;
+}
+
+export function getRegistrationsForExternal(
+  external: AnyConstructor | object | string,
+  cls?: object | string,
+  funcName?: string,
+) {
+  const res: {
+    methodConfig: unknown;
+    classConfig: unknown;
+    methodReg: MethodRegistrationBase;
+    paramConfig: { name: string; index: number; paramConfig?: object }[];
+  }[] = [];
+
+  if (cls) {
+    const clsname = typeof cls === 'string' ? cls : getNameForClass(cls);
+    const c = classesByName.get(clsname);
+    if (c) {
+      if (funcName) {
+        const f = c.reg.registeredOperations.get(funcName);
+        if (f) {
+          collectRegForFunction(f);
+        }
+      } else {
+        collectRegForClass(c);
+      }
+    }
+  } else {
+    for (const [_cn, c] of classesByName) {
+      collectRegForClass(c);
     }
   }
   return res;
+
+  function collectRegForClass(c: { reg: ClassRegistration; ctor?: AnyConstructor }) {
+    for (const [_fn, f] of c.reg.registeredOperations) {
+      collectRegForFunction(f);
+    }
+  }
+
+  function collectRegForFunction(f: MethodRegistrationBase) {
+    const methodConfig = f.externalRegInfo.get(external);
+    const classConfig = f.defaults?.externalRegInfo.get(external);
+    const paramConfig: { name: string; index: number; paramConfig?: object }[] = [];
+    let hasParamConfig = false;
+    for (const arg of f.args) {
+      if (arg.externalRegInfo.has(external)) hasParamConfig = true;
+
+      paramConfig.push({
+        name: arg.name,
+        index: arg.index,
+        paramConfig: arg.externalRegInfo.get(external),
+      });
+    }
+    if (!methodConfig && !classConfig && !hasParamConfig) return;
+    res.push({ methodReg: f, methodConfig, classConfig: classConfig ?? {}, paramConfig });
+  }
 }
 
 //////////////////////////
 /* PARAMETER DECORATORS */
 //////////////////////////
-
-export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
-
-  const curParam = existingParameters[parameterIndex];
-  curParam.required = ArgRequiredOptions.REQUIRED;
-}
-
-export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
-
-  const curParam = existingParameters[parameterIndex];
-  curParam.required = ArgRequiredOptions.OPTIONAL;
-}
-
-export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
-
-  const curParam = existingParameters[parameterIndex];
-  curParam.logMask = LogMasks.SKIP;
-}
-
-export function LogMask(mask: LogMasks) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
-
-    const curParam = existingParameters[parameterIndex];
-    curParam.logMask = mask;
-  };
-}
 
 export function ArgName(name: string) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
@@ -1012,26 +1066,6 @@ export function ArgName(name: string) {
 
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
-  };
-}
-
-export function ArgDate() {
-  // TODO a little more info about it - is it a date or timestamp precision?
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
-
-    const curParam = existingParameters[parameterIndex];
-    if (!curParam.dataType) curParam.dataType = new DBOSDataType();
-    curParam.dataType.dataType = 'timestamp';
-  };
-}
-
-export function ArgVarchar(length: number) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
-
-    const curParam = existingParameters[parameterIndex];
-    curParam.dataType = DBOSDataType.varchar(length);
   };
 }
 
@@ -1046,23 +1080,6 @@ export function DefaultRequiredRole(anyOf: string[]) {
     clsreg.requiredRole = anyOf;
   }
   return clsdec;
-}
-
-export function DefaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
-  const clsreg = getOrCreateClassRegistration(ctor);
-  clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
-  clsreg.argRequiredEnabled = true;
-}
-
-export function DefaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
-  const clsreg = getOrCreateClassRegistration(ctor);
-  clsreg.defaultArgValidate = true;
-}
-
-export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
-  const clsreg = getOrCreateClassRegistration(ctor);
-  clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
-  clsreg.argRequiredEnabled = true;
 }
 
 /** @deprecated Use `new` */

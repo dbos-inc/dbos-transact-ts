@@ -1,7 +1,13 @@
 import { IncomingHttpHeaders } from 'http';
 import { randomUUID } from 'node:crypto';
 
-import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
+import {
+  DBOS,
+  DBOSLifecycleCallback,
+  Error as DBOSErrors,
+  MethodParameter,
+  requestArgValidation,
+} from '@dbos-inc/dbos-sdk';
 
 export enum APITypes {
   GET = 'GET',
@@ -9,6 +15,13 @@ export enum APITypes {
   PUT = 'PUT',
   PATCH = 'PATCH',
   DELETE = 'DELETE',
+}
+
+export enum ArgSources {
+  AUTO = 'AUTO', // Look both places
+  DEFAULT = 'DEFAULT', // Look in the standard place for the method
+  BODY = 'BODY', // Look in body only
+  QUERY = 'QUERY', // Look in query string only
 }
 
 export interface DBOSHTTPAuthReturn {
@@ -24,6 +37,12 @@ export interface DBOSHTTPReg {
 export interface DBOSHTTPMethodInfo {
   registrations?: DBOSHTTPReg[];
 }
+
+export interface DBOSHTTPArgInfo {
+  argSource?: ArgSources;
+}
+
+export const DBOSHTTP = 'dboshttp';
 
 export const WorkflowIDHeader = 'dbos-idempotency-key';
 
@@ -69,7 +88,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
         apiURL: url,
         apiType: verb,
       });
-      registration.performArgValidation = true;
+      requestArgValidation(registration);
 
       return descriptor;
     };
@@ -98,6 +117,29 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
   /** Decorator indicating that the method is the target of HTTP DELETE operations for `url` */
   deleteApi(url: string) {
     return this.httpApiDec(APITypes.DELETE, url);
+  }
+
+  /** Parameter decorator indicating which source to use (URL, BODY, etc) for arg data */
+  argSource(source: ArgSources) {
+    return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+      const curParam = DBOS.associateParamWithInfo(
+        DBOSHTTP,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
+        Object.getOwnPropertyDescriptor(target, propertyKey)!.value,
+        {
+          classOrInst: target,
+          name: propertyKey.toString(),
+          param: parameterIndex,
+        },
+      ) as DBOSHTTPArgInfo;
+
+      curParam.argSource = source;
+    };
+  }
+
+  getArgSource(arg: MethodParameter) {
+    const arginfo = arg.getRegisteredInfo(DBOSHTTP) as DBOSHTTPArgInfo;
+    return arginfo?.argSource ?? ArgSources.AUTO;
   }
 
   override logRegisteredEndpoints(): void {

@@ -55,33 +55,33 @@ export {
   DBOSInitializer,
   RequiredRole,
 
-  // Class Instances
-  ConfiguredInstance,
-} from './decorators';
-
-// Items under redesign for v3
-
-export {
-  LogMasks,
-
-  // Parameter Decorators
-  ArgRequired,
-  ArgOptional,
-  SkipLogging,
-  LogMask,
-  ArgName,
-  ArgDate,
-  ArgVarchar,
-
   // Class Decorators
   DefaultRequiredRole,
-  DefaultArgRequired,
-  DefaultArgOptional,
-  DefaultArgValidate,
+
+  // Class Instances
+  ConfiguredInstance,
+
+  // Parameter Decorators
+  MethodParameter,
+  ArgName,
 
   // ORM Class Decorators
   OrmEntities,
 } from './decorators';
+
+export {
+  ArgRequired,
+  ArgOptional,
+  ArgDate,
+  ArgVarchar,
+  DefaultArgRequired,
+  DefaultArgOptional,
+  DefaultArgValidate,
+  LogMask,
+  LogMasks,
+  SkipLogging,
+  requestArgValidation,
+} from './paramdecorators';
 
 export { ParseOptions, parseConfigFile } from './dbos-runtime/config';
 

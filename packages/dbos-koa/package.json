@@ -5,7 +5,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/dbos-inc/dbos-transact",
+    "url": "https://github.com/dbos-inc/dbos-transact-ts",
     "directory": "packages/dbos-koa"
   },
   "homepage": "https://docs.dbos.dev/",
@@ -13,6 +13,8 @@
   "types": "dist/index.d.ts",
   "scripts": {
     "build": "tsc --project tsconfig.json",
+    "testv": "npm run build && jest --detectOpenHandles tests/validation.test.ts",
+    "testa": "npm run build && jest --detectOpenHandles tests/argsource.test.ts",
     "test": "npm run build && jest --detectOpenHandles"
   },
   "devDependencies": {
