@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/dbos-typeorm",
   "version": "0.0.0-placeholder",
-  "main": "index.js",
+  "main": "dist/index.js",
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "test": "npm run build && jest --detectOpenHandles"

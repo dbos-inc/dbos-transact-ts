@@ -111,8 +111,6 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
         await ds.destroy();
       } catch (e) {}
     }
-
-    return Promise.resolve();
   }
 
   /**
@@ -120,7 +118,6 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
    */
   async destroy(): Promise<void> {
     await this.dataSource?.destroy();
-    return Promise.resolve();
   }
 
   async checkExecution<R>(
@@ -194,51 +191,56 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     while (true) {
       let failedForRetriableReasons = false;
 
-      if (shouldCheckOutput && !readOnly) {
-        const executionResult = await this.checkExecution<Return>(this.dataSource, wfid, funcnum);
-
-        if (executionResult) {
-          DBOS.span?.setAttribute('cached', true);
-          return executionResult.res;
-        }
-      }
-
       try {
-        const result = this.dataSource?.transaction(isolationLevel, async (transactionEntityManager: EntityManager) => {
+        const result = this.dataSource.transaction(isolationLevel, async (transactionEntityManager: EntityManager) => {
+          if (this.dataSource === undefined) {
+            throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of Datasource');
+          }
+
+          if (shouldCheckOutput && !readOnly) {
+            const executionResult = await this.checkExecution<Return>(this.dataSource, wfid, funcnum);
+
+            if (executionResult) {
+              DBOS.span?.setAttribute('cached', true);
+              return executionResult.res;
+            }
+          }
+
           const result = await asyncLocalCtx.run({ typeOrmEntityManager: transactionEntityManager }, async () => {
             return await func.call(target, ...args);
           });
+
+          // Save result
+          try {
+            if (!readOnly) {
+              await this.recordOutput(this.dataSource, wfid, funcnum, result);
+            }
+          } catch (e) {
+            const error = e as Error;
+
+            // Aside from a connectivity error, two kinds of error are anticipated here:
+            //  1. The transaction is marked failed, but the user code did not throw.
+            //      Bad on them.  We will throw an error (this will get recorded) and not retry.
+            //  2. There was a key conflict in the statement, and we need to use the fetched output
+            if (this.isFailedSqlTransactionError(error)) {
+              DBOS.logger.error(
+                `In workflow ${wfid}, Postgres aborted a transaction but the function '${funcname}' did not raise an exception.  Please ensure that the transaction method raises an exception if the database transaction is aborted.`,
+              );
+              failedForRetriableReasons = false;
+              throw new Error.DBOSFailedSqlTransactionError(wfid, funcname);
+            } else if (this.isKeyConflictError(error)) {
+              throw new Error.DBOSWorkflowConflictError(
+                `In workflow ${wfid}, Postgres raised a key conflict error in transaction '${funcname}'.  This is not retriable, but the output will be fetched from the database.`,
+              );
+            } else {
+              DBOS.logger.error(`Unexpected error raised in transaction '${funcname}: ${error}`);
+              failedForRetriableReasons = false;
+              throw error;
+            }
+          }
+
           return result;
         });
-
-        // Save result
-        try {
-          if (!readOnly) {
-            await this.recordOutput(this.dataSource, wfid, funcnum, result);
-          }
-        } catch (e) {
-          const error = e as Error;
-
-          // Aside from a connectivity error, two kinds of error are anticipated here:
-          //  1. The transaction is marked failed, but the user code did not throw.
-          //      Bad on them.  We will throw an error (this will get recorded) and not retry.
-          //  2. There was a key conflict in the statement, and we need to use the fetched output
-          if (this.isFailedSqlTransactionError(error)) {
-            DBOS.logger.error(
-              `In workflow ${wfid}, Postgres aborted a transaction but the function '${funcname}' did not raise an exception.  Please ensure that the transaction method raises an exception if the database transaction is aborted.`,
-            );
-            failedForRetriableReasons = false;
-            throw new Error.DBOSFailedSqlTransactionError(wfid, funcname);
-          } else if (this.isKeyConflictError(error)) {
-            // Expected.  There is probably a result to return
-            shouldCheckOutput = true;
-            failedForRetriableReasons = true;
-          } else {
-            DBOS.logger.error(`Unexpected error raised in transaction '${funcname}: ${error}`);
-            failedForRetriableReasons = false;
-            throw error;
-          }
-        }
 
         return result;
       } catch (e) {
