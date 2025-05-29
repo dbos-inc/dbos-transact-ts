@@ -508,6 +508,9 @@ function retriablePostgresException(e: unknown) {
   if (String(e).toLowerCase().includes('connection terminated unexpectedly')) {
     return true;
   }
+  if (String(e).toLowerCase().includes('client has encountered a connection error')) {
+    return true;
+  }
   return false;
 }
 
