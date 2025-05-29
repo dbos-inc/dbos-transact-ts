@@ -749,7 +749,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
           where: { status: StatusString.PENDING },
           throwOnFailure: false,
         });
-        // Commit before we throw the exception
         throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
