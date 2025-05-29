@@ -27,6 +27,8 @@ export interface QueueParameters {
   concurrency?: number;
   /** If set, this limits the rate at which queued workflows are started */
   rateLimit?: QueueRateLimit;
+  /** If set, this queue supports priority */
+  priorityEnabled?: boolean;
 }
 
 /**
@@ -40,6 +42,7 @@ export class WorkflowQueue {
   readonly concurrency?: number;
   readonly rateLimit?: QueueRateLimit;
   readonly workerConcurrency?: number;
+  readonly priorityEnabled: boolean = false;
 
   constructor(name: string);
 
@@ -67,6 +70,7 @@ export class WorkflowQueue {
       this.concurrency = arg2.concurrency;
       this.rateLimit = arg2.rateLimit;
       this.workerConcurrency = arg2.workerConcurrency;
+      this.priorityEnabled = arg2.priorityEnabled ?? false;
     } else {
       // Handle the case where the second argument is a number
       this.concurrency = arg2;

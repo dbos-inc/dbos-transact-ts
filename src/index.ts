@@ -39,7 +39,8 @@ export {
   WorkflowFunction,
   StatusString,
   GetWorkflowsInput,
-  GetWorkflowsOutput,
+  GetQueuedWorkflowsInput,
+  WorkflowStatus,
 } from './workflow';
 
 export {
