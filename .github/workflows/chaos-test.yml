@@ -1,0 +1,36 @@
+name: Run Chaos Tests
+
+on:
+    schedule:
+        # Runs every hour on the hour
+        - cron: '0 * * * *'
+    workflow_dispatch:
+    pull_request:
+      branches:
+        - main
+        - release/*
+      types:
+        - ready_for_review
+        - opened
+        - reopened
+        - synchronize
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+        fetch-tags: true
+
+    - name: Build and Install
+      run: |
+        npm ci
+        npm run build
+      working-directory: ./
+
+    - name: Run Chaos Tests
+      run: npx jest chaos-tests/
+      working-directory: ./
