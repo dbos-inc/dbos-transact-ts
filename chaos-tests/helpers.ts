@@ -11,7 +11,7 @@ export class PostgresChaosMonkey {
   start(): void {
     const chaosLoop = async (): Promise<void> => {
       while (!this.stopEvent) {
-        const waitTime = Math.random() * (15 - 5) + 5; // Random between 5-15 seconds
+        const waitTime = Math.random() * (10 - 5) + 5; // Random between 5-10 seconds
 
         await new Promise<void>((resolve) => {
           this.chaosTimeout = setTimeout(() => {
