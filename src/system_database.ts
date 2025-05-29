@@ -485,8 +485,10 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
 }
 
 function retriablePostgresException(e: unknown): boolean {
-  if (e instanceof AggregateError) {
-    return e.errors.some((error) => retriablePostgresException(error));
+  if (e && typeof e === 'object' && 'errors' in e && Array.isArray((e as { errors: unknown }).errors)) {
+    if ((e as { errors: unknown[] }).errors.some((error: unknown) => retriablePostgresException(error))) {
+      return true;
+    }
   }
   if (e instanceof DatabaseError && e.code) {
     // Operator intervention
