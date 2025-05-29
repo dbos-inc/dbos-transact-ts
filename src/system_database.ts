@@ -750,16 +750,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
           throwOnFailure: false,
         });
         // Commit before we throw the exception
-        await client.query('COMMIT');
         throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       const status = resRow.status;
       const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
-      await client.query('COMMIT');
       return { status, deadlineEpochMS };
     } finally {
-      client.release();
+      try {
+        await client.query('COMMIT');
+      } finally {
+        client.release();
+      }
     }
   }
 
