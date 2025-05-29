@@ -105,6 +105,7 @@ describe('decoratorless-api-tests', () => {
     await setUpDBOSTestDb(dbosConfig);
     await typeOrmDS.initializeSchema();
     await DBOS.launch();
+    typeOrmDS.createSchema();
   });
 
   afterEach(async () => {

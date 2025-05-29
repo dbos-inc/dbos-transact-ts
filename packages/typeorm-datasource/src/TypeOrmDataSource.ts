@@ -26,6 +26,7 @@ export interface transaction_completion {
   workflow_id: string;
   function_num: number;
   output: string | null;
+  error: string | null;
 }
 
 export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
@@ -35,6 +36,7 @@ export const userDBSchema = `
     workflow_id TEXT NOT NULL,
     function_num INT NOT NULL,
     output TEXT,
+    error TEXT,
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
     PRIMARY KEY (workflow_id, function_num)
   );
@@ -161,6 +163,19 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     );
   }
 
+  async recordError<R>(client: DataSource, workflowID: string, funcNum: number, error: R): Promise<void> {
+    const serialError = DBOSJSON.stringify(error);
+    await client.query<{ rows: transaction_completion[] }>(
+      `INSERT INTO dbos.transaction_completion (
+        workflow_id, 
+        function_num,
+        error,
+        created_at
+      ) VALUES ($1, $2, $3, $4)`,
+      [workflowID, funcNum, serialError, Date.now()],
+    );
+  }
+
   /**
    * Invoke a transaction function
    */
@@ -217,6 +232,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
             }
           } catch (e) {
             const error = e as Error;
+            await this.recordError(this.dataSource, wfid, funcnum, error);
 
             // Aside from a connectivity error, two kinds of error are anticipated here:
             //  1. The transaction is marked failed, but the user code did not throw.
