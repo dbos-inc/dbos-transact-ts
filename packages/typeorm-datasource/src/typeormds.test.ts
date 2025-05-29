@@ -17,7 +17,6 @@ if (!dbPassword) {
   throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
 }
 
-console.log('password is', dbPassword);
 const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
 
 const poolconfig = {
@@ -51,8 +50,6 @@ const dbosConfig = {
     },
   },
 };
-
-console.log('DBOS config is', dbosConfig);
 
 async function txFunctionGuts() {
   expect(DBOS.isInTransaction()).toBe(true);
@@ -90,8 +87,6 @@ class DBWFI {
   @typeOrmDS.transaction({ readOnly: true })
   static async tx() {
     let res = await TypeOrmDS.entityManager.query("SELECT 'My decorated tx result' as a");
-    console.log(res);
-    console.log(res[0].a);
     return res[0].a;
   }
 
@@ -103,14 +98,14 @@ class DBWFI {
 
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
-    await setUpDBOSTestDb(dbosConfig);
-    console.log('DBOS test database setup complete');
-    await typeOrmDS.InitializeSchema();
-    console.log('TypeORM schema initialized');
+    // await setUpDBOSTestDb(dbosConfig);
+    // await typeOrmDS.InitializeSchema();
     DBOS.setConfig(dbosConfig);
   });
 
   beforeEach(async () => {
+    await setUpDBOSTestDb(dbosConfig);
+    await typeOrmDS.InitializeSchema();
     await DBOS.launch();
   });
 

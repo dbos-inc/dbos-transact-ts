@@ -1,8 +1,6 @@
 import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import { DBOS, type DBOSTransactionalDataSource, DBOSJSON, Error } from '@dbos-inc/dbos-sdk';
 import { DataSource, EntityManager } from 'typeorm';
-import { Type } from '@nestjs/common';
-import { Data } from 'ws';
 import { AsyncLocalStorage } from 'async_hooks';
 
 interface DBOSTypeOrmLocalCtx {
@@ -20,15 +18,11 @@ function assertCurrentDSContextStore(): DBOSTypeOrmLocalCtx {
   return ctx;
 }
 
-interface ExistenceCheck {
-  exists: boolean;
-}
-
 export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
-export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_outputs')`;
-export const txnOutputIndexExistsQuery = `SELECT EXISTS (SELECT FROM pg_indexes WHERE schemaname='dbos' AND tablename = 'transaction_outputs' AND indexname = 'transaction_outputs_created_at_index')`;
+export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_completion')`;
+export const txnOutputIndexExistsQuery = `SELECT EXISTS (SELECT FROM pg_indexes WHERE schemaname='dbos' AND tablename = 'transaction_completion' AND indexname = 'transaction_completion_created_at_index')`;
 
-export interface transaction_outputs {
+export interface transaction_completion {
   workflow_id: string;
   function_num: number;
   output: string | null;
@@ -37,27 +31,13 @@ export interface transaction_outputs {
 export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
 export const userDBSchema = `
-  CREATE TABLE IF NOT EXISTS dbos.transaction_outputs (
+  CREATE TABLE IF NOT EXISTS dbos.transaction_completion (
     workflow_id TEXT NOT NULL,
     function_num INT NOT NULL,
     output TEXT,
     created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
     PRIMARY KEY (workflow_id, function_num)
   );
-`;
-
-export const columnExistsQuery = `
-  SELECT EXISTS (
-    SELECT FROM information_schema.columns 
-    WHERE table_schema = 'dbos' 
-      AND table_name = 'transaction_outputs' 
-      AND column_name = 'function_name'
-  ) AS exists;
-`;
-
-export const addColumnQuery = `
-  ALTER TABLE dbos.transaction_outputs 
-    ADD COLUMN function_name TEXT NOT NULL DEFAULT '';
 `;
 
 export const userDBIndex = `
@@ -109,38 +89,22 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   async InitializeSchema(): Promise<void> {
     const ds = await this.createInstance();
 
-    console.log('created datasource');
-
     try {
       const schemaExists = await ds.query(schemaExistsQuery);
-      console.log('checking schema exists', schemaExists);
       if (!schemaExists[0].exists) {
         await ds.query(createUserDBSchema);
       }
-      console.log('created schema');
-
       const txnOutputTableExists = await ds.query(txnOutputTableExistsQuery);
-      console.log('checking txn output table exists', txnOutputTableExists);
+
       if (txnOutputTableExists[0].exists === false) {
-        console.log(userDBSchema);
         await ds.query(userDBSchema);
-      } else {
-        console.log('txn output table already exists');
-        const columnExists = await ds.query(columnExistsQuery);
-        console.log('checking column exists', columnExists);
-        if (!columnExists[0].exists) {
-          await ds.query(addColumnQuery);
-        }
       }
-      console.log('created table');
 
       const txnOutputIndexExists = await ds.query(txnOutputIndexExistsQuery);
       if (!txnOutputIndexExists[0].exists) {
         await ds.query(userDBIndex);
       }
-      console.log('created index');
     } catch (e) {
-      console.error(`Unexpected error initializing schema: ${e}`);
       throw new Error.DBOSError(`Unexpected error initializing schema: ${e}`);
     } finally {
       try {
@@ -169,13 +133,13 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
       }
     | undefined
   > {
-    type TxOutputRow = Pick<transaction_outputs, 'output'> & {
+    type TxOutputRow = Pick<transaction_completion, 'output'> & {
       recorded: boolean;
     };
 
     const { rows } = await client.query<{ rows: TxOutputRow[] }>(
       `SELECT output
-          FROM dbos.transaction_outputs
+          FROM dbos.transaction_completion
           WHERE workflow_id=$1 AND function_num=$2;`,
       [workflowID, funcNum],
     );
@@ -188,15 +152,9 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   }
 
   async recordOutput<R>(client: DataSource, workflowID: string, funcNum: number, output: R): Promise<void> {
-    const result = await client.query(
-      'SELECT current_database() as db, current_schema() as schema, current_user as user;',
-    );
-    console.log('mjjjj Connected to:', result);
-
     const serialOutput = DBOSJSON.stringify(output);
-    await client.query<{ rows: transaction_outputs[] }>(
-      // await TypeOrmDS.entityManager.query(
-      `INSERT INTO dbos.transaction_outputs (
+    await client.query<{ rows: transaction_completion[] }>(
+      `INSERT INTO dbos.transaction_completion (
         workflow_id, 
         function_num,
         output,
@@ -300,22 +258,14 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   }
 
   async createInstance(): Promise<DataSource> {
-    console.log(`Creating TypeORM DataSource for ${this.name} with config:`, this.config);
-    console.log(`Entities:`, this.entities);
-
     let ds = new DataSource({
       type: 'postgres',
-      host: this.config.host,
-      port: this.config.port,
-      database: this.config.database,
-      username: this.config.user,
-      password: 'postgres',
+      url: this.config.connectionString,
       connectTimeoutMS: this.config.connectionTimeoutMillis,
       entities: this.entities,
       poolSize: this.config.max,
     });
     await ds.initialize();
-    console.log('TypeORM DataSource initialized:', ds.isInitialized);
     return ds;
   }
 
