@@ -20,6 +20,9 @@ export interface workflow_status {
   workflow_timeout_ms: number | null;
   workflow_deadline_epoch_ms: number | null;
   inputs: string;
+  started_at_epoch_ms?: number;
+  deduplication_id?: string; // ID used to identify enqueued workflows for de-duplication.
+  priority?: number; // Optional priority for the workflow.
 }
 
 export interface notifications {
@@ -53,15 +56,6 @@ export interface event_dispatch_kv {
   value?: string;
   update_time?: number; // Timestamp of record (for upsert)
   update_seq?: bigint; // Sequence number of record (for upsert)
-}
-
-export interface workflow_queue {
-  workflow_uuid: string;
-  queue_name: string;
-  executor_id: string;
-  created_at_epoch_ms: number; // This time is provided by the database
-  started_at_epoch_ms?: number; // This time is provided by the client
-  completed_at_epoch_ms?: number; // This time is provided by the client
 }
 
 // This is the deserialized version of operation_outputs

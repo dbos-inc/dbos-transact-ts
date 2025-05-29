@@ -499,16 +499,16 @@ describe('queued-wf-tests-simple', () => {
     }
     expect(TestQueueRecovery.cnt).toBe(2);
 
-    const workflows = await DBOS.getWorkflowQueue({ queueName: recoveryQueue.name });
-    expect(workflows.workflows.length).toBe(3);
-    expect(workflows.workflows[2].workflowID).toBe(wfid1);
-    expect(workflows.workflows[2].executorID).toBe('local');
+    const workflows = await DBOS.listQueuedWorkflows({ queueName: recoveryQueue.name });
+    expect(workflows.length).toBe(3);
+    expect(workflows[2].workflowID).toBe(wfid1);
+    expect(workflows[2].executorId).toBe('local');
     expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
-    expect(workflows.workflows[1].workflowID).toBe(wfid2);
-    expect(workflows.workflows[1].executorID).toBe('local');
+    expect(workflows[1].workflowID).toBe(wfid2);
+    expect(workflows[1].executorId).toBe('local');
     expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
-    expect(workflows.workflows[0].workflowID).toBe(wfid3);
-    expect(workflows.workflows[0].executorID).toBe('local');
+    expect(workflows[0].workflowID).toBe(wfid3);
+    expect(workflows[0].executorId).toBe('local');
     expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
     // Manually update the database to pretend wf3 is PENDING and comes from a different executor

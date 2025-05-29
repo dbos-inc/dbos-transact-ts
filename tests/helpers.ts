@@ -132,8 +132,8 @@ export async function queueEntriesAreCleanedUp() {
   let maxTries = 10;
   let success = false;
   while (maxTries > 0) {
-    const r = await DBOS.getWorkflowQueue({});
-    if (r.workflows.length === 0) {
+    const r = await DBOS.listQueuedWorkflows({});
+    if (r.length === 0) {
       success = true;
       break;
     }

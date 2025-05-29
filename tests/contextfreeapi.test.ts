@@ -411,9 +411,9 @@ async function main5() {
   expect(wfstatsw?.queueName).toBe('wfq');
 
   // Validate that it had the queue
-  const wfqcontent = await DBOS.getWorkflowQueue({ queueName: wfq.name });
-  expect(wfqcontent.workflows.length).toBe(1);
-  expect(wfqcontent.workflows[0].workflowID).toBe('waitPromiseWF');
+  const wfqcontent = await DBOS.listQueuedWorkflows({ queueName: wfq.name });
+  expect(wfqcontent.length).toBe(1);
+  expect(wfqcontent[0].workflowID).toBe('waitPromiseWF');
 
   resolve(); // Let WF finish
   await wfhq.getResult();

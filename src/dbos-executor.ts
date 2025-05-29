@@ -25,8 +25,6 @@ import {
   WorkflowContextImpl,
   StatusString,
   type ContextFreeFunction,
-  type GetWorkflowQueueInput,
-  type GetWorkflowQueueOutput,
   type WorkflowStatus,
   type GetQueuedWorkflowsInput,
   type StepInfo,
@@ -778,6 +776,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       timeoutMS: timeoutMS,
       deadlineEpochMS: deadlineEpochMS,
       input: DBOSJSON.stringify(args),
+      deduplicationID: params.enqueueOptions?.deduplicationID,
+      priority: priority ?? 0,
     };
 
     if (wCtxt.isTempWorkflow) {
@@ -855,9 +855,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       e.dbos_already_logged = true;
       internalStatus.error = DBOSJSON.stringify(serializeError(e));
       internalStatus.status = StatusString.ERROR;
-      if (internalStatus.queueName && !exec.isDebugging) {
-        await exec.systemDatabase.dequeueWorkflow(workflowID, exec.#getQueueByName(internalStatus.queueName));
-      }
       if (!exec.isDebugging) {
         await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       }
@@ -904,9 +901,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         internalStatus.output = DBOSJSON.stringify(result);
         internalStatus.status = StatusString.SUCCESS;
-        if (internalStatus.queueName && !this.isDebugging) {
-          await this.systemDatabase.dequeueWorkflow(workflowID, this.#getQueueByName(internalStatus.queueName));
-        }
         if (!this.isDebugging) {
           await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
         }
@@ -950,13 +944,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // Return the normal handle that doesn't capture errors.
       return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name, callerID, callerFunctionID);
     } else {
-      if (params.queueName && status === 'ENQUEUED' && !this.isDebugging) {
-        await this.systemDatabase.enqueueWorkflow(
-          workflowID,
-          this.#getQueueByName(params.queueName).name,
-          params.enqueueOptions,
-        );
-      }
       return new RetrievedHandle(this.systemDatabase, workflowID, callerID, callerFunctionID);
     }
   }
@@ -1937,10 +1924,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
   }
 
-  getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
-    return this.systemDatabase.getWorkflowQueue(input);
-  }
-
   async queryUserDB(sql: string, params?: unknown[]) {
     if (params !== undefined) {
       return await this.userDatabase.query(sql, ...params);
@@ -2243,6 +2226,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const sortedWorkflowSource = Array.from(this.workflowInfoMap.values())
       .map((i) => i.workflowOrigFunction.toString())
       .sort();
+    // TODO (Qian): Different DBOS versions should produce different hashes.
     for (const sourceCode of sortedWorkflowSource) {
       hasher.update(sourceCode);
     }
