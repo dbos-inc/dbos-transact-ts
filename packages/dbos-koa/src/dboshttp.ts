@@ -134,7 +134,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
 
   getArgSource(arg: MethodParameter) {
     const arginfo = arg.getRegisteredInfo(DBOSHTTP) as DBOSHTTPArgInfo;
-    return arginfo?.argSource ?? ArgSources.DEFAULT;
+    return arginfo?.argSource ?? ArgSources.AUTO;
   }
 
   override logRegisteredEndpoints(): void {
