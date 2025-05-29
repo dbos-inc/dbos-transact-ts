@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { DBOS, DBOSConfig } from '../src/';
+import { DBOS, DBOSConfig, WorkflowQueue } from '../src/';
 import { startDockerPg, stopDockerPg } from '../src/dbos-runtime/docker_pg_helper';
 import { dropDatabases, PostgresChaosMonkey } from './helpers';
 import { sleepms } from '../src/utils';
@@ -117,15 +117,45 @@ describe('chaos-tests', () => {
 
     @DBOS.workflow()
     @DBOS.scheduled({ crontab: '* * * * * *' })
-    static async increment(scheduled: Date, _actual: Date) {
-      console.log(`Running scheduled workflow at ${String(scheduled)}`);
+    static async increment(_scheduled: Date, _actual: Date) {
       TestScheduled.value++;
       return Promise.resolve();
     }
   }
 
   test('test-scheduled', async () => {
+    TestScheduled.value = 0;
     await sleepms(120000);
     expect(TestScheduled.value).toBeGreaterThan(60);
+  });
+
+  class TestQueues {
+    static queue = new WorkflowQueue('queue');
+
+    @DBOS.step()
+    static async stepOne(x: number) {
+      return Promise.resolve(x + 1);
+    }
+
+    @DBOS.step()
+    static async stepTwo(x: number) {
+      return Promise.resolve(x + 2);
+    }
+
+    @DBOS.workflow()
+    static async workflow(x: number) {
+      x = await TestWorkflow.stepOne(x);
+      x = await TestWorkflow.stepTwo(x);
+      return x;
+    }
+  }
+
+  test('test-queues', async () => {
+    const numWorkflows = 60;
+    for (let i = 0; i < numWorkflows; i++) {
+      const handle = await DBOS.startWorkflow(TestQueues, { queueName: TestQueues.queue.name }).workflow(i);
+      await expect(handle.getResult()).resolves.toEqual(i + 3);
+      DBOS.logger.info(i);
+    }
   });
 });
