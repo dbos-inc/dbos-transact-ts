@@ -89,4 +89,25 @@ describe('chaos-tests', () => {
       DBOS.logger.info(i);
     }
   });
+
+  class TestEvents {
+    static key = 'test_key';
+
+    @DBOS.workflow()
+    static async eventWorkflow() {
+      const value = String(randomUUID());
+      await DBOS.setEvent(TestEvents.key, value);
+      return value;
+    }
+  }
+
+  test('test-events', async () => {
+    const numWorkflows = 5000;
+    for (let i = 0; i < numWorkflows; i++) {
+      const handle = await DBOS.startWorkflow(TestEvents).eventWorkflow();
+      const value = await handle.getResult();
+      await expect(DBOS.getEvent(handle.workflowID, TestEvents.key, 0)).resolves.toEqual(value);
+      DBOS.logger.info(i);
+    }
+  });
 });
