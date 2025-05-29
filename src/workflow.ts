@@ -122,24 +122,6 @@ export interface GetWorkflowsOutput {
   workflowUUIDs: string[];
 }
 
-export interface GetWorkflowQueueInput {
-  queueName?: string; // The name of the workflow queue
-  startTime?: string; // Timestamp in ISO 8601 format
-  endTime?: string; // Timestamp in ISO 8601 format
-  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
-}
-
-export interface GetWorkflowQueueOutput {
-  workflows: {
-    workflowID: string; // Workflow ID
-    executorID?: string; // Workflow executor ID
-    queueName: string; // Workflow queue name
-    createdAt: number; // Time that queue entry was created
-    startedAt?: number; // Time that workflow was started, if started
-    completedAt?: number; // Time that workflow completed, if complete
-  }[];
-}
-
 export interface GetPendingWorkflowsOutput {
   workflowUUID: string;
   queueName?: string;

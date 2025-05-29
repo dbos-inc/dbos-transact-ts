@@ -7,7 +7,7 @@ import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import { randomUUID } from 'crypto';
 
-const _queue = new WorkflowQueue('testQueue');
+const _queue = new WorkflowQueue('testQueue', { priorityEnabled: true });
 
 class ClientTest {
   static inorder_results: string[] = [];
@@ -408,7 +408,8 @@ describe('DBOSClient', () => {
       expect(result1).toBe('abc');
       expect(result2).toBe('def');
       expect(result3).toBe('ghi');
-      expect(ClientTest.inorder_results).toEqual(['abc', 'def', 'ghi']);
+      // They should be processed in order of priority
+      expect(ClientTest.inorder_results).toEqual(['abc', 'ghi', 'def']);
     } finally {
       await client.destroy();
     }

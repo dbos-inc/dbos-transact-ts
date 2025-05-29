@@ -21,8 +21,8 @@ describe('stored-proc-tests', () => {
 
     const [config] = parseConfigFile();
     await runSql({ ...config.poolConfig, database: 'postgres', connectionString: undefined }, async (client) => {
-      await client.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
-      await client.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
+      await client.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database} WITH (FORCE);`);
+      await client.query(`DROP DATABASE IF EXISTS ${config.system_database} WITH (FORCE);`);
       await client.query(`CREATE DATABASE ${config.poolConfig.database};`);
     });
 

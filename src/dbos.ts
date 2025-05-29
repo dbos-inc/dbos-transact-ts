@@ -22,8 +22,6 @@ import {
 import { Tracer } from './telemetry/traces';
 import {
   GetQueuedWorkflowsInput,
-  GetWorkflowQueueInput,
-  GetWorkflowQueueOutput,
   GetWorkflowsInput,
   GetWorkflowsOutput,
   StepInfo,
@@ -1025,16 +1023,6 @@ export class DBOS {
     }, 'DBOS.forkWorkflow');
 
     return this.retrieveWorkflow(forkedID);
-  }
-
-  /**
-   * Retrieve the contents of a workflow queue.
-   * @param input - Filter predicate, containing the queue name and other criteria
-   */
-  static async getWorkflowQueue(input: GetWorkflowQueueInput): Promise<GetWorkflowQueueOutput> {
-    return await DBOS.#runAsWorkflowStep(async () => {
-      return await DBOS.#executor.getWorkflowQueue(input);
-    }, 'DBOS.getWorkflowQueue');
   }
 
   /**
