@@ -337,8 +337,8 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     };
   }
 
-  createSchema() {
+  async createSchema() {
     console.log('Creating TypeOrmDS schema by calling synchronize()');
-    this.dataSource?.synchronize();
+    await this.dataSource?.synchronize();
   }
 }
