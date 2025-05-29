@@ -508,7 +508,7 @@ function dbRetry(
           retries++;
           // Calculate backoff with jitter
           const actualBackoff = backoff * (0.5 + Math.random());
-          console.warn(
+          DBOSExecutor.globalInstance?.logger.warn(
             `Database connection failed: ${e instanceof Error ? e.message : String(e)}. ` +
               `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
           );
@@ -686,15 +686,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
           where: { status: StatusString.PENDING },
           throwOnFailure: false,
         });
+        // Commit before we throw the exception
+        await client.query('COMMIT');
         throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       const status = resRow.status;
       const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
-
+      await client.query('COMMIT');
       return { status, deadlineEpochMS };
     } finally {
-      await client.query('COMMIT');
       client.release();
     }
   }
