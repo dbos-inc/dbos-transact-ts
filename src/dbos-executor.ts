@@ -736,6 +736,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
     }
 
+    // If the workflow is called on a queue with a priority but the queue is not configured with a priority, print a warning.
+    if (params.queueName) {
+      const wfqueue = this.#getQueueByName(params.queueName);
+      if (!wfqueue.priorityEnabled && priority !== undefined) {
+        this.logger.warn(
+          `Priority is not enabled for queue ${params.queueName}. Setting priority will not have any effect.`,
+        );
+      }
+    }
+
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
       throw new DBOSNotRegisteredError(wf.name);

@@ -1700,10 +1700,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
           .andWhere((b) => {
             b.whereNull('application_version').orWhere('application_version', appVersion);
           })
-          .orderBy('priority', 'asc') // TODO (Qian): only enable this if priority is supported
-          .orderBy('created_at', 'asc')
           .forUpdate()
           .noWait();
+        if (queue.priorityEnabled) {
+          query = query.orderBy('priority', 'asc').orderBy('created_at', 'asc');
+        } else {
+          query = query.orderBy('created_at', 'asc');
+        }
         if (maxTasks !== Infinity) {
           query = query.limit(maxTasks);
         }

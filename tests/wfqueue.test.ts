@@ -1139,7 +1139,7 @@ describe('enqueue-options', () => {
 
     static wfPriorityList: number[] = [];
 
-    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1 });
+    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1, priorityEnabled: true });
     static childqueue = new WorkflowQueue('child_queue', { concurrency: 1 });
 
     @DBOS.workflow()

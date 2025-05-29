@@ -7,7 +7,7 @@ import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import { randomUUID } from 'crypto';
 
-const _queue = new WorkflowQueue('testQueue');
+const _queue = new WorkflowQueue('testQueue', { priorityEnabled: true });
 
 class ClientTest {
   static inorder_results: string[] = [];
