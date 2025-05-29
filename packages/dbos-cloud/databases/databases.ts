@@ -268,7 +268,7 @@ export async function listUserDB(host: string, json: boolean) {
   }
 }
 
-async function getUserDBInfo(
+export async function getUserDBInfo(
   host: string,
   dbName: string,
   userCredentials?: DBOSCloudCredentials,

@@ -7,6 +7,7 @@ import {
   retrieveApplicationName,
   sleepms,
 } from '../cloudutils.js';
+import { getUserDBInfo } from '../databases/databases.js';
 import { Application } from './types.js';
 
 export async function deleteApp(host: string, dropdb: boolean, appName?: string): Promise<number> {
@@ -21,6 +22,23 @@ export async function deleteApp(host: string, dropdb: boolean, appName?: string)
   logger.info(`Submitting deletion request for ${appName}`);
 
   try {
+    // If dropdb is set, check if the database is linked, and refuse if it is
+    const appResponse = await axios.get(
+      `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`,
+      {
+        headers: {
+          Authorization: bearerToken,
+        },
+      },
+    );
+    const application: Application = appResponse.data as Application;
+    const dbName = application.PostgresInstanceName;
+    const userDBInfo = await getUserDBInfo(host, dbName, userCredentials);
+    if (dropdb && userDBInfo.IsLinked) {
+      logger.error('Cannot drop a linked database');
+      return 1;
+    }
+
     await axios.delete(`https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}`, {
       headers: {
         'Content-Type': 'application/json',
