@@ -503,7 +503,9 @@ function retriablePostgresException(e: unknown): boolean {
     }
   }
   const errorString = e instanceof Error ? e.message : String(e);
+  console.log('ERROR', e);
   console.log('ERROR STRING', errorString);
+  console.log('TYPE', e?.constructor?.name);
   if (errorString.includes('ECONNREFUSED')) {
     return true;
   }
