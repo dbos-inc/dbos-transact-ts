@@ -502,7 +502,10 @@ function retriablePostgresException(e: unknown) {
   if (String(e).includes('ECONNREFUSED')) {
     return true;
   }
-  if (String(e).includes('connection timeout')) {
+  if (String(e).toLowerCase().includes('connection timeout')) {
+    return true;
+  }
+  if (String(e).toLowerCase().includes('connection terminated unexpectedly')) {
     return true;
   }
   return false;
