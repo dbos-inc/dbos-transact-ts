@@ -12,11 +12,18 @@ export class KV {
   @Column()
   value: string = 'v';
 }
+const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
+if (!dbPassword) {
+  throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
+}
+
+console.log('password is', dbPassword);
+const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
 
 const poolconfig = {
-  connectionString: 'postgresql://postgres:postgres@localhost:5432/typeorm_testdb?sslmode=disable',
+  connectionString: databaseUrl,
   user: 'postgres',
-  password: 'postgres',
+  password: dbPassword,
   database: 'typeorm_testdb',
 
   host: 'localhost',
@@ -28,7 +35,7 @@ DBOS.registerDataSource(typeOrmDS);
 
 const dbosConfig = {
   name: 'dbostest',
-  databaseUrl: 'postgresql://postgres:postgres@localhost:5432/typeorm_testdb?sslmode=disable',
+  databaseUrl: databaseUrl,
   database: {
     app_db_client: 'typeorm',
   },
@@ -44,6 +51,8 @@ const dbosConfig = {
     },
   },
 };
+
+console.log('DBOS config is', dbosConfig);
 
 async function txFunctionGuts() {
   expect(DBOS.isInTransaction()).toBe(true);
