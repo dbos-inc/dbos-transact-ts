@@ -98,8 +98,6 @@ class DBWFI {
 
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
-    // await setUpDBOSTestDb(dbosConfig);
-    // await typeOrmDS.InitializeSchema();
     DBOS.setConfig(dbosConfig);
   });
 
