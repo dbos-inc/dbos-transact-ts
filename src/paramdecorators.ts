@@ -1,3 +1,5 @@
+import * as crypto from 'crypto';
+
 import {
   ArgDataType,
   associateParameterWithExternal,
@@ -171,7 +173,99 @@ export function DefaultArgOptional<T extends { new (...args: unknown[]): object 
   registerMiddlewareInserter(valInserter);
 }
 
-export function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args) {
+export enum LogMasks {
+  NONE = 'NONE',
+  HASH = 'HASH',
+  SKIP = 'SKIP',
+}
+
+interface LoggerArgInfo {
+  logMask?: LogMasks;
+}
+
+export const LOGGER = 'log';
+
+export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
+  const curParam = associateParameterWithExternal(
+    LOGGER,
+    target,
+    undefined,
+    propertyKey.toString(),
+    undefined,
+    parameterIndex,
+  ) as LoggerArgInfo;
+
+  curParam.logMask = LogMasks.SKIP;
+}
+
+export function LogMask(mask: LogMasks) {
+  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+    const curParam = associateParameterWithExternal(
+      LOGGER,
+      target,
+      undefined,
+      propertyKey.toString(),
+      undefined,
+      parameterIndex,
+    ) as LoggerArgInfo;
+
+    curParam.logMask = mask;
+  };
+}
+
+function generateSaltedHash(data: string, salt: string): string {
+  const hash = crypto.createHash('sha256'); // You can use other algorithms like 'md5', 'sha512', etc.
+  hash.update(data + salt);
+  return hash.digest('hex');
+}
+
+function getLoggerArgInfo(param: MethodParameter) {
+  const valInfo = param.getRegisteredInfo(LOGGER) as LoggerArgInfo;
+  return {
+    logMask: valInfo.logMask ?? LogMasks.NONE,
+  };
+}
+
+class LoggingInserter extends DBOSMethodMiddlewareInserter {
+  installMiddleware(methReg: MethodRegistrationBase): void {
+    methReg.addEntryInterceptor(logMethodArgs, 30);
+  }
+}
+
+const logInserter = new LoggingInserter();
+registerMiddlewareInserter(logInserter);
+
+export function logMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args) {
+  // Argument logging
+  args.forEach((argValue, idx) => {
+    if (idx === 0 && methReg.passContext) {
+      return;
+    }
+
+    let loggedArgValue = argValue;
+    const logMask = getLoggerArgInfo(methReg.args[idx]).logMask;
+
+    if (logMask === LogMasks.SKIP) {
+      return;
+    } else {
+      if (logMask !== LogMasks.NONE) {
+        // For now this means hash
+        if (methReg.args[idx].dataType?.dataType === 'json') {
+          loggedArgValue = generateSaltedHash(JSON.stringify(argValue), 'JSONSALT');
+        } else {
+          // Yes, we are doing the same as above for now.
+          // It can be better if we have verified the type of the data
+          loggedArgValue = generateSaltedHash(JSON.stringify(argValue), 'DBOSSALT');
+        }
+      }
+      DBOS.span?.setAttribute(methReg.args[idx].name, loggedArgValue as string);
+    }
+  });
+
+  return args;
+}
+
+function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args) {
   const validationError = (msg: string) => {
     const err = new DBOSDataValidationError(msg);
     DBOS.span?.addEvent('DataValidationError', { message: err.message });

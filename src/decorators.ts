@@ -1,6 +1,5 @@
 import 'reflect-metadata';
 
-import * as crypto from 'crypto';
 import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
 import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, HTTPRequest } from './context';
@@ -238,12 +237,6 @@ function getArgNames(func: Function): string[] {
   return args;
 }
 
-export enum LogMasks {
-  NONE = 'NONE',
-  HASH = 'HASH',
-  SKIP = 'SKIP',
-}
-
 export interface ArgDataType {
   dataType?: DBOSDataType; // Also a very simplistic data type format... for native scalars or JSON
 }
@@ -251,7 +244,6 @@ export interface ArgDataType {
 export class MethodParameter {
   name: string = '';
   index: number = -1;
-  logMask: LogMasks = LogMasks.NONE;
 
   externalRegInfo: Map<AnyConstructor | object | string, object> = new Map();
 
@@ -672,12 +664,6 @@ export function getOrCreateMethodArgsRegistration(
   return mParameters;
 }
 
-function generateSaltedHash(data: string, salt: string): string {
-  const hash = crypto.createHash('sha256'); // You can use other algorithms like 'md5', 'sha512', etc.
-  hash.update(data + salt);
-  return hash.digest('hex');
-}
-
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   target: object | undefined,
   className: string | undefined,
@@ -782,32 +768,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       for (const vf of methReg.onEnter) {
         validatedArgs = vf.func(methReg, validatedArgs) as Args;
       }
-
-      // Argument logging
-      validatedArgs.forEach((argValue, idx) => {
-        let isCtx = false;
-        if (idx === 0 && passContext) {
-          opCtx = validatedArgs[0] as DBOSContextImpl;
-          isCtx = true;
-        }
-
-        let loggedArgValue = argValue;
-        if (isCtx || methReg.args[idx].logMask === LogMasks.SKIP) {
-          return;
-        } else {
-          if (methReg.args[idx].logMask !== LogMasks.NONE) {
-            // For now this means hash
-            if (methReg.args[idx].dataType?.dataType === 'json') {
-              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), 'JSONSALT');
-            } else {
-              // Yes, we are doing the same as above for now.
-              // It can be better if we have verified the type of the data
-              loggedArgValue = generateSaltedHash(JSON.stringify(argValue), 'DBOSSALT');
-            }
-          }
-          opCtx?.span.setAttribute(methReg.args[idx].name, loggedArgValue as string);
-        }
-      });
 
       return methReg.origFunction.call(this, ...validatedArgs);
     };
@@ -1099,22 +1059,6 @@ export function getRegistrationsForExternal(
 //////////////////////////
 /* PARAMETER DECORATORS */
 //////////////////////////
-
-export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
-  const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
-
-  const curParam = existingParameters[parameterIndex];
-  curParam.logMask = LogMasks.SKIP;
-}
-
-export function LogMask(mask: LogMasks) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
-
-    const curParam = existingParameters[parameterIndex];
-    curParam.logMask = mask;
-  };
-}
 
 export function ArgName(name: string) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {

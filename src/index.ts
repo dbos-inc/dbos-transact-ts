@@ -54,22 +54,14 @@ export {
   DBOSInitializer,
   RequiredRole,
 
-  // Class Instances
-  ConfiguredInstance,
-} from './decorators';
-
-// Items under redesign for v3
-
-export {
-  LogMasks,
-
-  // Parameter Decorators
-  SkipLogging,
-  LogMask,
-  ArgName,
-
   // Class Decorators
   DefaultRequiredRole,
+
+  // Class Instances
+  ConfiguredInstance,
+
+  // Parameter Decorators
+  ArgName,
 
   // ORM Class Decorators
   OrmEntities,
@@ -83,6 +75,9 @@ export {
   DefaultArgRequired,
   DefaultArgOptional,
   DefaultArgValidate,
+  LogMask,
+  LogMasks,
+  SkipLogging,
   requestArgValidation,
 } from './paramdecorators';
 
