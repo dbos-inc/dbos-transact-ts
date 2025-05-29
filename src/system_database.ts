@@ -670,8 +670,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async destroy() {
     await this.knexDB.destroy();
     if (this.notificationsClient) {
-      this.notificationsClient.removeAllListeners();
-      this.notificationsClient.release();
+      try {
+        this.notificationsClient.removeAllListeners();
+        this.notificationsClient.release();
+      } catch (e) {
+        this.logger.warn(`Error releasing notifications client: ${String(e)}`);
+      }
     }
     await this.pool.end();
   }
