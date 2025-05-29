@@ -95,7 +95,8 @@ export interface DBOSExecutorContext {
   procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   /**
-   * Send a messsage to workflow with a given ID.  Note that `DBOS.send` can be used instead.
+   * Send a messsage to workflow with a given ID.
+   * @deprecated `DBOS.send` can be used instead.
    * @param destinationID - ID of workflow to receive the message
    * @param message - Message
    * @param topic - Topic for message
@@ -103,9 +104,15 @@ export interface DBOSExecutorContext {
    * @template T - Type of object to send
    */
   send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void>;
-  /** Get an event set by a workflow.  Note that `DBOS.getEvent` can be used instead. */
+  /**
+   * Get an event set by a workflow.
+   * @deprecated Note that `DBOS.getEvent` can be used instead.
+   */
   getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
-  /** Retrieve a workflow handle given the workflow ID.  Note that `DBOS.retrieveWorkflow` can be used instead */
+  /**
+   * Retrieve a workflow handle given the workflow ID.
+   * @deprecated Note that `DBOS.retrieveWorkflow` can be used instead
+   */
   retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R>;
   /** @deprecated Use functions on `DBOS` */
   getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null>;
@@ -129,14 +136,14 @@ export interface DBOSExecutorContext {
   ): Promise<string>;
 
   // Event receiver state queries / updates
-  /** @see DBOS.getEventDispatchState */
+  /** @deprecated see DBOS.getEventDispatchState */
   getEventDispatchState(
     service: string,
     workflowFnName: string,
     key: string,
   ): Promise<DBOSEventReceiverState | undefined>;
 
-  /** @see DBOS.upsertEventDispatchState */
+  /** @deprecated see DBOS.upsertEventDispatchState */
   upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
 
   /** @deprecated Use `DBOS.queryUserDB` */
