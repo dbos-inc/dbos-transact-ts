@@ -119,6 +119,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
     return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
       const curParam = DBOS.associateParamWithInfo(
         DBOSHTTP,
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         Object.getOwnPropertyDescriptor(target, propertyKey)!.value,
         {
           classOrInst: target,
