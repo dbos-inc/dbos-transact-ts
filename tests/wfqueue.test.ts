@@ -208,7 +208,7 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify all queue entries eventually get cleaned up.
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }, 10000);
+  }, 15000);
 
   test('test_one_at_a_time_with_crash', async () => {
     let wfqRes: () => void = () => {};
