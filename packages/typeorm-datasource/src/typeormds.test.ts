@@ -117,12 +117,13 @@ describe('decoratorless-api-tests', () => {
       expect(res).toBe('My first tx result|Tx2 result');
     });
 
-    /* const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
+    /* Needs discussion
+    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(wfsteps.length).toBe(2);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('MyFirstTx');
     expect(wfsteps[1].functionID).toBe(1);
-    expect(wfsteps[1].name).toBe('MySecondTx'); */
+    expect(wfsteps[1].name).toBe('MySecondTx');  */
   });
 
   test('decorated-tx-wf-functions', async () => {
@@ -133,7 +134,8 @@ describe('decoratorless-api-tests', () => {
       expect(res).toBe('My decorated tx result');
     });
 
-    /* const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
+    /* Needs discussion
+    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('tx'); */
