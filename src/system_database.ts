@@ -553,6 +553,7 @@ function dbRetry(
             // Increase backoff for next attempt (exponential)
             backoff = Math.min(backoff * 2, maxBackoff);
           } else {
+            console.error('UNEXPECTED ERROR', e);
             throw e;
           }
         }
