@@ -554,6 +554,7 @@ function dbRetry(
             backoff = Math.min(backoff * 2, maxBackoff);
           } else {
             console.error('UNEXPECTED ERROR', e);
+            console.log(`UNEXPECTED ERROR STRING ${String(e)}`);
             throw e;
           }
         }
