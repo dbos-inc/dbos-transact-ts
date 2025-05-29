@@ -392,7 +392,6 @@ async function main5() {
   expect(res).toBe('done');
 
   const wfs = await DBOS.listWorkflows({ workflowName: 'doWorkflow' });
-  expect(wfs.length).toBeGreaterThanOrEqual(1);
   expect(wfs.length).toBe(1);
   const wfstat = await DBOS.getWorkflowStatus(wfs[0].workflowID);
   expect(wfstat?.queueName).toBe('wfq');

@@ -1590,10 +1590,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const schemaName = DBOSExecutor.systemDBSchemaName;
 
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`).orderBy(
-      `${schemaName}.workflow_status.created_at`,
-      sortDesc ? 'desc' : 'asc',
-    );
+    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
+      .whereNotNull(`${schemaName}.workflow_status.queue_name`)
+      .whereIn(`${schemaName}.workflow_status.status`, [StatusString.ENQUEUED, StatusString.PENDING])
+      .orderBy(`${schemaName}.workflow_status.created_at`, sortDesc ? 'desc' : 'asc');
 
     if (input.workflowName) {
       query = query.where(`${schemaName}.workflow_status.name`, input.workflowName);

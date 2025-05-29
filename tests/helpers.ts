@@ -73,9 +73,9 @@ export async function setUpDBOSTestDb(cfg: DBOSConfig) {
   });
   try {
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database} WITH (FORCE);`);
     await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database} WITH (FORCE);`);
     await pgSystemClient.end();
   } catch (e) {
     if (e instanceof AggregateError) {
@@ -132,9 +132,8 @@ export async function queueEntriesAreCleanedUp() {
   let maxTries = 10;
   let success = false;
   while (maxTries > 0) {
-    const enqueued_tasks = await DBOS.listQueuedWorkflows({ status: 'ENQUEUED' });
-    const pending_tasks = await DBOS.listQueuedWorkflows({ status: 'PENDING' });
-    if (enqueued_tasks.length === 0 && pending_tasks.length === 0) {
+    const qtasks = await DBOS.listQueuedWorkflows({});
+    if (qtasks.length === 0) {
       success = true;
       break;
     }
