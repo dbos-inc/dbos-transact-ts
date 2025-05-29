@@ -577,11 +577,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.pool = new Pool(this.systemPoolConfig);
 
     this.pool.on('error', (err: Error) => {
-      console.error('Unexpected error in pool', err);
+      this.logger.warn(`Unexpected error in pool: ${err}`);
     });
     this.pool.on('connect', (client: PoolClient) => {
-      client.on('error', (err) => {
-        console.error('Unexpected error in idle client:', err);
+      client.on('error', (err: Error) => {
+        this.logger.warn(`Unexpected error in idle client: ${err}`);
       });
     });
     const knexConfig = {
@@ -1504,22 +1504,38 @@ export class PostgresSystemDatabase implements SystemDatabase {
    * workflow listener by resolving its promise.
    */
   async #listenForNotifications() {
-    this.notificationsClient = await this.pool.connect();
-    await this.notificationsClient.query('LISTEN dbos_notifications_channel;');
-    await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
-    const handler = (msg: Notification) => {
-      if (!this.shouldUseDBNotifications) return; // Testing parameter
-      if (msg.channel === 'dbos_notifications_channel') {
-        if (msg.payload) {
-          this.notificationsMap.callCallbacks(msg.payload);
-        }
-      } else if (msg.channel === 'dbos_workflow_events_channel') {
-        if (msg.payload) {
-          this.workflowEventsMap.callCallbacks(msg.payload);
-        }
+    const connect = async () => {
+      try {
+        this.notificationsClient = await this.pool.connect();
+        await this.notificationsClient.query('LISTEN dbos_notifications_channel;');
+        await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
+
+        const handler = (msg: Notification) => {
+          if (!this.shouldUseDBNotifications) return;
+          if (msg.channel === 'dbos_notifications_channel' && msg.payload) {
+            this.notificationsMap.callCallbacks(msg.payload);
+          } else if (msg.channel === 'dbos_workflow_events_channel' && msg.payload) {
+            this.workflowEventsMap.callCallbacks(msg.payload);
+          }
+        };
+
+        this.notificationsClient.on('notification', handler);
+        const restarted = { restarted: false };
+        this.notificationsClient.on('error', async (err: Error) => {
+          if (!restarted['restarted']) {
+            restarted['restarted'] = true;
+            this.logger.warn(`Error in notifications client: ${err}`);
+            await new Promise((resolve) => setTimeout(resolve, 1000));
+            await connect();
+          }
+        });
+      } catch (error) {
+        this.logger.warn(`Error in notifications listener: ${String(error)}`);
+        setTimeout(connect, 1000);
       }
     };
-    this.notificationsClient.on('notification', handler);
+
+    await connect();
   }
 
   // Event dispatcher queries / updates
