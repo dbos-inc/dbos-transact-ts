@@ -1531,6 +1531,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         });
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
+        try {
+          this.notificationsClient?.release();
+        } catch (error) {
+          this.logger.warn(`Error releasing notifications client: ${String(error)}`);
+        }
         setTimeout(connect, 1000);
       }
     };

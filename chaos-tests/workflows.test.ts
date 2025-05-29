@@ -80,7 +80,7 @@ describe('chaos-tests', () => {
   }
 
   test('test-recv', async () => {
-    const numWorkflows = 1000;
+    const numWorkflows = 5000;
     for (let i = 0; i < numWorkflows; i++) {
       const handle = await DBOS.startWorkflow(TestRecv).recvWorkflow();
       const value = String(randomUUID());
