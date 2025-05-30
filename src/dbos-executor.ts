@@ -1169,6 +1169,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
       let txn_snapshot = 'invalid';
+      let prevResultFound = false;
       const workflowUUID = wfCtx.workflowUUID;
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
         const tCtxt = new TransactionContextImpl(
@@ -1191,6 +1192,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           prevResult = executionResult.result;
           txn_snapshot = executionResult.txn_snapshot;
           if (prevResult !== dbosNull) {
+            prevResultFound = true;
             tCtxt.span.setAttribute('cached', true);
 
             if (this.debugMode === DebugMode.TIME_TRAVEL) {
@@ -1286,7 +1288,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         return result;
       } catch (err) {
         const e: Error = err as Error;
-        if (!this.debugMode && !(e instanceof DBOSUnexpectedStepError)) {
+        if (!prevResultFound && !this.debugMode && !(e instanceof DBOSUnexpectedStepError)) {
           if (this.userDatabase.isRetriableTransactionError(err)) {
             // serialization_failure in PostgreSQL
             span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
