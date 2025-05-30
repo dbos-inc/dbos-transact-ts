@@ -163,7 +163,7 @@ export class DBOSKoa extends DBOSHTTPBase {
       const httpmethod = methodConfig as DBOSHTTPMethodInfo;
 
       for (const ro of httpmethod?.registrations ?? []) {
-        // TODO: What about instance methods?
+        // What about instance methods?
         //   Those would have to be registered another way that accepted the instances.
         if (methodReg.isInstance) {
           DBOS.logger.warn(
@@ -174,7 +174,6 @@ export class DBOSKoa extends DBOSHTTPBase {
 
         // Apply CORS, bodyParser, and other middlewares
         // Check if we need to apply a custom CORS
-        // TODO give this the right home...
         if (defaults.koaCors) {
           appRouter.all(ro.apiURL, defaults.koaCors); // Use router.all to register with all methods including preflight requests
         } else {

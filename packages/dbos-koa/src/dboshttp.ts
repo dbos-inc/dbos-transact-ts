@@ -1,4 +1,5 @@
 import { IncomingHttpHeaders } from 'http';
+import { ParsedUrlQuery } from 'querystring';
 import { randomUUID } from 'node:crypto';
 
 import {
@@ -42,6 +43,25 @@ export interface DBOSHTTPArgInfo {
   argSource?: ArgSources;
 }
 
+/**
+ * HTTPRequest includes useful information from http.IncomingMessage and parsed body,
+ *   URL parameters, and parsed query string.
+ * In essence, it is the serializable part of the request.
+ */
+export interface DBOSHTTPRequest {
+  readonly headers?: IncomingHttpHeaders; // A node's http.IncomingHttpHeaders object.
+  readonly rawHeaders?: string[]; // Raw headers.
+  readonly params?: unknown; // Parsed path parameters from the URL.
+  readonly body?: unknown; // parsed HTTP body as an object.
+  readonly rawBody?: string; // Unparsed raw HTTP body string.
+  readonly query?: ParsedUrlQuery; // Parsed query string.
+  readonly querystring?: string; // Unparsed raw query string.
+  readonly url?: string; // Request URL.
+  readonly method?: string; // Request HTTP method.
+  readonly ip?: string; // Request remote address.
+  readonly requestID?: string; // Request ID. Gathered from headers or generated if missing.
+}
+
 export const DBOSHTTP = 'dboshttp';
 
 export const WorkflowIDHeader = 'dbos-idempotency-key';
@@ -69,6 +89,14 @@ export interface DBOSHTTPConfig {
 
 export class DBOSHTTPBase extends DBOSLifecycleCallback {
   static HTTP_OPERATION_TYPE: string = 'http';
+
+  static get httpRequest(): DBOSHTTPRequest {
+    const req = DBOS.requestObject();
+    if (req === undefined) {
+      throw new TypeError('`DBOSHTTP.httpRequest` accessed from outside of HTTP requests');
+    }
+    return req as DBOSHTTPRequest;
+  }
 
   httpApiDec(verb: APITypes, url: string) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias

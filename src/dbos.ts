@@ -646,9 +646,14 @@ export class DBOS {
     return undefined;
   }
 
+  /** Get the current request object (such as an HTTP request) */
+  static requestObject(): object | undefined {
+    return getCurrentDBOSContext()?.request;
+  }
+
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
   static getRequest(): HTTPRequest | undefined {
-    return getCurrentDBOSContext()?.request as HTTPRequest | undefined;
+    return this.requestObject() as HTTPRequest | undefined;
   }
 
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
