@@ -100,6 +100,8 @@ describe('recovery-tests', () => {
 
     @DBOS.transaction()
     static async errorTransaction(message: string) {
+      // simulate async work to make linter happy
+      await Promise.resolve();
       throw new Error(message);
     }
 
