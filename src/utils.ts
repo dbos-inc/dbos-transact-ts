@@ -8,7 +8,8 @@ export function readFileSync(path: string, encoding: BufferEncoding = 'utf8'): s
   return fs.readFileSync(path, { encoding });
 }
 
-const packageJson = require('../../package.json') as { version: string };
+const packageJsonPath = path.join(findPackageRoot(__dirname), 'package.json');
+const packageJson = require(packageJsonPath) as { version: string };
 
 export const globalParams = {
   appVersion: process.env.DBOS__APPVERSION || '', // The one true source of appVersion
