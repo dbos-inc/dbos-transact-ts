@@ -17,7 +17,7 @@ import {
   workflow_events,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME } from './utils';
+import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
 import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
@@ -494,6 +494,94 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
   };
 }
 
+function retriablePostgresException(e: unknown): boolean {
+  // Recurse into AggregateErrors of various types
+  if (e && typeof e === 'object' && 'errors' in e && Array.isArray((e as { errors: unknown }).errors)) {
+    return (e as { errors: unknown[] }).errors.some((error: unknown) => retriablePostgresException(error));
+  }
+  // For Postgres errors, check the code
+  if (e instanceof DatabaseError && e.code) {
+    // Operator intervention
+    if (e.code.startsWith('57')) {
+      return true;
+    }
+    // Insufficent resources
+    if (e.code.startsWith('53')) {
+      return true;
+    }
+    // Connection exception
+    if (e.code.startsWith('08')) {
+      return true;
+    }
+  }
+  // Otherwise, check for network issues in the string
+  const errorString = e instanceof Error ? e.stack || e.message : String(e);
+  if (errorString.includes('ECONNREFUSED')) {
+    return true;
+  }
+  if (errorString.includes('ECONNRESET')) {
+    return true;
+  }
+  if (errorString.toLowerCase().includes('connection timeout')) {
+    return true;
+  }
+  if (errorString.toLowerCase().includes('connection terminated unexpectedly')) {
+    return true;
+  }
+  if (errorString.toLowerCase().includes('client has encountered a connection error')) {
+    return true;
+  }
+  return false;
+}
+
+/**
+ * If a workflow encounters a database connection issue while performing an operation,
+ * block the workflow and retry the operation until it reconnects and succeeds.
+ * In other words, if DBOS loses its database connection, everything pauses until the connection is recovered,
+ * trading off availability for correctness.
+ */
+function dbRetry(
+  options: {
+    initialBackoff?: number;
+    maxBackoff?: number;
+  } = {},
+) {
+  const { initialBackoff = 1.0, maxBackoff = 60.0 } = options;
+  return function <T extends (...args: never[]) => Promise<unknown>>(
+    target: unknown,
+    propertyName: string,
+    descriptor: TypedPropertyDescriptor<T>,
+  ): TypedPropertyDescriptor<T> {
+    const method = descriptor.value!;
+    descriptor.value = async function (this: never, ...args: never): Promise<unknown> {
+      let retries = 0;
+      let backoff = initialBackoff;
+      while (true) {
+        try {
+          return await method.apply(this, args);
+        } catch (e) {
+          if (retriablePostgresException(e)) {
+            retries++;
+            // Calculate backoff with jitter
+            const actualBackoff = backoff * (0.5 + Math.random());
+            DBOSExecutor.globalInstance?.logger.warn(
+              `Database connection failed: ${e instanceof Error ? e.message : String(e)}. ` +
+                `Retrying in ${actualBackoff.toFixed(2)}s (attempt ${retries})`,
+            );
+            // Sleep with backoff
+            await sleepms(actualBackoff * 1000); // Convert to milliseconds
+            // Increase backoff for next attempt (exponential)
+            backoff = Math.min(backoff * 2, maxBackoff);
+          } else {
+            throw e;
+          }
+        }
+      }
+    } as T;
+    return descriptor;
+  };
+}
+
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
@@ -518,7 +606,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
    *   The real problem is, if the pipes out of the server are full... then notifications can be
    *     dropped, and only the PG server log may note it.  For those reasons, we do occasional polling
    */
-  notificationsClient: PoolClient | null = null;
+  notificationsClient: Client | null = null;
   dbPollingIntervalResultMs: number = 1000;
   dbPollingIntervalEventMs: number = 10000;
   shouldUseDBNotifications: boolean = true;
@@ -546,6 +634,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
       application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
     };
     this.pool = new Pool(this.systemPoolConfig);
+
+    this.pool.on('error', (err: Error) => {
+      this.logger.warn(`Unexpected error in pool: ${err}`);
+    });
+    this.pool.on('connect', (client: PoolClient) => {
+      client.on('error', (err: Error) => {
+        this.logger.warn(`Unexpected error in idle client: ${err}`);
+      });
+    });
     const knexConfig = {
       client: 'pg',
       connection: this.systemPoolConfig,
@@ -592,9 +689,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async destroy() {
     await this.knexDB.destroy();
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
     if (this.notificationsClient) {
-      this.notificationsClient.removeAllListeners();
-      this.notificationsClient.release();
+      try {
+        this.notificationsClient.removeAllListeners();
+        await this.notificationsClient.end();
+      } catch (e) {
+        this.logger.warn(`Error ending notifications client: ${String(e)}`);
+      }
     }
     await this.pool.end();
   }
@@ -613,6 +717,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await pgSystemClient.end();
   }
 
+  @dbRetry()
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     maxRetries?: number,
@@ -652,14 +757,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       const status = resRow.status;
       const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
-
       return { status, deadlineEpochMS };
     } finally {
-      await client.query('COMMIT');
-      client.release();
+      try {
+        await client.query('COMMIT');
+      } finally {
+        client.release();
+      }
     }
   }
 
+  @dbRetry()
   async recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -671,6 +779,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -723,6 +832,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async getOperationResultAndThrowIfCancelled(
     workflowID: string,
     functionID: number,
@@ -743,6 +853,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows;
   }
 
+  @dbRetry()
   async recordOperationResult(
     workflowID: string,
     functionID: number,
@@ -847,6 +958,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return output;
   }
 
+  @dbRetry()
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
     let resolveNotification: () => void;
     const cancelPromise = new Promise<void>((resolve) => {
@@ -906,6 +1018,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   readonly nullTopic = '__null__topic__';
 
+  @dbRetry()
   async send(
     workflowID: string,
     functionID: number,
@@ -916,8 +1029,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     topic = topic ?? this.nullTopic;
     const client: PoolClient = await this.pool.connect();
 
-    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
         await client.query(
           `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
@@ -940,6 +1053,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async recv(
     workflowID: string,
     functionID: number,
@@ -1061,6 +1175,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return message;
   }
 
+  // Only used in tests
+  async setWorkflowStatus(
+    workflowID: string,
+    status: (typeof StatusString)[keyof typeof StatusString],
+    resetRecoveryAttempts: boolean,
+  ): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await updateWorkflowStatus(client, workflowID, status, { update: { resetRecoveryAttempts } });
+    } finally {
+      client.release();
+    }
+  }
+
+  @dbRetry()
   async setEvent(workflowID: string, functionID: number, key: string, message: string | null): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
@@ -1087,6 +1216,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async getEvent(
     workflowID: string,
     key: string,
@@ -1201,19 +1331,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return value;
   }
 
-  async setWorkflowStatus(
-    workflowID: string,
-    status: (typeof StatusString)[keyof typeof StatusString],
-    resetRecoveryAttempts: boolean,
-  ): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await updateWorkflowStatus(client, workflowID, status, { update: { resetRecoveryAttempts } });
-    } finally {
-      client.release();
-    }
-  }
-
   #setWFCancelMap(workflowID: string) {
     if (this.runningWorkflowMap.has(workflowID)) {
       this.workflowCancellationMap.set(workflowID, true);
@@ -1272,6 +1389,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async checkIfCanceled(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
     try {
@@ -1350,6 +1468,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async getWorkflowStatus(
     workflowID: string,
     callerID?: string,
@@ -1380,6 +1499,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
+  @dbRetry()
   async awaitWorkflowResult(
     workflowID: string,
     timeoutSeconds?: number,
@@ -1468,26 +1588,57 @@ export class PostgresSystemDatabase implements SystemDatabase {
    * A background process that listens for notifications from Postgres then signals the appropriate
    * workflow listener by resolving its promise.
    */
+  reconnectTimeout: NodeJS.Timeout | null = null;
+
   async #listenForNotifications() {
-    this.notificationsClient = await this.pool.connect();
-    await this.notificationsClient.query('LISTEN dbos_notifications_channel;');
-    await this.notificationsClient.query('LISTEN dbos_workflow_events_channel;');
-    const handler = (msg: Notification) => {
-      if (!this.shouldUseDBNotifications) return; // Testing parameter
-      if (msg.channel === 'dbos_notifications_channel') {
-        if (msg.payload) {
-          this.notificationsMap.callCallbacks(msg.payload);
+    const connect = async () => {
+      const reconnect = () => {
+        if (this.reconnectTimeout) {
+          return;
         }
-      } else if (msg.channel === 'dbos_workflow_events_channel') {
-        if (msg.payload) {
-          this.workflowEventsMap.callCallbacks(msg.payload);
-        }
+        this.reconnectTimeout = setTimeout(async () => {
+          this.reconnectTimeout = null;
+          await connect();
+        }, 1000);
+      };
+
+      let client: Client | null = null;
+      try {
+        client = new Client(this.systemPoolConfig);
+        await client.connect();
+        await client.query('LISTEN dbos_notifications_channel;');
+        await client.query('LISTEN dbos_workflow_events_channel;');
+
+        const handler = (msg: Notification) => {
+          if (!this.shouldUseDBNotifications) return;
+          if (msg.channel === 'dbos_notifications_channel' && msg.payload) {
+            this.notificationsMap.callCallbacks(msg.payload);
+          } else if (msg.channel === 'dbos_workflow_events_channel' && msg.payload) {
+            this.workflowEventsMap.callCallbacks(msg.payload);
+          }
+        };
+
+        client.on('notification', handler);
+        client.on('error', async (err: Error) => {
+          this.logger.warn(`Error in notifications client: ${err}`);
+          client!.removeAllListeners();
+          await client!.end();
+          reconnect();
+        });
+        this.notificationsClient = client;
+      } catch (error) {
+        this.logger.warn(`Error in notifications listener: ${String(error)}`);
+        client!.removeAllListeners();
+        await client!.end();
+        reconnect();
       }
     };
-    this.notificationsClient.on('notification', handler);
+
+    await connect();
   }
 
   // Event dispatcher queries / updates
+  @dbRetry()
   async getEventDispatchState(
     service: string,
     workflowName: string,
@@ -1514,6 +1665,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
+  @dbRetry()
   async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
     const res = await this.pool.query<event_dispatch_kv>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv (
