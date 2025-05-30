@@ -689,12 +689,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async destroy() {
     await this.knexDB.destroy();
+    if (this.reconnectTimeout) {
+      clearTimeout(this.reconnectTimeout);
+    }
     if (this.notificationsClient) {
       try {
         this.notificationsClient.removeAllListeners();
         await this.notificationsClient.end();
       } catch (e) {
-        this.logger.warn(`Error releasing notifications client: ${String(e)}`);
+        this.logger.warn(`Error ending notifications client: ${String(e)}`);
       }
     }
     await this.pool.end();
@@ -1585,8 +1588,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
    * A background process that listens for notifications from Postgres then signals the appropriate
    * workflow listener by resolving its promise.
    */
+  reconnectTimeout: NodeJS.Timeout | null = null;
+
   async #listenForNotifications() {
     const connect = async () => {
+      const reconnect = () => {
+        if (this.reconnectTimeout) {
+          return;
+        }
+        this.reconnectTimeout = setTimeout(async () => {
+          this.reconnectTimeout = null;
+          await connect();
+        }, 1000);
+      };
+
       let client: Client | null = null;
       try {
         client = new Client(this.systemPoolConfig);
@@ -1604,23 +1619,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
         };
 
         client.on('notification', handler);
-        const restarted = { restarted: false };
         client.on('error', async (err: Error) => {
-          if (!restarted['restarted']) {
-            restarted['restarted'] = true;
-            await client!.end();
-            this.logger.warn(`Error in notifications client: ${err}`);
-            await new Promise((resolve) => setTimeout(resolve, 1000));
-            await connect();
-          }
+          this.logger.warn(`Error in notifications client: ${err}`);
+          client!.removeAllListeners();
+          await client!.end();
+          reconnect();
         });
         this.notificationsClient = client;
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
-        if (client) {
-          await client.end();
-        }
-        setTimeout(connect, 1000);
+        client!.removeAllListeners();
+        await client!.end();
+        reconnect();
       }
     };
 
