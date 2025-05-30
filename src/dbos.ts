@@ -615,7 +615,6 @@ export class DBOS {
   //////
   static #dbosConfig?: DBOSConfig;
   static #runtimeConfig?: DBOSRuntimeConfig = undefined;
-  static #invokeWrappers: Map<unknown, unknown> = new Map();
 
   static get dbosConfig(): DBOSConfig | undefined {
     return DBOS.#dbosConfig;
@@ -646,7 +645,11 @@ export class DBOS {
     return undefined;
   }
 
-  /** Get the current request object (such as an HTTP request) */
+  /**
+   * Get the current request object (such as an HTTP request)
+   * This is intended for use in event libraries that know the type of the current request,
+   *  and set it using `withTracedContext` or `runWithContext`
+   */
   static requestObject(): object | undefined {
     return getCurrentDBOSContext()?.request;
   }
