@@ -84,6 +84,7 @@ class ValidationInserter extends DBOSMethodMiddlewareInserter {
     }
   }
 }
+
 const valInserter = new ValidationInserter();
 
 export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {

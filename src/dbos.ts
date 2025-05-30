@@ -49,14 +49,16 @@ import {
   associateClassWithExternal,
   associateMethodWithExternal,
   associateParameterWithExternal,
+  ClassAuthDefaults,
   configureInstance,
+  DBOS_AUTH,
   getLifecycleListeners,
-  getOrCreateClassRegistration,
   getRegisteredOperations,
   getRegistrationForFunction,
   getRegistrationsForExternal,
   getTransactionalDataSource,
   insertAllMiddleware,
+  MethodAuth,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
@@ -111,6 +113,7 @@ import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { registerAuthChecker } from './authdecorators';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -2512,8 +2515,9 @@ export class DBOS {
   static defaultRequiredRole(anyOf: string[]) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
-      const clsreg = getOrCreateClassRegistration(ctor);
+      const clsreg = associateClassWithExternal(DBOS_AUTH, ctor) as ClassAuthDefaults;
       clsreg.requiredRole = anyOf;
+      registerAuthChecker();
     }
     return clsdec;
   }
@@ -2529,10 +2533,14 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      registration.requiredRole = anyOf;
+      const rr = associateMethodWithExternal(DBOS_AUTH, target, undefined, propertyKey.toString(), inDescriptor.value!);
 
-      return descriptor;
+      (rr.regInfo as MethodAuth).requiredRole = anyOf;
+      registerAuthChecker();
+
+      inDescriptor.value = rr.registration.wrappedFunction ?? rr.registration.registeredFunction;
+
+      return inDescriptor;
     }
     return apidec;
   }
