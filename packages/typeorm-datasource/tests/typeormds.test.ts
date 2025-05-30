@@ -34,17 +34,9 @@ const typeOrmDS = new TypeOrmDS('app-db', poolconfig, [KV]);
 DBOS.registerDataSource(typeOrmDS);
 
 const dbosConfig = {
-  name: 'dbostest',
   databaseUrl: databaseUrl,
-  database: {
-    app_db_client: 'typeorm',
-  },
   poolConfig: poolconfig,
   system_database: 'typeorm_testdb_dbos_sys',
-  application: {
-    counter: 3,
-    shouldExist: 'exists',
-  },
   telemetry: {
     logs: {
       silent: true,
