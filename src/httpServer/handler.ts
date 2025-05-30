@@ -7,7 +7,7 @@ import {
   ConfiguredInstance,
 } from '../decorators';
 import { DBOSExecutor, OperationType } from '../dbos-executor';
-import { DBOSContext, DBOSContextImpl } from '../context';
+import { DBOSContext, DBOSContextImpl, HTTPRequest } from '../context';
 import Koa from 'koa';
 import {
   Workflow,
@@ -29,6 +29,7 @@ import { APITypes, ArgSources } from './handlerTypes';
 import { StoredProcedure } from '../procedure';
 import { WorkflowQueue } from '../wfqueue';
 import { getOrGenerateRequestID, RequestIDHeader } from './middleware';
+import { requestArgValidation } from '../paramdecorators';
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -146,7 +147,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       url: koaContext.request.url,
       ip: koaContext.request.ip,
       requestID: requestID,
-    };
+    } satisfies HTTPRequest;
     this.applicationConfig = dbosExec.config.application;
     this.#dbosExec = dbosExec;
   }
@@ -316,7 +317,7 @@ function generateApiDec(verb: APITypes, url: string) {
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
-    registration.performArgValidation = true;
+    requestArgValidation(registration);
 
     return descriptor;
   };
@@ -353,7 +354,7 @@ export function DeleteApi(url: string) {
 
 export function ArgSource(source: ArgSources) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
 
     const curParam = existingParameters[parameterIndex] as HandlerParameter;
     curParam.argSource = source;
