@@ -1607,8 +1607,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const restarted = { restarted: false };
         client.on('error', async (err: Error) => {
           if (!restarted['restarted']) {
-            await client!.end();
             restarted['restarted'] = true;
+            await client!.end();
             this.logger.warn(`Error in notifications client: ${err}`);
             await new Promise((resolve) => setTimeout(resolve, 1000));
             await connect();
