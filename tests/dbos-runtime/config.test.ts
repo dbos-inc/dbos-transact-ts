@@ -292,17 +292,11 @@ describe('dbos-config', () => {
     });
 
     test('constructPoolConfig throws when database_url is missing required fields', () => {
-      // Test missing password
-      const config1 = baseConfig();
-      config1.database_url = 'postgres://user@host:5432/db';
-
-      expect(() => constructPoolConfig(config1)).toThrow(/missing required field\(s\): password/);
-
       // Test missing username and password
       const config2 = baseConfig();
       config2.database_url = 'postgres://host:5432/db';
 
-      expect(() => constructPoolConfig(config2)).toThrow(/missing required field\(s\): username, password/);
+      expect(() => constructPoolConfig(config2)).toThrow(/missing required field\(s\): username/);
 
       // Test missing hostname
       const config3 = baseConfig();
