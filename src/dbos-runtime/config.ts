@@ -223,7 +223,6 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     // Validate required fields
     const missingFields: string[] = [];
     if (!url.username) missingFields.push('username');
-    if (!url.password) missingFields.push('password');
     if (!url.hostname) missingFields.push('hostname');
     if (!databaseName) missingFields.push('database name');
 

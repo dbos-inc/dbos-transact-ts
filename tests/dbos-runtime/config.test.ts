@@ -19,6 +19,7 @@ import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error
 import { DBOSExecutor, DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { WorkflowContextImpl } from '../../src/workflow';
 import { get } from 'lodash';
+import { DBOSClient } from '../../src';
 
 describe('dbos-config', () => {
   const mockCLIOptions = { port: NaN, loglevel: 'info' };
@@ -292,17 +293,11 @@ describe('dbos-config', () => {
     });
 
     test('constructPoolConfig throws when database_url is missing required fields', () => {
-      // Test missing password
-      const config1 = baseConfig();
-      config1.database_url = 'postgres://user@host:5432/db';
-
-      expect(() => constructPoolConfig(config1)).toThrow(/missing required field\(s\): password/);
-
       // Test missing username and password
       const config2 = baseConfig();
       config2.database_url = 'postgres://host:5432/db';
 
-      expect(() => constructPoolConfig(config2)).toThrow(/missing required field\(s\): username, password/);
+      expect(() => constructPoolConfig(config2)).toThrow(/missing required field\(s\): username/);
 
       // Test missing hostname
       const config3 = baseConfig();
@@ -1232,6 +1227,31 @@ describe('dbos-config', () => {
       expect(parseSSLConfig(dbConfig)).toEqual({
         rejectUnauthorized: false,
       });
+    });
+  });
+
+  describe('databaseUrl-no-password', () => {
+    test('No error when database_url is provided without password', async () => {
+      const expected_url = 'postgresql://postgres@localhost:5432/dbostest?sslmode=disable';
+      const config: DBOSConfig = {
+        name: 'test-app',
+        databaseUrl: expected_url,
+      };
+      const poolConfig = constructPoolConfig({
+        database: {},
+        database_url: expected_url,
+        application: {},
+        env: {},
+      });
+      expect(poolConfig.connectionString).toBe(expected_url);
+
+      // Make sure we can use it to construct a client and connect to the database without the password.
+      const client = await DBOSClient.create(expected_url);
+      try {
+        await expect(client.listQueuedWorkflows({})).resolves.toBeDefined();
+      } finally {
+        await client.destroy();
+      }
     });
   });
 });
