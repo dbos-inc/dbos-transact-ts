@@ -145,7 +145,6 @@ describe('decoratorless-api-tests', () => {
   });
 });
 
-@OrmEntities([KV])
 class KVController {
   @typeOrmDS.transaction()
   static async testTxn(id: string, value: string) {
