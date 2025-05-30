@@ -220,26 +220,26 @@ export function getExecutor() {
 }
 
 export function runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string, childWFID?: string): Promise<T> {
+  const executor = DBOSExecutor.globalInstance;
+  if (!executor) {
+    throw new DBOSExecutorNotInitializedError();
+  }
+
   if (DBOS.isWithinWorkflow()) {
     if (DBOS.isInStep()) {
       // OK to use directly
-      return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
+      return executor.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
     } else if (DBOS.isInWorkflow()) {
       const wfctx = assertCurrentWorkflowContext();
-      return DBOSExecutor.globalInstance!.runAsStep<T>(
-        callback,
-        funcName,
-        DBOS.workflowID,
-        wfctx.functionIDGetIncrement(),
-        childWFID,
-      );
+      return executor.runAsStep<T>(callback, funcName, DBOS.workflowID, wfctx.functionIDGetIncrement(), childWFID);
     } else {
       throw new DBOSInvalidWorkflowTransitionError(
         `Invalid call to \`${funcName}\` inside a \`transaction\` or \`procedure\``,
       );
     }
+  } else {
+    return executor.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
   }
-  return DBOSExecutor.globalInstance!.runAsStep<T>(callback, funcName, undefined, undefined, childWFID);
 }
 
 export class DBOS {
@@ -861,7 +861,7 @@ export class DBOS {
   // Workflow and other operations
   //////
 
-  static #runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string): Promise<T> {
+  static runAsWorkflowStep<T>(callback: () => Promise<T>, funcName: string): Promise<T> {
     return runAsWorkflowStep(callback, funcName);
   }
 
@@ -943,7 +943,7 @@ export class DBOS {
    * @deprecated Use `DBOS.listWorkflows` instead
    */
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await runAsWorkflowStep(async () => {
       const wfs = await DBOS.#executor.listWorkflows(input);
       return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
     }, 'DBOS.getWorkflows');
@@ -955,7 +955,7 @@ export class DBOS {
    * @returns `WorkflowStatus` array containing details of the matching workflows
    */
   static async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await runAsWorkflowStep(async () => {
       return await DBOS.#executor.listWorkflows(input);
     }, 'DBOS.listWorkflows');
   }
@@ -966,7 +966,7 @@ export class DBOS {
    * @returns `WorkflowStatus` array containing details of the matching workflows
    */
   static async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await runAsWorkflowStep(async () => {
       return await DBOS.#executor.listQueuedWorkflows(input);
     }, 'DBOS.listQueuedWorkflows');
   }
@@ -977,7 +977,7 @@ export class DBOS {
    * @returns `StepInfo` array listing the executed steps of the workflow. If the workflow is not found, `undefined` is returned.
    */
   static async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await runAsWorkflowStep(async () => {
       return await DBOS.#executor.listWorkflowSteps(workflowID);
     }, 'DBOS.listWorkflowSteps');
   }
@@ -989,7 +989,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async cancelWorkflow(workflowID: string): Promise<void> {
-    return await DBOS.#runAsWorkflowStep(async () => {
+    return await runAsWorkflowStep(async () => {
       return await DBOS.#executor.cancelWorkflow(workflowID);
     }, 'DBOS.cancelWorkflow');
   }
@@ -999,7 +999,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async resumeWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
-    await DBOS.#runAsWorkflowStep(async () => {
+    await runAsWorkflowStep(async () => {
       return await DBOS.#executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
     return this.retrieveWorkflow(workflowID);
@@ -1018,7 +1018,7 @@ export class DBOS {
     startStep: number,
     options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<WorkflowHandle<Awaited<T>>> {
-    const forkedID = await DBOS.#runAsWorkflowStep(async () => {
+    const forkedID = await runAsWorkflowStep(async () => {
       return await DBOS.#executor.forkWorkflow(workflowID, startStep, options);
     }, 'DBOS.forkWorkflow');
 
