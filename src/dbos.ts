@@ -648,7 +648,7 @@ export class DBOS {
 
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
   static getRequest(): HTTPRequest | undefined {
-    return getCurrentDBOSContext()?.request;
+    return getCurrentDBOSContext()?.request as HTTPRequest | undefined;
   }
 
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
@@ -1118,14 +1118,14 @@ export class DBOS {
    *   DBOS functions called within the `callback` function.
    * @param callerName - Tracing caller name
    * @param span - Tracing span
-   * @param request - HTTP request that initiated the call
+   * @param request - event context (such as HTTP request) that initiated the call
    * @param callback - Function to run with tracing context in place
    * @returns - Return value from `callback`
    */
   static async withTracedContext<R>(
     callerName: string,
     span: Span,
-    request: HTTPRequest,
+    request: object,
     callback: () => Promise<R>,
   ): Promise<R> {
     return DBOS.#withTopContext(

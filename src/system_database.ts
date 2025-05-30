@@ -18,7 +18,6 @@ import {
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
 import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME } from './utils';
-import { HTTPRequest } from './context';
 import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
 import path from 'path';
@@ -181,7 +180,7 @@ export interface WorkflowStatusInternal {
   input: string;
   assumedRole: string;
   authenticatedRoles: string[];
-  request: HTTPRequest;
+  request: object;
   executorId: string;
   applicationVersion?: string;
   applicationID: string;
@@ -479,7 +478,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     authenticatedUser: row.authenticated_user,
     assumedRole: row.assumed_role,
     authenticatedRoles: JSON.parse(row.authenticated_roles) as string[],
-    request: JSON.parse(row.request) as HTTPRequest,
+    request: JSON.parse(row.request) as object,
     executorId: row.executor_id,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
