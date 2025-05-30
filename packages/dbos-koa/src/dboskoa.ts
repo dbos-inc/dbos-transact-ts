@@ -13,7 +13,6 @@ import {
   ArgSources,
   DBOSHTTPAuthReturn,
   DBOSHTTPBase,
-  DBOSHTTPConfig,
   DBOSHTTPMethodInfo,
   getOrGenerateRequestID,
   isClientRequestError,
@@ -39,9 +38,13 @@ export interface DBOSKoaAuthContext {
  */
 export type DBOSKoaAuthMiddleware = (ctx: DBOSKoaAuthContext) => Promise<DBOSHTTPAuthReturn | void>;
 
-export type DBOSKoaConfig = DBOSHTTPConfig;
+export interface DBOSKoaConfig {
+  corsMiddleware?: boolean;
+  credentials?: boolean;
+  allowedOrigins?: string[];
+}
 
-interface DBOSHTTPClassReg {
+export interface DBOSKoaClassReg {
   authMiddleware?: DBOSKoaAuthMiddleware;
   koaBodyParser?: Koa.Middleware;
   koaCors?: Koa.Middleware;
@@ -80,7 +83,7 @@ export class DBOSKoa extends DBOSHTTPBase {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const er = this;
     function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSKoaClassReg;
       clsreg.authMiddleware = authMiddleware;
     }
     return clsdec;
@@ -90,7 +93,7 @@ export class DBOSKoa extends DBOSHTTPBase {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const er = this;
     function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSKoaClassReg;
       clsreg.koaBodyParser = koaBodyParser;
     }
     return clsdec;
@@ -100,7 +103,7 @@ export class DBOSKoa extends DBOSHTTPBase {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const er = this;
     function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSKoaClassReg;
       clsreg.koaCors = koaCors;
     }
     return clsdec;
@@ -118,7 +121,7 @@ export class DBOSKoa extends DBOSHTTPBase {
       }
     });
     function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSKoaClassReg;
       clsreg.koaMiddlewares = [...(clsreg.koaMiddlewares ?? []), ...koaMiddleware];
     }
     return clsdec;
@@ -138,7 +141,7 @@ export class DBOSKoa extends DBOSHTTPBase {
       }
     });
     function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSHTTPClassReg;
+      const clsreg = DBOS.associateClassWithInfo(er, ctor) as DBOSKoaClassReg;
       clsreg.koaGlobalMiddlewares = [...(clsreg.koaGlobalMiddlewares ?? []), ...koaMiddleware];
     }
     return clsdec;
@@ -159,7 +162,7 @@ export class DBOSKoa extends DBOSHTTPBase {
     const eps = DBOS.getAssociatedInfo(this);
     for (const e of eps) {
       const { methodConfig, classConfig, methodReg } = e;
-      const defaults = classConfig as DBOSHTTPClassReg;
+      const defaults = classConfig as DBOSKoaClassReg;
       const httpmethod = methodConfig as DBOSHTTPMethodInfo;
 
       for (const ro of httpmethod?.registrations ?? []) {

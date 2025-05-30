@@ -81,12 +81,6 @@ export function isClientRequestError(e: Error) {
   return DBOSErrors.isDataValidationError(e);
 }
 
-export interface DBOSHTTPConfig {
-  corsMiddleware?: boolean;
-  credentials?: boolean;
-  allowedOrigins?: string[];
-}
-
 export class DBOSHTTPBase extends DBOSLifecycleCallback {
   static HTTP_OPERATION_TYPE: string = 'http';
 

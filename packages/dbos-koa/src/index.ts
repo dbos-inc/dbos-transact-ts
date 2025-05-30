@@ -1,12 +1,14 @@
 export {
   ArgSources,
+  DBOSHTTP,
+  DBOSHTTPArgInfo,
   DBOSHTTPAuthReturn,
   DBOSHTTPBase,
-  DBOSHTTPConfig,
   DBOSHTTPMethodInfo,
   DBOSHTTPReg,
+  DBOSHTTPRequest,
   RequestIDHeader,
   WorkflowIDHeader,
 } from './dboshttp';
 
-export { DBOSKoa, DBOSKoaAuthContext, DBOSKoaAuthMiddleware, DBOSKoaConfig } from './dboskoa';
+export { DBOSKoa, DBOSKoaAuthContext, DBOSKoaClassReg, DBOSKoaAuthMiddleware, DBOSKoaConfig } from './dboskoa';
