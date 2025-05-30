@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { DBOS, OrmEntities } from '@dbos-inc/dbos-sdk';
-import { TypeOrmDS } from '../src/TypeOrmDataSource';
+import { TypeOrmDS } from '../src/typeorm_datasource';
 import { Entity, Column, PrimaryColumn, EntityManager } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
