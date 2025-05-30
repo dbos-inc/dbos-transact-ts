@@ -157,7 +157,7 @@ class KVController {
     return res.id;
   }
 
-  static async readTxn(id: string) {
+  static async readTxn(id: string): Promise<string> {
     const kvp = await TypeOrmDS.entityManager.findOneBy(KV, { id: id });
     return Promise.resolve(kvp?.value || '<Not Found>');
   }
@@ -167,6 +167,14 @@ class KVController {
     return await KVController.testTxn(id, value);
   }
 }
+
+const txFunc2 = DBOS.registerTransaction('app-db', KVController.readTxn, { name: 'explicitRegister' }, {});
+async function explicitWf(id: string): Promise<string> {
+  return await txFunc2(id);
+}
+const wfFunction2 = DBOS.registerWorkflow(explicitWf, {
+  name: 'explicitworkflow',
+});
 
 describe('typeorm-tests', () => {
   beforeAll(() => {
@@ -189,10 +197,8 @@ describe('typeorm-tests', () => {
   });
 
   test('typeorm-register', async () => {
-    /* const txFunc = DBOS.registerTransaction('app-db', KVController.readTxn, { name: 'MySecondTx' }, {});
-
-    await expect(KVController.readTxn('test')).resolves.toBe('<Not Found>');
-    await KVController.testTxn('test', 'value');
-    await expect(KVController.readTxn('test')).resolves.toBe('value'); */
+    await expect(wfFunction2('test')).resolves.toBe('<Not Found>');
+    await KVController.wf('test', 'value');
+    await expect(wfFunction2('test')).resolves.toBe('value');
   });
 });
