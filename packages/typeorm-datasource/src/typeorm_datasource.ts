@@ -137,7 +137,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     // return rows[1].output as any;
   }
 
-  async recordOutput<R>(client: DataSource, workflowID: string, funcNum: number, output: R): Promise<void> {
+  async #recordOutput<R>(client: DataSource, workflowID: string, funcNum: number, output: R): Promise<void> {
     const serialOutput = DBOSJSON.stringify(output);
     await client.query<{ rows: transaction_completion[] }>(
       `INSERT INTO dbos.transaction_completion (
@@ -150,7 +150,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     );
   }
 
-  async recordError<R>(client: DataSource, workflowID: string, funcNum: number, error: R): Promise<void> {
+  async #recordError<R>(client: DataSource, workflowID: string, funcNum: number, error: R): Promise<void> {
     const serialError = DBOSJSON.stringify(error);
     await client.query<{ rows: transaction_completion[] }>(
       `INSERT INTO dbos.transaction_completion (
@@ -215,11 +215,11 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
           // Save result
           try {
             if (!readOnly) {
-              await this.recordOutput(this.dataSource, wfid, funcnum, result);
+              await this.#recordOutput(this.dataSource, wfid, funcnum, result);
             }
           } catch (e) {
             const error = e as Error;
-            await this.recordError(this.dataSource, wfid, funcnum, error);
+            await this.#recordError(this.dataSource, wfid, funcnum, error);
 
             // Aside from a connectivity error, two kinds of error are anticipated here:
             //  1. The transaction is marked failed, but the user code did not throw.
