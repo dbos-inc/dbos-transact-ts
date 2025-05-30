@@ -240,7 +240,6 @@ describe('recovery-tests', () => {
     // Run a workflow until pending and start recovery.
 
     const handle = await DBOS.startWorkflow(LocalRecovery).testTxErrorWorkflow(5);
-    await new Promise((resolve) => setTimeout(resolve, 1000)); // Wait for the workflow to be pending.
 
     const recoverHandles = await recoverPendingWorkflows();
     await LocalRecovery.promise4; // Wait for the recovery to be done.
