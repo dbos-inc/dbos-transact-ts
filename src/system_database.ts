@@ -1029,8 +1029,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     topic = topic ?? this.nullTopic;
     const client: PoolClient = await this.pool.connect();
 
-    await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
     try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
         await client.query(
           `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
