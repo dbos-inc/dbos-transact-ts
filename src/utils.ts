@@ -9,6 +9,7 @@ export function readFileSync(path: string, encoding: BufferEncoding = 'utf8'): s
 }
 
 const packageJsonPath = path.join(findPackageRoot(__dirname), 'package.json');
+// eslint-disable-next-line @typescript-eslint/no-require-imports
 const packageJson = require(packageJsonPath) as { version: string };
 
 export const globalParams = {
