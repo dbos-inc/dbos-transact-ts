@@ -53,10 +53,6 @@ export {
 export {
   // Method Decorators
   DBOSInitializer,
-  RequiredRole,
-
-  // Class Decorators
-  DefaultRequiredRole,
 
   // Class Instances
   ConfiguredInstance,
@@ -68,6 +64,13 @@ export {
   // ORM Class Decorators
   OrmEntities,
 } from './decorators';
+
+export {
+  RequiredRole,
+
+  // Class Decorators
+  DefaultRequiredRole,
+} from './authdecorators';
 
 export {
   ArgRequired,

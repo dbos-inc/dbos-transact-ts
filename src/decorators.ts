@@ -2,9 +2,8 @@ import 'reflect-metadata';
 
 import { TransactionConfig, TransactionContext } from './transaction';
 import { WorkflowConfig, WorkflowContext } from './workflow';
-import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext, HTTPRequest } from './context';
 import { StepConfig, StepContext } from './step';
-import { DBOSConflictingRegistrationError, DBOSNotAuthorizedError, DBOSNotRegisteredError } from './error';
+import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
@@ -278,9 +277,18 @@ export class MethodParameter {
 /* REGISTRATION OBJECTS and read access */
 //////////////////////////////////////////
 
+export const DBOS_AUTH = 'auth';
+
+export interface ClassAuthDefaults {
+  requiredRole?: string[] | undefined;
+}
+
+export interface MethodAuth {
+  requiredRole?: string[] | undefined;
+}
+
 export interface RegistrationDefaults {
   name: string;
-  requiredRole: string[] | undefined;
 
   getRegisteredInfo(reg: AnyConstructor | object | string): unknown;
 
@@ -331,8 +339,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
 
   name: string = '';
   className: string = '';
-
-  requiredRole: string[] | undefined = undefined;
 
   // Interceptors
   onEnter: { seqNum: number; func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[] }[] = [];
@@ -423,10 +429,14 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   }
 
   getRequiredRoles() {
-    if (this.requiredRole) {
-      return this.requiredRole;
+    const rr = this.getRegisteredInfo(DBOS_AUTH) as MethodAuth;
+
+    if (rr?.requiredRole) {
+      return rr.requiredRole;
     }
-    return this.defaults?.requiredRole || [];
+
+    const drr = this.defaults?.getRegisteredInfo(DBOS_AUTH) as ClassAuthDefaults;
+    return drr?.requiredRole || [];
   }
 }
 
@@ -463,7 +473,6 @@ export abstract class ConfiguredInstance {
 
 export class ClassRegistration implements RegistrationDefaults {
   name: string = '';
-  requiredRole: string[] | undefined;
   needsInitialized: boolean = true;
 
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
@@ -572,22 +581,6 @@ export function getConfiguredInstance(clsname: string, cfgname: string): Configu
   const classReg = classesByName.get(clsname)?.reg;
   if (!classReg) return null;
   return classReg.configuredInstances.get(cfgname) ?? null;
-}
-
-/////
-// Context provider registration
-////
-export class DBOSStoredWFContext {
-  authenticatedUser?: string;
-  authenticatedRoles?: string[];
-  assumedRole?: string;
-  request?: HTTPRequest;
-  contextData: { [key: string]: unknown } = {};
-}
-export interface DBOSContextProvider {
-  captureContext(ctx: DBOSStoredWFContext, explicitContxt?: DBOSContext): void;
-  needsToRestoreContext(ctx: DBOSStoredWFContext): boolean;
-  runInRestoredContext<T>(ctx: DBOSStoredWFContext, callback: () => Promise<T>): Promise<T>;
 }
 
 /////
@@ -731,39 +724,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
       }
     });
 
-    // TODO Make these generic
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
-      let opCtx: DBOSContextImpl | undefined = undefined;
-      if (passContext) {
-        opCtx = rawArgs[0] as DBOSContextImpl;
-      } else {
-        opCtx = getCurrentDBOSContext() as DBOSContextImpl;
-      }
-
-      // Validate the user authentication and populate the role field
-      const requiredRoles = methReg.getRequiredRoles();
-      if (requiredRoles.length > 0) {
-        opCtx.span.setAttribute('requiredRoles', requiredRoles);
-        const curRoles = opCtx.authenticatedRoles;
-        let authorized = false;
-        const set = new Set(curRoles);
-        for (const role of requiredRoles) {
-          if (set.has(role)) {
-            authorized = true;
-            opCtx.assumedRole = role;
-            break;
-          }
-        }
-        if (!authorized) {
-          const err = new DBOSNotAuthorizedError(
-            `User does not have a role with permission to call ${methReg.name}`,
-            403,
-          );
-          opCtx.span.addEvent('DBOSNotAuthorizedError', { message: err.message });
-          throw err;
-        }
-      }
-
       let validatedArgs = rawArgs;
       for (const vf of methReg.onEnter) {
         validatedArgs = vf.func(methReg, validatedArgs) as Args;
@@ -1073,15 +1034,6 @@ export function ArgName(name: string) {
 /* CLASS DECORATORS */
 ///////////////////////
 
-export function DefaultRequiredRole(anyOf: string[]) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor);
-    clsreg.requiredRole = anyOf;
-  }
-  return clsdec;
-}
-
 /** @deprecated Use `new` */
 export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
   cls: new (name: string, ...args: T) => R,
@@ -1095,21 +1047,6 @@ export function configureInstance<R extends ConfiguredInstance, T extends unknow
 ///////////////////////
 /* METHOD DECORATORS */
 ///////////////////////
-
-/** @see `DBOS.requiredRole` */
-export function RequiredRole(anyOf: string[]) {
-  function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-    registration.requiredRole = anyOf;
-
-    return descriptor;
-  }
-  return apidec;
-}
 
 /**
  * @deprecated Use `@DBOS.workflow`
@@ -1195,6 +1132,9 @@ export function Step(config: StepConfig = {}) {
   return decorator;
 }
 
+/**
+ * @deprecated Use ORM DSs
+ */
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export function OrmEntities(entities: Function[] | { [key: string]: object } = []) {
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {

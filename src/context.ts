@@ -27,7 +27,7 @@ export interface DBOSContextOptions {
   authenticatedUser?: string;
   authenticatedRoles?: string[];
   assumedRole?: string;
-  request?: HTTPRequest;
+  request?: object;
   operationType?: string; // A custom helper for users to set a operation type of their choice. Intended for functions setting a pctx to run DBOS operations from.
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
   workflowTimeoutMS?: number | null;
@@ -229,7 +229,11 @@ export async function runWithWorkflowContext<R>(ctx: WorkflowContext, callback: 
   );
 }
 
-// HTTPRequest includes useful information from http.IncomingMessage and parsed body, URL parameters, and parsed query string.
+/**
+ * HTTPRequest includes useful information from http.IncomingMessage and parsed body,
+ *   URL parameters, and parsed query string.
+ * In essence, it is the serializable part of the request.
+ */
 export interface HTTPRequest {
   readonly headers?: IncomingHttpHeaders; // A node's http.IncomingHttpHeaders object.
   readonly rawHeaders?: string[]; // Raw headers.
@@ -248,7 +252,7 @@ export interface HTTPRequest {
  * @deprecated Use `DBOS.workflow`, `DBOS.step`, `DBOS.transaction`, and other decorators that do not pass contexts around.
  */
 export interface DBOSContext {
-  readonly request: HTTPRequest;
+  readonly request: object;
   readonly workflowUUID: string;
   readonly authenticatedUser: string;
   readonly authenticatedRoles: string[];
@@ -262,7 +266,7 @@ export interface DBOSContext {
 }
 
 export class DBOSContextImpl implements DBOSContext {
-  request: HTTPRequest = {}; // Raw incoming HTTP request.
+  request: object = {}; // Raw incoming HTTP request.
   authenticatedUser: string = ''; // The user that has been authenticated
   authenticatedRoles: string[] = []; // All roles the user has according to authentication
   assumedRole: string = ''; // Role in use - that user has and provided authorization to current function

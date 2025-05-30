@@ -49,14 +49,16 @@ import {
   associateClassWithExternal,
   associateMethodWithExternal,
   associateParameterWithExternal,
+  ClassAuthDefaults,
   configureInstance,
+  DBOS_AUTH,
   getLifecycleListeners,
-  getOrCreateClassRegistration,
   getRegisteredOperations,
   getRegistrationForFunction,
   getRegistrationsForExternal,
   getTransactionalDataSource,
   insertAllMiddleware,
+  MethodAuth,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
@@ -111,6 +113,7 @@ import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { SpanStatusCode } from '@opentelemetry/api';
+import { registerAuthChecker } from './authdecorators';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -612,7 +615,6 @@ export class DBOS {
   //////
   static #dbosConfig?: DBOSConfig;
   static #runtimeConfig?: DBOSRuntimeConfig = undefined;
-  static #invokeWrappers: Map<unknown, unknown> = new Map();
 
   static get dbosConfig(): DBOSConfig | undefined {
     return DBOS.#dbosConfig;
@@ -643,9 +645,18 @@ export class DBOS {
     return undefined;
   }
 
+  /**
+   * Get the current request object (such as an HTTP request)
+   * This is intended for use in event libraries that know the type of the current request,
+   *  and set it using `withTracedContext` or `runWithContext`
+   */
+  static requestObject(): object | undefined {
+    return getCurrentDBOSContext()?.request;
+  }
+
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
   static getRequest(): HTTPRequest | undefined {
-    return getCurrentDBOSContext()?.request;
+    return this.requestObject() as HTTPRequest | undefined;
   }
 
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
@@ -1115,14 +1126,14 @@ export class DBOS {
    *   DBOS functions called within the `callback` function.
    * @param callerName - Tracing caller name
    * @param span - Tracing span
-   * @param request - HTTP request that initiated the call
+   * @param request - event context (such as HTTP request) that initiated the call
    * @param callback - Function to run with tracing context in place
    * @returns - Return value from `callback`
    */
   static async withTracedContext<R>(
     callerName: string,
     span: Span,
-    request: HTTPRequest,
+    request: object,
     callback: () => Promise<R>,
   ): Promise<R> {
     return DBOS.#withTopContext(
@@ -2512,8 +2523,9 @@ export class DBOS {
   static defaultRequiredRole(anyOf: string[]) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
-      const clsreg = getOrCreateClassRegistration(ctor);
+      const clsreg = associateClassWithExternal(DBOS_AUTH, ctor) as ClassAuthDefaults;
       clsreg.requiredRole = anyOf;
+      registerAuthChecker();
     }
     return clsdec;
   }
@@ -2529,10 +2541,14 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      registration.requiredRole = anyOf;
+      const rr = associateMethodWithExternal(DBOS_AUTH, target, undefined, propertyKey.toString(), inDescriptor.value!);
 
-      return descriptor;
+      (rr.regInfo as MethodAuth).requiredRole = anyOf;
+      registerAuthChecker();
+
+      inDescriptor.value = rr.registration.wrappedFunction ?? rr.registration.registeredFunction;
+
+      return inDescriptor;
     }
     return apidec;
   }

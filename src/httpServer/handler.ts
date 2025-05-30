@@ -7,7 +7,7 @@ import {
   ConfiguredInstance,
 } from '../decorators';
 import { DBOSExecutor, OperationType } from '../dbos-executor';
-import { DBOSContext, DBOSContextImpl } from '../context';
+import { DBOSContext, DBOSContextImpl, HTTPRequest } from '../context';
 import Koa from 'koa';
 import {
   Workflow,
@@ -147,7 +147,7 @@ export class HandlerContextImpl extends DBOSContextImpl implements HandlerContex
       url: koaContext.request.url,
       ip: koaContext.request.ip,
       requestID: requestID,
-    };
+    } satisfies HTTPRequest;
     this.applicationConfig = dbosExec.config.application;
     this.#dbosExec = dbosExec;
   }

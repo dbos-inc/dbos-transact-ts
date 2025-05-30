@@ -229,6 +229,25 @@ describe('httpserver-tests', () => {
     expect(response.headers.location).toBe('/redirect-dbos');
   });
 
+  test('request-is-persisted', async () => {
+    const workflowID = randomUUID();
+    const response = await request(app.callback()).get('/check-url').set({ 'dbos-idempotency-key': workflowID });
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe('/check-url');
+
+    // Retrieve the workflow with WFID.
+    const retrievedHandle = DBOS.retrieveWorkflow(workflowID);
+    expect(retrievedHandle).not.toBeNull();
+    await expect(retrievedHandle.getResult()).resolves.toBe('/check-url');
+    await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Start another WF based on that...
+    const wfh = await DBOS.forkWorkflow(workflowID, 0);
+    await expect(wfh.getResult()).resolves.toBe(`/check-url`);
+  });
+
   test('not-authenticated', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice');
     expect(response.statusCode).toBe(401);
@@ -349,9 +368,16 @@ describe('httpserver-tests', () => {
 
     @dhttp.getApi('/redirect')
     static async redirectUrl() {
-      const url = DBOS.request.url || 'bad url'; // Get the raw url from request.
+      const url = DBOSKoa.httpRequest.url || 'bad url'; // Get the raw url from request.
       DBOSKoa.koaContext.redirect(url + '-dbos');
       return Promise.resolve();
+    }
+
+    @dhttp.getApi('/check-url')
+    @DBOS.workflow()
+    static async returnURL() {
+      const url = DBOSKoa.httpRequest.url || 'bad url'; // Get the raw url from request.
+      return Promise.resolve(url);
     }
 
     @dhttp.getApi('/query')

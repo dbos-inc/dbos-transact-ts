@@ -3,7 +3,7 @@ import { DBOSExecutor, OperationType } from './dbos-executor';
 import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
-import { DBOSContext, DBOSContextImpl, HTTPRequest } from './context';
+import { DBOSContext, DBOSContextImpl } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
@@ -80,7 +80,7 @@ export interface WorkflowStatus {
   readonly error?: unknown; // The error thrown by the workflow, if any.
   readonly input?: unknown[]; // The input to the workflow, if any.
 
-  readonly request?: HTTPRequest; // The parent request for this workflow, if any.
+  readonly request?: object; // The parent request for this workflow, if any.
   readonly executorId?: string; // The ID of the workflow executor
   readonly applicationVersion?: string;
   readonly applicationID: string;
