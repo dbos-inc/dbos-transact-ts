@@ -158,3 +158,5 @@ export {
   // Class Instances
   configureInstance,
 } from './decorators';
+
+export { DBOSJSON } from './utils';
