@@ -8,6 +8,7 @@ import { globalParams, sleepms } from '../../src/utils';
 import { Client } from 'pg';
 import { step_info } from '../../schemas/system_db_schema';
 import http from 'http';
+import { DBOSWorkflowCancelledError } from '../../src/error';
 
 describe('not-running-admin-server', () => {
   let config: DBOSConfig;
@@ -411,5 +412,21 @@ describe('running-admin-server-tests', () => {
     expect(response.status).toBe(204);
 
     expect((await DBOS.listWorkflows({})).length).toBe(0);
+  });
+
+  test('test-admin-global-timeout', async () => {
+    const handle = await DBOS.startWorkflow(testAdminWorkflow).blockedWorkflow();
+    await sleepms(1000);
+
+    const response = await fetch(`http://localhost:3001/dbos-global-timeout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ timeout_ms: 1000 }),
+    });
+    expect(response.status).toBe(204);
+
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 });
