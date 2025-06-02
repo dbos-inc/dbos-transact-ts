@@ -30,53 +30,6 @@ export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
   if (!lifecycleListeners.includes(lcl)) lifecycleListeners.push(lcl);
 }
 export function getLifecycleListeners() {
-  return lifecycleListeners;
-}
-
-// Middleware installation
-export abstract class DBOSMethodMiddlewareInserter {
-  abstract installMiddleware(methodReg: MethodRegistrationBase): void;
-}
-let installedMiddleware = false;
-const middlewareInserters: DBOSMethodMiddlewareInserter[] = [];
-export function registerMiddlewareInserter(i: DBOSMethodMiddlewareInserter) {
-  if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
-  if (!middlewareInserters.includes(i)) middlewareInserters.push(i);
-}
-export function insertAllMiddleware() {
-  if (installedMiddleware) return;
-  installedMiddleware = true;
-
-  for (const [_cn, c] of classesByName) {
-    for (const [_fn, f] of c.reg.registeredOperations) {
-      for (const i of middlewareInserters) {
-        i.installMiddleware(f);
-      }
-    }
-  }
-}
-
-/**
- * Interface for integrating into the DBOS startup/shutdown lifecycle
- */
-export abstract class DBOSLifecycleCallback {
-  /** Called back during DBOS launch */
-  initialize(): Promise<void> {
-    return Promise.resolve();
-  }
-  /** Called back upon shutdown (usually in tests) to close connections and free resources */
-  destroy(): Promise<void> {
-    return Promise.resolve();
-  }
-  /** Called at launch; Implementers should emit a diagnostic list of all registrations */
-  logRegisteredEndpoints(): void {}
-}
-
-const lifecycleListeners: DBOSLifecycleCallback[] = [];
-export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
-  if (!lifecycleListeners.includes(lcl)) lifecycleListeners.push(lcl);
-}
-export function getLifecycleListeners() {
   return lifecycleListeners as readonly DBOSLifecycleCallback[];
 }
 
