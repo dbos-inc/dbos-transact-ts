@@ -4,6 +4,7 @@ import { DrizzleDS } from '../src/drizzle_datasource';
 import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
 import { pgTable, text } from 'drizzle-orm/pg-core';
+import { eq } from 'drizzle-orm/expressions';
 
 export const kv = pgTable('kv', {
   id: text('id').primaryKey().default('t'),
@@ -96,7 +97,7 @@ describe('decoratorless-api-tests', () => {
     await drizzleDS.initializeSchema();
     await DBOS.launch();
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS kv;`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS kv (id SERIAL PRIMARY KEY, value TEXT);`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS kv (id TEXT PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
@@ -145,20 +146,19 @@ describe('decoratorless-api-tests', () => {
   });
 });
 
-/* class KVController {
-  @typeOrmDS.transaction()
+class KVController {
+  @drizzleDS.transaction()
   static async testTxn(id: string, value: string) {
-    const kv: KV = new KV();
-    kv.id = id;
-    kv.value = value;
-    const res = await TypeOrmDS.entityManager.save(kv);
+    console.log(`Running testTxn with id: ${id}, value: ${value}`);
+    await drizzleDS.dataSource?.insert(kv).values({ id: id, value: value }).onConflictDoNothing().execute();
 
-    return res.id;
+    return id;
   }
 
   static async readTxn(id: string): Promise<string> {
-    const kvp = await TypeOrmDS.entityManager.findOneBy(KV, { id: id });
-    return Promise.resolve(kvp?.value || '<Not Found>');
+    const kvp = await drizzleDS.dataSource?.select().from(kv).where(eq(kv.id, id)).limit(1).execute();
+
+    return kvp?.[0]?.value ?? '<Not Found>';
   }
 
   @DBOS.workflow()
@@ -175,30 +175,32 @@ const wfFunction2 = DBOS.registerWorkflow(explicitWf, {
   name: 'explicitworkflow',
 });
 
-describe('typeorm-tests', () => {
+describe('drizzle-tests', () => {
   beforeAll(() => {
     DBOS.setConfig(dbosConfig);
   });
 
   beforeEach(async () => {
     await setUpDBOSTestDb(dbosConfig);
-    await typeOrmDS.initializeSchema();
+    await drizzleDS.initializeSchema();
     await DBOS.launch();
-    await typeOrmDS.createSchema();
+    await DBOS.queryUserDB(`DROP TABLE IF EXISTS kv;`);
+    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS kv (id TEXT PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
     await DBOS.shutdown();
   });
 
-  test('simple-typeorm', async () => {
-    await expect(KVController.wf('test', 'value')).resolves.toBe('test');
+  test('simple-drizzle', async () => {
+    await KVController.wf('test', 'value');
+    let read = await KVController.readTxn('test');
+    expect(read).toBe('value');
   });
 
-  test('typeorm-register', async () => {
+  test('drizzle-register', async () => {
     await expect(wfFunction2('test')).resolves.toBe('<Not Found>');
     await KVController.wf('test', 'value');
     await expect(wfFunction2('test')).resolves.toBe('value');
   });
 });
-*/

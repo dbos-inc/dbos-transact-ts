@@ -177,7 +177,10 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     ...args: Args
   ): Promise<Return> {
     let isolationLevel: 'read uncommitted' | 'read committed' | 'repeatable read' | 'serializable';
-    if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
+
+    if (config === undefined || config.isolationLevel === undefined) {
+      isolationLevel = 'serializable'; // Default isolation level
+    } else if (config.isolationLevel === IsolationLevel.ReadUncommitted) {
       isolationLevel = 'read uncommitted';
     } else if (config.isolationLevel === IsolationLevel.ReadCommitted) {
       isolationLevel = 'read committed';
@@ -186,6 +189,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     } else {
       isolationLevel = 'serializable';
     }
+
     const accessMode = 'read write';
 
     const readOnly = config?.readOnly ? true : false;
@@ -211,9 +215,12 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     while (true) {
       let failedForRetriableReasons = false;
 
+      console.log('DrizzleDS: Invoking transaction function', isolationLevel);
+
       try {
         const result = await this.dataSource.transaction(
           async (drizzleClient: NodePgDatabase<{ [key: string]: object }>) => {
+            console.log('DrizzleDS: Inside transaction function', isolationLevel);
             if (this.drizzlePool === undefined) {
               throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of Datasource');
             }
