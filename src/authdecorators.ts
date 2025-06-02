@@ -5,7 +5,7 @@ import {
   associateMethodWithExternal,
   ClassAuthDefaults,
   DBOS_AUTH,
-  DBOSMethodMiddlewareInserter,
+  DBOSMethodMiddlewareInstaller,
   MethodAuth,
   MethodRegistrationBase,
   registerMiddlewareInserter,
@@ -37,7 +37,7 @@ function checkMethodAuth(methReg: MethodRegistrationBase, args: unknown[]) {
   return args;
 }
 
-class AuthCheckInserter extends DBOSMethodMiddlewareInserter {
+class AuthCheckInserter implements DBOSMethodMiddlewareInstaller {
   installMiddleware(methReg: MethodRegistrationBase): void {
     const classAuth = methReg?.defaults?.getRegisteredInfo(DBOS_AUTH) as ClassAuthDefaults;
     const methodAuth = methReg?.getRegisteredInfo(DBOS_AUTH) as MethodAuth;

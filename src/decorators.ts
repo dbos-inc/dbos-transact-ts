@@ -29,16 +29,16 @@ export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
   if (!lifecycleListeners.includes(lcl)) lifecycleListeners.push(lcl);
 }
 export function getLifecycleListeners() {
-  return lifecycleListeners;
+  return lifecycleListeners as readonly DBOSLifecycleCallback[];
 }
 
 // Middleware installation
-export abstract class DBOSMethodMiddlewareInserter {
-  abstract installMiddleware(methodReg: MethodRegistrationBase): void;
+export interface DBOSMethodMiddlewareInstaller {
+  installMiddleware(methodReg: MethodRegistrationBase): void;
 }
 let installedMiddleware = false;
-const middlewareInserters: DBOSMethodMiddlewareInserter[] = [];
-export function registerMiddlewareInserter(i: DBOSMethodMiddlewareInserter) {
+const middlewareInserters: DBOSMethodMiddlewareInstaller[] = [];
+export function registerMiddlewareInserter(i: DBOSMethodMiddlewareInstaller) {
   if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
   if (!middlewareInserters.includes(i)) middlewareInserters.push(i);
 }
