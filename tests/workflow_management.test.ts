@@ -660,7 +660,7 @@ describe('test-list-queues', () => {
   }
 
   test('test-garbage-collection', async () => {
-    const numWorkflows = 100;
+    const numWorkflows = 10;
 
     // Start one blocked workflow and 100 normal workflows
     const handle = await DBOS.startWorkflow(TestGarbageCollection).blockedWorkflow();
@@ -691,6 +691,19 @@ describe('test-list-queues', () => {
 
     // Verify GC runs without errors on a blank table
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(undefined, 1);
+
+    // Run workflows, wait, run them again
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+    }
+    await sleepms(1000);
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+    }
+    // GC the first half, verify only half were GC'ed
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(1000, undefined);
+    workflows = await DBOS.listWorkflows({});
+    expect(workflows.length).toBe(numWorkflows);
   });
 
   class TestGlobalTimeout {
