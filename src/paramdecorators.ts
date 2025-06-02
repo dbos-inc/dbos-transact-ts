@@ -4,7 +4,7 @@ import {
   ArgDataType,
   associateParameterWithExternal,
   DBOSDataType,
-  DBOSMethodMiddlewareInserter,
+  DBOSMethodMiddlewareInstaller,
   MethodParameter,
   registerMiddlewareInserter,
 } from './decorators';
@@ -61,7 +61,7 @@ function getValidatorArgInfo(param: MethodParameter) {
   };
 }
 
-class ValidationInserter extends DBOSMethodMiddlewareInserter {
+class ValidationInserter implements DBOSMethodMiddlewareInstaller {
   installMiddleware(methReg: MethodRegistrationBase): void {
     const valInfo = getValidatorClassInfo(methReg);
     const defaultArgRequired = valInfo.defaultArgRequired;
@@ -227,7 +227,7 @@ function getLoggerArgInfo(param: MethodParameter) {
   };
 }
 
-class LoggingInserter extends DBOSMethodMiddlewareInserter {
+class LoggingInserter implements DBOSMethodMiddlewareInstaller {
   installMiddleware(methReg: MethodRegistrationBase): void {
     methReg.addEntryInterceptor(logMethodArgs, 30);
   }
