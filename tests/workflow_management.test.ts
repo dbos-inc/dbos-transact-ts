@@ -632,6 +632,43 @@ describe('test-list-queues', () => {
       await sysdb.destroy();
     }
   });
+
+  class TestGarbageCollection {
+    static event = new Event();
+
+    @DBOS.step()
+    static async testStep(x: number) {
+      return Promise.resolve(x);
+    }
+
+    @DBOS.workflow()
+    static async testWorkflow(x: number) {
+      await TestGarbageCollection.testStep(x);
+      return x;
+    }
+
+    @DBOS.workflow()
+    static async blockedWorkflow() {
+      await TestGarbageCollection.event.wait();
+      return DBOS.workflowID;
+    }
+  }
+
+  test('test-garbage-collection', async () => {
+    const numWorkflows = 100;
+    const handle = await DBOS.startWorkflow(TestGarbageCollection).blockedWorkflow();
+    for (let i = 0; i < numWorkflows; i++) {
+      await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
+    }
+
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(undefined, 1);
+
+    const workflows = await DBOS.listWorkflows({});
+    expect(workflows.length).toBe(2);
+
+    TestGarbageCollection.event.set();
+    await expect(handle.getResult()).resolves.toBeTruthy();
+  });
 });
 
 describe('test-list-steps', () => {
