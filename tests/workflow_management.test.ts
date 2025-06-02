@@ -656,18 +656,36 @@ describe('test-list-queues', () => {
 
   test('test-garbage-collection', async () => {
     const numWorkflows = 100;
+
+    // Start one blocked workflow and 100 normal workflows
     const handle = await DBOS.startWorkflow(TestGarbageCollection).blockedWorkflow();
     for (let i = 0; i < numWorkflows; i++) {
       await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
     }
 
+    // Garbage collect all but one workflow
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(undefined, 1);
-
-    const workflows = await DBOS.listWorkflows({});
+    // Verify two workflows remain: the newest and blocked workflow
+    let workflows = await DBOS.listWorkflows({});
     expect(workflows.length).toBe(2);
+    expect(workflows[0].workflowID).toEqual(handle.workflowID);
 
+    // Garbage collect all completed workflows
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(0, undefined);
+    // Verify only the blocked workflow remains
+    workflows = await DBOS.listWorkflows({});
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].workflowID).toEqual(handle.workflowID);
+
+    // Finish the blocked workflow, garbage collect everything
     TestGarbageCollection.event.set();
     await expect(handle.getResult()).resolves.toBeTruthy();
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(0, undefined);
+    workflows = await DBOS.listWorkflows({});
+    expect(workflows.length).toBe(0);
+
+    // Verify GC runs without errors on a blank table
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(undefined, 1);
   });
 });
 
