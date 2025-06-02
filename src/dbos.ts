@@ -44,14 +44,23 @@ import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
 import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
 import {
+  associateClassWithExternal,
+  associateMethodWithExternal,
+  associateParameterWithExternal,
+  ClassAuthDefaults,
   configureInstance,
-  getOrCreateClassRegistration,
+  DBOS_AUTH,
+  getLifecycleListeners,
   getRegisteredOperations,
+  getRegistrationsForExternal,
+  insertAllMiddleware,
+  MethodAuth,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
   registerAndWrapDBOSFunction,
   registerFunctionWrapper,
+  registerLifecycleCallback,
 } from './decorators';
 import { globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
@@ -77,7 +86,9 @@ import { PoolClient } from 'pg';
 import { Knex } from 'knex';
 import { StepConfig, StepFunction } from './step';
 import {
+  DBOSLifecycleCallback,
   HandlerContext,
+  requestArgValidation,
   StepContext,
   StoredProcedureContext,
   TransactionContext,
@@ -93,6 +104,9 @@ import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
+import { registerAuthChecker } from './authdecorators';
+
+type AnyConstructor = new (...args: unknown[]) => object;
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -176,7 +190,7 @@ function httpApiDec(verb: APITypes, url: string) {
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
-    registration.performArgValidation = true;
+    requestArgValidation(registration);
 
     return descriptor;
   };
@@ -342,6 +356,7 @@ export class DBOS {
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
     // Do nothing is DBOS is already initialized
+    insertAllMiddleware();
 
     if (DBOS.isInitialized()) {
       return;
@@ -459,6 +474,9 @@ export class DBOS {
     for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
       evtRcvr.logRegisteredEndpoints();
     }
+    for (const lcl of getLifecycleListeners()) {
+      lcl.logRegisteredEndpoints();
+    }
   }
 
   /**
@@ -575,7 +593,6 @@ export class DBOS {
   //////
   static #dbosConfig?: DBOSConfig;
   static #runtimeConfig?: DBOSRuntimeConfig = undefined;
-  static #invokeWrappers: Map<unknown, unknown> = new Map();
 
   static get dbosConfig(): DBOSConfig | undefined {
     return DBOS.#dbosConfig;
@@ -606,9 +623,18 @@ export class DBOS {
     return undefined;
   }
 
+  /**
+   * Get the current request object (such as an HTTP request)
+   * This is intended for use in event libraries that know the type of the current request,
+   *  and set it using `withTracedContext` or `runWithContext`
+   */
+  static requestObject(): object | undefined {
+    return getCurrentDBOSContext()?.request;
+  }
+
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
   static getRequest(): HTTPRequest | undefined {
-    return getCurrentDBOSContext()?.request;
+    return this.requestObject() as HTTPRequest | undefined;
   }
 
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
@@ -632,7 +658,7 @@ export class DBOS {
 
   /** Get the current workflow ID */
   static get workflowID(): string | undefined {
-    return getCurrentDBOSContext()?.workflowUUID;
+    return getCurrentContextStore()?.workflowId ?? getCurrentDBOSContext()?.workflowUUID;
   }
 
   /** Get the current step number, within the current workflow */
@@ -1067,14 +1093,14 @@ export class DBOS {
    *   DBOS functions called within the `callback` function.
    * @param callerName - Tracing caller name
    * @param span - Tracing span
-   * @param request - HTTP request that initiated the call
+   * @param request - event context (such as HTTP request) that initiated the call
    * @param callback - Function to run with tracing context in place
    * @returns - Return value from `callback`
    */
   static async withTracedContext<R>(
     callerName: string,
     span: Span,
-    request: HTTPRequest,
+    request: object,
     callback: () => Promise<R>,
   ): Promise<R> {
     return DBOS.#withTopContext(
@@ -1145,6 +1171,10 @@ export class DBOS {
    * @param callback - Function to run, which would call or start workflows
    * @returns - Return value from `callback`
    */
+  static async runWithContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
+    return DBOS.#withTopContext(options, callback);
+  }
+
   static async #withTopContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
     const pctx = getCurrentContextStore();
     if (pctx) {
@@ -1171,7 +1201,30 @@ export class DBOS {
         }
       }
     } else {
-      return runWithTopContext(options, callback);
+      let span = options.span;
+      if (!span) {
+        span = DBOS.#executor.tracer.startSpan('topContext', {
+          operationUUID: options.idAssignedForNextWorkflow,
+          operationType: options.operationType,
+          authenticatedUser: options.authenticatedUser,
+          assumedRole: options.assumedRole,
+          authenticatedRoles: options.authenticatedRoles,
+        });
+      }
+      const ctx = new DBOSContextImpl(options.operationCaller || 'topContext', span, DBOS.logger as GlobalLogger);
+      ctx.request = options.request || {};
+      ctx.authenticatedUser = options.authenticatedUser || '';
+      ctx.assumedRole = options.assumedRole || '';
+      ctx.authenticatedRoles = options.authenticatedRoles || [];
+      ctx.workflowUUID = options.idAssignedForNextWorkflow || '';
+
+      return runWithTopContext(
+        {
+          ...options,
+          ctx,
+        },
+        callback,
+      );
     }
   }
 
@@ -1475,6 +1528,8 @@ export class DBOS {
             ? (...args: unknown[]) =>
                 DBOSExecutor.globalInstance!.callStepFunction(
                   op.registeredFunction as StepFunction<unknown[], unknown>,
+                  undefined,
+                  undefined,
                   null,
                   wfctx,
                   ...args,
@@ -1515,6 +1570,8 @@ export class DBOS {
             ? (...args: unknown[]) =>
                 DBOSExecutor.globalInstance!.callStepFunction(
                   op.registeredFunction as StepFunction<unknown[], unknown>,
+                  undefined,
+                  undefined,
                   targetInst,
                   wfctx,
                   ...args,
@@ -1663,7 +1720,7 @@ export class DBOS {
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         const pctx = getCurrentContextStore();
         let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as ConfiguredInstance;
@@ -1757,8 +1814,6 @@ export class DBOS {
       });
 
       registerFunctionWrapper(invokeWrapper, registration as MethodRegistration<unknown, unknown[], unknown>);
-      // TODO CTX this should not be in here already, or if it is we need to do something different...
-      DBOS.#invokeWrappers.set(invokeWrapper, registration.registeredFunction);
 
       return descriptor;
     }
@@ -1782,7 +1837,7 @@ export class DBOS {
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as ConfiguredInstance;
@@ -1961,7 +2016,7 @@ export class DBOS {
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
         let inst: ConfiguredInstance | undefined = undefined;
-        if (typeof this === 'function') {
+        if (this === undefined || typeof this === 'function') {
           // This is static
         } else {
           inst = this as ConfiguredInstance;
@@ -1985,6 +2040,8 @@ export class DBOS {
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callStepFunction(
             registration.registeredFunction as unknown as StepFunction<Args, Return>,
+            undefined,
+            undefined,
             inst ?? null,
             wfctx,
             ...rawArgs,
@@ -2073,8 +2130,9 @@ export class DBOS {
   static defaultRequiredRole(anyOf: string[]) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
-      const clsreg = getOrCreateClassRegistration(ctor);
+      const clsreg = associateClassWithExternal(DBOS_AUTH, ctor) as ClassAuthDefaults;
       clsreg.requiredRole = anyOf;
+      registerAuthChecker();
     }
     return clsdec;
   }
@@ -2090,10 +2148,14 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      registration.requiredRole = anyOf;
+      const rr = associateMethodWithExternal(DBOS_AUTH, target, undefined, propertyKey.toString(), inDescriptor.value!);
 
-      return descriptor;
+      (rr.regInfo as MethodAuth).requiredRole = anyOf;
+      registerAuthChecker();
+
+      inDescriptor.value = rr.registration.wrappedFunction ?? rr.registration.registeredFunction;
+
+      return inDescriptor;
     }
     return apidec;
   }
@@ -2112,6 +2174,63 @@ export class DBOS {
     ...args: T
   ): R {
     return configureInstance(cls, name, ...args);
+  }
+
+  /**
+   * Register a lifecycle listener
+   */
+  static registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
+    registerLifecycleCallback(lcl);
+  }
+
+  /**
+   * Register information to be associated with a DBOS class
+   */
+  static associateClassWithInfo(external: AnyConstructor | object | string, cls: AnyConstructor | string): object {
+    return associateClassWithExternal(external, cls);
+  }
+
+  /**
+   * Register information to be associated with a DBOS function
+   */
+  static associateFunctionWithInfo<This, Args extends unknown[], Return>(
+    external: AnyConstructor | object | string,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      classOrInst?: object;
+      className?: string;
+      name: string;
+    },
+  ) {
+    return associateMethodWithExternal(external, target.classOrInst, target.className, target.name, func);
+  }
+
+  /**
+   * Register information to be associated with a DBOS function
+   */
+  static associateParamWithInfo<This, Args extends unknown[], Return>(
+    external: AnyConstructor | object | string,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      classOrInst?: object;
+      className?: string;
+      name: string;
+      param: number | string;
+    },
+  ) {
+    return associateParameterWithExternal(
+      external,
+      target.classOrInst,
+      target.className,
+      target.name,
+      func,
+      target.param,
+    );
+  }
+
+  /** Get registrations */
+  static getAssociatedInfo(external: AnyConstructor | object | string, cls?: object | string, funcName?: string) {
+    return getRegistrationsForExternal(external, cls, funcName);
   }
 }
 

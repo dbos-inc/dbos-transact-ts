@@ -19,11 +19,13 @@ export {
   DBOSEventReceiverState,
 } from './eventreceiver';
 
+export { DBOSLifecycleCallback } from './decorators';
+
 export { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';
 
-export { DBOSResponseError } from './error';
+export { DBOSResponseError, DBOSWorkflowConflictError } from './error';
 
 export { TransactionConfig, TransactionFunction } from './transaction';
 
@@ -49,35 +51,38 @@ export {
 export {
   // Method Decorators
   DBOSInitializer,
-  RequiredRole,
 
   // Class Instances
   ConfiguredInstance,
-} from './decorators';
-
-// Items under redesign for v3
-
-export {
-  LogMasks,
 
   // Parameter Decorators
-  ArgRequired,
-  ArgOptional,
-  SkipLogging,
-  LogMask,
+  MethodParameter,
   ArgName,
-  ArgDate,
-  ArgVarchar,
-
-  // Class Decorators
-  DefaultRequiredRole,
-  DefaultArgRequired,
-  DefaultArgOptional,
-  DefaultArgValidate,
 
   // ORM Class Decorators
   OrmEntities,
 } from './decorators';
+
+export {
+  RequiredRole,
+
+  // Class Decorators
+  DefaultRequiredRole,
+} from './authdecorators';
+
+export {
+  ArgRequired,
+  ArgOptional,
+  ArgDate,
+  ArgVarchar,
+  DefaultArgRequired,
+  DefaultArgOptional,
+  DefaultArgValidate,
+  LogMask,
+  LogMasks,
+  SkipLogging,
+  requestArgValidation,
+} from './paramdecorators';
 
 export { ParseOptions, parseConfigFile } from './dbos-runtime/config';
 
