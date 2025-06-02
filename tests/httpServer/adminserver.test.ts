@@ -74,7 +74,7 @@ describe('running-admin-server-tests', () => {
       database: config.system_database,
     });
     await systemDBClient.connect();
-    testAdminWorkflow.counter = 0;
+    TestAdminWorkflow.counter = 0;
   });
 
   afterEach(async () => {
@@ -91,12 +91,12 @@ describe('running-admin-server-tests', () => {
     rateLimit: { limitPerPeriod: 0, periodSec: 0 },
   });
 
-  class testAdminWorkflow {
+  class TestAdminWorkflow {
     static counter = 0;
 
     @DBOS.workflow()
     static async simpleWorkflow(value: number) {
-      testAdminWorkflow.counter++;
+      TestAdminWorkflow.counter++;
       const msg = await DBOS.recv<string>();
       return `${value}-${msg}`;
     }
@@ -113,9 +113,9 @@ describe('running-admin-server-tests', () => {
 
     @DBOS.workflow()
     static async workflowWithSteps() {
-      await testAdminWorkflow.stepOne();
+      await TestAdminWorkflow.stepOne();
       await DBOS.sleepSeconds(1);
-      await testAdminWorkflow.stepTwo();
+      await TestAdminWorkflow.stepTwo();
       return Promise.resolve();
     }
 
@@ -134,7 +134,7 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-workflow-management', async () => {
     // Run the workflow. Verify it succeeds.
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow(42);
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).simpleWorkflow(42);
 
     // Cancel the workflow. Verify it was cancelled.
     let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/cancel`, {
@@ -233,7 +233,7 @@ describe('running-admin-server-tests', () => {
   });
 
   test('test-admin-list-workflow-steps', async () => {
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).workflowWithSteps();
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).workflowWithSteps();
     await handle.getResult();
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -259,10 +259,10 @@ describe('running-admin-server-tests', () => {
     expect(globalParams.executorID).toBe('test-executor');
 
     // Run the workflow. Verify it succeeds.
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow(42);
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).simpleWorkflow(42);
     await DBOS.send(handle.workflowID, 'message');
     await expect(handle.getResult()).resolves.toEqual('42-message');
-    expect(testAdminWorkflow.counter).toBe(1);
+    expect(TestAdminWorkflow.counter).toBe(1);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -368,7 +368,7 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-deactivate', async () => {
     const value = 5;
-    let handle = await DBOS.startWorkflow(testAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
+    let handle = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
     await expect(handle.getResult()).resolves.toBe(value);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -383,7 +383,7 @@ describe('running-admin-server-tests', () => {
     expect(response.status).toBe(200);
 
     // Verify queues still work after deactivation
-    handle = await DBOS.startWorkflow(testAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
+    handle = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
     await expect(handle.getResult()).resolves.toBe(value);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -392,7 +392,7 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-garbage-collect', async () => {
     const value = 5;
-    await expect(testAdminWorkflow.exampleWorkflow(value)).resolves.toBe(value);
+    await expect(TestAdminWorkflow.exampleWorkflow(value)).resolves.toBe(value);
     expect((await DBOS.listWorkflows({})).length).toBe(1);
 
     const response = await fetch(`http://localhost:3001/dbos-garbage-collect`, {
@@ -408,7 +408,7 @@ describe('running-admin-server-tests', () => {
   });
 
   test('test-admin-global-timeout', async () => {
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).blockedWorkflow();
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).blockedWorkflow();
     await sleepms(1000);
 
     const response = await fetch(`http://localhost:3001/dbos-global-timeout`, {
