@@ -17,7 +17,7 @@
     "build": "tsc --project tsconfig.json && npm run --workspaces build",
     "lint": "rm -rf packages/create/templates/hello-prisma/node_modules/ && eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
-    "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles --testPathIgnorePatterns=packages/*",
+    "test": "npm run build && rm -rf packages/create/templates/hello-prisma/node_modules/ && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest ./tests --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
     "prepare": "husky install"
   },
   "bin": {

@@ -526,6 +526,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         globalParams.appVersion = this.computeAppVersion();
         globalParams.wasComputed = true;
       }
+      this.logger.info(`Initializing DBOS (v${globalParams.dbosVersion})`);
+      this.logger.info(`Executor ID: ${this.executorID}`);
       this.logger.info(`Application version: ${globalParams.appVersion}`);
 
       await this.recoverPendingWorkflows([this.executorID]);
@@ -2270,7 +2272,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const sortedWorkflowSource = Array.from(this.workflowInfoMap.values())
       .map((i) => i.workflowOrigFunction.toString())
       .sort();
-    // TODO (Qian): Different DBOS versions should produce different hashes.
+    // Different DBOS versions should produce different hashes.
+    sortedWorkflowSource.push(globalParams.dbosVersion);
     for (const sourceCode of sortedWorkflowSource) {
       hasher.update(sourceCode);
     }
