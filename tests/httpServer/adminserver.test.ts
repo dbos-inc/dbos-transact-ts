@@ -129,6 +129,13 @@ describe('running-admin-server-tests', () => {
     static async exampleWorkflow(input: number) {
       return Promise.resolve(input);
     }
+
+    @DBOS.workflow()
+    static async blockedWorkflow() {
+      while (true) {
+        await DBOS.sleep(100);
+      }
+    }
   }
 
   test('test-admin-workflow-management', async () => {
@@ -387,5 +394,22 @@ describe('running-admin-server-tests', () => {
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
+  });
+
+  test('test-admin-garbage-collect', async () => {
+    const value = 5;
+    await expect(testAdminWorkflow.exampleWorkflow(value)).resolves.toBe(value);
+    expect((await DBOS.listWorkflows({})).length).toBe(1);
+
+    const response = await fetch(`http://localhost:3001/dbos-garbage-collect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ time_threshold_ms: 0 }),
+    });
+    expect(response.status).toBe(204);
+
+    expect((await DBOS.listWorkflows({})).length).toBe(0);
   });
 });
