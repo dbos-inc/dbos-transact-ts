@@ -5,11 +5,16 @@ import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows
 import { Client } from 'pg';
 import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
-import { globalParams } from '../src/utils';
+import { globalParams, sleepms } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { GlobalLogger as Logger } from '../src/telemetry/logs';
-import { getWorkflow, listQueuedWorkflows, listWorkflows } from '../src/dbos-runtime/workflow_management';
-import { DBOSNonExistentWorkflowError } from '../src/error';
+import {
+  getWorkflow,
+  globalTimeout,
+  listQueuedWorkflows,
+  listWorkflows,
+} from '../src/dbos-runtime/workflow_management';
+import { DBOSNonExistentWorkflowError, DBOSWorkflowCancelledError } from '../src/error';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -686,6 +691,38 @@ describe('test-list-queues', () => {
 
     // Verify GC runs without errors on a blank table
     await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(undefined, 1);
+  });
+
+  class TestGlobalTimeout {
+    static blocked: boolean = true;
+
+    @DBOS.workflow()
+    static async blockedWorkflow() {
+      while (TestGlobalTimeout.blocked) {
+        await DBOS.sleep(100);
+      }
+      return DBOS.workflowID as string;
+    }
+  }
+
+  test('test-global-timeout', async () => {
+    const numWorkflows = 10;
+    const handles: WorkflowHandle<string>[] = [];
+    for (let i = 0; i < numWorkflows; i++) {
+      handles.push(await DBOS.startWorkflow(TestGlobalTimeout).blockedWorkflow());
+    }
+
+    // Wait one second, start one final workflow, then timeout all workflows started more than one second ago
+    await sleepms(1000);
+    const finalHandle = await DBOS.startWorkflow(TestGlobalTimeout).blockedWorkflow();
+    await globalTimeout(DBOSExecutor.globalInstance?.systemDatabase as PostgresSystemDatabase, 1000);
+
+    // Verify all workflows started before the global timeout are cancelled
+    for (const handle of handles) {
+      await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    }
+    TestGlobalTimeout.blocked = false;
+    await expect(finalHandle.getResult()).resolves.toBeTruthy();
   });
 });
 
