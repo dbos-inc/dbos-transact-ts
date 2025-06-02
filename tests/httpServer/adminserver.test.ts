@@ -50,8 +50,7 @@ describe('running-admin-server-tests', () => {
   let config: DBOSConfigInternal;
   let systemDBClient: Client;
 
-  beforeAll(async () => {
-    // Reset the executor ID
+  beforeEach(async () => {
     process.env.DBOS__VMID = 'test-executor';
     await DBOS.shutdown();
     config = generateDBOSTestConfig();
@@ -67,9 +66,6 @@ describe('running-admin-server-tests', () => {
     await setUpDBOSTestDb(config);
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
-  });
-
-  beforeEach(async () => {
     systemDBClient = new Client({
       user: config.poolConfig.user,
       port: config.poolConfig.port,
@@ -83,11 +79,8 @@ describe('running-admin-server-tests', () => {
 
   afterEach(async () => {
     await systemDBClient.end();
-  }, 10000);
-
-  afterAll(async () => {
     await DBOS.shutdown();
-  });
+  }, 10000);
 
   const testQueueOne = new WorkflowQueue('test-queue-1');
   const testQueueTwo = new WorkflowQueue('test-queue-2', { concurrency: 1 });
