@@ -1,8 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { IncomingMessage } from 'http';
 import { StepFunction } from '../step';
-import { HTTPRequest, DBOSContextImpl } from '../context';
-import { ConfiguredInstance, getRegisteredOperations } from '../decorators';
+import { DBOSContextImpl } from '../context';
+import { ConfiguredInstance, getRegisteredOperations, insertAllMiddleware } from '../decorators';
 import { DBOSConfigKeyTypeError, DBOSError } from '../error';
 import {
   AsyncHandlerWfFuncs,
@@ -58,7 +58,7 @@ export async function createTestingRuntime(
 export interface WorkflowInvokeParams {
   readonly authenticatedUser?: string; // The user who ran the function.
   readonly authenticatedRoles?: string[]; // Roles the authenticated user has.
-  readonly request?: HTTPRequest; // The originating HTTP request.
+  readonly request?: object; // The originating request (such as HTTP request).
 }
 
 /** @deprecated */
@@ -150,6 +150,7 @@ export class TestingRuntimeImpl implements TestingRuntime {
    * This should be the first function call before any subsequent calls.
    */
   async init(userClasses?: object[], testConfig?: DBOSConfigInternal, options: DBOSExecutorOptions = {}) {
+    insertAllMiddleware();
     const dbosConfig = testConfig ? [testConfig] : parseConfigFile();
     DBOS.setConfig(dbosConfig[0]);
     this.#dbosExec = new DBOSExecutor(dbosConfig[0], options);
