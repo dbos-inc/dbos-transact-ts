@@ -425,7 +425,8 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   init: boolean = false;
 
   invoke(pthis: This, args: Args): Promise<Return> {
-    return this.registeredFunction!.call(pthis, ...args);
+    const f = this.wrappedFunction ?? this.registeredFunction ?? this.origFunction;
+    return f.call(pthis, ...args);
   }
 
   getRequiredRoles() {

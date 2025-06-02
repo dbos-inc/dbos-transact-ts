@@ -321,8 +321,7 @@ export class DBOSKoa extends DBOSHTTPBase {
                   request: koaCtxt.request,
                 },
                 async () => {
-                  const f = methodReg.wrappedFunction ?? methodReg.registeredFunction ?? methodReg.origFunction;
-                  return (await f.call(undefined, ...args)) as unknown;
+                  return await methodReg.invoke(undefined, args);
                 },
               );
             });

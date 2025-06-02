@@ -30,8 +30,7 @@ class ERD implements DBOSLifecycleCallback {
             authenticatedRoles: ['Event', 'Receiver'],
           },
           async () => {
-            const f = methodReg.wrappedFunction ?? methodReg.registeredFunction ?? methodReg.origFunction;
-            return (await f.call(undefined, cs.classval, ms.methodval, i)) as unknown;
+            return await methodReg.invoke(undefined, [cs.classval, ms.methodval, i]);
           },
         );
       }
@@ -89,6 +88,7 @@ class MyEventReceiver {
   @DBOS.workflow()
   static async method1(cv: string, mv: string, en: number) {
     if (cv !== 'myclass' || mv !== 'method1') throw new Error('Info missing!');
+    if (DBOS.authenticatedUser !== 'ER') throw new Error('NOT correct user');
     MyEventReceiver.callNumSum += en;
     return Promise.resolve();
   }
