@@ -1,5 +1,5 @@
 {
-  "name": "@dbos-inc/dbos-typeorm",
+  "name": "@dbos-inc/typeorm-datasource",
   "version": "0.0.0-placeholder",
   "main": "dist/index.js",
   "scripts": {
@@ -8,11 +8,12 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "description": "",
   "dependencies": {
     "typeorm": "^0.3.24",
-    "pg": "8.11.3"
+    "pg": "8.11.3",
+    "superjson": "^1.13"
   },
   "peerDependencies": {
     "@dbos-inc/dbos-sdk": "*"

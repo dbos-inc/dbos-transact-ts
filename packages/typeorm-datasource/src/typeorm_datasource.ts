@@ -1,7 +1,8 @@
 import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
-import { DBOS, type DBOSTransactionalDataSource, DBOSJSON, Error } from '@dbos-inc/dbos-sdk';
+import { DBOS, type DBOSTransactionalDataSource, Error } from '@dbos-inc/dbos-sdk';
 import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
+import { SuperJSON } from 'superjson';
 
 interface DBOSTypeOrmLocalCtx {
   typeOrmEntityManager: EntityManager;
@@ -133,12 +134,16 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     if (rows.length !== 1) {
       return undefined;
     }
-    return { res: DBOSJSON.parse(rows[1].output) as R };
-    // return rows[1].output as any;
+
+    if (rows[0].output === null) {
+      return undefined;
+    }
+
+    return { res: SuperJSON.parse(rows[0].output) };
   }
 
   async #recordOutput<R>(client: DataSource, workflowID: string, funcNum: number, output: R): Promise<void> {
-    const serialOutput = DBOSJSON.stringify(output);
+    const serialOutput = SuperJSON.stringify(output);
     await client.query<{ rows: transaction_completion[] }>(
       `INSERT INTO dbos.transaction_completion (
         workflow_id, 
@@ -151,7 +156,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   }
 
   async #recordError<R>(client: DataSource, workflowID: string, funcNum: number, error: R): Promise<void> {
-    const serialError = DBOSJSON.stringify(error);
+    const serialError = SuperJSON.stringify(error);
     await client.query<{ rows: transaction_completion[] }>(
       `INSERT INTO dbos.transaction_completion (
         workflow_id, 
