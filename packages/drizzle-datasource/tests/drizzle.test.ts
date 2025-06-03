@@ -104,10 +104,6 @@ describe('decoratorless-api-tests', () => {
     await DBOS.shutdown();
   });
 
-  afterAll(() => {
-    console.log('afterAll cleanup done');
-  });
-
   test('bare-tx-wf-functions', async () => {
     const wfid = randomUUID();
 
@@ -127,29 +123,21 @@ describe('decoratorless-api-tests', () => {
   test('decorated-tx-wf-functions', async () => {
     const wfid = randomUUID();
 
-    console.log('Running decorated tx wf function');
     await DBOS.withNextWorkflowID(wfid, async () => {
       const res = await DBWFI.wf();
       expect(res).toBe('My decorated tx result');
     });
-    console.log('Done running decorated tx wf function');
 
     const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('tx');
-    console.log('Done checking wf steps', wfsteps);
-  });
-
-  test('do-nothing', async () => {
-    console.log('Running do-nothing test');
   });
 });
 
 class KVController {
   @drizzleDS.transaction()
   static async testTxn(id: string, value: string) {
-    console.log(`Running testTxn with id: ${id}, value: ${value}`);
     await drizzleDS.dataSource?.insert(kv).values({ id: id, value: value }).onConflictDoNothing().execute();
 
     return id;

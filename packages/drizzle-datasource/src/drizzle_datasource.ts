@@ -111,7 +111,6 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
    * Will be called by DBOS during attempt at clean shutdown (generally in testing scenarios).
    */
   async destroy(): Promise<void> {
-    console.log(`DrizzleDS: Destroying datasource ${this.name}`);
     await this.drizzlePool?.end();
   }
 
@@ -215,12 +214,9 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     while (true) {
       let failedForRetriableReasons = false;
 
-      console.log('DrizzleDS: Invoking transaction function', isolationLevel);
-
       try {
         const result = await this.dataSource.transaction(
           async (drizzleClient: NodePgDatabase<{ [key: string]: object }>) => {
-            console.log('DrizzleDS: Inside transaction function', isolationLevel);
             if (this.drizzlePool === undefined) {
               throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of Datasource');
             }
