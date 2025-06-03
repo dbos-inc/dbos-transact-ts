@@ -503,7 +503,7 @@ describe('running-admin-server-tests', () => {
       },
       body: JSON.stringify({
         start_time: firstWorkflowTime,
-        workflow_uuids: [handle1.workflowID, handle2.workflowID],
+        workflow_ids: [handle1.workflowID, handle2.workflowID],
       }),
     });
     expect(response.status).toBe(200);

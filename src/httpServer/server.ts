@@ -434,7 +434,7 @@ export class DBOSHttpServer {
     const listWorkflowsUrl = '/workflows';
     const listWorkflowsHandler = async (koaCtxt: Koa.Context) => {
       const body = koaCtxt.request.body as {
-        workflow_uuids?: string[];
+        workflow_ids?: string[];
         workflow_name?: string;
         authenticated_user?: string;
         start_time?: string;
@@ -449,7 +449,7 @@ export class DBOSHttpServer {
 
       // Map request body keys to GetWorkflowsInput properties
       const input: GetWorkflowsInput = {
-        workflowIDs: body.workflow_uuids,
+        workflowIDs: body.workflow_ids,
         workflowName: body.workflow_name,
         authenticatedUser: body.authenticated_user,
         startTime: body.start_time,
