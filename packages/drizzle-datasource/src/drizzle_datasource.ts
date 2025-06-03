@@ -2,6 +2,7 @@ import { Pool, PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import { DBOS, type DBOSTransactionalDataSource, Error } from '@dbos-inc/dbos-sdk';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { AsyncLocalStorage } from 'async_hooks';
+import { SuperJSON } from 'superjson';
 
 interface DrizzleLocalCtx {
   drizzleClient: NodePgDatabase<{ [key: string]: object }>;
