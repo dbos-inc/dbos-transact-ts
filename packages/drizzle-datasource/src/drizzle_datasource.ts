@@ -1,5 +1,5 @@
 import { Pool, PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
-import { DBOS, type DBOSTransactionalDataSource, Error, DBOSJSON } from '@dbos-inc/dbos-sdk';
+import { DBOS, type DBOSTransactionalDataSource, Error } from '@dbos-inc/dbos-sdk';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { AsyncLocalStorage } from 'async_hooks';
 
@@ -137,11 +137,11 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
       return undefined;
     }
 
-    return { res: DBOSJSON.parse(result.rows[0].output) as R };
+    return { res: SuperJSON.parse(result.rows[0].output) as R };
   }
 
   async #recordOutput<R>(client: Pool, workflowID: string, funcNum: number, output: R): Promise<void> {
-    const serialOutput = DBOSJSON.stringify(output);
+    const serialOutput = SuperJSON.stringify(output);
     await client.query<{ rows: transaction_completion[] }>(
       `INSERT INTO dbos.transaction_completion (
         workflow_id, 
@@ -154,7 +154,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
   }
 
   async #recordError<R>(client: Pool, workflowID: string, funcNum: number, error: R): Promise<void> {
-    const serialError = DBOSJSON.stringify(error);
+    const serialError = SuperJSON.stringify(error);
     await client.query<{ rows: transaction_completion[] }>(
       `INSERT INTO dbos.transaction_completion (
         workflow_id, 
