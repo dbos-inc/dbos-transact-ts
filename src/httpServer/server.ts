@@ -18,6 +18,7 @@ import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
 import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
+import { globalTimeout } from '../dbos-runtime/workflow_management';
 export type QueueMetadataResponse = QueueParameters & { name: string };
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
@@ -70,6 +71,8 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerQueueMetadataEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerListWorkflowStepsEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerForkWorkflowEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerGarbageCollectEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerGlobalTimeoutEndpoint(dbosExec, adminRouter);
     adminApp.use(adminRouter.routes()).use(adminRouter.allowedMethods());
     return adminApp;
   }
@@ -247,6 +250,31 @@ export class DBOSHttpServer {
     };
     router.get(DeactivateUrl, deactivateHandler);
     dbosExec.logger.debug(`DBOS Server Registered Deactivate GET ${DeactivateUrl}`);
+  }
+
+  static registerGarbageCollectEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const url = '/dbos-garbage-collect';
+    const handler = async (koaCtxt: Koa.Context) => {
+      const body = koaCtxt.request.body as {
+        cutoff_epoch_timestamp_ms?: number;
+        rows_threshold?: number;
+      };
+      await dbosExec.systemDatabase.garbageCollect(body.cutoff_epoch_timestamp_ms, body.rows_threshold);
+      koaCtxt.status = 204;
+    };
+    router.post(url, handler);
+  }
+
+  static registerGlobalTimeoutEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const url = '/dbos-global-timeout';
+    const handler = async (koaCtxt: Koa.Context) => {
+      const body = koaCtxt.request.body as {
+        timeout_ms: number;
+      };
+      await globalTimeout(dbosExec.systemDatabase, body.timeout_ms);
+      koaCtxt.status = 204;
+    };
+    router.post(url, handler);
   }
 
   /**
