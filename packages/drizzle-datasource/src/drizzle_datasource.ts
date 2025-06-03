@@ -138,7 +138,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
       return undefined;
     }
 
-    return { res: SuperJSON.parse(result.rows[0].output) as R };
+    return { res: SuperJSON.parse(result.rows[0].output) };
   }
 
   async #recordOutput<R>(client: Pool, workflowID: string, funcNum: number, output: R): Promise<void> {
