@@ -12,7 +12,8 @@
   "description": "",
   "dependencies": {
     "drizzle-orm": "^0.40.1",
-    "pg": "8.11.3"
+    "pg": "8.11.3",
+    "superjson": "^2.2.2"
   },
   "peerDependencies": {
     "@dbos-inc/dbos-sdk": "*"
