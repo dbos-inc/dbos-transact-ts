@@ -5,7 +5,7 @@ import cors from '@koa/cors';
 import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
-import { Workflow } from '../workflow';
+import { Workflow, GetWorkflowsInput } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor } from '../dbos-executor';
 import { GlobalLogger as Logger } from '../telemetry/logs';
@@ -70,6 +70,8 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerRestartWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerQueueMetadataEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerListWorkflowStepsEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerListWorkflowsEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerGetWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerForkWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerGarbageCollectEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerGlobalTimeoutEndpoint(dbosExec, adminRouter);
@@ -421,6 +423,73 @@ export class DBOSHttpServer {
     };
     router.get(workflowStepsUrl, workflowStepsHandler);
     dbosExec.logger.debug(`DBOS Server Registered List Workflow steps Get ${workflowStepsUrl}`);
+  }
+
+  /**
+   *
+   * Register List Workflows endpoint.
+   * List workflows with optional filtering via request body.
+   */
+  static registerListWorkflowsEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const listWorkflowsUrl = '/workflows';
+    const listWorkflowsHandler = async (koaCtxt: Koa.Context) => {
+      const body = koaCtxt.request.body as {
+        workflow_uuids?: string[];
+        workflow_name?: string;
+        authenticated_user?: string;
+        start_time?: string;
+        end_time?: string;
+        status?: string;
+        application_version?: string;
+        limit?: number;
+        offset?: number;
+        sort_desc?: boolean;
+        workflow_id_prefix?: string;
+      };
+
+      // Map request body keys to GetWorkflowsInput properties
+      const input: GetWorkflowsInput = {
+        workflowIDs: body.workflow_uuids,
+        workflowName: body.workflow_name,
+        authenticatedUser: body.authenticated_user,
+        startTime: body.start_time,
+        endTime: body.end_time,
+        status: body.status as GetWorkflowsInput['status'],
+        applicationVersion: body.application_version,
+        limit: body.limit,
+        offset: body.offset,
+        sortDesc: body.sort_desc,
+        workflow_id_prefix: body.workflow_id_prefix,
+      };
+
+      const workflows = await dbosExec.listWorkflows(input);
+      koaCtxt.body = workflows;
+      koaCtxt.status = 200;
+    };
+    router.post(listWorkflowsUrl, listWorkflowsHandler);
+    dbosExec.logger.debug(`DBOS Server Registered List Workflows POST ${listWorkflowsUrl}`);
+  }
+
+  /**
+   *
+   * Register Get Workflow endpoint.
+   * Get detailed information about a specific workflow by ID.
+   */
+  static registerGetWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const getWorkflowUrl = '/workflows/:workflow_id';
+    const getWorkflowHandler = async (koaCtxt: Koa.Context) => {
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
+      const workflow = await dbosExec.getWorkflowStatus(workflowId);
+      if (workflow) {
+        koaCtxt.body = workflow;
+        koaCtxt.status = 200;
+      } else {
+        koaCtxt.status = 404;
+        koaCtxt.body = { error: `Workflow ${workflowId} not found` };
+      }
+    };
+    router.get(getWorkflowUrl, getWorkflowHandler);
+    dbosExec.logger.debug(`DBOS Server Registered Get Workflow GET ${getWorkflowUrl}`);
   }
 
   /**

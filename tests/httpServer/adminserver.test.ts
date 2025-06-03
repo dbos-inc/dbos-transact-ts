@@ -422,4 +422,97 @@ describe('running-admin-server-tests', () => {
 
     await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
+
+  test('test-admin-get-workflow', async () => {
+    // Run a workflow to have something to get
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(123);
+    await handle.getResult();
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Test GET /workflows/:workflow_id - existing workflow
+    let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(response.status).toBe(200);
+    const workflow = await response.json();
+    expect(workflow.workflowID).toBe(handle.workflowID);
+    expect(workflow.status).toBe(StatusString.SUCCESS);
+    expect(workflow.workflowName).toBe('exampleWorkflow');
+
+    // Test GET /workflows/:workflow_id - non-existing workflow
+    response = await fetch(`http://localhost:3001/workflows/non-existing-workflow-id`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(response.status).toBe(404);
+    const errorResponse = await response.json();
+    expect(errorResponse.error).toBe('Workflow non-existing-workflow-id not found');
+  });
+
+  test('test-admin-list-workflows', async () => {
+    // Run first workflow
+    const handle1 = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(456);
+    await handle1.getResult();
+    await expect(handle1.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Sleep 1 second
+    await sleepms(1000);
+
+    // Record time between workflows (this will be used for filtering)
+    const firstWorkflowTime = new Date().toISOString();
+
+    // Run second workflow
+    const handle2 = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(789);
+    await handle2.getResult();
+    await expect(handle2.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Test POST /workflows - list all workflows
+    let response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+    expect(response.status).toBe(200);
+    let workflows = await response.json();
+
+    // Both workflows should appear in the results
+    const workflowIds = workflows.map((w: any) => w.workflowID);
+    expect(workflowIds).toContain(handle1.workflowID);
+    expect(workflowIds).toContain(handle2.workflowID);
+
+    // Test POST /workflows - list with filtering by start time and workflow IDs
+    // This should only return the second workflow since we filter by time after the first workflow
+    // and pass both IDs to make sure the correct filters are applied
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        start_time: firstWorkflowTime,
+        workflow_uuids: [handle1.workflowID, handle2.workflowID],
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = await response.json();
+
+    // Only the second workflow should be returned since it was created after firstWorkflowTime
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].workflowID).toBe(handle2.workflowID);
+    expect(workflows[0].status).toBe(StatusString.SUCCESS);
+    expect(workflows[0].workflowName).toBe('exampleWorkflow');
+  });
 });
