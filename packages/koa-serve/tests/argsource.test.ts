@@ -111,42 +111,42 @@ describe('httpserver-argsource-tests', () => {
   @DBOSKoa.defaultArgRequired
   class ArgTestEndpoints {
     @dhttp.getApi('/getquery')
-    static async getQuery(@dhttp.argSource(ArgSources.QUERY) name: string) {
+    static async getQuery(@DBOSKoa.argSource(ArgSources.QUERY) name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
     @dhttp.getApi('/getbody')
-    static async getBody(@dhttp.argSource(ArgSources.BODY) name: string) {
+    static async getBody(@DBOSKoa.argSource(ArgSources.BODY) name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
     @dhttp.getApi('/getdefault')
-    static async getDefault(@dhttp.argSource(ArgSources.DEFAULT) name: string) {
+    static async getDefault(@DBOSKoa.argSource(ArgSources.DEFAULT) name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
     @dhttp.getApi('/getauto')
-    static async getAuto(@dhttp.argSource(ArgSources.AUTO) name: string) {
+    static async getAuto(@DBOSKoa.argSource(ArgSources.AUTO) name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
     @dhttp.postApi('/postquery')
-    static async postQuery(@dhttp.argSource(ArgSources.QUERY) name: string) {
+    static async postQuery(@DBOSKoa.argSource(ArgSources.QUERY) name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
     @dhttp.postApi('/postbody')
-    static async postBody(@dhttp.argSource(ArgSources.BODY) name: string) {
+    static async postBody(@DBOSKoa.argSource(ArgSources.BODY) name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
     @dhttp.postApi('/postdefault')
-    static async postDefault(@dhttp.argSource(ArgSources.DEFAULT) name: string) {
+    static async postDefault(@DBOSKoa.argSource(ArgSources.DEFAULT) name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
     @dhttp.postApi('/postauto')
-    static async postAuto(@dhttp.argSource(ArgSources.AUTO) name: string) {
+    static async postAuto(@DBOSKoa.argSource(ArgSources.AUTO) name: string) {
       return Promise.resolve(`hello ${name}`);
     }
   }

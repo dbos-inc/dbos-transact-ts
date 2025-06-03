@@ -50,25 +50,6 @@ export interface DBOSHTTPArgInfo {
   argSource?: ArgSources;
 }
 
-enum ArgRequiredOptions {
-  REQUIRED = 'REQUIRED',
-  OPTIONAL = 'OPTIONAL',
-  DEFAULT = 'DEFAULT',
-}
-
-interface ValidatorClassInfo {
-  defaultArgRequired?: ArgRequiredOptions;
-  defaultArgValidate?: boolean;
-}
-
-interface ValidatorFuncInfo {
-  performArgValidation?: boolean;
-}
-
-interface ValidatorArgInfo {
-  required?: ArgRequiredOptions;
-}
-
 /**
  * HTTPRequest includes useful information from http.IncomingMessage and parsed body,
  *   URL parameters, and parsed query string.
@@ -106,8 +87,6 @@ export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
 export function isClientRequestError(e: Error) {
   return DBOSErrors.isDataValidationError(e);
 }
-
-const VALIDATOR = 'validator';
 
 export class DBOSHTTPBase extends DBOSLifecycleCallback {
   static HTTP_OPERATION_TYPE: string = 'http';
@@ -170,7 +149,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
   }
 
   /** Parameter decorator indicating which source to use (URL, BODY, etc) for arg data */
-  argSource(source: ArgSources) {
+  static argSource(source: ArgSources) {
     return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
       const curParam = DBOS.associateParamWithInfo(
         DBOSHTTP,
@@ -187,7 +166,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
     };
   }
 
-  getArgSource(arg: MethodParameter) {
+  protected getArgSource(arg: MethodParameter) {
     const arginfo = arg.getRegisteredInfo(DBOSHTTP) as DBOSHTTPArgInfo;
     return arginfo?.argSource ?? ArgSources.AUTO;
   }
