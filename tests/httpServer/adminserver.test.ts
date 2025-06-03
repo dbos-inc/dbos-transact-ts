@@ -440,9 +440,9 @@ describe('running-admin-server-tests', () => {
     });
     expect(response.status).toBe(200);
     const workflow = await response.json();
-    expect(workflow.workflowID).toBe(handle.workflowID);
+    expect(workflow.workflow_id).toBe(handle.workflowID);
     expect(workflow.status).toBe(StatusString.SUCCESS);
-    expect(workflow.workflowName).toBe('exampleWorkflow');
+    expect(workflow.workflow_name).toBe('exampleWorkflow');
 
     // Test GET /workflows/:workflow_id - non-existing workflow
     response = await fetch(`http://localhost:3001/workflows/non-existing-workflow-id`, {
@@ -489,7 +489,8 @@ describe('running-admin-server-tests', () => {
     let workflows = await response.json();
 
     // Both workflows should appear in the results
-    const workflowIds = workflows.map((w: any) => w.workflowID);
+    const workflowIds = workflows.map((w: any) => w.workflow_id);
+    expect(workflows.length).toBe(2);
     expect(workflowIds).toContain(handle1.workflowID);
     expect(workflowIds).toContain(handle2.workflowID);
 
@@ -511,8 +512,8 @@ describe('running-admin-server-tests', () => {
 
     // Only the second workflow should be returned since it was created after firstWorkflowTime
     expect(workflows.length).toBe(1);
-    expect(workflows[0].workflowID).toBe(handle2.workflowID);
+    expect(workflows[0].workflow_id).toBe(handle2.workflowID);
     expect(workflows[0].status).toBe(StatusString.SUCCESS);
-    expect(workflows[0].workflowName).toBe('exampleWorkflow');
+    expect(workflows[0].workflow_name).toBe('exampleWorkflow');
   });
 });

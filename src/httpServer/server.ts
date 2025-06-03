@@ -463,7 +463,30 @@ export class DBOSHttpServer {
       };
 
       const workflows = await dbosExec.listWorkflows(input);
-      koaCtxt.body = workflows;
+
+      // Map result to the underscore format.
+      koaCtxt.body = workflows.map((wf) => ({
+        workflow_id: wf.workflowID,
+        status: wf.status,
+        workflow_name: wf.workflowName,
+        workflow_class_name: wf.workflowClassName,
+        workflow_config_name: wf.workflowConfigName,
+        queue_name: wf.queueName,
+        authenticated_user: wf.authenticatedUser,
+        assumed_role: wf.assumedRole,
+        authenticated_roles: wf.authenticatedRoles,
+        output: wf.output,
+        error: wf.error,
+        input: wf.input,
+        executor_id: wf.executorId,
+        application_version: wf.applicationVersion,
+        application_id: wf.applicationID,
+        recovery_attempts: wf.recoveryAttempts,
+        created_at: wf.createdAt,
+        updated_at: wf.updatedAt,
+        timeout_ms: wf.timeoutMS,
+        deadline_epoch_ms: wf.deadlineEpochMS,
+      }));
       koaCtxt.status = 200;
     };
     router.post(listWorkflowsUrl, listWorkflowsHandler);
@@ -481,7 +504,28 @@ export class DBOSHttpServer {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const workflow = await dbosExec.getWorkflowStatus(workflowId);
       if (workflow) {
-        koaCtxt.body = workflow;
+        koaCtxt.body = {
+          workflow_id: workflow.workflowID,
+          status: workflow.status,
+          workflow_name: workflow.workflowName,
+          workflow_class_name: workflow.workflowClassName,
+          workflow_config_name: workflow.workflowConfigName,
+          queue_name: workflow.queueName,
+          authenticated_user: workflow.authenticatedUser,
+          assumed_role: workflow.assumedRole,
+          authenticated_roles: workflow.authenticatedRoles,
+          output: workflow.output,
+          error: workflow.error,
+          input: workflow.input,
+          executor_id: workflow.executorId,
+          application_version: workflow.applicationVersion,
+          application_id: workflow.applicationID,
+          recovery_attempts: workflow.recoveryAttempts,
+          created_at: workflow.createdAt,
+          updated_at: workflow.updatedAt,
+          timeout_ms: workflow.timeoutMS,
+          deadline_epoch_ms: workflow.deadlineEpochMS,
+        };
         koaCtxt.status = 200;
       } else {
         koaCtxt.status = 404;
