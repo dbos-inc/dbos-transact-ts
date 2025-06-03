@@ -2097,6 +2097,66 @@ export class DBOS {
     return decorator;
   }
 
+  static registerStep<This, Args extends unknown[], Return>(
+    func: (this: This, ...args: Args) => Promise<Return>,
+    config: StepConfig & { name?: string } = {},
+  ): (this: This, ...args: Args) => Promise<Return> {
+    const name = config.name ?? func.name;
+    const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+      const inst =
+        this && typeof this !== 'function' && Object.hasOwn(this, 'name')
+          ? (this as unknown as ConfiguredInstance)
+          : undefined;
+
+      if (DBOS.isWithinWorkflow()) {
+        if (DBOS.isInTransaction()) {
+          throw new DBOSInvalidWorkflowTransitionError('Invalid call to a `step` function from within a `transaction`');
+        }
+        if (DBOS.isInStep()) {
+          // There should probably be checks here about the compatibility of the StepConfig...
+          return func.call(this, ...rawArgs);
+        }
+        const wfctx = assertCurrentWorkflowContext();
+        return await DBOSExecutor.globalInstance!.callStepFunction(
+          func as unknown as StepFunction<Args, Return>,
+          name,
+          config,
+          inst ?? null,
+          wfctx,
+          ...rawArgs,
+        );
+      }
+
+      throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+    };
+
+    Object.defineProperty(invokeWrapper, 'name', { value: name });
+    return invokeWrapper;
+  }
+
+  static runAsStep<Return>(func: () => Promise<Return>, config: StepConfig & { name?: string } = {}): Promise<Return> {
+    const name = config.name ?? func.name;
+    if (DBOS.isWithinWorkflow()) {
+      if (DBOS.isInTransaction()) {
+        throw new DBOSInvalidWorkflowTransitionError('Invalid call to a runAsStep from within a `transaction`');
+      }
+      if (DBOS.isInStep()) {
+        // There should probably be checks here about the compatibility of the StepConfig...
+        return func();
+      }
+      const wfctx = assertCurrentWorkflowContext();
+      return DBOSExecutor.globalInstance!.callStepFunction<[], Return>(
+        func as unknown as StepFunction<[], Return>,
+        name,
+        config,
+        null,
+        wfctx,
+      );
+    }
+
+    throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+  }
+
   /** Decorator indicating that the method is the target of HTTP GET operations for `url` */
   static getApi(url: string) {
     return httpApiDec(APITypes.GET, url);
