@@ -2,8 +2,8 @@
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
-import { SystemDatabase } from './system_database';
-import { DBOSContext, DBOSContextImpl, HTTPRequest } from './context';
+import { SystemDatabase, WorkflowStatusInternal } from './system_database';
+import { DBOSContext, DBOSContextImpl } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
@@ -80,7 +80,7 @@ export interface WorkflowStatus {
   readonly error?: unknown; // The error thrown by the workflow, if any.
   readonly input?: unknown[]; // The input to the workflow, if any.
 
-  readonly request?: HTTPRequest; // The parent request for this workflow, if any.
+  readonly request?: object; // The parent request for this workflow, if any.
   readonly executorId?: string; // The ID of the workflow executor
   readonly applicationVersion?: string;
   readonly applicationID: string;
@@ -120,24 +120,6 @@ export interface GetQueuedWorkflowsInput {
 
 export interface GetWorkflowsOutput {
   workflowUUIDs: string[];
-}
-
-export interface GetWorkflowQueueInput {
-  queueName?: string; // The name of the workflow queue
-  startTime?: string; // Timestamp in ISO 8601 format
-  endTime?: string; // Timestamp in ISO 8601 format
-  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
-}
-
-export interface GetWorkflowQueueOutput {
-  workflows: {
-    workflowID: string; // Workflow ID
-    executorID?: string; // Workflow executor ID
-    queueName: string; // Workflow queue name
-    createdAt: number; // Time that queue entry was created
-    startedAt?: number; // Time that workflow was started, if started
-    completedAt?: number; // Time that workflow completed, if complete
-  }[];
 }
 
 export interface GetPendingWorkflowsOutput {
@@ -409,7 +391,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     clsInst: ConfiguredInstance | null,
     ...args: T
   ): Promise<R> {
-    return this.#dbosExec.callStepFunction(stepFn, clsInst, this, ...args);
+    return this.#dbosExec.callStepFunction(stepFn, undefined, undefined, clsInst, this, ...args);
   }
 
   /**
@@ -599,7 +581,8 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    return DBOSJSON.parse(await this.systemDatabase.getWorkflowInputs(this.workflowUUID)) as T;
+    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
+    return DBOSJSON.parse(status.input) as T;
   }
 }
 
@@ -631,6 +614,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    return DBOSJSON.parse(await this.systemDatabase.getWorkflowInputs(this.workflowUUID)) as T;
+    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
+    return DBOSJSON.parse(status.input) as T;
   }
 }

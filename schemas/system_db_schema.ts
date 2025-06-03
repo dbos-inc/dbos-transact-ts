@@ -9,7 +9,7 @@ export interface workflow_status {
   error: string;
   assumed_role: string;
   authenticated_roles: string; // Serialized list of roles.
-  request: string; // Serialized HTTPRequest
+  request: string; // Serialized event dispatch data (such as HTTPRequest)
   executor_id: string; // Set to "local" for local deployment, set to microVM ID for cloud deployment.
   application_version?: string;
   queue_name?: string;
@@ -19,6 +19,10 @@ export interface workflow_status {
   recovery_attempts: number;
   workflow_timeout_ms: number | null;
   workflow_deadline_epoch_ms: number | null;
+  inputs: string;
+  started_at_epoch_ms?: number;
+  deduplication_id?: string; // ID used to identify enqueued workflows for de-duplication.
+  priority?: number; // Optional priority for the workflow.
 }
 
 export interface notifications {
@@ -42,11 +46,6 @@ export interface operation_outputs {
   function_name?: string;
 }
 
-export interface workflow_inputs {
-  workflow_uuid: string;
-  inputs: string;
-}
-
 export interface event_dispatch_kv {
   // Key fields
   service_name: string;
@@ -57,15 +56,6 @@ export interface event_dispatch_kv {
   value?: string;
   update_time?: number; // Timestamp of record (for upsert)
   update_seq?: bigint; // Sequence number of record (for upsert)
-}
-
-export interface workflow_queue {
-  workflow_uuid: string;
-  queue_name: string;
-  executor_id: string;
-  created_at_epoch_ms: number; // This time is provided by the database
-  started_at_epoch_ms?: number; // This time is provided by the client
-  completed_at_epoch_ms?: number; // This time is provided by the client
 }
 
 // This is the deserialized version of operation_outputs

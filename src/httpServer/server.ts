@@ -6,7 +6,7 @@ import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
 import { Workflow } from '../workflow';
-import { DBOSDataValidationError, DBOSError, DBOSResponseError, isClientError } from '../error';
+import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor } from '../dbos-executor';
 import { GlobalLogger as Logger } from '../telemetry/logs';
 import { MiddlewareDefaults } from './middleware';
@@ -18,6 +18,7 @@ import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
 import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
+import { globalTimeout } from '../dbos-runtime/workflow_management';
 export type QueueMetadataResponse = QueueParameters & { name: string };
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
@@ -70,6 +71,8 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerQueueMetadataEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerListWorkflowStepsEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerForkWorkflowEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerGarbageCollectEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerGlobalTimeoutEndpoint(dbosExec, adminRouter);
     adminApp.use(adminRouter.routes()).use(adminRouter.allowedMethods());
     return adminApp;
   }
@@ -249,6 +252,31 @@ export class DBOSHttpServer {
     dbosExec.logger.debug(`DBOS Server Registered Deactivate GET ${DeactivateUrl}`);
   }
 
+  static registerGarbageCollectEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const url = '/dbos-garbage-collect';
+    const handler = async (koaCtxt: Koa.Context) => {
+      const body = koaCtxt.request.body as {
+        cutoff_epoch_timestamp_ms?: number;
+        rows_threshold?: number;
+      };
+      await dbosExec.systemDatabase.garbageCollect(body.cutoff_epoch_timestamp_ms, body.rows_threshold);
+      koaCtxt.status = 204;
+    };
+    router.post(url, handler);
+  }
+
+  static registerGlobalTimeoutEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const url = '/dbos-global-timeout';
+    const handler = async (koaCtxt: Koa.Context) => {
+      const body = koaCtxt.request.body as {
+        timeout_ms: number;
+      };
+      await globalTimeout(dbosExec.systemDatabase, body.timeout_ms);
+      koaCtxt.status = 204;
+    };
+    router.post(url, handler);
+  }
+
   /**
    *
    * Register Cancel Workflow endpoint.
@@ -404,240 +432,236 @@ export class DBOSHttpServer {
     DBOSHttpServer.nRegisteredEndpoints = 0;
     dbosExec.registeredOperations.forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistrationBase;
-      if (ro.apiURL) {
-        if (ro.isInstance) {
-          dbosExec.logger.warn(
-            `Operation ${ro.className}/${ro.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked.`,
+      if (!ro.apiURL) return;
+
+      if (ro.isInstance) {
+        dbosExec.logger.warn(
+          `Operation ${ro.className}/${ro.name} is registered with an endpoint (${ro.apiURL}) but cannot be invoked.`,
+        );
+        return;
+      }
+      ++DBOSHttpServer.nRegisteredEndpoints;
+      const defaults = ro.defaults as MiddlewareDefaults;
+      // Check if we need to apply a custom CORS
+      if (defaults.koaCors) {
+        router.all(ro.apiURL, defaults.koaCors); // Use router.all to register with all methods including preflight requests
+      } else {
+        if (dbosExec.config.http?.cors_middleware ?? true) {
+          router.all(
+            ro.apiURL,
+            cors({
+              credentials: dbosExec.config.http?.credentials ?? true,
+              origin: (o: Context) => {
+                const whitelist = dbosExec.config.http?.allowed_origins;
+                const origin = o.request.header.origin ?? '*';
+                if (whitelist && whitelist.length > 0) {
+                  return whitelist.includes(origin) ? origin : '';
+                }
+                return o.request.header.origin || '*';
+              },
+              allowMethods: 'GET,HEAD,PUT,POST,DELETE,PATCH,OPTIONS',
+              allowHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
+            }),
           );
-          return;
         }
-        ++DBOSHttpServer.nRegisteredEndpoints;
-        const defaults = ro.defaults as MiddlewareDefaults;
-        // Check if we need to apply a custom CORS
-        if (defaults.koaCors) {
-          router.all(ro.apiURL, defaults.koaCors); // Use router.all to register with all methods including preflight requests
-        } else {
-          if (dbosExec.config.http?.cors_middleware ?? true) {
-            router.all(
-              ro.apiURL,
-              cors({
-                credentials: dbosExec.config.http?.credentials ?? true,
-                origin: (o: Context) => {
-                  const whitelist = dbosExec.config.http?.allowed_origins;
-                  const origin = o.request.header.origin ?? '*';
-                  if (whitelist && whitelist.length > 0) {
-                    return whitelist.includes(origin) ? origin : '';
-                  }
-                  return o.request.header.origin || '*';
-                },
-                allowMethods: 'GET,HEAD,PUT,POST,DELETE,PATCH,OPTIONS',
-                allowHeaders: ['Origin', 'X-Requested-With', 'Content-Type', 'Accept', 'Authorization'],
-              }),
-            );
+      }
+      // Check if we need to apply any Koa global middleware.
+      if (defaults?.koaGlobalMiddlewares) {
+        defaults.koaGlobalMiddlewares.forEach((koaMiddleware) => {
+          if (globalMiddlewares.has(koaMiddleware)) {
+            return;
           }
-        }
-        // Check if we need to apply any Koa global middleware.
-        if (defaults?.koaGlobalMiddlewares) {
-          defaults.koaGlobalMiddlewares.forEach((koaMiddleware) => {
-            if (globalMiddlewares.has(koaMiddleware)) {
-              return;
-            }
-            dbosExec.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} globally`);
-            globalMiddlewares.add(koaMiddleware);
-            app.use(koaMiddleware);
-          });
-        }
+          dbosExec.logger.debug(`DBOS Server applying middleware ${koaMiddleware.name} globally`);
+          globalMiddlewares.add(koaMiddleware);
+          app.use(koaMiddleware);
+        });
+      }
 
-        // Wrapper function that parses request and send response.
-        const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-          const oc: HandlerContextImpl = new HandlerContextImpl(dbosExec, koaCtxt);
+      // Wrapper function that parses request and send response.
+      const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+        const oc: HandlerContextImpl = new HandlerContextImpl(dbosExec, koaCtxt);
 
-          try {
-            // Check for auth first
-            if (defaults?.authMiddleware) {
-              const res = await defaults.authMiddleware({
-                name: ro.name,
-                requiredRole: ro.getRequiredRoles(),
-                koaContext: koaCtxt,
-                logger: oc.logger,
-                span: oc.span,
-                getConfig: (key: string, def) => {
-                  return oc.getConfig(key, def);
-                },
-                query: (query, ...args) => {
-                  return dbosExec.userDatabase.queryFunction(query, ...args);
-                },
-              });
-              if (res) {
-                oc.authenticatedUser = res.authenticatedUser;
-                oc.authenticatedRoles = res.authenticatedRoles;
-              }
-            }
-
-            // Parse the arguments.
-            const args: unknown[] = [];
-            ro.args.forEach((marg, idx) => {
-              marg.argSource = marg.argSource ?? ArgSources.DEFAULT; // Assign a default value.
-              if (idx === 0 && ro.passContext) {
-                return; // Do not parse the context.
-              }
-
-              let foundArg = undefined;
-              const isQueryMethod = ro.apiType === APITypes.GET || ro.apiType === APITypes.DELETE;
-              const isBodyMethod =
-                ro.apiType === APITypes.POST || ro.apiType === APITypes.PUT || ro.apiType === APITypes.PATCH;
-
-              if ((isQueryMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
-                foundArg = koaCtxt.request.query[marg.name];
-                if (foundArg !== undefined) {
-                  args.push(foundArg);
-                }
-              } else if (
-                (isBodyMethod && marg.argSource === ArgSources.DEFAULT) ||
-                marg.argSource === ArgSources.BODY
-              ) {
-                if (!koaCtxt.request.body) {
-                  throw new DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
-                }
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-                foundArg = koaCtxt.request.body[marg.name];
-                if (foundArg !== undefined) {
-                  args.push(foundArg);
-                }
-              }
-
-              // Try to parse the argument from the URL if nothing found.
-              if (foundArg === undefined) {
-                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-                args.push(koaCtxt.params[marg.name]);
-              }
-
-              //console.log(`found arg ${marg.name} ${idx} ${args[idx-1]}`);
+        try {
+          // Check for auth first
+          if (defaults?.authMiddleware) {
+            const res = await defaults.authMiddleware({
+              name: ro.name,
+              requiredRole: ro.getRequiredRoles(),
+              koaContext: koaCtxt,
+              logger: oc.logger,
+              span: oc.span,
+              getConfig: (key: string, def) => {
+                return oc.getConfig(key, def);
+              },
+              query: (query, ...args) => {
+                return dbosExec.userDatabase.queryFunction(query, ...args);
+              },
             });
-
-            // Extract workflow UUID from headers (if any).
-            // We pass in the specified workflow UUID to workflows and transactions, but doesn't restrict how handlers use it.
-            const headerWorkflowUUID = koaCtxt.get(WorkflowUUIDHeader);
-
-            // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
-            // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
-            // In case of an exception:
-            // - If a client-side error is thrown, we return 400.
-            // - If an error contains a `status` field, we return the specified status code.
-            // - Otherwise, we return 500.
-            // configuredInstance is currently null; we don't allow configured handlers now.
-            const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredInstance: null };
-            if (ro.txnConfig) {
-              koaCtxt.body = await dbosExec.transaction(
-                ro.registeredFunction as Transaction<unknown[], unknown>,
-                wfParams,
-                ...args,
-              );
-            } else if (ro.workflowConfig) {
-              koaCtxt.body = await (
-                await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
-              ).getResult();
-            } else if (ro.stepConfig) {
-              koaCtxt.body = await dbosExec.external(
-                ro.registeredFunction as StepFunction<unknown[], unknown>,
-                wfParams,
-                ...args,
-              );
-            } else {
-              // Directly invoke the handler code.
-              let cresult: unknown;
-              await runWithHandlerContext(oc, async () => {
-                if (ro.passContext) {
-                  cresult = await ro.invoke(undefined, [oc, ...args]);
-                } else {
-                  cresult = await ro.invoke(undefined, [...args]);
-                }
-              });
-              const retValue = cresult!;
-
-              // Set the body to the return value unless the body is already set by the handler.
-              if (koaCtxt.body === undefined) {
-                koaCtxt.body = retValue;
-              }
+            if (res) {
+              oc.authenticatedUser = res.authenticatedUser;
+              oc.authenticatedRoles = res.authenticatedRoles;
             }
-            oc.span.setStatus({ code: SpanStatusCode.OK });
-          } catch (e) {
-            if (e instanceof Error) {
-              const annotated_e = e as Error & { dbos_already_logged?: boolean };
-              if (annotated_e.dbos_already_logged !== true) {
-                oc.logger.error(e);
-              }
-              oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-              let st = (e as DBOSResponseError)?.status || 500;
-              const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
-              if (dbosErrorCode && isClientError(dbosErrorCode)) {
-                st = 400; // Set to 400: client-side error.
-              }
-              koaCtxt.status = st;
-              koaCtxt.message = e.message;
-              koaCtxt.body = {
-                status: st,
-                message: e.message,
-                details: e,
-              };
-            } else {
-              // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
-              // using stringify() will not produce a pretty output, because our format function uses stringify() too.
-              oc.logger.error(DBOSJSON.stringify(e));
-              oc.span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
-              koaCtxt.body = e;
-              koaCtxt.status = 500;
-            }
-          } finally {
-            // Inject trace context into response headers.
-            // We cannot use the defaultTextMapSetter to set headers through Koa
-            // So we provide a custom setter that sets headers through Koa's context.
-            // See https://github.com/open-telemetry/opentelemetry-js/blob/868f75e448c7c3a0efd75d72c448269f1375a996/packages/opentelemetry-core/src/trace/W3CTraceContextPropagator.ts#L74
-            interface Carrier {
-              context: Koa.Context;
-            }
-            oc.W3CTraceContextPropagator.inject(
-              trace.setSpanContext(ROOT_CONTEXT, oc.span.spanContext()),
-              {
-                context: koaCtxt,
-              },
-              {
-                set: (carrier: Carrier, key: string, value: string) => {
-                  carrier.context.set(key, value);
-                },
-              },
-            );
-            dbosExec.tracer.endSpan(oc.span);
-            await koaNext();
           }
-        };
-        // Actually register the endpoint.
-        // Middleware functions are applied directly to router verb methods to prevent duplicate calls.
-        const routeMiddlewares = [defaults.koaBodyParser ?? bodyParser()].concat(defaults.koaMiddlewares ?? []);
-        switch (ro.apiType) {
-          case APITypes.GET:
-            router.get(ro.apiURL, ...routeMiddlewares, wrappedHandler);
-            dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
-            break;
-          case APITypes.POST:
-            router.post(ro.apiURL, ...routeMiddlewares, wrappedHandler);
-            dbosExec.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
-            break;
-          case APITypes.PUT:
-            router.put(ro.apiURL, ...routeMiddlewares, wrappedHandler);
-            dbosExec.logger.debug(`DBOS Server Registered PUT ${ro.apiURL}`);
-            break;
-          case APITypes.PATCH:
-            router.patch(ro.apiURL, ...routeMiddlewares, wrappedHandler);
-            dbosExec.logger.debug(`DBOS Server Registered PATCH ${ro.apiURL}`);
-            break;
-          case APITypes.DELETE:
-            router.delete(ro.apiURL, ...routeMiddlewares, wrappedHandler);
-            dbosExec.logger.debug(`DBOS Server Registered DELETE ${ro.apiURL}`);
-            break;
-          default:
-            exhaustiveCheckGuard(ro.apiType);
+
+          // Parse the arguments.
+          const args: unknown[] = [];
+          ro.args.forEach((marg, idx) => {
+            marg.argSource = marg.argSource ?? ArgSources.DEFAULT; // Assign a default value.
+            if (idx === 0 && ro.passContext) {
+              return; // Do not parse the context.
+            }
+
+            let foundArg = undefined;
+            const isQueryMethod = ro.apiType === APITypes.GET || ro.apiType === APITypes.DELETE;
+            const isBodyMethod =
+              ro.apiType === APITypes.POST || ro.apiType === APITypes.PUT || ro.apiType === APITypes.PATCH;
+
+            if ((isQueryMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.QUERY) {
+              foundArg = koaCtxt.request.query[marg.name];
+              if (foundArg !== undefined) {
+                args.push(foundArg);
+              }
+            } else if ((isBodyMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
+              if (!koaCtxt.request.body) {
+                throw new DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
+              }
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+              foundArg = koaCtxt.request.body[marg.name];
+              if (foundArg !== undefined) {
+                args.push(foundArg);
+              }
+            }
+
+            // Try to parse the argument from the URL if nothing found.
+            if (foundArg === undefined) {
+              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+              args.push(koaCtxt.params[marg.name]);
+            }
+
+            //console.log(`found arg ${marg.name} ${idx} ${args[idx-1]}`);
+          });
+
+          // Extract workflow UUID from headers (if any).
+          // We pass in the specified workflow UUID to workflows and transactions, but doesn't restrict how handlers use it.
+          const headerWorkflowUUID = koaCtxt.get(WorkflowUUIDHeader);
+
+          // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
+          // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
+          // In case of an exception:
+          // - If a client-side error is thrown, we return 400.
+          // - If an error contains a `status` field, we return the specified status code.
+          // - Otherwise, we return 500.
+          // configuredInstance is currently null; we don't allow configured handlers now.
+          const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredInstance: null };
+          if (ro.txnConfig) {
+            koaCtxt.body = await dbosExec.transaction(
+              ro.registeredFunction as Transaction<unknown[], unknown>,
+              wfParams,
+              ...args,
+            );
+          } else if (ro.workflowConfig) {
+            koaCtxt.body = await (
+              await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
+            ).getResult();
+          } else if (ro.stepConfig) {
+            koaCtxt.body = await dbosExec.external(
+              ro.registeredFunction as StepFunction<unknown[], unknown>,
+              wfParams,
+              ...args,
+            );
+          } else {
+            // Directly invoke the handler code.
+            let cresult: unknown;
+            await runWithHandlerContext(oc, async () => {
+              if (ro.passContext) {
+                cresult = await ro.invoke(undefined, [oc, ...args]);
+              } else {
+                cresult = await ro.invoke(undefined, [...args]);
+              }
+            });
+            const retValue = cresult!;
+
+            // Set the body to the return value unless the body is already set by the handler.
+            if (koaCtxt.body === undefined) {
+              koaCtxt.body = retValue;
+            }
+          }
+          oc.span.setStatus({ code: SpanStatusCode.OK });
+        } catch (e) {
+          if (e instanceof Error) {
+            const annotated_e = e as Error & { dbos_already_logged?: boolean };
+            if (annotated_e.dbos_already_logged !== true) {
+              oc.logger.error(e);
+            }
+            oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+            let st = (e as DBOSResponseError)?.status || 500;
+            if (isDataValidationError(e)) {
+              st = 400; // Set to 400: client-side error.
+            }
+            koaCtxt.status = st;
+            koaCtxt.message = e.message;
+            koaCtxt.body = {
+              status: st,
+              message: e.message,
+              details: e,
+            };
+          } else {
+            // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
+            // using stringify() will not produce a pretty output, because our format function uses stringify() too.
+            oc.logger.error(DBOSJSON.stringify(e));
+            oc.span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
+            koaCtxt.body = e;
+            koaCtxt.status = 500;
+          }
+        } finally {
+          // Inject trace context into response headers.
+          // We cannot use the defaultTextMapSetter to set headers through Koa
+          // So we provide a custom setter that sets headers through Koa's context.
+          // See https://github.com/open-telemetry/opentelemetry-js/blob/868f75e448c7c3a0efd75d72c448269f1375a996/packages/opentelemetry-core/src/trace/W3CTraceContextPropagator.ts#L74
+          interface Carrier {
+            context: Koa.Context;
+          }
+          oc.W3CTraceContextPropagator.inject(
+            trace.setSpanContext(ROOT_CONTEXT, oc.span.spanContext()),
+            {
+              context: koaCtxt,
+            },
+            {
+              set: (carrier: Carrier, key: string, value: string) => {
+                carrier.context.set(key, value);
+              },
+            },
+          );
+          dbosExec.tracer.endSpan(oc.span);
+          await koaNext();
         }
+      };
+      // Actually register the endpoint.
+      // Middleware functions are applied directly to router verb methods to prevent duplicate calls.
+      const routeMiddlewares = [defaults.koaBodyParser ?? bodyParser()].concat(defaults.koaMiddlewares ?? []);
+      switch (ro.apiType) {
+        case APITypes.GET:
+          router.get(ro.apiURL, ...routeMiddlewares, wrappedHandler);
+          dbosExec.logger.debug(`DBOS Server Registered GET ${ro.apiURL}`);
+          break;
+        case APITypes.POST:
+          router.post(ro.apiURL, ...routeMiddlewares, wrappedHandler);
+          dbosExec.logger.debug(`DBOS Server Registered POST ${ro.apiURL}`);
+          break;
+        case APITypes.PUT:
+          router.put(ro.apiURL, ...routeMiddlewares, wrappedHandler);
+          dbosExec.logger.debug(`DBOS Server Registered PUT ${ro.apiURL}`);
+          break;
+        case APITypes.PATCH:
+          router.patch(ro.apiURL, ...routeMiddlewares, wrappedHandler);
+          dbosExec.logger.debug(`DBOS Server Registered PATCH ${ro.apiURL}`);
+          break;
+        case APITypes.DELETE:
+          router.delete(ro.apiURL, ...routeMiddlewares, wrappedHandler);
+          dbosExec.logger.debug(`DBOS Server Registered DELETE ${ro.apiURL}`);
+          break;
+        default:
+          exhaustiveCheckGuard(ro.apiType);
       }
     });
   }

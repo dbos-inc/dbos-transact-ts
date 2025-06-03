@@ -3,7 +3,6 @@ import { Request, Response, NextFunction } from 'express';
 import { IncomingHttpHeaders } from 'http';
 
 import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from '../decorators';
-import { DBOSUndefinedDecoratorInputError } from '../error';
 import { Logger as DBOSLogger } from '../telemetry/logs';
 import { UserDatabaseClient } from '../user_database';
 import { OperationType } from '../dbos-executor';
@@ -58,18 +57,15 @@ export interface MiddlewareDefaults extends RegistrationDefaults {
   koaGlobalMiddlewares?: Koa.Middleware[];
 }
 
-export class MiddlewareClassRegistration<CT extends { new (...args: unknown[]): object }>
-  extends ClassRegistration<CT>
-  implements MiddlewareDefaults
-{
+export class MiddlewareClassRegistration extends ClassRegistration implements MiddlewareDefaults {
   authMiddleware?: DBOSHttpAuthMiddleware;
   koaBodyParser?: Koa.Middleware;
   koaCors?: Koa.Middleware;
   koaMiddlewares?: Koa.Middleware[];
   koaGlobalMiddlewares?: Koa.Middleware[];
 
-  constructor(ctor: CT) {
-    super(ctor);
+  constructor() {
+    super();
   }
 }
 
@@ -82,10 +78,10 @@ export class MiddlewareClassRegistration<CT extends { new (...args: unknown[]): 
  */
 export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
   if (authMiddleware === undefined) {
-    throw new DBOSUndefinedDecoratorInputError('Authentication');
+    throw new TypeError(`'Authentication' received undefined input. Possible circular dependency?`);
   }
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.authMiddleware = authMiddleware;
   }
   return clsdec;
@@ -96,7 +92,7 @@ export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
  */
 export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.koaBodyParser = koaBodyParser;
   }
   return clsdec;
@@ -107,7 +103,7 @@ export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
  */
 export function KoaCors(koaCors: Koa.Middleware) {
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.koaCors = koaCors;
   }
   return clsdec;
@@ -119,11 +115,11 @@ export function KoaCors(koaCors: Koa.Middleware) {
 export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
     if (i === undefined) {
-      throw new DBOSUndefinedDecoratorInputError('KoaMiddleware');
+      throw new TypeError(`'KoaMiddleware' received undefined input. Possible circular dependency?`);
     }
   });
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.koaMiddlewares = koaMiddleware;
   }
   return clsdec;
@@ -136,11 +132,11 @@ export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
 export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
     if (i === undefined) {
-      throw new DBOSUndefinedDecoratorInputError('KoaGlobalMiddleware');
+      throw new TypeError(`'KoaGlobalMiddleware' received undefined input. Possible circular dependency?`);
     }
   });
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration<T>;
+    const clsreg = getOrCreateClassRegistration(ctor) as MiddlewareClassRegistration;
     clsreg.koaGlobalMiddlewares = koaMiddleware;
   }
   return clsdec;

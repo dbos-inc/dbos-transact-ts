@@ -1,30 +1,14 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
-import {
-  GetApi,
-  Transaction,
-  Workflow,
-  MiddlewareContext,
-  PostApi,
-  RequiredRole,
-  TransactionContext,
-  WorkflowContext,
-  StatusString,
-  Step,
-  StepContext,
-  DBOS,
-  DefaultArgRequired,
-} from '../../src';
-import { DeleteApi, PatchApi, PutApi } from '../../src';
+import { MiddlewareContext, StatusString, DBOS, DefaultArgRequired } from '../../src';
 import { WorkflowUUIDHeader } from '../../src/httpServer/server';
 import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb, uuidValidate } from '../helpers';
 import request from 'supertest';
-import { ArgSource, HandlerContext } from '../../src/httpServer/handler';
+import { ArgSource } from '../../src/httpServer/handler';
 import { ArgSources } from '../../src/httpServer/handlerTypes';
 import { Authentication, KoaBodyParser, RequestIDHeader } from '../../src/httpServer/middleware';
 import { randomUUID } from 'node:crypto';
 import { DBOSConfig } from '../../src/dbos-executor';
 import { DBOSNotAuthorizedError, DBOSResponseError } from '../../src/error';
-import { PoolClient } from 'pg';
 import { IncomingMessage } from 'http';
 import { bodyParser } from '@koa/bodyparser';
 
@@ -320,8 +304,6 @@ describe('httpserver-tests', () => {
     return;
   }
 
-  type TestTransactionContext = TransactionContext<PoolClient>;
-
   @Authentication(testAuthMiddlware)
   @KoaBodyParser(
     bodyParser({
@@ -334,150 +316,148 @@ describe('httpserver-tests', () => {
   )
   @DefaultArgRequired
   class TestEndpoints {
-    @GetApi('/hello')
-    static async hello(_ctx: HandlerContext) {
+    @DBOS.getApi('/hello')
+    static async hello() {
       return Promise.resolve({ message: 'hello!' });
     }
 
-    @GetApi('/hello/:id')
-    static async helloUrl(ctx: HandlerContext, id: string) {
+    @DBOS.getApi('/hello/:id')
+    static async helloUrl(id: string) {
       // Customize status code and response.
-      ctx.koaContext.body = `wow ${id}`;
-      ctx.koaContext.status = 301;
+      DBOS.koaContext.body = `wow ${id}`;
+      DBOS.koaContext.status = 301;
       return Promise.resolve(`hello ${id}`);
     }
 
-    @GetApi('/redirect')
-    static async redirectUrl(ctx: HandlerContext) {
-      const url = ctx.request.url || 'bad url'; // Get the raw url from request.
-      ctx.koaContext.redirect(url + '-dbos');
+    @DBOS.getApi('/redirect')
+    static async redirectUrl() {
+      const url = DBOS.request.url || 'bad url'; // Get the raw url from request.
+      DBOS.koaContext.redirect(url + '-dbos');
       return Promise.resolve();
     }
 
-    @GetApi('/query')
-    static async helloQuery(ctx: HandlerContext, name: string) {
-      ctx.logger.info(`query with name ${name}`); // Test logging.
+    @DBOS.getApi('/query')
+    static async helloQuery(name: string) {
+      DBOS.logger.info(`query with name ${name}`); // Test logging.
       return Promise.resolve(`hello ${name}`);
     }
 
-    @GetApi('/querybody')
-    static async helloQueryBody(ctx: HandlerContext, @ArgSource(ArgSources.BODY) name: string) {
-      ctx.logger.info(`query with name ${name}`); // Test logging.
+    @DBOS.getApi('/querybody')
+    static async helloQueryBody(@ArgSource(ArgSources.BODY) name: string) {
+      DBOS.logger.info(`query with name ${name}`); // Test logging.
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DeleteApi('/testdeletequery')
-    static async testdeletequeryparam(ctx: HandlerContext, name: string) {
-      ctx.logger.info(`delete with param from query with name ${name}`);
+    @DBOS.deleteApi('/testdeletequery')
+    static async testdeletequeryparam(name: string) {
+      DBOS.logger.info(`delete with param from query with name ${name}`);
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DeleteApi('/testdeleteurl/:name')
-    static async testdeleteurlparam(ctx: HandlerContext, name: string) {
-      ctx.logger.info(`delete with param from url with name ${name}`);
+    @DBOS.deleteApi('/testdeleteurl/:name')
+    static async testdeleteurlparam(name: string) {
+      DBOS.logger.info(`delete with param from url with name ${name}`);
       return Promise.resolve(`hello ${name}`);
     }
 
-    @DeleteApi('/testdeletebody')
-    static async testdeletebodyparam(ctx: HandlerContext, @ArgSource(ArgSources.BODY) name: string) {
-      ctx.logger.info(`delete with param from url with name ${name}`);
+    @DBOS.deleteApi('/testdeletebody')
+    static async testdeletebodyparam(@ArgSource(ArgSources.BODY) name: string) {
+      DBOS.logger.info(`delete with param from url with name ${name}`);
       return Promise.resolve(`hello ${name}`);
     }
 
-    @PostApi('/testpost')
-    static async testpost(_ctx: HandlerContext, name: string) {
+    @DBOS.postApi('/testpost')
+    static async testpost(name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
-    @PutApi('/testput')
-    static async testput(_ctx: HandlerContext, name: string) {
+    @DBOS.putApi('/testput')
+    static async testput(name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
-    @PatchApi('/testpatch')
-    static async testpatch(_ctx: HandlerContext, name: string) {
+    @DBOS.patchApi('/testpatch')
+    static async testpatch(name: string) {
       return Promise.resolve(`hello ${name}`);
     }
 
-    @GetApi('/dbos-error')
-    @Transaction()
-    static async dbosErr(_ctx: TestTransactionContext) {
+    @DBOS.getApi('/dbos-error')
+    @DBOS.transaction()
+    static async dbosErr() {
       return Promise.reject(new DBOSResponseError('customize error', 503));
     }
 
-    @GetApi('/handler/:name')
-    static async testHandler(ctxt: HandlerContext, name: string) {
-      const workflowUUID = ctxt.koaContext.get(WorkflowUUIDHeader);
+    @DBOS.getApi('/handler/:name')
+    static async testHandler(name: string) {
+      const workflowID = DBOS.koaContext.get(WorkflowUUIDHeader);
       // Invoke a workflow using the given UUID.
-      return ctxt
-        .invoke(TestEndpoints, workflowUUID)
+      return DBOS.startWorkflow(TestEndpoints, { workflowID })
         .testWorkflow(name)
         .then((x) => x.getResult());
     }
 
-    @GetApi('/testStartWorkflow/:name')
-    static async testStartWorkflow(ctxt: HandlerContext, name: string): Promise<string> {
-      return ctxt
-        .startWorkflow(TestEndpoints)
+    @DBOS.getApi('/testStartWorkflow/:name')
+    static async testStartWorkflow(name: string): Promise<string> {
+      return DBOS.startWorkflow(TestEndpoints)
         .testWorkflow(name)
         .then((x) => x.getResult());
     }
 
-    @GetApi('/testInvokeWorkflow/:name')
-    static async testInvokeWorkflow(ctxt: HandlerContext, name: string): Promise<string> {
-      return ctxt.invokeWorkflow(TestEndpoints).testWorkflow(name);
+    @DBOS.getApi('/testInvokeWorkflow/:name')
+    static async testInvokeWorkflow(name: string): Promise<string> {
+      return TestEndpoints.testWorkflow(name);
     }
 
-    @PostApi('/transaction/:name')
-    @Transaction()
-    static async testTransaction(txnCtxt: TestTransactionContext, name: string) {
-      const { rows } = await txnCtxt.client.query<TestKvTable>(
+    @DBOS.postApi('/transaction/:name')
+    @DBOS.transaction()
+    static async testTransaction(name: string) {
+      const { rows } = await DBOS.pgClient.query<TestKvTable>(
         `INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`,
         [name],
       );
       return `hello ${rows[0].id}`;
     }
 
-    @GetApi('/step/:input')
-    @Step()
-    static async testStep(_ctxt: StepContext, input: string) {
+    @DBOS.getApi('/step/:input')
+    @DBOS.step()
+    static async testStep(input: string) {
       return Promise.resolve(input);
     }
 
-    @PostApi('/workflow')
-    @Workflow()
-    static async testWorkflow(wfCtxt: WorkflowContext, @ArgSource(ArgSources.QUERY) name: string) {
-      const res = await wfCtxt.invoke(TestEndpoints).testTransaction(name);
-      return wfCtxt.invoke(TestEndpoints).testStep(res);
+    @DBOS.postApi('/workflow')
+    @DBOS.workflow()
+    static async testWorkflow(@ArgSource(ArgSources.QUERY) name: string) {
+      const res = await TestEndpoints.testTransaction(name);
+      return TestEndpoints.testStep(res);
     }
 
-    @PostApi('/error')
-    @Workflow()
-    static async testWorkflowError(wfCtxt: WorkflowContext, name: string) {
+    @DBOS.postApi('/error')
+    @DBOS.workflow()
+    static async testWorkflowError(name: string) {
       // This workflow should encounter duplicate primary key error.
-      let res = await wfCtxt.invoke(TestEndpoints).testTransaction(name);
-      res = await wfCtxt.invoke(TestEndpoints).testTransaction(name);
+      let res = await TestEndpoints.testTransaction(name);
+      res = await TestEndpoints.testTransaction(name);
       return res;
     }
 
-    @GetApi('/requireduser')
-    @RequiredRole(['user'])
-    static async testAuth(ctxt: HandlerContext, name: string) {
-      if (ctxt.authenticatedUser !== 'a_real_user') {
+    @DBOS.getApi('/requireduser')
+    @DBOS.requiredRole(['user'])
+    static async testAuth(name: string) {
+      if (DBOS.authenticatedUser !== 'a_real_user') {
         throw new DBOSResponseError('uid not a real user!', 400);
       }
-      if (!ctxt.authenticatedRoles.includes('user')) {
+      if (!DBOS.authenticatedRoles.includes('user')) {
         throw new DBOSResponseError("roles don't include user!", 400);
       }
-      if (ctxt.assumedRole !== 'user') {
+      if (DBOS.assumedRole !== 'user') {
         throw new DBOSResponseError('Should never happen! Not assumed to be user', 400);
       }
       return Promise.resolve(`Please say hello to ${name}`);
     }
 
-    @GetApi('/requireduser2')
-    @RequiredRole(['user'])
-    static async testAuth2(_ctxt: HandlerContext, name: string) {
+    @DBOS.getApi('/requireduser2')
+    @DBOS.requiredRole(['user'])
+    static async testAuth2(name: string) {
       if (DBOS.authenticatedUser !== 'a_real_user') {
         throw new DBOSResponseError('uid not a real user!', 400);
       }

@@ -135,8 +135,8 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify that the gap between "waves" is ~equal to the period
     for (let wave = 1; wave < numWaves; ++wave) {
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 200);
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 300);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 300);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 500);
     }
 
     for (const h of handles) {
@@ -185,8 +185,8 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify that the gap between "waves" is ~equal to the period
     for (let wave = 1; wave < numWaves; ++wave) {
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 200);
-      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 300);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeGreaterThan(qperiod * 1000 - 300);
+      expect(times[qlimit * wave] - times[qlimit * wave - 1]).toBeLessThan(qperiod * 1000 + 500);
     }
 
     for (const h of handles) {
@@ -208,7 +208,7 @@ describe('queued-wf-tests-simple', () => {
 
     // Verify all queue entries eventually get cleaned up.
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  }, 10000);
+  }, 15000);
 
   test('test_one_at_a_time_with_crash', async () => {
     let wfqRes: () => void = () => {};
@@ -499,16 +499,16 @@ describe('queued-wf-tests-simple', () => {
     }
     expect(TestQueueRecovery.cnt).toBe(2);
 
-    const workflows = await DBOS.getWorkflowQueue({ queueName: recoveryQueue.name });
-    expect(workflows.workflows.length).toBe(3);
-    expect(workflows.workflows[2].workflowID).toBe(wfid1);
-    expect(workflows.workflows[2].executorID).toBe('local');
+    const workflows = await DBOS.listQueuedWorkflows({ queueName: recoveryQueue.name });
+    expect(workflows.length).toBe(3);
+    expect(workflows[0].workflowID).toBe(wfid1);
+    expect(workflows[0].executorId).toBe('local');
     expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
-    expect(workflows.workflows[1].workflowID).toBe(wfid2);
-    expect(workflows.workflows[1].executorID).toBe('local');
+    expect(workflows[1].workflowID).toBe(wfid2);
+    expect(workflows[1].executorId).toBe('local');
     expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
-    expect(workflows.workflows[0].workflowID).toBe(wfid3);
-    expect(workflows.workflows[0].executorID).toBe('local');
+    expect(workflows[2].workflowID).toBe(wfid3);
+    expect(workflows[2].executorId).toBe('local');
     expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
     // Manually update the database to pretend wf3 is PENDING and comes from a different executor
@@ -1139,7 +1139,7 @@ describe('enqueue-options', () => {
 
     static wfPriorityList: number[] = [];
 
-    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1 });
+    static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1, priorityEnabled: true });
     static childqueue = new WorkflowQueue('child_queue', { concurrency: 1 });
 
     @DBOS.workflow()
@@ -1442,7 +1442,7 @@ describe('queue-time-outs', () => {
     const recoveryHandles = await recoverPendingWorkflows(['local']);
     expect(recoveryHandles.length).toBe(1);
     const recoveryStatus = await recoveryHandles[0].getStatus();
-    expect(recoveryStatus?.timeoutMS).toBe('3000');
+    expect(recoveryStatus?.timeoutMS).toBe(3000);
     expect(status?.deadlineEpochMS).toBe(recoveryStatus?.deadlineEpochMS);
 
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));

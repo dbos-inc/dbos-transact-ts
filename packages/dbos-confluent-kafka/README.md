@@ -65,4 +65,4 @@ The `confluent-kafkajs.test.ts` file included in the source repository demonstra
 
 - To start a DBOS app from a template, visit our [quickstart](https://docs.dbos.dev/quickstart).
 - For DBOS programming tutorials, check out our [programming guide](https://docs.dbos.dev/typescript/programming-guide).
-- To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact).
+- To learn more about DBOS, take a look at [our documentation](https://docs.dbos.dev/) or our [source code](https://github.com/dbos-inc/dbos-transact-ts).
