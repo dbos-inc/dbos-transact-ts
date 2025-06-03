@@ -59,7 +59,7 @@ Node.js HTTP servers are also generally compatible with each other. Your Koa's `
 
 When a function has arguments, DBOS automatically parses them from the HTTP request, and returns an error to the client if they are not found.
 
-Arguments can be parsed from three places:
+Automatic argument handling is usually sufficent. If not, see the sections below.
 
 ### URL Path Parameters
 
@@ -123,9 +123,7 @@ Content-Type: application/json
 }
 ```
 
-:::tip
 When sending an HTTP request with a JSON body, make sure you set the [`Content-Type`](https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/Content-Type) header to `application/json`.
-:::
 
 ### Overriding Argument Sources
 
@@ -138,7 +136,7 @@ Argument sources can be overriden with the `DBOSKoa.argSource` parameter decorat
   }
 ```
 
-### Raw Requests
+## Raw Requests
 
 If you need finer-grained request parsing, any DBOS method invoked via HTTP request can access raw request information from `DBOSKoa.httpRequest`. This returns the following information:
 
@@ -164,7 +162,7 @@ For code that needs to access the Koa context to perform a redirect, send a larg
 DBOSKoa.koaContext.redirect(url + '-dbos');
 ```
 
-### Outputs and HTTP Responses
+## Outputs and HTTP Responses
 
 If a function invoked via HTTP request returns successfully, its return value is sent in the HTTP response body with status code `200` (or `204` if nothing is returned).
 
