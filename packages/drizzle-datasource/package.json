@@ -1,5 +1,5 @@
 {
-  "name": "@dbos-inc/dbos-drizzle",
+  "name": "@dbos-inc/drizzle-datasource",
   "version": "0.0.0-placeholder",
   "main": "dist/index.js",
   "scripts": {
@@ -8,7 +8,7 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "MIT",
   "description": "",
   "dependencies": {
     "drizzle-orm": "^0.40.1",
