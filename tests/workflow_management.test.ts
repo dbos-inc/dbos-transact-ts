@@ -676,7 +676,7 @@ describe('test-list-queues', () => {
     expect(workflows[0].workflowID).toEqual(handle.workflowID);
 
     // Garbage collect all completed workflows
-    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(0, undefined);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined);
     // Verify only the blocked workflow remains
     workflows = await DBOS.listWorkflows({});
     expect(workflows.length).toBe(1);
@@ -685,7 +685,7 @@ describe('test-list-queues', () => {
     // Finish the blocked workflow, garbage collect everything
     TestGarbageCollection.event.set();
     await expect(handle.getResult()).resolves.toBeTruthy();
-    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(0, undefined);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now(), undefined);
     workflows = await DBOS.listWorkflows({});
     expect(workflows.length).toBe(0);
 
@@ -701,7 +701,7 @@ describe('test-list-queues', () => {
       await expect(TestGarbageCollection.testWorkflow(i)).resolves.toBe(i);
     }
     // GC the first half, verify only half were GC'ed
-    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(1000, undefined);
+    await DBOSExecutor.globalInstance!.systemDatabase.garbageCollect(Date.now() - 1000, undefined);
     workflows = await DBOS.listWorkflows({});
     expect(workflows.length).toBe(numWorkflows);
   });

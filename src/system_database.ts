@@ -1902,13 +1902,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return claimedIDs;
   }
 
-  async garbageCollect(timeThresholdMs?: number, rowsThreshold?: number): Promise<void> {
-    let cutoffEpochTimestampMs: number | null = null;
-
-    if (timeThresholdMs !== undefined) {
-      cutoffEpochTimestampMs = Date.now() - timeThresholdMs;
-    }
-
+  async garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void> {
     if (rowsThreshold !== undefined) {
       // Get the created_at timestamp of the rows_threshold newest row
       const result = (await this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
@@ -1921,13 +1915,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (result !== undefined) {
         const rowsBasedCutoff = result.created_at;
         // Use the more restrictive cutoff (higher timestamp = more recent = more deletion)
-        if (cutoffEpochTimestampMs === null || rowsBasedCutoff > cutoffEpochTimestampMs) {
+        if (cutoffEpochTimestampMs === undefined || rowsBasedCutoff > cutoffEpochTimestampMs) {
           cutoffEpochTimestampMs = rowsBasedCutoff;
         }
       }
     }
 
-    if (cutoffEpochTimestampMs === null) {
+    if (cutoffEpochTimestampMs === undefined) {
       return;
     }
 

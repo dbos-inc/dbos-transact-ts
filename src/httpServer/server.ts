@@ -256,10 +256,10 @@ export class DBOSHttpServer {
     const url = '/dbos-garbage-collect';
     const handler = async (koaCtxt: Koa.Context) => {
       const body = koaCtxt.request.body as {
-        time_threshold_ms?: number;
+        cutoff_epoch_timestamp_ms?: number;
         rows_threshold?: number;
       };
-      await dbosExec.systemDatabase.garbageCollect(body.time_threshold_ms, body.rows_threshold);
+      await dbosExec.systemDatabase.garbageCollect(body.cutoff_epoch_timestamp_ms, body.rows_threshold);
       koaCtxt.status = 204;
     };
     router.post(url, handler);

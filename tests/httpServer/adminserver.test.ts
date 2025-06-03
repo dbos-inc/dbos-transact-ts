@@ -400,7 +400,7 @@ describe('running-admin-server-tests', () => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ time_threshold_ms: 0 }),
+      body: JSON.stringify({ cutoff_epoch_timestamp_ms: Date.now() }),
     });
     expect(response.status).toBe(204);
 
