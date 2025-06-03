@@ -110,3 +110,14 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal): WorkflowStat
     deadlineEpochMS: internal.deadlineEpochMS,
   };
 }
+
+export async function globalTimeout(sysdb: SystemDatabase, timeoutMS: number): Promise<void> {
+  const cutoffEpochTimestampMs = Date.now() - timeoutMS;
+  const cutoffIso = new Date(cutoffEpochTimestampMs).toISOString();
+  for (const workflow of await listWorkflows(sysdb, { status: 'PENDING', endTime: cutoffIso })) {
+    await sysdb.cancelWorkflow(workflow.workflowID);
+  }
+  for (const workflow of await listWorkflows(sysdb, { status: 'ENQUEUED', endTime: cutoffIso })) {
+    await sysdb.cancelWorkflow(workflow.workflowID);
+  }
+}

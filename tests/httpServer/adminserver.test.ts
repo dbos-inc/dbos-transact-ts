@@ -8,6 +8,7 @@ import { globalParams, sleepms } from '../../src/utils';
 import { Client } from 'pg';
 import { step_info } from '../../schemas/system_db_schema';
 import http from 'http';
+import { DBOSWorkflowCancelledError } from '../../src/error';
 
 describe('not-running-admin-server', () => {
   let config: DBOSConfig;
@@ -49,8 +50,7 @@ describe('running-admin-server-tests', () => {
   let config: DBOSConfigInternal;
   let systemDBClient: Client;
 
-  beforeAll(async () => {
-    // Reset the executor ID
+  beforeEach(async () => {
     process.env.DBOS__VMID = 'test-executor';
     await DBOS.shutdown();
     config = generateDBOSTestConfig();
@@ -66,9 +66,6 @@ describe('running-admin-server-tests', () => {
     await setUpDBOSTestDb(config);
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
-  });
-
-  beforeEach(async () => {
     systemDBClient = new Client({
       user: config.poolConfig.user,
       port: config.poolConfig.port,
@@ -77,16 +74,13 @@ describe('running-admin-server-tests', () => {
       database: config.system_database,
     });
     await systemDBClient.connect();
-    testAdminWorkflow.counter = 0;
+    TestAdminWorkflow.counter = 0;
   });
 
   afterEach(async () => {
     await systemDBClient.end();
-  }, 10000);
-
-  afterAll(async () => {
     await DBOS.shutdown();
-  });
+  }, 10000);
 
   const testQueueOne = new WorkflowQueue('test-queue-1');
   const testQueueTwo = new WorkflowQueue('test-queue-2', { concurrency: 1 });
@@ -97,12 +91,12 @@ describe('running-admin-server-tests', () => {
     rateLimit: { limitPerPeriod: 0, periodSec: 0 },
   });
 
-  class testAdminWorkflow {
+  class TestAdminWorkflow {
     static counter = 0;
 
     @DBOS.workflow()
     static async simpleWorkflow(value: number) {
-      testAdminWorkflow.counter++;
+      TestAdminWorkflow.counter++;
       const msg = await DBOS.recv<string>();
       return `${value}-${msg}`;
     }
@@ -119,9 +113,9 @@ describe('running-admin-server-tests', () => {
 
     @DBOS.workflow()
     static async workflowWithSteps() {
-      await testAdminWorkflow.stepOne();
+      await TestAdminWorkflow.stepOne();
       await DBOS.sleepSeconds(1);
-      await testAdminWorkflow.stepTwo();
+      await TestAdminWorkflow.stepTwo();
       return Promise.resolve();
     }
 
@@ -129,11 +123,18 @@ describe('running-admin-server-tests', () => {
     static async exampleWorkflow(input: number) {
       return Promise.resolve(input);
     }
+
+    @DBOS.workflow()
+    static async blockedWorkflow() {
+      while (true) {
+        await DBOS.sleep(100);
+      }
+    }
   }
 
   test('test-admin-workflow-management', async () => {
     // Run the workflow. Verify it succeeds.
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow(42);
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).simpleWorkflow(42);
 
     // Cancel the workflow. Verify it was cancelled.
     let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/cancel`, {
@@ -232,7 +233,7 @@ describe('running-admin-server-tests', () => {
   });
 
   test('test-admin-list-workflow-steps', async () => {
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).workflowWithSteps();
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).workflowWithSteps();
     await handle.getResult();
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -258,10 +259,10 @@ describe('running-admin-server-tests', () => {
     expect(globalParams.executorID).toBe('test-executor');
 
     // Run the workflow. Verify it succeeds.
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow(42);
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).simpleWorkflow(42);
     await DBOS.send(handle.workflowID, 'message');
     await expect(handle.getResult()).resolves.toEqual('42-message');
-    expect(testAdminWorkflow.counter).toBe(1);
+    expect(TestAdminWorkflow.counter).toBe(1);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -367,7 +368,7 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-deactivate', async () => {
     const value = 5;
-    let handle = await DBOS.startWorkflow(testAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
+    let handle = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
     await expect(handle.getResult()).resolves.toBe(value);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -382,10 +383,43 @@ describe('running-admin-server-tests', () => {
     expect(response.status).toBe(200);
 
     // Verify queues still work after deactivation
-    handle = await DBOS.startWorkflow(testAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
+    handle = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
     await expect(handle.getResult()).resolves.toBe(value);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
+  });
+
+  test('test-admin-garbage-collect', async () => {
+    const value = 5;
+    await expect(TestAdminWorkflow.exampleWorkflow(value)).resolves.toBe(value);
+    expect((await DBOS.listWorkflows({})).length).toBe(1);
+
+    const response = await fetch(`http://localhost:3001/dbos-garbage-collect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cutoff_epoch_timestamp_ms: Date.now() }),
+    });
+    expect(response.status).toBe(204);
+
+    expect((await DBOS.listWorkflows({})).length).toBe(0);
+  });
+
+  test('test-admin-global-timeout', async () => {
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).blockedWorkflow();
+    await sleepms(1000);
+
+    const response = await fetch(`http://localhost:3001/dbos-global-timeout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ timeout_ms: 1000 }),
+    });
+    expect(response.status).toBe(204);
+
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
   });
 });
