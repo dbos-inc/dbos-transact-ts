@@ -156,6 +156,14 @@ interface HTTPRequest {
 }
 ```
 
+### Accessing the Koa Context
+
+For code that needs to access the Koa context to perform a redirect, send a large response, etc., this can be accessed with `DBOSKoa.koaContext`:
+
+```typescript
+DBOSKoa.koaContext.redirect(url + '-dbos');
+```
+
 ### Outputs and HTTP Responses
 
 If a function invoked via HTTP request returns successfully, its return value is sent in the HTTP response body with status code `200` (or `204` if nothing is returned).
@@ -163,7 +171,7 @@ If a function invoked via HTTP request returns successfully, its return value is
 If the function throws an exception, the error message is sent in the response body with a `400` or `500` status code.
 If the error contains a `status` field, the response uses that status code instead.
 
-If you need custom HTTP response behavior, you can access the HTTP response directly via [`DBOS.koaContext.response`].
+If you need custom HTTP response behavior, you can access the HTTP response directly via [`DBOSKoa.koaContext.response`].
 
 ## Koa Middleware
 
