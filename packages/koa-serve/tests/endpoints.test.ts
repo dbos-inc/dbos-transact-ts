@@ -2,7 +2,7 @@
 import Koa from 'koa';
 import Router from '@koa/router';
 
-import { DBOS, DBOSResponseError, Error as DBOSErrors, DefaultArgRequired, StatusString } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSResponseError, Error as DBOSErrors, StatusString } from '@dbos-inc/dbos-sdk';
 
 import { DBOSKoa, DBOSKoaAuthContext, RequestIDHeader, WorkflowIDHeader } from '../src';
 
@@ -351,7 +351,7 @@ describe('httpserver-tests', () => {
       parsedMethods: ['POST', 'PUT', 'PATCH', 'GET', 'DELETE'],
     }),
   )
-  @DefaultArgRequired
+  @DBOSKoa.defaultArgRequired
   class TestEndpoints {
     @dhttp.getApi('/hello')
     static async hello() {

@@ -2,15 +2,7 @@
 import Koa from 'koa';
 import Router from '@koa/router';
 
-import {
-  ArgDate,
-  ArgOptional,
-  ArgRequired,
-  ArgVarchar,
-  DBOS,
-  DefaultArgOptional,
-  DefaultArgRequired,
-} from '@dbos-inc/dbos-sdk';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import { DBOSKoa } from '../src';
 
@@ -346,7 +338,7 @@ describe('httpserver-datavalidation-tests', () => {
     }
   });
 
-  @DefaultArgRequired
+  @DBOSKoa.defaultArgRequired
   class TestEndpointDataVal {
     @dhttp.getApi('/hello')
     static async hello() {
@@ -370,7 +362,7 @@ describe('httpserver-datavalidation-tests', () => {
     }
 
     @dhttp.getApi('/varchar')
-    static async checkVarcharG(@ArgVarchar(10) v: string) {
+    static async checkVarcharG(@DBOSKoa.argVarchar(10) v: string) {
       if (typeof v !== 'string') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
@@ -378,7 +370,7 @@ describe('httpserver-datavalidation-tests', () => {
     }
 
     @dhttp.postApi('/varchar')
-    static async checkVarcharP(@ArgVarchar(10) v: string) {
+    static async checkVarcharP(@DBOSKoa.argVarchar(10) v: string) {
       if (typeof v !== 'string') {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
@@ -418,7 +410,7 @@ describe('httpserver-datavalidation-tests', () => {
     }
 
     @dhttp.getApi('/date')
-    static async checkDateG(@ArgDate() v: Date) {
+    static async checkDateG(@DBOSKoa.argDate() v: Date) {
       if (!(v instanceof Date)) {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
@@ -426,7 +418,7 @@ describe('httpserver-datavalidation-tests', () => {
     }
 
     @dhttp.postApi('/date')
-    static async checkDateP(@ArgDate() v: Date) {
+    static async checkDateP(@DBOSKoa.argDate() v: Date) {
       if (!(v instanceof Date)) {
         return Promise.reject(new Error('THIS SHOULD NEVER HAPPEN'));
       }
@@ -457,15 +449,15 @@ describe('httpserver-datavalidation-tests', () => {
     //  JSON
   }
 
-  @DefaultArgRequired
+  @DBOSKoa.defaultArgRequired
   class DefaultArgToRequired {
     @dhttp.postApi('/rrequired')
-    static async checkReqValueR(@ArgRequired v: string) {
+    static async checkReqValueR(@DBOSKoa.argRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
     @dhttp.postApi('/roptional')
-    static async checkOptValueR(@ArgOptional v?: string) {
+    static async checkOptValueR(@DBOSKoa.argOptional v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
@@ -475,15 +467,15 @@ describe('httpserver-datavalidation-tests', () => {
     }
   }
 
-  @DefaultArgOptional
+  @DBOSKoa.defaultArgOptional
   class DefaultArgToOptional {
     @dhttp.postApi('/orequired')
-    static async checkReqValueO(@ArgRequired v: string) {
+    static async checkReqValueO(@DBOSKoa.argRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
     @dhttp.postApi('/ooptional')
-    static async checkOptValueO(@ArgOptional v?: string) {
+    static async checkOptValueO(@DBOSKoa.argOptional v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
@@ -495,12 +487,12 @@ describe('httpserver-datavalidation-tests', () => {
 
   class DefaultArgToDefault {
     @dhttp.postApi('/drequired')
-    static async checkReqValueD(@ArgRequired v: string) {
+    static async checkReqValueD(@DBOSKoa.argRequired v: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
     @dhttp.postApi('/doptional')
-    static async checkOptValueD(@ArgOptional v?: string) {
+    static async checkOptValueD(@DBOSKoa.argOptional v?: string) {
       return Promise.resolve({ message: `Got string ${v}` });
     }
 
@@ -510,12 +502,12 @@ describe('httpserver-datavalidation-tests', () => {
     }
 
     @DBOS.workflow()
-    static async opworkflow(@ArgOptional v?: string) {
+    static async opworkflow(@DBOSKoa.argOptional v?: string) {
       return Promise.resolve({ message: v });
     }
 
     @dhttp.postApi('/doworkflow')
-    static async doWorkflow(@ArgOptional v?: string) {
+    static async doWorkflow(@DBOSKoa.argOptional v?: string) {
       return await DefaultArgToDefault.opworkflow(v);
     }
   }

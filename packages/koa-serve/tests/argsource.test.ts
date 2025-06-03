@@ -1,7 +1,7 @@
 import Koa from 'koa';
 import Router from '@koa/router';
 
-import { DBOS, DefaultArgRequired } from '@dbos-inc/dbos-sdk';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import { ArgSources, DBOSKoa } from '../src';
 
@@ -108,7 +108,7 @@ describe('httpserver-argsource-tests', () => {
       parsedMethods: ['GET', 'POST'],
     }),
   )
-  @DefaultArgRequired
+  @DBOSKoa.defaultArgRequired
   class ArgTestEndpoints {
     @dhttp.getApi('/getquery')
     static async getQuery(@dhttp.argSource(ArgSources.QUERY) name: string) {

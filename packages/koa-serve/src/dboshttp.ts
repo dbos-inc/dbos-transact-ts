@@ -8,6 +8,13 @@ import {
   Error as DBOSErrors,
   MethodParameter,
   requestArgValidation,
+  ArgRequired,
+  ArgOptional,
+  DefaultArgRequired,
+  DefaultArgValidate,
+  DefaultArgOptional,
+  ArgDate,
+  ArgVarchar,
 } from '@dbos-inc/dbos-sdk';
 
 export enum APITypes {
@@ -41,6 +48,25 @@ export interface DBOSHTTPMethodInfo {
 
 export interface DBOSHTTPArgInfo {
   argSource?: ArgSources;
+}
+
+enum ArgRequiredOptions {
+  REQUIRED = 'REQUIRED',
+  OPTIONAL = 'OPTIONAL',
+  DEFAULT = 'DEFAULT',
+}
+
+interface ValidatorClassInfo {
+  defaultArgRequired?: ArgRequiredOptions;
+  defaultArgValidate?: boolean;
+}
+
+interface ValidatorFuncInfo {
+  performArgValidation?: boolean;
+}
+
+interface ValidatorArgInfo {
+  required?: ArgRequiredOptions;
 }
 
 /**
@@ -80,6 +106,8 @@ export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
 export function isClientRequestError(e: Error) {
   return DBOSErrors.isDataValidationError(e);
 }
+
+const VALIDATOR = 'validator';
 
 export class DBOSHTTPBase extends DBOSLifecycleCallback {
   static HTTP_OPERATION_TYPE: string = 'http';
@@ -181,5 +209,30 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
         }
       }
     }
+  }
+
+  static argRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
+    ArgRequired(target, propertyKey, parameterIndex);
+  }
+
+  static argOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
+    ArgOptional(target, propertyKey, parameterIndex);
+  }
+
+  static argDate() {
+    return ArgDate();
+  }
+  static argVarchar(n: number) {
+    return ArgVarchar(n);
+  }
+
+  static defaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
+    return DefaultArgRequired(ctor);
+  }
+  static defaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
+    return DefaultArgOptional(ctor);
+  }
+  static defaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
+    return DefaultArgValidate(ctor);
   }
 }
