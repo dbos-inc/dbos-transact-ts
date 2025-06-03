@@ -1,11 +1,16 @@
-import { WorkflowHandle, DBOSInitializer, InitContext, DBOS } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
+import { DBOS } from '../src/';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
 class DecoratorFreeTest {
   @DBOS.workflow()
   static async testFreeStep(value: number) {
     return await regFreeStep(value);
+  }
+
+  @DBOS.workflow()
+  static async testStaticStep(value: number) {
+    return await DecoratorFreeTest.staticStep(value);
   }
 
   @DBOS.workflow()
@@ -42,7 +47,13 @@ class DecoratorFreeTest {
       { name: 'testRunStep', retriesAllowed: true },
     );
   }
+
+  static async staticStep(value: number): Promise<number> {
+    return value * 1000;
+  }
 }
+
+DecoratorFreeTest.staticStep = DBOS.registerStep(DecoratorFreeTest.staticStep);
 
 async function freeStep(value: number): Promise<number> {
   return value * 100;
@@ -92,6 +103,23 @@ describe('decorator-free-tests', () => {
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('freeStep');
     expect(wfsteps[0].output).toEqual(1000);
+    expect(wfsteps[0].error).toBeNull();
+    expect(wfsteps[0].childWorkflowID).toBeNull();
+  });
+
+  test('wf-static-step', async () => {
+    const wfid = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await DecoratorFreeTest.testStaticStep(10);
+      expect(res).toBe(10000);
+    });
+
+    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(wfsteps.length).toBe(1);
+    expect(wfsteps[0].functionID).toBe(0);
+    expect(wfsteps[0].name).toBe('staticStep');
+    expect(wfsteps[0].output).toEqual(10000);
     expect(wfsteps[0].error).toBeNull();
     expect(wfsteps[0].childWorkflowID).toBeNull();
   });
