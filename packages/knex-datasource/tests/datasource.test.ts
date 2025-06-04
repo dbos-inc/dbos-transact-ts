@@ -1,6 +1,6 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
-import { KnexDataSource } from '../index';
+import { KnexDataSource } from '..';
 import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import SuperJSON from 'superjson';

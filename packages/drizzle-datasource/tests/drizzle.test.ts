@@ -1,6 +1,6 @@
 /* eslint-disable */
-import { DBOS, OrmEntities } from '@dbos-inc/dbos-sdk';
-import { DrizzleDS } from '../src/drizzle_datasource';
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import { DrizzleDS } from '..';
 import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
 import { pgTable, text } from 'drizzle-orm/pg-core';

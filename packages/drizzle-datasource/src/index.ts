@@ -1,1 +1,1 @@
-export { DrizzleDS } from './drizzle_datasource';
+export { DrizzleDS, DrizzleTransactionConfig, IsolationLevel } from './drizzle_datasource';
