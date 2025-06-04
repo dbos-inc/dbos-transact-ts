@@ -413,7 +413,6 @@ export class DBOS {
     }
 
     await DBOSExecutor.globalInstance.initEventReceivers();
-    // TODO: Move this to launch
     for (const [_n, ds] of transactionalDataSources) {
       await ds.initialize();
     }
@@ -531,7 +530,6 @@ export class DBOS {
       DBOSExecutor.globalInstance = undefined;
     }
 
-    // TODO: Move this to shutdown
     for (const [_n, ds] of transactionalDataSources) {
       await ds.destroy();
     }
