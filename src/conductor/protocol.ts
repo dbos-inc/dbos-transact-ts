@@ -14,6 +14,7 @@ export enum MessageType {
   EXIST_PENDING_WORKFLOWS = 'exist_pending_workflows',
   LIST_STEPS = 'list_steps',
   FORK_WORKFLOW = 'fork_workflow',
+  RETENTION = 'retention',
 }
 
 export interface BaseMessage {
@@ -318,5 +319,29 @@ export class ForkWorkflowResponse extends BaseResponse {
   constructor(request_id: string, new_workflow_id?: string, error_message?: string) {
     super(MessageType.FORK_WORKFLOW, request_id, error_message);
     this.new_workflow_id = new_workflow_id;
+  }
+}
+
+export interface RetentionBody {
+  gc_cutoff_epoch_ms?: number;
+  gc_rows_threshold?: number;
+  timeout_cutoff_epoch_ms?: number;
+}
+
+export class RetentionRequest implements BaseMessage {
+  type = MessageType.RETENTION;
+  request_id: string;
+  body: RetentionBody;
+  constructor(request_id: string, body: RetentionBody) {
+    this.request_id = request_id;
+    this.body = body;
+  }
+}
+
+export class RetentionResponse extends BaseResponse {
+  success: boolean;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.RETENTION, request_id, error_message);
+    this.success = success;
   }
 }
