@@ -416,7 +416,7 @@ describe('running-admin-server-tests', () => {
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ timeout_ms: 1000 }),
+      body: JSON.stringify({ cutoff_epoch_timestamp_ms: Date.now() - 1000 }),
     });
     expect(response.status).toBe(204);
 
