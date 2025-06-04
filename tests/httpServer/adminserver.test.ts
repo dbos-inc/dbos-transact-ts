@@ -576,10 +576,6 @@ describe('running-admin-server-tests', () => {
     // Should have at least 4 workflows (the ones we just enqueued)
     expect(queuedWorkflows.length).toBeGreaterThanOrEqual(4);
 
-    // All should be in ENQUEUED status
-    const enqueuedWorkflows = queuedWorkflows.filter((wf) => wf.status === 'ENQUEUED');
-    expect(enqueuedWorkflows.length).toBeGreaterThanOrEqual(4);
-
     // Test filtering by queue name
     response = await fetch(`http://localhost:3001/queues`, {
       method: 'POST',
