@@ -5,7 +5,7 @@ import cors from '@koa/cors';
 import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
-import { Workflow } from '../workflow';
+import { Workflow, GetWorkflowsInput, GetQueuedWorkflowsInput } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor } from '../dbos-executor';
 import { GlobalLogger as Logger } from '../telemetry/logs';
@@ -19,6 +19,37 @@ import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
 import { globalTimeout } from '../dbos-runtime/workflow_management';
+import { WorkflowStatus } from '../workflow';
+
+/**
+ * Utility function to convert WorkflowStatus object to underscore format
+ * for HTTP API responses.
+ */
+function workflowStatusToUnderscoreFormat(wf: WorkflowStatus) {
+  return {
+    workflow_id: wf.workflowID,
+    status: wf.status,
+    workflow_name: wf.workflowName,
+    workflow_class_name: wf.workflowClassName,
+    workflow_config_name: wf.workflowConfigName,
+    queue_name: wf.queueName,
+    authenticated_user: wf.authenticatedUser,
+    assumed_role: wf.assumedRole,
+    authenticated_roles: wf.authenticatedRoles,
+    output: wf.output,
+    error: wf.error,
+    input: wf.input,
+    executor_id: wf.executorId,
+    app_version: wf.applicationVersion,
+    application_id: wf.applicationID,
+    recovery_attempts: wf.recoveryAttempts,
+    created_at: wf.createdAt,
+    updated_at: wf.updatedAt,
+    timeout_ms: wf.timeoutMS,
+    deadline_epoch_ms: wf.deadlineEpochMS,
+  };
+}
+
 export type QueueMetadataResponse = QueueParameters & { name: string };
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
@@ -70,6 +101,9 @@ export class DBOSHttpServer {
     DBOSHttpServer.registerRestartWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerQueueMetadataEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerListWorkflowStepsEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerListWorkflowsEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerListQueuedWorkflowsEndpoint(dbosExec, adminRouter);
+    DBOSHttpServer.registerGetWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerForkWorkflowEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerGarbageCollectEndpoint(dbosExec, adminRouter);
     DBOSHttpServer.registerGlobalTimeoutEndpoint(dbosExec, adminRouter);
@@ -421,6 +455,116 @@ export class DBOSHttpServer {
     };
     router.get(workflowStepsUrl, workflowStepsHandler);
     dbosExec.logger.debug(`DBOS Server Registered List Workflow steps Get ${workflowStepsUrl}`);
+  }
+
+  /**
+   *
+   * Register List Workflows endpoint.
+   * List workflows with optional filtering via request body.
+   */
+  static registerListWorkflowsEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const listWorkflowsUrl = '/workflows';
+    const listWorkflowsHandler = async (koaCtxt: Koa.Context) => {
+      const body = koaCtxt.request.body as {
+        workflow_ids?: string[];
+        workflow_name?: string;
+        authenticated_user?: string;
+        start_time?: string;
+        end_time?: string;
+        status?: string;
+        application_version?: string;
+        limit?: number;
+        offset?: number;
+        sort_desc?: boolean;
+        workflow_id_prefix?: string;
+      };
+
+      // Map request body keys to GetWorkflowsInput properties
+      const input: GetWorkflowsInput = {
+        workflowIDs: body.workflow_ids,
+        workflowName: body.workflow_name,
+        authenticatedUser: body.authenticated_user,
+        startTime: body.start_time,
+        endTime: body.end_time,
+        status: body.status as GetWorkflowsInput['status'],
+        applicationVersion: body.application_version,
+        limit: body.limit,
+        offset: body.offset,
+        sortDesc: body.sort_desc,
+        workflow_id_prefix: body.workflow_id_prefix,
+      };
+
+      const workflows = await dbosExec.listWorkflows(input);
+
+      // Map result to the underscore format.
+      koaCtxt.body = workflows.map(workflowStatusToUnderscoreFormat);
+      koaCtxt.status = 200;
+    };
+    router.post(listWorkflowsUrl, listWorkflowsHandler);
+    dbosExec.logger.debug(`DBOS Server Registered List Workflows POST ${listWorkflowsUrl}`);
+  }
+
+  /**
+   *
+   * Register List Queued Workflows endpoint.
+   * List queued workflows with optional filtering via request body.
+   */
+  static registerListQueuedWorkflowsEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const listQueuedWorkflowsUrl = '/queues';
+    const listQueuedWorkflowsHandler = async (koaCtxt: Koa.Context) => {
+      const body = koaCtxt.request.body as {
+        workflow_name?: string;
+        start_time?: string;
+        end_time?: string;
+        status?: string;
+        queue_name?: string;
+        limit?: number;
+        offset?: number;
+        sort_desc?: boolean;
+      };
+
+      // Map request body keys to GetQueuedWorkflowsInput properties
+      const input: GetQueuedWorkflowsInput = {
+        workflowName: body.workflow_name,
+        startTime: body.start_time,
+        endTime: body.end_time,
+        status: body.status as GetQueuedWorkflowsInput['status'],
+        queueName: body.queue_name,
+        limit: body.limit,
+        offset: body.offset,
+        sortDesc: body.sort_desc,
+      };
+
+      const workflows = await dbosExec.listQueuedWorkflows(input);
+
+      // Map result to the underscore format.
+      koaCtxt.body = workflows.map(workflowStatusToUnderscoreFormat);
+      koaCtxt.status = 200;
+    };
+    router.post(listQueuedWorkflowsUrl, listQueuedWorkflowsHandler);
+    dbosExec.logger.debug(`DBOS Server Registered List Queued Workflows POST ${listQueuedWorkflowsUrl}`);
+  }
+
+  /**
+   *
+   * Register Get Workflow endpoint.
+   * Get detailed information about a specific workflow by ID.
+   */
+  static registerGetWorkflowEndpoint(dbosExec: DBOSExecutor, router: Router) {
+    const getWorkflowUrl = '/workflows/:workflow_id';
+    const getWorkflowHandler = async (koaCtxt: Koa.Context) => {
+      const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
+      const workflow = await dbosExec.getWorkflowStatus(workflowId);
+      if (workflow) {
+        koaCtxt.body = workflowStatusToUnderscoreFormat(workflow);
+        koaCtxt.status = 200;
+      } else {
+        koaCtxt.status = 404;
+        koaCtxt.body = { error: `Workflow ${workflowId} not found` };
+      }
+    };
+    router.get(getWorkflowUrl, getWorkflowHandler);
+    dbosExec.logger.debug(`DBOS Server Registered Get Workflow GET ${getWorkflowUrl}`);
   }
 
   /**
