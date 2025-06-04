@@ -1712,9 +1712,7 @@ export class DBOS {
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      registration.setWorkflowConfig(config);
-
-      const invokeWrapper = DBOS.#getWorkflowInvokeWrapper(registration);
+      const invokeWrapper = DBOS.#getWorkflowInvokeWrapper(registration, config);
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
@@ -1734,14 +1732,14 @@ export class DBOS {
     },
   ): (this: This, ...args: Args) => Promise<Return> {
     const { registration } = registerAndWrapDBOSFunctionByName(target.classOrInst, target.className, target.name, func);
-    registration.setWorkflowConfig(target.config ?? {});
-
-    return DBOS.#getWorkflowInvokeWrapper(registration);
+    return DBOS.#getWorkflowInvokeWrapper(registration, target.config);
   }
 
   static #getWorkflowInvokeWrapper<This, Args extends unknown[], Return>(
     registration: MethodRegistration<This, Args, Return>,
+    config: WorkflowConfig | undefined,
   ): (this: This, ...args: Args) => Promise<Return> {
+    registration.setWorkflowConfig(config ?? {});
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
       const pctx = getCurrentContextStore();
       let inst: ConfiguredInstance | undefined = undefined;
