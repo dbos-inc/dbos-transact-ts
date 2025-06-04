@@ -3,6 +3,7 @@
 import { DBOS, DBOSWorkflowConflictError, type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk';
 import { Client, type ClientBase, type ClientConfig, DatabaseError, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { SuperJSON } from 'superjson';
 
 interface NodePostgresDataSourceContext {
   client: ClientBase;
@@ -24,36 +25,6 @@ export interface NodePostgresTransactionOptions {
 
 function getErrorCode(error: unknown) {
   return error instanceof DatabaseError ? error.code : undefined;
-}
-
-// JsonReviver and JsonReplacer are duplicated across multiple data source packages
-// TODO: Should we DRY this out and/or use DBOSJSON instead?
-function JsonReviver(_key: string, value: unknown): unknown {
-  if (value && typeof value === 'object' && 'json_type' in value && 'json_value' in value) {
-    if (value.json_type === 'Date' && typeof value.json_value === 'string') {
-      return new Date(value.json_value);
-    }
-    if (value.json_type === 'BigInt' && typeof value.json_value === 'string') {
-      return BigInt(value.json_value);
-    }
-  }
-  return value;
-}
-
-function JsonReplacer(_key: string, value: unknown): unknown {
-  if (value instanceof Date) {
-    return {
-      json_type: 'Date',
-      json_value: value.toISOString(),
-    };
-  }
-  if (typeof value === 'bigint') {
-    return {
-      json_type: 'BigInt',
-      json_value: value.toString(),
-    };
-  }
-  return value;
 }
 
 export class NodePostgresDataSource implements DBOSTransactionalDataSource {
@@ -213,7 +184,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
               ? undefined
               : await NodePostgresDataSource.#checkExecution(client, workflowID, functionNum);
             if (previousResult) {
-              return (previousResult.output ? JSON.parse(previousResult.output, JsonReviver) : null) as Return;
+              return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
             }
 
             // execute user's transaction function
@@ -223,12 +194,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
 
             // save the output of read/write transactions
             if (!readOnly) {
-              await NodePostgresDataSource.#recordOutput(
-                client,
-                workflowID,
-                functionNum,
-                JSON.stringify(result, JsonReplacer),
-              );
+              await NodePostgresDataSource.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
               // Note, existing code wraps #recordOutput call in a try/catch block that
               // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.
