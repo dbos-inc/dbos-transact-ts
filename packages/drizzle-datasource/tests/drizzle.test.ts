@@ -53,7 +53,7 @@ const txFunc = DBOS.registerTransaction('app-db', txFunctionGuts, { name: 'MySec
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
-  const p1 = await drizzleDS.runTransactionStep(
+  const p1 = await drizzleDS.runTransaction(
     async () => {
       return (await DrizzleDS.drizzleClient.execute("SELECT 'My first tx result' as a")).rows[0].a;
     },
@@ -94,7 +94,7 @@ describe('decoratorless-api-tests', () => {
 
   beforeEach(async () => {
     await setUpDBOSTestDb(dbosConfig);
-    await drizzleDS.initializeSchema();
+    await drizzleDS.initializeInternalSchema();
     await DBOS.launch();
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS kv;`);
     await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS kv (id TEXT PRIMARY KEY, value TEXT);`);
@@ -170,7 +170,7 @@ describe('drizzle-tests', () => {
 
   beforeEach(async () => {
     await setUpDBOSTestDb(dbosConfig);
-    await drizzleDS.initializeSchema();
+    await drizzleDS.initializeInternalSchema();
     await DBOS.launch();
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS kv;`);
     await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS kv (id TEXT PRIMARY KEY, value TEXT);`);

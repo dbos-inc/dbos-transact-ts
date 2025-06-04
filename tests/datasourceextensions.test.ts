@@ -94,8 +94,8 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     return ctx.knexClient;
   }
 
-  // initializeSchema - this is up to the user to call.  It's not part of DBOS lifecycle
-  async initializeSchema(): Promise<void> {
+  // initializeInternalSchema - this is up to the user to call.  It's not part of DBOS lifecycle
+  async initializeInternalSchema(): Promise<void> {
     const knex = this.createInstance();
     try {
       const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
@@ -330,7 +330,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     };
   }
 
-  async runTransactionStep<T>(callback: () => Promise<T>, funcName: string, config?: KnexTransactionConfig) {
+  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: KnexTransactionConfig) {
     return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
   }
 
@@ -369,7 +369,7 @@ const txFunc = DBOS.registerTransaction('knexA', txFunctionGuts, { name: 'MySeco
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
-  const p1 = await dsa.runTransactionStep(
+  const p1 = await dsa.runTransaction(
     async () => {
       return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My first tx result' as a")).rows[0].a;
     },
@@ -410,7 +410,7 @@ class DBWFI {
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
     await setUpDBOSTestDb(config);
-    await dsa.initializeSchema();
+    await dsa.initializeInternalSchema();
     DBOS.setConfig(config);
   });
 

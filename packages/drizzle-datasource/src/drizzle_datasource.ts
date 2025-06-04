@@ -92,7 +92,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     return Promise.resolve();
   }
 
-  async initializeSchema(): Promise<void> {
+  async initializeInternalSchema(): Promise<void> {
     const drizzlePool = new Pool(this.config);
     const ds = drizzle(drizzlePool, { schema: this.entities });
 
@@ -312,7 +312,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     return this.getPostgresErrorCode(error) === '25P02';
   }
 
-  async runTransactionStep<T>(callback: () => Promise<T>, funcName: string, config?: DrizzleTransactionConfig) {
+  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: DrizzleTransactionConfig) {
     return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
   }
 
