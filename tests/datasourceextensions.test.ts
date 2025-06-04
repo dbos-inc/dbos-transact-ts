@@ -299,8 +299,6 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     }
   }
 
-  // Think of this as part of the API of the specific transaction provider, not
-  //  the interface.  It could also be the internals of a decorator.
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     target: {
@@ -309,6 +307,17 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
     return DBOS.registerTransaction(this.name, func, target, config);
+  }
+
+  static registerTransaction<This, Args extends unknown[], Return>(
+    dsname: string,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      name: string;
+    },
+    config?: KnexTransactionConfig,
+  ): (this: This, ...args: Args) => Promise<Return> {
+    return DBOS.registerTransaction(dsname, func, target, config);
   }
 
   // Custom TX decorator
@@ -365,7 +374,8 @@ async function txFunctionGuts() {
   return res.rows[0].a;
 }
 
-const txFunc = DBOS.registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
+// It is not clear if we want to encourage this pattern, but it does work
+const txFunc = DBOSKnexDS.registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
@@ -452,8 +462,3 @@ describe('decoratorless-api-tests', () => {
     expect(wfsteps[0].name).toBe('tx');
   });
 });
-
-// Later
-// Other DSs
-// Test the tracing
-// MikroORM example
