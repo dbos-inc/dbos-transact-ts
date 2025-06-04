@@ -19,6 +19,37 @@ import { runWithHandlerContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
 import { globalTimeout } from '../dbos-runtime/workflow_management';
+import { WorkflowStatus } from '../workflow';
+
+/**
+ * Utility function to convert WorkflowStatus object to underscore format
+ * for HTTP API responses.
+ */
+function workflowStatusToUnderscoreFormat(wf: WorkflowStatus) {
+  return {
+    workflow_id: wf.workflowID,
+    status: wf.status,
+    workflow_name: wf.workflowName,
+    workflow_class_name: wf.workflowClassName,
+    workflow_config_name: wf.workflowConfigName,
+    queue_name: wf.queueName,
+    authenticated_user: wf.authenticatedUser,
+    assumed_role: wf.assumedRole,
+    authenticated_roles: wf.authenticatedRoles,
+    output: wf.output,
+    error: wf.error,
+    input: wf.input,
+    executor_id: wf.executorId,
+    app_version: wf.applicationVersion,
+    application_id: wf.applicationID,
+    recovery_attempts: wf.recoveryAttempts,
+    created_at: wf.createdAt,
+    updated_at: wf.updatedAt,
+    timeout_ms: wf.timeoutMS,
+    deadline_epoch_ms: wf.deadlineEpochMS,
+  };
+}
+
 export type QueueMetadataResponse = QueueParameters & { name: string };
 
 export const WorkflowUUIDHeader = 'dbos-idempotency-key';
@@ -466,28 +497,7 @@ export class DBOSHttpServer {
       const workflows = await dbosExec.listWorkflows(input);
 
       // Map result to the underscore format.
-      koaCtxt.body = workflows.map((wf) => ({
-        workflow_id: wf.workflowID,
-        status: wf.status,
-        workflow_name: wf.workflowName,
-        workflow_class_name: wf.workflowClassName,
-        workflow_config_name: wf.workflowConfigName,
-        queue_name: wf.queueName,
-        authenticated_user: wf.authenticatedUser,
-        assumed_role: wf.assumedRole,
-        authenticated_roles: wf.authenticatedRoles,
-        output: wf.output,
-        error: wf.error,
-        input: wf.input,
-        executor_id: wf.executorId,
-        app_version: wf.applicationVersion,
-        application_id: wf.applicationID,
-        recovery_attempts: wf.recoveryAttempts,
-        created_at: wf.createdAt,
-        updated_at: wf.updatedAt,
-        timeout_ms: wf.timeoutMS,
-        deadline_epoch_ms: wf.deadlineEpochMS,
-      }));
+      koaCtxt.body = workflows.map(workflowStatusToUnderscoreFormat);
       koaCtxt.status = 200;
     };
     router.post(listWorkflowsUrl, listWorkflowsHandler);
@@ -528,28 +538,7 @@ export class DBOSHttpServer {
       const workflows = await dbosExec.listQueuedWorkflows(input);
 
       // Map result to the underscore format.
-      koaCtxt.body = workflows.map((wf) => ({
-        workflow_id: wf.workflowID,
-        status: wf.status,
-        workflow_name: wf.workflowName,
-        workflow_class_name: wf.workflowClassName,
-        workflow_config_name: wf.workflowConfigName,
-        queue_name: wf.queueName,
-        authenticated_user: wf.authenticatedUser,
-        assumed_role: wf.assumedRole,
-        authenticated_roles: wf.authenticatedRoles,
-        output: wf.output,
-        error: wf.error,
-        input: wf.input,
-        executor_id: wf.executorId,
-        app_version: wf.applicationVersion,
-        application_id: wf.applicationID,
-        recovery_attempts: wf.recoveryAttempts,
-        created_at: wf.createdAt,
-        updated_at: wf.updatedAt,
-        timeout_ms: wf.timeoutMS,
-        deadline_epoch_ms: wf.deadlineEpochMS,
-      }));
+      koaCtxt.body = workflows.map(workflowStatusToUnderscoreFormat);
       koaCtxt.status = 200;
     };
     router.post(listQueuedWorkflowsUrl, listQueuedWorkflowsHandler);
@@ -567,28 +556,7 @@ export class DBOSHttpServer {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const workflow = await dbosExec.getWorkflowStatus(workflowId);
       if (workflow) {
-        koaCtxt.body = {
-          workflow_id: workflow.workflowID,
-          status: workflow.status,
-          workflow_name: workflow.workflowName,
-          workflow_class_name: workflow.workflowClassName,
-          workflow_config_name: workflow.workflowConfigName,
-          queue_name: workflow.queueName,
-          authenticated_user: workflow.authenticatedUser,
-          assumed_role: workflow.assumedRole,
-          authenticated_roles: workflow.authenticatedRoles,
-          output: workflow.output,
-          error: workflow.error,
-          input: workflow.input,
-          executor_id: workflow.executorId,
-          app_version: workflow.applicationVersion,
-          application_id: workflow.applicationID,
-          recovery_attempts: workflow.recoveryAttempts,
-          created_at: workflow.createdAt,
-          updated_at: workflow.updatedAt,
-          timeout_ms: workflow.timeoutMS,
-          deadline_epoch_ms: workflow.deadlineEpochMS,
-        };
+        koaCtxt.body = workflowStatusToUnderscoreFormat(workflow);
         koaCtxt.status = 200;
       } else {
         koaCtxt.status = 404;
