@@ -728,7 +728,7 @@ describe('test-list-queues', () => {
     // Wait one second, start one final workflow, then timeout all workflows started more than one second ago
     await sleepms(1000);
     const finalHandle = await DBOS.startWorkflow(TestGlobalTimeout).blockedWorkflow();
-    await globalTimeout(DBOSExecutor.globalInstance?.systemDatabase as PostgresSystemDatabase, 1000);
+    await globalTimeout(DBOSExecutor.globalInstance?.systemDatabase as PostgresSystemDatabase, Date.now() - 1000);
 
     // Verify all workflows started before the global timeout are cancelled
     for (const handle of handles) {
