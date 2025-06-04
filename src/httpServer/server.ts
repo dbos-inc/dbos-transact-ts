@@ -269,9 +269,9 @@ export class DBOSHttpServer {
     const url = '/dbos-global-timeout';
     const handler = async (koaCtxt: Koa.Context) => {
       const body = koaCtxt.request.body as {
-        timeout_ms: number;
+        cutoff_epoch_timestamp_ms: number;
       };
-      await globalTimeout(dbosExec.systemDatabase, body.timeout_ms);
+      await globalTimeout(dbosExec.systemDatabase, body.cutoff_epoch_timestamp_ms);
       koaCtxt.status = 204;
     };
     router.post(url, handler);
