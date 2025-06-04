@@ -164,7 +164,7 @@ export interface SystemDatabase {
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
   listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]>;
-  garbageCollect(timeThresholdMs?: number, rowsThreshold?: number): Promise<void>;
+  garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void>;
 }
 
 // For internal use, not serialized status.
