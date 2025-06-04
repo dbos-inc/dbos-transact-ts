@@ -17,6 +17,7 @@
   "license": "MIT",
   "description": "",
   "dependencies": {
+    "drizzle-kit": "^0.31.1",
     "drizzle-orm": "^0.40.1",
     "pg": "8.11.3",
     "superjson": "^1.13"

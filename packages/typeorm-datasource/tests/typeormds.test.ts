@@ -50,7 +50,14 @@ const typeOrmDS = new TypeOrmDS('app-db', poolconfig, [KV, User]);
 DBOS.registerDataSource(typeOrmDS);
 
 const dbosConfig = {
-  name: 'dbos_typeorm_test',
+  databaseUrl: databaseUrl,
+  poolConfig: poolconfig,
+  system_database: 'typeorm_testdb_dbos_sys',
+  telemetry: {
+    logs: {
+      silent: true,
+    },
+  },
 };
 
 async function txFunctionGuts() {

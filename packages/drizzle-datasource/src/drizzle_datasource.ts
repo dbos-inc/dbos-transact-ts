@@ -1,8 +1,10 @@
 import { Pool, PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import { DBOS, type DBOSTransactionalDataSource, Error } from '@dbos-inc/dbos-sdk';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { pushSchema } from 'drizzle-kit/api';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
+import { PgDatabase } from 'drizzle-orm/pg-core';
 
 interface DrizzleLocalCtx {
   drizzleClient: NodePgDatabase<{ [key: string]: object }>;
@@ -26,9 +28,9 @@ export interface transaction_completion {
   error: string | null;
 }
 
-export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
+const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
-export const userDBSchema = `
+const userDBSchema = `
   CREATE TABLE IF NOT EXISTS dbos.transaction_completion (
     workflow_id TEXT NOT NULL,
     function_num INT NOT NULL,
@@ -39,7 +41,7 @@ export const userDBSchema = `
   );
 `;
 
-export const userDBIndex = `
+const userDBIndex = `
   CREATE INDEX IF NOT EXISTS transaction_completion_created_at_index ON dbos.transaction_completion (created_at);
 `;
 
@@ -84,8 +86,6 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
   }
 
   async initialize(): Promise<void> {
-    // this.dataSource = this.createInstance();
-
     this.drizzlePool = new Pool(this.config);
     this.dataSource = drizzle(this.drizzlePool, { schema: this.entities });
 
@@ -169,9 +169,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     );
   }
 
-  /**
-   * Invoke a transaction function
-   */
+  /* Invoke a transaction function, called by the framework */
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
     config: DrizzleTransactionConfig,
     target: This,
@@ -345,5 +343,17 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     };
   }
 
-  async createSchema() {}
+  /**
+   * Create user schema in database (for testing)
+   */
+  async createSchema() {
+    const drizzlePool = new Pool(this.config);
+    const db = drizzle(drizzlePool);
+    try {
+      const res = await pushSchema(this.entities, db);
+      await res.apply();
+    } finally {
+      await drizzlePool.end();
+    }
+  }
 }
