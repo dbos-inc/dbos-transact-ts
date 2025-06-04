@@ -4,7 +4,6 @@ import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pushSchema } from 'drizzle-kit/api';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
-import { PgDatabase } from 'drizzle-orm/pg-core';
 
 interface DrizzleLocalCtx {
   drizzleClient: NodePgDatabase<{ [key: string]: object }>;
@@ -71,7 +70,6 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
   constructor(
     readonly name: string,
     readonly config: PoolConfig,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     readonly entities: { [key: string]: object } = {},
   ) {}
 

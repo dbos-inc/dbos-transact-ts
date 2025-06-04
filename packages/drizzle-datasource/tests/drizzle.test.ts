@@ -78,7 +78,6 @@ class DBWFI {
   @drizzleDS.transaction({ readOnly: true })
   static async tx(): Promise<string> {
     let res = await DrizzleDS.drizzleClient.execute("SELECT 'My decorated tx result' as a");
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     return res.rows[0].a as string;
   }
 
