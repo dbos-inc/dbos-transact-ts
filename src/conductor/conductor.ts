@@ -6,6 +6,7 @@ import { GetWorkflowsInput, StatusString } from '..';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { hostname } from 'node:os';
 import { json as streamJSON } from 'stream/consumers';
+import { globalTimeout } from '../dbos-runtime/workflow_management';
 
 export class Conductor {
   url: string;
@@ -296,6 +297,29 @@ export class Conductor {
               errorMsg,
             );
             this.websocket!.send(DBOSJSON.stringify(listStepsResponse));
+            break;
+          case protocol.MessageType.RETENTION:
+            const retentionMessage = baseMsg as protocol.RetentionRequest;
+            let retentionSuccess = true;
+            try {
+              await this.dbosExec.systemDatabase.garbageCollect(
+                retentionMessage.body.gc_cutoff_epoch_ms,
+                retentionMessage.body.gc_rows_threshold,
+              );
+              if (retentionMessage.body.timeout_cutoff_epoch_ms) {
+                await globalTimeout(this.dbosExec.systemDatabase, retentionMessage.body.timeout_cutoff_epoch_ms);
+              }
+            } catch (e) {
+              retentionSuccess = false;
+              errorMsg = `Exception encountered during enforcing retention policy: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const retentionResponse = new protocol.RetentionResponse(
+              retentionMessage.request_id,
+              retentionSuccess,
+              errorMsg,
+            );
+            this.websocket!.send(DBOSJSON.stringify(retentionResponse));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
