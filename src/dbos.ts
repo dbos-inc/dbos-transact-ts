@@ -2150,11 +2150,11 @@ export class DBOS {
     return invokeWrapper;
   }
 
-  static runAsStep<Return>(func: () => Promise<Return>, config: StepConfig & { name?: string } = {}): Promise<Return> {
+  static runStep<Return>(func: () => Promise<Return>, config: StepConfig & { name?: string } = {}): Promise<Return> {
     const name = config.name ?? func.name;
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInTransaction()) {
-        throw new DBOSInvalidWorkflowTransitionError('Invalid call to a runAsStep from within a `transaction`');
+        throw new DBOSInvalidWorkflowTransitionError('Invalid call to a runStep from within a `transaction`');
       }
       if (DBOS.isInStep()) {
         // There should probably be checks here about the compatibility of the StepConfig...

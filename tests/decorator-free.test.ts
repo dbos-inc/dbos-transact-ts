@@ -25,7 +25,7 @@ function wfRegStep(value: number) {
 }
 
 function wfRunStep(value: number) {
-  return DBOS.runAsStep(() => stepTest(value), { name: 'stepTest-runAsStep' });
+  return DBOS.runStep(() => stepTest(value), { name: 'stepTest-runStep' });
 }
 
 function wfRegRetry(value: number) {
@@ -57,7 +57,7 @@ class TestClass extends ConfiguredInstance {
   }
 
   static wfRunStep(value: number) {
-    return DBOS.runAsStep(() => stepTest(value), { name: 'stepTest-runAsStep' });
+    return DBOS.runStep(() => stepTest(value), { name: 'stepTest-runStep' });
   }
 
   static wfRegRetry(value: number) {
@@ -84,7 +84,7 @@ class TestClass extends ConfiguredInstance {
   }
 
   wfRunStep(value: number) {
-    return DBOS.runAsStep(() => stepTest(value), { name: 'stepTest-runAsStep' });
+    return DBOS.runStep(() => stepTest(value), { name: 'stepTest-runStep' });
   }
 
   wfRegRetry(value: number) {
@@ -160,7 +160,7 @@ describe('decorator-free-tests', () => {
     const steps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(steps.length).toBe(1);
     expect(steps[0].functionID).toBe(0);
-    expect(steps[0].name).toBe('stepTest-runAsStep');
+    expect(steps[0].name).toBe('stepTest-runStep');
     expect(steps[0].output).toEqual(1000);
     expect(steps[0].error).toBeNull();
     expect(steps[0].childWorkflowID).toBeNull();
@@ -225,7 +225,7 @@ describe('decorator-free-tests', () => {
     const steps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(steps.length).toBe(1);
     expect(steps[0].functionID).toBe(0);
-    expect(steps[0].name).toBe('stepTest-runAsStep');
+    expect(steps[0].name).toBe('stepTest-runStep');
     expect(steps[0].output).toEqual(1000);
     expect(steps[0].error).toBeNull();
     expect(steps[0].childWorkflowID).toBeNull();
@@ -288,7 +288,7 @@ describe('decorator-free-tests', () => {
     const steps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(steps.length).toBe(1);
     expect(steps[0].functionID).toBe(0);
-    expect(steps[0].name).toBe('stepTest-runAsStep');
+    expect(steps[0].name).toBe('stepTest-runStep');
     expect(steps[0].output).toEqual(1000);
     expect(steps[0].error).toBeNull();
     expect(steps[0].childWorkflowID).toBeNull();
