@@ -76,7 +76,9 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   static get entityManager(): EntityManager {
     const ctx = assertCurrentDSContextStore();
     if (!DBOS.isInTransaction())
-      throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
+      throw new Error.DBOSInvalidWorkflowTransitionError(
+        'Invalid use of `TypeOrmDS.entityManager` outside of a `transaction`',
+      );
     return ctx.typeOrmEntityManager;
   }
 

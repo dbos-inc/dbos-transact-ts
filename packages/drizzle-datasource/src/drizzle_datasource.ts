@@ -77,7 +77,9 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
   static get drizzleClient(): NodePgDatabase<{ [key: string]: object }> {
     const ctx = assertCurrentDSContextStore();
     if (!DBOS.isInTransaction())
-      throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
+      throw new Error.DBOSInvalidWorkflowTransitionError(
+        'Invalid use of `DrizzleDS.drizzleClient` outside of a `transaction`',
+      );
     return ctx.drizzleClient;
   }
 

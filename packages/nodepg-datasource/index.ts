@@ -69,7 +69,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
 
   static get client(): ClientBase {
     if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
     }
     const ctx = NodePostgresDataSource.#asyncLocalCtx.getStore();
     if (!ctx) {
