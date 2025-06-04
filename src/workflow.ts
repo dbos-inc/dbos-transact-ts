@@ -9,7 +9,7 @@ import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
-import { DBOS, runAsWorkflowStep } from './dbos';
+import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
 
 /** @deprecated */
@@ -571,7 +571,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
-    return await runAsWorkflowStep(
+    return await runInternalStep(
       async () => {
         return await this.workflowPromise;
       },
