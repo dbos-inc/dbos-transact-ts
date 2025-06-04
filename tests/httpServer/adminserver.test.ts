@@ -15,6 +15,34 @@ import { step_info } from '../../schemas/system_db_schema';
 import http from 'http';
 import { DBOSWorkflowCancelledError } from '../../src/error';
 
+// Add type definitions for admin server API responses
+interface WorkflowResponse {
+  workflow_id: string;
+  status: string;
+  workflow_name: string;
+  workflow_class_name: string;
+  workflow_config_name?: string;
+  queue_name?: string;
+  authenticated_user?: string;
+  assumed_role?: string;
+  authenticated_roles?: string[];
+  output?: unknown;
+  error?: unknown;
+  input?: unknown[];
+  executor_id?: string;
+  app_version?: string;
+  application_id?: string;
+  recovery_attempts?: number;
+  created_at?: number;
+  updated_at?: number;
+  timeout_ms?: number;
+  deadline_epoch_ms?: number;
+}
+
+interface ErrorResponse {
+  error: string;
+}
+
 describe('not-running-admin-server', () => {
   let config: DBOSConfig;
   beforeEach(async () => {
@@ -444,7 +472,7 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(200);
-    const workflow = await response.json();
+    const workflow = (await response.json()) as WorkflowResponse;
     expect(workflow.workflow_id).toBe(handle.workflowID);
     expect(workflow.status).toBe(StatusString.SUCCESS);
     expect(workflow.workflow_name).toBe('exampleWorkflow');
@@ -457,7 +485,7 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(404);
-    const errorResponse = await response.json();
+    const errorResponse = (await response.json()) as ErrorResponse;
     expect(errorResponse.error).toBe('Workflow non-existing-workflow-id not found');
   });
 
@@ -491,10 +519,10 @@ describe('running-admin-server-tests', () => {
       body: JSON.stringify({}),
     });
     expect(response.status).toBe(200);
-    let workflows = await response.json();
+    let workflows = (await response.json()) as WorkflowResponse[];
 
     // Both workflows should appear in the results
-    const workflowIds = workflows.map((w: any) => w.workflow_id);
+    const workflowIds = workflows.map((w) => w.workflow_id);
     expect(workflows.length).toBe(2);
     expect(workflowIds).toContain(handle1.workflowID);
     expect(workflowIds).toContain(handle2.workflowID);
@@ -513,7 +541,7 @@ describe('running-admin-server-tests', () => {
       }),
     });
     expect(response.status).toBe(200);
-    workflows = await response.json();
+    workflows = (await response.json()) as WorkflowResponse[];
 
     // Only the second workflow should be returned since it was created after firstWorkflowTime
     expect(workflows.length).toBe(1);
@@ -543,13 +571,13 @@ describe('running-admin-server-tests', () => {
       body: JSON.stringify({}),
     });
     expect(response.status).toBe(200);
-    let queuedWorkflows = await response.json();
+    let queuedWorkflows = (await response.json()) as WorkflowResponse[];
 
     // Should have at least 4 workflows (the ones we just enqueued)
     expect(queuedWorkflows.length).toBeGreaterThanOrEqual(4);
 
     // All should be in ENQUEUED status
-    const enqueuedWorkflows = queuedWorkflows.filter((wf: any) => wf.status === 'ENQUEUED');
+    const enqueuedWorkflows = queuedWorkflows.filter((wf) => wf.status === 'ENQUEUED');
     expect(enqueuedWorkflows.length).toBeGreaterThanOrEqual(4);
 
     // Test filtering by queue name
@@ -563,11 +591,11 @@ describe('running-admin-server-tests', () => {
       }),
     });
     expect(response.status).toBe(200);
-    queuedWorkflows = await response.json();
+    queuedWorkflows = (await response.json()) as WorkflowResponse[];
 
     // Should have exactly 3 workflows for this specific queue
     expect(queuedWorkflows.length).toBe(3);
-    queuedWorkflows.forEach((wf: any) => {
+    queuedWorkflows.forEach((wf) => {
       expect(wf.queue_name).toBe(testQueue.name);
       expect(wf.workflow_name).toBe('blockedWorkflow');
       expect(wf.status).toBe('ENQUEUED');
@@ -584,7 +612,7 @@ describe('running-admin-server-tests', () => {
       }),
     });
     expect(response.status).toBe(200);
-    queuedWorkflows = await response.json();
+    queuedWorkflows = (await response.json()) as WorkflowResponse[];
 
     // Should have exactly 2 workflows
     expect(queuedWorkflows.length).toBe(2);
