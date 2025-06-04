@@ -240,13 +240,10 @@ export function runInternalStep<T>(callback: () => Promise<T>, funcName: string,
       return callback();
     } else if (DBOS.isInWorkflow()) {
       const wfctx = assertCurrentWorkflowContext();
-      if (DBOS.workflowID === undefined) {
-        throw new Error();
-      }
       return DBOSExecutor.globalInstance!.runInternalStep<T>(
         callback,
         funcName,
-        DBOS.workflowID,
+        DBOS.workflowID!, // assume DBOS.workflowID is defined because of assertCurrentWorkflowContext call above
         wfctx.functionIDGetIncrement(),
         childWFID,
       );
