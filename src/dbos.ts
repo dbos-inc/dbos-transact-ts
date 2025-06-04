@@ -61,7 +61,7 @@ import {
   registerAndWrapDBOSFunction,
   registerFunctionWrapper,
   registerLifecycleCallback,
-  registerMiddlewareInserter,
+  registerMiddlewareInstaller,
 } from './decorators';
 import { globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
@@ -2189,7 +2189,7 @@ export class DBOS {
    * Register a middleware provider
    */
   static registerMiddlewareInstaller(mwp: DBOSMethodMiddlewareInstaller) {
-    registerMiddlewareInserter(mwp);
+    registerMiddlewareInstaller(mwp);
   }
 
   /**
