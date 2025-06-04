@@ -1,83 +1,115 @@
-import { DBOS } from '../src/';
+import { ConfiguredInstance, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
-class DecoratorFreeTest {
-  @DBOS.workflow()
-  static async testFreeStep(value: number) {
-    return await regFreeStep(value);
-  }
-
-  @DBOS.workflow()
-  static async testStaticStep(value: number) {
-    return await DecoratorFreeTest.staticStep(value);
-  }
-
-  @DBOS.workflow()
-  static async testFreeStepRetries(value: number) {
-    return await regFreeStepRetries(value);
-  }
-
-  @DBOS.workflow()
-  static async testRunAsStep(value: number) {
-    return DBOS.runAsStep(
-      () => {
-        return Promise.resolve(value * 10);
-      },
-      { name: 'testRunStep' },
-    );
-  }
-
-  static runAsStepRetriesAttempts = Array<boolean>(5).fill(false);
-
-  @DBOS.workflow()
-  static async testRunAsStepRetries(value: number) {
-    return DBOS.runAsStep(
-      //eslint-disable-next-line @typescript-eslint/require-await
-      async () => {
-        expect(DBOS.stepStatus).toBeDefined();
-        expect(DBOS.stepStatus!.currentAttempt).toBeDefined();
-        const currentAttempt = DBOS.stepStatus!.currentAttempt!;
-        DecoratorFreeTest.runAsStepRetriesAttempts[currentAttempt - 1] = true;
-        if (currentAttempt < 3) {
-          throw new Error('Test error');
-        }
-        return value * 10;
-      },
-      { name: 'testRunStep', retriesAllowed: true },
-    );
-  }
-
-  static staticStep(value: number): Promise<number> {
-    return Promise.resolve(value * 1000);
-  }
-}
-
-DecoratorFreeTest.staticStep = DBOS.registerStep(DecoratorFreeTest.staticStep);
-
-function freeStep(value: number): Promise<number> {
+function stepTest(value: number): Promise<number> {
+  expect(DBOS.stepStatus).toBeDefined();
   return Promise.resolve(value * 100);
 }
 
-const regFreeStep = DBOS.registerStep(freeStep);
-
-const freeStepRetriesAttempts = Array<boolean>(5).fill(false);
-
-//eslint-disable-next-line @typescript-eslint/require-await
-async function freeStepRetries(value: number): Promise<number> {
-  expect(DBOS.stepStatus).toBeDefined();
+const retryTestAttempts = Array<boolean>(5).fill(false);
+function retryTest(value: number): Promise<number> {
   expect(DBOS.stepStatus!.currentAttempt).toBeDefined();
-  const currentAttempt = DBOS.stepStatus!.currentAttempt!;
-  freeStepRetriesAttempts[currentAttempt - 1] = true;
-  if (currentAttempt < 3) {
-    throw new Error('Test error');
+  retryTestAttempts[DBOS.stepStatus!.currentAttempt!] = true;
+  if (DBOS.stepStatus!.currentAttempt! < 3) {
+    throw new Error('retry-test-error');
   }
-  return value * 100;
+  return Promise.resolve(value * 100);
 }
-const regFreeStepRetries = DBOS.registerStep(freeStepRetries, { retriesAllowed: true });
+
+const regStepTest = DBOS.registerStep(stepTest);
+const regRetryTest = DBOS.registerStep(retryTest, { retriesAllowed: true });
+
+function wfRegStep(value: number) {
+  return regStepTest(value);
+}
+
+function wfRunStep(value: number) {
+  return DBOS.runAsStep(() => stepTest(value), { name: 'stepTest-runAsStep' });
+}
+
+function wfRegRetry(value: number) {
+  return regRetryTest(value);
+}
+
+const regWFRegStep = DBOS.registerWorkflow(wfRegStep, 'wfRegStep');
+const regWFRunStep = DBOS.registerWorkflow(wfRunStep, 'wfRunStep');
+const regWFRunRetry = DBOS.registerWorkflow(wfRegRetry, 'wfRegRetry');
+
+class TestClass extends ConfiguredInstance {
+  static stepTest(value: number): Promise<number> {
+    expect(DBOS.stepStatus).toBeDefined();
+    return Promise.resolve(value * 100);
+  }
+
+  static readonly retryTestAttempts = Array<boolean>(5).fill(false);
+  static retryTest(value: number): Promise<number> {
+    expect(DBOS.stepStatus!.currentAttempt).toBeDefined();
+    TestClass.retryTestAttempts[DBOS.stepStatus!.currentAttempt!] = true;
+    if (DBOS.stepStatus!.currentAttempt! < 3) {
+      throw new Error('retry-test-error');
+    }
+    return Promise.resolve(value * 100);
+  }
+
+  static wfRegStep(value: number) {
+    return TestClass.stepTest(value);
+  }
+
+  static wfRunStep(value: number) {
+    return DBOS.runAsStep(() => stepTest(value), { name: 'stepTest-runAsStep' });
+  }
+
+  static wfRegRetry(value: number) {
+    return TestClass.retryTest(value);
+  }
+
+  stepTest(value: number): Promise<number> {
+    expect(DBOS.stepStatus).toBeDefined();
+    return Promise.resolve(value * 100);
+  }
+
+  readonly retryTestAttempts = Array<boolean>(5).fill(false);
+  retryTest(value: number): Promise<number> {
+    expect(DBOS.stepStatus!.currentAttempt).toBeDefined();
+    this.retryTestAttempts[DBOS.stepStatus!.currentAttempt!] = true;
+    if (DBOS.stepStatus!.currentAttempt! < 3) {
+      throw new Error('retry-test-error');
+    }
+    return Promise.resolve(value * 100);
+  }
+
+  wfRegStep(value: number) {
+    return this.stepTest(value);
+  }
+
+  wfRunStep(value: number) {
+    return DBOS.runAsStep(() => stepTest(value), { name: 'stepTest-runAsStep' });
+  }
+
+  wfRegRetry(value: number) {
+    return this.retryTest(value);
+  }
+}
+
+TestClass.stepTest = DBOS.registerStep(TestClass.stepTest);
+TestClass.retryTest = DBOS.registerStep(TestClass.retryTest, { retriesAllowed: true });
+TestClass.wfRegStep = DBOS.registerWorkflow(TestClass.wfRegStep, 'TestClass.wfRegStep');
+TestClass.wfRunStep = DBOS.registerWorkflow(TestClass.wfRunStep, 'TestClass.wfRunStep');
+TestClass.wfRegRetry = DBOS.registerWorkflow(TestClass.wfRegRetry, 'TestClass.wfRegRetry');
+
+TestClass.prototype.stepTest = DBOS.registerStep(TestClass.prototype.stepTest);
+TestClass.prototype.retryTest = DBOS.registerStep(TestClass.prototype.retryTest, { retriesAllowed: true });
+TestClass.prototype.wfRegStep = DBOS.registerWorkflow(TestClass.prototype.wfRegStep, 'TestClass.prototype.wfRegStep');
+TestClass.prototype.wfRunStep = DBOS.registerWorkflow(TestClass.prototype.wfRunStep, 'TestClass.prototype.wfRunStep');
+TestClass.prototype.wfRegRetry = DBOS.registerWorkflow(
+  TestClass.prototype.wfRegRetry,
+  'TestClass.prototype.wfRegRetry',
+);
 
 describe('decorator-free-tests', () => {
   const config = generateDBOSTestConfig();
+  const inst = new TestClass('TestClassInstance');
 
   beforeAll(async () => {
     await setUpDBOSTestDb(config);
@@ -92,92 +124,197 @@ describe('decorator-free-tests', () => {
     await DBOS.shutdown();
   });
 
-  test('wf-free-step', async () => {
+  test('wf-free-step-reg', async () => {
     const wfid = randomUUID();
 
     await DBOS.withNextWorkflowID(wfid, async () => {
-      const res = await DecoratorFreeTest.testFreeStep(10);
+      const res = await regWFRegStep(10);
       expect(res).toBe(1000);
     });
 
-    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
-    expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].functionID).toBe(0);
-    expect(wfsteps[0].name).toBe('freeStep');
-    expect(wfsteps[0].output).toEqual(1000);
-    expect(wfsteps[0].error).toBeNull();
-    expect(wfsteps[0].childWorkflowID).toBeNull();
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('wfRegStep');
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-static-step', async () => {
+  test('wf-free-step-run', async () => {
     const wfid = randomUUID();
 
     await DBOS.withNextWorkflowID(wfid, async () => {
-      const res = await DecoratorFreeTest.testStaticStep(10);
-      expect(res).toBe(10000);
-    });
-
-    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
-    expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].functionID).toBe(0);
-    expect(wfsteps[0].name).toBe('staticStep');
-    expect(wfsteps[0].output).toEqual(10000);
-    expect(wfsteps[0].error).toBeNull();
-    expect(wfsteps[0].childWorkflowID).toBeNull();
-  });
-
-  test('wf-free-step-retries', async () => {
-    const wfid = randomUUID();
-
-    await DBOS.withNextWorkflowID(wfid, async () => {
-      const res = await DecoratorFreeTest.testFreeStepRetries(10);
+      const res = await regWFRunStep(10);
       expect(res).toBe(1000);
     });
 
-    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
-    expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].functionID).toBe(0);
-    expect(wfsteps[0].name).toBe('freeStepRetries');
-    expect(wfsteps[0].output).toEqual(1000);
-    expect(wfsteps[0].error).toBeNull();
-    expect(wfsteps[0].childWorkflowID).toBeNull();
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('wfRunStep');
 
-    expect(freeStepRetriesAttempts).toEqual([true, true, true, false, false]);
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest-runAsStep');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-run-as-step', async () => {
+  test('wf-free-step-retry', async () => {
     const wfid = randomUUID();
 
     await DBOS.withNextWorkflowID(wfid, async () => {
-      const res = await DecoratorFreeTest.testRunAsStep(10);
-      expect(res).toBe(100);
+      const res = await regWFRunRetry(10);
+      expect(res).toBe(1000);
     });
 
-    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
-    expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].functionID).toBe(0);
-    expect(wfsteps[0].name).toBe('testRunStep');
-    expect(wfsteps[0].output).toEqual(100);
-    expect(wfsteps[0].error).toBeNull();
-    expect(wfsteps[0].childWorkflowID).toBeNull();
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('wfRegRetry');
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('retryTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+
+    expect(retryTestAttempts).toEqual([false, true, true, true, false]);
   });
 
-  test('wf-run-as-step-retries', async () => {
+  test('wf-static-step-reg', async () => {
     const wfid = randomUUID();
 
     await DBOS.withNextWorkflowID(wfid, async () => {
-      const res = await DecoratorFreeTest.testRunAsStepRetries(10);
-      expect(res).toBe(100);
+      const res = await TestClass.wfRegStep(10);
+      expect(res).toBe(1000);
     });
 
-    const wfsteps = (await DBOS.listWorkflowSteps(wfid))!;
-    expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].functionID).toBe(0);
-    expect(wfsteps[0].name).toBe('testRunStep');
-    expect(wfsteps[0].output).toEqual(100);
-    expect(wfsteps[0].error).toBeNull();
-    expect(wfsteps[0].childWorkflowID).toBeNull();
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.wfRegStep');
 
-    expect(DecoratorFreeTest.runAsStepRetriesAttempts).toEqual([true, true, true, false, false]);
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('wf-static-step-run', async () => {
+    const wfid = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await TestClass.wfRunStep(10);
+      expect(res).toBe(1000);
+    });
+
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.wfRunStep');
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest-runAsStep');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('wf-static-step-retry', async () => {
+    const wfid = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await TestClass.wfRegRetry(10);
+      expect(res).toBe(1000);
+    });
+
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.wfRegRetry');
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('retryTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+
+    expect(TestClass.retryTestAttempts).toEqual([false, true, true, true, false]);
+  });
+
+  test('wf-inst-step-reg', async () => {
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await inst.wfRegStep(10);
+      expect(res).toBe(1000);
+    });
+
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.prototype.wfRegStep');
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('wf-inst-step-run', async () => {
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await inst.wfRunStep(10);
+      expect(res).toBe(1000);
+    });
+
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.prototype.wfRunStep');
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest-runAsStep');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('wf-inst-step-retry', async () => {
+    inst.retryTestAttempts.fill(false); // reset for test
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      const res = await inst.wfRegRetry(10);
+      expect(res).toBe(1000);
+    });
+
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.prototype.wfRegRetry');
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('retryTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+
+    expect(inst.retryTestAttempts).toEqual([false, true, true, true, false]);
   });
 });

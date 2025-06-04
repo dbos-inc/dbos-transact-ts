@@ -1724,15 +1724,15 @@ export class DBOS {
 
   static registerWorkflow<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
+    name: string,
+    options: {
       classOrInst?: object;
       className?: string;
-      name: string;
       config?: WorkflowConfig;
-    },
+    } = {},
   ): (this: This, ...args: Args) => Promise<Return> {
-    const { registration } = registerAndWrapDBOSFunctionByName(target.classOrInst, target.className, target.name, func);
-    return DBOS.#getWorkflowInvokeWrapper(registration, target.config);
+    const { registration } = registerAndWrapDBOSFunctionByName(options.classOrInst, options.className, name, func);
+    return DBOS.#getWorkflowInvokeWrapper(registration, options.config);
   }
 
   static #getWorkflowInvokeWrapper<This, Args extends unknown[], Return>(
