@@ -21,8 +21,8 @@ class DecoratorFreeTest {
   @DBOS.workflow()
   static async testRunAsStep(value: number) {
     return DBOS.runAsStep(
-      async () => {
-        return value * 10;
+      () => {
+        return Promise.resolve(value * 10);
       },
       { name: 'testRunStep' },
     );
@@ -33,6 +33,7 @@ class DecoratorFreeTest {
   @DBOS.workflow()
   static async testRunAsStepRetries(value: number) {
     return DBOS.runAsStep(
+      //eslint-disable-next-line @typescript-eslint/require-await
       async () => {
         expect(DBOS.stepStatus).toBeDefined();
         expect(DBOS.stepStatus!.currentAttempt).toBeDefined();
@@ -41,27 +42,28 @@ class DecoratorFreeTest {
         if (currentAttempt < 3) {
           throw new Error('Test error');
         }
-
         return value * 10;
       },
       { name: 'testRunStep', retriesAllowed: true },
     );
   }
 
-  static async staticStep(value: number): Promise<number> {
-    return value * 1000;
+  static staticStep(value: number): Promise<number> {
+    return Promise.resolve(value * 1000);
   }
 }
 
 DecoratorFreeTest.staticStep = DBOS.registerStep(DecoratorFreeTest.staticStep);
 
-async function freeStep(value: number): Promise<number> {
-  return value * 100;
+function freeStep(value: number): Promise<number> {
+  return Promise.resolve(value * 100);
 }
 
 const regFreeStep = DBOS.registerStep(freeStep);
 
 const freeStepRetriesAttempts = Array<boolean>(5).fill(false);
+
+//eslint-disable-next-line @typescript-eslint/require-await
 async function freeStepRetries(value: number): Promise<number> {
   expect(DBOS.stepStatus).toBeDefined();
   expect(DBOS.stepStatus!.currentAttempt).toBeDefined();
