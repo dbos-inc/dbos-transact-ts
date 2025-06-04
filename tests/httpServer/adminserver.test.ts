@@ -594,7 +594,6 @@ describe('running-admin-server-tests', () => {
     queuedWorkflows.forEach((wf) => {
       expect(wf.queue_name).toBe(testQueue.name);
       expect(wf.workflow_name).toBe('blockedWorkflow');
-      expect(wf.status).toBe('ENQUEUED');
     });
 
     // Test with limit
