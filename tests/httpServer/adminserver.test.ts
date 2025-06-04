@@ -1,7 +1,12 @@
 import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
 import { DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { WorkflowQueue } from '../../src';
-import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import {
+  generateDBOSTestConfig,
+  generatePublicDBOSTestConfig,
+  queueEntriesAreCleanedUp,
+  setUpDBOSTestDb,
+} from '../helpers';
 import { QueueMetadataResponse } from '../../src/httpServer/server';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../../src/httpServer/server';
 import { globalParams, sleepms } from '../../src/utils';
@@ -515,5 +520,80 @@ describe('running-admin-server-tests', () => {
     expect(workflows[0].workflow_id).toBe(handle2.workflowID);
     expect(workflows[0].status).toBe(StatusString.SUCCESS);
     expect(workflows[0].workflow_name).toBe('exampleWorkflow');
+  });
+
+  test('test-admin-list-queued-workflows', async () => {
+    // Create a queue for testing
+    const testQueue = new WorkflowQueue('test-admin-list-queue', { concurrency: 1 });
+
+    // Enqueue some workflows that will be blocked
+    const handle1 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();
+    const handle2 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();
+    const handle3 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();
+
+    // Also enqueue a workflow in a different queue
+    const handle4 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueueOne.name }).blockedWorkflow();
+
+    // Test POST /queues - list all queued workflows
+    let response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+    expect(response.status).toBe(200);
+    let queuedWorkflows = await response.json();
+
+    // Should have at least 4 workflows (the ones we just enqueued)
+    expect(queuedWorkflows.length).toBeGreaterThanOrEqual(4);
+
+    // All should be in ENQUEUED status
+    const enqueuedWorkflows = queuedWorkflows.filter((wf: any) => wf.status === 'ENQUEUED');
+    expect(enqueuedWorkflows.length).toBeGreaterThanOrEqual(4);
+
+    // Test filtering by queue name
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        queue_name: testQueue.name,
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = await response.json();
+
+    // Should have exactly 3 workflows for this specific queue
+    expect(queuedWorkflows.length).toBe(3);
+    queuedWorkflows.forEach((wf: any) => {
+      expect(wf.queue_name).toBe(testQueue.name);
+      expect(wf.workflow_name).toBe('blockedWorkflow');
+      expect(wf.status).toBe('ENQUEUED');
+    });
+
+    // Test with limit
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        limit: 2,
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = await response.json();
+
+    // Should have exactly 2 workflows
+    expect(queuedWorkflows.length).toBe(2);
+
+    // Cancel all the workflows to clean up
+    await DBOS.cancelWorkflow(handle1.workflowID);
+    await DBOS.cancelWorkflow(handle2.workflowID);
+    await DBOS.cancelWorkflow(handle3.workflowID);
+    await DBOS.cancelWorkflow(handle4.workflowID);
+    await queueEntriesAreCleanedUp();
   });
 });
