@@ -7,7 +7,7 @@ import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './erro
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
-import { DBOSTransactionalDataSource } from './transactionsource';
+import { DBOSTransactionalDataSource } from './datasource';
 
 /**
  * Interface for integrating into the DBOS startup/shutdown lifecycle

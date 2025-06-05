@@ -1,11 +1,23 @@
 import { randomUUID } from 'node:crypto';
-import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
+import { PoolConfig } from 'pg';
 import knex, { Knex } from 'knex';
-import { DBOS, DBOSTransactionalDataSource } from '../src';
+import { DBOS } from '../src';
+import {
+  type DBOSTransactionalDataSource,
+  createTransactionCompletionSchemaPG,
+  createTransactionCompletionTablePG,
+  isPGRetriableTransactionError,
+  isPGKeyConflictError,
+  isPGFailedSqlTransactionError,
+  registerTransaction,
+  runTransaction,
+  PGIsolationLevel as IsolationLevel,
+  PGTransactionConfig as KnexTransactionConfig,
+} from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';
-import { DBOSJSON, sleepms, ValuesOf } from '../src/utils';
+import { DBOSJSON, sleepms } from '../src/utils';
 
 /*
  * Knex user data access interface
@@ -19,25 +31,13 @@ interface ExistenceCheck {
 }
 
 export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
-export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'knex_transaction_outputs')`;
+export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_completion')`;
 
 export interface transaction_outputs {
   workflow_id: string;
   function_num: number;
   output: string | null;
 }
-
-export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
-
-export const userDBSchema = `
-  CREATE TABLE IF NOT EXISTS dbos.knex_transaction_outputs (
-    workflow_id TEXT NOT NULL,
-    function_num INT NOT NULL,
-    output TEXT,
-    created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
-    PRIMARY KEY (workflow_id, function_num)
-  );
-`;
 
 interface DBOSKnexLocalCtx {
   knexClient: Knex;
@@ -54,25 +54,6 @@ function assertCurrentDSContextStore(): DBOSKnexLocalCtx {
     throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOSKnexDS.knexClient` outside of a `transaction`');
   return ctx;
 }
-
-/**
- * Configuration for `DBOSKnexDS` functions
- */
-export interface KnexTransactionConfig {
-  /** Isolation level to request from underlying app database */
-  isolationLevel?: IsolationLevel;
-  /** If set, request read-only transaction from underlying app database */
-  readOnly?: boolean;
-}
-
-/** Isolation typically supported by application databases */
-export const IsolationLevel = {
-  ReadUncommitted: 'READ UNCOMMITTED',
-  ReadCommitted: 'READ COMMITTED',
-  RepeatableRead: 'REPEATABLE READ',
-  Serializable: 'SERIALIZABLE',
-} as const;
-export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
 export class DBOSKnexDS implements DBOSTransactionalDataSource {
   // User will set this up, in this case
@@ -100,11 +81,11 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     try {
       const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
       if (!schemaExists.rows[0].exists) {
-        await knex.raw(createUserDBSchema);
+        await knex.raw(createTransactionCompletionSchemaPG);
       }
       const txnOutputTableExists = await knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
-        await knex.raw(userDBSchema);
+        await knex.raw(createTransactionCompletionTablePG);
       }
     } finally {
       try {
@@ -159,7 +140,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
 
     const { rows } = await client.raw<{ rows: TxOutputRow[] }>(
       `SELECT output
-          FROM dbos.knex_transaction_outputs
+          FROM dbos.transaction_completion
           WHERE workflow_id=? AND function_num=?;`,
       [workflowID, funcNum],
     );
@@ -173,7 +154,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
   async #recordOutput<R>(client: Knex, workflowID: string, funcNum: number, output: R): Promise<void> {
     const serialOutput = DBOSJSON.stringify(output);
     await client.raw<{ rows: transaction_outputs[] }>(
-      `INSERT INTO dbos.knex_transaction_outputs (
+      `INSERT INTO dbos.transaction_completion (
         workflow_id, function_num,
         output,
         created_at
@@ -250,13 +231,13 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
                 //  1. The transaction is marked failed, but the user code did not throw.
                 //      Bad on them.  We will throw an error (this will get recorded) and not retry.
                 //  2. There was a key conflict in the statement, and we need to use the fetched output
-                if (this.isFailedSqlTransactionError(error)) {
+                if (isPGFailedSqlTransactionError(error)) {
                   DBOS.logger.error(
                     `In workflow ${wfid}, Postgres aborted a transaction but the function '${funcname}' did not raise an exception.  Please ensure that the transaction method raises an exception if the database transaction is aborted.`,
                   );
                   failedForRetriableReasons = false;
                   throw new DBOSFailedSqlTransactionError(wfid, funcname);
-                } else if (this.isKeyConflictError(error)) {
+                } else if (isPGKeyConflictError(error)) {
                   // Expected.  There is probably a result to return
                   shouldCheckOutput = true;
                   failedForRetriableReasons = true;
@@ -285,7 +266,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
         return result;
       } catch (e) {
         const err = e as Error;
-        if (failedForRetriableReasons || this.isRetriableTransactionError(err)) {
+        if (failedForRetriableReasons || isPGRetriableTransactionError(err)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
           // Retry serialization failures.
           await sleepms(retryWaitMillis);
@@ -306,7 +287,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     },
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, target, config);
   }
 
   static registerTransaction<This, Args extends unknown[], Return>(
@@ -317,7 +298,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     },
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(dsname, func, target, config);
+    return registerTransaction(dsname, func, target, config);
   }
 
   // Custom TX decorator
@@ -340,24 +321,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
   }
 
   async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: KnexTransactionConfig) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
-  }
-
-  getPostgresErrorCode(error: unknown): string | null {
-    const dbErr: PGDatabaseError = error as PGDatabaseError;
-    return dbErr.code ? dbErr.code : null;
-  }
-
-  isRetriableTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === '40001';
-  }
-
-  isKeyConflictError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === '23505';
-  }
-
-  isFailedSqlTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === '25P02';
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 }
 
@@ -395,9 +359,7 @@ async function wfFunctionGuts() {
 
 // Workflow functions must always be registered before launch; this
 //  allows recovery to occur.
-const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
-  name: 'workflow',
-});
+const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
 
 // Intentionally initialize DS after we've already tried to register a transaction to it
 const dsa = new DBOSKnexDS('knexA', config.poolConfig);

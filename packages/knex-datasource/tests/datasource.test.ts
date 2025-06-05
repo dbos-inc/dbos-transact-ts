@@ -9,7 +9,7 @@ const config = { client: 'pg', connection: { user: 'postgres', database: 'knex_d
 const dataSource = new KnexDataSource('app-db', config);
 DBOS.registerDataSource(dataSource);
 
-interface transaction_outputs {
+interface transaction_completion {
   workflow_id: string;
   function_num: number;
   output: string | null;
@@ -64,8 +64,8 @@ describe('KnexDataSource', () => {
       greet_count: 1,
     });
 
-    const { rows } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
     expect(rows.length).toBe(1);
@@ -86,8 +86,8 @@ describe('KnexDataSource', () => {
       greet_count: 1,
     });
 
-    const { rows } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
     expect(rows.length).toBe(1);
@@ -106,8 +106,8 @@ describe('KnexDataSource', () => {
 
     await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user))).rejects.toThrow('test error');
 
-    const { rows: txOutput } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+    const { rows: txOutput } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
     expect(txOutput.length).toBe(0);
@@ -126,8 +126,8 @@ describe('KnexDataSource', () => {
 
     await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user))).rejects.toThrow('test error');
 
-    const { rows: txOutput } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+    const { rows: txOutput } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
     expect(txOutput.length).toBe(0);
@@ -149,8 +149,8 @@ describe('KnexDataSource', () => {
       greet_count: 10,
     });
 
-    const { rows } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
     expect(rows.length).toBe(0);
@@ -168,7 +168,9 @@ describe('KnexDataSource', () => {
       greet_count: 10,
     });
 
-    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1', [
+      workflowID,
+    ]);
     expect(rows.length).toBe(0);
   });
 
@@ -293,11 +295,11 @@ async function instanceWorkflow(user: string) {
   return [result, readResult];
 }
 
-const regInsertWorfklowReg = DBOS.registerWorkflow(insertWorkflowReg, { name: 'insertWorkflowReg' });
-const regInsertWorfklowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx, { name: 'insertWorkflowRunTx' });
-const regErrorWorkflowReg = DBOS.registerWorkflow(errorWorkflowReg, { name: 'errorWorkflowReg' });
-const regErrorWorkflowRunTx = DBOS.registerWorkflow(errorWorkflowRunTx, { name: 'errorWorkflowRunTx' });
-const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg, { name: 'readWorkflowReg' });
-const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx, { name: 'readWorkflowRunTx' });
-const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow, { name: 'staticWorkflow' });
-const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow, { name: 'instanceWorkflow' });
+const regInsertWorfklowReg = DBOS.registerWorkflow(insertWorkflowReg, 'insertWorkflowReg');
+const regInsertWorfklowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx, 'insertWorkflowRunTx');
+const regErrorWorkflowReg = DBOS.registerWorkflow(errorWorkflowReg, 'errorWorkflowReg');
+const regErrorWorkflowRunTx = DBOS.registerWorkflow(errorWorkflowRunTx, 'errorWorkflowRunTx');
+const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg, 'readWorkflowReg');
+const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx, 'readWorkflowRunTx');
+const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow, 'staticWorkflow');
+const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow, 'instanceWorkflow');

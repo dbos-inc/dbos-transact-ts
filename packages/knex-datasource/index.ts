@@ -1,11 +1,18 @@
 // using https://github.com/knex/knex
 
-import { DBOS, type DBOSTransactionalDataSource, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import {
+  type DBOSTransactionalDataSource,
+  isPGRetriableTransactionError,
+  isPGKeyConflictError,
+  registerTransaction,
+  runTransaction,
+} from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
 import { SuperJSON } from 'superjson';
 
-interface transaction_outputs {
+interface transaction_completion {
   workflow_id: string;
   function_num: number;
   output: string | null;
@@ -17,10 +24,6 @@ interface KnexDataSourceContext {
 
 export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'>;
 
-function getErrorCode(error: unknown) {
-  return error && typeof error === 'object' && 'code' in error ? error.code : undefined;
-}
-
 export class KnexDataSource implements DBOSTransactionalDataSource {
   static readonly #asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
@@ -29,7 +32,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     funcName: string,
     options: { dsName?: string; config?: TransactionConfig } = {},
   ) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, options);
+    return await runTransaction(callback, funcName, options);
   }
 
   static get client(): Knex.Transaction {
@@ -47,9 +50,9 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     const knexDB = knex(config);
     try {
       await knexDB.schema.createSchemaIfNotExists('dbos');
-      const exists = await knexDB.schema.withSchema('dbos').hasTable('transaction_outputs');
+      const exists = await knexDB.schema.withSchema('dbos').hasTable('transaction_completion');
       if (!exists) {
-        await knexDB.schema.withSchema('dbos').createTable('transaction_outputs', (table) => {
+        await knexDB.schema.withSchema('dbos').createTable('transaction_completion', (table) => {
           table.string('workflow_id').notNullable();
           table.integer('function_num').notNullable();
           table.string('output').nullable();
@@ -79,7 +82,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
   }
 
   async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   register<This, Args extends unknown[], Return>(
@@ -87,7 +90,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     name: string,
     config?: TransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   static async #checkExecution(
@@ -95,7 +98,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     workflowID: string,
     functionNum: number,
   ): Promise<{ output: string | null } | undefined> {
-    const result = await client<transaction_outputs>('transaction_outputs')
+    const result = await client<transaction_completion>('transaction_completion')
       .withSchema('dbos')
       .select('output')
       .where({
@@ -113,14 +116,13 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     output: string | null,
   ): Promise<void> {
     try {
-      await client<transaction_outputs>('transaction_outputs').withSchema('dbos').insert({
+      await client<transaction_completion>('transaction_completion').withSchema('dbos').insert({
         workflow_id: workflowID,
         function_num: functionNum,
         output,
       });
     } catch (error) {
-      // 24505 is a duplicate key error in PostgreSQL
-      if (getErrorCode(error) === '23505') {
+      if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
       } else {
         throw error;
@@ -184,9 +186,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
 
         return result;
       } catch (error) {
-        if (getErrorCode(error) === '40001') {
-          // 400001 is a serialization failure in PostgreSQL
-
+        if (isPGRetriableTransactionError(error)) {
           // TODO: span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
           retryWaitMS = Math.min(retryWaitMS * backoffFactor, maxRetryWaitMS);

@@ -9,7 +9,6 @@ import {
   DBOSContextImpl,
   getNextWFID,
   StepStatus,
-  runWithDSContext,
   DBOSContextOptions,
 } from './context';
 import {
@@ -19,7 +18,6 @@ import {
   DBOSExecutor,
   DebugMode,
   InternalWorkflowParams,
-  OperationType,
 } from './dbos-executor';
 import { Tracer } from './telemetry/traces';
 import {
@@ -56,7 +54,6 @@ import {
   getRegisteredOperations,
   getRegistrationForFunction,
   getRegistrationsForExternal,
-  getTransactionalDataSource,
   insertAllMiddleware,
   MethodAuth,
   MethodRegistration,
@@ -95,7 +92,6 @@ import { Knex } from 'knex';
 import { StepConfig, StepFunction } from './step';
 import {
   DBOSLifecycleCallback,
-  DBOSTransactionalDataSource,
   DBOSMethodMiddlewareInstaller,
   HandlerContext,
   requestArgValidation,
@@ -114,8 +110,8 @@ import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
-import { SpanStatusCode } from '@opentelemetry/api';
 import { registerAuthChecker } from './authdecorators';
+import { DBOSTransactionalDataSource } from './datasource';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -1967,108 +1963,6 @@ export class DBOS {
    */
   static registerDataSource(ds: DBOSTransactionalDataSource) {
     registerTransactionalDataSource(ds.name, ds);
-  }
-
-  // This is the version that needs no existing transaction registration.  Just goes with it.
-  static async runAsWorkflowTransaction<T>(
-    callback: () => Promise<T>,
-    funcName: string,
-    options: { dsName?: string; config?: unknown } = {},
-  ) {
-    if (!DBOS.isWithinWorkflow) {
-      throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` outside of a workflow`);
-    }
-    if (!DBOS.isInWorkflow()) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Invalid call to \`${funcName}\` inside a \`step\`, \`transaction\`, or \`procedure\``,
-      );
-    }
-    const dsn = options.dsName ?? '<default>';
-    const ds = getTransactionalDataSource(dsn);
-
-    const wfctx = assertCurrentWorkflowContext();
-    const callnum = wfctx.functionIDGetIncrement();
-
-    const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
-      funcName,
-      {
-        operationUUID: wfctx.workflowUUID,
-        operationType: OperationType.TRANSACTION,
-        authenticatedUser: wfctx.authenticatedUser,
-        assumedRole: wfctx.assumedRole,
-        authenticatedRoles: wfctx.authenticatedRoles,
-        // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
-      },
-      wfctx.span,
-    );
-
-    try {
-      const res = DBOSExecutor.globalInstance!.runInternalStep<T>(
-        async () => {
-          return await runWithDSContext(callnum, async () => {
-            return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
-          });
-        },
-        funcName,
-        // we can be sure workflowID is set because of previous call to assertCurrentWorkflowContext
-        DBOS.workflowID!,
-        callnum,
-      );
-
-      span.setStatus({ code: SpanStatusCode.OK });
-      DBOSExecutor.globalInstance!.tracer.endSpan(span);
-      return res;
-    } catch (err) {
-      const e = err as Error;
-      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-      DBOSExecutor.globalInstance!.tracer.endSpan(span);
-      throw err;
-    }
-  }
-
-  // Transaction wrapper
-  static registerTransaction<This, Args extends unknown[], Return>(
-    dsName: string,
-    func: (this: This, ...args: Args) => Promise<Return>,
-    options: {
-      name: string;
-    },
-    config?: unknown,
-  ): (this: This, ...args: Args) => Promise<Return> {
-    const dsn = dsName ?? '<default>';
-
-    const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-      if (!DBOS.isWithinWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError(`Call to transaction '${options.name}' outside of a workflow`);
-      }
-
-      if (DBOS.isInTransaction() || DBOS.isInStep()) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to a `trasaction` function from within a `step` or `transaction`',
-        );
-      }
-
-      const ds = getTransactionalDataSource(dsn);
-
-      const wfctx = assertCurrentWorkflowContext();
-      const callnum = wfctx.functionIDGetIncrement();
-      return DBOSExecutor.globalInstance!.runInternalStep<Return>(
-        async () => {
-          return await runWithDSContext(callnum, async () => {
-            return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
-          });
-        },
-        options.name,
-        // we can be sure workflowID is set because of previous call to assertCurrentWorkflowContext
-        DBOS.workflowID!,
-        callnum,
-      );
-    };
-
-    Object.defineProperty(invokeWrapper, 'name', {
-      value: options.name,
-    });
-    return invokeWrapper;
   }
 
   /**

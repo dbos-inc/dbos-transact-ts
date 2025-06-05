@@ -1,5 +1,17 @@
-import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
-import { DBOS, type DBOSTransactionalDataSource, Error } from '@dbos-inc/dbos-sdk';
+import { PoolConfig } from 'pg';
+import { DBOS, Error } from '@dbos-inc/dbos-sdk';
+import {
+  type DBOSTransactionalDataSource,
+  createTransactionCompletionSchemaPG,
+  createTransactionCompletionTablePG,
+  isPGRetriableTransactionError,
+  isPGKeyConflictError,
+  isPGFailedSqlTransactionError,
+  registerTransaction,
+  runTransaction,
+  PGIsolationLevel as IsolationLevel,
+  PGTransactionConfig as TypeOrmTransactionConfig,
+} from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
@@ -26,40 +38,7 @@ interface transaction_completion {
   error: string | null;
 }
 
-const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
-
-const userDBSchema = `
-  CREATE TABLE IF NOT EXISTS dbos.transaction_completion (
-    workflow_id TEXT NOT NULL,
-    function_num INT NOT NULL,
-    output TEXT,
-    error TEXT,
-    created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
-    PRIMARY KEY (workflow_id, function_num)
-  );
-`;
-
-const userDBIndex = `
-  CREATE INDEX IF NOT EXISTS transaction_completion_created_at_index ON dbos.transaction_completion (created_at);
-`;
-
-/** Isolation typically supported by application databases */
-export const IsolationLevel = {
-  ReadUncommitted: 'READ UNCOMMITTED',
-  ReadCommitted: 'READ COMMITTED',
-  RepeatableRead: 'REPEATABLE READ',
-  Serializable: 'SERIALIZABLE',
-} as const;
-
-type ValuesOf<T> = T[keyof T];
-type IsolationLevel = ValuesOf<typeof IsolationLevel>;
-
-export interface TypeOrmTransactionConfig {
-  /** Isolation level to request from underlying app database */
-  isolationLevel?: IsolationLevel;
-  /** If set, request read-only transaction from underlying app database */
-  readOnly?: boolean;
-}
+export { IsolationLevel, TypeOrmTransactionConfig };
 
 export class TypeOrmDS implements DBOSTransactionalDataSource {
   readonly dsType = 'TypeOrm';
@@ -92,9 +71,8 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     const ds = await this.createInstance();
 
     try {
-      await ds.query(createUserDBSchema);
-      await ds.query(userDBSchema);
-      await ds.query(userDBIndex);
+      await ds.query(createTransactionCompletionSchemaPG);
+      await ds.query(createTransactionCompletionTablePG);
     } catch (e) {
       const error = e as Error;
       throw new Error.DBOSError(`Unexpected error initializing schema: ${error.message}`);
@@ -230,13 +208,13 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
             //  1. The transaction is marked failed, but the user code did not throw.
             //      Bad on them.  We will throw an error (this will get recorded) and not retry.
             //  2. There was a key conflict in the statement, and we need to use the fetched output
-            if (this.isFailedSqlTransactionError(error)) {
+            if (isPGFailedSqlTransactionError(error)) {
               DBOS.logger.error(
                 `In workflow ${wfid}, Postgres aborted a transaction but the function '${funcname}' did not raise an exception.  Please ensure that the transaction method raises an exception if the database transaction is aborted.`,
               );
               failedForRetriableReasons = false;
               throw new Error.DBOSFailedSqlTransactionError(wfid, funcname);
-            } else if (this.isKeyConflictError(error)) {
+            } else if (isPGKeyConflictError(error)) {
               throw new Error.DBOSWorkflowConflictError(
                 `In workflow ${wfid}, Postgres raised a key conflict error in transaction '${funcname}'.  This is not retriable, but the output will be fetched from the database.`,
               );
@@ -253,7 +231,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
         return result;
       } catch (e) {
         const err = e as Error;
-        if (failedForRetriableReasons || this.isRetriableTransactionError(err)) {
+        if (failedForRetriableReasons || isPGRetriableTransactionError(err)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
           // Retry serialization failures.
           await DBOS.sleepms(retryWaitMillis);
@@ -279,23 +257,6 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     return ds;
   }
 
-  getPostgresErrorCode(error: unknown): string | null {
-    const dbErr: PGDatabaseError = error as PGDatabaseError;
-    return dbErr.code ? dbErr.code : null;
-  }
-
-  isRetriableTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === '40001';
-  }
-
-  isKeyConflictError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === '23505';
-  }
-
-  isFailedSqlTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === '25P02';
-  }
-
   /**
    * Run `callback` as a transaction against this DataSource
    * @param callback Function to run within a transactional context
@@ -304,7 +265,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
    * @returns Return value from `callback`
    */
   async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TypeOrmTransactionConfig) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   /**
@@ -323,7 +284,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     },
     config?: TypeOrmTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, target, config);
   }
 
   /**

@@ -1,7 +1,17 @@
 // using https://github.com/brianc/node-postgres
 
-import { DBOS, DBOSWorkflowConflictError, type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk';
-import { Client, type ClientBase, type ClientConfig, DatabaseError, Pool, type PoolConfig } from 'pg';
+import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import {
+  type DBOSTransactionalDataSource,
+  createTransactionCompletionSchemaPG,
+  createTransactionCompletionTablePG,
+  isPGRetriableTransactionError,
+  isPGKeyConflictError,
+  registerTransaction,
+  runTransaction,
+  PGTransactionConfig as NodePostgresTransactionOptions,
+} from '@dbos-inc/dbos-sdk/datasource';
+import { Client, type ClientBase, type ClientConfig, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
 
@@ -9,23 +19,7 @@ interface NodePostgresDataSourceContext {
   client: ClientBase;
 }
 
-export const IsolationLevel = Object.freeze({
-  serializable: 'SERIALIZABLE',
-  repeatableRead: 'REPEATABLE READ',
-  readCommited: 'READ COMMITTED',
-  readUncommitted: 'READ UNCOMMITTED',
-});
-
-type ValuesOf<T> = T[keyof T];
-
-export interface NodePostgresTransactionOptions {
-  isolationLevel?: ValuesOf<typeof IsolationLevel>;
-  readOnly?: boolean;
-}
-
-function getErrorCode(error: unknown) {
-  return error instanceof DatabaseError ? error.code : undefined;
-}
+export { NodePostgresTransactionOptions };
 
 export class NodePostgresDataSource implements DBOSTransactionalDataSource {
   static readonly #asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
@@ -35,7 +29,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     funcName: string,
     options: { dsName?: string; config?: NodePostgresTransactionOptions } = {},
   ) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, options);
+    return await runTransaction(callback, funcName, options);
   }
 
   static get client(): ClientBase {
@@ -53,16 +47,8 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     const client = new Client(config);
     try {
       await client.connect();
-      await client.query(
-        /*sql*/
-        `CREATE SCHEMA IF NOT EXISTS dbos;
-         CREATE TABLE IF NOT EXISTS dbos.transaction_outputs (
-            workflow_id TEXT NOT NULL,
-            function_num INT NOT NULL,
-            output TEXT,
-            created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
-            PRIMARY KEY (workflow_id, function_num));`,
-      );
+      await client.query(createTransactionCompletionSchemaPG);
+      await client.query(createTransactionCompletionTablePG);
     } finally {
       await client.end();
     }
@@ -86,7 +72,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
   }
 
   async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   register<This, Args extends unknown[], Return>(
@@ -94,7 +80,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     name: string,
     config?: NodePostgresTransactionOptions,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   static async #checkExecution(
@@ -103,7 +89,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     functionNum: number,
   ): Promise<{ output: string | null } | undefined> {
     const { rows } = await client.query<{ output: string }>(
-      /*sql*/ `SELECT output FROM dbos.transaction_outputs
+      /*sql*/ `SELECT output FROM dbos.transaction_completion
        WHERE workflow_id = $1 AND function_num = $2`,
       [workflowID, functionNum],
     );
@@ -119,13 +105,12 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     try {
       await client.query(
         /*sql*/
-        `INSERT INTO dbos.transaction_outputs (workflow_id, function_num, output) 
+        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
          VALUES ($1, $2, $3)`,
         [workflowID, functionNum, output],
       );
     } catch (error) {
-      // 24505 is a duplicate key error in PostgreSQL
-      if (getErrorCode(error) === '23505') {
+      if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
       } else {
         throw error;
@@ -211,9 +196,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
 
         return result;
       } catch (error) {
-        if (getErrorCode(error) === '40001') {
-          // 400001 is a serialization failure in PostgreSQL
-
+        if (isPGRetriableTransactionError(error)) {
           // TODO: span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
           retryWaitMS = Math.min(retryWaitMS * backoffFactor, maxRetryWaitMS);

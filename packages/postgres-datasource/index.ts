@@ -1,31 +1,26 @@
 // using https://github.com/porsager/postgres
 
 import postgres, { type Sql } from 'postgres';
-import { DBOS, type DBOSTransactionalDataSource, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import {
+  createTransactionCompletionSchemaPG,
+  createTransactionCompletionTablePG,
+  type DBOSTransactionalDataSource,
+  isPGRetriableTransactionError,
+  isPGKeyConflictError,
+  registerTransaction,
+  runTransaction,
+  PGIsolationLevel as IsolationLevel,
+  PGTransactionConfig as PostgresTransactionOptions,
+} from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
+
+export { IsolationLevel, PostgresTransactionOptions };
 
 interface PostgresDataSourceContext {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   client: postgres.TransactionSql<{}>;
-}
-
-export const IsolationLevel = Object.freeze({
-  serializable: 'SERIALIZABLE',
-  repeatableRead: 'REPEATABLE READ',
-  readCommited: 'READ COMMITTED',
-  readUncommitted: 'READ UNCOMMITTED',
-});
-
-type ValuesOf<T> = T[keyof T];
-
-export interface PostgresTransactionOptions {
-  isolationLevel?: ValuesOf<typeof IsolationLevel>;
-  readOnly?: boolean;
-}
-
-function getErrorCode(error: unknown) {
-  return error instanceof postgres.PostgresError ? error.code : undefined;
 }
 
 export class PostgresDataSource implements DBOSTransactionalDataSource {
@@ -36,7 +31,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
     funcName: string,
     options: { dsName?: string; config?: PostgresTransactionOptions } = {},
   ) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, options);
+    return await runTransaction(callback, funcName, options);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -55,14 +50,8 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   static async configure(options: postgres.Options<{}> = {}): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
-      await pg/*sql*/ `
-        CREATE SCHEMA IF NOT EXISTS dbos;
-        CREATE TABLE IF NOT EXISTS dbos.transaction_outputs (
-            workflow_id TEXT NOT NULL,
-            function_num INT NOT NULL,
-            output TEXT,
-            created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
-            PRIMARY KEY (workflow_id, function_num));`.simple();
+      await pg.unsafe(createTransactionCompletionSchemaPG);
+      await pg.unsafe(createTransactionCompletionTablePG);
     } finally {
       await pg.end();
     }
@@ -87,7 +76,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   }
 
   async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: PostgresTransactionOptions) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   register<This, Args extends unknown[], Return>(
@@ -95,7 +84,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
     name: string,
     config?: PostgresTransactionOptions,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   static async #checkExecution(
@@ -106,7 +95,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   ): Promise<{ output: string | null } | undefined> {
     type Result = { output: string };
     const result = await client<Result[]>/*sql*/ `
-            SELECT output FROM dbos.transaction_outputs
+            SELECT output FROM dbos.transaction_completion
             WHERE workflow_id = ${workflowID} AND function_num = ${functionNum}`;
 
     return result.length > 0 ? { output: result[0].output } : undefined;
@@ -121,11 +110,10 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   ): Promise<void> {
     try {
       await client/*sql*/ `
-        INSERT INTO dbos.transaction_outputs (workflow_id, function_num, output)
+        INSERT INTO dbos.transaction_completion (workflow_id, function_num, output)
         VALUES (${workflowID}, ${functionNum}, ${output})`;
     } catch (error) {
-      // 24505 is a duplicate key error in PostgreSQL
-      if (getErrorCode(error) === '23505') {
+      if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
       } else {
         throw error;
@@ -189,7 +177,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
 
         return result as Return;
       } catch (error) {
-        if (getErrorCode(error) === '40001') {
+        if (isPGRetriableTransactionError(error)) {
           // 400001 is a serialization failure in PostgreSQL
 
           // TODO: span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
