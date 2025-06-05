@@ -15,7 +15,7 @@
     "test": "jest --detectOpenHandles"
   },
   "dependencies": {
-    "pg": "8.11.3",
+    "pg": "^8.11.3",
     "pg-protocol": "^1.6.1"
   },
   "peerDependencies": {

@@ -8,6 +8,13 @@ import {
   Error as DBOSErrors,
   MethodParameter,
   requestArgValidation,
+  ArgRequired,
+  ArgOptional,
+  DefaultArgRequired,
+  DefaultArgValidate,
+  DefaultArgOptional,
+  ArgDate,
+  ArgVarchar,
 } from '@dbos-inc/dbos-sdk';
 
 export enum APITypes {
@@ -142,7 +149,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
   }
 
   /** Parameter decorator indicating which source to use (URL, BODY, etc) for arg data */
-  argSource(source: ArgSources) {
+  static argSource(source: ArgSources) {
     return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
       const curParam = DBOS.associateParamWithInfo(
         DBOSHTTP,
@@ -159,7 +166,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
     };
   }
 
-  getArgSource(arg: MethodParameter) {
+  protected getArgSource(arg: MethodParameter) {
     const arginfo = arg.getRegisteredInfo(DBOSHTTP) as DBOSHTTPArgInfo;
     return arginfo?.argSource ?? ArgSources.AUTO;
   }
@@ -181,5 +188,30 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
         }
       }
     }
+  }
+
+  static argRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
+    ArgRequired(target, propertyKey, parameterIndex);
+  }
+
+  static argOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
+    ArgOptional(target, propertyKey, parameterIndex);
+  }
+
+  static argDate() {
+    return ArgDate();
+  }
+  static argVarchar(n: number) {
+    return ArgVarchar(n);
+  }
+
+  static defaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
+    return DefaultArgRequired(ctor);
+  }
+  static defaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
+    return DefaultArgOptional(ctor);
+  }
+  static defaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
+    return DefaultArgValidate(ctor);
   }
 }

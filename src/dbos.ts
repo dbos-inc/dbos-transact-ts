@@ -68,6 +68,7 @@ import {
   registerLifecycleCallback,
   registerTransactionalDataSource,
   transactionalDataSources,
+  registerMiddlewareInstaller,
 } from './decorators';
 import { globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
@@ -95,6 +96,7 @@ import { StepConfig, StepFunction } from './step';
 import {
   DBOSLifecycleCallback,
   DBOSTransactionalDataSource,
+  DBOSMethodMiddlewareInstaller,
   HandlerContext,
   requestArgValidation,
   StepContext,
@@ -2574,6 +2576,13 @@ export class DBOS {
    */
   static registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
     registerLifecycleCallback(lcl);
+  }
+
+  /**
+   * Register a middleware provider
+   */
+  static registerMiddlewareInstaller(mwp: DBOSMethodMiddlewareInstaller) {
+    registerMiddlewareInstaller(mwp);
   }
 
   /**

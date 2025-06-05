@@ -1,12 +1,12 @@
 {
-  "name": "@dbos-inc/dbos-koa",
+  "name": "@dbos-inc/koa-serve",
   "version": "0.0.0-placeholder",
-  "description": "DBOS HTTP Integration Package for Koa",
+  "description": "DBOS HTTP Package for serving workflows with Koa",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact-ts",
-    "directory": "packages/dbos-koa"
+    "directory": "packages/koa-serve"
   },
   "homepage": "https://docs.dbos.dev/",
   "main": "dist/src/index.js",

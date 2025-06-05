@@ -38,10 +38,10 @@ export interface DBOSMethodMiddlewareInstaller {
   installMiddleware(methodReg: MethodRegistrationBase): void;
 }
 let installedMiddleware = false;
-const middlewareInserters: DBOSMethodMiddlewareInstaller[] = [];
-export function registerMiddlewareInserter(i: DBOSMethodMiddlewareInstaller) {
+const middlewareInstallers: DBOSMethodMiddlewareInstaller[] = [];
+export function registerMiddlewareInstaller(i: DBOSMethodMiddlewareInstaller) {
   if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
-  if (!middlewareInserters.includes(i)) middlewareInserters.push(i);
+  if (!middlewareInstallers.includes(i)) middlewareInstallers.push(i);
 }
 export function insertAllMiddleware() {
   if (installedMiddleware) return;
@@ -49,7 +49,7 @@ export function insertAllMiddleware() {
 
   for (const [_cn, c] of classesByName) {
     for (const [_fn, f] of c.reg.registeredOperations) {
-      for (const i of middlewareInserters) {
+      for (const i of middlewareInstallers) {
         i.installMiddleware(f);
       }
     }
