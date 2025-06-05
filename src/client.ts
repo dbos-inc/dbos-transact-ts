@@ -38,8 +38,14 @@ interface ClientEnqueueOptions {
   workflowName: string;
   /**
    * The name of the class containing the method that will be invoked when the workflow runs.
+   * If not provided, an empty string will be used as the class name.
    */
-  workflowClassName: string;
+  workflowClassName?: string;
+  /**
+   * The name of the ConfiguredInstance containing the method that will be invoked when the workflow runs.
+   * If not provided, an empty string will be used as the configured instance name.
+   */
+  workflowConfigName?: string;
   /**
    * An optional identifier for the workflow to ensure idempotency.
    * If not provided, a new UUID will be generated.
@@ -125,15 +131,15 @@ export class DBOSClient {
     options: ClientEnqueueOptions,
     ...args: Parameters<T>
   ): Promise<WorkflowHandle<Awaited<ReturnType<T>>>> {
-    const { workflowName, workflowClassName, queueName, appVersion } = options;
+    const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.ENQUEUED,
       workflowName: workflowName,
-      workflowClassName: workflowClassName,
-      workflowConfigName: '',
+      workflowClassName: workflowClassName ?? '',
+      workflowConfigName: workflowConfigName ?? '',
       queueName: queueName,
       authenticatedUser: '',
       output: null,
