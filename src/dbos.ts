@@ -920,8 +920,8 @@ export class DBOS {
    * @returns - result (either obtained from invoking function, or retrieved if run before)
    */
   // TODO: shouldn't this have a StepConfig param?
-  static async runAsWorkflowStep<T>(callback: () => Promise<T>, name: string): Promise<T> {
-    return await runAsWorkflowStep(callback, name);
+  static async runStep<T>(callback: () => Promise<T>, options: { name: string }): Promise<T> {
+    return await runAsWorkflowStep(callback, options.name);
   }
 
   /**

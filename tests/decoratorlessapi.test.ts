@@ -23,9 +23,12 @@ async function wfFunctionGuts() {
   // whith the app's utility. Whether retries are recorded or not
   // would then depend entirely on whether the app puts this loop
   // inside or outside its call to `DBOS.runAsWorkflowStep`.
-  const p1 = await DBOS.runAsWorkflowStep(async () => {
-    return Promise.resolve('My first step result');
-  }, 'MyFirstStep');
+  const p1 = await DBOS.runStep(
+    async () => {
+      return Promise.resolve('My first step result');
+    },
+    { name: 'MyFirstStep' },
+  );
 
   const p2 = await stepFunction();
 
@@ -161,13 +164,13 @@ class StaticAndInstanceWFs extends ConfiguredInstance {
 
   static async staticWF() {
     const rv1 = await StaticAndInstanceSteps.getStaticVal();
-    const rv2 = await DBOS.runAsWorkflowStep(async () => Promise.resolve(StaticAndInstanceWFs.staticVal), 'step2');
+    const rv2 = await DBOS.runStep(async () => Promise.resolve(StaticAndInstanceWFs.staticVal), { name: 'step2' });
     return Promise.resolve(`${rv1}-${rv2}`);
   }
 
   async instanceWF() {
     const rv1 = await this.steps.getInstanceVal();
-    const rv2 = await DBOS.runAsWorkflowStep(async () => Promise.resolve(this.instanceVal), 'step2');
+    const rv2 = await DBOS.runStep(async () => Promise.resolve(this.instanceVal), { name: 'step2' });
     return Promise.resolve(`${rv1}-${rv2}`);
   }
 }
