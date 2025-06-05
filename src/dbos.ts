@@ -115,7 +115,7 @@ import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { SpanStatusCode } from '@opentelemetry/api';
 import { registerAuthChecker } from './authdecorators';
-import { DBOSTransactionalDataSource } from './transactionsource';
+import { DBOSTransactionalDataSource } from './datasource';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 

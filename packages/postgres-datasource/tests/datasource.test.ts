@@ -9,7 +9,7 @@ const config = { user: 'postgres', database: 'pg_ds_test_userdb' };
 const dataSource = new PostgresDataSource('app-db', config);
 DBOS.registerDataSource(dataSource);
 
-interface transaction_outputs {
+interface transaction_completion {
   workflow_id: string;
   function_num: number;
   output: string | null;
@@ -64,8 +64,8 @@ describe('PostgresDataSource', () => {
       greet_count: 1,
     });
 
-    const { rows } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
     expect(rows.length).toBe(1);
@@ -86,8 +86,8 @@ describe('PostgresDataSource', () => {
       greet_count: 1,
     });
 
-    const { rows } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
     expect(rows.length).toBe(1);
@@ -106,7 +106,7 @@ describe('PostgresDataSource', () => {
 
     await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user))).rejects.toThrow('test error');
 
-    const { rows: txOutput } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [
+    const { rows: txOutput } = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1', [
       workflowID,
     ]);
     expect(txOutput.length).toBe(0);
@@ -125,8 +125,8 @@ describe('PostgresDataSource', () => {
 
     await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user))).rejects.toThrow('test error');
 
-    const { rows: txOutput } = await userDB.query<transaction_outputs>(
-      'SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1',
+    const { rows: txOutput } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
     expect(txOutput.length).toBe(0);
@@ -148,7 +148,9 @@ describe('PostgresDataSource', () => {
       greet_count: 10,
     });
 
-    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1', [
+      workflowID,
+    ]);
     expect(rows.length).toBe(0);
   });
 
@@ -164,7 +166,9 @@ describe('PostgresDataSource', () => {
       greet_count: 10,
     });
 
-    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_outputs WHERE workflow_id = $1', [workflowID]);
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1', [
+      workflowID,
+    ]);
     expect(rows.length).toBe(0);
   });
 

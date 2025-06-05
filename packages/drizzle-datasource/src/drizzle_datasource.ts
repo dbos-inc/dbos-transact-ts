@@ -1,6 +1,10 @@
 import { Pool, PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import { DBOS, Error } from '@dbos-inc/dbos-sdk';
-import { type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk/datasource';
+import {
+  type DBOSTransactionalDataSource,
+  createTransactionCompletionSchemaPG,
+  createTransactionCompletionTablePG,
+} from '@dbos-inc/dbos-sdk/datasource';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pushSchema } from 'drizzle-kit/api';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -27,23 +31,6 @@ export interface transaction_completion {
   output: string | null;
   error: string | null;
 }
-
-const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
-
-const userDBSchema = `
-  CREATE TABLE IF NOT EXISTS dbos.transaction_completion (
-    workflow_id TEXT NOT NULL,
-    function_num INT NOT NULL,
-    output TEXT,
-    error TEXT,
-    created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
-    PRIMARY KEY (workflow_id, function_num)
-  );
-`;
-
-const userDBIndex = `
-  CREATE INDEX IF NOT EXISTS transaction_completion_created_at_index ON dbos.transaction_completion (created_at);
-`;
 
 /** Isolation typically supported by application databases */
 export const IsolationLevel = {
@@ -96,9 +83,8 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     const ds = drizzle(drizzlePool, { schema: this.entities });
 
     try {
-      await ds.execute(createUserDBSchema);
-      await ds.execute(userDBSchema);
-      await ds.execute(userDBIndex);
+      await ds.execute(createTransactionCompletionSchemaPG);
+      await ds.execute(createTransactionCompletionTablePG);
     } catch (e) {
       const error = e as Error;
       throw new Error.DBOSError(`Unexpected error initializing schema: ${error.message}`);

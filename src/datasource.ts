@@ -30,3 +30,16 @@ export interface DBOSTransactionalDataSource {
 /// Calling into DBOS
 
 /// Postgres helper routines
+
+export const createTransactionCompletionSchemaPG = `CREATE SCHEMA IF NOT EXISTS dbos;`;
+
+export const createTransactionCompletionTablePG = `
+  CREATE TABLE IF NOT EXISTS dbos.transaction_completion (
+    workflow_id TEXT NOT NULL,
+    function_num INT NOT NULL,
+    output TEXT,
+    error TEXT,
+    created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
+    PRIMARY KEY (workflow_id, function_num)
+  );
+`;

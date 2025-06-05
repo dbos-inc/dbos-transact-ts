@@ -22,7 +22,7 @@ describe('NodePostgresDataSource.configure', () => {
     const client = new Client(config);
     try {
       await client.connect();
-      const result = await client.query('SELECT workflow_id, function_num, output FROM dbos.transaction_outputs');
+      const result = await client.query('SELECT workflow_id, function_num, output FROM dbos.transaction_completion');
       expect(result.rows.length).toBe(0);
     } finally {
       await client.end();

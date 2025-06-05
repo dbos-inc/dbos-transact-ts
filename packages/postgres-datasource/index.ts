@@ -2,7 +2,11 @@
 
 import postgres, { type Sql } from 'postgres';
 import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
-import { type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk/datasource';
+import {
+  createTransactionCompletionSchemaPG,
+  createTransactionCompletionTablePG,
+  type DBOSTransactionalDataSource,
+} from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
 
@@ -56,14 +60,8 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   static async configure(options: postgres.Options<{}> = {}): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
-      await pg/*sql*/ `
-        CREATE SCHEMA IF NOT EXISTS dbos;
-        CREATE TABLE IF NOT EXISTS dbos.transaction_outputs (
-            workflow_id TEXT NOT NULL,
-            function_num INT NOT NULL,
-            output TEXT,
-            created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
-            PRIMARY KEY (workflow_id, function_num));`.simple();
+      await pg.unsafe(createTransactionCompletionSchemaPG);
+      await pg.unsafe(createTransactionCompletionTablePG);
     } finally {
       await pg.end();
     }
@@ -107,7 +105,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   ): Promise<{ output: string | null } | undefined> {
     type Result = { output: string };
     const result = await client<Result[]>/*sql*/ `
-            SELECT output FROM dbos.transaction_outputs
+            SELECT output FROM dbos.transaction_completion
             WHERE workflow_id = ${workflowID} AND function_num = ${functionNum}`;
 
     return result.length > 0 ? { output: result[0].output } : undefined;
@@ -122,7 +120,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   ): Promise<void> {
     try {
       await client/*sql*/ `
-        INSERT INTO dbos.transaction_outputs (workflow_id, function_num, output)
+        INSERT INTO dbos.transaction_completion (workflow_id, function_num, output)
         VALUES (${workflowID}, ${functionNum}, ${output})`;
     } catch (error) {
       // 24505 is a duplicate key error in PostgreSQL

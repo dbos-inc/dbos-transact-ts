@@ -6,7 +6,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
 import { SuperJSON } from 'superjson';
 
-interface transaction_outputs {
+interface transaction_completion {
   workflow_id: string;
   function_num: number;
   output: string | null;
@@ -48,9 +48,9 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     const knexDB = knex(config);
     try {
       await knexDB.schema.createSchemaIfNotExists('dbos');
-      const exists = await knexDB.schema.withSchema('dbos').hasTable('transaction_outputs');
+      const exists = await knexDB.schema.withSchema('dbos').hasTable('transaction_completion');
       if (!exists) {
-        await knexDB.schema.withSchema('dbos').createTable('transaction_outputs', (table) => {
+        await knexDB.schema.withSchema('dbos').createTable('transaction_completion', (table) => {
           table.string('workflow_id').notNullable();
           table.integer('function_num').notNullable();
           table.string('output').nullable();
@@ -96,7 +96,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     workflowID: string,
     functionNum: number,
   ): Promise<{ output: string | null } | undefined> {
-    const result = await client<transaction_outputs>('transaction_outputs')
+    const result = await client<transaction_completion>('transaction_completion')
       .withSchema('dbos')
       .select('output')
       .where({
@@ -114,7 +114,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     output: string | null,
   ): Promise<void> {
     try {
-      await client<transaction_outputs>('transaction_outputs').withSchema('dbos').insert({
+      await client<transaction_completion>('transaction_completion').withSchema('dbos').insert({
         workflow_id: workflowID,
         function_num: functionNum,
         output,

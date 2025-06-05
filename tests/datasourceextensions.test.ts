@@ -2,7 +2,7 @@ import { randomUUID } from 'node:crypto';
 import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import knex, { Knex } from 'knex';
 import { DBOS } from '../src';
-import { type DBOSTransactionalDataSource } from '../src/transactionsource';
+import { type DBOSTransactionalDataSource } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';

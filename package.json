@@ -16,8 +16,8 @@
       "types": "./dist/src/index.d.ts"
     },
     "./datasource": {
-      "require": "./dist/src/transactionsource.js",
-      "types": "./dist/src/transactionsource.d.ts"
+      "require": "./dist/src/datasource.js",
+      "types": "./dist/src/datasource.d.ts"
     }
   },
   "workspaces": [
