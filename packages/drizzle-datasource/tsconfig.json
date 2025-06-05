@@ -3,5 +3,6 @@
   "compilerOptions": {
     "outDir": "./dist"
   },
-  "exclude": ["dist", "*.test.ts", "testutils.ts"]
+  "exclude": ["dist", "*.test.ts", "testutils.ts"],
+  "include": ["src/"]
 }

@@ -1,12 +1,12 @@
 /* eslint-disable */
-import { DBOS, OrmEntities } from '@dbos-inc/dbos-sdk';
-import { DrizzleDS } from '../src/drizzle_datasource';
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import { DrizzleDS } from '../src';
 import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
 import { pgTable, text } from 'drizzle-orm/pg-core';
 import { eq } from 'drizzle-orm/expressions';
 
-export const kv = pgTable('kv', {
+const kv = pgTable('kv', {
   id: text('id').primaryKey().default('t'),
   value: text('value').default('v'),
 });
@@ -32,6 +32,7 @@ const drizzleDS = new DrizzleDS('app-db', poolconfig, { kv });
 DBOS.registerDataSource(drizzleDS);
 
 const dbosConfig = {
+  name: 'dbos_drizzle_test',
   databaseUrl: databaseUrl,
   poolConfig: poolconfig,
   system_database: 'drizzle_testdb_dbos_sys',
@@ -49,11 +50,11 @@ async function txFunctionGuts() {
   return res.rows[0].a as string;
 }
 
-const txFunc = DBOS.registerTransaction('app-db', txFunctionGuts, { name: 'MySecondTx' }, {});
+const txFunc = drizzleDS.registerTransaction(txFunctionGuts, { name: 'MySecondTx' }, {});
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
-  const p1 = await drizzleDS.runTransactionStep(
+  const p1 = await drizzleDS.runTransaction(
     async () => {
       return (await DrizzleDS.drizzleClient.execute("SELECT 'My first tx result' as a")).rows[0].a;
     },
@@ -77,7 +78,6 @@ class DBWFI {
   @drizzleDS.transaction({ readOnly: true })
   static async tx(): Promise<string> {
     let res = await DrizzleDS.drizzleClient.execute("SELECT 'My decorated tx result' as a");
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
     return res.rows[0].a as string;
   }
 
@@ -94,10 +94,9 @@ describe('decoratorless-api-tests', () => {
 
   beforeEach(async () => {
     await setUpDBOSTestDb(dbosConfig);
-    await drizzleDS.initializeSchema();
+    await drizzleDS.initializeInternalSchema();
+    await drizzleDS.createSchema();
     await DBOS.launch();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS kv;`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS kv (id TEXT PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
@@ -155,7 +154,7 @@ class KVController {
   }
 }
 
-const txFunc2 = DBOS.registerTransaction('app-db', KVController.readTxn, { name: 'explicitRegister' }, {});
+const txFunc2 = drizzleDS.registerTransaction(KVController.readTxn, { name: 'explicitRegister' }, {});
 async function explicitWf(id: string): Promise<string> {
   return await txFunc2(id);
 }
@@ -170,10 +169,9 @@ describe('drizzle-tests', () => {
 
   beforeEach(async () => {
     await setUpDBOSTestDb(dbosConfig);
-    await drizzleDS.initializeSchema();
+    await drizzleDS.initializeInternalSchema();
+    await drizzleDS.createSchema();
     await DBOS.launch();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS kv;`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS kv (id TEXT PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {

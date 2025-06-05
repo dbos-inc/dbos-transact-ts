@@ -19,16 +19,16 @@ function assertCurrentDSContextStore(): DBOSTypeOrmLocalCtx {
   return ctx;
 }
 
-export interface transaction_completion {
+interface transaction_completion {
   workflow_id: string;
   function_num: number;
   output: string | null;
   error: string | null;
 }
 
-export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
+const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
-export const userDBSchema = `
+const userDBSchema = `
   CREATE TABLE IF NOT EXISTS dbos.transaction_completion (
     workflow_id TEXT NOT NULL,
     function_num INT NOT NULL,
@@ -39,7 +39,7 @@ export const userDBSchema = `
   );
 `;
 
-export const userDBIndex = `
+const userDBIndex = `
   CREATE INDEX IF NOT EXISTS transaction_completion_created_at_index ON dbos.transaction_completion (created_at);
 `;
 
@@ -76,7 +76,9 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
   static get entityManager(): EntityManager {
     const ctx = assertCurrentDSContextStore();
     if (!DBOS.isInTransaction())
-      throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
+      throw new Error.DBOSInvalidWorkflowTransitionError(
+        'Invalid use of `TypeOrmDS.entityManager` outside of a `transaction`',
+      );
     return ctx.typeOrmEntityManager;
   }
 
@@ -86,7 +88,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     return Promise.resolve();
   }
 
-  async initializeSchema(): Promise<void> {
+  async initializeInternalSchema(): Promise<void> {
     const ds = await this.createInstance();
 
     try {
@@ -168,9 +170,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     );
   }
 
-  /**
-   * Invoke a transaction function
-   */
+  /* Required by base class */
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
     config: TypeOrmTransactionConfig,
     target: This,
@@ -296,10 +296,26 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     return this.getPostgresErrorCode(error) === '25P02';
   }
 
-  async runTransactionStep<T>(callback: () => Promise<T>, funcName: string, config?: TypeOrmTransactionConfig) {
+  /**
+   * Run `callback` as a transaction against this DataSource
+   * @param callback Function to run within a transactional context
+   * @param funcName Name to record for the transaction
+   * @param config Transaction configuration (isolation, etc)
+   * @returns Return value from `callback`
+   */
+  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TypeOrmTransactionConfig) {
     return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
   }
 
+  /**
+   * Register function as DBOS transaction, to be called within the context
+   *  of a transaction on this data source.
+   *
+   * @param func Function to wrap
+   * @param target Name of function
+   * @param config Transaction settings
+   * @returns Wrapped function, to be called instead of `func`
+   */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     target: {
@@ -310,7 +326,9 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     return DBOS.registerTransaction(this.name, func, target, config);
   }
 
-  // decorator
+  /**
+   * Decorator establishing function as a transaction
+   */
   transaction(config?: TypeOrmTransactionConfig) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
@@ -329,7 +347,15 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     };
   }
 
+  /**
+   * For testing: Use DataSource.syncronize to install the user schema
+   */
   async createSchema() {
-    await this.dataSource?.synchronize();
+    const ds = await this.createInstance();
+    try {
+      await ds.synchronize();
+    } finally {
+      await ds.destroy();
+    }
   }
 }

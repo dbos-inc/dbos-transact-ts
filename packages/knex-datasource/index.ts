@@ -3,6 +3,7 @@
 import { DBOS, type DBOSTransactionalDataSource, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
+import { SuperJSON } from 'superjson';
 
 interface transaction_outputs {
   workflow_id: string;
@@ -20,36 +21,6 @@ function getErrorCode(error: unknown) {
   return error && typeof error === 'object' && 'code' in error ? error.code : undefined;
 }
 
-// JsonReviver and JsonReplacer are duplicated across multiple data source packages
-// TODO: Should we DRY this out and/or use DBOSJSON instead?
-function JsonReviver(_key: string, value: unknown): unknown {
-  if (value && typeof value === 'object' && 'json_type' in value && 'json_value' in value) {
-    if (value.json_type === 'Date' && typeof value.json_value === 'string') {
-      return new Date(value.json_value);
-    }
-    if (value.json_type === 'BigInt' && typeof value.json_value === 'string') {
-      return BigInt(value.json_value);
-    }
-  }
-  return value;
-}
-
-function JsonReplacer(_key: string, value: unknown): unknown {
-  if (value instanceof Date) {
-    return {
-      json_type: 'Date',
-      json_value: value.toISOString(),
-    };
-  }
-  if (typeof value === 'bigint') {
-    return {
-      json_type: 'BigInt',
-      json_value: value.toString(),
-    };
-  }
-  return value;
-}
-
 export class KnexDataSource implements DBOSTransactionalDataSource {
   static readonly #asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
@@ -63,7 +34,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
 
   static get client(): Knex.Transaction {
     if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('invalid use of KnexDataSource.client outside of a DBOS transaction.');
     }
     const ctx = KnexDataSource.#asyncLocalCtx.getStore();
     if (!ctx) {
@@ -186,7 +157,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
               ? undefined
               : await KnexDataSource.#checkExecution(client, workflowID, functionNum);
             if (previousResult) {
-              return (previousResult.output ? JSON.parse(previousResult.output, JsonReviver) : null) as Return;
+              return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
             }
 
             // execute user's transaction function
@@ -196,7 +167,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
 
             // save the output of read/write transactions
             if (!readOnly) {
-              await KnexDataSource.#recordOutput(client, workflowID, functionNum, JSON.stringify(result, JsonReplacer));
+              await KnexDataSource.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
               // Note, existing code wraps #recordOutput call in a try/catch block that
               // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.

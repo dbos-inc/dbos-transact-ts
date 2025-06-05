@@ -94,8 +94,8 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     return ctx.knexClient;
   }
 
-  // initializeSchema - this is up to the user to call.  It's not part of DBOS lifecycle
-  async initializeSchema(): Promise<void> {
+  // initializeInternalSchema - this is up to the user to call.  It's not part of DBOS lifecycle
+  async initializeInternalSchema(): Promise<void> {
     const knex = this.createInstance();
     try {
       const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
@@ -299,8 +299,6 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     }
   }
 
-  // Think of this as part of the API of the specific transaction provider, not
-  //  the interface.  It could also be the internals of a decorator.
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     target: {
@@ -309,6 +307,17 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
     return DBOS.registerTransaction(this.name, func, target, config);
+  }
+
+  static registerTransaction<This, Args extends unknown[], Return>(
+    dsname: string,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: {
+      name: string;
+    },
+    config?: KnexTransactionConfig,
+  ): (this: This, ...args: Args) => Promise<Return> {
+    return DBOS.registerTransaction(dsname, func, target, config);
   }
 
   // Custom TX decorator
@@ -330,7 +339,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     };
   }
 
-  async runTransactionStep<T>(callback: () => Promise<T>, funcName: string, config?: KnexTransactionConfig) {
+  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: KnexTransactionConfig) {
     return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
   }
 
@@ -365,11 +374,12 @@ async function txFunctionGuts() {
   return res.rows[0].a;
 }
 
-const txFunc = DBOS.registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
+// It is not clear if we want to encourage this pattern, but it does work
+const txFunc = DBOSKnexDS.registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
-  const p1 = await dsa.runTransactionStep(
+  const p1 = await dsa.runTransaction(
     async () => {
       return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My first tx result' as a")).rows[0].a;
     },
@@ -410,7 +420,7 @@ class DBWFI {
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
     await setUpDBOSTestDb(config);
-    await dsa.initializeSchema();
+    await dsa.initializeInternalSchema();
     DBOS.setConfig(config);
   });
 
@@ -452,8 +462,3 @@ describe('decoratorless-api-tests', () => {
     expect(wfsteps[0].name).toBe('tx');
   });
 });
-
-// Later
-// Other DSs
-// Test the tracing
-// MikroORM example

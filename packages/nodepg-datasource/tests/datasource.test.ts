@@ -1,8 +1,9 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
-import { NodePostgresDataSource } from '../index';
+import { NodePostgresDataSource } from '..';
 import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
+import { SuperJSON } from 'superjson';
 
 const config = { user: 'postgres', database: 'nodepg_ds_test_userdb' };
 const dataSource = new NodePostgresDataSource('app-db', config);
@@ -71,7 +72,7 @@ describe('NodePostgresDataSource', () => {
     expect(rows[0].workflow_id).toBe(workflowID);
     expect(rows[0].function_num).toBe(0);
     expect(rows[0].output).not.toBeNull();
-    expect(JSON.parse(rows[0].output!)).toEqual({ user, greet_count: 1 });
+    expect(SuperJSON.parse(rows[0].output!)).toEqual({ user, greet_count: 1 });
   });
 
   test('insert dataSource.runAsTx function', async () => {
@@ -93,7 +94,7 @@ describe('NodePostgresDataSource', () => {
     expect(rows[0].workflow_id).toBe(workflowID);
     expect(rows[0].function_num).toBe(0);
     expect(rows[0].output).not.toBeNull();
-    expect(JSON.parse(rows[0].output!)).toEqual({ user, greet_count: 1 });
+    expect(SuperJSON.parse(rows[0].output!)).toEqual({ user, greet_count: 1 });
   });
 
   test('error dataSource.register function', async () => {

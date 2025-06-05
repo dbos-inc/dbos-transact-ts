@@ -15,7 +15,8 @@
     "test": "jest --detectOpenHandles"
   },
   "dependencies": {
-    "postgres": "^3.4.7"
+    "postgres": "^3.4.7",
+    "superjson": "^1.13"
   },
   "peerDependencies": {
     "@dbos-inc/dbos-sdk": "*"

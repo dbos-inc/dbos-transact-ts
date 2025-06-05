@@ -1,7 +1,13 @@
 {
   "name": "@dbos-inc/drizzle-datasource",
   "version": "0.0.0-placeholder",
-  "main": "dist/index.js",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-transact-ts",
+    "directory": "packages/drizzle-datasource"
+  },
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "test": "npm run build && jest --detectOpenHandles"
@@ -11,6 +17,7 @@
   "license": "MIT",
   "description": "",
   "dependencies": {
+    "drizzle-kit": "^0.31.1",
     "drizzle-orm": "^0.40.1",
     "pg": "^8.11.3",
     "superjson": "^1.13"

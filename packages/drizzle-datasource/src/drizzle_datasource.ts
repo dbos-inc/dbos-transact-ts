@@ -1,6 +1,7 @@
 import { Pool, PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import { DBOS, type DBOSTransactionalDataSource, Error } from '@dbos-inc/dbos-sdk';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { pushSchema } from 'drizzle-kit/api';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
 
@@ -26,9 +27,9 @@ export interface transaction_completion {
   error: string | null;
 }
 
-export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
+const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
-export const userDBSchema = `
+const userDBSchema = `
   CREATE TABLE IF NOT EXISTS dbos.transaction_completion (
     workflow_id TEXT NOT NULL,
     function_num INT NOT NULL,
@@ -39,7 +40,7 @@ export const userDBSchema = `
   );
 `;
 
-export const userDBIndex = `
+const userDBIndex = `
   CREATE INDEX IF NOT EXISTS transaction_completion_created_at_index ON dbos.transaction_completion (created_at);
 `;
 
@@ -69,7 +70,6 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
   constructor(
     readonly name: string,
     readonly config: PoolConfig,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     readonly entities: { [key: string]: object } = {},
   ) {}
 
@@ -77,20 +77,20 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
   static get drizzleClient(): NodePgDatabase<{ [key: string]: object }> {
     const ctx = assertCurrentDSContextStore();
     if (!DBOS.isInTransaction())
-      throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
+      throw new Error.DBOSInvalidWorkflowTransitionError(
+        'Invalid use of `DrizzleDS.drizzleClient` outside of a `transaction`',
+      );
     return ctx.drizzleClient;
   }
 
   async initialize(): Promise<void> {
-    // this.dataSource = this.createInstance();
-
     this.drizzlePool = new Pool(this.config);
     this.dataSource = drizzle(this.drizzlePool, { schema: this.entities });
 
     return Promise.resolve();
   }
 
-  async initializeSchema(): Promise<void> {
+  async initializeInternalSchema(): Promise<void> {
     const drizzlePool = new Pool(this.config);
     const ds = drizzle(drizzlePool, { schema: this.entities });
 
@@ -167,9 +167,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     );
   }
 
-  /**
-   * Invoke a transaction function
-   */
+  /* Invoke a transaction function, called by the framework */
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
     config: DrizzleTransactionConfig,
     target: This,
@@ -310,7 +308,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     return this.getPostgresErrorCode(error) === '25P02';
   }
 
-  async runTransactionStep<T>(callback: () => Promise<T>, funcName: string, config?: DrizzleTransactionConfig) {
+  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: DrizzleTransactionConfig) {
     return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
   }
 
@@ -343,5 +341,17 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     };
   }
 
-  async createSchema() {}
+  /**
+   * Create user schema in database (for testing)
+   */
+  async createSchema() {
+    const drizzlePool = new Pool(this.config);
+    const db = drizzle(drizzlePool);
+    try {
+      const res = await pushSchema(this.entities, db);
+      await res.apply();
+    } finally {
+      await drizzlePool.end();
+    }
+  }
 }
