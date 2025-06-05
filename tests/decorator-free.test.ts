@@ -107,15 +107,15 @@ TestClass.wfRegRetryStatic = DBOS.registerWorkflow(TestClass.wfRegRetryStatic, '
 TestClass.prototype.stepTest = DBOS.registerStep(TestClass.prototype.stepTest);
 TestClass.prototype.retryTest = DBOS.registerStep(TestClass.prototype.retryTest, { retriesAllowed: true });
 TestClass.prototype.wfRegStep = DBOS.registerWorkflow(TestClass.prototype.wfRegStep, 'TestClass.prototype.wfRegStep', {
-  classOrInst: inst,
+  classOrInst: TestClass,
 });
 TestClass.prototype.wfRunStep = DBOS.registerWorkflow(TestClass.prototype.wfRunStep, 'TestClass.prototype.wfRunStep', {
-  classOrInst: inst,
+  classOrInst: TestClass,
 });
 TestClass.prototype.wfRegRetry = DBOS.registerWorkflow(
   TestClass.prototype.wfRegRetry,
   'TestClass.prototype.wfRegRetry',
-  { classOrInst: inst },
+  { classOrInst: TestClass },
 );
 
 describe('decorator-free-tests', () => {
