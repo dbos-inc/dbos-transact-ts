@@ -53,6 +53,7 @@ export {
 export {
   // Method Decorators
   DBOSInitializer,
+  DBOSMethodMiddlewareInstaller,
 
   // Class Instances
   ConfiguredInstance,
