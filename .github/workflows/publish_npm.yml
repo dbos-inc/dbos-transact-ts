@@ -25,6 +25,7 @@ jobs:
             packages/dbos-confluent-kafka,
             packages/dbos-kafkajs,
             packages/dbos-sqs,
+            packages/koa-serve,
           ]
     steps:
       - name: Checkout
