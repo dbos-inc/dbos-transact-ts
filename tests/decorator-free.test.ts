@@ -1,7 +1,10 @@
 /* eslint-disable @typescript-eslint/unbound-method */
-import { ConfiguredInstance, DBOS } from '../src/';
+import { ConfiguredInstance, DBOS, DBOSClient, WorkflowQueue } from '../src/';
+import { DBOSConflictingRegistrationError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
+
+const queue = new WorkflowQueue('example_queue');
 
 function stepTest(value: number): Promise<number> {
   expect(DBOS.stepStatus).toBeDefined();
@@ -138,6 +141,31 @@ describe('decorator-free-tests', () => {
     expect(status!.workflowName).toBe('wfRegStep');
 
     const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('wf-free-step-reg-queue', async () => {
+    const client = await DBOSClient.create(config.databaseUrl!);
+    const handle = await client.enqueue<typeof regWFRegStep>(
+      {
+        queueName: queue.name,
+        workflowClassName: '',
+        workflowName: 'wfRegStep',
+      },
+      10,
+    );
+    await expect(handle.getResult()).resolves.toBe(1000);
+
+    const status = await DBOS.getWorkflowStatus(handle.workflowID);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('wfRegStep');
+
+    const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
     expect(steps.length).toBe(1);
     expect(steps[0].functionID).toBe(0);
     expect(steps[0].name).toBe('stepTest');
@@ -317,5 +345,20 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
 
     expect(inst.retryTestAttempts).toEqual([false, true, true, true, false]);
+  });
+});
+
+describe('registerWorkflow-tests', () => {
+  test('dont-allow-duplicate-workflow-registration', async () => {
+    function workflow1(value: number) {
+      return DBOS.runStep(() => stepTest(value), { name: 'stepTest-runStep' });
+    }
+
+    function workflow2(value: number) {
+      return DBOS.runStep(() => stepTest(value), { name: 'stepTest-runStep' });
+    }
+
+    DBOS.registerWorkflow(workflow1, 'workflow1');
+    expect(() => DBOS.registerWorkflow(workflow2, 'workflow1')).toThrow(DBOSConflictingRegistrationError);
   });
 });
