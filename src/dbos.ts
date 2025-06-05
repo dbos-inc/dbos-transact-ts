@@ -1724,7 +1724,15 @@ export class DBOS {
     return decorator;
   }
 
-  static registerWorkflow<This, Args extends unknown[], Return>(
+  /**
+   * Create a DBOS workflow function from a provided function.
+   *   Similar to the DBOS.workflow, but without requiring a decorator
+   *   Durable execution will be applied to calls to the function returned by registerWorkflow
+   *   This also registers the function so that it is available during recovery
+   * @param func - The function to register as a workflow
+   * @param name - The name of the registered workflow
+   * @param options - Configuration information for the registered workflow
+   */ static registerWorkflow<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     name: string,
     options: {
@@ -2115,6 +2123,17 @@ export class DBOS {
     return decorator;
   }
 
+  /**
+   * Create a checkpointed DBOS step function from  a provided function
+   *   Simlar to the DBOS.step decorator, but without requiring a decorator
+   *   A durable checkpoint will be made after the step completes
+   *   This ensures "at least once" execution of the step, and that the step will not
+   *    be executed again once the checkpoint is recorded
+   * @param func - The function to register as a step
+   * @param config - Configuration information for the step, particularly the retry policy
+   * @param config.name - The name of the step; if not provided, the function name will be used
+   */
+
   static registerStep<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config: StepConfig & { name?: string } = {},
@@ -2152,6 +2171,12 @@ export class DBOS {
     return invokeWrapper;
   }
 
+  /**
+   * Run the enclosed `callback` as a checkpointed step within a DBOS workflow
+   * @param callback - function containing code to run
+   * @param name - Name of step to record, this will be used in traces and introspection
+   * @returns - result (either obtained from invoking function, or retrieved if run before)
+   */
   static runStep<Return>(func: () => Promise<Return>, config: StepConfig & { name?: string } = {}): Promise<Return> {
     const name = config.name ?? func.name;
     if (DBOS.isWithinWorkflow()) {
