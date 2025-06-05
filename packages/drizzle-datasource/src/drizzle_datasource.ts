@@ -7,6 +7,8 @@ import {
   isPGRetriableTransactionError,
   isPGKeyConflictError,
   isPGFailedSqlTransactionError,
+  registerTransaction,
+  runTransaction,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pushSchema } from 'drizzle-kit/api';
@@ -282,7 +284,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
   }
 
   async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: DrizzleTransactionConfig) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
@@ -292,7 +294,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     },
     config?: DrizzleTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, target, config);
   }
 
   // decorator

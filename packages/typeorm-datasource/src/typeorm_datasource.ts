@@ -1,4 +1,4 @@
-import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
+import { PoolConfig } from 'pg';
 import { DBOS, Error } from '@dbos-inc/dbos-sdk';
 import {
   type DBOSTransactionalDataSource,
@@ -7,6 +7,8 @@ import {
   isPGRetriableTransactionError,
   isPGKeyConflictError,
   isPGFailedSqlTransactionError,
+  registerTransaction,
+  runTransaction,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -277,7 +279,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
    * @returns Return value from `callback`
    */
   async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TypeOrmTransactionConfig) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   /**
@@ -296,7 +298,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     },
     config?: TypeOrmTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, target, config);
   }
 
   /**

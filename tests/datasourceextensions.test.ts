@@ -2,7 +2,13 @@ import { randomUUID } from 'node:crypto';
 import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
 import knex, { Knex } from 'knex';
 import { DBOS } from '../src';
-import { type DBOSTransactionalDataSource } from '../src/datasource';
+import {
+  type DBOSTransactionalDataSource,
+  createTransactionCompletionSchemaPG,
+  createTransactionCompletionTablePG,
+  registerTransaction,
+  runTransaction,
+} from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';
@@ -20,25 +26,13 @@ interface ExistenceCheck {
 }
 
 export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
-export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'knex_transaction_outputs')`;
+export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_completion')`;
 
 export interface transaction_outputs {
   workflow_id: string;
   function_num: number;
   output: string | null;
 }
-
-export const createUserDBSchema = `CREATE SCHEMA IF NOT EXISTS dbos;`;
-
-export const userDBSchema = `
-  CREATE TABLE IF NOT EXISTS dbos.knex_transaction_outputs (
-    workflow_id TEXT NOT NULL,
-    function_num INT NOT NULL,
-    output TEXT,
-    created_at BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now())*1000)::bigint,
-    PRIMARY KEY (workflow_id, function_num)
-  );
-`;
 
 interface DBOSKnexLocalCtx {
   knexClient: Knex;
@@ -101,11 +95,11 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     try {
       const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
       if (!schemaExists.rows[0].exists) {
-        await knex.raw(createUserDBSchema);
+        await knex.raw(createTransactionCompletionSchemaPG);
       }
       const txnOutputTableExists = await knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
       if (!txnOutputTableExists.rows[0].exists) {
-        await knex.raw(userDBSchema);
+        await knex.raw(createTransactionCompletionTablePG);
       }
     } finally {
       try {
@@ -160,7 +154,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
 
     const { rows } = await client.raw<{ rows: TxOutputRow[] }>(
       `SELECT output
-          FROM dbos.knex_transaction_outputs
+          FROM dbos.transaction_completion
           WHERE workflow_id=? AND function_num=?;`,
       [workflowID, funcNum],
     );
@@ -174,7 +168,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
   async #recordOutput<R>(client: Knex, workflowID: string, funcNum: number, output: R): Promise<void> {
     const serialOutput = DBOSJSON.stringify(output);
     await client.raw<{ rows: transaction_outputs[] }>(
-      `INSERT INTO dbos.knex_transaction_outputs (
+      `INSERT INTO dbos.transaction_completion (
         workflow_id, function_num,
         output,
         created_at
@@ -307,7 +301,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     },
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, target, config);
   }
 
   static registerTransaction<This, Args extends unknown[], Return>(
@@ -318,7 +312,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
     },
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(dsname, func, target, config);
+    return registerTransaction(dsname, func, target, config);
   }
 
   // Custom TX decorator
@@ -341,7 +335,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
   }
 
   async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: KnexTransactionConfig) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   getPostgresErrorCode(error: unknown): string | null {

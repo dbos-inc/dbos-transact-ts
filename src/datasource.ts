@@ -1,3 +1,11 @@
+import { SpanStatusCode } from '@opentelemetry/api';
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { assertCurrentWorkflowContext, runWithDSContext } from './context';
+import { DBOS } from './dbos';
+import { DBOSExecutor, OperationType } from './dbos-executor';
+import { getTransactionalDataSource } from './decorators';
+import { DBOSInvalidWorkflowTransitionError } from './error';
+
 /**
  * This interface is to be used for implementers of transactional data sources
  */
@@ -28,6 +36,116 @@ export interface DBOSTransactionalDataSource {
 }
 
 /// Calling into DBOS
+
+/**
+ * This function is to be called by `DBOSTransactionalDataSource` instances,
+ *   with bits of user code to be run as transactions.
+ * 1. The DS validates the type of config and provides the name
+ * 2. The transaction will be started inside here, with a durable sysdb checkpoint.
+ * 3. The DS will in turn be called upon to run the callback in a transaction context
+ * @param callback - User callback function
+ * @param funcName - Function name, for recording in system DB
+ * @param options - Data source name and configuration
+ * @returns the return from `callback`
+ */
+export async function runTransaction<T>(
+  callback: () => Promise<T>,
+  funcName: string,
+  options: { dsName?: string; config?: unknown } = {},
+) {
+  if (!DBOS.isWithinWorkflow) {
+    throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` outside of a workflow`);
+  }
+  if (!DBOS.isInWorkflow()) {
+    throw new DBOSInvalidWorkflowTransitionError(
+      `Invalid call to \`${funcName}\` inside a \`step\`, \`transaction\`, or \`procedure\``,
+    );
+  }
+  const dsn = options.dsName ?? '<default>';
+  const ds = getTransactionalDataSource(dsn);
+
+  const wfctx = assertCurrentWorkflowContext();
+  const callnum = wfctx.functionIDGetIncrement();
+
+  const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
+    funcName,
+    {
+      operationUUID: wfctx.workflowUUID,
+      operationType: OperationType.TRANSACTION,
+      authenticatedUser: wfctx.authenticatedUser,
+      assumedRole: wfctx.assumedRole,
+      authenticatedRoles: wfctx.authenticatedRoles,
+      // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
+    },
+    wfctx.span,
+  );
+
+  try {
+    const res = DBOSExecutor.globalInstance!.runAsStep<T>(
+      async () => {
+        return await runWithDSContext(callnum, async () => {
+          return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
+        });
+      },
+      funcName,
+      DBOS.workflowID,
+      callnum,
+    );
+
+    span.setStatus({ code: SpanStatusCode.OK });
+    DBOSExecutor.globalInstance!.tracer.endSpan(span);
+    return res;
+  } catch (err) {
+    const e = err as Error;
+    span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+    DBOSExecutor.globalInstance!.tracer.endSpan(span);
+    throw err;
+  }
+}
+
+// Transaction wrapper
+export function registerTransaction<This, Args extends unknown[], Return>(
+  dsName: string,
+  func: (this: This, ...args: Args) => Promise<Return>,
+  options: {
+    name: string;
+  },
+  config?: unknown,
+): (this: This, ...args: Args) => Promise<Return> {
+  const dsn = dsName ?? '<default>';
+
+  const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+    if (!DBOS.isWithinWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(`Call to transaction '${options.name}' outside of a workflow`);
+    }
+
+    if (DBOS.isInTransaction() || DBOS.isInStep()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Invalid call to a `trasaction` function from within a `step` or `transaction`',
+      );
+    }
+
+    const ds = getTransactionalDataSource(dsn);
+
+    const wfctx = assertCurrentWorkflowContext();
+    const callnum = wfctx.functionIDGetIncrement();
+    return DBOSExecutor.globalInstance!.runAsStep<Return>(
+      async () => {
+        return await runWithDSContext(callnum, async () => {
+          return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
+        });
+      },
+      options.name,
+      DBOS.workflowID,
+      callnum,
+    );
+  };
+
+  Object.defineProperty(invokeWrapper, 'name', {
+    value: options.name,
+  });
+  return invokeWrapper;
+}
 
 /// Postgres helper routines
 

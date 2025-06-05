@@ -6,6 +6,8 @@ import {
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   type DBOSTransactionalDataSource,
+  registerTransaction,
+  runTransaction,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
@@ -41,7 +43,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
     funcName: string,
     options: { dsName?: string; config?: PostgresTransactionOptions } = {},
   ) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, options);
+    return await runTransaction(callback, funcName, options);
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -86,7 +88,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   }
 
   async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: PostgresTransactionOptions) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   register<This, Args extends unknown[], Return>(
@@ -94,7 +96,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
     name: string,
     config?: PostgresTransactionOptions,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   static async #checkExecution(

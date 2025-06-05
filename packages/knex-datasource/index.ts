@@ -1,7 +1,7 @@
 // using https://github.com/knex/knex
 
 import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
-import { type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk/datasource';
+import { type DBOSTransactionalDataSource, registerTransaction, runTransaction } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
 import { SuperJSON } from 'superjson';
@@ -30,7 +30,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     funcName: string,
     options: { dsName?: string; config?: TransactionConfig } = {},
   ) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, options);
+    return await runTransaction(callback, funcName, options);
   }
 
   static get client(): Knex.Transaction {
@@ -80,7 +80,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
   }
 
   async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   register<This, Args extends unknown[], Return>(
@@ -88,7 +88,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     name: string,
     config?: TransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   static async #checkExecution(

@@ -5,6 +5,8 @@ import {
   type DBOSTransactionalDataSource,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
+  registerTransaction,
+  runTransaction,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { Client, type ClientBase, type ClientConfig, DatabaseError, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -40,7 +42,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     funcName: string,
     options: { dsName?: string; config?: NodePostgresTransactionOptions } = {},
   ) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, options);
+    return await runTransaction(callback, funcName, options);
   }
 
   static get client(): ClientBase {
@@ -83,7 +85,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
   }
 
   async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
-    return await DBOS.runAsWorkflowTransaction(callback, funcName, { dsName: this.name, config });
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   register<This, Args extends unknown[], Return>(
@@ -91,7 +93,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     name: string,
     config?: NodePostgresTransactionOptions,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return DBOS.registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   static async #checkExecution(
