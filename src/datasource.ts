@@ -43,3 +43,19 @@ export const createTransactionCompletionTablePG = `
     PRIMARY KEY (workflow_id, function_num)
   );
 `;
+
+export function getPGErrorCode(error: unknown): string | undefined {
+  return error && typeof error === 'object' && 'code' in error ? (error.code as string) : undefined;
+}
+
+export function isPGRetriableTransactionError(error: unknown): boolean {
+  return getPGErrorCode(error) === '40001';
+}
+
+export function isPGKeyConflictError(error: unknown): boolean {
+  return getPGErrorCode(error) === '23505';
+}
+
+export function isPGFailedSqlTransactionError(error: unknown): boolean {
+  return getPGErrorCode(error) === '25P02';
+}
