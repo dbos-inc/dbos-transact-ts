@@ -10,27 +10,17 @@ import {
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
+  PGIsolationLevel as IsolationLevel,
+  PGTransactionConfig as PostgresTransactionOptions,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
 
+export { IsolationLevel, PostgresTransactionOptions };
+
 interface PostgresDataSourceContext {
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   client: postgres.TransactionSql<{}>;
-}
-
-export const IsolationLevel = Object.freeze({
-  serializable: 'SERIALIZABLE',
-  repeatableRead: 'REPEATABLE READ',
-  readCommited: 'READ COMMITTED',
-  readUncommitted: 'READ UNCOMMITTED',
-});
-
-type ValuesOf<T> = T[keyof T];
-
-export interface PostgresTransactionOptions {
-  isolationLevel?: ValuesOf<typeof IsolationLevel>;
-  readOnly?: boolean;
 }
 
 export class PostgresDataSource implements DBOSTransactionalDataSource {

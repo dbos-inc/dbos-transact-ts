@@ -149,6 +149,27 @@ export function registerTransaction<This, Args extends unknown[], Return>(
 
 /// Postgres helper routines
 
+/** Isolation typically supported by application databases */
+export const PGIsolationLevel = Object.freeze({
+  ReadUncommitted: 'READ UNCOMMITTED',
+  ReadCommitted: 'READ COMMITTED',
+  RepeatableRead: 'REPEATABLE READ',
+  Serializable: 'SERIALIZABLE',
+} as const);
+
+type ValuesOf<T> = T[keyof T];
+export type PGIsolationLevel = ValuesOf<typeof PGIsolationLevel>;
+
+/**
+ * Configuration for Postgres-like transactions
+ */
+export interface PGTransactionConfig {
+  /** Isolation level to request from underlying app database */
+  isolationLevel?: PGIsolationLevel;
+  /** If set, request read-only transaction from underlying app database */
+  readOnly?: boolean;
+}
+
 export const createTransactionCompletionSchemaPG = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
 export const createTransactionCompletionTablePG = `

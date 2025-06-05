@@ -9,6 +9,7 @@ import {
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
+  PGTransactionConfig as NodePostgresTransactionOptions,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { Client, type ClientBase, type ClientConfig, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -18,19 +19,7 @@ interface NodePostgresDataSourceContext {
   client: ClientBase;
 }
 
-export const IsolationLevel = Object.freeze({
-  serializable: 'SERIALIZABLE',
-  repeatableRead: 'REPEATABLE READ',
-  readCommited: 'READ COMMITTED',
-  readUncommitted: 'READ UNCOMMITTED',
-});
-
-type ValuesOf<T> = T[keyof T];
-
-export interface NodePostgresTransactionOptions {
-  isolationLevel?: ValuesOf<typeof IsolationLevel>;
-  readOnly?: boolean;
-}
+export { NodePostgresTransactionOptions };
 
 export class NodePostgresDataSource implements DBOSTransactionalDataSource {
   static readonly #asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();

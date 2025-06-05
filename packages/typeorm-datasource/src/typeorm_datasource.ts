@@ -9,6 +9,8 @@ import {
   isPGFailedSqlTransactionError,
   registerTransaction,
   runTransaction,
+  PGIsolationLevel as IsolationLevel,
+  PGTransactionConfig as TypeOrmTransactionConfig,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -36,23 +38,7 @@ interface transaction_completion {
   error: string | null;
 }
 
-/** Isolation typically supported by application databases */
-export const IsolationLevel = {
-  ReadUncommitted: 'READ UNCOMMITTED',
-  ReadCommitted: 'READ COMMITTED',
-  RepeatableRead: 'REPEATABLE READ',
-  Serializable: 'SERIALIZABLE',
-} as const;
-
-type ValuesOf<T> = T[keyof T];
-type IsolationLevel = ValuesOf<typeof IsolationLevel>;
-
-export interface TypeOrmTransactionConfig {
-  /** Isolation level to request from underlying app database */
-  isolationLevel?: IsolationLevel;
-  /** If set, request read-only transaction from underlying app database */
-  readOnly?: boolean;
-}
+export { IsolationLevel, TypeOrmTransactionConfig };
 
 export class TypeOrmDS implements DBOSTransactionalDataSource {
   readonly dsType = 'TypeOrm';

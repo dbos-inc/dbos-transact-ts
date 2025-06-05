@@ -11,11 +11,13 @@ import {
   isPGFailedSqlTransactionError,
   registerTransaction,
   runTransaction,
+  PGIsolationLevel as IsolationLevel,
+  PGTransactionConfig as KnexTransactionConfig,
 } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';
-import { DBOSJSON, sleepms, ValuesOf } from '../src/utils';
+import { DBOSJSON, sleepms } from '../src/utils';
 
 /*
  * Knex user data access interface
@@ -52,25 +54,6 @@ function assertCurrentDSContextStore(): DBOSKnexLocalCtx {
     throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOSKnexDS.knexClient` outside of a `transaction`');
   return ctx;
 }
-
-/**
- * Configuration for `DBOSKnexDS` functions
- */
-export interface KnexTransactionConfig {
-  /** Isolation level to request from underlying app database */
-  isolationLevel?: IsolationLevel;
-  /** If set, request read-only transaction from underlying app database */
-  readOnly?: boolean;
-}
-
-/** Isolation typically supported by application databases */
-export const IsolationLevel = {
-  ReadUncommitted: 'READ UNCOMMITTED',
-  ReadCommitted: 'READ COMMITTED',
-  RepeatableRead: 'REPEATABLE READ',
-  Serializable: 'SERIALIZABLE',
-} as const;
-export type IsolationLevel = ValuesOf<typeof IsolationLevel>;
 
 export class DBOSKnexDS implements DBOSTransactionalDataSource {
   // User will set this up, in this case

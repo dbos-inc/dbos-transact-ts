@@ -9,11 +9,15 @@ import {
   isPGFailedSqlTransactionError,
   registerTransaction,
   runTransaction,
+  PGIsolationLevel as IsolationLevel,
+  PGTransactionConfig as DrizzleTransactionConfig,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pushSchema } from 'drizzle-kit/api';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
+
+export { IsolationLevel, DrizzleTransactionConfig };
 
 interface DrizzleLocalCtx {
   drizzleClient: NodePgDatabase<{ [key: string]: object }>;
@@ -35,24 +39,6 @@ export interface transaction_completion {
   function_num: number;
   output: string | null;
   error: string | null;
-}
-
-/** Isolation typically supported by application databases */
-export const IsolationLevel = {
-  ReadUncommitted: 'READ UNCOMMITTED',
-  ReadCommitted: 'READ COMMITTED',
-  RepeatableRead: 'REPEATABLE READ',
-  Serializable: 'SERIALIZABLE',
-} as const;
-
-type ValuesOf<T> = T[keyof T];
-type IsolationLevel = ValuesOf<typeof IsolationLevel>;
-
-export interface DrizzleTransactionConfig {
-  /** Isolation level to request from underlying app database */
-  isolationLevel?: IsolationLevel;
-  /** If set, request read-only transaction from underlying app database */
-  readOnly?: boolean;
 }
 
 export class DrizzleDS implements DBOSTransactionalDataSource {
