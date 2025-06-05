@@ -6,6 +6,8 @@ import {
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   type DBOSTransactionalDataSource,
+  isPGRetriableTransactionError,
+  isPGKeyConflictError,
   registerTransaction,
   runTransaction,
 } from '@dbos-inc/dbos-sdk/datasource';
@@ -29,10 +31,6 @@ type ValuesOf<T> = T[keyof T];
 export interface PostgresTransactionOptions {
   isolationLevel?: ValuesOf<typeof IsolationLevel>;
   readOnly?: boolean;
-}
-
-function getErrorCode(error: unknown) {
-  return error instanceof postgres.PostgresError ? error.code : undefined;
 }
 
 export class PostgresDataSource implements DBOSTransactionalDataSource {
@@ -125,8 +123,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
         INSERT INTO dbos.transaction_completion (workflow_id, function_num, output)
         VALUES (${workflowID}, ${functionNum}, ${output})`;
     } catch (error) {
-      // 24505 is a duplicate key error in PostgreSQL
-      if (getErrorCode(error) === '23505') {
+      if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
       } else {
         throw error;
@@ -190,7 +187,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
 
         return result as Return;
       } catch (error) {
-        if (getErrorCode(error) === '40001') {
+        if (isPGRetriableTransactionError(error)) {
           // 400001 is a serialization failure in PostgreSQL
 
           // TODO: span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());

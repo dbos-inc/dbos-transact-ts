@@ -1,11 +1,14 @@
 import { randomUUID } from 'node:crypto';
-import { PoolConfig, DatabaseError as PGDatabaseError } from 'pg';
+import { PoolConfig } from 'pg';
 import knex, { Knex } from 'knex';
 import { DBOS } from '../src';
 import {
   type DBOSTransactionalDataSource,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
+  isPGRetriableTransactionError,
+  isPGKeyConflictError,
+  isPGFailedSqlTransactionError,
   registerTransaction,
   runTransaction,
 } from '../src/datasource';
@@ -245,13 +248,13 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
                 //  1. The transaction is marked failed, but the user code did not throw.
                 //      Bad on them.  We will throw an error (this will get recorded) and not retry.
                 //  2. There was a key conflict in the statement, and we need to use the fetched output
-                if (this.isFailedSqlTransactionError(error)) {
+                if (isPGFailedSqlTransactionError(error)) {
                   DBOS.logger.error(
                     `In workflow ${wfid}, Postgres aborted a transaction but the function '${funcname}' did not raise an exception.  Please ensure that the transaction method raises an exception if the database transaction is aborted.`,
                   );
                   failedForRetriableReasons = false;
                   throw new DBOSFailedSqlTransactionError(wfid, funcname);
-                } else if (this.isKeyConflictError(error)) {
+                } else if (isPGKeyConflictError(error)) {
                   // Expected.  There is probably a result to return
                   shouldCheckOutput = true;
                   failedForRetriableReasons = true;
@@ -280,7 +283,7 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
         return result;
       } catch (e) {
         const err = e as Error;
-        if (failedForRetriableReasons || this.isRetriableTransactionError(err)) {
+        if (failedForRetriableReasons || isPGRetriableTransactionError(err)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
           // Retry serialization failures.
           await sleepms(retryWaitMillis);
@@ -336,23 +339,6 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
 
   async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: KnexTransactionConfig) {
     return await runTransaction(callback, funcName, { dsName: this.name, config });
-  }
-
-  getPostgresErrorCode(error: unknown): string | null {
-    const dbErr: PGDatabaseError = error as PGDatabaseError;
-    return dbErr.code ? dbErr.code : null;
-  }
-
-  isRetriableTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === '40001';
-  }
-
-  isKeyConflictError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === '23505';
-  }
-
-  isFailedSqlTransactionError(error: unknown): boolean {
-    return this.getPostgresErrorCode(error) === '25P02';
   }
 }
 

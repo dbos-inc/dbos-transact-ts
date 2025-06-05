@@ -1,7 +1,13 @@
 // using https://github.com/knex/knex
 
 import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
-import { type DBOSTransactionalDataSource, registerTransaction, runTransaction } from '@dbos-inc/dbos-sdk/datasource';
+import {
+  type DBOSTransactionalDataSource,
+  isPGRetriableTransactionError,
+  isPGKeyConflictError,
+  registerTransaction,
+  runTransaction,
+} from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
 import { SuperJSON } from 'superjson';
@@ -17,10 +23,6 @@ interface KnexDataSourceContext {
 }
 
 export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'>;
-
-function getErrorCode(error: unknown) {
-  return error && typeof error === 'object' && 'code' in error ? error.code : undefined;
-}
 
 export class KnexDataSource implements DBOSTransactionalDataSource {
   static readonly #asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
@@ -120,8 +122,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
         output,
       });
     } catch (error) {
-      // 24505 is a duplicate key error in PostgreSQL
-      if (getErrorCode(error) === '23505') {
+      if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
       } else {
         throw error;
@@ -185,9 +186,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
 
         return result;
       } catch (error) {
-        if (getErrorCode(error) === '40001') {
-          // 400001 is a serialization failure in PostgreSQL
-
+        if (isPGRetriableTransactionError(error)) {
           // TODO: span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
           retryWaitMS = Math.min(retryWaitMS * backoffFactor, maxRetryWaitMS);
