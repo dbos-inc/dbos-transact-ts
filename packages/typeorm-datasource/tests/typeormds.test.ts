@@ -87,9 +87,7 @@ async function wfFunctionGuts() {
 
 // Workflow functions must always be registered before launch; this
 //  allows recovery to occur.
-const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
-  name: 'workflow',
-});
+const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
 
 class DBWFI {
   @typeOrmDS.transaction({ readOnly: true })
@@ -176,9 +174,7 @@ const txFunc2 = typeOrmDS.registerTransaction(KVController.readTxn, { name: 'exp
 async function explicitWf(id: string): Promise<string> {
   return await txFunc2(id);
 }
-const wfFunction2 = DBOS.registerWorkflow(explicitWf, {
-  name: 'explicitworkflow',
-});
+const wfFunction2 = DBOS.registerWorkflow(explicitWf, 'explicitworkflow');
 
 describe('typeorm-tests', () => {
   beforeAll(() => {
