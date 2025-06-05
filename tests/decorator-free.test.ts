@@ -172,6 +172,8 @@ describe('decorator-free-tests', () => {
     expect(steps[0].output).toEqual(1000);
     expect(steps[0].error).toBeNull();
     expect(steps[0].childWorkflowID).toBeNull();
+
+    await client.destroy();
   });
 
   test('wf-free-step-run', async () => {
@@ -349,7 +351,7 @@ describe('decorator-free-tests', () => {
 });
 
 describe('registerWorkflow-tests', () => {
-  test('dont-allow-duplicate-workflow-registration', async () => {
+  test('dont-allow-duplicate-workflow-registration', () => {
     function workflow1(value: number) {
       return DBOS.runStep(() => stepTest(value), { name: 'stepTest-runStep' });
     }
