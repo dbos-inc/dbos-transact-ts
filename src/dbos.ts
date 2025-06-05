@@ -1839,7 +1839,8 @@ export class DBOS {
    * @param func - The function to register as a workflow
    * @param name - The name of the registered workflow
    * @param options - Configuration information for the registered workflow
-   */ static registerWorkflow<This, Args extends unknown[], Return>(
+   */
+  static registerWorkflow<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     name: string,
     options: {
@@ -2240,7 +2241,6 @@ export class DBOS {
    * @param config - Configuration information for the step, particularly the retry policy
    * @param config.name - The name of the step; if not provided, the function name will be used
    */
-
   static registerStep<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config: StepConfig & { name?: string } = {},
