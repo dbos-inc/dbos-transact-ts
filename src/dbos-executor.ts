@@ -1903,38 +1903,32 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return new RetrievedHandle(this.systemDatabase, workflowID);
   }
 
-  async runAsStep<T>(
+  async runInternalStep<T>(
     callback: () => Promise<T>,
     functionName: string,
-    workflowID?: string,
-    functionID?: number,
+    workflowID: string,
+    functionID: number,
     childWfId?: string,
   ): Promise<T> {
-    if (workflowID !== undefined && functionID !== undefined) {
-      const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(workflowID, functionID);
-      if (result) {
-        if (result.functionName !== functionName) {
-          throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, result.functionName!);
-        }
-        return DBOSExecutor.reviveResultOrError<T>(result);
+    const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(workflowID, functionID);
+    if (result) {
+      if (result.functionName !== functionName) {
+        throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, result.functionName!);
       }
+      return DBOSExecutor.reviveResultOrError<T>(result);
     }
     try {
       const output: T = await callback();
-      if (workflowID !== undefined && functionID !== undefined) {
-        await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, {
-          output: DBOSJSON.stringify(output),
-          childWorkflowID: childWfId,
-        });
-      }
+      await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, {
+        output: DBOSJSON.stringify(output),
+        childWorkflowID: childWfId,
+      });
       return output;
     } catch (e) {
-      if (workflowID !== undefined && functionID !== undefined) {
-        await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, {
-          error: DBOSJSON.stringify(serializeError(e)),
-          childWorkflowID: childWfId,
-        });
-      }
+      await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, {
+        error: DBOSJSON.stringify(serializeError(e)),
+        childWorkflowID: childWfId,
+      });
 
       throw e;
     }

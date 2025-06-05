@@ -81,14 +81,15 @@ export async function runTransaction<T>(
   );
 
   try {
-    const res = DBOSExecutor.globalInstance!.runAsStep<T>(
+    const res = await DBOSExecutor.globalInstance!.runInternalStep<T>(
       async () => {
         return await runWithDSContext(callnum, async () => {
           return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
         });
       },
       funcName,
-      DBOS.workflowID,
+      // we can be sure workflowID is set because of previous call to assertCurrentWorkflowContext
+      DBOS.workflowID!,
       callnum,
     );
 
@@ -129,14 +130,14 @@ export function registerTransaction<This, Args extends unknown[], Return>(
 
     const wfctx = assertCurrentWorkflowContext();
     const callnum = wfctx.functionIDGetIncrement();
-    return DBOSExecutor.globalInstance!.runAsStep<Return>(
+    return DBOSExecutor.globalInstance!.runInternalStep<Return>(
       async () => {
         return await runWithDSContext(callnum, async () => {
           return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
         });
       },
       options.name,
-      DBOS.workflowID,
+      DBOS.workflowID!,
       callnum,
     );
   };

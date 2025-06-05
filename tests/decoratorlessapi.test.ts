@@ -37,9 +37,7 @@ async function wfFunctionGuts() {
 
 // Workflow functions must always be registered before launch; this
 //  allows recovery to occur.
-const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, {
-  name: 'workflow',
-});
+const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
 
 describe('decoratorless-api-basic-tests', () => {
   let config: DBOSConfig;
@@ -110,7 +108,7 @@ async function classStepsWFFuncGuts() {
   return `${rv1}-${rv2}`;
 }
 
-const classStepsWF = DBOS.registerWorkflow(classStepsWFFuncGuts, { name: 'classStepsWF' });
+const classStepsWF = DBOS.registerWorkflow(classStepsWFFuncGuts, 'classStepsWF');
 
 // runAsStep no config instance
 describe('decoratorless-api-class-tests', () => {
@@ -178,18 +176,20 @@ class StaticAndInstanceWFs extends ConfiguredInstance {
 const wfi34 = new StaticAndInstanceWFs(4, 3);
 const wfi56 = new StaticAndInstanceWFs(6, 5);
 
-StaticAndInstanceWFs.staticWF = DBOS.registerWorkflow(StaticAndInstanceWFs.staticWF, {
+StaticAndInstanceWFs.staticWF = DBOS.registerWorkflow(StaticAndInstanceWFs.staticWF, 'staticWF', {
   classOrInst: StaticAndInstanceWFs,
   className: 'StaticAndInstanceWFs',
-  name: 'staticWF',
 });
 
 // eslint-disable-next-line @typescript-eslint/unbound-method
-StaticAndInstanceWFs.prototype.instanceWF = DBOS.registerWorkflow(StaticAndInstanceWFs.prototype.instanceWF, {
-  classOrInst: StaticAndInstanceWFs,
-  className: 'StaticAndInstanceWFs',
-  name: 'instanceWF',
-});
+StaticAndInstanceWFs.prototype.instanceWF = DBOS.registerWorkflow(
+  StaticAndInstanceWFs.prototype.instanceWF,
+  'instanceWF',
+  {
+    classOrInst: StaticAndInstanceWFs,
+    className: 'StaticAndInstanceWFs',
+  },
+);
 
 describe('decoratorless-api-class-tests', () => {
   let config: DBOSConfig;
@@ -258,7 +258,7 @@ async function argsWFFuncGuts(a: number, b: string) {
   return Promise.resolve(`${a}-${b}`);
 }
 
-const argsWF = DBOS.registerWorkflow(argsWFFuncGuts, { name: 'argsWF' });
+const argsWF = DBOS.registerWorkflow(argsWFFuncGuts, 'argsWF');
 
 // Do this with startWorkflow (in a new form)
 describe('start-workflow-function', () => {
