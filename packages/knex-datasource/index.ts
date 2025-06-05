@@ -1,6 +1,7 @@
 // using https://github.com/knex/knex
 
-import { DBOS, type DBOSTransactionalDataSource, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
 import { SuperJSON } from 'superjson';

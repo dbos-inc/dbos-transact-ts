@@ -1,4 +1,6 @@
-// Data source implementation (to be moved to DBOS core)
+/**
+ * This interface is to be used for implementers of transactional data sources
+ */
 export interface DBOSTransactionalDataSource {
   readonly name: string;
   readonly dsType: string;
@@ -24,3 +26,7 @@ export interface DBOSTransactionalDataSource {
     ...args: Args
   ): Promise<Return>;
 }
+
+/// Calling into DBOS
+
+/// Postgres helper routines

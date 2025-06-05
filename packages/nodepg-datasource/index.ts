@@ -1,6 +1,7 @@
 // using https://github.com/brianc/node-postgres
 
-import { DBOS, DBOSWorkflowConflictError, type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk/datasource';
 import { Client, type ClientBase, type ClientConfig, DatabaseError, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';

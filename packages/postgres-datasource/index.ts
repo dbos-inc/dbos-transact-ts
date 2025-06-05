@@ -1,7 +1,8 @@
 // using https://github.com/porsager/postgres
 
 import postgres, { type Sql } from 'postgres';
-import { DBOS, type DBOSTransactionalDataSource, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { type DBOSTransactionalDataSource } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
 
