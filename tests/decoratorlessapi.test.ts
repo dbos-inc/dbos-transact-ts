@@ -181,8 +181,8 @@ StaticAndInstanceWFs.staticWF = DBOS.registerWorkflow(StaticAndInstanceWFs.stati
   className: 'StaticAndInstanceWFs',
 });
 
-// eslint-disable-next-line @typescript-eslint/unbound-method
 StaticAndInstanceWFs.prototype.instanceWF = DBOS.registerWorkflow(
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   StaticAndInstanceWFs.prototype.instanceWF,
   'instanceWF',
   {
