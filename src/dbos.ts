@@ -1264,11 +1264,8 @@ export class DBOS {
    */
   static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
   static startWorkflow<T extends object>(target: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T> {
-    if (typeof target === 'function') {
-      return DBOS.#proxyInvokeWF(target, null, params) as unknown as InvokeFunctionsAsync<T>;
-    } else {
-      return DBOS.#proxyInvokeWF(target, target as ConfiguredInstance, params) as unknown as InvokeFunctionsAsync<T>;
-    }
+    const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
+    return DBOS.#proxyInvokeWF(target, instance, params) as unknown as InvokeFunctionsAsync<T>;
   }
 
   /**
