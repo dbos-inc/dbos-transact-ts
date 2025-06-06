@@ -12,6 +12,7 @@ import {
   runTransaction,
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as PostgresTransactionOptions,
+  DBOSDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
@@ -23,7 +24,9 @@ interface PostgresDataSourceContext {
   client: postgres.TransactionSql<{}>;
 }
 
-export class PostgresDataSource implements DBOSDataSourceTransactionHandler {
+export class PostgresDataSource
+  implements DBOSDataSourceTransactionHandler, DBOSDataSource<PostgresTransactionOptions>
+{
   static readonly #asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type

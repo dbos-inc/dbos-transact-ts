@@ -10,6 +10,7 @@ import {
   registerTransaction,
   runTransaction,
   PGTransactionConfig as NodePostgresTransactionOptions,
+  DBOSDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { Client, type ClientBase, type ClientConfig, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -21,7 +22,9 @@ interface NodePostgresDataSourceContext {
 
 export { NodePostgresTransactionOptions };
 
-export class NodePostgresDataSource implements DBOSDataSourceTransactionHandler {
+export class NodePostgresDataSource
+  implements DBOSDataSourceTransactionHandler, DBOSDataSource<NodePostgresTransactionOptions>
+{
   static readonly #asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
 
   static get client(): ClientBase {

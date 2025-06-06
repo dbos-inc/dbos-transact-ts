@@ -7,6 +7,7 @@ import {
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
+  DBOSDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
@@ -24,7 +25,7 @@ interface KnexDataSourceContext {
 
 export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'>;
 
-export class KnexDataSource implements DBOSDataSourceTransactionHandler {
+export class KnexDataSource implements DBOSDataSourceTransactionHandler, DBOSDataSource<TransactionConfig> {
   static readonly #asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
   static get client(): Knex.Transaction {

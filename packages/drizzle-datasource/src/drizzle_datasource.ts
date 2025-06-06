@@ -11,6 +11,7 @@ import {
   runTransaction,
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as DrizzleTransactionConfig,
+  DBOSDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pushSchema } from 'drizzle-kit/api';
@@ -41,7 +42,7 @@ export interface transaction_completion {
   error: string | null;
 }
 
-export class DrizzleDS implements DBOSDataSourceTransactionHandler {
+export class DrizzleDS implements DBOSDataSourceTransactionHandler, DBOSDataSource<DrizzleTransactionConfig> {
   readonly dsType = 'drizzle';
   dataSource: NodePgDatabase<{ [key: string]: object }> | undefined;
   drizzlePool: Pool | undefined;

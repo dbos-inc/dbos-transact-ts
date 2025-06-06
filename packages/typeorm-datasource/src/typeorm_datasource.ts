@@ -11,6 +11,7 @@ import {
   runTransaction,
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as TypeOrmTransactionConfig,
+  DBOSDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -40,7 +41,7 @@ interface transaction_completion {
 
 export { IsolationLevel, TypeOrmTransactionConfig };
 
-export class TypeOrmDS implements DBOSDataSourceTransactionHandler {
+export class TypeOrmDS implements DBOSDataSourceTransactionHandler, DBOSDataSource<TypeOrmTransactionConfig> {
   readonly dsType = 'TypeOrm';
   dataSource: DataSource | undefined;
 

@@ -13,6 +13,7 @@ import {
   runTransaction,
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as KnexTransactionConfig,
+  DBOSDataSource,
 } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -55,7 +56,7 @@ function assertCurrentDSContextStore(): DBOSKnexLocalCtx {
   return ctx;
 }
 
-export class DBOSKnexDS implements DBOSDataSourceTransactionHandler {
+export class DBOSKnexDS implements DBOSDataSourceTransactionHandler, DBOSDataSource<KnexTransactionConfig> {
   // User will set this up, in this case
   constructor(
     readonly name: string,
