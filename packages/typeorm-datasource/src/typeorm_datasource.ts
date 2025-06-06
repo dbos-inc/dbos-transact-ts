@@ -1,7 +1,7 @@
 import { PoolConfig } from 'pg';
 import { DBOS, Error } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSDataSourceTransactionHandler,
+  type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -42,7 +42,7 @@ interface transaction_completion {
 
 export { IsolationLevel, TypeOrmTransactionConfig };
 
-class TypeOrmDSP implements DBOSDataSourceTransactionHandler {
+class TypeOrmDSTH implements DataSourceTransactionHandler {
   readonly dsType = 'TypeOrm';
   dataSource: DataSource | undefined;
 
@@ -231,15 +231,15 @@ class TypeOrmDSP implements DBOSDataSourceTransactionHandler {
   }
 }
 
-export class TypeOrmDS implements DBOSDataSource<TypeOrmTransactionConfig> {
-  #provider: TypeOrmDSP;
+export class TypeOrmDataSource implements DBOSDataSource<TypeOrmTransactionConfig> {
+  #provider: TypeOrmDSTH;
   constructor(
     readonly name: string,
     readonly config: PoolConfig,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     readonly entities: Function[],
   ) {
-    this.#provider = new TypeOrmDSP(name, config, entities);
+    this.#provider = new TypeOrmDSTH(name, config, entities);
     registerDataSource(this.#provider);
   }
 
@@ -248,7 +248,7 @@ export class TypeOrmDS implements DBOSDataSource<TypeOrmTransactionConfig> {
     const ctx = assertCurrentDSContextStore();
     if (!DBOS.isInTransaction())
       throw new Error.DBOSInvalidWorkflowTransitionError(
-        'Invalid use of `TypeOrmDS.entityManager` outside of a `transaction`',
+        'Invalid use of `TypeOrmDataSource.entityManager` outside of a `transaction`',
       );
     return ctx.typeOrmEntityManager;
   }

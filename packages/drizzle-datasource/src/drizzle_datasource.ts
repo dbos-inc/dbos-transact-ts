@@ -1,7 +1,7 @@
 import { Pool, PoolConfig } from 'pg';
 import { DBOS, Error } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSDataSourceTransactionHandler,
+  type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -43,7 +43,7 @@ export interface transaction_completion {
   error: string | null;
 }
 
-class DrizzleDSP implements DBOSDataSourceTransactionHandler {
+class DrizzleDSTH implements DataSourceTransactionHandler {
   readonly dsType = 'drizzle';
   dataSource: NodePgDatabase<{ [key: string]: object }> | undefined;
   drizzlePool: Pool | undefined;
@@ -242,15 +242,15 @@ class DrizzleDSP implements DBOSDataSourceTransactionHandler {
   }
 }
 
-export class DrizzleDS implements DBOSDataSource<DrizzleTransactionConfig> {
-  #provider: DrizzleDSP;
+export class DrizzleDataSource implements DBOSDataSource<DrizzleTransactionConfig> {
+  #provider: DrizzleDSTH;
 
   constructor(
     readonly name: string,
     readonly config: PoolConfig,
     readonly entities: { [key: string]: object } = {},
   ) {
-    this.#provider = new DrizzleDSP(name, config, entities);
+    this.#provider = new DrizzleDSTH(name, config, entities);
     registerDataSource(this.#provider);
   }
 
@@ -259,7 +259,7 @@ export class DrizzleDS implements DBOSDataSource<DrizzleTransactionConfig> {
     const ctx = assertCurrentDSContextStore();
     if (!DBOS.isInTransaction())
       throw new Error.DBOSInvalidWorkflowTransitionError(
-        'Invalid use of `DrizzleDS.drizzleClient` outside of a `transaction`',
+        'Invalid use of `DrizzleDataSource.drizzleClient` outside of a `transaction`',
       );
     return ctx.drizzleClient;
   }

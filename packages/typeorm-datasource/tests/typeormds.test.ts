@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { TypeOrmDS } from '../src';
+import { TypeOrmDataSource } from '../src';
 import { Entity, Column, PrimaryColumn, PrimaryGeneratedColumn } from 'typeorm';
 import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
@@ -46,7 +46,7 @@ const poolconfig = {
   port: 5432,
 };
 
-const typeOrmDS = new TypeOrmDS('app-db', poolconfig, [KV, User]);
+const typeOrmDS = new TypeOrmDataSource('app-db', poolconfig, [KV, User]);
 
 const dbosConfig = {
   databaseUrl: databaseUrl,
@@ -62,7 +62,7 @@ const dbosConfig = {
 async function txFunctionGuts() {
   expect(DBOS.isInTransaction()).toBe(true);
   expect(DBOS.isWithinWorkflow()).toBe(true);
-  const res = await TypeOrmDS.entityManager.query("SELECT 'Tx2 result' as a");
+  const res = await TypeOrmDataSource.entityManager.query("SELECT 'Tx2 result' as a");
   return res[0].a;
 }
 
@@ -72,7 +72,7 @@ async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
   const p1 = await typeOrmDS.runTransaction(
     async () => {
-      return (await TypeOrmDS.entityManager.query("SELECT 'My first tx result' as a"))[0].a;
+      return (await TypeOrmDataSource.entityManager.query("SELECT 'My first tx result' as a"))[0].a;
     },
     'MyFirstTx',
     { readOnly: true },
@@ -91,7 +91,7 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
 class DBWFI {
   @typeOrmDS.transaction({ readOnly: true })
   static async tx(): Promise<number> {
-    return await TypeOrmDS.entityManager.count(User);
+    return await TypeOrmDataSource.entityManager.count(User);
   }
 
   @DBOS.workflow()
@@ -153,13 +153,13 @@ class KVController {
     const kv: KV = new KV();
     kv.id = id;
     kv.value = value;
-    const res = await TypeOrmDS.entityManager.save(kv);
+    const res = await TypeOrmDataSource.entityManager.save(kv);
 
     return res.id;
   }
 
   static async readTxn(id: string): Promise<string> {
-    const kvp = await TypeOrmDS.entityManager.findOneBy(KV, { id: id });
+    const kvp = await TypeOrmDataSource.entityManager.findOneBy(KV, { id: id });
     return Promise.resolve(kvp?.value || '<Not Found>');
   }
 

@@ -2,7 +2,7 @@
 
 import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSDataSourceTransactionHandler,
+  type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
   isPGKeyConflictError,
   registerTransaction,
@@ -28,7 +28,7 @@ export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 
 
 const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
-class KnexDSP implements DBOSDataSourceTransactionHandler {
+class KnexDSTH implements DataSourceTransactionHandler {
   readonly name: string;
   readonly dsType = 'KnexDataSource';
   readonly #knexDB: Knex;
@@ -110,7 +110,7 @@ class KnexDSP implements DBOSDataSourceTransactionHandler {
             // Check to see if this tx has already been executed
             const previousResult = readOnly
               ? undefined
-              : await KnexDSP.#checkExecution(client, workflowID, functionNum);
+              : await KnexDSTH.#checkExecution(client, workflowID, functionNum);
             if (previousResult) {
               return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
             }
@@ -122,7 +122,7 @@ class KnexDSP implements DBOSDataSourceTransactionHandler {
 
             // save the output of read/write transactions
             if (!readOnly) {
-              await KnexDSP.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
+              await KnexDSTH.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
               // Note, existing code wraps #recordOutput call in a try/catch block that
               // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.
@@ -191,11 +191,11 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
   }
 
   readonly name: string;
-  #provider: KnexDSP;
+  #provider: KnexDSTH;
 
   constructor(name: string, config: Knex.Config) {
     this.name = name;
-    this.#provider = new KnexDSP(name, config);
+    this.#provider = new KnexDSTH(name, config);
     registerDataSource(this.#provider);
   }
 

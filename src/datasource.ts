@@ -1,6 +1,6 @@
 import { SpanStatusCode } from '@opentelemetry/api';
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { assertCurrentWorkflowContext, runWithDSContext } from './context';
+import { assertCurrentWorkflowContext, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import { getTransactionalDataSource, registerTransactionalDataSource } from './decorators';
@@ -10,7 +10,7 @@ import { DBOSInvalidWorkflowTransitionError } from './error';
  * This interface is to be used for implementers of transactional data sources
  *   This is what gets registered for the transaction control framework
  */
-export interface DBOSDataSourceTransactionHandler {
+export interface DataSourceTransactionHandler {
   readonly name: string;
   readonly dsType: string;
 
@@ -100,7 +100,7 @@ export interface DBOSDataSource<Config> {
 /// Calling into DBOS
 
 /**
- * This function is to be called by `DBOSDataSourceTransactionHandler` instances,
+ * This function is to be called by `DataSourceTransactionHandler` instances,
  *   with bits of user code to be run as transactions.
  * 1. The DS validates the type of config and provides the name
  * 2. The transaction will be started inside here, with a durable sysdb checkpoint.
@@ -145,7 +145,7 @@ export async function runTransaction<T>(
   try {
     const res = await DBOSExecutor.globalInstance!.runInternalStep<T>(
       async () => {
-        return await runWithDSContext(callnum, async () => {
+        return await runWithDataSourceContext(callnum, async () => {
           return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
         });
       },
@@ -194,7 +194,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
     const callnum = wfctx.functionIDGetIncrement();
     return DBOSExecutor.globalInstance!.runInternalStep<Return>(
       async () => {
-        return await runWithDSContext(callnum, async () => {
+        return await runWithDataSourceContext(callnum, async () => {
           return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
         });
       },
@@ -216,7 +216,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
  * @param name - Registered name for the data source
  * @param ds - Transactional data source provider
  */
-export function registerDataSource(ds: DBOSDataSourceTransactionHandler) {
+export function registerDataSource(ds: DataSourceTransactionHandler) {
   registerTransactionalDataSource(ds.name, ds);
 }
 

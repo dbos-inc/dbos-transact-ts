@@ -3,7 +3,7 @@ import { PoolConfig } from 'pg';
 import knex, { Knex } from 'knex';
 import { DBOS } from '../src';
 import {
-  type DBOSDataSourceTransactionHandler,
+  type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -57,7 +57,7 @@ function assertCurrentDSContextStore(): DBOSKnexLocalCtx {
   return ctx;
 }
 
-class KnexDSP implements DBOSDataSourceTransactionHandler {
+class KnexDSTH implements DataSourceTransactionHandler {
   constructor(
     readonly name: string,
     readonly config: PoolConfig,
@@ -129,14 +129,13 @@ class KnexDSP implements DBOSDataSourceTransactionHandler {
       try {
         const result = await this.knex.transaction<Return>(
           async (transactionClient: Knex.Transaction) => {
-            // TODO: serialization duties are based on DB logic here... but not app logic.  Is that right?
+            // We are using DBOSJSON for this unit test.  Real clients are suggested to use SuperJSON.
 
             // Check for prior result / error
-            // TODO: Question the model here.
-            // This is an interesting question, as it fits neither of the 2 common DB patterns
-            // Optimistically, checkExection is not necessary on the first trip around,
-            //   It can be run on a second iteration if insert has failed.
-            // OTOH, to be pessimistic, this should be LOCK / SFU'd
+            // Concurrency is an interesting question
+            //   Optimistically, checkExection is not necessary on the first trip around,
+            //     It can be run on a second iteration if insert has failed.
+            // OTOH, to be pessimistic, this should be LOCK / SELECT FOR UPDATE'd
 
             if (shouldCheckOutput && !readOnly) {
               const executionResult = await this.#checkExecution<Return>(transactionClient, wfid, funcnum);
@@ -181,12 +180,8 @@ class KnexDSP implements DBOSDataSourceTransactionHandler {
               }
               return res;
             } catch (e) {
-              // There is no reason to record errors.  The system DB does this.
-              //   Presumably, the transaction was rolled back and therefore had no side-effects.
-              //   There is no reason why you'd get a different error if you re-ran the transaction,
-              //    but if you did, that's also presumed to be valid.
-              // There's also no suitable transaction to record the error in, so we'd need a new one.
-              //   Putting in the sysdb is no different.
+              // We shoud record errors.  That was not implemented here since this is just a unit test,
+              //   not a production DS
               throw e;
             }
           },
@@ -258,14 +253,14 @@ class KnexDSP implements DBOSDataSourceTransactionHandler {
 }
 
 export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
-  #provider: KnexDSP;
+  #provider: KnexDSTH;
 
   // User will set this up, in this case
   constructor(
     readonly name: string,
     readonly config: PoolConfig,
   ) {
-    this.#provider = new KnexDSP(name, config);
+    this.#provider = new KnexDSTH(name, config);
     registerDataSource(this.#provider);
   }
 
