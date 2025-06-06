@@ -1253,8 +1253,12 @@ export class DBOS {
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
   ): Promise<WorkflowHandle<Return>> {
-    const wfFunc = func as unknown as WorkflowFunction<Args, Return>;
-    return DBOS.#runDatWorkflow(params?.instance, wfFunc, args, params ?? {});
+    const op = getRegistrationForFunction(func);
+    if (!op) {
+      throw new DBOSNotRegisteredError(func.name, `${func.name} is not a registered DBOS workflow function`);
+    }
+    const wfFunc = op.registeredFunction as WorkflowFunction<Args, Return>;
+    return await DBOS.#runDatWorkflow(params?.instance, wfFunc, args, params ?? {});
   }
 
   /**
