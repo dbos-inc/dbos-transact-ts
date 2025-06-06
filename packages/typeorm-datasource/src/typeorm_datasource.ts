@@ -1,7 +1,7 @@
 import { PoolConfig } from 'pg';
 import { DBOS, Error } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSTransactionalDataSource,
+  type DBOSDataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -11,6 +11,8 @@ import {
   runTransaction,
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as TypeOrmTransactionConfig,
+  DBOSDataSource,
+  registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -40,7 +42,7 @@ interface transaction_completion {
 
 export { IsolationLevel, TypeOrmTransactionConfig };
 
-export class TypeOrmDS implements DBOSTransactionalDataSource {
+class TypeOrmDSP implements DBOSDataSourceTransactionHandler {
   readonly dsType = 'TypeOrm';
   dataSource: DataSource | undefined;
 
@@ -51,14 +53,16 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     readonly entities: Function[],
   ) {}
 
-  // User calls this... DBOS not directly involved...
-  static get entityManager(): EntityManager {
-    const ctx = assertCurrentDSContextStore();
-    if (!DBOS.isInTransaction())
-      throw new Error.DBOSInvalidWorkflowTransitionError(
-        'Invalid use of `TypeOrmDS.entityManager` outside of a `transaction`',
-      );
-    return ctx.typeOrmEntityManager;
+  async createInstance(): Promise<DataSource> {
+    const ds = new DataSource({
+      type: 'postgres',
+      url: this.config.connectionString,
+      connectTimeoutMS: this.config.connectionTimeoutMillis,
+      entities: this.entities,
+      poolSize: this.config.max,
+    });
+    await ds.initialize();
+    return ds;
   }
 
   async initialize(): Promise<void> {
@@ -67,25 +71,6 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
     return Promise.resolve();
   }
 
-  async initializeInternalSchema(): Promise<void> {
-    const ds = await this.createInstance();
-
-    try {
-      await ds.query(createTransactionCompletionSchemaPG);
-      await ds.query(createTransactionCompletionTablePG);
-    } catch (e) {
-      const error = e as Error;
-      throw new Error.DBOSError(`Unexpected error initializing schema: ${error.message}`);
-    } finally {
-      try {
-        await ds.destroy();
-      } catch (e) {}
-    }
-  }
-
-  /**
-   * Will be called by DBOS during attempt at clean shutdown (generally in testing scenarios).
-   */
   async destroy(): Promise<void> {
     await this.dataSource?.destroy();
   }
@@ -244,17 +229,44 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
       }
     }
   }
+}
 
-  async createInstance(): Promise<DataSource> {
-    const ds = new DataSource({
-      type: 'postgres',
-      url: this.config.connectionString,
-      connectTimeoutMS: this.config.connectionTimeoutMillis,
-      entities: this.entities,
-      poolSize: this.config.max,
-    });
-    await ds.initialize();
-    return ds;
+export class TypeOrmDS implements DBOSDataSource<TypeOrmTransactionConfig> {
+  #provider: TypeOrmDSP;
+  constructor(
+    readonly name: string,
+    readonly config: PoolConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+    readonly entities: Function[],
+  ) {
+    this.#provider = new TypeOrmDSP(name, config, entities);
+    registerDataSource(this.#provider);
+  }
+
+  // User calls this... DBOS not directly involved...
+  static get entityManager(): EntityManager {
+    const ctx = assertCurrentDSContextStore();
+    if (!DBOS.isInTransaction())
+      throw new Error.DBOSInvalidWorkflowTransitionError(
+        'Invalid use of `TypeOrmDS.entityManager` outside of a `transaction`',
+      );
+    return ctx.typeOrmEntityManager;
+  }
+
+  async initializeInternalSchema(): Promise<void> {
+    const ds = await this.#provider.createInstance();
+
+    try {
+      await ds.query(createTransactionCompletionSchemaPG);
+      await ds.query(createTransactionCompletionTablePG);
+    } catch (e) {
+      const error = e as Error;
+      throw new Error.DBOSError(`Unexpected error initializing schema: ${error.message}`);
+    } finally {
+      try {
+        await ds.destroy();
+      } catch (e) {}
+    }
   }
 
   /**
@@ -279,12 +291,10 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      name: string;
-    },
+    name: string,
     config?: TypeOrmTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   /**
@@ -302,7 +312,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
         throw new Error.DBOSError('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, { name: propertyKey.toString() }, config);
+      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
 
       return descriptor;
     };
@@ -312,7 +322,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
    * For testing: Use DataSource.syncronize to install the user schema
    */
   async createSchema() {
-    const ds = await this.createInstance();
+    const ds = await this.#provider.createInstance();
     try {
       await ds.synchronize();
     } finally {

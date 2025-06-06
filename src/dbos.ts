@@ -63,7 +63,6 @@ import {
   registerAndWrapDBOSFunctionByName,
   registerFunctionWrapper,
   registerLifecycleCallback,
-  registerTransactionalDataSource,
   transactionalDataSources,
   registerMiddlewareInstaller,
 } from './decorators';
@@ -111,7 +110,6 @@ import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
-import { DBOSTransactionalDataSource } from './datasource';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -1953,16 +1951,6 @@ export class DBOS {
       value: registration.name,
     });
     return invokeWrapper;
-  }
-
-  /**
-   * Register a transactional data source, that helps DBOS provide
-   *  transactional access to user databases
-   * @param name - Registered name for the data source
-   * @param ds - Transactional data source provider
-   */
-  static registerDataSource(ds: DBOSTransactionalDataSource) {
-    registerTransactionalDataSource(ds.name, ds);
   }
 
   /**

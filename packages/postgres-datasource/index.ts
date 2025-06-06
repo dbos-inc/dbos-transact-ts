@@ -5,13 +5,15 @@ import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import {
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
-  type DBOSTransactionalDataSource,
+  type DBOSDataSourceTransactionHandler,
   isPGRetriableTransactionError,
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as PostgresTransactionOptions,
+  DBOSDataSource,
+  registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
@@ -23,40 +25,9 @@ interface PostgresDataSourceContext {
   client: postgres.TransactionSql<{}>;
 }
 
-export class PostgresDataSource implements DBOSTransactionalDataSource {
-  static readonly #asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
+const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 
-  static async runTxStep<T>(
-    callback: () => Promise<T>,
-    funcName: string,
-    options: { dsName?: string; config?: PostgresTransactionOptions } = {},
-  ) {
-    return await runTransaction(callback, funcName, options);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  static get client(): postgres.TransactionSql<{}> {
-    if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
-    }
-    const ctx = PostgresDataSource.#asyncLocalCtx.getStore();
-    if (!ctx) {
-      throw new Error('No async local context found.');
-    }
-    return ctx.client;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  static async configure(options: postgres.Options<{}> = {}): Promise<void> {
-    const pg = postgres({ ...options, onnotice: () => {} });
-    try {
-      await pg.unsafe(createTransactionCompletionSchemaPG);
-      await pg.unsafe(createTransactionCompletionTablePG);
-    } finally {
-      await pg.end();
-    }
-  }
-
+class PGDSP implements DBOSDataSourceTransactionHandler {
   readonly name: string;
   readonly dsType = 'PostgresDataSource';
   readonly #db: Sql;
@@ -73,18 +44,6 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
 
   destroy(): Promise<void> {
     return this.#db.end();
-  }
-
-  async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: PostgresTransactionOptions) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
-  }
-
-  register<This, Args extends unknown[], Return>(
-    func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
-    config?: PostgresTransactionOptions,
-  ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
   }
 
   static async #checkExecution(
@@ -148,21 +107,19 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
       try {
         const result = await this.#db.begin<Return>(`${isolationLevel} ${accessMode}`, async (client) => {
           // Check to see if this tx has already been executed
-          const previousResult = readOnly
-            ? undefined
-            : await PostgresDataSource.#checkExecution(client, workflowID, functionNum);
+          const previousResult = readOnly ? undefined : await PGDSP.#checkExecution(client, workflowID, functionNum);
           if (previousResult) {
             return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
           }
 
           // execute user's transaction function
-          const result = await PostgresDataSource.#asyncLocalCtx.run({ client }, async () => {
+          const result = await asyncLocalCtx.run({ client }, async () => {
             return (await func.call(target, ...args)) as Return;
           });
 
           // save the output of read/write transactions
           if (!readOnly) {
-            await PostgresDataSource.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
+            await PGDSP.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
             // Note, existing code wraps #recordOutput call in a try/catch block that
             // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.
@@ -197,5 +154,70 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
         }
       }
     }
+  }
+}
+
+export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOptions> {
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  static get client(): postgres.TransactionSql<{}> {
+    if (!DBOS.isInTransaction()) {
+      throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
+    }
+    const ctx = asyncLocalCtx.getStore();
+    if (!ctx) {
+      throw new Error('No async local context found.');
+    }
+    return ctx.client;
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  static async initializeInternalSchema(options: postgres.Options<{}> = {}): Promise<void> {
+    const pg = postgres({ ...options, onnotice: () => {} });
+    try {
+      await pg.unsafe(createTransactionCompletionSchemaPG);
+      await pg.unsafe(createTransactionCompletionTablePG);
+    } finally {
+      await pg.end();
+    }
+  }
+
+  readonly name: string;
+  #provider: PGDSP;
+
+  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
+  constructor(name: string, options: postgres.Options<{}> = {}) {
+    this.name = name;
+    this.#provider = new PGDSP(name, options);
+    registerDataSource(this.#provider);
+  }
+
+  async runTransaction<T>(callback: () => Promise<T>, name: string, config?: PostgresTransactionOptions) {
+    return await runTransaction(callback, name, { dsName: this.name, config });
+  }
+
+  registerTransaction<This, Args extends unknown[], Return>(
+    func: (this: This, ...args: Args) => Promise<Return>,
+    name: string,
+    config?: PostgresTransactionOptions,
+  ): (this: This, ...args: Args) => Promise<Return> {
+    return registerTransaction(this.name, func, { name }, config);
+  }
+
+  transaction(config?: PostgresTransactionOptions) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ds = this;
+    return function decorator<This, Args extends unknown[], Return>(
+      _target: object,
+      propertyKey: string,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+    ) {
+      if (!descriptor.value) {
+        throw Error('Use of decorator when original method is undefined');
+      }
+
+      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+
+      return descriptor;
+    };
   }
 }

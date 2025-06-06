@@ -3,13 +3,14 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 import { assertCurrentWorkflowContext, runWithDSContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
-import { getTransactionalDataSource } from './decorators';
+import { getTransactionalDataSource, registerTransactionalDataSource } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 
 /**
  * This interface is to be used for implementers of transactional data sources
+ *   This is what gets registered for the transaction control framework
  */
-export interface DBOSTransactionalDataSource {
+export interface DBOSDataSourceTransactionHandler {
   readonly name: string;
   readonly dsType: string;
 
@@ -35,10 +36,71 @@ export interface DBOSTransactionalDataSource {
   ): Promise<Return>;
 }
 
+/**
+ * This is the suggested interface guideline for presenting to the end user, but not
+ *   strictly required.
+ */
+export interface DBOSDataSource<Config> {
+  readonly name: string;
+
+  /**
+   * Run the code transactionally within this data source
+   *   Implementers should strongly type the config
+   * @param callback - Function to run within a transactional context
+   * @param name - Step name to show in the system database, traces, etc.
+   * @param config - Transaction configuration options
+   */
+  runTransaction<T>(callback: () => Promise<T>, name: string, config?: Config): Promise<T>;
+
+  /**
+   * Register function as DBOS transaction, to be called within the context
+   *  of a transaction on this data source.
+   *
+   * Providing a static version of this functionality is optional.
+   *
+   * @param func - Function to wrap
+   * @param name - Name of function
+   * @param config - Transaction settings
+   * @returns Wrapped function, to be called instead of `func`
+   */
+  registerTransaction<This, Args extends unknown[], Return>(
+    func: (this: This, ...args: Args) => Promise<Return>,
+    name: string,
+    config?: Config,
+  ): (this: This, ...args: Args) => Promise<Return>;
+
+  /**
+   * Produce a Stage 2 method decorator
+   * @param config - Configuration to apply to the decorated method
+   */
+  transaction(
+    config?: Config,
+  ): <This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+  ) => TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>;
+
+  // In addition to the named methods above, there should also be a way to get the
+  //  strongly-typed transaction client object:
+  //   `static get whateverClient(): WhateverClient;`
+
+  // A way to initialize the internal schema used by the DS for transaction tracking
+  //  This is only for testing, it should be documented how to create this entirely
+  //  outside of DBOS.
+  //   `async initializeInternalSchema(): Promise<void>;`
+  //  or, it can be static, such as:
+  //   `static async initializeInternalSchema(options: Config)`
+
+  // A way to initialize the user's schema (for ORMs that are capable of this)
+  //  Again, this is only for testing, it should be doable entirely outside of DBOS
+  // `async createSchema(...)`
+}
+
 /// Calling into DBOS
 
 /**
- * This function is to be called by `DBOSTransactionalDataSource` instances,
+ * This function is to be called by `DBOSDataSourceTransactionHandler` instances,
  *   with bits of user code to be run as transactions.
  * 1. The DS validates the type of config and provides the name
  * 2. The transaction will be started inside here, with a durable sysdb checkpoint.
@@ -146,6 +208,16 @@ export function registerTransaction<This, Args extends unknown[], Return>(
     value: options.name,
   });
   return invokeWrapper;
+}
+
+/**
+ * Register a transactional data source, that helps DBOS provide
+ *  transactional access to user databases
+ * @param name - Registered name for the data source
+ * @param ds - Transactional data source provider
+ */
+export function registerDataSource(ds: DBOSDataSourceTransactionHandler) {
+  registerTransactionalDataSource(ds.name, ds);
 }
 
 /// Postgres helper routines

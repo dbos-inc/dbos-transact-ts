@@ -1,7 +1,7 @@
 import { Pool, PoolConfig } from 'pg';
 import { DBOS, Error } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSTransactionalDataSource,
+  type DBOSDataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -11,6 +11,8 @@ import {
   runTransaction,
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as DrizzleTransactionConfig,
+  DBOSDataSource,
+  registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pushSchema } from 'drizzle-kit/api';
@@ -41,7 +43,7 @@ export interface transaction_completion {
   error: string | null;
 }
 
-export class DrizzleDS implements DBOSTransactionalDataSource {
+class DrizzleDSP implements DBOSDataSourceTransactionHandler {
   readonly dsType = 'drizzle';
   dataSource: NodePgDatabase<{ [key: string]: object }> | undefined;
   drizzlePool: Pool | undefined;
@@ -52,16 +54,6 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     readonly entities: { [key: string]: object } = {},
   ) {}
 
-  // User calls this... DBOS not directly involved...
-  static get drizzleClient(): NodePgDatabase<{ [key: string]: object }> {
-    const ctx = assertCurrentDSContextStore();
-    if (!DBOS.isInTransaction())
-      throw new Error.DBOSInvalidWorkflowTransitionError(
-        'Invalid use of `DrizzleDS.drizzleClient` outside of a `transaction`',
-      );
-    return ctx.drizzleClient;
-  }
-
   async initialize(): Promise<void> {
     this.drizzlePool = new Pool(this.config);
     this.dataSource = drizzle(this.drizzlePool, { schema: this.entities });
@@ -69,31 +61,11 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     return Promise.resolve();
   }
 
-  async initializeInternalSchema(): Promise<void> {
-    const drizzlePool = new Pool(this.config);
-    const ds = drizzle(drizzlePool, { schema: this.entities });
-
-    try {
-      await ds.execute(createTransactionCompletionSchemaPG);
-      await ds.execute(createTransactionCompletionTablePG);
-    } catch (e) {
-      const error = e as Error;
-      throw new Error.DBOSError(`Unexpected error initializing schema: ${error.message}`);
-    } finally {
-      try {
-        await drizzlePool.end();
-      } catch (e) {}
-    }
-  }
-
-  /**
-   * Will be called by DBOS during attempt at clean shutdown (generally in testing scenarios).
-   */
   async destroy(): Promise<void> {
     await this.drizzlePool?.end();
   }
 
-  async checkExecution<R>(
+  async #checkExecution<R>(
     client: Pool,
     workflowID: string,
     funcNum: number,
@@ -199,7 +171,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
             }
 
             if (shouldCheckOutput && !readOnly) {
-              const executionResult = await this.checkExecution<Return>(this.drizzlePool, wfid, funcnum);
+              const executionResult = await this.#checkExecution<Return>(this.drizzlePool, wfid, funcnum);
 
               if (executionResult) {
                 DBOS.span?.setAttribute('cached', true);
@@ -268,6 +240,50 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
     const ds = drizzle(drizzlePool, { schema: this.entities });
     return ds;
   }
+}
+
+export class DrizzleDS implements DBOSDataSource<DrizzleTransactionConfig> {
+  #provider: DrizzleDSP;
+
+  constructor(
+    readonly name: string,
+    readonly config: PoolConfig,
+    readonly entities: { [key: string]: object } = {},
+  ) {
+    this.#provider = new DrizzleDSP(name, config, entities);
+    registerDataSource(this.#provider);
+  }
+
+  // User calls this... DBOS not directly involved...
+  static get drizzleClient(): NodePgDatabase<{ [key: string]: object }> {
+    const ctx = assertCurrentDSContextStore();
+    if (!DBOS.isInTransaction())
+      throw new Error.DBOSInvalidWorkflowTransitionError(
+        'Invalid use of `DrizzleDS.drizzleClient` outside of a `transaction`',
+      );
+    return ctx.drizzleClient;
+  }
+
+  get dataSource() {
+    return this.#provider.dataSource;
+  }
+
+  async initializeInternalSchema(): Promise<void> {
+    const drizzlePool = new Pool(this.config);
+    const ds = drizzle(drizzlePool, { schema: this.entities });
+
+    try {
+      await ds.execute(createTransactionCompletionSchemaPG);
+      await ds.execute(createTransactionCompletionTablePG);
+    } catch (e) {
+      const error = e as Error;
+      throw new Error.DBOSError(`Unexpected error initializing schema: ${error.message}`);
+    } finally {
+      try {
+        await drizzlePool.end();
+      } catch (e) {}
+    }
+  }
 
   async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: DrizzleTransactionConfig) {
     return await runTransaction(callback, funcName, { dsName: this.name, config });
@@ -275,12 +291,10 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      name: string;
-    },
+    name: string,
     config?: DrizzleTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   // decorator
@@ -296,7 +310,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
         throw new Error.DBOSError('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, { name: propertyKey.toString() }, config);
+      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
 
       return descriptor;
     };

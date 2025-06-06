@@ -47,7 +47,6 @@ const poolconfig = {
 };
 
 const typeOrmDS = new TypeOrmDS('app-db', poolconfig, [KV, User]);
-DBOS.registerDataSource(typeOrmDS);
 
 const dbosConfig = {
   databaseUrl: databaseUrl,
@@ -67,7 +66,7 @@ async function txFunctionGuts() {
   return res[0].a;
 }
 
-const txFunc = typeOrmDS.registerTransaction(txFunctionGuts, { name: 'MySecondTx' }, { readOnly: true });
+const txFunc = typeOrmDS.registerTransaction(txFunctionGuts, 'MySecondTx', { readOnly: true });
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
@@ -170,7 +169,7 @@ class KVController {
   }
 }
 
-const txFunc2 = typeOrmDS.registerTransaction(KVController.readTxn, { name: 'explicitRegister' }, {});
+const txFunc2 = typeOrmDS.registerTransaction(KVController.readTxn, 'explicitRegister', {});
 async function explicitWf(id: string): Promise<string> {
   return await txFunc2(id);
 }

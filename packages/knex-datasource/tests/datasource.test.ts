@@ -7,7 +7,6 @@ import SuperJSON from 'superjson';
 
 const config = { client: 'pg', connection: { user: 'postgres', database: 'knex_ds_test_userdb' } };
 const dataSource = new KnexDataSource('app-db', config);
-DBOS.registerDataSource(dataSource);
 
 interface transaction_completion {
   workflow_id: string;
@@ -43,7 +42,7 @@ describe('KnexDataSource', () => {
       }
     }
 
-    await KnexDataSource.configure(config);
+    await KnexDataSource.initializeInternalSchema(config);
     DBOS.setConfig({ name: 'knex-ds-test' });
     await DBOS.launch();
   });
@@ -226,9 +225,9 @@ async function readFunction(user: string) {
   return { user, greet_count: row?.greet_count };
 }
 
-const regInsertFunction = dataSource.register(insertFunction, 'insertFunction');
-const regErrorFunction = dataSource.register(errorFunction, 'errorFunction');
-const regReadFunction = dataSource.register(readFunction, 'readFunction', { readOnly: true });
+const regInsertFunction = dataSource.registerTransaction(insertFunction, 'insertFunction');
+const regErrorFunction = dataSource.registerTransaction(errorFunction, 'errorFunction');
+const regReadFunction = dataSource.registerTransaction(readFunction, 'readFunction', { readOnly: true });
 
 class StaticClass {
   static async insertFunction(user: string) {
@@ -240,8 +239,8 @@ class StaticClass {
   }
 }
 
-StaticClass.insertFunction = dataSource.register(StaticClass.insertFunction, 'insertFunction');
-StaticClass.readFunction = dataSource.register(StaticClass.readFunction, 'readFunction');
+StaticClass.insertFunction = dataSource.registerTransaction(StaticClass.insertFunction, 'insertFunction');
+StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, 'readFunction');
 
 class InstanceClass {
   async insertFunction(user: string) {
@@ -253,17 +252,23 @@ class InstanceClass {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/unbound-method
-InstanceClass.prototype.insertFunction = dataSource.register(InstanceClass.prototype.insertFunction, 'insertFunction');
-// eslint-disable-next-line @typescript-eslint/unbound-method
-InstanceClass.prototype.readFunction = dataSource.register(InstanceClass.prototype.readFunction, 'readFunction');
+InstanceClass.prototype.insertFunction = dataSource.registerTransaction(
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  InstanceClass.prototype.insertFunction,
+  'insertFunction',
+);
+InstanceClass.prototype.readFunction = dataSource.registerTransaction(
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  InstanceClass.prototype.readFunction,
+  'readFunction',
+);
 
 async function insertWorkflowReg(user: string) {
   return await regInsertFunction(user);
 }
 
 async function insertWorkflowRunTx(user: string) {
-  return await dataSource.runTxStep(() => insertFunction(user), 'insertFunction');
+  return await dataSource.runTransaction(() => insertFunction(user), 'insertFunction');
 }
 
 async function errorWorkflowReg(user: string) {
@@ -271,7 +276,7 @@ async function errorWorkflowReg(user: string) {
 }
 
 async function errorWorkflowRunTx(user: string) {
-  return await dataSource.runTxStep(() => errorFunction(user), 'errorFunction');
+  return await dataSource.runTransaction(() => errorFunction(user), 'errorFunction');
 }
 
 async function readWorkflowReg(user: string) {
@@ -279,7 +284,7 @@ async function readWorkflowReg(user: string) {
 }
 
 async function readWorkflowRunTx(user: string) {
-  return await dataSource.runTxStep(() => readFunction(user), 'readFunction', { readOnly: true });
+  return await dataSource.runTransaction(() => readFunction(user), 'readFunction', { readOnly: true });
 }
 
 async function staticWorkflow(user: string) {
