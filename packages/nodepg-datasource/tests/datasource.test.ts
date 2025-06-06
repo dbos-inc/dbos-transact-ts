@@ -7,7 +7,6 @@ import { SuperJSON } from 'superjson';
 
 const config = { user: 'postgres', database: 'nodepg_ds_test_userdb' };
 const dataSource = new NodePostgresDataSource('app-db', config);
-DBOS.registerDataSource(dataSource);
 
 interface transaction_completion {
   workflow_id: string;
@@ -263,13 +262,13 @@ class InstanceClass {
   }
 }
 
-// eslint-disable-next-line @typescript-eslint/unbound-method
 InstanceClass.prototype.insertFunction = dataSource.registerTransaction(
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   InstanceClass.prototype.insertFunction,
   'insertFunction',
 );
-// eslint-disable-next-line @typescript-eslint/unbound-method
 InstanceClass.prototype.readFunction = dataSource.registerTransaction(
+  // eslint-disable-next-line @typescript-eslint/unbound-method
   InstanceClass.prototype.readFunction,
   'readFunction',
 );

@@ -29,7 +29,6 @@ const poolconfig = {
 };
 
 const drizzleDS = new DrizzleDS('app-db', poolconfig, { kv });
-DBOS.registerDataSource(drizzleDS);
 
 const dbosConfig = {
   name: 'dbos_drizzle_test',

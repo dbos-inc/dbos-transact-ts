@@ -13,6 +13,7 @@ import {
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as PostgresTransactionOptions,
   DBOSDataSource,
+  registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
@@ -60,6 +61,7 @@ export class PostgresDataSource
   constructor(name: string, options: postgres.Options<{}> = {}) {
     this.name = name;
     this.#db = postgres(options);
+    registerDataSource(this);
   }
 
   initialize(): Promise<void> {
@@ -192,5 +194,23 @@ export class PostgresDataSource
         }
       }
     }
+  }
+
+  transaction(config?: PostgresTransactionOptions) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ds = this;
+    return function decorator<This, Args extends unknown[], Return>(
+      _target: object,
+      propertyKey: string,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+    ) {
+      if (!descriptor.value) {
+        throw Error('Use of decorator when original method is undefined');
+      }
+
+      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+
+      return descriptor;
+    };
   }
 }

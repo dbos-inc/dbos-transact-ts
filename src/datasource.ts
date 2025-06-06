@@ -3,7 +3,7 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 import { assertCurrentWorkflowContext, runWithDSContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
-import { getTransactionalDataSource } from './decorators';
+import { getTransactionalDataSource, registerTransactionalDataSource } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 
 /**
@@ -69,7 +69,17 @@ export interface DBOSDataSource<Config> {
     config?: Config,
   ): (this: This, ...args: Args) => Promise<Return>;
 
-  // TODO:  transaction(config?: DrizzleTransactionConfig) {
+  /**
+   * Produce a Stage 2 method decorator
+   * @param config - Configuration to apply to the decorated method
+   */
+  transaction(
+    config?: Config,
+  ): <This, Args extends unknown[], Return>(
+    target: object,
+    propertyKey: string,
+    descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+  ) => TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>;
 
   // In addition to the named methods above, there should also be a way to get the
   //  strongly-typed transaction client object:
@@ -198,6 +208,16 @@ export function registerTransaction<This, Args extends unknown[], Return>(
     value: options.name,
   });
   return invokeWrapper;
+}
+
+/**
+ * Register a transactional data source, that helps DBOS provide
+ *  transactional access to user databases
+ * @param name - Registered name for the data source
+ * @param ds - Transactional data source provider
+ */
+export function registerDataSource(ds: DBOSDataSourceTransactionHandler) {
+  registerTransactionalDataSource(ds.name, ds);
 }
 
 /// Postgres helper routines

@@ -8,6 +8,7 @@ import {
   registerTransaction,
   runTransaction,
   DBOSDataSource,
+  registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
@@ -64,6 +65,7 @@ export class KnexDataSource implements DBOSDataSourceTransactionHandler, DBOSDat
   constructor(name: string, config: Knex.Config) {
     this.name = name;
     this.#knexDB = knex(config);
+    registerDataSource(this);
   }
 
   initialize(): Promise<void> {
@@ -197,5 +199,23 @@ export class KnexDataSource implements DBOSDataSourceTransactionHandler, DBOSDat
         }
       }
     }
+  }
+
+  transaction(config?: TransactionConfig) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ds = this;
+    return function decorator<This, Args extends unknown[], Return>(
+      _target: object,
+      propertyKey: string,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+    ) {
+      if (!descriptor.value) {
+        throw Error('Use of decorator when original method is undefined');
+      }
+
+      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+
+      return descriptor;
+    };
   }
 }

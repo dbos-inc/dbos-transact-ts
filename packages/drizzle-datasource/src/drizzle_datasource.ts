@@ -12,6 +12,7 @@ import {
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as DrizzleTransactionConfig,
   DBOSDataSource,
+  registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { pushSchema } from 'drizzle-kit/api';
@@ -51,7 +52,9 @@ export class DrizzleDS implements DBOSDataSourceTransactionHandler, DBOSDataSour
     readonly name: string,
     readonly config: PoolConfig,
     readonly entities: { [key: string]: object } = {},
-  ) {}
+  ) {
+    registerDataSource(this);
+  }
 
   // User calls this... DBOS not directly involved...
   static get drizzleClient(): NodePgDatabase<{ [key: string]: object }> {

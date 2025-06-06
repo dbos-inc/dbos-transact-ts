@@ -14,6 +14,7 @@ import {
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as KnexTransactionConfig,
   DBOSDataSource,
+  registerDataSource,
 } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -61,7 +62,9 @@ export class DBOSKnexDS implements DBOSDataSourceTransactionHandler, DBOSDataSou
   constructor(
     readonly name: string,
     readonly config: PoolConfig,
-  ) {}
+  ) {
+    registerDataSource(this);
+  }
   knexInstance: Knex | undefined;
   get knex(): Knex {
     if (!this.knexInstance) throw new Error('Not initialized');
@@ -360,7 +363,6 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
 
 // Intentionally initialize DS after we've already tried to register a transaction to it
 const dsa = new DBOSKnexDS('knexA', config.poolConfig);
-DBOS.registerDataSource(dsa);
 
 // Decoratory example
 class DBWFI {

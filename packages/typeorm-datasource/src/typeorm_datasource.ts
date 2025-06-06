@@ -12,6 +12,7 @@ import {
   PGIsolationLevel as IsolationLevel,
   PGTransactionConfig as TypeOrmTransactionConfig,
   DBOSDataSource,
+  registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -50,7 +51,9 @@ export class TypeOrmDS implements DBOSDataSourceTransactionHandler, DBOSDataSour
     readonly config: PoolConfig,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     readonly entities: Function[],
-  ) {}
+  ) {
+    registerDataSource(this);
+  }
 
   // User calls this... DBOS not directly involved...
   static get entityManager(): EntityManager {

@@ -11,6 +11,7 @@ import {
   runTransaction,
   PGTransactionConfig as NodePostgresTransactionOptions,
   DBOSDataSource,
+  registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { Client, type ClientBase, type ClientConfig, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -56,6 +57,7 @@ export class NodePostgresDataSource
   constructor(name: string, config: PoolConfig) {
     this.name = name;
     this.#pool = new Pool(config);
+    registerDataSource(this);
   }
 
   initialize(): Promise<void> {
@@ -209,5 +211,23 @@ export class NodePostgresDataSource
         }
       }
     }
+  }
+
+  transaction(config?: NodePostgresTransactionOptions) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const ds = this;
+    return function decorator<This, Args extends unknown[], Return>(
+      _target: object,
+      propertyKey: string,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+    ) {
+      if (!descriptor.value) {
+        throw Error('Use of decorator when original method is undefined');
+      }
+
+      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+
+      return descriptor;
+    };
   }
 }

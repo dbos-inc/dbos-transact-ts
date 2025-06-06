@@ -47,7 +47,6 @@ const poolconfig = {
 };
 
 const typeOrmDS = new TypeOrmDS('app-db', poolconfig, [KV, User]);
-DBOS.registerDataSource(typeOrmDS);
 
 const dbosConfig = {
   databaseUrl: databaseUrl,
