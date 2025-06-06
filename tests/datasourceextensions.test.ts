@@ -57,45 +57,26 @@ function assertCurrentDSContextStore(): DBOSKnexLocalCtx {
   return ctx;
 }
 
-export class DBOSKnexDS implements DBOSDataSourceTransactionHandler, DBOSDataSource<KnexTransactionConfig> {
-  // User will set this up, in this case
+class KnexDSP implements DBOSDataSourceTransactionHandler {
   constructor(
     readonly name: string,
     readonly config: PoolConfig,
-  ) {
-    registerDataSource(this);
-  }
+  ) {}
   knexInstance: Knex | undefined;
-  get knex(): Knex {
-    if (!this.knexInstance) throw new Error('Not initialized');
-    return this.knexInstance;
+
+  async initialize(): Promise<void> {
+    this.knexInstance = this.createInstance();
+
+    return Promise.resolve();
   }
 
-  // User calls this... DBOS not directly involved...
-  static get knexClient(): Knex {
-    const ctx = assertCurrentDSContextStore();
-    if (!DBOS.isInTransaction())
-      throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
-    return ctx.knexClient;
+  async destroy(): Promise<void> {
+    await this.knexInstance?.destroy();
+    this.knexInstance = undefined;
   }
 
-  // initializeInternalSchema - this is up to the user to call.  It's not part of DBOS lifecycle
-  async initializeInternalSchema(): Promise<void> {
-    const knex = this.createInstance();
-    try {
-      const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
-      if (!schemaExists.rows[0].exists) {
-        await knex.raw(createTransactionCompletionSchemaPG);
-      }
-      const txnOutputTableExists = await knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
-      if (!txnOutputTableExists.rows[0].exists) {
-        await knex.raw(createTransactionCompletionTablePG);
-      }
-    } finally {
-      try {
-        await knex.destroy();
-      } catch (e) {}
-    }
+  get dsType(): string {
+    return 'DBOSKnex';
   }
 
   createInstance() {
@@ -112,59 +93,6 @@ export class DBOSKnexDS implements DBOSDataSourceTransactionHandler, DBOSDataSou
     };
 
     return knex(knexConfig);
-  }
-
-  async initialize(): Promise<void> {
-    this.knexInstance = this.createInstance();
-
-    return Promise.resolve();
-  }
-
-  async destroy(): Promise<void> {
-    await this.knex.destroy();
-  }
-
-  get dsType(): string {
-    return 'DBOSKnex';
-  }
-
-  async #checkExecution<R>(
-    client: Knex,
-    workflowID: string,
-    funcNum: number,
-  ): Promise<
-    | {
-        res: R;
-      }
-    | undefined
-  > {
-    type TxOutputRow = Pick<transaction_outputs, 'output'> & {
-      recorded: boolean;
-    };
-
-    const { rows } = await client.raw<{ rows: TxOutputRow[] }>(
-      `SELECT output
-          FROM dbos.transaction_completion
-          WHERE workflow_id=? AND function_num=?;`,
-      [workflowID, funcNum],
-    );
-
-    if (rows.length !== 1) {
-      return undefined;
-    }
-    return { res: DBOSJSON.parse(rows[1].output) as R };
-  }
-
-  async #recordOutput<R>(client: Knex, workflowID: string, funcNum: number, output: R): Promise<void> {
-    const serialOutput = DBOSJSON.stringify(output);
-    await client.raw<{ rows: transaction_outputs[] }>(
-      `INSERT INTO dbos.transaction_completion (
-        workflow_id, function_num,
-        output,
-        created_at
-      ) VALUES (?, ?, ?, ?)`,
-      [workflowID, funcNum, serialOutput, Date.now()],
-    );
   }
 
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
@@ -281,6 +209,94 @@ export class DBOSKnexDS implements DBOSDataSourceTransactionHandler, DBOSDataSou
           throw err;
         }
       }
+    }
+  }
+
+  async #checkExecution<R>(
+    client: Knex,
+    workflowID: string,
+    funcNum: number,
+  ): Promise<
+    | {
+        res: R;
+      }
+    | undefined
+  > {
+    type TxOutputRow = Pick<transaction_outputs, 'output'> & {
+      recorded: boolean;
+    };
+
+    const { rows } = await client.raw<{ rows: TxOutputRow[] }>(
+      `SELECT output
+          FROM dbos.transaction_completion
+          WHERE workflow_id=? AND function_num=?;`,
+      [workflowID, funcNum],
+    );
+
+    if (rows.length !== 1) {
+      return undefined;
+    }
+    return { res: DBOSJSON.parse(rows[1].output) as R };
+  }
+
+  async #recordOutput<R>(client: Knex, workflowID: string, funcNum: number, output: R): Promise<void> {
+    const serialOutput = DBOSJSON.stringify(output);
+    await client.raw<{ rows: transaction_outputs[] }>(
+      `INSERT INTO dbos.transaction_completion (
+        workflow_id, function_num,
+        output,
+        created_at
+      ) VALUES (?, ?, ?, ?)`,
+      [workflowID, funcNum, serialOutput, Date.now()],
+    );
+  }
+
+  get knex(): Knex {
+    if (!this.knexInstance) throw new Error('Not initialized');
+    return this.knexInstance;
+  }
+}
+
+export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
+  #provider: KnexDSP;
+
+  // User will set this up, in this case
+  constructor(
+    readonly name: string,
+    readonly config: PoolConfig,
+  ) {
+    this.#provider = new KnexDSP(name, config);
+    registerDataSource(this.#provider);
+  }
+
+  get knex(): Knex {
+    return this.#provider.knex;
+  }
+
+  // User calls this... DBOS not directly involved...
+  static get knexClient(): Knex {
+    const ctx = assertCurrentDSContextStore();
+    if (!DBOS.isInTransaction())
+      throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
+    return ctx.knexClient;
+  }
+
+  // initializeInternalSchema - this is up to the user to call.  It's not part of DBOS lifecycle
+  async initializeInternalSchema(): Promise<void> {
+    const knex = this.#provider.createInstance();
+    try {
+      const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
+      if (!schemaExists.rows[0].exists) {
+        await knex.raw(createTransactionCompletionSchemaPG);
+      }
+      const txnOutputTableExists = await knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
+      if (!txnOutputTableExists.rows[0].exists) {
+        await knex.raw(createTransactionCompletionTablePG);
+      }
+    } finally {
+      try {
+        await knex.destroy();
+      } catch (e) {}
     }
   }
 
