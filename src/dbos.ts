@@ -1861,98 +1861,92 @@ export class DBOS {
     return DBOS.#getWorkflowInvokeWrapper(registration, options.config);
   }
 
+  // TODO: better method name
+  static async #runDatWorkflow<This, Args extends unknown[], Return>(
+    $this: This,
+    func: WorkflowFunction<Args, Return>,
+    args: Args,
+  ): Promise<WorkflowHandle<Return>> {
+    const pctx = getCurrentContextStore();
+    const instance = $this === undefined || typeof $this === 'function' ? undefined : ($this as ConfiguredInstance);
+    if (instance && 'name' in instance === false) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Attempt to call a `workflow` function on an object that is not a `ConfiguredInstance`',
+      );
+    }
+
+    let wfId = getNextWFID(undefined);
+
+    // If this is called from within a workflow, this is a child workflow,
+    //  For OAOO, we will need a consistent ID formed from the parent WF and call number
+    if (DBOS.isWithinWorkflow()) {
+      if (!DBOS.isInWorkflow()) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to a `workflow` function from within a `step` or `transaction`',
+        );
+      }
+
+      const wfctx = assertCurrentWorkflowContext();
+
+      const funcId = wfctx.functionIDGetIncrement();
+      wfId = wfId || wfctx.workflowUUID + '-' + funcId;
+      const params: WorkflowParams = {
+        workflowUUID: wfId,
+        parentCtx: wfctx,
+        configuredInstance: instance,
+        queueName: pctx?.queueAssignedForWorkflows,
+        timeoutMS: pctx?.workflowTimeoutMS,
+        deadlineEpochMS: wfctx.deadlineEpochMS,
+      };
+      // Detach child deadline if a null timeout is configured
+      if (pctx?.workflowTimeoutMS === null) {
+        params.deadlineEpochMS = undefined;
+      }
+
+      return await DBOSExecutor.globalInstance!.internalWorkflow(func, params, wfctx.workflowUUID, funcId, ...args);
+    }
+
+    // Else, we setup a parent context that includes all the potential metadata the application could have set in DBOSLocalCtx
+    let parentCtx: DBOSContextImpl | undefined = undefined;
+    if (pctx) {
+      // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
+      let span = pctx.span;
+      if (!span) {
+        span = DBOS.#executor.tracer.startSpan(pctx.operationCaller || 'workflowCaller', {
+          operationUUID: wfId,
+          operationType: pctx.operationType,
+          authenticatedUser: pctx.authenticatedUser,
+          assumedRole: pctx.assumedRole,
+          authenticatedRoles: pctx.authenticatedRoles,
+        });
+      }
+      parentCtx = new DBOSContextImpl(pctx.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
+      parentCtx.request = pctx.request || {};
+      parentCtx.authenticatedUser = pctx.authenticatedUser || '';
+      parentCtx.assumedRole = pctx.assumedRole || '';
+      parentCtx.authenticatedRoles = pctx.authenticatedRoles || [];
+      parentCtx.workflowUUID = wfId || '';
+    }
+
+    const wfParams: InternalWorkflowParams = {
+      workflowUUID: wfId,
+      queueName: pctx?.queueAssignedForWorkflows,
+      configuredInstance: instance,
+      parentCtx,
+      timeoutMS: pctx?.workflowTimeoutMS,
+    };
+
+    return await DBOS.#executor.workflow(func, wfParams, ...args);
+  }
+
   static #getWorkflowInvokeWrapper<This, Args extends unknown[], Return>(
     registration: MethodRegistration<This, Args, Return>,
     config: WorkflowConfig | undefined,
   ): (this: This, ...args: Args) => Promise<Return> {
     registration.setWorkflowConfig(config ?? {});
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-      const pctx = getCurrentContextStore();
-      let inst: ConfiguredInstance | undefined = undefined;
-      if (this === undefined || typeof this === 'function') {
-        // This is static
-      } else {
-        inst = this as ConfiguredInstance;
-        if (!('name' in inst)) {
-          throw new DBOSInvalidWorkflowTransitionError(
-            'Attempt to call a `workflow` function on an object that is not a `ConfiguredInstance`',
-          );
-        }
-      }
-
-      let wfId = getNextWFID(undefined);
-
-      // If this is called from within a workflow, this is a child workflow,
-      //  For OAOO, we will need a consistent ID formed from the parent WF and call number
-      if (DBOS.isWithinWorkflow()) {
-        if (!DBOS.isInWorkflow()) {
-          throw new DBOSInvalidWorkflowTransitionError(
-            'Invalid call to a `workflow` function from within a `step` or `transaction`',
-          );
-        }
-
-        const wfctx = assertCurrentWorkflowContext();
-
-        const funcId = wfctx.functionIDGetIncrement();
-        wfId = wfId || wfctx.workflowUUID + '-' + funcId;
-        const params: WorkflowParams = {
-          workflowUUID: wfId,
-          parentCtx: wfctx,
-          configuredInstance: inst,
-          queueName: pctx?.queueAssignedForWorkflows,
-          timeoutMS: pctx?.workflowTimeoutMS,
-          deadlineEpochMS: wfctx.deadlineEpochMS,
-        };
-        // Detach child deadline if a null timeout is configured
-        if (pctx?.workflowTimeoutMS === null) {
-          params.deadlineEpochMS = undefined;
-        }
-
-        const cwfh = await DBOSExecutor.globalInstance!.internalWorkflow(
-          registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
-          params,
-          wfctx.workflowUUID,
-          funcId,
-          ...rawArgs,
-        );
-        return await cwfh.getResult();
-      }
-
-      // Else, we setup a parent context that includes all the potential metadata the application could have set in DBOSLocalCtx
-      let parentCtx: DBOSContextImpl | undefined = undefined;
-      if (pctx) {
-        // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
-        let span = pctx.span;
-        if (!span) {
-          span = DBOS.#executor.tracer.startSpan(pctx.operationCaller || 'workflowCaller', {
-            operationUUID: wfId,
-            operationType: pctx.operationType,
-            authenticatedUser: pctx.authenticatedUser,
-            assumedRole: pctx.assumedRole,
-            authenticatedRoles: pctx.authenticatedRoles,
-          });
-        }
-        parentCtx = new DBOSContextImpl(pctx.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
-        parentCtx.request = pctx.request || {};
-        parentCtx.authenticatedUser = pctx.authenticatedUser || '';
-        parentCtx.assumedRole = pctx.assumedRole || '';
-        parentCtx.authenticatedRoles = pctx.authenticatedRoles || [];
-        parentCtx.workflowUUID = wfId || '';
-      }
-
-      const wfParams: InternalWorkflowParams = {
-        workflowUUID: wfId,
-        queueName: pctx?.queueAssignedForWorkflows,
-        configuredInstance: inst,
-        parentCtx,
-        timeoutMS: pctx?.workflowTimeoutMS,
-      };
-
-      const handle = await DBOS.#executor.workflow(
-        registration.registeredFunction as unknown as WorkflowFunction<Args, Return>,
-        wfParams,
-        ...rawArgs,
-      );
+      const func = registration.registeredFunction as unknown as WorkflowFunction<Args, Return>;
+      const handle = await DBOS.#runDatWorkflow(this, func, rawArgs);
       return await handle.getResult();
     };
     registerFunctionWrapper(invokeWrapper, registration as MethodRegistration<unknown, unknown[], unknown>);
