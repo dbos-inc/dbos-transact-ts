@@ -42,7 +42,7 @@ interface transaction_completion {
 
 export { IsolationLevel, TypeOrmTransactionConfig };
 
-export class TypeOrmDS implements DBOSDataSourceTransactionHandler, DBOSDataSource<TypeOrmTransactionConfig> {
+class TypeOrmDSP implements DBOSDataSourceTransactionHandler {
   readonly dsType = 'TypeOrm';
   dataSource: DataSource | undefined;
 
@@ -51,18 +51,18 @@ export class TypeOrmDS implements DBOSDataSourceTransactionHandler, DBOSDataSour
     readonly config: PoolConfig,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     readonly entities: Function[],
-  ) {
-    registerDataSource(this);
-  }
+  ) {}
 
-  // User calls this... DBOS not directly involved...
-  static get entityManager(): EntityManager {
-    const ctx = assertCurrentDSContextStore();
-    if (!DBOS.isInTransaction())
-      throw new Error.DBOSInvalidWorkflowTransitionError(
-        'Invalid use of `TypeOrmDS.entityManager` outside of a `transaction`',
-      );
-    return ctx.typeOrmEntityManager;
+  async createInstance(): Promise<DataSource> {
+    const ds = new DataSource({
+      type: 'postgres',
+      url: this.config.connectionString,
+      connectTimeoutMS: this.config.connectionTimeoutMillis,
+      entities: this.entities,
+      poolSize: this.config.max,
+    });
+    await ds.initialize();
+    return ds;
   }
 
   async initialize(): Promise<void> {
@@ -71,25 +71,6 @@ export class TypeOrmDS implements DBOSDataSourceTransactionHandler, DBOSDataSour
     return Promise.resolve();
   }
 
-  async initializeInternalSchema(): Promise<void> {
-    const ds = await this.createInstance();
-
-    try {
-      await ds.query(createTransactionCompletionSchemaPG);
-      await ds.query(createTransactionCompletionTablePG);
-    } catch (e) {
-      const error = e as Error;
-      throw new Error.DBOSError(`Unexpected error initializing schema: ${error.message}`);
-    } finally {
-      try {
-        await ds.destroy();
-      } catch (e) {}
-    }
-  }
-
-  /**
-   * Will be called by DBOS during attempt at clean shutdown (generally in testing scenarios).
-   */
   async destroy(): Promise<void> {
     await this.dataSource?.destroy();
   }
@@ -248,17 +229,44 @@ export class TypeOrmDS implements DBOSDataSourceTransactionHandler, DBOSDataSour
       }
     }
   }
+}
 
-  async createInstance(): Promise<DataSource> {
-    const ds = new DataSource({
-      type: 'postgres',
-      url: this.config.connectionString,
-      connectTimeoutMS: this.config.connectionTimeoutMillis,
-      entities: this.entities,
-      poolSize: this.config.max,
-    });
-    await ds.initialize();
-    return ds;
+export class TypeOrmDS implements DBOSDataSource<TypeOrmTransactionConfig> {
+  #provider: TypeOrmDSP;
+  constructor(
+    readonly name: string,
+    readonly config: PoolConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+    readonly entities: Function[],
+  ) {
+    this.#provider = new TypeOrmDSP(name, config, entities);
+    registerDataSource(this.#provider);
+  }
+
+  // User calls this... DBOS not directly involved...
+  static get entityManager(): EntityManager {
+    const ctx = assertCurrentDSContextStore();
+    if (!DBOS.isInTransaction())
+      throw new Error.DBOSInvalidWorkflowTransitionError(
+        'Invalid use of `TypeOrmDS.entityManager` outside of a `transaction`',
+      );
+    return ctx.typeOrmEntityManager;
+  }
+
+  async initializeInternalSchema(): Promise<void> {
+    const ds = await this.#provider.createInstance();
+
+    try {
+      await ds.query(createTransactionCompletionSchemaPG);
+      await ds.query(createTransactionCompletionTablePG);
+    } catch (e) {
+      const error = e as Error;
+      throw new Error.DBOSError(`Unexpected error initializing schema: ${error.message}`);
+    } finally {
+      try {
+        await ds.destroy();
+      } catch (e) {}
+    }
   }
 
   /**
@@ -314,7 +322,7 @@ export class TypeOrmDS implements DBOSDataSourceTransactionHandler, DBOSDataSour
    * For testing: Use DataSource.syncronize to install the user schema
    */
   async createSchema() {
-    const ds = await this.createInstance();
+    const ds = await this.#provider.createInstance();
     try {
       await ds.synchronize();
     } finally {
