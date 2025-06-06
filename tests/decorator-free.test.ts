@@ -107,15 +107,15 @@ TestClass.wfRegRetryStatic = DBOS.registerWorkflow(TestClass.wfRegRetryStatic, '
 TestClass.prototype.stepTest = DBOS.registerStep(TestClass.prototype.stepTest);
 TestClass.prototype.retryTest = DBOS.registerStep(TestClass.prototype.retryTest, { retriesAllowed: true });
 TestClass.prototype.wfRegStep = DBOS.registerWorkflow(TestClass.prototype.wfRegStep, 'TestClass.prototype.wfRegStep', {
-  classOrInst: inst,
+  classOrInst: TestClass,
 });
 TestClass.prototype.wfRunStep = DBOS.registerWorkflow(TestClass.prototype.wfRunStep, 'TestClass.prototype.wfRunStep', {
-  classOrInst: inst,
+  classOrInst: TestClass,
 });
 TestClass.prototype.wfRegRetry = DBOS.registerWorkflow(
   TestClass.prototype.wfRegRetry,
   'TestClass.prototype.wfRegRetry',
-  { classOrInst: inst },
+  { classOrInst: TestClass },
 );
 
 describe('decorator-free-tests', () => {
@@ -155,7 +155,24 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-free-step-reg-queue', async () => {
+  test('wf-free-step-reg-swf', async () => {
+    const handle = await DBOS.startWorkflowFunction({ queueName: queue.name }, regWFRegStep, 10);
+    await expect(handle.getResult()).resolves.toBe(1000);
+
+    const status = await DBOS.getWorkflowStatus(handle.workflowID);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('wfRegStep');
+
+    const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('wf-free-step-reg-client', async () => {
     const client = await DBOSClient.create(config.databaseUrl!);
     try {
       const handle = await client.enqueue<typeof regWFRegStep>(
@@ -248,7 +265,24 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-static-step-reg-queue', async () => {
+  test('wf-static-step-reg-swf', async () => {
+    const handle = await DBOS.startWorkflowFunction({ queueName: queue.name }, TestClass.wfRegStepStatic, 10);
+    await expect(handle.getResult()).resolves.toBe(1000);
+
+    const status = await DBOS.getWorkflowStatus(handle.workflowID);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.wfRegStepStatic');
+
+    const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTestStatic');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('wf-static-step-reg-client', async () => {
     const client = await DBOSClient.create(config.databaseUrl!);
     try {
       const handle = await client.enqueue<typeof TestClass.wfRunStepStatic>(
@@ -340,7 +374,31 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-inst-step-reg-queue', async () => {
+  test('wf-inst-step-reg-swf', async () => {
+    const handle = await DBOS.startWorkflowFunction(
+      {
+        queueName: queue.name,
+        instance: inst,
+      },
+      inst.wfRegStep,
+      10,
+    );
+    await expect(handle.getResult()).resolves.toBe(1000);
+
+    const status = await DBOS.getWorkflowStatus(handle.workflowID);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.prototype.wfRegStep');
+
+    const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('wf-inst-step-reg-client', async () => {
     const client = await DBOSClient.create(config.databaseUrl!);
     try {
       const handle = await client.enqueue<typeof TestClass.prototype.wfRegStep>(
@@ -353,6 +411,17 @@ describe('decorator-free-tests', () => {
         10,
       );
       await expect(handle.getResult()).resolves.toBe(1000);
+      const status = await DBOS.getWorkflowStatus(handle.workflowID);
+      expect(status).not.toBeNull();
+      expect(status!.workflowName).toBe('TestClass.prototype.wfRegStep');
+
+      const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
+      expect(steps.length).toBe(1);
+      expect(steps[0].functionID).toBe(0);
+      expect(steps[0].name).toBe('stepTest');
+      expect(steps[0].output).toEqual(1000);
+      expect(steps[0].error).toBeNull();
+      expect(steps[0].childWorkflowID).toBeNull();
     } finally {
       await client.destroy();
     }
