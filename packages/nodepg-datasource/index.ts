@@ -23,33 +23,9 @@ interface NodePostgresDataSourceContext {
 
 export { NodePostgresTransactionOptions };
 
-export class NodePostgresDataSource
-  implements DBOSDataSourceTransactionHandler, DBOSDataSource<NodePostgresTransactionOptions>
-{
-  static readonly #asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
+const asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
 
-  static get client(): ClientBase {
-    if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
-    }
-    const ctx = NodePostgresDataSource.#asyncLocalCtx.getStore();
-    if (!ctx) {
-      throw new Error('No async local context found.');
-    }
-    return ctx.client;
-  }
-
-  static async initializeInternalSchema(config: ClientConfig): Promise<void> {
-    const client = new Client(config);
-    try {
-      await client.connect();
-      await client.query(createTransactionCompletionSchemaPG);
-      await client.query(createTransactionCompletionTablePG);
-    } finally {
-      await client.end();
-    }
-  }
-
+class NodePGDSP implements DBOSDataSourceTransactionHandler {
   readonly name: string;
   readonly dsType = 'NodePostgresDataSource';
   readonly #pool: Pool;
@@ -57,7 +33,6 @@ export class NodePostgresDataSource
   constructor(name: string, config: PoolConfig) {
     this.name = name;
     this.#pool = new Pool(config);
-    registerDataSource(this);
   }
 
   initialize(): Promise<void> {
@@ -66,18 +41,6 @@ export class NodePostgresDataSource
 
   destroy(): Promise<void> {
     return this.#pool.end();
-  }
-
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
-  }
-
-  registerTransaction<This, Args extends unknown[], Return>(
-    func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
-    config?: NodePostgresTransactionOptions,
-  ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
   }
 
   static async #checkExecution(
@@ -164,19 +127,19 @@ export class NodePostgresDataSource
             // Check to see if this tx has already been executed
             const previousResult = readOnly
               ? undefined
-              : await NodePostgresDataSource.#checkExecution(client, workflowID, functionNum);
+              : await NodePGDSP.#checkExecution(client, workflowID, functionNum);
             if (previousResult) {
               return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
             }
 
             // execute user's transaction function
-            const result = await NodePostgresDataSource.#asyncLocalCtx.run({ client }, async () => {
+            const result = await asyncLocalCtx.run({ client }, async () => {
               return (await func.call(target, ...args)) as Return;
             });
 
             // save the output of read/write transactions
             if (!readOnly) {
-              await NodePostgresDataSource.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
+              await NodePGDSP.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
               // Note, existing code wraps #recordOutput call in a try/catch block that
               // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.
@@ -211,6 +174,51 @@ export class NodePostgresDataSource
         }
       }
     }
+  }
+}
+
+export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransactionOptions> {
+  static get client(): ClientBase {
+    if (!DBOS.isInTransaction()) {
+      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+    }
+    const ctx = asyncLocalCtx.getStore();
+    if (!ctx) {
+      throw new Error('No async local context found.');
+    }
+    return ctx.client;
+  }
+
+  static async initializeInternalSchema(config: ClientConfig): Promise<void> {
+    const client = new Client(config);
+    try {
+      await client.connect();
+      await client.query(createTransactionCompletionSchemaPG);
+      await client.query(createTransactionCompletionTablePG);
+    } finally {
+      await client.end();
+    }
+  }
+
+  readonly name: string;
+  #provider: NodePGDSP;
+
+  constructor(name: string, config: PoolConfig) {
+    this.name = name;
+    this.#provider = new NodePGDSP(name, config);
+    registerDataSource(this.#provider);
+  }
+
+  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
+    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  }
+
+  registerTransaction<This, Args extends unknown[], Return>(
+    func: (this: This, ...args: Args) => Promise<Return>,
+    name: string,
+    config?: NodePostgresTransactionOptions,
+  ): (this: This, ...args: Args) => Promise<Return> {
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   transaction(config?: NodePostgresTransactionOptions) {
