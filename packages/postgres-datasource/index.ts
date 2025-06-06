@@ -5,7 +5,7 @@ import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import {
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
-  type DBOSDataSourceTransactionHandler,
+  type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
   isPGKeyConflictError,
   registerTransaction,
@@ -27,7 +27,7 @@ interface PostgresDataSourceContext {
 
 const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 
-class PGDSP implements DBOSDataSourceTransactionHandler {
+class PGDSTH implements DataSourceTransactionHandler {
   readonly name: string;
   readonly dsType = 'PostgresDataSource';
   readonly #db: Sql;
@@ -107,7 +107,7 @@ class PGDSP implements DBOSDataSourceTransactionHandler {
       try {
         const result = await this.#db.begin<Return>(`${isolationLevel} ${accessMode}`, async (client) => {
           // Check to see if this tx has already been executed
-          const previousResult = readOnly ? undefined : await PGDSP.#checkExecution(client, workflowID, functionNum);
+          const previousResult = readOnly ? undefined : await PGDSTH.#checkExecution(client, workflowID, functionNum);
           if (previousResult) {
             return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
           }
@@ -119,7 +119,7 @@ class PGDSP implements DBOSDataSourceTransactionHandler {
 
           // save the output of read/write transactions
           if (!readOnly) {
-            await PGDSP.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
+            await PGDSTH.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
             // Note, existing code wraps #recordOutput call in a try/catch block that
             // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.
@@ -182,12 +182,12 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
   }
 
   readonly name: string;
-  #provider: PGDSP;
+  #provider: PGDSTH;
 
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   constructor(name: string, options: postgres.Options<{}> = {}) {
     this.name = name;
-    this.#provider = new PGDSP(name, options);
+    this.#provider = new PGDSTH(name, options);
     registerDataSource(this.#provider);
   }
 

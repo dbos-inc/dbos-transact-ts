@@ -230,10 +230,6 @@ export interface StartWorkflowParams {
   enqueueOptions?: EnqueueOptions;
 }
 
-export interface StartWorkflowFunctionParams<T> extends StartWorkflowParams {
-  instance?: T;
-}
-
 export function getExecutor() {
   if (!DBOSExecutor.globalInstance) {
     throw new DBOSExecutorNotInitializedError();

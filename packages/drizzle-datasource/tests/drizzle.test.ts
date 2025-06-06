@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { DrizzleDS } from '../src';
+import { DrizzleDataSource } from '../src';
 import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
 import { pgTable, text } from 'drizzle-orm/pg-core';
@@ -28,7 +28,7 @@ const poolconfig = {
   port: 5432,
 };
 
-const drizzleDS = new DrizzleDS('app-db', poolconfig, { kv });
+const drizzleDS = new DrizzleDataSource('app-db', poolconfig, { kv });
 
 const dbosConfig = {
   name: 'dbos_drizzle_test',
@@ -45,7 +45,7 @@ const dbosConfig = {
 async function txFunctionGuts() {
   expect(DBOS.isInTransaction()).toBe(true);
   expect(DBOS.isWithinWorkflow()).toBe(true);
-  const res = await DrizzleDS.drizzleClient.execute("SELECT 'Tx2 result' as a");
+  const res = await DrizzleDataSource.drizzleClient.execute("SELECT 'Tx2 result' as a");
   return res.rows[0].a as string;
 }
 
@@ -55,7 +55,7 @@ async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
   const p1 = await drizzleDS.runTransaction(
     async () => {
-      return (await DrizzleDS.drizzleClient.execute("SELECT 'My first tx result' as a")).rows[0].a;
+      return (await DrizzleDataSource.drizzleClient.execute("SELECT 'My first tx result' as a")).rows[0].a;
     },
     'MyFirstTx',
     { readOnly: true },
@@ -74,7 +74,7 @@ const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
 class DBWFI {
   @drizzleDS.transaction({ readOnly: true })
   static async tx(): Promise<string> {
-    let res = await DrizzleDS.drizzleClient.execute("SELECT 'My decorated tx result' as a");
+    let res = await DrizzleDataSource.drizzleClient.execute("SELECT 'My decorated tx result' as a");
     return res.rows[0].a as string;
   }
 

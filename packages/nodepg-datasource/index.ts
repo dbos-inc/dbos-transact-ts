@@ -2,7 +2,7 @@
 
 import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSDataSourceTransactionHandler,
+  type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -25,7 +25,7 @@ export { NodePostgresTransactionOptions };
 
 const asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
 
-class NodePGDSP implements DBOSDataSourceTransactionHandler {
+class NodePGDSTH implements DataSourceTransactionHandler {
   readonly name: string;
   readonly dsType = 'NodePostgresDataSource';
   readonly #pool: Pool;
@@ -127,7 +127,7 @@ class NodePGDSP implements DBOSDataSourceTransactionHandler {
             // Check to see if this tx has already been executed
             const previousResult = readOnly
               ? undefined
-              : await NodePGDSP.#checkExecution(client, workflowID, functionNum);
+              : await NodePGDSTH.#checkExecution(client, workflowID, functionNum);
             if (previousResult) {
               return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
             }
@@ -139,7 +139,7 @@ class NodePGDSP implements DBOSDataSourceTransactionHandler {
 
             // save the output of read/write transactions
             if (!readOnly) {
-              await NodePGDSP.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
+              await NodePGDSTH.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
               // Note, existing code wraps #recordOutput call in a try/catch block that
               // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.
@@ -201,11 +201,11 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
   }
 
   readonly name: string;
-  #provider: NodePGDSP;
+  #provider: NodePGDSTH;
 
   constructor(name: string, config: PoolConfig) {
     this.name = name;
-    this.#provider = new NodePGDSP(name, config);
+    this.#provider = new NodePGDSTH(name, config);
     registerDataSource(this.#provider);
   }
 

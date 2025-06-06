@@ -1,1 +1,1 @@
-export { IsolationLevel, TypeOrmDS, TypeOrmTransactionConfig } from './typeorm_datasource';
+export { IsolationLevel, TypeOrmDataSource, TypeOrmTransactionConfig } from './typeorm_datasource';
