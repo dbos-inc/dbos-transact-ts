@@ -7,7 +7,7 @@ import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './erro
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
-import { DBOSTransactionalDataSource } from './datasource';
+import { DBOSDataSourceTransactionHandler } from './datasource';
 
 /**
  * Interface for integrating into the DBOS startup/shutdown lifecycle
@@ -587,10 +587,10 @@ export function getConfiguredInstance(clsname: string, cfgname: string): Configu
 /////
 // Transactional data source registration
 /////
-export const transactionalDataSources: Map<string, DBOSTransactionalDataSource> = new Map();
+export const transactionalDataSources: Map<string, DBOSDataSourceTransactionHandler> = new Map();
 
 // Register data source (user version)
-export function registerTransactionalDataSource(name: string, ds: DBOSTransactionalDataSource) {
+export function registerTransactionalDataSource(name: string, ds: DBOSDataSourceTransactionHandler) {
   if (transactionalDataSources.has(name)) {
     if (transactionalDataSources.get(name) !== ds) {
       throw new DBOSConflictingRegistrationError(`Data source with name ${name} is already registered`);

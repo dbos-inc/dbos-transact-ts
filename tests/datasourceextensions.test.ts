@@ -3,7 +3,7 @@ import { PoolConfig } from 'pg';
 import knex, { Knex } from 'knex';
 import { DBOS } from '../src';
 import {
-  type DBOSTransactionalDataSource,
+  type DBOSDataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -55,7 +55,7 @@ function assertCurrentDSContextStore(): DBOSKnexLocalCtx {
   return ctx;
 }
 
-export class DBOSKnexDS implements DBOSTransactionalDataSource {
+export class DBOSKnexDS implements DBOSDataSourceTransactionHandler {
   // User will set this up, in this case
   constructor(
     readonly name: string,
@@ -282,23 +282,19 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      name: string;
-    },
+    name: string,
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   static registerTransaction<This, Args extends unknown[], Return>(
     dsname: string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      name: string;
-    },
+    name: string,
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(dsname, func, target, config);
+    return registerTransaction(dsname, func, { name }, config);
   }
 
   // Custom TX decorator
@@ -314,14 +310,14 @@ export class DBOSKnexDS implements DBOSTransactionalDataSource {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, { name: propertyKey.toString() }, config);
+      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
 
       return descriptor;
     };
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: KnexTransactionConfig) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(callback: () => Promise<T>, name: string, config?: KnexTransactionConfig) {
+    return await runTransaction(callback, name, { dsName: this.name, config });
   }
 }
 
@@ -339,7 +335,7 @@ async function txFunctionGuts() {
 }
 
 // It is not clear if we want to encourage this pattern, but it does work
-const txFunc = DBOSKnexDS.registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' }, {});
+const txFunc = DBOSKnexDS.registerTransaction('knexA', txFunctionGuts, 'MySecondTx', {});
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step

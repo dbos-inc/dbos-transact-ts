@@ -1,7 +1,7 @@
 import { PoolConfig } from 'pg';
 import { DBOS, Error } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSTransactionalDataSource,
+  type DBOSDataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -40,7 +40,7 @@ interface transaction_completion {
 
 export { IsolationLevel, TypeOrmTransactionConfig };
 
-export class TypeOrmDS implements DBOSTransactionalDataSource {
+export class TypeOrmDS implements DBOSDataSourceTransactionHandler {
   readonly dsType = 'TypeOrm';
   dataSource: DataSource | undefined;
 
@@ -279,12 +279,10 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      name: string;
-    },
+    name: string,
     config?: TypeOrmTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   /**
@@ -302,7 +300,7 @@ export class TypeOrmDS implements DBOSTransactionalDataSource {
         throw new Error.DBOSError('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, { name: propertyKey.toString() }, config);
+      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
 
       return descriptor;
     };

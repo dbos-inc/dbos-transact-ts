@@ -111,7 +111,7 @@ import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
-import { DBOSTransactionalDataSource } from './datasource';
+import { DBOSDataSourceTransactionHandler } from './datasource';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -1961,7 +1961,7 @@ export class DBOS {
    * @param name - Registered name for the data source
    * @param ds - Transactional data source provider
    */
-  static registerDataSource(ds: DBOSTransactionalDataSource) {
+  static registerDataSource(ds: DBOSDataSourceTransactionHandler) {
     registerTransactionalDataSource(ds.name, ds);
   }
 

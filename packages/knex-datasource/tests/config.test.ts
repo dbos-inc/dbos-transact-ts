@@ -17,7 +17,7 @@ describe('KnexDataSource.configure', () => {
   });
 
   test('configure creates tx outputs table', async () => {
-    await KnexDataSource.configure({ client: 'pg', connection: config });
+    await KnexDataSource.initializeInternalSchema({ client: 'pg', connection: config });
 
     const client = new Client(config);
     try {

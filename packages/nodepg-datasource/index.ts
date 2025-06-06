@@ -2,7 +2,7 @@
 
 import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSTransactionalDataSource,
+  type DBOSDataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -21,16 +21,8 @@ interface NodePostgresDataSourceContext {
 
 export { NodePostgresTransactionOptions };
 
-export class NodePostgresDataSource implements DBOSTransactionalDataSource {
+export class NodePostgresDataSource implements DBOSDataSourceTransactionHandler {
   static readonly #asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
-
-  static async runTxStep<T>(
-    callback: () => Promise<T>,
-    funcName: string,
-    options: { dsName?: string; config?: NodePostgresTransactionOptions } = {},
-  ) {
-    return await runTransaction(callback, funcName, options);
-  }
 
   static get client(): ClientBase {
     if (!DBOS.isInTransaction()) {
@@ -43,7 +35,7 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     return ctx.client;
   }
 
-  static async configure(config: ClientConfig): Promise<void> {
+  static async initializeInternalSchema(config: ClientConfig): Promise<void> {
     const client = new Client(config);
     try {
       await client.connect();
@@ -71,11 +63,11 @@ export class NodePostgresDataSource implements DBOSTransactionalDataSource {
     return this.#pool.end();
   }
 
-  async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
+  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
     return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
-  register<This, Args extends unknown[], Return>(
+  registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     name: string,
     config?: NodePostgresTransactionOptions,

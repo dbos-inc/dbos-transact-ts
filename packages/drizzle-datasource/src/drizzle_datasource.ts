@@ -1,7 +1,7 @@
 import { Pool, PoolConfig } from 'pg';
 import { DBOS, Error } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSTransactionalDataSource,
+  type DBOSDataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
@@ -41,7 +41,7 @@ export interface transaction_completion {
   error: string | null;
 }
 
-export class DrizzleDS implements DBOSTransactionalDataSource {
+export class DrizzleDS implements DBOSDataSourceTransactionHandler {
   readonly dsType = 'drizzle';
   dataSource: NodePgDatabase<{ [key: string]: object }> | undefined;
   drizzlePool: Pool | undefined;
@@ -275,12 +275,10 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      name: string;
-    },
+    name: string,
     config?: DrizzleTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, target, config);
+    return registerTransaction(this.name, func, { name }, config);
   }
 
   // decorator
@@ -296,7 +294,7 @@ export class DrizzleDS implements DBOSTransactionalDataSource {
         throw new Error.DBOSError('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, { name: propertyKey.toString() }, config);
+      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
 
       return descriptor;
     };

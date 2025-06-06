@@ -5,7 +5,7 @@ import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import {
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
-  type DBOSTransactionalDataSource,
+  type DBOSDataSourceTransactionHandler,
   isPGRetriableTransactionError,
   isPGKeyConflictError,
   registerTransaction,
@@ -23,16 +23,8 @@ interface PostgresDataSourceContext {
   client: postgres.TransactionSql<{}>;
 }
 
-export class PostgresDataSource implements DBOSTransactionalDataSource {
+export class PostgresDataSource implements DBOSDataSourceTransactionHandler {
   static readonly #asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
-
-  static async runTxStep<T>(
-    callback: () => Promise<T>,
-    funcName: string,
-    options: { dsName?: string; config?: PostgresTransactionOptions } = {},
-  ) {
-    return await runTransaction(callback, funcName, options);
-  }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   static get client(): postgres.TransactionSql<{}> {
@@ -47,7 +39,7 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  static async configure(options: postgres.Options<{}> = {}): Promise<void> {
+  static async initializeInternalSchema(options: postgres.Options<{}> = {}): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
       await pg.unsafe(createTransactionCompletionSchemaPG);
@@ -75,11 +67,11 @@ export class PostgresDataSource implements DBOSTransactionalDataSource {
     return this.#db.end();
   }
 
-  async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: PostgresTransactionOptions) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(callback: () => Promise<T>, name: string, config?: PostgresTransactionOptions) {
+    return await runTransaction(callback, name, { dsName: this.name, config });
   }
 
-  register<This, Args extends unknown[], Return>(
+  registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     name: string,
     config?: PostgresTransactionOptions,

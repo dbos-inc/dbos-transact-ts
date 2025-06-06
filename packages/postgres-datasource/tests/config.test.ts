@@ -17,7 +17,7 @@ describe('PostgresDataSource.configure', () => {
   });
 
   test('configure creates tx outputs table', async () => {
-    await PostgresDataSource.configure(config);
+    await PostgresDataSource.initializeInternalSchema(config);
 
     const client = new Client(config);
     try {

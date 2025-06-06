@@ -2,7 +2,7 @@
 
 import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import {
-  type DBOSTransactionalDataSource,
+  type DBOSDataSourceTransactionHandler,
   isPGRetriableTransactionError,
   isPGKeyConflictError,
   registerTransaction,
@@ -24,16 +24,8 @@ interface KnexDataSourceContext {
 
 export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'>;
 
-export class KnexDataSource implements DBOSTransactionalDataSource {
+export class KnexDataSource implements DBOSDataSourceTransactionHandler {
   static readonly #asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
-
-  static async runTxStep<T>(
-    callback: () => Promise<T>,
-    funcName: string,
-    options: { dsName?: string; config?: TransactionConfig } = {},
-  ) {
-    return await runTransaction(callback, funcName, options);
-  }
 
   static get client(): Knex.Transaction {
     if (!DBOS.isInTransaction()) {
@@ -46,7 +38,7 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     return ctx.client;
   }
 
-  static async configure(config: Knex.Config) {
+  static async initializeInternalSchema(config: Knex.Config) {
     const knexDB = knex(config);
     try {
       await knexDB.schema.createSchemaIfNotExists('dbos');
@@ -81,11 +73,11 @@ export class KnexDataSource implements DBOSTransactionalDataSource {
     return this.#knexDB.destroy();
   }
 
-  async runTxStep<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
+  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
     return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
-  register<This, Args extends unknown[], Return>(
+  registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     name: string,
     config?: TransactionConfig,

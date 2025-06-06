@@ -50,7 +50,7 @@ async function txFunctionGuts() {
   return res.rows[0].a as string;
 }
 
-const txFunc = drizzleDS.registerTransaction(txFunctionGuts, { name: 'MySecondTx' }, {});
+const txFunc = drizzleDS.registerTransaction(txFunctionGuts, 'MySecondTx', {});
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
@@ -152,7 +152,7 @@ class KVController {
   }
 }
 
-const txFunc2 = drizzleDS.registerTransaction(KVController.readTxn, { name: 'explicitRegister' }, {});
+const txFunc2 = drizzleDS.registerTransaction(KVController.readTxn, 'explicitRegister', {});
 async function explicitWf(id: string): Promise<string> {
   return await txFunc2(id);
 }
