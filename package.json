@@ -10,6 +10,16 @@
   "homepage": "https://docs.dbos.dev/",
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
+  "exports": {
+    ".": {
+      "require": "./dist/src/index.js",
+      "types": "./dist/src/index.d.ts"
+    },
+    "./datasource": {
+      "require": "./dist/src/datasource.js",
+      "types": "./dist/src/datasource.d.ts"
+    }
+  },
   "workspaces": [
     "packages/*"
   ],

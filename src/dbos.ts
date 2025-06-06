@@ -62,6 +62,7 @@ import {
   registerAndWrapDBOSFunctionByName,
   registerFunctionWrapper,
   registerLifecycleCallback,
+  transactionalDataSources,
   registerMiddlewareInstaller,
 } from './decorators';
 import { globalParams, sleepms } from './utils';
@@ -227,6 +228,10 @@ export interface StartWorkflowParams {
   queueName?: string;
   timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
+}
+
+export interface StartWorkflowFunctionParams<T> extends StartWorkflowParams {
+  instance?: T;
 }
 
 export function getExecutor() {
@@ -403,6 +408,9 @@ export class DBOS {
     }
 
     await DBOSExecutor.globalInstance.initEventReceivers();
+    for (const [_n, ds] of transactionalDataSources) {
+      await ds.initialize();
+    }
 
     if (options?.conductorKey) {
       if (!options.conductorURL) {
@@ -515,6 +523,10 @@ export class DBOS {
       await DBOSExecutor.globalInstance.deactivateEventReceivers();
       await DBOSExecutor.globalInstance.destroy();
       DBOSExecutor.globalInstance = undefined;
+    }
+
+    for (const [_n, ds] of transactionalDataSources) {
+      await ds.destroy();
     }
 
     // Reset the global app version and executor ID
@@ -2121,10 +2133,8 @@ export class DBOS {
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-      const inst =
-        this && typeof this !== 'function' && Object.hasOwn(this, 'name')
-          ? (this as unknown as ConfiguredInstance)
-          : undefined;
+      // eslint-disable-next-line @typescript-eslint/no-this-alias
+      const inst = this;
 
       if (DBOS.isWithinWorkflow()) {
         if (DBOS.isInTransaction()) {
