@@ -1241,34 +1241,6 @@ export class DBOS {
   }
 
   /**
-   * Start a workflow in the background, returning a handle that can be used to check status, await a result,
-   *   or otherwise interact with the workflow.
-   * The full syntax is:
-   * `handle = await DBOS.startWorkflow(<target object>, <params>).<target method>(<args>);`
-   * @param target - Object (which must be a `ConfiguredInstance`) containing the instance method to invoke
-   * @param params - `StartWorkflowParams` which may specify the ID, queue, or other parameters for starting the workflow
-   * @returns - `WorkflowHandle` which can be used to interact with the workflow
-   */
-  static startWorkflow<T extends ConfiguredInstance>(
-    target: T,
-    params?: StartWorkflowParams,
-  ): InvokeFunctionsAsyncInst<T>;
-  /**
-   * Start a workflow in the background, returning a handle that can be used to check status, await a result,
-   *   or otherwise interact with the workflow.
-   * The full syntax is:
-   * `handle = await DBOS.startWorkflow(<target class>, <params>).<target method>(<args>);`
-   * @param target - Class containing the static method to invoke
-   * @param params - `StartWorkflowParams` which may specify the ID, queue, or other parameters for starting the workflow
-   * @returns - `WorkflowHandle` which can be used to interact with the workflow
-   */
-  static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
-  static startWorkflow<T extends object>(target: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T> {
-    const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
-    return DBOS.#proxyInvokeWF(target, instance, params) as unknown as InvokeFunctionsAsync<T>;
-  }
-
-  /**
    * Start a workflow in the background, returning a handle that can be used to check status,
    *   await the result, or otherwise interact with the workflow.
    * @param func - The function to start.  If a class or instance method, supply `this` within `params`.
@@ -1370,7 +1342,35 @@ export class DBOS {
     )) as WorkflowHandle<Return>;
   }
 
-  static #proxyInvokeWF<T extends object>(
+  /**
+   * Start a workflow in the background, returning a handle that can be used to check status, await a result,
+   *   or otherwise interact with the workflow.
+   * The full syntax is:
+   * `handle = await DBOS.startWorkflow(<target object>, <params>).<target method>(<args>);`
+   * @param target - Object (which must be a `ConfiguredInstance`) containing the instance method to invoke
+   * @param params - `StartWorkflowParams` which may specify the ID, queue, or other parameters for starting the workflow
+   * @returns - `WorkflowHandle` which can be used to interact with the workflow
+   */
+  static startWorkflow<T extends ConfiguredInstance>(
+    target: T,
+    params?: StartWorkflowParams,
+  ): InvokeFunctionsAsyncInst<T>;
+  /**
+   * Start a workflow in the background, returning a handle that can be used to check status, await a result,
+   *   or otherwise interact with the workflow.
+   * The full syntax is:
+   * `handle = await DBOS.startWorkflow(<target class>, <params>).<target method>(<args>);`
+   * @param target - Class containing the static method to invoke
+   * @param params - `StartWorkflowParams` which may specify the ID, queue, or other parameters for starting the workflow
+   * @returns - `WorkflowHandle` which can be used to interact with the workflow
+   */
+  static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
+  static startWorkflow<T extends object>(target: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T> {
+    const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
+    return DBOS.#createStartWorkflowProxy(target, instance, params) as unknown as InvokeFunctionsAsync<T>;
+  }
+
+  static #createStartWorkflowProxy<T extends object>(
     object: T,
     configuredInstance: ConfiguredInstance | null,
     inParams?: StartWorkflowParams,
