@@ -1399,6 +1399,7 @@ export class DBOS {
 
   /** @deprecated Adjust target function to exclude its `DBOSContext` argument, and then call the function directly */
   static invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
+  /** @deprecated Adjust target function to exclude its `DBOSContext` argument, and then call the function directly */
   static invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
   static invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
     if (!DBOS.isWithinWorkflow()) {
