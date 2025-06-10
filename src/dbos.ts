@@ -1290,7 +1290,7 @@ export class DBOS {
     return DBOS.#createStartWorkflowProxy(target, instance, params) as unknown as InvokeFunctionsAsync<T>;
   }
 
-  static #createStartWorkflowProxyMethod<T extends Object>(
+  static #createStartWorkflowProxyMethod(
     op: MethodRegistrationBase,
     configuredInstance: ConfiguredInstance | null,
     inParams?: StartWorkflowParams,
