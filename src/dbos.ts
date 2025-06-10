@@ -1258,8 +1258,7 @@ export class DBOS {
     if (!op) {
       throw new DBOSNotRegisteredError(func.name, `${func.name} is not a registered DBOS workflow function`);
     }
-    const wfFunc = op.registeredFunction as WorkflowFunction<Args, Return>;
-    return await DBOS.#runDatWorkflow(params?.instance, wfFunc, args, params ?? {});
+    return await DBOS.#runDatWorkflow(params?.instance, op, args, params ?? {});
   }
 
   /**
@@ -1785,10 +1784,30 @@ export class DBOS {
   // TODO: better method name
   static async #runDatWorkflow<This, Args extends unknown[], Return>(
     $this: This,
-    func: WorkflowFunction<Args, Return>,
+    op: MethodRegistrationBase,
     args: Args,
     params: StartWorkflowParams = {},
   ): Promise<WorkflowHandle<Return>> {
+    function invokeOp(params: WorkflowParams, workflowID: string | undefined, funcNum: number | undefined) {
+      if (op.workflowConfig) {
+        const func = op.registeredFunction as WorkflowFunction<Args, Return>;
+        return DBOSExecutor.globalInstance!.internalWorkflow(func, params, workflowID, funcNum, ...args);
+      }
+      if (op.txnConfig) {
+        const func = op.registeredFunction as TransactionFunction<Args, Return>;
+        return DBOSExecutor.globalInstance!.startTransactionTempWF(func, params, workflowID, funcNum, ...args);
+      }
+      if (op.stepConfig) {
+        const func = op.registeredFunction as StepFunction<Args, Return>;
+        return DBOSExecutor.globalInstance!.startStepTempWF(func, params, workflowID, funcNum, ...args);
+      }
+
+      throw new DBOSNotRegisteredError(
+        op.name,
+        `${op.name} is not a registered DBOS workflow, step, or transaction function`,
+      );
+    }
+
     const wfId = getNextWFID(params.workflowID);
     const pctx = getCurrentContextStore();
     const queueName = params?.queueName ?? pctx?.queueAssignedForWorkflows;
@@ -1825,7 +1844,7 @@ export class DBOS {
         deadlineEpochMS: pctx?.workflowTimeoutMS === null ? undefined : wfctx.deadlineEpochMS,
       };
 
-      return await DBOSExecutor.globalInstance!.internalWorkflow(func, params, wfctx.workflowUUID, funcId, ...args);
+      return await invokeOp(params, wfId, funcId);
     } else {
       // Else, we setup a parent context that includes all the potential metadata the application could have set in DBOSLocalCtx
       let parentCtx: DBOSContextImpl | undefined = undefined;
@@ -1857,7 +1876,7 @@ export class DBOS {
         timeoutMS: pctx?.workflowTimeoutMS,
       };
 
-      return await DBOS.#executor.workflow(func, params, ...args);
+      return await invokeOp(params, undefined, undefined);
     }
   }
 
@@ -1867,8 +1886,7 @@ export class DBOS {
   ): (this: This, ...args: Args) => Promise<Return> {
     registration.setWorkflowConfig(config ?? {});
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-      const func = registration.registeredFunction as unknown as WorkflowFunction<Args, Return>;
-      const handle = await DBOS.#runDatWorkflow(this, func, rawArgs);
+      const handle = await DBOS.#runDatWorkflow<This, Args, Return>(this, registration, rawArgs);
       return await handle.getResult();
     };
     registerFunctionWrapper(invokeWrapper, registration as MethodRegistration<unknown, unknown[], unknown>);
