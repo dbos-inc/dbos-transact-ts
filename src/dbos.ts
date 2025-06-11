@@ -1844,7 +1844,7 @@ export class DBOS {
         deadlineEpochMS: pctx?.workflowTimeoutMS === null ? undefined : wfctx.deadlineEpochMS,
       };
 
-      return await invokeOp(params, wfId, funcId);
+      return await invokeOp(params, wfctx.workflowUUID, funcId);
     } else {
       // Else, we setup a parent context that includes all the potential metadata the application could have set in DBOSLocalCtx
       let parentCtx: DBOSContextImpl | undefined = undefined;
