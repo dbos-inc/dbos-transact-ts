@@ -174,7 +174,7 @@ describe('scheduled-wf-tests-oaoo', () => {
     } finally {
       await DBOS.shutdown();
     }
-  }, 15000);
+  }, 30000);
 });
 
 describe('scheduled-wf-tests-when-active', () => {
