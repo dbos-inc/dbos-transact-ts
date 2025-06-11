@@ -432,5 +432,17 @@ describe('decoratorless-api-tests', () => {
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('tx');
+
+    // Check that the bare transaction does not start a workflow
+    const nwsBefore = (await DBOS.listWorkflows({})).length;
+    const res = await DBWFI.tx();
+    expect(res).toBe('My decorated tx result');
+    const nwsAfter = (await DBOS.listWorkflows({})).length;
+    expect(nwsAfter - nwsBefore).toBe(0);
+
+    //  (If WF requested by providing an ID, this is an error)
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await expect(DBWFI.tx()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    });
   });
 });
