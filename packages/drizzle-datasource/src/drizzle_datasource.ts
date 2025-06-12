@@ -185,7 +185,7 @@ class DrizzleDSTH implements DataSourceTransactionHandler {
 
             // Save result
             try {
-              if (!readOnly) {
+              if (!readOnly && wfid) {
                 await this.#recordOutput(this.drizzlePool, wfid, funcnum, result);
               }
             } catch (e) {

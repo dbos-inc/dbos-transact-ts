@@ -182,7 +182,7 @@ class TypeOrmDSTH implements DataSourceTransactionHandler {
 
           // Save result
           try {
-            if (!readOnly) {
+            if (!readOnly && wfid) {
               await this.#recordOutput(this.dataSource, wfid, funcnum, result);
             }
           } catch (e) {

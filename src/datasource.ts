@@ -118,7 +118,7 @@ export async function runTransaction<T>(
   const dsn = options.dsName ?? '<default>';
   const ds = getTransactionalDataSource(dsn);
 
-  if (!DBOS.isWithinWorkflow) {
+  if (!DBOS.isWithinWorkflow()) {
     if (getNextWFID(undefined)) {
       throw new DBOSInvalidWorkflowTransitionError(
         `Invalid call to transaction '${funcName}' outside of a workflow; with directive to start a workflow.`,
