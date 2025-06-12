@@ -315,5 +315,9 @@ describe('start-workflow-function', () => {
 
     const wfh3 = await DBOS.startWorkflowFunction({ workflowID: wfid3 }, argsWF, 7, 'f');
     await expect(wfh3.getResult()).resolves.toBe('7-f');
+
+    const wfidi1 = randomUUID();
+    const wfhi1 = await DBOS.startWorkflow(StaticAndInstanceWFs, { workflowID: wfidi1 }).staticWF();
+    await expect(wfhi1.getResult()).resolves.toBe('1-2');
   });
 });
