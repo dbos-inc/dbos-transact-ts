@@ -41,6 +41,11 @@ const regWFRunStep = DBOS.registerWorkflow(wfRunStep, 'wfRunStep');
 const regWFRunRetry = DBOS.registerWorkflow(wfRegRetry, 'wfRegRetry');
 
 class TestClass extends ConfiguredInstance {
+  @DBOS.workflow()
+  static decoratedWorkflow(value: number): Promise<number> {
+    return TestClass.stepTestStatic(value);
+  }
+
   static stepTestStatic(value: number): Promise<number> {
     expect(DBOS.stepStatus).toBeDefined();
     return Promise.resolve(value * 100);
@@ -132,6 +137,24 @@ describe('decorator-free-tests', () => {
 
   afterEach(async () => {
     await DBOS.shutdown();
+  });
+
+  test('decorated-wf-startWorkflowFunction', async () => {
+    const handle = await DBOS.startWorkflowFunction({ queueName: queue.name }, TestClass.decoratedWorkflow, 10);
+    await expect(handle.getResult()).resolves.toBe(1000);
+
+    const wfid = handle.workflowID;
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('decoratedWorkflow');
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTestStatic');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
   });
 
   test('wf-free-step-reg', async () => {
