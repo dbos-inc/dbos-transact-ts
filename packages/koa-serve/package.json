@@ -1,0 +1,43 @@
+{
+  "name": "@dbos-inc/koa-serve",
+  "version": "0.0.0-placeholder",
+  "description": "DBOS HTTP Package for serving workflows with Koa",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-transact-ts",
+    "directory": "packages/koa-serve"
+  },
+  "homepage": "https://docs.dbos.dev/",
+  "main": "dist/src/index.js",
+  "types": "dist/src/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "testv": "npm run build && jest --detectOpenHandles tests/validation.test.ts",
+    "testa": "npm run build && jest --detectOpenHandles tests/argsource.test.ts",
+    "test": "npm run build && jest --detectOpenHandles"
+  },
+  "devDependencies": {
+    "@types/koa": "^2.15.0",
+    "@types/koa__cors": "^5.0.0",
+    "@types/koa__router": "^12.0.4",
+    "@types/jest": "^29.5.12",
+    "@types/node": "^20.11.25",
+    "@types/supertest": "^6.0.2",
+    "jest": "^29.7.0",
+    "supertest": "^7.0.0",
+    "ts-jest": "^29.1.4",
+    "typescript": "^5.3.3"
+  },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "*"
+  },
+  "dependencies": {
+    "@koa/bodyparser": "5.0.0",
+    "@koa/cors": "5.0.0",
+    "@koa/router": "13.1.0",
+    "jsonwebtoken": "^9.0.2",
+    "koa": "^2.15.4",
+    "serialize-error": "8.1.0"
+  }
+}

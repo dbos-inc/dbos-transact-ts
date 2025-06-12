@@ -36,6 +36,7 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigI
   const poolConfig = constructPoolConfig(configFile, { silent: true });
 
   const dbosTestConfig: DBOSConfigInternal = {
+    databaseUrl,
     poolConfig,
     application: configFile.application,
     telemetry: configFile.telemetry!,

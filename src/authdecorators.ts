@@ -8,7 +8,7 @@ import {
   DBOSMethodMiddlewareInstaller,
   MethodAuth,
   MethodRegistrationBase,
-  registerMiddlewareInserter,
+  registerMiddlewareInstaller,
 } from './decorators';
 import { DBOSNotAuthorizedError } from './error';
 
@@ -37,7 +37,7 @@ function checkMethodAuth(methReg: MethodRegistrationBase, args: unknown[]) {
   return args;
 }
 
-class AuthCheckInserter implements DBOSMethodMiddlewareInstaller {
+class AuthChecker implements DBOSMethodMiddlewareInstaller {
   installMiddleware(methReg: MethodRegistrationBase): void {
     const classAuth = methReg?.defaults?.getRegisteredInfo(DBOS_AUTH) as ClassAuthDefaults;
     const methodAuth = methReg?.getRegisteredInfo(DBOS_AUTH) as MethodAuth;
@@ -50,10 +50,10 @@ class AuthCheckInserter implements DBOSMethodMiddlewareInstaller {
   }
 }
 
-const authChecker = new AuthCheckInserter();
+const authChecker = new AuthChecker();
 
 export function registerAuthChecker() {
-  registerMiddlewareInserter(authChecker);
+  registerMiddlewareInstaller(authChecker);
 }
 
 /** @deprecated Use `DBOS.defaultRequiredRole` */

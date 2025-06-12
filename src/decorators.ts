@@ -7,6 +7,7 @@ import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './erro
 import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
+import { DataSourceTransactionHandler } from './datasource';
 
 /**
  * Interface for integrating into the DBOS startup/shutdown lifecycle
@@ -37,10 +38,10 @@ export interface DBOSMethodMiddlewareInstaller {
   installMiddleware(methodReg: MethodRegistrationBase): void;
 }
 let installedMiddleware = false;
-const middlewareInserters: DBOSMethodMiddlewareInstaller[] = [];
-export function registerMiddlewareInserter(i: DBOSMethodMiddlewareInstaller) {
+const middlewareInstallers: DBOSMethodMiddlewareInstaller[] = [];
+export function registerMiddlewareInstaller(i: DBOSMethodMiddlewareInstaller) {
   if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
-  if (!middlewareInserters.includes(i)) middlewareInserters.push(i);
+  if (!middlewareInstallers.includes(i)) middlewareInstallers.push(i);
 }
 export function insertAllMiddleware() {
   if (installedMiddleware) return;
@@ -48,7 +49,7 @@ export function insertAllMiddleware() {
 
   for (const [_cn, c] of classesByName) {
     for (const [_fn, f] of c.reg.registeredOperations) {
-      for (const i of middlewareInserters) {
+      for (const i of middlewareInstallers) {
         i.installMiddleware(f);
       }
     }
@@ -583,6 +584,28 @@ export function getConfiguredInstance(clsname: string, cfgname: string): Configu
   return classReg.configuredInstances.get(cfgname) ?? null;
 }
 
+/////
+// Transactional data source registration
+/////
+export const transactionalDataSources: Map<string, DataSourceTransactionHandler> = new Map();
+
+// Register data source (user version)
+export function registerTransactionalDataSource(name: string, ds: DataSourceTransactionHandler) {
+  if (transactionalDataSources.has(name)) {
+    if (transactionalDataSources.get(name) !== ds) {
+      throw new DBOSConflictingRegistrationError(`Data source with name ${name} is already registered`);
+    }
+    return;
+  }
+  ensureDBOSIsNotLaunched();
+  transactionalDataSources.set(name, ds);
+}
+
+export function getTransactionalDataSource(name: string) {
+  if (transactionalDataSources.has(name)) return transactionalDataSources.get(name)!;
+  throw new DBOSNotRegisteredError(name, `Data source '${name}' is not registered`);
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 // DECORATOR REGISTRATION
 // These manage registration objects, creating them at decorator evaluation time
@@ -1110,6 +1133,9 @@ export function Step(config: StepConfig = {}) {
   return decorator;
 }
 
+/**
+ * @deprecated Use ORM DSs
+ */
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export function OrmEntities(entities: Function[] | { [key: string]: object } = []) {
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {

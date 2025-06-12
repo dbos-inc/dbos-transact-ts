@@ -6,7 +6,7 @@ import {
   DBOSDataType,
   DBOSMethodMiddlewareInstaller,
   MethodParameter,
-  registerMiddlewareInserter,
+  registerMiddlewareInstaller,
 } from './decorators';
 
 import { MethodRegistrationBase } from './decorators';
@@ -61,7 +61,7 @@ function getValidatorArgInfo(param: MethodParameter) {
   };
 }
 
-class ValidationInserter implements DBOSMethodMiddlewareInstaller {
+class ValidationMiddleware implements DBOSMethodMiddlewareInstaller {
   installMiddleware(methReg: MethodRegistrationBase): void {
     const valInfo = getValidatorClassInfo(methReg);
     const defaultArgRequired = valInfo.defaultArgRequired;
@@ -85,7 +85,7 @@ class ValidationInserter implements DBOSMethodMiddlewareInstaller {
   }
 }
 
-const valInserter = new ValidationInserter();
+const validationMiddleware = new ValidationMiddleware();
 
 export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
   const curParam = associateParameterWithExternal(
@@ -99,7 +99,7 @@ export function ArgRequired(target: object, propertyKey: string | symbol, parame
 
   curParam.required = ArgRequiredOptions.REQUIRED;
 
-  registerMiddlewareInserter(valInserter);
+  registerMiddlewareInstaller(validationMiddleware);
 }
 
 export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
@@ -114,7 +114,7 @@ export function ArgOptional(target: object, propertyKey: string | symbol, parame
 
   curParam.required = ArgRequiredOptions.OPTIONAL;
 
-  registerMiddlewareInserter(valInserter);
+  registerMiddlewareInstaller(validationMiddleware);
 }
 
 export function ArgDate() {
@@ -132,7 +132,7 @@ export function ArgDate() {
     if (!curParam.dataType) curParam.dataType = new DBOSDataType();
     curParam.dataType.dataType = 'timestamp';
 
-    registerMiddlewareInserter(valInserter);
+    registerMiddlewareInstaller(validationMiddleware);
   };
 }
 
@@ -149,7 +149,7 @@ export function ArgVarchar(length: number) {
 
     curParam.dataType = DBOSDataType.varchar(length);
 
-    registerMiddlewareInserter(valInserter);
+    registerMiddlewareInstaller(validationMiddleware);
   };
 }
 
@@ -157,21 +157,21 @@ export function DefaultArgRequired<T extends { new (...args: unknown[]): object 
   const clsreg = DBOS.associateClassWithInfo(VALIDATOR, ctor) as ValidatorClassInfo;
   clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
 
-  registerMiddlewareInserter(valInserter);
+  registerMiddlewareInstaller(validationMiddleware);
 }
 
 export function DefaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = DBOS.associateClassWithInfo(VALIDATOR, ctor) as ValidatorClassInfo;
   clsreg.defaultArgValidate = true;
 
-  registerMiddlewareInserter(valInserter);
+  registerMiddlewareInstaller(validationMiddleware);
 }
 
 export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = DBOS.associateClassWithInfo(VALIDATOR, ctor) as ValidatorClassInfo;
   clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
 
-  registerMiddlewareInserter(valInserter);
+  registerMiddlewareInstaller(validationMiddleware);
 }
 
 export enum LogMasks {
@@ -227,14 +227,14 @@ function getLoggerArgInfo(param: MethodParameter) {
   };
 }
 
-class LoggingInserter implements DBOSMethodMiddlewareInstaller {
+class LoggingMiddleware implements DBOSMethodMiddlewareInstaller {
   installMiddleware(methReg: MethodRegistrationBase): void {
     methReg.addEntryInterceptor(logMethodArgs, 30);
   }
 }
 
-const logInserter = new LoggingInserter();
-registerMiddlewareInserter(logInserter);
+const logMiddleware = new LoggingMiddleware();
+registerMiddlewareInstaller(logMiddleware);
 
 export function logMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args) {
   // Argument logging
