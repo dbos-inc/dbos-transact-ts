@@ -2071,8 +2071,8 @@ export class DBOS {
   }
 
   /**
-   * Create a checkpointed DBOS step function from  a provided function
-   *   Simlar to the DBOS.step decorator, but without requiring a decorator
+   * Create a check pointed DBOS step function from  a provided function
+   *   Similar to the DBOS.step decorator, but without requiring a decorator
    *   A durable checkpoint will be made after the step completes
    *   This ensures "at least once" execution of the step, and that the step will not
    *    be executed again once the checkpoint is recorded
