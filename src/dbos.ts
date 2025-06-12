@@ -1286,6 +1286,11 @@ export class DBOS {
   static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
   static startWorkflow<T extends object>(target: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T> {
     const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
+    if (instance && !(instance instanceof ConfiguredInstance)) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Attempt to call `startWorkflow` on an object that is not a `ConfiguredInstance`',
+      );
+    }
 
     const regOps = getRegisteredOperations(target);
     const proxy: Record<string, unknown> = {};
@@ -1669,14 +1674,10 @@ export class DBOS {
     const timeoutMS = params.timeoutMS ?? pctx?.workflowTimeoutMS;
 
     const instance = $this === undefined || typeof $this === 'function' ? undefined : ($this as ConfiguredInstance);
-    if (instance) {
-      if ('name' in instance) {
-        DBOS.logger.warn(`Configured instance is set to ${instance.name}`);
-      } else {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Attempt to call a `workflow` function on an object that is not a `ConfiguredInstance`',
-        );
-      }
+    if (instance && !(instance instanceof ConfiguredInstance)) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        'Attempt to call a `workflow` function on an object that is not a `ConfiguredInstance`',
+      );
     }
 
     // If this is called from within a workflow, this is a child workflow,
@@ -1796,7 +1797,7 @@ export class DBOS {
           // This is static
         } else {
           inst = this as ConfiguredInstance;
-          if (!('name' in inst)) {
+          if (!(inst instanceof ConfiguredInstance)) {
             throw new DBOSInvalidWorkflowTransitionError(
               'Attempt to call a `transaction` function on an object that is not a `ConfiguredInstance`',
             );
@@ -1975,7 +1976,7 @@ export class DBOS {
           // This is static
         } else {
           inst = this as ConfiguredInstance;
-          if (!('name' in inst)) {
+          if (!(inst instanceof ConfiguredInstance)) {
             throw new DBOSInvalidWorkflowTransitionError(
               'Attempt to call a `step` function on an object that is not a `ConfiguredInstance`',
             );
