@@ -1657,7 +1657,6 @@ export class DBOS {
     return DBOS.#getWorkflowInvoker(registration, options.config);
   }
 
-  // TODO: better method name
   static async #invokeWorkflow<This, Args extends unknown[], Return>(
     $this: This,
     regOP: MethodRegistrationBase,
