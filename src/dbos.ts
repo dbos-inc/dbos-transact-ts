@@ -271,11 +271,7 @@ export class DBOS {
   private static getDebugModeFromEnv(): DebugMode {
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     const isDebugging = debugWorkflowId !== undefined;
-    return isDebugging
-      ? process.env.DBOS_DEBUG_TIME_TRAVEL === 'true'
-        ? DebugMode.TIME_TRAVEL
-        : DebugMode.ENABLED
-      : DebugMode.DISABLED;
+    return isDebugging ? DebugMode.ENABLED : DebugMode.DISABLED;
   }
 
   /**

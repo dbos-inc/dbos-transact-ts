@@ -10,13 +10,11 @@ describe('debugger-test', () => {
   let username: string;
   let config: DBOSConfigInternal;
   let debugConfig: DBOSConfigInternal;
-  let debugProxyConfig: DBOSConfigInternal;
   let systemDBClient: Client;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined);
-    debugProxyConfig = generateDBOSTestConfig(undefined);
     username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
   });
@@ -176,13 +174,6 @@ describe('debugger-test', () => {
     expect(debugRes1).toBe(1);
     await DBOS.shutdown();
 
-    // And as time travel
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    const debugRestt = await (await executeWorkflowById(wfUUID)).getResult();
-    expect(debugRestt).toBe(1);
-    await DBOS.shutdown();
-
     // Execute a non-exist UUID should fail under debugger.
     const wfUUID2 = randomUUID();
     DBOS.setConfig(debugConfig);
@@ -223,16 +214,6 @@ describe('debugger-test', () => {
       expect(debugRes).toBe(1000);
     });
     await DBOS.shutdown();
-
-    // And as time travel
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    await DBOS.withNextWorkflowID(wfUUID, async () => {
-      const ttdbgRes = await DebuggerTest.debugWF(100);
-      expect(DebuggerTest.debugCount).toBe(2);
-      expect(ttdbgRes).toBe(1000);
-    });
-    await DBOS.shutdown();
   });
 
   test('debug-sleep-workflow', async () => {
@@ -249,15 +230,6 @@ describe('debugger-test', () => {
     // Execute again in debug mode, should return the correct value
     DBOS.setConfig(debugConfig);
     await DBOS.launch({ debugMode: DebugMode.ENABLED });
-    await DBOS.withNextWorkflowID(wfUUID, async () => {
-      const res = await DebuggerTest.sleepWorkflow(2);
-      expect(res).toBe(3);
-    });
-    await DBOS.shutdown();
-
-    // Proxy mode should return the same result
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       const res = await DebuggerTest.sleepWorkflow(2);
       expect(res).toBe(3);
@@ -345,12 +317,6 @@ describe('debugger-test', () => {
     await expect(DebuggerTest.testFunction(username)).rejects.toThrow(
       /DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
     );
-    await DBOS.shutdown();
-
-    // Proxy mode should return the same result.
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
     await DBOS.shutdown();
   });
 
