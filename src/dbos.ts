@@ -2100,7 +2100,8 @@ export class DBOS {
   /**
    * Run the enclosed `callback` as a checkpointed step within a DBOS workflow
    * @param callback - function containing code to run
-   * @param name - Name of step to record, this will be used in traces and introspection
+   * @param config - Configuration information for the step, particularly the retry policy
+   * @param config.name - The name of the step; if not provided, the function name will be used
    * @returns - result (either obtained from invoking function, or retrieved if run before)
    */
   static runStep<Return>(func: () => Promise<Return>, config: StepConfig & { name?: string } = {}): Promise<Return> {
