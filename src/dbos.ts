@@ -2091,7 +2091,12 @@ export class DBOS {
         );
       }
 
-      throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+      if (getNextWFID(undefined)) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
+        );
+      }
+      return func.call(this, ...rawArgs);
     };
 
     Object.defineProperty(invokeWrapper, 'name', { value: name });
@@ -2125,7 +2130,13 @@ export class DBOS {
       );
     }
 
-    throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+    if (getNextWFID(undefined)) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
+      );
+    }
+
+    return func();
   }
 
   /** Decorator indicating that the method is the target of HTTP GET operations for `url` */
