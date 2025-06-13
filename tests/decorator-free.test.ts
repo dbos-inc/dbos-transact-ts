@@ -177,7 +177,7 @@ describe('decorator-free-tests', () => {
   });
 
   test('decorated-wf-startWorkflowFunction', async () => {
-    const handle = await DBOS.startWorkflowFunction({ queueName: queue.name }, TestClass.decoratedWorkflow, 10);
+    const handle = await DBOS.startWorkflow(TestClass, { queueName: queue.name }).decoratedWorkflow(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
     const wfid = handle.workflowID;
@@ -216,7 +216,7 @@ describe('decorator-free-tests', () => {
   });
 
   test('wf-free-step-reg-swf', async () => {
-    const handle = await DBOS.startWorkflowFunction({ queueName: queue.name }, regWFRegStep, 10);
+    const handle = await DBOS.startWorkflow(regWFRegStep, { queueName: queue.name })(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
     const status = await DBOS.getWorkflowStatus(handle.workflowID);
@@ -326,7 +326,7 @@ describe('decorator-free-tests', () => {
   });
 
   test('wf-static-step-reg-swf', async () => {
-    const handle = await DBOS.startWorkflowFunction({ queueName: queue.name }, TestClass.wfRegStepStatic, 10);
+    const handle = await DBOS.startWorkflow(TestClass, { queueName: queue.name }).wfRegStepStatic(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
     const status = await DBOS.getWorkflowStatus(handle.workflowID);
@@ -435,15 +435,7 @@ describe('decorator-free-tests', () => {
   });
 
   test('wf-inst-step-reg-swf', async () => {
-    const handle = await DBOS.startWorkflowFunction(
-      {
-        queueName: queue.name,
-        instance: inst,
-      },
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      inst.wfRegStep,
-      10,
-    );
+    const handle = await DBOS.startWorkflow(inst, { queueName: queue.name }).wfRegStep(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
     const status = await DBOS.getWorkflowStatus(handle.workflowID);
