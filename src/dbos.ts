@@ -1297,7 +1297,7 @@ export class DBOS {
     const handler: ProxyHandler<T> = {
       get(target, p, receiver) {
         const func = Reflect.get(target, p, receiver);
-        const regOp = regOps.find((op) => op.wrappedFunction === func);
+        const regOp = getRegistrationForFunction(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
           return (...args: unknown[]) => DBOS.#invokeWorkflow(instance, regOp, args, params);
         }
