@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { ConfiguredInstance, DBOS, DBOSClient, WorkflowQueue } from '../src/';
 import { DBOSConflictingRegistrationError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
@@ -109,6 +108,7 @@ TestClass.wfRegStepStatic = DBOS.registerWorkflow(TestClass.wfRegStepStatic, 'Te
 TestClass.wfRunStepStatic = DBOS.registerWorkflow(TestClass.wfRunStepStatic, 'TestClass.wfRunStepStatic');
 TestClass.wfRegRetryStatic = DBOS.registerWorkflow(TestClass.wfRegRetryStatic, 'TestClass.wfRegRetryStatic');
 
+/* eslint-disable @typescript-eslint/unbound-method */
 TestClass.prototype.stepTest = DBOS.registerStep(TestClass.prototype.stepTest);
 TestClass.prototype.retryTest = DBOS.registerStep(TestClass.prototype.retryTest, { retriesAllowed: true });
 TestClass.prototype.wfRegStep = DBOS.registerWorkflow(TestClass.prototype.wfRegStep, 'TestClass.prototype.wfRegStep', {
@@ -122,6 +122,7 @@ TestClass.prototype.wfRegRetry = DBOS.registerWorkflow(
   'TestClass.prototype.wfRegRetry',
   { classOrInst: TestClass },
 );
+/* eslint-enable @typescript-eslint/unbound-method */
 
 describe('decorator-free-tests', () => {
   const config = generateDBOSTestConfig();
@@ -439,6 +440,7 @@ describe('decorator-free-tests', () => {
         queueName: queue.name,
         instance: inst,
       },
+      // eslint-disable-next-line @typescript-eslint/unbound-method
       inst.wfRegStep,
       10,
     );
