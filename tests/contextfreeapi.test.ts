@@ -555,10 +555,10 @@ async function main9() {
     'Invalid call to a `workflow` function from within a `step` or `transaction`',
   );
   await expect(() => TransitionTests.oopsCallStartWFFromTransaction()).rejects.toThrow(
-    'Invalid call to `DBOS.startWorkflow` from within a `step` or `transaction`',
+    'Invalid call to a `workflow` function from within a `step` or `transaction`',
   );
   await expect(() => TransitionTests.oopsCallStartWFFromStep()).rejects.toThrow(
-    'Invalid call to `DBOS.startWorkflow` from within a `step` or `transaction`',
+    'Invalid call to a `workflow` function from within a `step` or `transaction`',
   );
 
   await DBOS.shutdown();

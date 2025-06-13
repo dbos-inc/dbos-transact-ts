@@ -127,8 +127,8 @@ Typical application processing for standard SQS queues implements "at least once
 
 - Receive the message from the SQS queue
 - If necessary, extend the visibility timeout of the message during the course of processing
-- After all processing is complete, delete the message from the queue
-  If there are any failures, the message will remain in the queue and be redelivered to another consumer.
+- After all processing is complete, delete the message from the queue. If there are any failures,
+  the message will remain in the queue and be redelivered to another consumer.
 
 The DBOS receiver proceeds differently:
 
