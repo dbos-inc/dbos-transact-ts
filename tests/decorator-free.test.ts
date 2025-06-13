@@ -176,7 +176,7 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('decorated-wf-startWorkflowFunction', async () => {
+  test('decorated-wf-startWorkflow', async () => {
     const handle = await DBOS.startWorkflow(TestClass, { queueName: queue.name }).decoratedWorkflow(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
@@ -215,7 +215,7 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-free-step-reg-swf', async () => {
+  test('wf-free-step-reg-startWorkflow', async () => {
     const handle = await DBOS.startWorkflow(regWFRegStep, { queueName: queue.name })(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
@@ -325,7 +325,7 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-static-step-reg-swf', async () => {
+  test('wf-static-step-reg-startWorkflow', async () => {
     const handle = await DBOS.startWorkflow(TestClass, { queueName: queue.name }).wfRegStepStatic(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
@@ -434,7 +434,7 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-inst-step-reg-swf', async () => {
+  test('wf-inst-step-reg-startWorkflow', async () => {
     const handle = await DBOS.startWorkflow(inst, { queueName: queue.name }).wfRegStep(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
