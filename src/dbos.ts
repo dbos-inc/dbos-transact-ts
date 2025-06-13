@@ -1293,15 +1293,21 @@ export class DBOS {
     }
 
     const regOps = getRegisteredOperations(target);
-    const proxy: Record<string, unknown> = {};
 
-    for (const regOp of regOps) {
-      proxy[regOp.name] = (...args: unknown[]) => DBOS.#invokeWorkflow(instance, regOp, args, params);
-    }
+    const handler: ProxyHandler<T> = {
+      get(target, p, receiver) {
+        const func = Reflect.get(target, p, receiver);
+        const regOp = getRegistrationForFunction(func) ?? regOps.find((op) => op.name === p);
+        if (regOp) {
+          return (...args: unknown[]) => DBOS.#invokeWorkflow(instance, regOp, args, params);
+        }
 
-    augmentProxy(instance ?? target, proxy);
+        const name = typeof p === 'string' ? p : String(p);
+        throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
+      },
+    };
 
-    return proxy as InvokeFunctionsAsync<T>;
+    return new Proxy(target, handler) as unknown as InvokeFunctionsAsync<T>;
   }
 
   /** @deprecated Adjust target function to exclude its `DBOSContext` argument, and then call the function directly */
