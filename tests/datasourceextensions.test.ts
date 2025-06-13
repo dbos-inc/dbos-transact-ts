@@ -141,7 +141,7 @@ class KnexDSTH implements DataSourceTransactionHandler {
             //     It can be run on a second iteration if insert has failed.
             // OTOH, to be pessimistic, this should be LOCK / SELECT FOR UPDATE'd
 
-            if (shouldCheckOutput && !readOnly) {
+            if (shouldCheckOutput && !readOnly && wfid) {
               const executionResult = await this.#checkExecution<Return>(transactionClient, wfid, funcnum);
 
               if (executionResult) {

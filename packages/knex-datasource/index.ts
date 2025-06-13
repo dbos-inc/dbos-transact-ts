@@ -108,9 +108,8 @@ class KnexDSTH implements DataSourceTransactionHandler {
         const result = await this.#knexDB.transaction<Return>(
           async (client) => {
             // Check to see if this tx has already been executed
-            const previousResult = readOnly
-              ? undefined
-              : await KnexDSTH.#checkExecution(client, workflowID, functionNum);
+            const previousResult =
+              readOnly || !workflowID ? undefined : await KnexDSTH.#checkExecution(client, workflowID, functionNum);
             if (previousResult) {
               return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
             }

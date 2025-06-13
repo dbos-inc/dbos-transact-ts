@@ -170,7 +170,7 @@ class DrizzleDSTH implements DataSourceTransactionHandler {
               throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of Datasource');
             }
 
-            if (shouldCheckOutput && !readOnly) {
+            if (shouldCheckOutput && !readOnly && wfid) {
               const executionResult = await this.#checkExecution<Return>(this.drizzlePool, wfid, funcnum);
 
               if (executionResult) {
