@@ -138,7 +138,7 @@ class NodePGDSTH implements DataSourceTransactionHandler {
             });
 
             // save the output of read/write transactions
-            if (!readOnly) {
+            if (!readOnly && workflowID) {
               await NodePGDSTH.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
               // Note, existing code wraps #recordOutput call in a try/catch block that

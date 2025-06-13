@@ -178,11 +178,9 @@ export async function runWithStoredProcContext<R>(ctx: StoredProcedureContextImp
 export async function runWithDataSourceContext<R>(callnum: number, callback: () => Promise<R>) {
   // Check we are in a workflow context and not in a step / transaction already
   const pctx = getCurrentContextStore();
-  if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
-  if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
   return await asyncLocalCtx.run(
     {
-      workflowId: pctx.workflowId,
+      workflowId: pctx?.workflowId,
       curTxFunctionId: callnum,
       parentCtx: pctx,
     },

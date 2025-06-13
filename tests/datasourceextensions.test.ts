@@ -18,7 +18,11 @@ import {
 } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
-import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';
+import {
+  DBOSNotAuthorizedError,
+  DBOSFailedSqlTransactionError,
+  DBOSInvalidWorkflowTransitionError,
+} from '../src/error';
 import { DBOSJSON, sleepms } from '../src/utils';
 
 /*
@@ -151,9 +155,9 @@ class KnexDSTH implements DataSourceTransactionHandler {
                 return await func.call(target, ...args);
               });
 
-              // Save result
+              // Save result if not read-only, and in workflow
               try {
-                if (!readOnly) {
+                if (!readOnly && wfid) {
                   await this.#recordOutput(transactionClient, wfid, funcnum, res);
                 }
               } catch (e) {
@@ -349,7 +353,7 @@ async function txFunctionGuts() {
   return res.rows[0].a;
 }
 
-// It is not clear if we want to encourage this pattern, but it does work
+// It is not clear if we want to encourage this pattern of registering early by DS name, but it does work
 const txFunc = DBOSKnexDS.registerTransaction('knexA', txFunctionGuts, 'MySecondTx', {});
 
 async function wfFunctionGuts() {
@@ -387,7 +391,38 @@ class DBWFI {
   static async wf() {
     return await DBWFI.tx();
   }
+
+  @DBOS.requiredRole(['user'])
+  @dsa.transaction({ readOnly: true })
+  static async sectx1() {
+    return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Secure Tx1' as a")).rows[0].a;
+  }
+
+  @dsa.transaction({ readOnly: true })
+  @DBOS.requiredRole(['user'])
+  static async sectx2() {
+    return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Secure Tx1' as a")).rows[0].a;
+  }
+
+  @DBOS.workflow()
+  static async wfs1() {
+    return await DBWFI.sectx1();
+  }
+
+  @DBOS.workflow()
+  static async wfs2() {
+    return await DBWFI.sectx2();
+  }
 }
+
+async function txFunctionGutsNoWF() {
+  expect(DBOS.isInTransaction()).toBe(true);
+  expect(DBOS.isWithinWorkflow()).toBe(false);
+  const res = await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'NoWF Tx Result' as a");
+  return res.rows[0].a;
+}
+
+const txFuncNoWF = dsa.registerTransaction(txFunctionGutsNoWF, 'NoWFTx', {});
 
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
@@ -418,6 +453,23 @@ describe('decoratorless-api-tests', () => {
     expect(wfsteps[0].name).toBe('MyFirstTx');
     expect(wfsteps[1].functionID).toBe(1);
     expect(wfsteps[1].name).toBe('MySecondTx');
+
+    // Check that the bare transaction does not start a workflow
+    const nwsBefore = (await DBOS.listWorkflows({})).length;
+    const p1 = await dsa.runTransaction(
+      async () => {
+        return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Bare outside wf' as a")).rows[0].a;
+      },
+      'MyFirstTx',
+      { readOnly: true },
+    );
+    expect(p1).toBe('Bare outside wf');
+
+    const res = await txFuncNoWF();
+    expect(res).toBe('NoWF Tx Result');
+
+    const nwsAfter = (await DBOS.listWorkflows({})).length;
+    expect(nwsAfter - nwsBefore).toBe(0);
   });
 
   test('decorated-tx-wf-functions', async () => {
@@ -432,5 +484,25 @@ describe('decoratorless-api-tests', () => {
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('tx');
+
+    // Check that the bare transaction does not start a workflow
+    const nwsBefore = (await DBOS.listWorkflows({})).length;
+    expect(nwsBefore).toBeGreaterThanOrEqual(1);
+    const res = await DBWFI.tx();
+    expect(res).toBe('My decorated tx result');
+    const nwsAfter = (await DBOS.listWorkflows({})).length;
+    expect(nwsAfter - nwsBefore).toBe(0);
+
+    //  (If WF requested by providing an ID, this is an error)
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await expect(DBWFI.tx()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    });
+  });
+
+  test('security-plus-dstxns', async () => {
+    await expect(DBWFI.sectx1()).rejects.toThrow(DBOSNotAuthorizedError);
+    await expect(DBWFI.sectx2()).rejects.toThrow(DBOSNotAuthorizedError);
+    await expect(DBWFI.wfs1()).rejects.toThrow(DBOSNotAuthorizedError);
+    await expect(DBWFI.wfs2()).rejects.toThrow(DBOSNotAuthorizedError);
   });
 });
