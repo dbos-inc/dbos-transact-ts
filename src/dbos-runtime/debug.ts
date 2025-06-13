@@ -7,9 +7,8 @@ export async function debugWorkflow(
   dbosConfig: DBOSConfigInternal,
   runtimeConfig: DBOSRuntimeConfig,
   workflowUUID: string,
-  timeTravelMode: boolean,
 ) {
-  const debugMode = timeTravelMode ? DebugMode.TIME_TRAVEL : DebugMode.ENABLED;
+  const debugMode = DebugMode.ENABLED;
   const logger = new GlobalLogger();
   try {
     const dbosExec = new DBOSExecutor(dbosConfig, { debugMode });
