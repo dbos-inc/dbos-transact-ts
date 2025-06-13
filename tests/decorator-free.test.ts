@@ -148,6 +148,7 @@ describe('decorator-free-tests', () => {
     const status = await DBOS.getWorkflowStatus(wfid);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('TestClass.wfRegStepStatic');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(steps.length).toBe(1);
@@ -166,6 +167,7 @@ describe('decorator-free-tests', () => {
     const status = await DBOS.getWorkflowStatus(wfid);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('TestClass.wfRegStepStatic');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(steps.length).toBe(1);
@@ -184,6 +186,7 @@ describe('decorator-free-tests', () => {
     const status = await DBOS.getWorkflowStatus(wfid);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('TestClass.prototype.wfRegStep');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(steps.length).toBe(1);
@@ -202,6 +205,7 @@ describe('decorator-free-tests', () => {
     const status = await DBOS.getWorkflowStatus(wfid);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('decoratedWorkflow');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(steps.length).toBe(1);
@@ -240,6 +244,7 @@ describe('decorator-free-tests', () => {
     const status = await DBOS.getWorkflowStatus(handle.workflowID);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('wfRegStep');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
     expect(steps.length).toBe(1);
@@ -265,6 +270,7 @@ describe('decorator-free-tests', () => {
       const status = await DBOS.getWorkflowStatus(handle.workflowID);
       expect(status).not.toBeNull();
       expect(status!.workflowName).toBe('wfRegStep');
+      expect(status!.queueName).toBe(queue.name);
 
       const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
       expect(steps.length).toBe(1);
@@ -350,6 +356,7 @@ describe('decorator-free-tests', () => {
     const status = await DBOS.getWorkflowStatus(handle.workflowID);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('TestClass.wfRegStepStatic');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
     expect(steps.length).toBe(1);
@@ -375,6 +382,7 @@ describe('decorator-free-tests', () => {
       const status = await DBOS.getWorkflowStatus(handle.workflowID);
       expect(status).not.toBeNull();
       expect(status!.workflowName).toBe('TestClass.wfRegStepStatic');
+      expect(status!.queueName).toBe(queue.name);
 
       const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
       expect(steps.length).toBe(1);
@@ -459,6 +467,7 @@ describe('decorator-free-tests', () => {
     const status = await DBOS.getWorkflowStatus(handle.workflowID);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('TestClass.prototype.wfRegStep');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
     expect(steps.length).toBe(1);
@@ -485,6 +494,7 @@ describe('decorator-free-tests', () => {
       const status = await DBOS.getWorkflowStatus(handle.workflowID);
       expect(status).not.toBeNull();
       expect(status!.workflowName).toBe('TestClass.prototype.wfRegStep');
+      expect(status!.queueName).toBe(queue.name);
 
       const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
       expect(steps.length).toBe(1);
