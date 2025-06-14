@@ -322,6 +322,7 @@ describe('start-workflow-function', () => {
       wfi.instanceWF,
       { instance: wfi, workflowID: wfid2 },
     )();
+    await wfh2.getResult();
     await expect(wfh2.getResult()).resolves.toBe('5-6');
 
     const wfh3 = await DBOS.startWorkflow(argsWF, { workflowID: wfid3 })(7, 'f');

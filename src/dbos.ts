@@ -1282,7 +1282,7 @@ export class DBOS {
     params?: StartWorkflowFunctionParams<unknown>,
   ): unknown {
     const instance = typeof target === 'function' ? params?.instance : (target as ConfiguredInstance);
-    if (instance && !(instance instanceof ConfiguredInstance)) {
+    if (instance && typeof instance !== 'function' && !(instance instanceof ConfiguredInstance)) {
       throw new DBOSInvalidWorkflowTransitionError(
         'Attempt to call `startWorkflow` on an object that is not a `ConfiguredInstance`',
       );
@@ -1298,7 +1298,7 @@ export class DBOS {
           const name = typeof target === 'function' ? target.name : target.toString();
           throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
         }
-        return DBOS.#invokeWorkflow(null, regOp, args, params);
+        return DBOS.#invokeWorkflow(instance, regOp, args, params);
       },
       get(target, p, receiver) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
