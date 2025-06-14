@@ -1250,9 +1250,9 @@ export class DBOS {
    * @param params - `StartWorkflowParams` which may specify the ID, queue, or other parameters for starting the workflow
    * @returns `WorkflowHandle` which can be used to interact with the started workflow
    */
-  static startWorkflow<Args extends unknown[], Return>(
-    target: (...args: Args) => Promise<Return>,
-    params?: StartWorkflowParams,
+  static startWorkflow<Args extends unknown[], Return, This>(
+    target: (this: This, ...args: Args) => Promise<Return>,
+    params?: StartWorkflowFunctionParams<This>,
   ): (...args: Args) => Promise<WorkflowHandle<Return>>;
   /**
    * Start a workflow in the background, returning a handle that can be used to check status, await a result,
@@ -1279,10 +1279,10 @@ export class DBOS {
   static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
   static startWorkflow(
     target: ((...args: unknown[]) => Promise<unknown>) | ConfiguredInstance | object,
-    params?: StartWorkflowParams,
+    params?: StartWorkflowFunctionParams<unknown>,
   ): unknown {
-    const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
-    if (instance && !(instance instanceof ConfiguredInstance)) {
+    const instance = typeof target === 'function' ? params?.instance : (target as ConfiguredInstance);
+    if (instance && typeof instance !== 'function' && !(instance instanceof ConfiguredInstance)) {
       throw new DBOSInvalidWorkflowTransitionError(
         'Attempt to call `startWorkflow` on an object that is not a `ConfiguredInstance`',
       );
@@ -1298,7 +1298,7 @@ export class DBOS {
           const name = typeof target === 'function' ? target.name : target.toString();
           throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
         }
-        return DBOS.#invokeWorkflow(null, regOp, args, params);
+        return DBOS.#invokeWorkflow(instance, regOp, args, params);
       },
       get(target, p, receiver) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -2103,7 +2103,12 @@ export class DBOS {
         );
       }
 
-      throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+      if (getNextWFID(undefined)) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
+        );
+      }
+      return func.call(this, ...rawArgs);
     };
 
     Object.defineProperty(invokeWrapper, 'name', { value: name });
@@ -2137,7 +2142,13 @@ export class DBOS {
       );
     }
 
-    throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+    if (getNextWFID(undefined)) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
+      );
+    }
+
+    return func();
   }
 
   /** Decorator indicating that the method is the target of HTTP GET operations for `url` */

@@ -1,6 +1,6 @@
 import { SpanStatusCode } from '@opentelemetry/api';
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { assertCurrentWorkflowContext, runWithDataSourceContext } from './context';
+import { assertCurrentWorkflowContext, getNextWFID, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import { getTransactionalDataSource, registerTransactionalDataSource } from './decorators';
@@ -115,16 +115,24 @@ export async function runTransaction<T>(
   funcName: string,
   options: { dsName?: string; config?: unknown } = {},
 ) {
-  if (!DBOS.isWithinWorkflow) {
-    throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` outside of a workflow`);
+  const dsn = options.dsName ?? '<default>';
+  const ds = getTransactionalDataSource(dsn);
+
+  if (!DBOS.isWithinWorkflow()) {
+    if (getNextWFID(undefined)) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Invalid call to transaction '${funcName}' outside of a workflow; with directive to start a workflow.`,
+      );
+    }
+    return await runWithDataSourceContext(0, async () => {
+      return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
+    });
   }
   if (!DBOS.isInWorkflow()) {
     throw new DBOSInvalidWorkflowTransitionError(
       `Invalid call to \`${funcName}\` inside a \`step\`, \`transaction\`, or \`procedure\``,
     );
   }
-  const dsn = options.dsName ?? '<default>';
-  const ds = getTransactionalDataSource(dsn);
 
   const wfctx = assertCurrentWorkflowContext();
   const callnum = wfctx.functionIDGetIncrement();
@@ -178,8 +186,17 @@ export function registerTransaction<This, Args extends unknown[], Return>(
   const dsn = dsName ?? '<default>';
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+    const ds = getTransactionalDataSource(dsn);
     if (!DBOS.isWithinWorkflow()) {
-      throw new DBOSInvalidWorkflowTransitionError(`Call to transaction '${options.name}' outside of a workflow`);
+      if (getNextWFID(undefined)) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          `Call to transaction '${options.name}' made without starting workflow`,
+        );
+      }
+
+      return await runWithDataSourceContext(0, async () => {
+        return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
+      });
     }
 
     if (DBOS.isInTransaction() || DBOS.isInStep()) {
@@ -187,8 +204,6 @@ export function registerTransaction<This, Args extends unknown[], Return>(
         'Invalid call to a `trasaction` function from within a `step` or `transaction`',
       );
     }
-
-    const ds = getTransactionalDataSource(dsn);
 
     const wfctx = assertCurrentWorkflowContext();
     const callnum = wfctx.functionIDGetIncrement();

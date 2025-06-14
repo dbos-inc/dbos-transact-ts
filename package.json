@@ -12,10 +12,12 @@
   "types": "dist/src/index.d.ts",
   "exports": {
     ".": {
+      "import": "./dist/src/index.js",
       "require": "./dist/src/index.js",
       "types": "./dist/src/index.d.ts"
     },
     "./datasource": {
+      "import": "./dist/src/datasource.js",
       "require": "./dist/src/datasource.js",
       "types": "./dist/src/datasource.d.ts"
     }
