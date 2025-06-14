@@ -311,20 +311,20 @@ describe('start-workflow-function', () => {
     StaticAndInstanceWFs.staticVal = 2;
     const wfi = wfi56;
 
-    const wfh1 = await DBOS.startWorkflowFunction(
-      { instance: StaticAndInstanceWFs, workflowID: wfid1 },
-      StaticAndInstanceWFs.staticWF,
-    );
+    const wfh1 = await DBOS.startWorkflow(StaticAndInstanceWFs.staticWF, {
+      instance: StaticAndInstanceWFs,
+      workflowID: wfid1,
+    })();
     await expect(wfh1.getResult()).resolves.toBe('1-2');
 
-    const wfh2 = await DBOS.startWorkflowFunction(
-      { instance: wfi, workflowID: wfid2 },
+    const wfh2 = await DBOS.startWorkflow(
       // eslint-disable-next-line @typescript-eslint/unbound-method
       wfi.instanceWF,
-    );
+      { instance: wfi, workflowID: wfid2 },
+    )();
     await expect(wfh2.getResult()).resolves.toBe('5-6');
 
-    const wfh3 = await DBOS.startWorkflowFunction({ workflowID: wfid3 }, argsWF, 7, 'f');
+    const wfh3 = await DBOS.startWorkflow(argsWF, { workflowID: wfid3 })(7, 'f');
     await expect(wfh3.getResult()).resolves.toBe('7-f');
 
     const wfidi1 = randomUUID();
