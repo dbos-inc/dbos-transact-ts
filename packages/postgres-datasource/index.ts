@@ -17,7 +17,6 @@ import {
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
-import { SpanStatusCode } from '@opentelemetry/api';
 
 export { IsolationLevel, PostgresTransactionOptions };
 
@@ -151,8 +150,6 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 
           return result;
         });
-        DBOS.span?.setStatus({ code: SpanStatusCode.OK });
-
         return result as Return;
       } catch (error) {
         if (isPGRetriableTransactionError(error)) {
@@ -162,11 +159,8 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
           retryWaitMS = Math.min(retryWaitMS * backoffFactor, maxRetryWaitMS);
           continue;
         } else {
-          const message = SuperJSON.stringify(error);
-          DBOS.span?.setStatus({ code: SpanStatusCode.ERROR, message });
-
           if (saveResults) {
-            // If this is a read/write transaction, record the error
+            const message = SuperJSON.stringify(error);
             await this.#recordError(workflowID, functionNum, message);
           }
 
