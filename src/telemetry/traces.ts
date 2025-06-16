@@ -16,7 +16,7 @@ export class Tracer {
         [SemanticResourceAttributes.SERVICE_NAME]: 'dbos',
       }),
     });
-    this.tracer.register();
+    this.tracer.register(); // this is a no-op if another tracer provider was already registered
     this.applicationID = globalParams.appID;
     this.executorID = globalParams.executorID; // for consistency with src/context.ts
   }
@@ -40,10 +40,12 @@ export class Tracer {
 
   endSpan(span: Span) {
     span.end(hrTime(performance.now()));
-    span.attributes.applicationID = this.applicationID;
-    span.attributes.applicationVersion = globalParams.appVersion;
-    if (!('executorID' in span.attributes)) {
-      span.attributes.executorID = this.executorID;
+    span.setAttributes({
+      applicationID: this.applicationID,
+      applicationVersion: globalParams.appVersion,
+    });
+    if (span.attributes && !('executorID' in span.attributes)) {
+      span.setAttribute('executorID', this.executorID);
     }
     this.telemetryCollector.push(span as ReadableSpan);
   }
