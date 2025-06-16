@@ -186,7 +186,7 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
 
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   static async initializeInternalSchema(options: postgres.Options<{}> = {}): Promise<void> {
-    const pg = postgres({ ...options /*onnotice: () => {}*/ });
+    const pg = postgres({ ...options, onnotice: () => {} });
     try {
       await pg.unsafe(createTransactionCompletionSchemaPG);
       await pg.unsafe(createTransactionCompletionTablePG);
