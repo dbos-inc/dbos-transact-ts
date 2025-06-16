@@ -232,10 +232,6 @@ export interface StartWorkflowParams {
   enqueueOptions?: EnqueueOptions;
 }
 
-export interface StartWorkflowFunctionParams<T> extends StartWorkflowParams {
-  instance?: T;
-}
-
 export function getExecutor() {
   if (!DBOSExecutor.globalInstance) {
     throw new DBOSExecutorNotInitializedError();
@@ -1250,9 +1246,9 @@ export class DBOS {
    * @param params - `StartWorkflowParams` which may specify the ID, queue, or other parameters for starting the workflow
    * @returns `WorkflowHandle` which can be used to interact with the started workflow
    */
-  static startWorkflow<Args extends unknown[], Return, This>(
-    target: (this: This, ...args: Args) => Promise<Return>,
-    params?: StartWorkflowFunctionParams<This>,
+  static startWorkflow<Args extends unknown[], Return>(
+    target: (...args: Args) => Promise<Return>,
+    params?: StartWorkflowParams,
   ): (...args: Args) => Promise<WorkflowHandle<Return>>;
   /**
    * Start a workflow in the background, returning a handle that can be used to check status, await a result,
@@ -1279,9 +1275,9 @@ export class DBOS {
   static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
   static startWorkflow(
     target: ((...args: unknown[]) => Promise<unknown>) | ConfiguredInstance | object,
-    params?: StartWorkflowFunctionParams<unknown>,
+    params?: StartWorkflowParams,
   ): unknown {
-    const instance = typeof target === 'function' ? params?.instance : (target as ConfiguredInstance);
+    const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
     if (instance && typeof instance !== 'function' && !(instance instanceof ConfiguredInstance)) {
       throw new DBOSInvalidWorkflowTransitionError(
         'Attempt to call `startWorkflow` on an object that is not a `ConfiguredInstance`',

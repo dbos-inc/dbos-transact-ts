@@ -312,7 +312,6 @@ describe('start-workflow-function', () => {
     const wfi = wfi56;
 
     const wfh1 = await DBOS.startWorkflow(StaticAndInstanceWFs.staticWF, {
-      instance: StaticAndInstanceWFs,
       workflowID: wfid1,
     })();
     await expect(wfh1.getResult()).resolves.toBe('1-2');
