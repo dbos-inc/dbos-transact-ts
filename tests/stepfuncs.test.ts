@@ -1,6 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { ConfiguredInstance, DBOS, DBOSConfig } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { DBOSInvalidWorkflowTransitionError } from '../src/error';
 
 // Step variant 1: Let DBOS provide the step wrapper making
 //  a reusable function that can be called from multiple places
@@ -260,6 +261,16 @@ async function argsWFFuncGuts(a: number, b: string) {
 
 const argsWF = DBOS.registerWorkflow(argsWFFuncGuts, 'argsWF');
 
+async function stepFuncBare() {
+  // expect(DBOS.isInStep()).toBe(true); // TODO should be true
+  expect(DBOS.isWithinWorkflow()).toBe(false);
+  return Promise.resolve('BareStep');
+}
+
+const stepFunctionBare = DBOS.registerStep(stepFuncBare, {
+  name: 'MyNonWFStep',
+});
+
 // Do this with startWorkflow (in a new form)
 describe('start-workflow-function', () => {
   let config: DBOSConfig;
@@ -300,20 +311,43 @@ describe('start-workflow-function', () => {
     StaticAndInstanceWFs.staticVal = 2;
     const wfi = wfi56;
 
-    const wfh1 = await DBOS.startWorkflowFunction(
-      { instance: StaticAndInstanceWFs, workflowID: wfid1 },
-      StaticAndInstanceWFs.staticWF,
-    );
+    const wfh1 = await DBOS.startWorkflow(StaticAndInstanceWFs.staticWF, {
+      workflowID: wfid1,
+    })();
     await expect(wfh1.getResult()).resolves.toBe('1-2');
 
-    const wfh2 = await DBOS.startWorkflowFunction(
-      { instance: wfi, workflowID: wfid2 },
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      wfi.instanceWF,
-    );
+    const wfh2 = await DBOS.startWorkflow(wfi, { workflowID: wfid2 }).instanceWF();
+    await wfh2.getResult();
     await expect(wfh2.getResult()).resolves.toBe('5-6');
 
-    const wfh3 = await DBOS.startWorkflowFunction({ workflowID: wfid3 }, argsWF, 7, 'f');
+    const wfh3 = await DBOS.startWorkflow(argsWF, { workflowID: wfid3 })(7, 'f');
     await expect(wfh3.getResult()).resolves.toBe('7-f');
+
+    const wfidi1 = randomUUID();
+    const wfhi1 = await DBOS.startWorkflow(StaticAndInstanceWFs, { workflowID: wfidi1 }).staticWF();
+    await expect(wfhi1.getResult()).resolves.toBe('1-2');
+  });
+
+  test('step-outside-wf', async () => {
+    // Check that the bare step does not start a workflow
+    const nwsBefore = (await DBOS.listWorkflows({})).length;
+    expect(nwsBefore).toBeGreaterThanOrEqual(1);
+    const r1 = await stepFunctionBare();
+    expect(r1).toBe('BareStep');
+    const i1 = await DBOS.runStep(
+      async () => {
+        return Promise.resolve('inline');
+      },
+      { name: 'MyFirstStep' },
+    );
+    expect(i1).toBe('inline');
+    const nwsAfter = (await DBOS.listWorkflows({})).length;
+    expect(nwsAfter - nwsBefore).toBe(0);
+
+    //  (If WF requested by providing an ID, this is an error)
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await expect(stepFunctionBare()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    });
   });
 });

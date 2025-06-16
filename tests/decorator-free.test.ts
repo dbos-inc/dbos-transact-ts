@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/unbound-method */
 import { ConfiguredInstance, DBOS, DBOSClient, WorkflowQueue } from '../src/';
 import { DBOSConflictingRegistrationError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
@@ -109,6 +108,7 @@ TestClass.wfRegStepStatic = DBOS.registerWorkflow(TestClass.wfRegStepStatic, 'Te
 TestClass.wfRunStepStatic = DBOS.registerWorkflow(TestClass.wfRunStepStatic, 'TestClass.wfRunStepStatic');
 TestClass.wfRegRetryStatic = DBOS.registerWorkflow(TestClass.wfRegRetryStatic, 'TestClass.wfRegRetryStatic');
 
+/* eslint-disable @typescript-eslint/unbound-method */
 TestClass.prototype.stepTest = DBOS.registerStep(TestClass.prototype.stepTest);
 TestClass.prototype.retryTest = DBOS.registerStep(TestClass.prototype.retryTest, { retriesAllowed: true });
 TestClass.prototype.wfRegStep = DBOS.registerWorkflow(TestClass.prototype.wfRegStep, 'TestClass.prototype.wfRegStep', {
@@ -122,6 +122,7 @@ TestClass.prototype.wfRegRetry = DBOS.registerWorkflow(
   'TestClass.prototype.wfRegRetry',
   { classOrInst: TestClass },
 );
+/* eslint-enable @typescript-eslint/unbound-method */
 
 describe('decorator-free-tests', () => {
   const config = generateDBOSTestConfig();
@@ -139,14 +140,72 @@ describe('decorator-free-tests', () => {
     await DBOS.shutdown();
   });
 
-  test('decorated-wf-startWorkflowFunction', async () => {
-    const handle = await DBOS.startWorkflowFunction({ queueName: queue.name }, TestClass.decoratedWorkflow, 10);
+  test('static-registered-wf-startWorkflow', async () => {
+    const handle = await DBOS.startWorkflow(TestClass, { queueName: queue.name }).wfRegStepStatic(10);
+    await expect(handle.getResult()).resolves.toBe(1000);
+
+    const wfid = handle.workflowID;
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.wfRegStepStatic');
+    expect(status!.queueName).toBe(queue.name);
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTestStatic');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('static-registered-wf-startWorkflow-2', async () => {
+    const handle = await DBOS.startWorkflow(TestClass.wfRegStepStatic, { queueName: queue.name })(10);
+    await expect(handle.getResult()).resolves.toBe(1000);
+
+    const wfid = handle.workflowID;
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.wfRegStepStatic');
+    expect(status!.queueName).toBe(queue.name);
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTestStatic');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('instance-registered-wf-startWorkflow', async () => {
+    const handle = await DBOS.startWorkflow(inst, { queueName: queue.name }).wfRegStep(10);
+    await expect(handle.getResult()).resolves.toBe(1000);
+
+    const wfid = handle.workflowID;
+    const status = await DBOS.getWorkflowStatus(wfid);
+    expect(status).not.toBeNull();
+    expect(status!.workflowName).toBe('TestClass.prototype.wfRegStep');
+    expect(status!.queueName).toBe(queue.name);
+
+    const steps = (await DBOS.listWorkflowSteps(wfid))!;
+    expect(steps.length).toBe(1);
+    expect(steps[0].functionID).toBe(0);
+    expect(steps[0].name).toBe('stepTest');
+    expect(steps[0].output).toEqual(1000);
+    expect(steps[0].error).toBeNull();
+    expect(steps[0].childWorkflowID).toBeNull();
+  });
+
+  test('decorated-wf-startWorkflow', async () => {
+    const handle = await DBOS.startWorkflow(TestClass, { queueName: queue.name }).decoratedWorkflow(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
     const wfid = handle.workflowID;
     const status = await DBOS.getWorkflowStatus(wfid);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('decoratedWorkflow');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(wfid))!;
     expect(steps.length).toBe(1);
@@ -178,13 +237,14 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-free-step-reg-swf', async () => {
-    const handle = await DBOS.startWorkflowFunction({ queueName: queue.name }, regWFRegStep, 10);
+  test('wf-free-step-reg-startWorkflow', async () => {
+    const handle = await DBOS.startWorkflow(regWFRegStep, { queueName: queue.name })(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
     const status = await DBOS.getWorkflowStatus(handle.workflowID);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('wfRegStep');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
     expect(steps.length).toBe(1);
@@ -210,6 +270,7 @@ describe('decorator-free-tests', () => {
       const status = await DBOS.getWorkflowStatus(handle.workflowID);
       expect(status).not.toBeNull();
       expect(status!.workflowName).toBe('wfRegStep');
+      expect(status!.queueName).toBe(queue.name);
 
       const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
       expect(steps.length).toBe(1);
@@ -288,13 +349,14 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-static-step-reg-swf', async () => {
-    const handle = await DBOS.startWorkflowFunction({ queueName: queue.name }, TestClass.wfRegStepStatic, 10);
+  test('wf-static-step-reg-startWorkflow', async () => {
+    const handle = await DBOS.startWorkflow(TestClass, { queueName: queue.name }).wfRegStepStatic(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
     const status = await DBOS.getWorkflowStatus(handle.workflowID);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('TestClass.wfRegStepStatic');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
     expect(steps.length).toBe(1);
@@ -320,6 +382,7 @@ describe('decorator-free-tests', () => {
       const status = await DBOS.getWorkflowStatus(handle.workflowID);
       expect(status).not.toBeNull();
       expect(status!.workflowName).toBe('TestClass.wfRegStepStatic');
+      expect(status!.queueName).toBe(queue.name);
 
       const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
       expect(steps.length).toBe(1);
@@ -397,20 +460,14 @@ describe('decorator-free-tests', () => {
     expect(steps[0].childWorkflowID).toBeNull();
   });
 
-  test('wf-inst-step-reg-swf', async () => {
-    const handle = await DBOS.startWorkflowFunction(
-      {
-        queueName: queue.name,
-        instance: inst,
-      },
-      inst.wfRegStep,
-      10,
-    );
+  test('wf-inst-step-reg-startWorkflow', async () => {
+    const handle = await DBOS.startWorkflow(inst, { queueName: queue.name }).wfRegStep(10);
     await expect(handle.getResult()).resolves.toBe(1000);
 
     const status = await DBOS.getWorkflowStatus(handle.workflowID);
     expect(status).not.toBeNull();
     expect(status!.workflowName).toBe('TestClass.prototype.wfRegStep');
+    expect(status!.queueName).toBe(queue.name);
 
     const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
     expect(steps.length).toBe(1);
@@ -437,6 +494,7 @@ describe('decorator-free-tests', () => {
       const status = await DBOS.getWorkflowStatus(handle.workflowID);
       expect(status).not.toBeNull();
       expect(status!.workflowName).toBe('TestClass.prototype.wfRegStep');
+      expect(status!.queueName).toBe(queue.name);
 
       const steps = (await DBOS.listWorkflowSteps(handle.workflowID))!;
       expect(steps.length).toBe(1);
