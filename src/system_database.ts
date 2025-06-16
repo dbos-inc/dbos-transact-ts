@@ -165,6 +165,7 @@ export interface SystemDatabase {
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
   listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]>;
+  garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void>;
 }
 
 // For internal use, not serialized status.
@@ -1900,5 +1901,37 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Return the IDs of all functions we marked started
     return claimedIDs;
+  }
+
+  async garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void> {
+    if (rowsThreshold !== undefined) {
+      // Get the created_at timestamp of the rows_threshold newest row
+      const result = (await this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
+        .select('created_at')
+        .orderBy('created_at', 'desc')
+        .limit(1)
+        .offset(rowsThreshold - 1)
+        .first()) as { created_at: number } | undefined;
+
+      if (result !== undefined) {
+        const rowsBasedCutoff = result.created_at;
+        // Use the more restrictive cutoff (higher timestamp = more recent = more deletion)
+        if (cutoffEpochTimestampMs === undefined || rowsBasedCutoff > cutoffEpochTimestampMs) {
+          cutoffEpochTimestampMs = rowsBasedCutoff;
+        }
+      }
+    }
+
+    if (cutoffEpochTimestampMs === undefined) {
+      return;
+    }
+
+    // Delete all workflows older than cutoff that are NOT PENDING or ENQUEUED
+    await this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
+      .where('created_at', '<', cutoffEpochTimestampMs)
+      .whereNotIn('status', [StatusString.PENDING, StatusString.ENQUEUED])
+      .del();
+
+    return;
   }
 }

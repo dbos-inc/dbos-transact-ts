@@ -1,13 +1,47 @@
 import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
 import { DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { WorkflowQueue } from '../../src';
-import { generateDBOSTestConfig, generatePublicDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import {
+  generateDBOSTestConfig,
+  generatePublicDBOSTestConfig,
+  queueEntriesAreCleanedUp,
+  setUpDBOSTestDb,
+} from '../helpers';
 import { QueueMetadataResponse } from '../../src/httpServer/server';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../../src/httpServer/server';
 import { globalParams, sleepms } from '../../src/utils';
 import { Client } from 'pg';
 import { step_info } from '../../schemas/system_db_schema';
 import http from 'http';
+import { DBOSWorkflowCancelledError } from '../../src/error';
+
+// Add type definitions for admin server API responses
+interface WorkflowResponse {
+  workflow_id: string;
+  status: string;
+  workflow_name: string;
+  workflow_class_name: string;
+  workflow_config_name?: string;
+  queue_name?: string;
+  authenticated_user?: string;
+  assumed_role?: string;
+  authenticated_roles?: string[];
+  output?: unknown;
+  error?: unknown;
+  input?: unknown[];
+  executor_id?: string;
+  app_version?: string;
+  application_id?: string;
+  recovery_attempts?: number;
+  created_at?: number;
+  updated_at?: number;
+  timeout_ms?: number;
+  deadline_epoch_ms?: number;
+}
+
+interface ErrorResponse {
+  error: string;
+}
 
 describe('not-running-admin-server', () => {
   let config: DBOSConfig;
@@ -49,8 +83,7 @@ describe('running-admin-server-tests', () => {
   let config: DBOSConfigInternal;
   let systemDBClient: Client;
 
-  beforeAll(async () => {
-    // Reset the executor ID
+  beforeEach(async () => {
     process.env.DBOS__VMID = 'test-executor';
     await DBOS.shutdown();
     config = generateDBOSTestConfig();
@@ -66,9 +99,6 @@ describe('running-admin-server-tests', () => {
     await setUpDBOSTestDb(config);
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
-  });
-
-  beforeEach(async () => {
     systemDBClient = new Client({
       user: config.poolConfig.user,
       port: config.poolConfig.port,
@@ -77,16 +107,13 @@ describe('running-admin-server-tests', () => {
       database: config.system_database,
     });
     await systemDBClient.connect();
-    testAdminWorkflow.counter = 0;
+    TestAdminWorkflow.counter = 0;
   });
 
   afterEach(async () => {
     await systemDBClient.end();
-  }, 10000);
-
-  afterAll(async () => {
     await DBOS.shutdown();
-  });
+  }, 10000);
 
   const testQueueOne = new WorkflowQueue('test-queue-1');
   const testQueueTwo = new WorkflowQueue('test-queue-2', { concurrency: 1 });
@@ -97,12 +124,12 @@ describe('running-admin-server-tests', () => {
     rateLimit: { limitPerPeriod: 0, periodSec: 0 },
   });
 
-  class testAdminWorkflow {
+  class TestAdminWorkflow {
     static counter = 0;
 
     @DBOS.workflow()
     static async simpleWorkflow(value: number) {
-      testAdminWorkflow.counter++;
+      TestAdminWorkflow.counter++;
       const msg = await DBOS.recv<string>();
       return `${value}-${msg}`;
     }
@@ -119,9 +146,9 @@ describe('running-admin-server-tests', () => {
 
     @DBOS.workflow()
     static async workflowWithSteps() {
-      await testAdminWorkflow.stepOne();
+      await TestAdminWorkflow.stepOne();
       await DBOS.sleepSeconds(1);
-      await testAdminWorkflow.stepTwo();
+      await TestAdminWorkflow.stepTwo();
       return Promise.resolve();
     }
 
@@ -129,11 +156,18 @@ describe('running-admin-server-tests', () => {
     static async exampleWorkflow(input: number) {
       return Promise.resolve(input);
     }
+
+    @DBOS.workflow()
+    static async blockedWorkflow() {
+      while (true) {
+        await DBOS.sleep(100);
+      }
+    }
   }
 
   test('test-admin-workflow-management', async () => {
     // Run the workflow. Verify it succeeds.
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow(42);
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).simpleWorkflow(42);
 
     // Cancel the workflow. Verify it was cancelled.
     let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}/cancel`, {
@@ -232,7 +266,7 @@ describe('running-admin-server-tests', () => {
   });
 
   test('test-admin-list-workflow-steps', async () => {
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).workflowWithSteps();
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).workflowWithSteps();
     await handle.getResult();
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -258,10 +292,10 @@ describe('running-admin-server-tests', () => {
     expect(globalParams.executorID).toBe('test-executor');
 
     // Run the workflow. Verify it succeeds.
-    const handle = await DBOS.startWorkflow(testAdminWorkflow).simpleWorkflow(42);
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).simpleWorkflow(42);
     await DBOS.send(handle.workflowID, 'message');
     await expect(handle.getResult()).resolves.toEqual('42-message');
-    expect(testAdminWorkflow.counter).toBe(1);
+    expect(TestAdminWorkflow.counter).toBe(1);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -367,7 +401,7 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-deactivate', async () => {
     const value = 5;
-    let handle = await DBOS.startWorkflow(testAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
+    let handle = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
     await expect(handle.getResult()).resolves.toBe(value);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -382,10 +416,207 @@ describe('running-admin-server-tests', () => {
     expect(response.status).toBe(200);
 
     // Verify queues still work after deactivation
-    handle = await DBOS.startWorkflow(testAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
+    handle = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: queue.name }).exampleWorkflow(value);
     await expect(handle.getResult()).resolves.toBe(value);
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
+  });
+
+  test('test-admin-garbage-collect', async () => {
+    const value = 5;
+    await expect(TestAdminWorkflow.exampleWorkflow(value)).resolves.toBe(value);
+    expect((await DBOS.listWorkflows({})).length).toBe(1);
+
+    const response = await fetch(`http://localhost:3001/dbos-garbage-collect`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cutoff_epoch_timestamp_ms: Date.now() }),
+    });
+    expect(response.status).toBe(204);
+
+    expect((await DBOS.listWorkflows({})).length).toBe(0);
+  });
+
+  test('test-admin-global-timeout', async () => {
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).blockedWorkflow();
+    await sleepms(1000);
+
+    const response = await fetch(`http://localhost:3001/dbos-global-timeout`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ cutoff_epoch_timestamp_ms: Date.now() - 1000 }),
+    });
+    expect(response.status).toBe(204);
+
+    await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  test('test-admin-get-workflow', async () => {
+    // Run a workflow to have something to get
+    const handle = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(123);
+    await handle.getResult();
+    await expect(handle.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Test GET /workflows/:workflow_id - existing workflow
+    let response = await fetch(`http://localhost:3001/workflows/${handle.workflowID}`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(response.status).toBe(200);
+    const workflow = (await response.json()) as WorkflowResponse;
+    expect(workflow.workflow_id).toBe(handle.workflowID);
+    expect(workflow.status).toBe(StatusString.SUCCESS);
+    expect(workflow.workflow_name).toBe('exampleWorkflow');
+
+    // Test GET /workflows/:workflow_id - non-existing workflow
+    response = await fetch(`http://localhost:3001/workflows/non-existing-workflow-id`, {
+      method: 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+    });
+    expect(response.status).toBe(404);
+    const errorResponse = (await response.json()) as ErrorResponse;
+    expect(errorResponse.error).toBe('Workflow non-existing-workflow-id not found');
+  });
+
+  test('test-admin-list-workflows', async () => {
+    // Run first workflow
+    const handle1 = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(456);
+    await handle1.getResult();
+    await expect(handle1.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Sleep 1 second
+    await sleepms(1000);
+
+    // Record time between workflows (this will be used for filtering)
+    const firstWorkflowTime = new Date().toISOString();
+
+    // Run second workflow
+    const handle2 = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(789);
+    await handle2.getResult();
+    await expect(handle2.getStatus()).resolves.toMatchObject({
+      status: StatusString.SUCCESS,
+    });
+
+    // Test POST /workflows - list all workflows
+    let response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+    expect(response.status).toBe(200);
+    let workflows = (await response.json()) as WorkflowResponse[];
+
+    // Both workflows should appear in the results
+    const workflowIds = workflows.map((w) => w.workflow_id);
+    expect(workflows.length).toBe(2);
+    expect(workflowIds).toContain(handle1.workflowID);
+    expect(workflowIds).toContain(handle2.workflowID);
+
+    // Test POST /workflows - list with filtering by start time and workflow IDs
+    // This should only return the second workflow since we filter by time after the first workflow
+    // and pass both IDs to make sure the correct filters are applied
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        start_time: firstWorkflowTime,
+        workflow_ids: [handle1.workflowID, handle2.workflowID],
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as WorkflowResponse[];
+
+    // Only the second workflow should be returned since it was created after firstWorkflowTime
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].workflow_id).toBe(handle2.workflowID);
+    expect(workflows[0].status).toBe(StatusString.SUCCESS);
+    expect(workflows[0].workflow_name).toBe('exampleWorkflow');
+  });
+
+  test('test-admin-list-queued-workflows', async () => {
+    // Create a queue for testing
+    const testQueue = new WorkflowQueue('test-admin-list-queue', { concurrency: 1 });
+
+    // Enqueue some workflows that will be blocked
+    const handle1 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();
+    const handle2 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();
+    const handle3 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();
+
+    // Also enqueue a workflow in a different queue
+    const handle4 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueueOne.name }).blockedWorkflow();
+
+    // Test POST /queues - list all queued workflows
+    let response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({}),
+    });
+    expect(response.status).toBe(200);
+    let queuedWorkflows = (await response.json()) as WorkflowResponse[];
+
+    // Should have at least 4 workflows (the ones we just enqueued)
+    expect(queuedWorkflows.length).toBeGreaterThanOrEqual(4);
+
+    // Test filtering by queue name
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        queue_name: testQueue.name,
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as WorkflowResponse[];
+
+    // Should have exactly 3 workflows for this specific queue
+    expect(queuedWorkflows.length).toBe(3);
+    queuedWorkflows.forEach((wf) => {
+      expect(wf.queue_name).toBe(testQueue.name);
+      expect(wf.workflow_name).toBe('blockedWorkflow');
+    });
+
+    // Test with limit
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        limit: 2,
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as WorkflowResponse[];
+
+    // Should have exactly 2 workflows
+    expect(queuedWorkflows.length).toBe(2);
+
+    // Cancel all the workflows to clean up
+    await DBOS.cancelWorkflow(handle1.workflowID);
+    await DBOS.cancelWorkflow(handle2.workflowID);
+    await DBOS.cancelWorkflow(handle3.workflowID);
+    await DBOS.cancelWorkflow(handle4.workflowID);
+    await queueEntriesAreCleanedUp();
   });
 });
