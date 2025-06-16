@@ -31,9 +31,9 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'PostgresDataSource';
   readonly #db: Sql;
 
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
   constructor(
     readonly name: string,
+    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
     options: postgres.Options<{}> = {},
   ) {
     this.#db = postgres(options);
