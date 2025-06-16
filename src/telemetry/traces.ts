@@ -39,14 +39,14 @@ export class Tracer {
   }
 
   endSpan(span: Span) {
-    span.end(hrTime(performance.now()));
-    if (span.attributes) {
-      span.attributes.applicationID = this.applicationID;
-      span.attributes.applicationVersion = globalParams.appVersion;
-    }
+    span.setAttributes({
+      applicationID: this.applicationID,
+      applicationVersion: globalParams.appVersion,
+    });
     if (span.attributes && !('executorID' in span.attributes)) {
-      span.attributes.executorID = this.executorID;
+      span.setAttribute('executorID', this.executorID);
     }
+    span.end(hrTime(performance.now()));
     this.telemetryCollector.push(span as ReadableSpan);
   }
 }
