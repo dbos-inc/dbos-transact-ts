@@ -317,11 +317,7 @@ describe('start-workflow-function', () => {
     })();
     await expect(wfh1.getResult()).resolves.toBe('1-2');
 
-    const wfh2 = await DBOS.startWorkflow(
-      // eslint-disable-next-line @typescript-eslint/unbound-method
-      wfi.instanceWF,
-      { instance: wfi, workflowID: wfid2 },
-    )();
+    const wfh2 = await DBOS.startWorkflow(wfi, { workflowID: wfid2 }).instanceWF();
     await wfh2.getResult();
     await expect(wfh2.getResult()).resolves.toBe('5-6');
 
