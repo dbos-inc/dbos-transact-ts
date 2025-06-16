@@ -48,12 +48,10 @@ const configR = new DebuggerCCTest('configA');
 describe('debugger-test', () => {
   let config: DBOSConfig;
   let debugConfig: DBOSConfig;
-  let debugProxyConfig: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined);
-    debugProxyConfig = generateDBOSTestConfig(undefined);
     await setUpDBOSTestDb(config);
   });
 
@@ -77,12 +75,6 @@ describe('debugger-test', () => {
     });
 
     // Execute again with the provided UUID.
-    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('configA23commcwf5-23');
-    await DBOS.shutdown();
-
-    // TT Mode
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
     await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('configA23commcwf5-23');
     await DBOS.shutdown();
   });

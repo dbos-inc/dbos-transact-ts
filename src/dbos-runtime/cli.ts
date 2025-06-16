@@ -43,7 +43,6 @@ interface DBOSDebugOptions {
   loglevel?: string;
   configfile?: string;
   appVersion?: string | boolean;
-  timeTravel?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -88,20 +87,18 @@ program
 program
   .command('debug')
   .description('Debug a workflow')
-  .option('-x, --proxy <string>', 'Specify the time-travel debug proxy URL for debugging cloud traces (DEPRECATED)')
   .requiredOption('-u, --uuid <string>', 'Specify the workflow UUID to replay')
   .option('-l, --loglevel <string>', 'Specify log level')
   .option('-c, --configfile <string>', 'Specify the config file path (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
-  .option('--time-travel', 'enable time-travel debugging mode')
   .action(async (options: DBOSDebugOptions) => {
     const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile({
       ...options,
       forceConsole: true,
     });
-    await debugWorkflow(dbosConfig, runtimeConfig, options.uuid, options.timeTravel ?? false);
+    await debugWorkflow(dbosConfig, runtimeConfig, options.uuid);
   });
 
 program

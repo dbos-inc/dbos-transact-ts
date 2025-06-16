@@ -159,7 +159,6 @@ export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
 export enum DebugMode {
   DISABLED,
   ENABLED,
-  TIME_TRAVEL,
 }
 
 interface WorkflowRegInfo {
@@ -259,7 +258,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       case DebugMode.DISABLED:
         return false;
       case DebugMode.ENABLED:
-      case DebugMode.TIME_TRAVEL:
         return true;
       default: {
         const _never: never = this.debugMode;
@@ -1197,16 +1195,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
             prevResultFound = true;
             tCtxt.span.setAttribute('cached', true);
 
-            if (this.debugMode === DebugMode.TIME_TRAVEL) {
-              // for time travel debugging, navigate the proxy to the time of this transaction's snapshot
-              await queryFunc(`--proxy:${executionResult.txn_id ?? ''}:${txn_snapshot}`, []);
+            // Return/throw the previous result
+            if (prevResult instanceof Error) {
+              throw prevResult;
             } else {
-              // otherwise, return/throw the previous result
-              if (prevResult instanceof Error) {
-                throw prevResult;
-              } else {
-                return prevResult as R;
-              }
+              return prevResult as R;
             }
           }
         } else {
@@ -1424,16 +1417,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
           if (prevResult !== dbosNull) {
             ctxt.span.setAttribute('cached', true);
 
-            if (this.debugMode === DebugMode.TIME_TRAVEL) {
-              // for time travel debugging, navigate the proxy to the time of this transaction's snapshot
-              await queryFunc(`--proxy:${executionResult.txn_id ?? ''}:${txn_snapshot}`, []);
+            // Return/throw the previous result
+            if (prevResult instanceof Error) {
+              throw prevResult;
             } else {
-              // otherwise, return/throw the previous result
-              if (prevResult instanceof Error) {
-                throw prevResult;
-              } else {
-                return prevResult as R;
-              }
+              return prevResult as R;
             }
           }
         } else {
