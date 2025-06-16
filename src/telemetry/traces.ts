@@ -40,12 +40,12 @@ export class Tracer {
 
   endSpan(span: Span) {
     span.end(hrTime(performance.now()));
-    span.setAttributes({
-      applicationID: this.applicationID,
-      applicationVersion: globalParams.appVersion,
-    });
+    if (span.attributes) {
+      span.attributes.applicationID = this.applicationID;
+      span.attributes.applicationVersion = globalParams.appVersion;
+    }
     if (span.attributes && !('executorID' in span.attributes)) {
-      span.setAttribute('executorID', this.executorID);
+      span.attributes.executorID = this.executorID;
     }
     this.telemetryCollector.push(span as ReadableSpan);
   }
