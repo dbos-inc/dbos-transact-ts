@@ -75,7 +75,7 @@ class TypeOrmDSTH implements DataSourceTransactionHandler {
     await this.dataSource?.destroy();
   }
 
-  async checkExecution<R>(
+  async #checkExecution<R>(
     client: DataSource,
     workflowID: string,
     funcNum: number,
@@ -167,8 +167,8 @@ class TypeOrmDSTH implements DataSourceTransactionHandler {
             throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of Datasource');
           }
 
-          if (shouldCheckOutput && !readOnly) {
-            const executionResult = await this.checkExecution<Return>(this.dataSource, wfid, funcnum);
+          if (shouldCheckOutput && !readOnly && wfid) {
+            const executionResult = await this.#checkExecution<Return>(this.dataSource, wfid, funcnum);
 
             if (executionResult) {
               DBOS.span?.setAttribute('cached', true);
@@ -182,7 +182,7 @@ class TypeOrmDSTH implements DataSourceTransactionHandler {
 
           // Save result
           try {
-            if (!readOnly) {
+            if (!readOnly && wfid) {
               await this.#recordOutput(this.dataSource, wfid, funcnum, result);
             }
           } catch (e) {

@@ -232,10 +232,6 @@ export interface StartWorkflowParams {
   enqueueOptions?: EnqueueOptions;
 }
 
-export interface StartWorkflowFunctionParams<T> extends StartWorkflowParams {
-  instance?: T;
-}
-
 export function getExecutor() {
   if (!DBOSExecutor.globalInstance) {
     throw new DBOSExecutorNotInitializedError();
@@ -1282,7 +1278,7 @@ export class DBOS {
     params?: StartWorkflowParams,
   ): unknown {
     const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
-    if (instance && !(instance instanceof ConfiguredInstance)) {
+    if (instance && typeof instance !== 'function' && !(instance instanceof ConfiguredInstance)) {
       throw new DBOSInvalidWorkflowTransitionError(
         'Attempt to call `startWorkflow` on an object that is not a `ConfiguredInstance`',
       );
@@ -1298,7 +1294,7 @@ export class DBOS {
           const name = typeof target === 'function' ? target.name : target.toString();
           throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
         }
-        return DBOS.#invokeWorkflow(null, regOp, args, params);
+        return DBOS.#invokeWorkflow(instance, regOp, args, params);
       },
       get(target, p, receiver) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
@@ -2103,7 +2099,12 @@ export class DBOS {
         );
       }
 
-      throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+      if (getNextWFID(undefined)) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
+        );
+      }
+      return func.call(this, ...rawArgs);
     };
 
     Object.defineProperty(invokeWrapper, 'name', { value: name });
@@ -2137,7 +2138,13 @@ export class DBOS {
       );
     }
 
-    throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+    if (getNextWFID(undefined)) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
+      );
+    }
+
+    return func();
   }
 
   /** Decorator indicating that the method is the target of HTTP GET operations for `url` */

@@ -107,7 +107,8 @@ class PGDSTH implements DataSourceTransactionHandler {
       try {
         const result = await this.#db.begin<Return>(`${isolationLevel} ${accessMode}`, async (client) => {
           // Check to see if this tx has already been executed
-          const previousResult = readOnly ? undefined : await PGDSTH.#checkExecution(client, workflowID, functionNum);
+          const previousResult =
+            readOnly || !workflowID ? undefined : await PGDSTH.#checkExecution(client, workflowID, functionNum);
           if (previousResult) {
             return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
           }
@@ -118,7 +119,7 @@ class PGDSTH implements DataSourceTransactionHandler {
           });
 
           // save the output of read/write transactions
-          if (!readOnly) {
+          if (!readOnly && workflowID) {
             await PGDSTH.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
             // Note, existing code wraps #recordOutput call in a try/catch block that

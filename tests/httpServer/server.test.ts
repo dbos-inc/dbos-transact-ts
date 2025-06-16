@@ -88,6 +88,12 @@ describe('httpserver-tests', () => {
     expect(response.text).toBe('hello alice');
   });
 
+  test('post-test-qp', async () => {
+    const response = await request(DBOS.getHTTPHandlersCallback()!).post('/testpost?name=alice').send({});
+    expect(response.statusCode).toBe(200);
+    expect(response.text).toBe('hello alice');
+  });
+
   test('post-test-custom-body', async () => {
     let response = await request(DBOS.getHTTPHandlersCallback()!)
       .post('/testpost')
