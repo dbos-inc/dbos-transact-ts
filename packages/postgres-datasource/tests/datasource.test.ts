@@ -59,7 +59,7 @@ describe('PostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user))).resolves.toEqual({
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user))).resolves.toMatchObject({
       user,
       greet_count: 1,
     });
@@ -72,7 +72,19 @@ describe('PostgresDataSource', () => {
     expect(rows[0].workflow_id).toBe(workflowID);
     expect(rows[0].function_num).toBe(0);
     expect(rows[0].output).not.toBeNull();
-    expect(SuperJSON.parse(rows[0].output!)).toEqual({ user, greet_count: 1 });
+    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+  });
+
+  test('rerun insert dataSource.register function', async () => {
+    const user = 'rerunTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user));
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user))).resolves.toMatchObject(result);
   });
 
   test('insert dataSource.runAsTx function', async () => {
@@ -81,7 +93,7 @@ describe('PostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user))).resolves.toEqual({
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user))).resolves.toMatchObject({
       user,
       greet_count: 1,
     });
@@ -94,8 +106,31 @@ describe('PostgresDataSource', () => {
     expect(rows[0].workflow_id).toBe(workflowID);
     expect(rows[0].function_num).toBe(0);
     expect(rows[0].output).not.toBeNull();
-    expect(SuperJSON.parse(rows[0].output!)).toEqual({ user, greet_count: 1 });
+    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
   });
+
+  test('rerun insert dataSource.runAsTx function', async () => {
+    const user = 'rerunTest2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user));
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user))).resolves.toMatchObject(
+      result,
+    );
+  });
+
+  async function throws<R>(func: () => Promise<R>): Promise<unknown> {
+    try {
+      await func();
+      fail('Expected function to throw an error');
+    } catch (error) {
+      return error;
+    }
+  }
 
   test('error dataSource.register function', async () => {
     const user = 'errorTest1';
@@ -104,7 +139,13 @@ describe('PostgresDataSource', () => {
     await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
     const workflowID = randomUUID();
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user))).rejects.toThrow('test error');
+    const error = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user)));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/^test error \d+$/);
+
+    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
+    expect(rows.length).toBe(1);
+    expect(rows[0].greet_count).toBe(10);
 
     const { rows: txOutput } = await userDB.query<transaction_completion>(
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
@@ -115,11 +156,25 @@ describe('PostgresDataSource', () => {
     expect(txOutput[0].function_num).toBe(0);
     expect(txOutput[0].output).toBeNull();
     expect(txOutput[0].error).not.toBeNull();
-    expect(SuperJSON.parse(txOutput[0].error!)).toEqual(new Error('test error'));
+    const $error = SuperJSON.parse(txOutput[0].error!);
+    expect($error).toBeInstanceOf(Error);
+    expect(($error as Error).message).toMatch(/^test error \d+$/);
+  });
 
-    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
-    expect(rows.length).toBe(1);
-    expect(rows[0].greet_count).toBe(10);
+  test('rerun error dataSource.register function', async () => {
+    const user = 'rerunErrorTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+    const workflowID = randomUUID();
+
+    const error = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user)));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/^test error \d+$/);
+
+    const error2 = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user)));
+    expect(error2).toBeInstanceOf(Error);
+    expect((error2 as Error).message).toMatch((error as Error).message);
   });
 
   test('error dataSource.runAsTx function', async () => {
@@ -129,7 +184,13 @@ describe('PostgresDataSource', () => {
     await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
     const workflowID = randomUUID();
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user))).rejects.toThrow('test error');
+    const error = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user)));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/^test error \d+$/);
+
+    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
+    expect(rows.length).toBe(1);
+    expect(rows[0].greet_count).toBe(10);
 
     const { rows: txOutput } = await userDB.query<transaction_completion>(
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
@@ -140,11 +201,25 @@ describe('PostgresDataSource', () => {
     expect(txOutput[0].function_num).toBe(0);
     expect(txOutput[0].output).toBeNull();
     expect(txOutput[0].error).not.toBeNull();
-    expect(SuperJSON.parse(txOutput[0].error!)).toEqual(new Error('test error'));
+    const $error = SuperJSON.parse(txOutput[0].error!);
+    expect($error).toBeInstanceOf(Error);
+    expect(($error as Error).message).toMatch(/^test error \d+$/);
+  });
 
-    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
-    expect(rows.length).toBe(1);
-    expect(rows[0].greet_count).toBe(10);
+  test('rerun error dataSource.runAsTx function', async () => {
+    const user = 'rerunErrorTest2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+    const workflowID = randomUUID();
+
+    const error = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user)));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/^test error \d+$/);
+
+    const error2 = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user)));
+    expect(error2).toBeInstanceOf(Error);
+    expect((error2 as Error).message).toMatch((error as Error).message);
   });
 
   test('readonly dataSource.register function', async () => {
@@ -154,7 +229,7 @@ describe('PostgresDataSource', () => {
     await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
 
     const workflowID = randomUUID();
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regReadWorkflowReg(user))).resolves.toEqual({
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regReadWorkflowReg(user))).resolves.toMatchObject({
       user,
       greet_count: 10,
     });
@@ -172,7 +247,7 @@ describe('PostgresDataSource', () => {
     await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
 
     const workflowID = randomUUID();
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regReadWorkflowRunTx(user))).resolves.toEqual({
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regReadWorkflowRunTx(user))).resolves.toMatchObject({
       user,
       greet_count: 10,
     });
@@ -189,7 +264,7 @@ describe('PostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
 
     const workflowID = randomUUID();
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regStaticWorkflow(user))).resolves.toEqual([
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regStaticWorkflow(user))).resolves.toMatchObject([
       { user, greet_count: 1 },
       { user, greet_count: 1 },
     ]);
@@ -201,7 +276,7 @@ describe('PostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
 
     const workflowID = randomUUID();
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInstanceWorkflow(user))).resolves.toEqual([
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInstanceWorkflow(user))).resolves.toMatchObject([
       { user, greet_count: 1 },
       { user, greet_count: 1 },
     ]);
@@ -221,12 +296,12 @@ async function insertFunction(user: string) {
     DO UPDATE SET greet_count = greetings.greet_count + 1
     RETURNING greet_count`;
   const row = rows.length > 0 ? rows[0] : undefined;
-  return { user, greet_count: row?.greet_count };
+  return { user, greet_count: row?.greet_count, now: Date.now() };
 }
 
 async function errorFunction(user: string) {
   const result = await insertFunction(user);
-  throw new Error('test error');
+  throw new Error(`test error ${Date.now()}`);
   return result;
 }
 
@@ -236,7 +311,7 @@ async function readFunction(user: string) {
     FROM greetings
     WHERE name = ${user}`;
   const row = rows.length > 0 ? rows[0] : undefined;
-  return { user, greet_count: row?.greet_count };
+  return { user, greet_count: row?.greet_count, now: Date.now() };
 }
 
 const regInsertFunction = dataSource.registerTransaction(insertFunction, 'insertFunction');

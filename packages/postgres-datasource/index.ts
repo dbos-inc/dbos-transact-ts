@@ -28,13 +28,14 @@ interface PostgresDataSourceContext {
 const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 
 class PostgresTransactionHandler implements DataSourceTransactionHandler {
-  readonly name: string;
   readonly dsType = 'PostgresDataSource';
   readonly #db: Sql;
 
   // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  constructor(name: string, options: postgres.Options<{}> = {}) {
-    this.name = name;
+  constructor(
+    readonly name: string,
+    options: postgres.Options<{}> = {},
+  ) {
     this.#db = postgres(options);
   }
 
