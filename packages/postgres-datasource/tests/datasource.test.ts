@@ -5,13 +5,14 @@ import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import { SuperJSON } from 'superjson';
 
-const config = { user: 'postgres', database: 'pg_ds_test_userdb' };
+const config = { user: 'postgres', database: 'pg_ds_test_datasource' };
 const dataSource = new PostgresDataSource('app-db', config);
 
 interface transaction_completion {
   workflow_id: string;
   function_num: number;
   output: string | null;
+  error: string | null;
 }
 
 describe('PostgresDataSource', () => {
@@ -22,9 +23,9 @@ describe('PostgresDataSource', () => {
       const client = new Client({ ...config, database: 'postgres' });
       try {
         await client.connect();
-        await dropDB(client, 'knex_ds_test');
-        await dropDB(client, 'knex_ds_test_dbos_sys');
-        await dropDB(client, config.database);
+        await dropDB(client, 'pg_ds_test', true);
+        await dropDB(client, 'pg_ds_test_dbos_sys', true);
+        await dropDB(client, config.database, true);
         await ensureDB(client, config.database);
       } finally {
         await client.end();
@@ -43,7 +44,7 @@ describe('PostgresDataSource', () => {
     }
 
     await PostgresDataSource.initializeInternalSchema(config);
-    DBOS.setConfig({ name: 'knex-ds-test' });
+    DBOS.setConfig({ name: 'pg-ds-test' });
     await DBOS.launch();
   });
 
@@ -105,10 +106,16 @@ describe('PostgresDataSource', () => {
 
     await expect(DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user))).rejects.toThrow('test error');
 
-    const { rows: txOutput } = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1', [
-      workflowID,
-    ]);
-    expect(txOutput.length).toBe(0);
+    const { rows: txOutput } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
+      [workflowID],
+    );
+    expect(txOutput.length).toBe(1);
+    expect(txOutput[0].workflow_id).toBe(workflowID);
+    expect(txOutput[0].function_num).toBe(0);
+    expect(txOutput[0].output).toBeNull();
+    expect(txOutput[0].error).not.toBeNull();
+    expect(SuperJSON.parse(txOutput[0].error!)).toEqual(new Error('test error'));
 
     const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
     expect(rows.length).toBe(1);
@@ -128,7 +135,12 @@ describe('PostgresDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-    expect(txOutput.length).toBe(0);
+    expect(txOutput.length).toBe(1);
+    expect(txOutput[0].workflow_id).toBe(workflowID);
+    expect(txOutput[0].function_num).toBe(0);
+    expect(txOutput[0].output).toBeNull();
+    expect(txOutput[0].error).not.toBeNull();
+    expect(SuperJSON.parse(txOutput[0].error!)).toEqual(new Error('test error'));
 
     const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
     expect(rows.length).toBe(1);
