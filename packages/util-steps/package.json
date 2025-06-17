@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/util-steps",
   "version": "0.0.0-placeholder",
-  "description": "",
+  "description": "Library of DBOS steps for common non-deterministic functions",
   "license": "MIT",
   "repository": {
     "type": "git",
