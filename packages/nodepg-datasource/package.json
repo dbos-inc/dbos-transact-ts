@@ -3,8 +3,8 @@
   "version": "0.0.0-placeholder",
   "description": "",
   "license": "MIT",
-  "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "homepage": "https://docs.dbos.dev/",
   "repository": {
     "type": "git",
