@@ -2,17 +2,7 @@ import request from 'supertest';
 
 import { PrismaClient, testkv } from '@prisma/client';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import {
-  Transaction,
-  TransactionContext,
-  Authentication,
-  MiddlewareContext,
-  GetApi,
-  HandlerContext,
-  RequiredRole,
-  PostApi,
-  DBOS,
-} from '../src';
+import { Authentication, MiddlewareContext, DBOS } from '../src';
 import { DBOSNotAuthorizedError } from '../src/error';
 
 import { randomUUID } from 'node:crypto';
@@ -28,8 +18,6 @@ interface PrismaPGError {
     message: string;
   };
 }
-
-type TestTransactionContext = TransactionContext<PrismaClient>;
 
 /**
  * Funtions used in tests.
@@ -150,10 +138,10 @@ const userTableName = 'dbos_test_user';
 
 @Authentication(PUserManager.authMiddlware)
 class PUserManager {
-  @Transaction()
-  @PostApi('/register')
-  static async createUser(txnCtxt: TestTransactionContext, uname: string) {
-    const res = await txnCtxt.client.dbos_test_user.create({
+  @DBOS.transaction()
+  @DBOS.postApi('/register')
+  static async createUser(uname: string) {
+    const res = await (DBOS.prismaClient as PrismaClient).dbos_test_user.create({
       data: {
         id: 1234,
         username: uname,
@@ -162,10 +150,10 @@ class PUserManager {
     return res;
   }
 
-  @GetApi('/hello')
-  @RequiredRole(['user'])
-  static async hello(hCtxt: HandlerContext) {
-    return Promise.resolve({ messge: 'hello ' + hCtxt.authenticatedUser });
+  @DBOS.getApi('/hello')
+  @DBOS.requiredRole(['user'])
+  static async hello() {
+    return Promise.resolve({ messge: 'hello ' + DBOS.authenticatedUser });
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
