@@ -14,10 +14,7 @@ jobs:
           [
             .,
             packages/aws-config,
-            packages/communicator-bcrypt,
-            packages/communicator-datetime,
             packages/communicator-email-ses,
-            packages/communicator-random,
             packages/component-aws-s3,
             packages/create,
             packages/dbos-cloud,
@@ -25,7 +22,13 @@ jobs:
             packages/dbos-confluent-kafka,
             packages/dbos-kafkajs,
             packages/dbos-sqs,
+            packages/drizzle-datasource,
+            packages/knex-datasource,
             packages/koa-serve,
+            packages/nodepg-datasource,
+            packages/postgres-datasource,
+            packages/typeorm-datasource,
+            packages/util-steps,
           ]
     steps:
       - name: Checkout
