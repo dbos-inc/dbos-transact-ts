@@ -21,9 +21,11 @@ import { SuperJSON } from 'superjson';
 export { IsolationLevel, PostgresTransactionOptions };
 
 interface PostgresDataSourceContext {
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  client: postgres.TransactionSql<{}>;
+  client: postgres.TransactionSql;
 }
+
+// eslint-disable-next-line @typescript-eslint/no-empty-object-type
+type Options = postgres.Options<{}>;
 
 const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 
@@ -33,8 +35,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 
   constructor(
     readonly name: string,
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    options: postgres.Options<{}> = {},
+    options: Options = {},
   ) {
     this.#db = postgres(options);
   }
@@ -63,8 +64,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   }
 
   static async #recordOutput(
-    // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-    client: postgres.TransactionSql<{}>,
+    client: postgres.TransactionSql,
     workflowID: string,
     functionNum: number,
     output: string | null,
@@ -173,8 +173,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 }
 
 export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOptions> {
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  static get client(): postgres.TransactionSql<{}> {
+  static get client(): postgres.TransactionSql {
     if (!DBOS.isInTransaction()) {
       throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
     }
@@ -185,8 +184,7 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     return ctx.client;
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  static async initializeInternalSchema(options: postgres.Options<{}> = {}): Promise<void> {
+  static async initializeInternalSchema(options: Options = {}): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
       await pg.unsafe(createTransactionCompletionSchemaPG);
@@ -199,8 +197,7 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
   readonly name: string;
   #provider: PostgresTransactionHandler;
 
-  // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-  constructor(name: string, options: postgres.Options<{}> = {}) {
+  constructor(name: string, options: Options = {}) {
     this.name = name;
     this.#provider = new PostgresTransactionHandler(name, options);
     registerDataSource(this.#provider);
