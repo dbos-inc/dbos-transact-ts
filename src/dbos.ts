@@ -1092,7 +1092,7 @@ export class DBOS {
    */
   static async now(): Promise<number> {
     if (DBOS.isInWorkflow()) {
-      return DBOS.runStep(async () => Promise.resolve(Date.now()), { name: 'DBOS.now' });
+      return runInternalStep(async () => Promise.resolve(Date.now()), 'DBOS.now');
     }
     return Date.now();
   }
@@ -1103,7 +1103,7 @@ export class DBOS {
    */
   static async randomUUID(): Promise<string> {
     if (DBOS.isInWorkflow()) {
-      return DBOS.runStep(async () => Promise.resolve(randomUUID()), { name: 'DBOS.now' });
+      return runInternalStep(async () => Promise.resolve(randomUUID()), 'DBOS.randomUUID');
     }
     return randomUUID();
   }
