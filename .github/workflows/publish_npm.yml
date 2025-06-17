@@ -28,7 +28,6 @@ jobs:
             packages/nodepg-datasource,
             packages/postgres-datasource,
             packages/typeorm-datasource,
-            packages/util-steps,
           ]
     steps:
       - name: Checkout

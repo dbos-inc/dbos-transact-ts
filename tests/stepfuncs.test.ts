@@ -350,4 +350,19 @@ describe('start-workflow-function', () => {
       await expect(stepFunctionBare()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
     });
   });
+
+  it('should generate uuid', async () => {
+    const uuid = await DBOS.randomUUID();
+    expect(uuid.length).toBeGreaterThan(16);
+    expect(uuid[0]).not.toBe('y');
+  });
+
+  it('Should get dates', async () => {
+    const st = Date.now();
+    const t1 = await DBOS.now();
+    const et = Date.now();
+
+    expect(t1).toBeGreaterThanOrEqual(st);
+    expect(t1).toBeLessThanOrEqual(et);
+  });
 });

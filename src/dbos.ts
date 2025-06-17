@@ -1087,6 +1087,28 @@ export class DBOS {
   }
 
   /**
+   * Get the current time in milliseconds, similar to `Date.now()`.
+   * This function is deterministic and can be used within workflows.
+   */
+  static async now(): Promise<number> {
+    if (DBOS.isInWorkflow()) {
+      return DBOS.runStep(async () => Promise.resolve(Date.now()), { name: 'DBOS.now' });
+    }
+    return Date.now();
+  }
+
+  /**
+   * Generate a random (v4) UUUID, similar to `node:crypto.randomUUID`.
+   * This function is deterministic and can be used within workflows.
+   */
+  static async randomUUID(): Promise<string> {
+    if (DBOS.isInWorkflow()) {
+      return DBOS.runStep(async () => Promise.resolve(randomUUID()), { name: 'DBOS.now' });
+    }
+    return randomUUID();
+  }
+
+  /**
    * Use the provided `workflowID` as the identifier for first workflow started
    *   within the `callback` function.
    * @param workflowID - ID to assign to the first workflow started
