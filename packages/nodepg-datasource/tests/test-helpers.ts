@@ -7,6 +7,7 @@ export async function ensureDB(client: Client, name: string) {
   }
 }
 
-export async function dropDB(client: Client, name: string) {
-  await client.query(`DROP DATABASE IF EXISTS ${name}`);
+export async function dropDB(client: Client, name: string, force: boolean = false) {
+  const withForce = force ? ' WITH (FORCE)' : '';
+  await client.query(`DROP DATABASE IF EXISTS ${name} ${withForce}`);
 }
