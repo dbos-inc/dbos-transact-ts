@@ -17,7 +17,7 @@ export { DBOSKoa, DBOSKoaAuthContext, DBOSKoaClassReg, DBOSKoaAuthMiddleware, DB
 
 export const DefaultArgOptional = DBOSKoa.defaultArgOptional;
 export const DefaultArgRequired = DBOSKoa.defaultArgRequired;
-export const DefaultArgValiate = DBOSKoa.defaultArgValidate;
+export const DefaultArgValidate = DBOSKoa.defaultArgValidate;
 export const ArgDate = DBOSKoa.argDate;
 export const ArgOptional = DBOSKoa.argOptional;
 export const ArgRequired = DBOSKoa.argRequired;
