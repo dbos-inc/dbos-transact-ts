@@ -140,9 +140,10 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     const readOnly = config?.readOnly ?? false;
     const saveResults = !readOnly && workflowID;
 
+    // Retry loop if appropriate
     let retryWaitMS = 1;
     const backoffFactor = 1.5;
-    const maxRetryWaitMS = 2000;
+    const maxRetryWaitMS = 2000; // Maximum wait 2 seconds.
 
     while (true) {
       // Check to see if this tx has already been executed
@@ -158,27 +159,24 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
       }
 
       try {
-        const result = await this.#transaction<Return>(
-          async (client) => {
-            // execute user's transaction function
-            const result = await asyncLocalCtx.run({ client }, async () => {
-              return (await func.call(target, ...args)) as Return;
-            });
+        const result = await this.#transaction<Return>(async (client) => {
+          // execute user's transaction function
+          const result = await asyncLocalCtx.run({ client }, async () => {
+            return (await func.call(target, ...args)) as Return;
+          });
 
-            // save the output of read/write transactions
-            if (saveResults) {
-              await NodePostgresTransactionHandler.#recordOutput(
-                client,
-                workflowID,
-                functionNum,
-                SuperJSON.stringify(result),
-              );
-            }
+          // save the output of read/write transactions
+          if (saveResults) {
+            await NodePostgresTransactionHandler.#recordOutput(
+              client,
+              workflowID,
+              functionNum,
+              SuperJSON.stringify(result),
+            );
+          }
 
-            return result;
-          },
-          { isolationLevel: config?.isolationLevel, readOnly: config?.readOnly },
-        );
+          return result;
+        }, config);
 
         return result;
       } catch (error) {
@@ -207,7 +205,7 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('No async local context found.');
+      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
     }
     return ctx.client;
   }

@@ -116,9 +116,10 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     const accessMode = config?.readOnly === undefined ? '' : readOnly ? 'READ ONLY' : 'READ WRITE';
     const saveResults = !readOnly && workflowID;
 
+    // Retry loop if appropriate
     let retryWaitMS = 1;
     const backoffFactor = 1.5;
-    const maxRetryWaitMS = 2000;
+    const maxRetryWaitMS = 2000; // Maximum wait 2 seconds.
 
     while (true) {
       // Check to see if this tx has already been executed
@@ -179,7 +180,7 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('No async local context found.');
+      throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
     }
     return ctx.client;
   }
@@ -194,11 +195,12 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     }
   }
 
-  readonly name: string;
   #provider: PostgresTransactionHandler;
 
-  constructor(name: string, options: Options = {}) {
-    this.name = name;
+  constructor(
+    readonly name: string,
+    options: Options = {},
+  ) {
     this.#provider = new PostgresTransactionHandler(name, options);
     registerDataSource(this.#provider);
   }

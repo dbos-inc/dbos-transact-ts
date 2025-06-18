@@ -5,7 +5,7 @@ import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import { SuperJSON } from 'superjson';
 
-const config = { user: 'postgres', database: 'nodepg_ds_test_datasource' };
+const config = { user: 'postgres', database: 'node_pg_ds_test_datasource' };
 const dataSource = new NodePostgresDataSource('app-db', config);
 
 interface transaction_completion {

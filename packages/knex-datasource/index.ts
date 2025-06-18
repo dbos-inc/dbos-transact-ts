@@ -123,9 +123,10 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     const readOnly = config?.readOnly ?? false;
     const saveResults = !readOnly && workflowID;
 
+    // Retry loop if appropriate
     let retryWaitMS = 1;
     const backoffFactor = 1.5;
-    const maxRetryWaitMS = 2000;
+    const maxRetryWaitMS = 2000; // Maximum wait 2 seconds.
 
     while (true) {
       // Check to see if this tx has already been executed
@@ -184,7 +185,7 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('No async local context found.');
+      throw new Error('invalid use of KnexDataSource.client outside of a DBOS transaction.');
     }
     return ctx.client;
   }
@@ -199,11 +200,12 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
   }
 
-  readonly name: string;
   #provider: KnexTransactionHandler;
 
-  constructor(name: string, config: Knex.Config) {
-    this.name = name;
+  constructor(
+    readonly name: string,
+    config: Knex.Config,
+  ) {
     this.#provider = new KnexTransactionHandler(name, config);
     registerDataSource(this.#provider);
   }
