@@ -967,8 +967,8 @@ export function getRegistrationsForExternal(
   funcName?: string,
 ) {
   const res: {
-    methodConfig: unknown;
-    classConfig: unknown;
+    methodConfig?: unknown;
+    classConfig?: unknown;
     methodReg: MethodRegistrationBase;
     paramConfig: { name: string; index: number; paramConfig?: object }[];
   }[] = [];
