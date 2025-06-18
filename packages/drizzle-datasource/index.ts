@@ -74,13 +74,13 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
   async #checkExecution(
     workflowID: string,
-    funcNum: number,
+    stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
 
     const statement = sql`
         SELECT output, error FROM dbos.transaction_completion
-        WHERE workflow_id = ${workflowID} AND function_num = ${funcNum}`;
+        WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
     const result = await this.#drizzle.execute<Result>(statement);
 
     if (result.rows.length !== 1) {
@@ -94,13 +94,13 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   static async #recordOutput(
     client: NodePgDatabase<{ [key: string]: object }>,
     workflowID: string,
-    funcNum: number,
+    stepID: number,
     output: string,
   ): Promise<void> {
     try {
       const statement = sql`
         INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
-        VALUES (${workflowID}, ${funcNum}, ${output})`;
+        VALUES (${workflowID}, ${stepID}, ${output})`;
       await client.execute(statement);
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -111,11 +111,11 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     }
   }
 
-  async #recordError(workflowID: string, funcNum: number, error: string): Promise<void> {
+  async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       const statement = sql`
         INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
-        VALUES (${workflowID}, ${funcNum}, ${error})`;
+        VALUES (${workflowID}, ${stepID}, ${error})`;
       await this.#drizzle.execute(statement);
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -134,12 +134,9 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     ...args: Args
   ): Promise<Return> {
     const workflowID = DBOS.workflowID;
-    if (workflowID === undefined) {
-      throw new Error('Workflow ID is not set.');
-    }
-    const functionNum = DBOS.stepID;
-    if (functionNum === undefined) {
-      throw new Error('Function Number is not set.');
+    const stepID = DBOS.stepID;
+    if (workflowID !== undefined && stepID === undefined) {
+      throw new Error('DBOS.stepID is undefined inside a workflow.');
     }
 
     const readOnly = config?.accessMode === 'read only' ? true : false;
@@ -152,7 +149,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
     while (true) {
       // Check to see if this tx has already been executed
-      const previousResult = saveResults ? await this.#checkExecution(workflowID, functionNum) : undefined;
+      const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
       if (previousResult) {
         DBOS.span?.setAttribute('cached', true);
 
@@ -172,12 +169,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
             // save the output of read/write transactions
             if (saveResults) {
-              await DrizzleTransactionHandler.#recordOutput(
-                client,
-                workflowID,
-                functionNum,
-                SuperJSON.stringify(result),
-              );
+              await DrizzleTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
             }
 
             return result;
@@ -196,7 +188,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, functionNum, message);
+            await this.#recordError(workflowID, stepID!, message);
           }
 
           throw error;

@@ -1,0 +1,460 @@
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import { Client, Pool, PoolConfig } from 'pg';
+import { DrizzleDataSource } from '..';
+import { dropDB, ensureDB } from './test-helpers';
+import { randomUUID } from 'crypto';
+import SuperJSON from 'superjson';
+import { pgTable, text, integer } from 'drizzle-orm/pg-core';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { pushSchema } from 'drizzle-kit/api';
+import { eq, sql } from 'drizzle-orm';
+
+const config = { user: 'postgres', database: 'drizzle_ds_test_userdb' };
+const dataSource = new DrizzleDataSource('app-db', config);
+
+interface transaction_completion {
+  workflow_id: string;
+  function_num: number;
+  output: string | null;
+  error: string | null;
+}
+
+async function createSchema(config: PoolConfig, entities: { [key: string]: object }) {
+  const drizzlePool = new Pool(config);
+  const db = drizzle(drizzlePool);
+  try {
+    const res = await pushSchema(entities, db);
+    await res.apply();
+  } finally {
+    await drizzlePool.end();
+  }
+}
+
+describe('DrizzleDataSource', () => {
+  const userDB = new Pool(config);
+
+  beforeAll(async () => {
+    {
+      const client = new Client({ ...config, database: 'postgres' });
+      try {
+        await client.connect();
+        await dropDB(client, 'drizzle_ds_test', true);
+        await dropDB(client, 'drizzle_ds_test_dbos_sys', true);
+        await dropDB(client, config.database, true);
+        await ensureDB(client, config.database);
+      } finally {
+        await client.end();
+      }
+    }
+
+    await DrizzleDataSource.initializeInternalSchema(config);
+    await createSchema(config, { greetingsTable });
+  });
+
+  afterAll(async () => {
+    await userDB.end();
+  });
+
+  beforeEach(async () => {
+    DBOS.setConfig({ name: 'drizzle-ds-test' });
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('insert dataSource.register function', async () => {
+    const user = 'helloTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user))).resolves.toMatchObject({
+      user,
+      greet_count: 1,
+    });
+
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
+      [workflowID],
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].workflow_id).toBe(workflowID);
+    expect(rows[0].function_num).toBe(0);
+    expect(rows[0].output).not.toBeNull();
+    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+  });
+
+  test('rerun insert dataSource.register function', async () => {
+    const user = 'rerunTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user));
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user))).resolves.toMatchObject(result);
+  });
+
+  test('insert dataSource.runAsTx function', async () => {
+    const user = 'helloTest2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user))).resolves.toMatchObject({
+      user,
+      greet_count: 1,
+    });
+
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
+      [workflowID],
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].workflow_id).toBe(workflowID);
+    expect(rows[0].function_num).toBe(0);
+    expect(rows[0].output).not.toBeNull();
+    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+  });
+
+  test('rerun insert dataSource.runAsTx function', async () => {
+    const user = 'rerunTest2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user));
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user))).resolves.toMatchObject(
+      result,
+    );
+  });
+
+  async function throws<R>(func: () => Promise<R>): Promise<unknown> {
+    try {
+      await func();
+      fail('Expected function to throw an error');
+    } catch (error) {
+      return error;
+    }
+  }
+
+  test('error dataSource.register function', async () => {
+    const user = 'errorTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+    const workflowID = randomUUID();
+
+    const error = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user)));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/^test error \d+$/);
+
+    interface greetings {
+      name: string;
+      greet_count: number;
+    }
+    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
+    expect(rows.length).toBe(1);
+    expect(rows[0].greet_count).toBe(10);
+
+    const { rows: txOutput } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
+      [workflowID],
+    );
+    expect(txOutput.length).toBe(1);
+    expect(txOutput[0].workflow_id).toBe(workflowID);
+    expect(txOutput[0].function_num).toBe(0);
+    expect(txOutput[0].output).toBeNull();
+    expect(txOutput[0].error).not.toBeNull();
+    const $error = SuperJSON.parse(txOutput[0].error!);
+    expect($error).toBeInstanceOf(Error);
+    expect(($error as Error).message).toMatch(/^test error \d+$/);
+  });
+
+  test('rerun error dataSource.register function', async () => {
+    const user = 'rerunErrorTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+    const workflowID = randomUUID();
+
+    const error = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user)));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/^test error \d+$/);
+
+    const error2 = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowReg(user)));
+    expect(error2).toBeInstanceOf(Error);
+    expect((error2 as Error).message).toMatch((error as Error).message);
+  });
+
+  test('error dataSource.runAsTx function', async () => {
+    const user = 'errorTest2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+    const workflowID = randomUUID();
+
+    const error = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user)));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/^test error \d+$/);
+
+    interface greetings {
+      name: string;
+      greet_count: number;
+    }
+    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
+    expect(rows.length).toBe(1);
+    expect(rows[0].greet_count).toBe(10);
+
+    const { rows: txOutput } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
+      [workflowID],
+    );
+    expect(txOutput.length).toBe(1);
+    expect(txOutput[0].workflow_id).toBe(workflowID);
+    expect(txOutput[0].function_num).toBe(0);
+    expect(txOutput[0].output).toBeNull();
+    expect(txOutput[0].error).not.toBeNull();
+    const $error = SuperJSON.parse(txOutput[0].error!);
+    expect($error).toBeInstanceOf(Error);
+    expect(($error as Error).message).toMatch(/^test error \d+$/);
+  });
+
+  test('rerun error dataSource.runAsTx function', async () => {
+    const user = 'rerunErrorTest2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+    const workflowID = randomUUID();
+
+    const error = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user)));
+    expect(error).toBeInstanceOf(Error);
+    expect((error as Error).message).toMatch(/^test error \d+$/);
+
+    const error2 = await throws(() => DBOS.withNextWorkflowID(workflowID, () => regErrorWorkflowRunTx(user)));
+    expect(error2).toBeInstanceOf(Error);
+    expect((error2 as Error).message).toMatch((error as Error).message);
+  });
+
+  test('readonly dataSource.register function', async () => {
+    const user = 'readTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regReadWorkflowReg(user))).resolves.toMatchObject({
+      user,
+      greet_count: 10,
+    });
+
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1', [
+      workflowID,
+    ]);
+    expect(rows.length).toBe(0);
+  });
+
+  test('readonly dataSource.runAsTx function', async () => {
+    const user = 'readTest2';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    await userDB.query('INSERT INTO greetings("name","greet_count") VALUES($1,10);', [user]);
+
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regReadWorkflowRunTx(user))).resolves.toMatchObject({
+      user,
+      greet_count: 10,
+    });
+
+    const { rows } = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1', [
+      workflowID,
+    ]);
+    expect(rows.length).toBe(0);
+  });
+
+  test('static dataSource.register methods', async () => {
+    const user = 'staticTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regStaticWorkflow(user))).resolves.toMatchObject([
+      { user, greet_count: 1 },
+      { user, greet_count: 1 },
+    ]);
+  });
+
+  test('instance dataSource.register methods', async () => {
+    const user = 'instanceTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+
+    const workflowID = randomUUID();
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInstanceWorkflow(user))).resolves.toMatchObject([
+      { user, greet_count: 1 },
+      { user, greet_count: 1 },
+    ]);
+  });
+
+  test('invoke-reg-tx-fun-outside-wf', async () => {
+    const user = 'outsideWfUser' + Date.now();
+    const result = await regInsertFunction(user);
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    const txResults = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE output LIKE $1', [
+      `%${user}%`,
+    ]);
+    expect(txResults.rows.length).toBe(0);
+  });
+
+  test('invoke-reg-tx-static-method-outside-wf', async () => {
+    const user = 'outsideWfUser' + Date.now();
+    const result = await StaticClass.insertFunction(user);
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    const txResults = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE output LIKE $1', [
+      `%${user}%`,
+    ]);
+    expect(txResults.rows.length).toBe(0);
+  });
+
+  test('invoke-reg-tx-inst-method-outside-wf', async () => {
+    const user = 'outsideWfUser' + Date.now();
+    const instance = new InstanceClass();
+    const result = await instance.insertFunction(user);
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    const txResults = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE output LIKE $1', [
+      `%${user}%`,
+    ]);
+    expect(txResults.rows.length).toBe(0);
+  });
+});
+
+const greetingsTable = pgTable('greetings', {
+  name: text('name').primaryKey().notNull(),
+  greet_count: integer('greet_count').default(0),
+});
+
+async function insertFunction(user: string) {
+  const result = await DrizzleDataSource.client
+    .insert(greetingsTable)
+    .values({ name: user, greet_count: 1 })
+    .onConflictDoUpdate({
+      target: greetingsTable.name,
+      set: {
+        greet_count: sql`${greetingsTable.greet_count} + 1`,
+      },
+    })
+    .returning({ greet_count: greetingsTable.greet_count });
+
+  const row = result.length > 0 ? result[0] : undefined;
+  return { user, greet_count: row?.greet_count, now: Date.now() };
+}
+
+async function errorFunction(user: string) {
+  const result = await insertFunction(user);
+  throw new Error(`test error ${Date.now()}`);
+  return result;
+}
+
+async function readFunction(user: string) {
+  const result = await DrizzleDataSource.client
+    .select({ greet_count: greetingsTable.greet_count })
+    .from(greetingsTable)
+    .where(eq(greetingsTable.name, user));
+  const row = result.length > 0 ? result[0] : undefined;
+  return { user, greet_count: row?.greet_count, now: Date.now() };
+}
+
+const regInsertFunction = dataSource.registerTransaction(insertFunction, 'insertFunction');
+const regErrorFunction = dataSource.registerTransaction(errorFunction, 'errorFunction');
+const regReadFunction = dataSource.registerTransaction(readFunction, 'readFunction', { accessMode: 'read only' });
+
+class StaticClass {
+  static async insertFunction(user: string) {
+    return await insertFunction(user);
+  }
+
+  static async readFunction(user: string) {
+    return await readFunction(user);
+  }
+}
+
+StaticClass.insertFunction = dataSource.registerTransaction(StaticClass.insertFunction, 'insertFunction');
+StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, 'readFunction', {
+  accessMode: 'read only',
+});
+
+class InstanceClass {
+  async insertFunction(user: string) {
+    return await insertFunction(user);
+  }
+
+  async readFunction(user: string) {
+    return await readFunction(user);
+  }
+}
+
+InstanceClass.prototype.insertFunction = dataSource.registerTransaction(
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  InstanceClass.prototype.insertFunction,
+  'insertFunction',
+);
+InstanceClass.prototype.readFunction = dataSource.registerTransaction(
+  // eslint-disable-next-line @typescript-eslint/unbound-method
+  InstanceClass.prototype.readFunction,
+  'readFunction',
+  { accessMode: 'read only' },
+);
+
+async function insertWorkflowReg(user: string) {
+  return await regInsertFunction(user);
+}
+
+async function insertWorkflowRunTx(user: string) {
+  return await dataSource.runTransaction(() => insertFunction(user), 'insertFunction');
+}
+
+async function errorWorkflowReg(user: string) {
+  return await regErrorFunction(user);
+}
+
+async function errorWorkflowRunTx(user: string) {
+  return await dataSource.runTransaction(() => errorFunction(user), 'errorFunction');
+}
+
+async function readWorkflowReg(user: string) {
+  return await regReadFunction(user);
+}
+
+async function readWorkflowRunTx(user: string) {
+  return await dataSource.runTransaction(() => readFunction(user), 'readFunction', { accessMode: 'read only' });
+}
+
+async function staticWorkflow(user: string) {
+  const result = await StaticClass.insertFunction(user);
+  const readResult = await StaticClass.readFunction(user);
+  return [result, readResult];
+}
+
+async function instanceWorkflow(user: string) {
+  const instance = new InstanceClass();
+  const result = await instance.insertFunction(user);
+  const readResult = await instance.readFunction(user);
+  return [result, readResult];
+}
+
+const regInsertWorfklowReg = DBOS.registerWorkflow(insertWorkflowReg, 'insertWorkflowReg');
+const regInsertWorfklowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx, 'insertWorkflowRunTx');
+const regErrorWorkflowReg = DBOS.registerWorkflow(errorWorkflowReg, 'errorWorkflowReg');
+const regErrorWorkflowRunTx = DBOS.registerWorkflow(errorWorkflowRunTx, 'errorWorkflowRunTx');
+const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg, 'readWorkflowReg');
+const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx, 'readWorkflowRunTx');
+const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow, 'staticWorkflow');
+const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow, 'instanceWorkflow');
