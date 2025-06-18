@@ -144,17 +144,6 @@ class SQSCommunicator extends ConfiguredInstance {
       //logger: console,
     });
   }
-
-  @Communicator()
-  async sendMessage(ctx: CommunicatorContext, msg: MessageWithOptionalQueueUrl) {
-    try {
-      const smsg = { ...msg, QueueUrl: msg.QueueUrl || this.config.queueUrl || this.config.queueURL };
-      return await this.client!.send(new SendMessageCommand(smsg));
-    } catch (e) {
-      ctx.logger.error(e);
-      throw e;
-    }
-  }
 }
 
 interface SQSReceiverClassDefaults {
