@@ -373,7 +373,7 @@ class StaticClass {
 }
 
 StaticClass.insertFunction = dataSource.registerTransaction(StaticClass.insertFunction, 'insertFunction');
-StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, 'readFunction');
+StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, 'readFunction', { readOnly: true });
 
 class InstanceClass {
   async insertFunction(user: string) {
@@ -394,6 +394,7 @@ InstanceClass.prototype.readFunction = dataSource.registerTransaction(
   // eslint-disable-next-line @typescript-eslint/unbound-method
   InstanceClass.prototype.readFunction,
   'readFunction',
+  { readOnly: true },
 );
 
 async function insertWorkflowReg(user: string) {
