@@ -55,14 +55,14 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
 
   async #checkExecution(
     workflowID: string,
-    functionNum: number,
+    stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
     const { rows } = await this.#pool.query<Result>(
       /*sql*/
       `SELECT output, error FROM dbos.transaction_completion
        WHERE workflow_id = $1 AND function_num = $2`,
-      [workflowID, functionNum],
+      [workflowID, stepID],
     );
     if (rows.length === 0) {
       return undefined;
@@ -74,7 +74,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
   static async #recordOutput(
     client: ClientBase,
     workflowID: string,
-    functionNum: number,
+    stepID: number,
     output: string | null,
   ): Promise<void> {
     try {
@@ -82,7 +82,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
         /*sql*/
         `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
          VALUES ($1, $2, $3)`,
-        [workflowID, functionNum, output],
+        [workflowID, stepID, output],
       );
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -93,13 +93,13 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     }
   }
 
-  async #recordError(workflowID: string, functionNum: number, error: string): Promise<void> {
+  async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.#pool.query(
         /*sql*/
         `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
          VALUES ($1, $2, $3)`,
-        [workflowID, functionNum, error],
+        [workflowID, stepID, error],
       );
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -139,16 +139,13 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     ...args: Args
   ): Promise<Return> {
     const workflowID = DBOS.workflowID;
-    if (workflowID === undefined) {
-      throw new Error('Workflow ID is not set.');
-    }
-    const functionNum = DBOS.stepID;
-    if (functionNum === undefined) {
-      throw new Error('Function Number is not set.');
+    const stepID = DBOS.stepID;
+    if (workflowID !== undefined && stepID === undefined) {
+      throw new Error('DBOS.stepID is undefined inside a workflow.');
     }
 
     const readOnly = config?.readOnly ?? false;
-    const saveResults = !readOnly && workflowID;
+    const saveResults = !readOnly && workflowID !== undefined;
 
     // Retry loop if appropriate
     let retryWaitMS = 1;
@@ -157,7 +154,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
 
     while (true) {
       // Check to see if this tx has already been executed
-      const previousResult = saveResults ? await this.#checkExecution(workflowID, functionNum) : undefined;
+      const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
       if (previousResult) {
         DBOS.span?.setAttribute('cached', true);
 
@@ -180,7 +177,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
             await NodePostgresTransactionHandler.#recordOutput(
               client,
               workflowID,
-              functionNum,
+              stepID!,
               SuperJSON.stringify(result),
             );
           }
@@ -198,7 +195,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, functionNum, message);
+            await this.#recordError(workflowID, stepID!, message);
           }
 
           throw error;

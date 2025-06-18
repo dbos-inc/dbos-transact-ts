@@ -61,14 +61,14 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
 
   async #checkExecution(
     workflowID: string,
-    functionNum: number,
+    stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     const result = await this.#knexDB<transaction_completion>('transaction_completion')
       .withSchema('dbos')
       .select('output', 'error')
       .where({
         workflow_id: workflowID,
-        function_num: functionNum,
+        function_num: stepID,
       })
       .first();
     if (result === undefined) {
@@ -78,11 +78,11 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     return error !== null ? { error } : { output };
   }
 
-  async #recordError(workflowID: string, functionNum: number, error: string): Promise<void> {
+  async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.#knexDB<transaction_completion>('transaction_completion').withSchema('dbos').insert({
         workflow_id: workflowID,
-        function_num: functionNum,
+        function_num: stepID,
         error,
       });
     } catch (error) {
@@ -97,13 +97,13 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
   static async #recordOutput(
     client: Knex.Transaction,
     workflowID: string,
-    functionNum: number,
+    stepID: number,
     output: string | null,
   ): Promise<void> {
     try {
       await client<transaction_completion>('transaction_completion').withSchema('dbos').insert({
         workflow_id: workflowID,
-        function_num: functionNum,
+        function_num: stepID,
         output,
       });
     } catch (error) {
@@ -122,16 +122,13 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     ...args: Args
   ): Promise<Return> {
     const workflowID = DBOS.workflowID;
-    if (workflowID === undefined) {
-      throw new Error('Workflow ID is not set.');
-    }
-    const functionNum = DBOS.stepID;
-    if (functionNum === undefined) {
-      throw new Error('Function Number is not set.');
+    const stepID = DBOS.stepID;
+    if (workflowID !== undefined && stepID === undefined) {
+      throw new Error('DBOS.stepID is undefined inside a workflow.');
     }
 
     const readOnly = config?.readOnly ?? false;
-    const saveResults = !readOnly && workflowID;
+    const saveResults = !readOnly && workflowID !== undefined;
 
     // Retry loop if appropriate
     let retryWaitMS = 1;
@@ -140,7 +137,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
 
     while (true) {
       // Check to see if this tx has already been executed
-      const previousResult = saveResults ? await this.#checkExecution(workflowID, functionNum) : undefined;
+      const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
       if (previousResult) {
         DBOS.span?.setAttribute('cached', true);
 
@@ -160,7 +157,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
 
             // save the output of read/write transactions
             if (saveResults) {
-              await KnexTransactionHandler.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
+              await KnexTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
             }
 
             return result;
@@ -178,7 +175,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, functionNum, message);
+            await this.#recordError(workflowID, stepID!, message);
           }
 
           throw error;

@@ -287,6 +287,40 @@ describe('PostgresDataSource', () => {
       { user, greet_count: 1 },
     ]);
   });
+
+  test('invoke-reg-tx-fun-outside-wf', async () => {
+    const user = 'outsideWfUser' + Date.now();
+    const result = await regInsertFunction(user);
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    const txResults = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE output LIKE $1', [
+      `%${user}%`,
+    ]);
+    expect(txResults.rows.length).toBe(0);
+  });
+
+  test('invoke-reg-tx-static-method-outside-wf', async () => {
+    const user = 'outsideWfUser' + Date.now();
+    const result = await StaticClass.insertFunction(user);
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    const txResults = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE output LIKE $1', [
+      `%${user}%`,
+    ]);
+    expect(txResults.rows.length).toBe(0);
+  });
+
+  test('invoke-reg-tx-inst-method-outside-wf', async () => {
+    const user = 'outsideWfUser' + Date.now();
+    const instance = new InstanceClass();
+    const result = await instance.insertFunction(user);
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    const txResults = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE output LIKE $1', [
+      `%${user}%`,
+    ]);
+    expect(txResults.rows.length).toBe(0);
+  });
 });
 
 export interface greetings {

@@ -59,12 +59,12 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 
   async #checkExecution(
     workflowID: string,
-    functionNum: number,
+    stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
     const result = await this.#db<Result[]>/*sql*/ `
       SELECT output, error FROM dbos.transaction_completion
-      WHERE workflow_id = ${workflowID} AND function_num = ${functionNum}`;
+      WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
     if (result.length === 0) {
       return undefined;
     }
@@ -75,13 +75,13 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   static async #recordOutput(
     client: postgres.TransactionSql,
     workflowID: string,
-    functionNum: number,
+    stepID: number,
     output: string | null,
   ): Promise<void> {
     try {
       await client/*sql*/ `
         INSERT INTO dbos.transaction_completion (workflow_id, function_num, output)
-        VALUES (${workflowID}, ${functionNum}, ${output})`;
+        VALUES (${workflowID}, ${stepID}, ${output})`;
     } catch (error) {
       if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
@@ -91,11 +91,11 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     }
   }
 
-  async #recordError(workflowID: string, functionNum: number, error: string): Promise<void> {
+  async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.#db/*sql*/ `
         INSERT INTO dbos.transaction_completion (workflow_id, function_num, error)
-        VALUES (${workflowID}, ${functionNum}, ${error})`;
+        VALUES (${workflowID}, ${stepID}, ${error})`;
     } catch (error) {
       if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
@@ -112,18 +112,15 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     ...args: Args
   ): Promise<Return> {
     const workflowID = DBOS.workflowID;
-    if (workflowID === undefined) {
-      throw new Error('Workflow ID is not set.');
-    }
-    const functionNum = DBOS.stepID;
-    if (functionNum === undefined) {
-      throw new Error('Function Number is not set.');
+    const stepID = DBOS.stepID;
+    if (workflowID !== undefined && stepID === undefined) {
+      throw new Error('DBOS.stepID is undefined inside a workflow.');
     }
 
     const isolationLevel = config?.isolationLevel ? `ISOLATION LEVEL ${config.isolationLevel}` : '';
     const readOnly = config?.readOnly ?? false;
     const accessMode = config?.readOnly === undefined ? '' : readOnly ? 'READ ONLY' : 'READ WRITE';
-    const saveResults = !readOnly && workflowID;
+    const saveResults = !readOnly && workflowID !== undefined;
 
     // Retry loop if appropriate
     let retryWaitMS = 1;
@@ -132,7 +129,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 
     while (true) {
       // Check to see if this tx has already been executed
-      const previousResult = saveResults ? await this.#checkExecution(workflowID, functionNum) : undefined;
+      const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
       if (previousResult) {
         DBOS.span?.setAttribute('cached', true);
 
@@ -151,12 +148,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 
           // save the output of read/write transactions
           if (saveResults) {
-            await PostgresTransactionHandler.#recordOutput(
-              client,
-              workflowID,
-              functionNum,
-              SuperJSON.stringify(result),
-            );
+            await PostgresTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
           }
 
           return result;
@@ -172,7 +164,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
         } else {
           if (saveResults) {
             const message = SuperJSON.stringify(error);
-            await this.#recordError(workflowID, functionNum, message);
+            await this.#recordError(workflowID, stepID!, message);
           }
 
           throw error;
