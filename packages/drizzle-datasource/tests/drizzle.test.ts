@@ -1,6 +1,6 @@
 /* eslint-disable */
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { DrizzleDataSource } from '../src';
+import { DrizzleDataSource } from '..';
 import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
 import { pgTable, text } from 'drizzle-orm/pg-core';
@@ -45,7 +45,7 @@ const dbosConfig = {
 async function txFunctionGuts() {
   expect(DBOS.isInTransaction()).toBe(true);
   expect(DBOS.isWithinWorkflow()).toBe(true);
-  const res = await DrizzleDataSource.drizzleClient.execute("SELECT 'Tx2 result' as a");
+  const res = await DrizzleDataSource.client.execute("SELECT 'Tx2 result' as a");
   return res.rows[0].a as string;
 }
 
@@ -55,10 +55,10 @@ async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
   const p1 = await drizzleDS.runTransaction(
     async () => {
-      return (await DrizzleDataSource.drizzleClient.execute("SELECT 'My first tx result' as a")).rows[0].a;
+      return (await DrizzleDataSource.client.execute("SELECT 'My first tx result' as a")).rows[0].a;
     },
     'MyFirstTx',
-    { readOnly: true },
+    { accessMode: 'read only' },
   );
 
   // Transaction variant 1: Use a registered DBOS transaction function
@@ -72,9 +72,9 @@ async function wfFunctionGuts() {
 const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
 
 class DBWFI {
-  @drizzleDS.transaction({ readOnly: true })
+  @drizzleDS.transaction({ accessMode: 'read only' })
   static async tx(): Promise<string> {
-    let res = await DrizzleDataSource.drizzleClient.execute("SELECT 'My decorated tx result' as a");
+    let res = await DrizzleDataSource.client.execute("SELECT 'My decorated tx result' as a");
     return res.rows[0].a as string;
   }
 
@@ -91,8 +91,8 @@ describe('decoratorless-api-tests', () => {
 
   beforeEach(async () => {
     await setUpDBOSTestDb(dbosConfig);
-    await drizzleDS.initializeInternalSchema();
-    await drizzleDS.createSchema();
+    await DrizzleDataSource.initializeInternalSchema(dbosConfig.poolConfig);
+    // await drizzleDS.createSchema();
     await DBOS.launch();
   });
 
@@ -134,13 +134,13 @@ describe('decoratorless-api-tests', () => {
 class KVController {
   @drizzleDS.transaction()
   static async testTxn(id: string, value: string) {
-    await drizzleDS.dataSource?.insert(kv).values({ id: id, value: value }).onConflictDoNothing().execute();
+    await DrizzleDataSource.client.insert(kv).values({ id: id, value: value }).onConflictDoNothing().execute();
 
     return id;
   }
 
   static async readTxn(id: string): Promise<string> {
-    const kvp = await drizzleDS.dataSource?.select().from(kv).where(eq(kv.id, id)).limit(1).execute();
+    const kvp = await DrizzleDataSource.client.select().from(kv).where(eq(kv.id, id)).limit(1).execute();
 
     return kvp?.[0]?.value ?? '<Not Found>';
   }
@@ -164,8 +164,8 @@ describe('drizzle-tests', () => {
 
   beforeEach(async () => {
     await setUpDBOSTestDb(dbosConfig);
-    await drizzleDS.initializeInternalSchema();
-    await drizzleDS.createSchema();
+    await DrizzleDataSource.initializeInternalSchema(dbosConfig.poolConfig);
+    // await drizzleDS.createSchema();
     await DBOS.launch();
   });
 
