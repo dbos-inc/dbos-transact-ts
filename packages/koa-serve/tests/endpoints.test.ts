@@ -43,7 +43,6 @@ describe('httpserver-tests', () => {
     DBOS.registerLifecycleCallback(dhttp);
     const _classes = [TestEndpoints];
     await DBOS.launch();
-    DBOS.setUpHandlerCallback();
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
     app = new Koa();
