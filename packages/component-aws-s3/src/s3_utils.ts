@@ -2,23 +2,8 @@ import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost, PresignedPost } from '@aws-sdk/s3-presigned-post';
 
-import {
-  DBOS,
-  ArgOptional,
-  Communicator,
-  CommunicatorContext,
-  ConfiguredInstance,
-  InitContext,
-  Workflow,
-  WorkflowContext,
-} from '@dbos-inc/dbos-sdk';
-import {
-  AWSServiceConfig,
-  getAWSConfigByName,
-  getAWSConfigForService,
-  getConfigForAWSService,
-  loadAWSConfigByName,
-} from '@dbos-inc/aws-config';
+import { DBOS, ArgOptional, ConfiguredInstance } from '@dbos-inc/dbos-sdk';
+import { AWSServiceConfig, getAWSConfigByName, getConfigForAWSService } from '@dbos-inc/aws-config';
 import { Error as DBOSError } from '@dbos-inc/dbos-sdk';
 
 export interface FileRecord {
@@ -101,8 +86,7 @@ export class DBOS_S3 extends ConfiguredInstance {
   }
 
   ///////
-  //  Basic functions +
-  //  Communicator wrappers for basic functions
+  //  Basic functions + step wrappers
   ///////
 
   // Delete object

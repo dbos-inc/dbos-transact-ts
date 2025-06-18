@@ -1,13 +1,10 @@
 import {
   DBOS,
-  Communicator,
-  CommunicatorContext,
   InitContext,
   ConfiguredInstance,
   Error as DBOSError,
   DBOSEventReceiver,
   DBOSExecutorContext,
-  WorkflowContext,
   WorkflowFunction,
   associateClassWithEventReceiver,
   associateMethodWithEventReceiver,
@@ -308,7 +305,7 @@ function SQSConfigure(config: SQSConfig) {
 
 // Decorators - method
 function SQSMessageConsumer(config?: SQSConfig) {
-  function mtddec<This, Args extends [Message] | [WorkflowContext, Message], Return>(
+  function mtddec<This, Args extends [Message], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,

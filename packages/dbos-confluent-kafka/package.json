@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/dbos-confluent-kafka",
   "version": "0.0.0-placeholder",
-  "description": "Communicator/event receiver library - Kafka via @confluentinc/kafka-javascript",
+  "description": "Step/event receiver library - Kafka via @confluentinc/kafka-javascript",
   "license": "MIT",
   "repository": {
     "type": "git",
