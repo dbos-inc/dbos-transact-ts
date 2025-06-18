@@ -223,11 +223,12 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     }
   }
 
-  readonly name: string;
   #provider: NodePostgresTransactionHandler;
 
-  constructor(name: string, config: PoolConfig) {
-    this.name = name;
+  constructor(
+    readonly name: string,
+    config: PoolConfig,
+  ) {
     this.#provider = new NodePostgresTransactionHandler(name, config);
     registerDataSource(this.#provider);
   }
