@@ -213,7 +213,9 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
       throw new Error('Invalid use of DrizzleDataSource.client outside of a DBOS transaction');
     }
     const ctx = asyncLocalCtx.getStore();
-    if (!ctx) throw new Error('Invalid use of DrizzleDataSource.client outside of a DBOS transaction');
+    if (!ctx) {
+      throw new Error('Invalid use of DrizzleDataSource.client outside of a DBOS transaction');
+    }
     return ctx.client;
   }
 
