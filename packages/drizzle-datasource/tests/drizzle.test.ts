@@ -5,11 +5,25 @@ import { randomUUID } from 'node:crypto';
 import { setUpDBOSTestDb } from './testutils';
 import { pgTable, text } from 'drizzle-orm/pg-core';
 import { eq } from 'drizzle-orm/expressions';
+import { Pool, PoolConfig } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { pushSchema } from 'drizzle-kit/api';
 
 const kv = pgTable('kv', {
   id: text('id').primaryKey().default('t'),
   value: text('value').default('v'),
 });
+
+async function createSchema(config: PoolConfig, entities: { [key: string]: object }) {
+  const drizzlePool = new Pool(config);
+  const db = drizzle(drizzlePool);
+  try {
+    const res = await pushSchema(entities, db);
+    await res.apply();
+  } finally {
+    await drizzlePool.end();
+  }
+}
 
 const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
 if (!dbPassword) {
@@ -85,14 +99,14 @@ class DBWFI {
 }
 
 describe('decoratorless-api-tests', () => {
-  beforeAll(() => {
+  beforeAll(async () => {
     DBOS.setConfig(dbosConfig);
+    await setUpDBOSTestDb(dbosConfig);
+    await DrizzleDataSource.initializeInternalSchema(dbosConfig.poolConfig);
+    await createSchema(dbosConfig.poolConfig, { kv });
   });
 
   beforeEach(async () => {
-    await setUpDBOSTestDb(dbosConfig);
-    await DrizzleDataSource.initializeInternalSchema(dbosConfig.poolConfig);
-    // await drizzleDS.createSchema();
     await DBOS.launch();
   });
 
@@ -158,14 +172,21 @@ async function explicitWf(id: string): Promise<string> {
 const wfFunction2 = DBOS.registerWorkflow(explicitWf, 'explicitworkflow');
 
 describe('drizzle-tests', () => {
-  beforeAll(() => {
+  const userDB = new Pool(dbosConfig.poolConfig);
+  const userDrizzle = drizzle(userDB);
+
+  beforeAll(async () => {
     DBOS.setConfig(dbosConfig);
+    await setUpDBOSTestDb(dbosConfig);
+    await DrizzleDataSource.initializeInternalSchema(dbosConfig.poolConfig);
+    await createSchema(dbosConfig.poolConfig, { kv });
+  });
+
+  afterAll(async () => {
+    await userDB.end();
   });
 
   beforeEach(async () => {
-    await setUpDBOSTestDb(dbosConfig);
-    await DrizzleDataSource.initializeInternalSchema(dbosConfig.poolConfig);
-    // await drizzleDS.createSchema();
     await DBOS.launch();
   });
 
@@ -174,14 +195,19 @@ describe('drizzle-tests', () => {
   });
 
   test('simple-drizzle', async () => {
-    await KVController.wf('test', 'value');
-    let read = await KVController.readTxn('test');
-    expect(read).toBe('value');
+    const user = `test-${Date.now()}`;
+
+    await KVController.wf(user, 'value');
+
+    const kvp = await userDrizzle.select().from(kv).where(eq(kv.id, user)).limit(1).execute();
+    expect(kvp?.[0]?.value).toBe('value');
   });
 
   test('drizzle-register', async () => {
-    await expect(wfFunction2('test')).resolves.toBe('<Not Found>');
-    await KVController.wf('test', 'value');
-    await expect(wfFunction2('test')).resolves.toBe('value');
+    const user = `test-${Date.now()}`;
+
+    await expect(wfFunction2(user)).resolves.toBe('<Not Found>');
+    await KVController.wf(user, 'value');
+    await expect(wfFunction2(user)).resolves.toBe('value');
   });
 });
