@@ -32,21 +32,31 @@ export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 
 const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
 class KnexTransactionHandler implements DataSourceTransactionHandler {
-  readonly name: string;
   readonly dsType = 'KnexDataSource';
-  readonly #knexDB: Knex;
+  #knexDBField: Knex | undefined;
 
-  constructor(name: string, config: Knex.Config) {
-    this.name = name;
-    this.#knexDB = knex(config);
+  constructor(
+    readonly name: string,
+    private readonly config: Knex.Config,
+  ) {}
+
+  async initialize(): Promise<void> {
+    const knexDB = this.#knexDBField;
+    this.#knexDBField = knex(this.config);
+    await knexDB?.destroy();
   }
 
-  initialize(): Promise<void> {
-    return Promise.resolve();
+  async destroy(): Promise<void> {
+    const knexDB = this.#knexDBField;
+    this.#knexDBField = undefined;
+    await knexDB?.destroy();
   }
 
-  destroy(): Promise<void> {
-    return this.#knexDB.destroy();
+  get #knexDB() {
+    if (!this.#knexDBField) {
+      throw new Error(`DataSource ${this.name} is not initialized.`);
+    }
+    return this.#knexDBField;
   }
 
   async #checkExecution(

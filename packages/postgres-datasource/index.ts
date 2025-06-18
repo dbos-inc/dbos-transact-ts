@@ -31,21 +31,30 @@ const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 
 class PostgresTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'PostgresDataSource';
-  readonly #db: Sql;
+  #dbField: Sql | undefined;
 
   constructor(
     readonly name: string,
-    options: Options = {},
-  ) {
-    this.#db = postgres(options);
+    private readonly options: Options = {},
+  ) {}
+
+  async initialize(): Promise<void> {
+    const db = this.#dbField;
+    this.#dbField = postgres(this.options);
+    await db?.end();
   }
 
-  initialize(): Promise<void> {
-    return Promise.resolve();
+  async destroy(): Promise<void> {
+    const db = this.#dbField;
+    this.#dbField = undefined;
+    await db?.end();
   }
 
-  destroy(): Promise<void> {
-    return this.#db.end();
+  get #db(): Sql {
+    if (!this.#dbField) {
+      throw new Error(`DataSource ${this.name} is not initialized.`);
+    }
+    return this.#dbField;
   }
 
   async #checkExecution(

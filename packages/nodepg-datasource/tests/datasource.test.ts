@@ -44,13 +44,19 @@ describe('NodePostgresDataSource', () => {
     }
 
     await NodePostgresDataSource.initializeInternalSchema(config);
+  });
+
+  afterAll(async () => {
+    await userDB.end();
+  });
+
+  beforeEach(async () => {
     DBOS.setConfig({ name: 'node-pg-ds-test' });
     await DBOS.launch();
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await DBOS.shutdown();
-    await userDB.end();
   });
 
   test('insert dataSource.register function', async () => {

@@ -26,21 +26,31 @@ export { NodePostgresTransactionOptions };
 const asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
 
 class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
-  readonly name: string;
   readonly dsType = 'NodePostgresDataSource';
-  readonly #pool: Pool;
+  #poolField: Pool | undefined;
 
-  constructor(name: string, config: PoolConfig) {
-    this.name = name;
-    this.#pool = new Pool(config);
+  constructor(
+    readonly name: string,
+    private readonly config: PoolConfig,
+  ) {}
+
+  async initialize(): Promise<void> {
+    const pool = this.#poolField;
+    this.#poolField = new Pool(this.config);
+    await pool?.end();
   }
 
-  initialize(): Promise<void> {
-    return Promise.resolve();
+  async destroy(): Promise<void> {
+    const pool = this.#poolField;
+    this.#poolField = undefined;
+    await pool?.end();
   }
 
-  destroy(): Promise<void> {
-    return this.#pool.end();
+  get #pool(): Pool {
+    if (!this.#poolField) {
+      throw new Error(`DataSource ${this.name} is not initialized.`);
+    }
+    return this.#poolField;
   }
 
   async #checkExecution(
