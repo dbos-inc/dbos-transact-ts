@@ -140,7 +140,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     }
 
     const readOnly = config?.accessMode === 'read only' ? true : false;
-    const saveResults = !readOnly && workflowID;
+    const saveResults = !readOnly && workflowID !== undefined;
 
     // Retry loop if appropriate
     let retryWaitMS = 1;
