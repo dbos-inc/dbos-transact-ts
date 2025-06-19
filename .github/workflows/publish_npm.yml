@@ -14,7 +14,6 @@ jobs:
           [
             .,
             packages/aws-config,
-            packages/communicator-email-ses,
             packages/component-aws-s3,
             packages/create,
             packages/dbos-cloud,

@@ -178,7 +178,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
     for (const e of eps) {
       const { methodConfig, methodReg } = e;
       const httpmethod = methodConfig as DBOSHTTPMethodInfo;
-      for (const ro of httpmethod.registrations ?? []) {
+      for (const ro of httpmethod?.registrations ?? []) {
         if (ro.apiURL) {
           DBOS.logger.info('    ' + ro.apiType.padEnd(6) + '  :  ' + ro.apiURL);
           const roles = methodReg.getRequiredRoles();

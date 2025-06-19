@@ -26,7 +26,6 @@ describe('httpserver-argsource-tests', () => {
     DBOS.registerLifecycleCallback(dhttp);
     const _classes = [ArgTestEndpoints];
     await DBOS.launch();
-    DBOS.setUpHandlerCallback();
     app = new Koa();
     appRouter = new Router();
     dhttp.registerWithApp(app, appRouter);
