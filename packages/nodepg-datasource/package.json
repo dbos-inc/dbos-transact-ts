@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/node-pg-datasource",
   "version": "0.0.0-placeholder",
-  "description": "",
+  "description": "DBOS DataSource library for Node-Postgres database client",
   "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

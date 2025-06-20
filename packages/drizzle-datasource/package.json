@@ -1,10 +1,10 @@
 {
   "name": "@dbos-inc/drizzle-datasource",
   "version": "0.0.0-placeholder",
-  "description": "",
+  "description": "DBOS DataSource library for Drizzle ORM with PostgreSQL support",
   "license": "MIT",
-  "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
   "homepage": "https://docs.dbos.dev/",
   "repository": {
     "type": "git",

@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/postgres-datasource",
   "version": "0.0.0-placeholder",
-  "description": "",
+  "description": "DBOS DataSource library for Postgres database client",
   "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

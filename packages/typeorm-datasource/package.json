@@ -1,8 +1,11 @@
 {
   "name": "@dbos-inc/typeorm-datasource",
   "version": "0.0.0-placeholder",
-  "main": "dist/src/index.js",
-  "types": "dist/src/index.d.ts",
+  "description": "DBOS DataSource library for TypeORM with PostgreSQL support",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "homepage": "https://docs.dbos.dev/",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact-ts",
@@ -12,10 +15,6 @@
     "build": "tsc --project tsconfig.json",
     "test": "npm run build && jest --detectOpenHandles"
   },
-  "keywords": [],
-  "author": "",
-  "license": "MIT",
-  "description": "",
   "dependencies": {
     "typeorm": "^0.3.24",
     "pg": "^8.11.3",

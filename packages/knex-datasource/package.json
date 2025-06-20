@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/knex-datasource",
   "version": "0.0.0-placeholder",
-  "description": "",
+  "description": "DBOS DataSource library for Knex ORM with PostgreSQL support",
   "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -17,6 +17,7 @@
   },
   "dependencies": {
     "knex": "^3.1.0",
+    "pg": "^8.11.3",
     "superjson": "^1.13"
   },
   "peerDependencies": {
@@ -26,7 +27,6 @@
     "@types/jest": "^29.5.14",
     "@types/pg": "^8.15.2",
     "jest": "^29.7.0",
-    "pg": "^8.11.3",
     "typescript": "^5.4.5"
   }
 }
