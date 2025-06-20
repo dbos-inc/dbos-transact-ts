@@ -88,7 +88,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type TxOutputRow = Pick<transaction_completion, 'output' | 'error'>;
-    const { rows } = await this.#dataSource.query<{ rows: TxOutputRow[] }>(
+    const rows = await this.#dataSource.query<TxOutputRow[]>(
       `SELECT output, error FROM dbos.transaction_completion
        WHERE workflow_id=$1 AND function_num=$2;`,
       [workflowID, stepID],
@@ -178,7 +178,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       }
 
       try {
-        const result = this.#dataSource.transaction(isolationLevel, async (entityManager: EntityManager) => {
+        const result = await this.#dataSource.transaction(isolationLevel, async (entityManager: EntityManager) => {
           if (readOnly) {
             await entityManager.query('SET TRANSACTION READ ONLY');
           }
@@ -305,16 +305,4 @@ export class TypeOrmDataSource implements DBOSDataSource<PGTransactionConfig> {
       return descriptor;
     };
   }
-
-  // /**
-  //  * For testing: Use DataSource.syncronize to install the user schema
-  //  */
-  // async createSchema() {
-  //   const ds = await this.#provider.createInstance();
-  //   try {
-  //     await ds.synchronize();
-  //   } finally {
-  //     await ds.destroy();
-  //   }
-  // }
 }

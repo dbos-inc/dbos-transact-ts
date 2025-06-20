@@ -3,7 +3,7 @@ import { TypeOrmDataSource } from '../index';
 import { dropDB, ensureDB } from './test-helpers';
 
 describe('TypeOrmDataSource.configure', () => {
-  const config = { user: 'postgres', database: 'nodepg_ds_config_test' };
+  const config = { user: 'postgres', database: 'typeorm_ds_config_test' };
 
   beforeAll(async () => {
     const client = new Client({ ...config, database: 'postgres' });
