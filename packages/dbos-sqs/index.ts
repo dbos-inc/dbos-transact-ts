@@ -1,13 +1,10 @@
 import {
   DBOS,
-  Communicator,
-  CommunicatorContext,
   InitContext,
   ConfiguredInstance,
   Error as DBOSError,
   DBOSEventReceiver,
   DBOSExecutorContext,
-  WorkflowContext,
   WorkflowFunction,
   associateClassWithEventReceiver,
   associateMethodWithEventReceiver,
@@ -143,17 +140,6 @@ class SQSCommunicator extends ConfiguredInstance {
       endpoint: cfg.endpoint,
       //logger: console,
     });
-  }
-
-  @Communicator()
-  async sendMessage(ctx: CommunicatorContext, msg: MessageWithOptionalQueueUrl) {
-    try {
-      const smsg = { ...msg, QueueUrl: msg.QueueUrl || this.config.queueUrl || this.config.queueURL };
-      return await this.client!.send(new SendMessageCommand(smsg));
-    } catch (e) {
-      ctx.logger.error(e);
-      throw e;
-    }
   }
 }
 
@@ -319,7 +305,7 @@ function SQSConfigure(config: SQSConfig) {
 
 // Decorators - method
 function SQSMessageConsumer(config?: SQSConfig) {
-  function mtddec<This, Args extends [Message] | [WorkflowContext, Message], Return>(
+  function mtddec<This, Args extends [Message], Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
