@@ -20,12 +20,12 @@ jobs:
             packages/dbos-compiler,
             packages/dbos-confluent-kafka,
             packages/dbos-kafkajs,
-            packages/dbos-sqs,
             packages/drizzle-datasource,
             packages/knex-datasource,
             packages/koa-serve,
             packages/nodepg-datasource,
             packages/postgres-datasource,
+            packages/sqs-receive,
             packages/typeorm-datasource,
           ]
     steps:
