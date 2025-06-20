@@ -65,7 +65,7 @@ describe('NodePostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user))).resolves.toMatchObject({
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowReg(user))).resolves.toMatchObject({
       user,
       greet_count: 1,
     });
@@ -87,10 +87,10 @@ describe('NodePostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user));
+    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowReg(user));
     expect(result).toMatchObject({ user, greet_count: 1 });
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user))).resolves.toMatchObject(result);
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowReg(user))).resolves.toMatchObject(result);
   });
 
   test('insert dataSource.runAsTx function', async () => {
@@ -99,7 +99,7 @@ describe('NodePostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user))).resolves.toMatchObject({
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowRunTx(user))).resolves.toMatchObject({
       user,
       greet_count: 1,
     });
@@ -121,10 +121,10 @@ describe('NodePostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user));
+    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowRunTx(user));
     expect(result).toMatchObject({ user, greet_count: 1 });
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user))).resolves.toMatchObject(
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowRunTx(user))).resolves.toMatchObject(
       result,
     );
   });
@@ -434,8 +434,8 @@ async function instanceWorkflow(user: string) {
   return [result, readResult];
 }
 
-const regInsertWorfklowReg = DBOS.registerWorkflow(insertWorkflowReg, 'insertWorkflowReg');
-const regInsertWorfklowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx, 'insertWorkflowRunTx');
+const regInsertWorkflowReg = DBOS.registerWorkflow(insertWorkflowReg, 'insertWorkflowReg');
+const regInsertWorkflowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx, 'insertWorkflowRunTx');
 const regErrorWorkflowReg = DBOS.registerWorkflow(errorWorkflowReg, 'errorWorkflowReg');
 const regErrorWorkflowRunTx = DBOS.registerWorkflow(errorWorkflowRunTx, 'errorWorkflowRunTx');
 const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg, 'readWorkflowReg');
