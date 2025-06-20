@@ -125,9 +125,8 @@ class NodePGDSTH implements DataSourceTransactionHandler {
         const result = await this.#transaction<Return>(
           async (client) => {
             // Check to see if this tx has already been executed
-            const previousResult = readOnly
-              ? undefined
-              : await NodePGDSTH.#checkExecution(client, workflowID, functionNum);
+            const previousResult =
+              readOnly || !workflowID ? undefined : await NodePGDSTH.#checkExecution(client, workflowID, functionNum);
             if (previousResult) {
               return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
             }
@@ -138,7 +137,7 @@ class NodePGDSTH implements DataSourceTransactionHandler {
             });
 
             // save the output of read/write transactions
-            if (!readOnly) {
+            if (!readOnly && workflowID) {
               await NodePGDSTH.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
 
               // Note, existing code wraps #recordOutput call in a try/catch block that

@@ -232,10 +232,6 @@ export interface StartWorkflowParams {
   enqueueOptions?: EnqueueOptions;
 }
 
-export interface StartWorkflowFunctionParams<T> extends StartWorkflowParams {
-  instance?: T;
-}
-
 export function getExecutor() {
   if (!DBOSExecutor.globalInstance) {
     throw new DBOSExecutorNotInitializedError();
@@ -1091,6 +1087,28 @@ export class DBOS {
   }
 
   /**
+   * Get the current time in milliseconds, similar to `Date.now()`.
+   * This function is deterministic and can be used within workflows.
+   */
+  static async now(): Promise<number> {
+    if (DBOS.isInWorkflow()) {
+      return runInternalStep(async () => Promise.resolve(Date.now()), 'DBOS.now');
+    }
+    return Date.now();
+  }
+
+  /**
+   * Generate a random (v4) UUUID, similar to `node:crypto.randomUUID`.
+   * This function is deterministic and can be used within workflows.
+   */
+  static async randomUUID(): Promise<string> {
+    if (DBOS.isInWorkflow()) {
+      return runInternalStep(async () => Promise.resolve(randomUUID()), 'DBOS.randomUUID');
+    }
+    return randomUUID();
+  }
+
+  /**
    * Use the provided `workflowID` as the identifier for first workflow started
    *   within the `callback` function.
    * @param workflowID - ID to assign to the first workflow started
@@ -1244,23 +1262,16 @@ export class DBOS {
   /**
    * Start a workflow in the background, returning a handle that can be used to check status,
    *   await the result, or otherwise interact with the workflow.
-   * @param func - The function to start.  If a class or instance method, supply `this` within `params`.
-   * @param params - `StartWorkflowFunctionParams` which may specify the ID, queue, `this`, or other parameters
-   * @param args - Arguments passed to `func`
+   * The full syntax is:
+   * `handle = await DBOS.startWorkflow(<target function>, <params>)(<args>);`
+   * @param func - The function to start.
+   * @param params - `StartWorkflowParams` which may specify the ID, queue, or other parameters for starting the workflow
    * @returns `WorkflowHandle` which can be used to interact with the started workflow
    */
-  static async startWorkflowFunction<This, Args extends unknown[], Return>(
-    params: StartWorkflowFunctionParams<This> | undefined,
-    func: (this: This, ...args: Args) => Promise<Return>,
-    ...args: Args
-  ): Promise<WorkflowHandle<Return>> {
-    const regOp = getRegistrationForFunction(func);
-    if (!regOp) {
-      throw new DBOSNotRegisteredError(func.name, `${func.name} is not a registered DBOS workflow function`);
-    }
-    return await DBOS.#invokeWorkflow(params?.instance, regOp, args, params ?? {});
-  }
-
+  static startWorkflow<Args extends unknown[], Return>(
+    target: (...args: Args) => Promise<Return>,
+    params?: StartWorkflowParams,
+  ): (...args: Args) => Promise<WorkflowHandle<Return>>;
   /**
    * Start a workflow in the background, returning a handle that can be used to check status, await a result,
    *   or otherwise interact with the workflow.
@@ -1284,9 +1295,12 @@ export class DBOS {
    * @returns - `WorkflowHandle` which can be used to interact with the workflow
    */
   static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
-  static startWorkflow<T extends object>(target: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T> {
+  static startWorkflow(
+    target: ((...args: unknown[]) => Promise<unknown>) | ConfiguredInstance | object,
+    params?: StartWorkflowParams,
+  ): unknown {
     const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
-    if (instance && !(instance instanceof ConfiguredInstance)) {
+    if (instance && typeof instance !== 'function' && !(instance instanceof ConfiguredInstance)) {
       throw new DBOSInvalidWorkflowTransitionError(
         'Attempt to call `startWorkflow` on an object that is not a `ConfiguredInstance`',
       );
@@ -1294,8 +1308,18 @@ export class DBOS {
 
     const regOps = getRegisteredOperations(target);
 
-    const handler: ProxyHandler<T> = {
+    const handler: ProxyHandler<object> = {
+      apply(target, _thisArg, args) {
+        const regOp = getRegistrationForFunction(target);
+        if (!regOp) {
+          // eslint-disable-next-line @typescript-eslint/no-base-to-string
+          const name = typeof target === 'function' ? target.name : target.toString();
+          throw new DBOSNotRegisteredError(name, `${name} is not a registered DBOS workflow function`);
+        }
+        return DBOS.#invokeWorkflow(instance, regOp, args, params);
+      },
       get(target, p, receiver) {
+        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const func = Reflect.get(target, p, receiver);
         const regOp = getRegistrationForFunction(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
@@ -1307,7 +1331,7 @@ export class DBOS {
       },
     };
 
-    return new Proxy(target, handler) as unknown as InvokeFunctionsAsync<T>;
+    return new Proxy(target, handler);
   }
 
   /** @deprecated Adjust target function to exclude its `DBOSContext` argument, and then call the function directly */
@@ -2097,7 +2121,12 @@ export class DBOS {
         );
       }
 
-      throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+      if (getNextWFID(undefined)) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
+        );
+      }
+      return func.call(this, ...rawArgs);
     };
 
     Object.defineProperty(invokeWrapper, 'name', { value: name });
@@ -2131,7 +2160,13 @@ export class DBOS {
       );
     }
 
-    throw new DBOSInvalidWorkflowTransitionError(`Call to step '${name}' outside of a workflow`);
+    if (getNextWFID(undefined)) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
+      );
+    }
+
+    return func();
   }
 
   /** Decorator indicating that the method is the target of HTTP GET operations for `url` */

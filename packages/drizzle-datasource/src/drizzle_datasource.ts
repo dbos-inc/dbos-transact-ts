@@ -170,7 +170,7 @@ class DrizzleDSTH implements DataSourceTransactionHandler {
               throw new Error.DBOSInvalidWorkflowTransitionError('Invalid use of Datasource');
             }
 
-            if (shouldCheckOutput && !readOnly) {
+            if (shouldCheckOutput && !readOnly && wfid) {
               const executionResult = await this.#checkExecution<Return>(this.drizzlePool, wfid, funcnum);
 
               if (executionResult) {
@@ -185,7 +185,7 @@ class DrizzleDSTH implements DataSourceTransactionHandler {
 
             // Save result
             try {
-              if (!readOnly) {
+              if (!readOnly && wfid) {
                 await this.#recordOutput(this.drizzlePool, wfid, funcnum, result);
               }
             } catch (e) {

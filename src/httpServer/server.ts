@@ -664,15 +664,28 @@ export class DBOSHttpServer {
               foundArg = koaCtxt.request.query[marg.name];
               if (foundArg !== undefined) {
                 args.push(foundArg);
+              } else {
+                if (marg.argSource === ArgSources.DEFAULT && koaCtxt.request.body) {
+                  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+                  foundArg = koaCtxt.request.body[marg.name];
+                  if (foundArg !== undefined) {
+                    args.push(foundArg);
+                  }
+                }
               }
             } else if ((isBodyMethod && marg.argSource === ArgSources.DEFAULT) || marg.argSource === ArgSources.BODY) {
-              if (!koaCtxt.request.body) {
-                throw new DBOSDataValidationError(`Argument ${marg.name} requires a method body.`);
+              if (koaCtxt.request.body) {
+                // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+                foundArg = koaCtxt.request.body[marg.name];
+                if (foundArg !== undefined) {
+                  args.push(foundArg);
+                }
               }
-              // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
-              foundArg = koaCtxt.request.body[marg.name];
-              if (foundArg !== undefined) {
-                args.push(foundArg);
+              if (!foundArg && marg.argSource === ArgSources.DEFAULT) {
+                foundArg = koaCtxt.request.query[marg.name];
+                if (foundArg !== undefined) {
+                  args.push(foundArg);
+                }
               }
             }
 
