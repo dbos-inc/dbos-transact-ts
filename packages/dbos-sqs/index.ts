@@ -1,6 +1,5 @@
 import {
   DBOS,
-  InitContext,
   ConfiguredInstance,
   Error as DBOSError,
   DBOSEventReceiver,
@@ -90,46 +89,6 @@ class DBOS_SQS extends ConfiguredInstance {
       DBOS.logger.error(e);
       throw e;
     }
-  }
-
-  static createSQS(cfg: AWSServiceConfig) {
-    return new SQSClient({
-      region: cfg.region,
-      credentials: cfg.credentials,
-      maxAttempts: cfg.maxRetries,
-      endpoint: cfg.endpoint,
-      //logger: console,
-    });
-  }
-}
-
-class SQSCommunicator extends ConfiguredInstance {
-  config: SQSConfig;
-  client?: SQSClient;
-
-  constructor(name: string, cfg: SQSConfig) {
-    super(name);
-    this.config = cfg;
-  }
-
-  async initialize(ctx: InitContext) {
-    // Get the config and call the validation
-    if (!this.config.awscfg) {
-      if (this.config.awscfgname) {
-        this.config.awscfg = loadAWSConfigByName(ctx, this.config.awscfgname);
-      } else {
-        this.config.awscfg = getAWSConfigForService(ctx, DBOS_SQS.AWS_SQS_CONFIGURATION);
-      }
-    }
-    if (!this.config.awscfg) {
-      throw new Error(`AWS Configuration not specified for SQSCommunicator: ${this.name}`);
-    }
-    this.client = DBOS_SQS.createSQS(this.config.awscfg);
-    return Promise.resolve();
-  }
-
-  static async validateConnection(client: SQSClient, url: string) {
-    return DBOS_SQS.validateConnection(client, url);
   }
 
   static createSQS(cfg: AWSServiceConfig) {
@@ -322,12 +281,4 @@ function SQSMessageConsumer(config?: SQSConfig) {
   return mtddec;
 }
 
-export {
-  SQSConfig,
-  DBOS_SQS,
-  SQSCommunicator,
-  SQSCommunicator as SQSStep,
-  SQSConfigure,
-  SQSMessageConsumer,
-  SQSReceiver,
-};
+export { SQSConfig, DBOS_SQS, SQSConfigure, SQSMessageConsumer, SQSReceiver };
