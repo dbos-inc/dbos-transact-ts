@@ -1,8 +1,10 @@
-# DBOS AWS Simple Queue Service (SQS) Library
+# DBOS AWS Simple Queue Service (SQS) Receiver
 
 Message queues are a common building block for distributed systems. Message queues allow processing to occur at a different place or time, perhaps in another programming environment. Due to its flexibility, robustness, integration, and low cost, [Amazon Simple Queue Service](https://aws.amazon.com/sqs/) is the most popular message queuing service underpinning distributed systems in AWS.
 
-This package includes a [DBOS](https://docs.dbos.dev/) [communicator](https://docs.dbos.dev/typescript/tutorials/step-tutorial) for sending messages using SQS, as well as an event receiver for exactly-once processing of incoming messages (even using standard queues).
+This package includes a [DBOS](https://docs.dbos.dev/).
+
+The test in this package also shows wrapping SQS send in a [DBOS step](https://docs.dbos.dev/typescript/tutorials/step-tutorial).
 
 ## Getting Started
 
@@ -15,19 +17,6 @@ First, ensure that the DBOS SQS package is installed into the application:
 ```
 npm install --save @dbos-inc/dbos-sqs
 ```
-
-Second, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/typescript/reference/configuration) file; the following example will pull the AWS information from the environment:
-
-```yaml
-application:
-  aws_sqs_configuration: aws_config # Optional if the section is called `aws_config`
-  aws_config:
-    aws_region: ${AWS_REGION}
-    aws_access_key_id: ${AWS_ACCESS_KEY_ID}
-    aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-```
-
-If a different configuration file section should be used for SQS, the `aws_sqs_configuration` can be changed to indicate a configuration section for use with SQS. If multiple configurations are to be used, the application code is responsible for naming them.
 
 ## Sending Messages
 
@@ -89,16 +78,15 @@ The `@SQSConfigure` decorator should be applied at the class level to identify t
 
 ```typescript
 interface SQSConfig {
-    awscfgname?: string;
-    awscfg?: AWSServiceConfig;
-    queueUrl?: string;
-    getWFKey?: (m: Message) => string; // Calculate workflow OAOO key for each message
-    workflowQueueName?: string;
+  client?: SQSClient | (()=>SQSClient);
+  queueUrl?: string;
+  getWFKey?: (m: Message) => string; // Calculate workflow OAOO key for each message
+  workflowQueueName?: string;
 }
 
 @SQSConfigure({awscfgname: 'sqs_receiver'})
 class SQSEventProcessor {
-    ...
+  ...
 }
 ```
 

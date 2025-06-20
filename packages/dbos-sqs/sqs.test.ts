@@ -1,6 +1,6 @@
-import { Message } from '@aws-sdk/client-sqs';
-import { DBOS_SQS, SQSMessageConsumer } from './index';
-import { DBOS, parseConfigFile } from '@dbos-inc/dbos-sdk';
+import { Message, SendMessageCommand, SendMessageCommandInput, SQSClient } from '@aws-sdk/client-sqs';
+import { SQSReceiver } from './index';
+import { DBOS } from '@dbos-inc/dbos-sdk';
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -8,23 +8,56 @@ interface ValueObj {
   val: number;
 }
 
-class SQSReceiver {
+function createSQS() {
+  return new SQSClient({
+    region: process.env['AWS_REGION'] ?? '',
+    endpoint: process.env['AWS_ENDPOINT_URL_SQS'],
+    credentials: {
+      accessKeyId: process.env['AWS_ACCESS_KEY_ID'] ?? '',
+      secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY'] ?? '',
+    },
+    //logger: console,
+  });
+}
+
+// Create a new type that omits the QueueUrl property
+type MessageWithoutQueueUrl = Omit<SendMessageCommandInput, 'QueueUrl'>;
+
+// Create a new type that allows QueueUrl to be added later
+type MessageWithOptionalQueueUrl = MessageWithoutQueueUrl & { QueueUrl?: string };
+
+async function sendMessageInternal(msg: MessageWithOptionalQueueUrl) {
+  try {
+    const smsg = { ...msg, QueueUrl: msg.QueueUrl || process.env['SQS_QUEUE_URL']! };
+    return await createSQS().send(new SendMessageCommand(smsg));
+  } catch (e) {
+    DBOS.logger.error(e);
+    throw e;
+  }
+}
+
+const sendMessageStep = DBOS.registerStep(sendMessageInternal, { name: 'Send SQS Message' });
+
+const sqsReceiver = new SQSReceiver({
+  client: createSQS,
+});
+
+class SQSRcv {
   static msgRcvCount: number = 0;
   static msgValueSum: number = 0;
-  @SQSMessageConsumer({ queueUrl: process.env['SQS_QUEUE_URL'] })
+  @sqsReceiver.messageConsumer({ queueUrl: process.env['SQS_QUEUE_URL'] })
   @DBOS.workflow()
   static async recvMessage(msg: Message) {
     const ms = msg.Body!;
     const res = JSON.parse(ms) as ValueObj;
-    SQSReceiver.msgRcvCount++;
-    SQSReceiver.msgValueSum += res.val;
+    SQSRcv.msgRcvCount++;
+    SQSRcv.msgValueSum += res.val;
     return Promise.resolve();
   }
 }
 
 describe('sqs-tests', () => {
   let sqsIsAvailable = true;
-  let sqsCfg: DBOS_SQS | undefined = undefined;
 
   beforeAll(() => {
     // Check if SES is available and update app config, skip the test if it's not
@@ -32,17 +65,13 @@ describe('sqs-tests', () => {
       sqsIsAvailable = false;
     } else {
       // This would normally be a global or static or something
-      const [cfg, rtCfg] = parseConfigFile({ configfile: 'sqs-test-dbos-config.yaml' });
-      DBOS.setConfig(cfg, rtCfg);
-      sqsCfg = new DBOS_SQS('default', {
-        awscfgname: 'aws_config',
-        queueUrl: process.env['SQS_QUEUE_URL'],
-      });
+      DBOS.setConfig({ name: 'dbossqstest' });
     }
   });
 
   beforeEach(async () => {
     if (sqsIsAvailable) {
+      DBOS.registerLifecycleCallback(sqsReceiver);
       await DBOS.launch();
     } else {
       console.log(
@@ -59,24 +88,24 @@ describe('sqs-tests', () => {
 
   // This tests receive also; which is already wired up
   test('sqs-send', async () => {
-    if (!sqsIsAvailable || !sqsCfg) {
+    if (!sqsIsAvailable) {
       console.log('SQS unavailable, skipping SQS tests');
       return;
     }
     const sv: ValueObj = {
       val: 10,
     };
-    const ser = await sqsCfg.sendMessage({
+    const ser = await sendMessageStep({
       MessageBody: JSON.stringify(sv),
     });
     expect(ser.MessageId).toBeDefined();
 
     // Wait for receipt
     for (let i = 0; i < 100; ++i) {
-      if (SQSReceiver.msgRcvCount === 1) break;
+      if (SQSRcv.msgRcvCount === 1) break;
       await sleepms(100);
     }
-    expect(SQSReceiver.msgRcvCount).toBe(1);
-    expect(SQSReceiver.msgValueSum).toBe(10);
+    expect(SQSRcv.msgRcvCount).toBe(1);
+    expect(SQSRcv.msgValueSum).toBe(10);
   });
 });
