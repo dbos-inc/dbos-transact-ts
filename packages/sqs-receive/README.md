@@ -15,47 +15,7 @@ In order to send and receive messages with SQS, it is necessary to register with
 First, ensure that the DBOS SQS package is installed into the application:
 
 ```
-npm install --save @dbos-inc/dbos-sqs
-```
-
-## Sending Messages
-
-### Imports
-
-First, ensure that the communicator is imported:
-
-```typescript
-import { DBOS_SQS } from '@dbos-inc/dbos-sqs';
-```
-
-### Selecting A Configuration
-
-`DBOS_SQS` is a configured class. This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
-
-```typescript
-const sqsCfg = new DBOS_SQS('default', { awscfgname: 'aws_config' });
-```
-
-### Sending With Standard Queues
-
-Within a [DBOS Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call the `DBOS_SQS` function from the workflow context:
-
-```typescript
-const sendRes = await sqsCfg.sendMessage({
-  MessageBody: '{/*app data goes here*/}',
-});
-```
-
-### FIFO Queues
-
-Sending to [SQS FIFO queues](https://docs.aws.amazon.com/AWSSimpleQueueService/latest/SQSDeveloperGuide/sqs-fifo-queues.html) is the same as with standard queues, except that FIFO queues need a `MessageDeduplicationId` (or content-based deduplication) and can be sharded by a `MessageGroupId`.
-
-```typescript
-const sendRes = await sqsCfg.sendMessage({
-  MessageBody: '{/*app data goes here*/}',
-  MessageDeduplicationId: 'Message key goes here',
-  MessageGroupId: 'Message grouping key goes here',
-});
+npm install @dbos-inc/sqs-receive
 ```
 
 ## Receiving Messages
@@ -66,36 +26,52 @@ The package uses decorators to configure message receipt and identify the functi
 
 ### Imports
 
-First, ensure that the method decorators are imported:
+First, ensure that the SQS receiver class is imported:
 
 ```typescript
-import { SQSMessageConsumer, SQSConfigure } from '@dbos-inc/dbos-sqs';
+import { SQSReceiver } from '@dbos-inc/dbos-sqs';
 ```
 
 ### Receiver Configuration
 
-The `@SQSConfigure` decorator should be applied at the class level to identify the credentials used by receiver functions in the class:
+Receiving messages requires:
+
+- Creating an `SQSReceiver` object
+- Providing configuration, so that the receiver can connect to AWS and locate the SQS queues
+- Associating your workflow code with SQS message queues
+- Registering your receiver with DBOS
+
+The SQS Receiver can be configured in 3 ways:
+
+- When constructing the `SQSReceiver` object
+- At the class level, with `@<receiver>.configuration`
+- At the method level, with `@<receiver>.messageConsumer`
 
 ```typescript
+// Note the configuration interface is:
 interface SQSConfig {
   client?: SQSClient | (()=>SQSClient);
   queueUrl?: string;
-  getWFKey?: (m: Message) => string; // Calculate workflow OAOO key for each message
+  getWFKey?: (m: Message) => string;
   workflowQueueName?: string;
 }
 
-@SQSConfigure({awscfgname: 'sqs_receiver'})
+// Create a receiver (can configure now, or later...)
+const sqsReceiver = new SQSReceiver();
+
+// Optionally, configure the receiver at the class level
+@sqsReceiver.configure({client: .../*client or function to retrieve client goes here*/})
 class SQSEventProcessor {
   ...
 }
 ```
 
-Then, within the class, one or more methods should be decorated with `SQSMessageConsumer` to handle SQS messages:
+Then, within the class, one or more `static` workflow methods should be decorated with `@sqsReceiver.messageConsumer` to handle SQS messages:
 
 ```typescript
 @SQSConfigure({ awscfgname: 'sqs_receiver' })
 class SQSEventProcessor {
-  @SQSMessageConsumer({ queueUrl: process.env['SQS_QUEUE_URL'] })
+  @sqsReceiver.messageConsumer({ queueUrl: process.env['SQS_QUEUE_URL'] })
   @DBOS.workflow()
   static async recvMessage(msg: Message) {
     // Workflow code goes here...
@@ -103,11 +79,18 @@ class SQSEventProcessor {
 }
 ```
 
-_NOTE:_ The DBOS `@SQSMessageConsumer` decorator should be applied to a method decorated with `@DBOS.workflow`. It is also possible to decorate an old-style DBOS workflow, which is also decorated with `@Workflow` and requires a first argument of type `WorkflowContext`.
+Finally, register your SQS receiver, and launch DBOS:
+
+```typescript
+DBOS.registerLifecycleCallback(sqsReceiver);
+await DBOS.launch();
+```
+
+_NOTE:_ The DBOS `@messageConsumer` decorator should be applied to a method decorated with `@DBOS.workflow`.
 
 ### Concurrency and Rate Limiting
 
-By default, `@SQSMessageConsumer` workflows are started immediately after message receipt. If `workflowQueueName` is specified in the `SQSConfig` at either the method or class level, then the workflow will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues).
+By default, `@messageConsumer` workflows are started immediately after message receipt. If `workflowQueueName` is specified in the `SQSConfig` at either the method, class, or receiver level, then the workflow will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues).
 
 ### Once-And-Only-Once (OAOO) Semantics
 
@@ -131,9 +114,62 @@ This means that, instead of the SQS service redelivering the message in the case
 The `sqs.test.ts` file included in the source repository demonstrates sending and processing SQS messages. Before running, set the following environment variables:
 
 - `SQS_QUEUE_URL`: SQS queue URL with access for sending and receiving messages
+- `AWS_ENDPOINT_URL_SQS`: SQS endpoint URL
 - `AWS_REGION`: AWS region to use
 - `AWS_ACCESS_KEY_ID`: The access key with permission to use the SQS service
 - `AWS_SECRET_ACCESS_KEY`: The secret access key corresponding to `AWS_ACCESS_KEY_ID`
+
+## Sending Messages
+
+Sending messages in DBOS is done using the AWS libraries directly, with the send call wrapped in a DBOS step to make execution durable.
+
+### Imports
+
+First, ensure that the AWS libraries are imported:
+
+```typescript
+import { Message, SendMessageCommand, SendMessageCommandInput, SQSClient } from '@aws-sdk/client-sqs';
+```
+
+### Sending Code
+
+The code below is just an example. You may choose to create your SQS client and message sending code differently; the key here is that it is registered with DBOS:
+
+```typescript
+// Your preferred method for connecting to SQS
+function createSQS() {
+  return new SQSClient({
+    region: process.env['AWS_REGION'] ?? '',
+    endpoint: process.env['AWS_ENDPOINT_URL_SQS'],
+    credentials: {
+      accessKeyId: process.env['AWS_ACCESS_KEY_ID'] ?? '',
+      secretAccessKey: process.env['AWS_SECRET_ACCESS_KEY'] ?? '',
+    },
+    //logger: console,
+  });
+}
+
+// Maybe you have the URL in each message, or maybe set globally...
+// Create a new type that omits the QueueUrl property
+type MessageWithoutQueueUrl = Omit<SendMessageCommandInput, 'QueueUrl'>;
+
+// Create a new type that allows QueueUrl to be added later
+type MessageWithOptionalQueueUrl = MessageWithoutQueueUrl & { QueueUrl?: string };
+
+// This is the send code, not to be called directly...
+async function sendMessageInternal(msg: MessageWithOptionalQueueUrl) {
+  try {
+    const smsg = { ...msg, QueueUrl: msg.QueueUrl || process.env['SQS_QUEUE_URL']! };
+    return await createSQS().send(new SendMessageCommand(smsg));
+  } catch (e) {
+    DBOS.logger.error(e);
+    throw e;
+  }
+}
+
+// `sendMessageStep(msg)` will be what your workflows actually call.
+const sendMessageStep = DBOS.registerStep(sendMessageInternal, { name: 'Send SQS Message' });
+```
 
 ## Next Steps
 

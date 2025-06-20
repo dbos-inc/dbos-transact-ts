@@ -1,12 +1,12 @@
 {
-  "name": "@dbos-inc/dbos-sqs",
+  "name": "@dbos-inc/sqs-receive",
   "version": "0.0.0-placeholder",
-  "description": "DBOS send step / event receiver library - queues in AWS with SQS",
+  "description": "DBOS event receiver for AWS SQS queues",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact-ts",
-    "directory": "packages/dbos-sqs"
+    "directory": "packages/sqs-receive"
   },
   "homepage": "https://docs.dbos.dev/",
   "main": "dist/index.js",
