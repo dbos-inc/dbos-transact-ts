@@ -212,10 +212,10 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: PostgresTransactionOptions,
+    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
   }
 
   transaction(config?: PostgresTransactionOptions) {
@@ -230,7 +230,7 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
 
       return descriptor;
     };

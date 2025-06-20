@@ -277,10 +277,10 @@ export class TypeOrmDataSource implements DBOSDataSource<PGTransactionConfig> {
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: PGTransactionConfig,
+    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
   }
 
   /**
@@ -298,7 +298,7 @@ export class TypeOrmDataSource implements DBOSDataSource<PGTransactionConfig> {
         throw new Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
 
       return descriptor;
     };

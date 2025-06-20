@@ -244,10 +244,10 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: NodePostgresTransactionOptions,
+    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
   }
 
   transaction(config?: NodePostgresTransactionOptions) {
@@ -262,7 +262,7 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
 
       return descriptor;
     };

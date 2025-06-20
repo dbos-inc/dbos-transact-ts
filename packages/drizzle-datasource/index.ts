@@ -239,10 +239,10 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: TransactionConfig,
+    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
   }
 
   // decorator
@@ -251,14 +251,14 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
       _target: object,
-      propertyKey: string,
+      propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       if (!descriptor.value) {
         throw new Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
 
       return descriptor;
     };
