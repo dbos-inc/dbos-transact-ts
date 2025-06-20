@@ -6,12 +6,10 @@ import {
   createTransactionCompletionTablePG,
   isPGRetriableTransactionError,
   isPGKeyConflictError,
-  isPGFailedSqlTransactionError,
   registerTransaction,
   runTransaction,
   DBOSDataSource,
   registerDataSource,
-  PGIsolationLevel,
   PGTransactionConfig,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
@@ -83,7 +81,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     return this.#dataSourceField;
   }
 
-  async #checkExecution<R>(
+  async #checkExecution(
     workflowID: string,
     stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {

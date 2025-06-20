@@ -351,7 +351,7 @@ async function insertFunction(user: string) {
 }
 
 async function errorFunction(user: string) {
-  const result = await insertFunction(user);
+  const _result = await insertFunction(user);
   throw new Error(`test error ${Date.now()}`);
 }
 
