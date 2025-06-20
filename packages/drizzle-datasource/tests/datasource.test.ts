@@ -360,7 +360,6 @@ async function insertFunction(user: string) {
 async function errorFunction(user: string) {
   const result = await insertFunction(user);
   throw new Error(`test error ${Date.now()}`);
-  return result;
 }
 
 async function readFunction(user: string) {
@@ -372,9 +371,9 @@ async function readFunction(user: string) {
   return { user, greet_count: row?.greet_count, now: Date.now() };
 }
 
-const regInsertFunction = dataSource.registerTransaction(insertFunction, 'insertFunction');
-const regErrorFunction = dataSource.registerTransaction(errorFunction, 'errorFunction');
-const regReadFunction = dataSource.registerTransaction(readFunction, 'readFunction', { accessMode: 'read only' });
+const regInsertFunction = dataSource.registerTransaction(insertFunction);
+const regErrorFunction = dataSource.registerTransaction(errorFunction);
+const regReadFunction = dataSource.registerTransaction(readFunction, { accessMode: 'read only' });
 
 class StaticClass {
   static async insertFunction(user: string) {
@@ -386,8 +385,8 @@ class StaticClass {
   }
 }
 
-StaticClass.insertFunction = dataSource.registerTransaction(StaticClass.insertFunction, 'insertFunction');
-StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, 'readFunction', {
+StaticClass.insertFunction = dataSource.registerTransaction(StaticClass.insertFunction);
+StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, {
   accessMode: 'read only',
 });
 
@@ -404,12 +403,10 @@ class InstanceClass {
 InstanceClass.prototype.insertFunction = dataSource.registerTransaction(
   // eslint-disable-next-line @typescript-eslint/unbound-method
   InstanceClass.prototype.insertFunction,
-  'insertFunction',
 );
 InstanceClass.prototype.readFunction = dataSource.registerTransaction(
   // eslint-disable-next-line @typescript-eslint/unbound-method
   InstanceClass.prototype.readFunction,
-  'readFunction',
   { accessMode: 'read only' },
 );
 
