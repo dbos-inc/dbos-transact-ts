@@ -44,13 +44,19 @@ describe('PostgresDataSource', () => {
     }
 
     await PostgresDataSource.initializeInternalSchema(config);
+  });
+
+  afterAll(async () => {
+    await userDB.end();
+  });
+
+  beforeEach(async () => {
     DBOS.setConfig({ name: 'pg-ds-test' });
     await DBOS.launch();
   });
 
-  afterAll(async () => {
+  afterEach(async () => {
     await DBOS.shutdown();
-    await userDB.end();
   });
 
   test('insert dataSource.register function', async () => {
@@ -59,7 +65,7 @@ describe('PostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user))).resolves.toMatchObject({
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowReg(user))).resolves.toMatchObject({
       user,
       greet_count: 1,
     });
@@ -81,10 +87,10 @@ describe('PostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user));
+    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowReg(user));
     expect(result).toMatchObject({ user, greet_count: 1 });
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowReg(user))).resolves.toMatchObject(result);
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowReg(user))).resolves.toMatchObject(result);
   });
 
   test('insert dataSource.runAsTx function', async () => {
@@ -93,7 +99,7 @@ describe('PostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user))).resolves.toMatchObject({
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowRunTx(user))).resolves.toMatchObject({
       user,
       greet_count: 1,
     });
@@ -115,10 +121,10 @@ describe('PostgresDataSource', () => {
     await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
     const workflowID = randomUUID();
 
-    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user));
+    const result = await DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowRunTx(user));
     expect(result).toMatchObject({ user, greet_count: 1 });
 
-    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorfklowRunTx(user))).resolves.toMatchObject(
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowRunTx(user))).resolves.toMatchObject(
       result,
     );
   });
@@ -281,6 +287,40 @@ describe('PostgresDataSource', () => {
       { user, greet_count: 1 },
     ]);
   });
+
+  test('invoke-reg-tx-fun-outside-wf', async () => {
+    const user = 'outsideWfUser' + Date.now();
+    const result = await regInsertFunction(user);
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    const txResults = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE output LIKE $1', [
+      `%${user}%`,
+    ]);
+    expect(txResults.rows.length).toBe(0);
+  });
+
+  test('invoke-reg-tx-static-method-outside-wf', async () => {
+    const user = 'outsideWfUser' + Date.now();
+    const result = await StaticClass.insertFunction(user);
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    const txResults = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE output LIKE $1', [
+      `%${user}%`,
+    ]);
+    expect(txResults.rows.length).toBe(0);
+  });
+
+  test('invoke-reg-tx-inst-method-outside-wf', async () => {
+    const user = 'outsideWfUser' + Date.now();
+    const instance = new InstanceClass();
+    const result = await instance.insertFunction(user);
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    const txResults = await userDB.query('SELECT * FROM dbos.transaction_completion WHERE output LIKE $1', [
+      `%${user}%`,
+    ]);
+    expect(txResults.rows.length).toBe(0);
+  });
 });
 
 export interface greetings {
@@ -300,9 +340,8 @@ async function insertFunction(user: string) {
 }
 
 async function errorFunction(user: string) {
-  const result = await insertFunction(user);
+  const _result = await insertFunction(user);
   throw new Error(`test error ${Date.now()}`);
-  return result;
 }
 
 async function readFunction(user: string) {
@@ -314,9 +353,9 @@ async function readFunction(user: string) {
   return { user, greet_count: row?.greet_count, now: Date.now() };
 }
 
-const regInsertFunction = dataSource.registerTransaction(insertFunction, 'insertFunction');
-const regErrorFunction = dataSource.registerTransaction(errorFunction, 'errorFunction');
-const regReadFunction = dataSource.registerTransaction(readFunction, 'readFunction', { readOnly: true });
+const regInsertFunction = dataSource.registerTransaction(insertFunction);
+const regErrorFunction = dataSource.registerTransaction(errorFunction);
+const regReadFunction = dataSource.registerTransaction(readFunction, { readOnly: true });
 
 class StaticClass {
   static async insertFunction(user: string) {
@@ -328,8 +367,8 @@ class StaticClass {
   }
 }
 
-StaticClass.insertFunction = dataSource.registerTransaction(StaticClass.insertFunction, 'insertFunction');
-StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, 'readFunction');
+StaticClass.insertFunction = dataSource.registerTransaction(StaticClass.insertFunction);
+StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, { readOnly: true });
 
 class InstanceClass {
   async insertFunction(user: string) {
@@ -344,12 +383,11 @@ class InstanceClass {
 InstanceClass.prototype.insertFunction = dataSource.registerTransaction(
   // eslint-disable-next-line @typescript-eslint/unbound-method
   InstanceClass.prototype.insertFunction,
-  'insertFunction',
 );
 InstanceClass.prototype.readFunction = dataSource.registerTransaction(
   // eslint-disable-next-line @typescript-eslint/unbound-method
   InstanceClass.prototype.readFunction,
-  'readFunction',
+  { readOnly: true },
 );
 
 async function insertWorkflowReg(user: string) {
@@ -389,8 +427,8 @@ async function instanceWorkflow(user: string) {
   return [result, readResult];
 }
 
-const regInsertWorfklowReg = DBOS.registerWorkflow(insertWorkflowReg, 'insertWorkflowReg');
-const regInsertWorfklowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx, 'insertWorkflowRunTx');
+const regInsertWorkflowReg = DBOS.registerWorkflow(insertWorkflowReg, 'insertWorkflowReg');
+const regInsertWorkflowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx, 'insertWorkflowRunTx');
 const regErrorWorkflowReg = DBOS.registerWorkflow(errorWorkflowReg, 'errorWorkflowReg');
 const regErrorWorkflowRunTx = DBOS.registerWorkflow(errorWorkflowRunTx, 'errorWorkflowRunTx');
 const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg, 'readWorkflowReg');

@@ -1,9 +1,9 @@
 import { Client } from 'pg';
-import { KnexDataSource } from '../index';
+import { TypeOrmDataSource } from '../index';
 import { dropDB, ensureDB } from './test-helpers';
 
-describe('KnexDataSource.configure', () => {
-  const config = { user: 'postgres', database: 'knex_ds_config_test' };
+describe('TypeOrmDataSource.configure', () => {
+  const config = { user: 'postgres', database: 'typeorm_ds_config_test' };
 
   beforeAll(async () => {
     const client = new Client({ ...config, database: 'postgres' });
@@ -17,7 +17,7 @@ describe('KnexDataSource.configure', () => {
   });
 
   test('configure creates tx outputs table', async () => {
-    await KnexDataSource.initializeInternalSchema({ client: 'pg', connection: config });
+    await TypeOrmDataSource.initializeInternalSchema(config);
 
     const client = new Client(config);
     try {

@@ -9,7 +9,7 @@ describe('NodePostgresDataSource.configure', () => {
     const client = new Client({ ...config, database: 'postgres' });
     try {
       await client.connect();
-      await dropDB(client, config.database);
+      await dropDB(client, config.database, true);
       await ensureDB(client, config.database);
     } finally {
       await client.end();
