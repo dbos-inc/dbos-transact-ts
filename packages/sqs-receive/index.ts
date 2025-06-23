@@ -47,7 +47,10 @@ class SQSReceiver extends DBOSLifecycleCallback {
   }
 
   // async function that uses .then/.catch to handle potentially unreliable library calls
-  static async sendCommandSafe(sqs: SQSClient, params: ReceiveMessageCommand): Promise<ReceiveMessageCommandOutput> {
+  static async sendReceiveMessageCommandSafe(
+    sqs: SQSClient,
+    params: ReceiveMessageCommand,
+  ): Promise<ReceiveMessageCommandOutput> {
     return new Promise((resolve, reject) => {
       sqs
         .send(params)
@@ -116,7 +119,7 @@ class SQSReceiver extends DBOSLifecycleCallback {
           while (!this.isShuttingDown) {
             // Get message
             try {
-              const response = await SQSReceiver.sendCommandSafe(
+              const response = await SQSReceiver.sendReceiveMessageCommandSafe(
                 client,
                 new ReceiveMessageCommand({
                   QueueUrl: url,
