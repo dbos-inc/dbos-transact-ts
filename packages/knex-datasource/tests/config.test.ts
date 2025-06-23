@@ -1,7 +1,7 @@
 import { Client } from 'pg';
 import { KnexDataSource } from '../index';
 import { dropDB, ensureDB } from './test-helpers';
-import knex, { type Knex } from 'knex';
+import knex from 'knex';
 
 describe('KnexDataSource.initializeSchema', () => {
   const config = { user: 'postgres', database: 'knex_ds_config_test' };
@@ -18,8 +18,10 @@ describe('KnexDataSource.initializeSchema', () => {
   });
 
   async function queryTxCompletionTable(client: Client) {
-    const result = await client.query('SELECT workflow_id, function_num, output FROM dbos.transaction_completion');
-    return result.rows;
+    const result = await client.query(
+      'SELECT workflow_id, function_num, output, error FROM dbos.transaction_completion',
+    );
+    return result.rowCount;
   }
 
   async function txCompletionTableExists(client: Client) {
@@ -38,7 +40,7 @@ describe('KnexDataSource.initializeSchema', () => {
     try {
       await client.connect();
       await expect(txCompletionTableExists(client)).resolves.toBe(true);
-      await expect(queryTxCompletionTable(client)).resolves.toEqual([]);
+      await expect(queryTxCompletionTable(client)).resolves.toEqual(0);
 
       await KnexDataSource.uninitializeSchema(knexConfig);
 
@@ -56,7 +58,7 @@ describe('KnexDataSource.initializeSchema', () => {
       await client.connect();
 
       await expect(txCompletionTableExists(client)).resolves.toBe(true);
-      await expect(queryTxCompletionTable(client)).resolves.toEqual([]);
+      await expect(queryTxCompletionTable(client)).resolves.toEqual(0);
 
       await KnexDataSource.uninitializeSchema(knexDB);
 

@@ -214,7 +214,6 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
 
     async function $initSchema(knexDB: Knex) {
-      knexDB;
       await knexDB.raw(createTransactionCompletionSchemaPG);
       await knexDB.raw(createTransactionCompletionTablePG);
     }
@@ -233,7 +232,6 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
 
     async function $uninitSchema(knexDB: Knex) {
-      knexDB;
       await knexDB.raw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos;');
     }
   }
