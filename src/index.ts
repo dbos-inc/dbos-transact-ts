@@ -113,8 +113,6 @@ export {
 
 // Deprecated items below here...
 
-export { Kafka, KafkaConsume } from './kafka/kafka';
-
 export { createTestingRuntime, TestingRuntime } from './testing/testing_runtime';
 
 export { DBOSContext } from './context';
