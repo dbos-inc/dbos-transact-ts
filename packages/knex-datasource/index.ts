@@ -185,6 +185,10 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
   }
 }
 
+function isKnex(value: Knex | Knex.Config): value is Knex {
+  return 'raw' in value;
+}
+
 export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
   static get client(): Knex.Transaction {
     if (!DBOS.isInTransaction()) {
@@ -197,13 +201,38 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     return ctx.client;
   }
 
-  static async initializeInternalSchema(config: Knex.Config) {
-    const knexDB = knex(config);
-    try {
+  static async initializeSchema(knexOrConfig: Knex.Config) {
+    if (isKnex(knexOrConfig)) {
+      await $initSchema(knexOrConfig);
+    } else {
+      const knexDB = knex(knexOrConfig);
+      try {
+        await $initSchema(knexDB);
+      } finally {
+        await knexDB.destroy();
+      }
+    }
+
+    async function $initSchema(knexDB: Knex) {
       await knexDB.raw(createTransactionCompletionSchemaPG);
       await knexDB.raw(createTransactionCompletionTablePG);
-    } finally {
-      await knexDB.destroy();
+    }
+  }
+
+  static async uninitializeSchema(knexOrConfig: Knex.Config) {
+    if (isKnex(knexOrConfig)) {
+      await $uninitSchema(knexOrConfig);
+    } else {
+      const knexDB = knex(knexOrConfig);
+      try {
+        await $uninitSchema(knexDB);
+      } finally {
+        await knexDB.destroy();
+      }
+    }
+
+    async function $uninitSchema(knexDB: Knex) {
+      await knexDB.raw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos;');
     }
   }
 

@@ -43,7 +43,7 @@ describe('KnexDataSource', () => {
       }
     }
 
-    await KnexDataSource.initializeInternalSchema(config);
+    await KnexDataSource.initializeSchema(config);
   });
 
   afterAll(async () => {
