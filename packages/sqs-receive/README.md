@@ -2,7 +2,7 @@
 
 Message queues are a common building block for distributed systems. Message queues allow processing to occur at a different place or time, perhaps in another programming environment. Due to its flexibility, robustness, integration, and low cost, [Amazon Simple Queue Service](https://aws.amazon.com/sqs/) is the most popular message queuing service underpinning distributed systems in AWS.
 
-This package includes a [DBOS](https://docs.dbos.dev/).
+This package includes a [DBOS](https://docs.dbos.dev/) receiver for SQS messages, which invokes a workflow for each message received.
 
 The test in this package also shows wrapping SQS send in a [DBOS step](https://docs.dbos.dev/typescript/tutorials/step-tutorial).
 
@@ -52,7 +52,7 @@ The SQS Receiver can be configured in 3 ways:
 interface SQSConfig {
   client?: SQSClient | (()=>SQSClient);
   queueUrl?: string;
-  getWFKey?: (m: Message) => string;
+  getWorkflowKey?: (m: Message) => string;
   workflowQueueName?: string;
 }
 
@@ -69,7 +69,7 @@ class SQSEventProcessor {
 Then, within the class, one or more `static` workflow methods should be decorated with `@sqsReceiver.messageConsumer` to handle SQS messages:
 
 ```typescript
-@SQSConfigure({ awscfgname: 'sqs_receiver' })
+@sqsReceiver.configure(...)
 class SQSEventProcessor {
   @sqsReceiver.messageConsumer({ queueUrl: process.env['SQS_QUEUE_URL'] })
   @DBOS.workflow()

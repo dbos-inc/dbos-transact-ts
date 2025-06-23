@@ -13,7 +13,7 @@ import {
 interface SQSConfig {
   client?: SQSClient | (() => SQSClient);
   queueUrl?: string;
-  getWFKey?: (m: Message) => string;
+  getWorkflowKey?: (m: Message) => string;
   workflowQueueName?: string;
 }
 
@@ -47,7 +47,7 @@ class SQSReceiver extends DBOSLifecycleCallback {
   }
 
   // async function that uses .then/.catch to handle potentially unreliable library calls
-  static async sendMessageSafe(sqs: SQSClient, params: ReceiveMessageCommand): Promise<ReceiveMessageCommandOutput> {
+  static async sendCommandSafe(sqs: SQSClient, params: ReceiveMessageCommand): Promise<ReceiveMessageCommandOutput> {
     return new Promise((resolve, reject) => {
       sqs
         .send(params)
@@ -116,7 +116,7 @@ class SQSReceiver extends DBOSLifecycleCallback {
           while (!this.isShuttingDown) {
             // Get message
             try {
-              const response = await SQSReceiver.sendMessageSafe(
+              const response = await SQSReceiver.sendCommandSafe(
                 client,
                 new ReceiveMessageCommand({
                   QueueUrl: url,
@@ -133,12 +133,12 @@ class SQSReceiver extends DBOSLifecycleCallback {
               const message = response.Messages[0];
 
               // Start workflow
-              let wfid = sqsmethod.config?.getWFKey ? sqsmethod.config.getWFKey(message) : undefined;
+              let wfid = sqsmethod.config?.getWorkflowKey ? sqsmethod.config.getWorkflowKey(message) : undefined;
               if (!wfid) {
-                wfid = sqsclass.config?.getWFKey ? sqsclass.config.getWFKey(message) : undefined;
+                wfid = sqsclass.config?.getWorkflowKey ? sqsclass.config.getWorkflowKey(message) : undefined;
               }
               if (!wfid) {
-                wfid = sqsr.config?.getWFKey ? sqsr.config.getWFKey(message) : undefined;
+                wfid = sqsr.config?.getWorkflowKey ? sqsr.config.getWorkflowKey(message) : undefined;
               }
               if (!wfid) wfid = message.MessageId;
               await DBOS.startWorkflow(methodReg.registeredFunction as (...args: unknown[]) => Promise<unknown>, {
