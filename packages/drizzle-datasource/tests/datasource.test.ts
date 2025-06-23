@@ -1,12 +1,16 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { Client, Pool } from 'pg';
-import { NodePostgresDataSource } from '..';
+import { Client, Pool, PoolConfig } from 'pg';
+import { DrizzleDataSource } from '..';
 import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
-import { SuperJSON } from 'superjson';
+import SuperJSON from 'superjson';
+import { pgTable, text, integer } from 'drizzle-orm/pg-core';
+import { drizzle } from 'drizzle-orm/node-postgres';
+import { pushSchema } from 'drizzle-kit/api';
+import { eq, sql } from 'drizzle-orm';
 
-const config = { user: 'postgres', database: 'node_pg_ds_test_datasource' };
-const dataSource = new NodePostgresDataSource('app-db', config);
+const config = { user: 'postgres', database: 'drizzle_ds_test_userdb' };
+const dataSource = new DrizzleDataSource('app-db', config);
 
 interface transaction_completion {
   workflow_id: string;
@@ -15,7 +19,18 @@ interface transaction_completion {
   error: string | null;
 }
 
-describe('NodePostgresDataSource', () => {
+async function createSchema(config: PoolConfig, entities: { [key: string]: object }) {
+  const drizzlePool = new Pool(config);
+  const db = drizzle(drizzlePool);
+  try {
+    const res = await pushSchema(entities, db);
+    await res.apply();
+  } finally {
+    await drizzlePool.end();
+  }
+}
+
+describe('DrizzleDataSource', () => {
   const userDB = new Pool(config);
 
   beforeAll(async () => {
@@ -23,8 +38,8 @@ describe('NodePostgresDataSource', () => {
       const client = new Client({ ...config, database: 'postgres' });
       try {
         await client.connect();
-        await dropDB(client, 'node_pg_ds_test', true);
-        await dropDB(client, 'node_pg_ds_test_dbos_sys', true);
+        await dropDB(client, 'drizzle_ds_test', true);
+        await dropDB(client, 'drizzle_ds_test_dbos_sys', true);
         await dropDB(client, config.database, true);
         await ensureDB(client, config.database);
       } finally {
@@ -32,18 +47,8 @@ describe('NodePostgresDataSource', () => {
       }
     }
 
-    {
-      const client = await userDB.connect();
-      try {
-        await client.query(
-          'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
-        );
-      } finally {
-        client.release();
-      }
-    }
-
-    await NodePostgresDataSource.initializeInternalSchema(config);
+    await DrizzleDataSource.initializeInternalSchema(config);
+    await createSchema(config, { greetingsTable });
   });
 
   afterAll(async () => {
@@ -51,7 +56,7 @@ describe('NodePostgresDataSource', () => {
   });
 
   beforeEach(async () => {
-    DBOS.setConfig({ name: 'node-pg-ds-test' });
+    DBOS.setConfig({ name: 'drizzle-ds-test' });
     await DBOS.launch();
   });
 
@@ -149,6 +154,10 @@ describe('NodePostgresDataSource', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(/^test error \d+$/);
 
+    interface greetings {
+      name: string;
+      greet_count: number;
+    }
     const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
     expect(rows.length).toBe(1);
     expect(rows[0].greet_count).toBe(10);
@@ -194,6 +203,10 @@ describe('NodePostgresDataSource', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(/^test error \d+$/);
 
+    interface greetings {
+      name: string;
+      greet_count: number;
+    }
     const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
     expect(rows.length).toBe(1);
     expect(rows[0].greet_count).toBe(10);
@@ -323,21 +336,24 @@ describe('NodePostgresDataSource', () => {
   });
 });
 
-export interface greetings {
-  name: string;
-  greet_count: number;
-}
+const greetingsTable = pgTable('greetings', {
+  name: text('name').primaryKey().notNull(),
+  greet_count: integer('greet_count').default(0),
+});
 
 async function insertFunction(user: string) {
-  const { rows } = await NodePostgresDataSource.client.query<Pick<greetings, 'greet_count'>>(
-    `INSERT INTO greetings(name, greet_count) 
-     VALUES($1, 1) 
-     ON CONFLICT(name)
-     DO UPDATE SET greet_count = greetings.greet_count + 1
-     RETURNING greet_count`,
-    [user],
-  );
-  const row = rows.length > 0 ? rows[0] : undefined;
+  const result = await DrizzleDataSource.client
+    .insert(greetingsTable)
+    .values({ name: user, greet_count: 1 })
+    .onConflictDoUpdate({
+      target: greetingsTable.name,
+      set: {
+        greet_count: sql`${greetingsTable.greet_count} + 1`,
+      },
+    })
+    .returning({ greet_count: greetingsTable.greet_count });
+
+  const row = result.length > 0 ? result[0] : undefined;
   return { user, greet_count: row?.greet_count, now: Date.now() };
 }
 
@@ -347,19 +363,17 @@ async function errorFunction(user: string) {
 }
 
 async function readFunction(user: string) {
-  const { rows } = await NodePostgresDataSource.client.query<Pick<greetings, 'greet_count'>>(
-    `SELECT greet_count
-     FROM greetings
-     WHERE name = $1`,
-    [user],
-  );
-  const row = rows.length > 0 ? rows[0] : undefined;
+  const result = await DrizzleDataSource.client
+    .select({ greet_count: greetingsTable.greet_count })
+    .from(greetingsTable)
+    .where(eq(greetingsTable.name, user));
+  const row = result.length > 0 ? result[0] : undefined;
   return { user, greet_count: row?.greet_count, now: Date.now() };
 }
 
 const regInsertFunction = dataSource.registerTransaction(insertFunction);
 const regErrorFunction = dataSource.registerTransaction(errorFunction);
-const regReadFunction = dataSource.registerTransaction(readFunction, { readOnly: true });
+const regReadFunction = dataSource.registerTransaction(readFunction, { accessMode: 'read only' });
 
 class StaticClass {
   static async insertFunction(user: string) {
@@ -372,7 +386,9 @@ class StaticClass {
 }
 
 StaticClass.insertFunction = dataSource.registerTransaction(StaticClass.insertFunction);
-StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, { readOnly: true });
+StaticClass.readFunction = dataSource.registerTransaction(StaticClass.readFunction, {
+  accessMode: 'read only',
+});
 
 class InstanceClass {
   async insertFunction(user: string) {
@@ -391,7 +407,7 @@ InstanceClass.prototype.insertFunction = dataSource.registerTransaction(
 InstanceClass.prototype.readFunction = dataSource.registerTransaction(
   // eslint-disable-next-line @typescript-eslint/unbound-method
   InstanceClass.prototype.readFunction,
-  { readOnly: true },
+  { accessMode: 'read only' },
 );
 
 async function insertWorkflowReg(user: string) {
@@ -415,7 +431,7 @@ async function readWorkflowReg(user: string) {
 }
 
 async function readWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => readFunction(user), 'readFunction', { readOnly: true });
+  return await dataSource.runTransaction(() => readFunction(user), 'readFunction', { accessMode: 'read only' });
 }
 
 async function staticWorkflow(user: string) {

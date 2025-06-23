@@ -301,10 +301,10 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: KnexTransactionConfig,
+    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
   }
 
   static registerTransaction<This, Args extends unknown[], Return>(
@@ -322,14 +322,14 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
       _target: object,
-      propertyKey: string,
+      propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       if (!descriptor.value) {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
 
       return descriptor;
     };
@@ -422,7 +422,7 @@ async function txFunctionGutsNoWF() {
   return res.rows[0].a;
 }
 
-const txFuncNoWF = dsa.registerTransaction(txFunctionGutsNoWF, 'NoWFTx', {});
+const txFuncNoWF = dsa.registerTransaction(txFunctionGutsNoWF, {});
 
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {

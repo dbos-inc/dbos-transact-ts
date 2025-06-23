@@ -1,5 +1,4 @@
-// using https://github.com/brianc/node-postgres
-
+import { Client, ClientConfig, Pool, PoolConfig } from 'pg';
 import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
@@ -9,48 +8,68 @@ import {
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
-  PGTransactionConfig as NodePostgresTransactionOptions,
   DBOSDataSource,
   registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
-import { Client, type ClientBase, type ClientConfig, Pool, type PoolConfig } from 'pg';
-import { AsyncLocalStorage } from 'node:async_hooks';
+import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
+import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
+import { PgTransactionConfig } from 'drizzle-orm/pg-core';
+import { sql } from 'drizzle-orm';
 
-interface NodePostgresDataSourceContext {
-  client: ClientBase;
+interface DrizzleLocalCtx {
+  client: NodePgDatabase<{ [key: string]: object }>;
 }
 
-export { NodePostgresTransactionOptions };
+export type TransactionConfig = Pick<PgTransactionConfig, 'isolationLevel' | 'accessMode'>;
 
-const asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
+const asyncLocalCtx = new AsyncLocalStorage<DrizzleLocalCtx>();
 
-class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'NodePostgresDataSource';
-  #poolField: Pool | undefined;
+export interface transaction_completion {
+  workflow_id: string;
+  function_num: number;
+  output: string | null;
+  error: string | null;
+}
+
+interface DrizzleConnection {
+  readonly db: NodePgDatabase<{ [key: string]: object }>;
+  end(): Promise<void>;
+}
+
+class DrizzleTransactionHandler implements DataSourceTransactionHandler {
+  readonly dsType = 'drizzle';
+  #connection: DrizzleConnection | undefined;
 
   constructor(
     readonly name: string,
     private readonly config: PoolConfig,
+    private readonly entities: { [key: string]: object } = {},
   ) {}
 
   async initialize(): Promise<void> {
-    const pool = this.#poolField;
-    this.#poolField = new Pool(this.config);
-    await pool?.end();
+    const conn = this.#connection;
+
+    const driver = new Pool(this.config);
+    const db = drizzle(driver, { schema: this.entities });
+    this.#connection = { db, end: () => driver.end() };
+
+    await conn?.end();
   }
 
   async destroy(): Promise<void> {
-    const pool = this.#poolField;
-    this.#poolField = undefined;
-    await pool?.end();
+    const conn = this.#connection;
+
+    this.#connection = undefined;
+
+    await conn?.end();
   }
 
-  get #pool(): Pool {
-    if (!this.#poolField) {
+  get #drizzle(): NodePgDatabase<{ [key: string]: object }> {
+    if (!this.#connection) {
       throw new Error(`DataSource ${this.name} is not initialized.`);
     }
-    return this.#poolField;
+    return this.#connection.db;
   }
 
   async #checkExecution(
@@ -58,32 +77,31 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
-    const { rows } = await this.#pool.query<Result>(
-      /*sql*/
-      `SELECT output, error FROM dbos.transaction_completion
-       WHERE workflow_id = $1 AND function_num = $2`,
-      [workflowID, stepID],
-    );
-    if (rows.length === 0) {
+
+    const statement = sql`
+        SELECT output, error FROM dbos.transaction_completion
+        WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
+    const result = await this.#drizzle.execute<Result>(statement);
+
+    if (result.rows.length !== 1) {
       return undefined;
     }
-    const { output, error } = rows[0];
+
+    const { output, error } = result.rows[0];
     return error !== null ? { error } : { output };
   }
 
   static async #recordOutput(
-    client: ClientBase,
+    client: NodePgDatabase<{ [key: string]: object }>,
     workflowID: string,
     stepID: number,
-    output: string | null,
+    output: string,
   ): Promise<void> {
     try {
-      await client.query(
-        /*sql*/
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
-         VALUES ($1, $2, $3)`,
-        [workflowID, stepID, output],
-      );
+      const statement = sql`
+        INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
+        VALUES (${workflowID}, ${stepID}, ${output})`;
+      await client.execute(statement);
     } catch (error) {
       if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
@@ -95,12 +113,10 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
-      await this.#pool.query(
-        /*sql*/
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
-         VALUES ($1, $2, $3)`,
-        [workflowID, stepID, error],
-      );
+      const statement = sql`
+        INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
+        VALUES (${workflowID}, ${stepID}, ${error})`;
+      await this.#drizzle.execute(statement);
     } catch (error) {
       if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
@@ -110,30 +126,9 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     }
   }
 
-  async #transaction<Return>(
-    func: (client: ClientBase) => Promise<Return>,
-    config: NodePostgresTransactionOptions = {},
-  ): Promise<Return> {
-    const isolationLevel = config?.isolationLevel ? `ISOLATION LEVEL ${config.isolationLevel}` : '';
-    const readOnly = config?.readOnly ?? false;
-    const accessMode = config?.readOnly === undefined ? '' : readOnly ? 'READ ONLY' : 'READ WRITE';
-
-    const client = await this.#pool.connect();
-    try {
-      await client.query(/*sql*/ `BEGIN ${isolationLevel} ${accessMode}`);
-      const result = await func(client);
-      await client.query(/*sql*/ `COMMIT`);
-      return result;
-    } catch (error) {
-      await client.query(/*sql*/ `ROLLBACK`);
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
+  /* Invoke a transaction function, called by the framework */
   async invokeTransactionFunction<This, Args extends unknown[], Return>(
-    config: NodePostgresTransactionOptions | undefined,
+    config: TransactionConfig | undefined,
     target: This,
     func: (this: This, ...args: Args) => Promise<Return>,
     ...args: Args
@@ -144,7 +139,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
       throw new Error('DBOS.stepID is undefined inside a workflow.');
     }
 
-    const readOnly = config?.readOnly ?? false;
+    const readOnly = config?.accessMode === 'read only' ? true : false;
     const saveResults = !readOnly && workflowID !== undefined;
 
     // Retry loop if appropriate
@@ -161,34 +156,32 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
         if ('error' in previousResult) {
           throw SuperJSON.parse(previousResult.error);
         }
-
         return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
       }
 
       try {
-        const result = await this.#transaction<Return>(async (client) => {
-          // execute user's transaction function
-          const result = await asyncLocalCtx.run({ client }, async () => {
-            return (await func.call(target, ...args)) as Return;
-          });
+        const result = await this.#drizzle.transaction(
+          async (client) => {
+            // execute user's transaction function
+            const result = await asyncLocalCtx.run({ client }, async () => {
+              return await func.call(target, ...args);
+            });
 
-          // save the output of read/write transactions
-          if (saveResults) {
-            await NodePostgresTransactionHandler.#recordOutput(
-              client,
-              workflowID,
-              stepID!,
-              SuperJSON.stringify(result),
-            );
-          }
+            // save the output of read/write transactions
+            if (saveResults) {
+              await DrizzleTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
+            }
 
-          return result;
-        }, config);
+            return result;
+          },
+          { accessMode: config?.accessMode, isolationLevel: config?.isolationLevel },
+        );
 
         return result;
       } catch (error) {
         if (isPGRetriableTransactionError(error)) {
           DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
+          // Retry serialization failures.
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
           retryWaitMS = Math.min(retryWaitMS * backoffFactor, maxRetryWaitMS);
           continue;
@@ -205,14 +198,15 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
   }
 }
 
-export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransactionOptions> {
-  static get client(): ClientBase {
+export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
+  // User calls this... DBOS not directly involved...
+  static get client(): NodePgDatabase<{ [key: string]: object }> {
     if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of DrizzleDataSource.client outside of a DBOS transaction');
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of DrizzleDataSource.client outside of a DBOS transaction');
     }
     return ctx.client;
   }
@@ -228,29 +222,31 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     }
   }
 
-  #provider: NodePostgresTransactionHandler;
+  #provider: DrizzleTransactionHandler;
 
   constructor(
     readonly name: string,
     config: PoolConfig,
+    entities: { [key: string]: object } = {},
   ) {
-    this.#provider = new NodePostgresTransactionHandler(name, config);
+    this.#provider = new DrizzleTransactionHandler(name, config, entities);
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
+  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
     return await runTransaction(callback, funcName, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: NodePostgresTransactionOptions,
+    config?: TransactionConfig,
     name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
     return registerTransaction(this.name, func, { name: name ?? func.name }, config);
   }
 
-  transaction(config?: NodePostgresTransactionOptions) {
+  // decorator
+  transaction(config?: TransactionConfig) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
@@ -259,7 +255,7 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       if (!descriptor.value) {
-        throw Error('Use of decorator when original method is undefined');
+        throw new Error('Use of decorator when original method is undefined');
       }
 
       descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
