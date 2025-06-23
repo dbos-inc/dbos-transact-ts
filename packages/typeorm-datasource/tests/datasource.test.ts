@@ -1,12 +1,22 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
-import { NodePostgresDataSource } from '..';
+import { TypeOrmDataSource } from '..';
 import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import { SuperJSON } from 'superjson';
+import { Column, DataSource, Entity, PrimaryColumn } from 'typeorm';
 
-const config = { user: 'postgres', database: 'node_pg_ds_test_datasource' };
-const dataSource = new NodePostgresDataSource('app-db', config);
+@Entity({ name: 'greetings' })
+class Greeting {
+  @PrimaryColumn()
+  name: string = '';
+
+  @Column()
+  greet_count: number = 0;
+}
+
+const config = { user: 'postgres', database: 'typeorm_ds_test_datasource' };
+const dataSource = new TypeOrmDataSource('app-db', config, [Greeting]);
 
 interface transaction_completion {
   workflow_id: string;
@@ -15,7 +25,7 @@ interface transaction_completion {
   error: string | null;
 }
 
-describe('NodePostgresDataSource', () => {
+describe('TypeOrmDataSource', () => {
   const userDB = new Pool(config);
 
   beforeAll(async () => {
@@ -23,8 +33,8 @@ describe('NodePostgresDataSource', () => {
       const client = new Client({ ...config, database: 'postgres' });
       try {
         await client.connect();
-        await dropDB(client, 'node_pg_ds_test', true);
-        await dropDB(client, 'node_pg_ds_test_dbos_sys', true);
+        await dropDB(client, 'typeorm_ds_test', true);
+        await dropDB(client, 'typeorm_ds_test_dbos_sys', true);
         await dropDB(client, config.database, true);
         await ensureDB(client, config.database);
       } finally {
@@ -32,18 +42,19 @@ describe('NodePostgresDataSource', () => {
       }
     }
 
-    {
-      const client = await userDB.connect();
-      try {
-        await client.query(
-          'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
-        );
-      } finally {
-        client.release();
-      }
-    }
+    await TypeOrmDataSource.initializeInternalSchema(config);
 
-    await NodePostgresDataSource.initializeInternalSchema(config);
+    {
+      const ds = new DataSource({
+        type: 'postgres',
+        username: config.user,
+        database: config.database,
+        entities: [Greeting],
+      });
+      await ds.initialize();
+      await ds.synchronize();
+      await ds.destroy();
+    }
   });
 
   afterAll(async () => {
@@ -51,7 +62,7 @@ describe('NodePostgresDataSource', () => {
   });
 
   beforeEach(async () => {
-    DBOS.setConfig({ name: 'node-pg-ds-test' });
+    DBOS.setConfig({ name: 'typeorm-ds-test' });
     await DBOS.launch();
   });
 
@@ -329,14 +340,12 @@ export interface greetings {
 }
 
 async function insertFunction(user: string) {
-  const { rows } = await NodePostgresDataSource.client.query<Pick<greetings, 'greet_count'>>(
-    `INSERT INTO greetings(name, greet_count) 
-     VALUES($1, 1) 
-     ON CONFLICT(name)
-     DO UPDATE SET greet_count = greetings.greet_count + 1
-     RETURNING greet_count`,
-    [user],
-  );
+  type Result = Array<{ greet_count: number }>;
+  const rows = await TypeOrmDataSource.entityManager.sql<Result>`
+     INSERT INTO greetings(name, greet_count) VALUES(${user}, 1)
+     ON CONFLICT(name) DO UPDATE SET greet_count = greetings.greet_count + 1
+     RETURNING greet_count`;
+
   const row = rows.length > 0 ? rows[0] : undefined;
   return { user, greet_count: row?.greet_count, now: Date.now() };
 }
@@ -347,14 +356,9 @@ async function errorFunction(user: string) {
 }
 
 async function readFunction(user: string) {
-  const { rows } = await NodePostgresDataSource.client.query<Pick<greetings, 'greet_count'>>(
-    `SELECT greet_count
-     FROM greetings
-     WHERE name = $1`,
-    [user],
-  );
-  const row = rows.length > 0 ? rows[0] : undefined;
-  return { user, greet_count: row?.greet_count, now: Date.now() };
+  const result = await TypeOrmDataSource.entityManager.findOneBy(Greeting, { name: user });
+
+  return { user, greet_count: result?.greet_count, now: Date.now() };
 }
 
 const regInsertFunction = dataSource.registerTransaction(insertFunction);

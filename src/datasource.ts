@@ -65,8 +65,8 @@ export interface DBOSDataSource<Config> {
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: Config,
+    name?: string,
   ): (this: This, ...args: Args) => Promise<Return>;
 
   /**
