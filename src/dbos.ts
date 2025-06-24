@@ -93,7 +93,6 @@ import { StepConfig, StepFunction } from './step';
 import {
   DBOSLifecycleCallback,
   DBOSMethodMiddlewareInstaller,
-  HandlerContext,
   requestArgValidation,
   StepContext,
   StoredProcedureContext,
@@ -657,7 +656,7 @@ export class DBOS {
 
   /** Get the current Koa context (within `@DBOS.getApi` et al) */
   static getKoaContext(): Koa.Context | undefined {
-    return (getCurrentDBOSContext() as HandlerContext)?.koaContext ?? getCurrentContextStore()?.koaContext;
+    return getCurrentContextStore()?.koaContext;
   }
 
   /** Get the current Koa context (within `@DBOS.getApi` et al) */

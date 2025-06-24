@@ -115,17 +115,6 @@ export { DBOSContext } from './context';
 export { InitContext } from './dbos';
 
 export {
-  HandlerContext,
-
-  // Endpoint Decorators
-  GetApi,
-  PostApi,
-  PatchApi,
-  PutApi,
-  DeleteApi,
-} from './httpServer/handler';
-
-export {
   // Method Decorators
   Transaction,
   Workflow,
