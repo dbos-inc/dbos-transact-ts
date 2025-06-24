@@ -2,7 +2,7 @@ export { DBOS } from './dbos';
 
 export { DBOSClient } from './client';
 
-export { SchedulerMode, SchedulerConfig, Scheduled } from './scheduler/scheduler';
+export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler';
 
 export {
   // Extensions for others to register event receivers/pollers
@@ -29,7 +29,7 @@ export { DBOSResponseError, DBOSWorkflowConflictError } from './error';
 
 export { TransactionConfig, TransactionFunction } from './transaction';
 
-export { StoredProcedureContext, StoredProcedureConfig } from './procedure';
+export { StoredProcedureConfig } from './procedure';
 
 export {
   WorkflowConfig,
@@ -108,32 +108,4 @@ export {
 
 // Deprecated items below here...
 
-export { DBOSContext } from './context';
-
 export { InitContext } from './dbos';
-
-export {
-  HandlerContext,
-
-  // Endpoint Decorators
-  GetApi,
-  PostApi,
-  PatchApi,
-  PutApi,
-  DeleteApi,
-} from './httpServer/handler';
-
-export {
-  // Method Decorators
-  Transaction,
-  Workflow,
-  Step,
-  StoredProcedure,
-  DBOSDeploy,
-} from './decorators';
-
-export { TransactionContext } from './transaction';
-
-export { WorkflowContext } from './workflow';
-
-export { StepContext } from './step';

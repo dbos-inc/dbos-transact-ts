@@ -1,4 +1,4 @@
-import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext } from './context';
+import { DBOSContext, DBOSContextImpl, getCurrentContextStore, getCurrentDBOSContext } from './context';
 import { DBOS } from './dbos';
 import {
   associateClassWithExternal,
@@ -23,7 +23,12 @@ function checkMethodAuth(methReg: MethodRegistrationBase, args: unknown[]) {
     for (const role of requiredRoles) {
       if (set.has(role)) {
         authorized = true;
-        (getCurrentDBOSContext() as DBOSContextImpl).assumedRole = role;
+        if (getCurrentDBOSContext()) {
+          (getCurrentDBOSContext() as DBOSContextImpl).assumedRole = role;
+        }
+        if (getCurrentContextStore()) {
+          getCurrentContextStore()!.assumedRole = role;
+        }
         break;
       }
     }

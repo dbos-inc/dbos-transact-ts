@@ -11,7 +11,7 @@ import {
   logLevel,
   Partitioners,
 } from 'kafkajs';
-import { DBOS, Step, StepContext, ConfiguredInstance, DBOSContext, DBOSEventReceiver } from '@dbos-inc/dbos-sdk';
+import { DBOS, ConfiguredInstance, DBOSEventReceiver } from '@dbos-inc/dbos-sdk';
 import { associateClassWithEventReceiver, associateMethodWithEventReceiver } from '@dbos-inc/dbos-sdk';
 import { TransactionFunction } from '@dbos-inc/dbos-sdk';
 import { WorkflowFunction } from '@dbos-inc/dbos-sdk';
@@ -187,7 +187,7 @@ export function KafkaConsume(
   consumerConfig?: ConsumerConfig,
   queueName?: string,
 ) {
-  function kafkadec<This, Ctx extends DBOSContext, Args extends KafkaArgs | [Ctx, ...KafkaArgs], Return>(
+  function kafkadec<This, Args extends KafkaArgs, Return>(
     target: object,
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
@@ -244,16 +244,6 @@ export class KafkaProduceStep extends ConfiguredInstance {
     this.producer = kafka.producer(this.pcfg);
     await this.producer.connect();
     return Promise.resolve();
-  }
-
-  @Step()
-  async sendMessage(_ctx: StepContext, msg: Message) {
-    return await this.producer?.send({ topic: this.topic, messages: [msg] });
-  }
-
-  @Step()
-  async sendMessages(_ctx: StepContext, msg: Message[]) {
-    return await this.producer?.send({ topic: this.topic, messages: msg });
   }
 
   @DBOS.step()
