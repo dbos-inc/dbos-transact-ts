@@ -26,7 +26,7 @@ const kafkaConfig = {
 const kafkaReceiver = new KafkaReceiver(kafkaConfig);
 
 interface KafkaEvents {
-  message: (func: string, topic: string, partition: number, message: KafkaMessage) => void;
+  message: (funcName: string, topic: string, partition: number, message: KafkaMessage) => void;
 }
 
 class KafkaEmitter extends EventEmitter {
@@ -45,11 +45,11 @@ type KafkaMessageEvent = {
   message: KafkaMessage;
 };
 
-function waitForMessage(emitter: KafkaEmitter, func: string, timeoutMS = 30000): Promise<KafkaMessageEvent> {
+function waitForMessage(emitter: KafkaEmitter, funcName: string, timeoutMS = 30000): Promise<KafkaMessageEvent> {
   return withTimeout(
     new Promise<KafkaMessageEvent>((resolve) => {
       const handler = (f: string, topic: string, partition: number, message: KafkaMessage) => {
-        if (f === func) {
+        if (f === funcName) {
           emitter.off('message', handler);
           resolve({ topic, partition, message });
         }
@@ -57,7 +57,7 @@ function waitForMessage(emitter: KafkaEmitter, func: string, timeoutMS = 30000):
       emitter.on('message', handler);
     }),
     timeoutMS,
-    `Timeout waiting for message for function ${func}`,
+    `Timeout waiting for message for function ${funcName}`,
   );
 }
 
