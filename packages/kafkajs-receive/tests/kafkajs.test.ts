@@ -70,7 +70,7 @@ class KafkaTestClass {
     KafkaTestClass.emitter.emit('message', 'stringTopic', topic, partition, message);
   }
 
-  @kafkaReceiver.eventConsumer(new RegExp(/regex-topic-.*/))
+  @kafkaReceiver.eventConsumer(/regex-topic-.*/i)
   @DBOS.workflow()
   static async regexTopic(topic: string, partition: number, message: KafkaMessage) {
     KafkaTestClass.emitter.emit('message', 'regexTopic', topic, partition, message);
@@ -80,6 +80,12 @@ class KafkaTestClass {
   @DBOS.workflow()
   static async stringArrayTopic(topic: string, partition: number, message: KafkaMessage) {
     KafkaTestClass.emitter.emit('message', 'stringArrayTopic', topic, partition, message);
+  }
+
+  @kafkaReceiver.eventConsumer([/z-topic-.*/i, /y-topic-.*/i])
+  @DBOS.workflow()
+  static async regexArrayTopic(topic: string, partition: number, message: KafkaMessage) {
+    KafkaTestClass.emitter.emit('message', 'regexArrayTopic', topic, partition, message);
   }
 }
 
@@ -144,13 +150,13 @@ describe('kafkajs-receive', () => {
     }
   }, 40000);
 
-  test.skip('wf-regex-topic', async () => {
+  test('wf-regex-topic', async () => {
     if (!kafkaIsAvailable) {
       DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
       return;
     }
 
-    const topic = `regex-topic-${Date.now()}`;
+    const topic = `regex-topic-foo`;
     const message = `test-message-${Date.now()}`;
     const kafka = new KafkaJS(kafkaConfig);
     const producer = kafka.producer();
@@ -193,6 +199,48 @@ describe('kafkajs-receive', () => {
     }
 
     const topic = `b-topic`;
+    const message = `test-message-${Date.now()}`;
+    const kafka = new KafkaJS(kafkaConfig);
+    const producer = kafka.producer();
+    try {
+      await producer.connect();
+      await producer.send({ topic, messages: [{ value: message }] });
+      const result = await waitForMessage(KafkaTestClass.emitter, 'stringArrayTopic');
+      expect(result.topic).toBe(topic);
+      expect(String(result.message.value)).toBe(message);
+    } finally {
+      await producer.disconnect();
+    }
+  }, 40000);
+
+  test('wf-array-regex-topic-z', async () => {
+    if (!kafkaIsAvailable) {
+      DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
+      return;
+    }
+
+    const topic = `z-topic-foo`;
+    const message = `test-message-${Date.now()}`;
+    const kafka = new KafkaJS(kafkaConfig);
+    const producer = kafka.producer();
+    try {
+      await producer.connect();
+      await producer.send({ topic, messages: [{ value: message }] });
+      const result = await waitForMessage(KafkaTestClass.emitter, 'stringArrayTopic');
+      expect(result.topic).toBe(topic);
+      expect(String(result.message.value)).toBe(message);
+    } finally {
+      await producer.disconnect();
+    }
+  }, 40000);
+
+  test('wf-array-regex-topic-y', async () => {
+    if (!kafkaIsAvailable) {
+      DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
+      return;
+    }
+
+    const topic = `y-topic-foo`;
     const message = `test-message-${Date.now()}`;
     const kafka = new KafkaJS(kafkaConfig);
     const producer = kafka.producer();
