@@ -750,36 +750,38 @@ export class DBOSHttpServer {
           // - If an error contains a `status` field, we return the specified status code.
           // - Otherwise, we return 500.
           // configuredInstance is currently null; we don't allow configured handlers now.
-          const wfParams = { workflowUUID: dctx.idAssignedForNextWorkflow, configuredInstance: null };
-          if (ro.txnConfig) {
-            koaCtxt.body = await dbosExec.transaction(
-              ro.registeredFunction as Transaction<unknown[], unknown>,
-              wfParams,
-              ...args,
-            );
-          } else if (ro.workflowConfig) {
-            koaCtxt.body = await (
-              await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
-            ).getResult();
-          } else if (ro.stepConfig) {
-            koaCtxt.body = await dbosExec.external(
-              ro.registeredFunction as StepFunction<unknown[], unknown>,
-              wfParams,
-              ...args,
-            );
-          } else {
-            // Directly invoke the handler code.
-            let cresult: unknown;
-            await runWithTopContext(dctx, async () => {
-              cresult = await ro.invoke(undefined, [...args]);
-            });
-            const retValue = cresult!;
+          const wfParams = {
+            workflowUUID: dctx.idAssignedForNextWorkflow,
+            configuredInstance: null,
+          };
+          await runWithTopContext(dctx, async () => {
+            if (ro.txnConfig) {
+              koaCtxt.body = await dbosExec.transaction(
+                ro.registeredFunction as Transaction<unknown[], unknown>,
+                wfParams,
+                ...args,
+              );
+            } else if (ro.workflowConfig) {
+              koaCtxt.body = await (
+                await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
+              ).getResult();
+            } else if (ro.stepConfig) {
+              koaCtxt.body = await dbosExec.external(
+                ro.registeredFunction as StepFunction<unknown[], unknown>,
+                wfParams,
+                ...args,
+              );
+            } else {
+              // Directly invoke the handler code.
+              const cresult = await ro.invoke(undefined, [...args]);
+              const retValue = cresult!;
 
-            // Set the body to the return value unless the body is already set by the handler.
-            if (koaCtxt.body === undefined) {
-              koaCtxt.body = retValue;
+              // Set the body to the return value unless the body is already set by the handler.
+              if (koaCtxt.body === undefined) {
+                koaCtxt.body = retValue;
+              }
             }
-          }
+          });
           dctx.span?.setStatus({ code: SpanStatusCode.OK });
         } catch (e) {
           if (e instanceof Error) {
