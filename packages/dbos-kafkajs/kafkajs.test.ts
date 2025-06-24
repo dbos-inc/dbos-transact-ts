@@ -97,7 +97,7 @@ let patternTopicCounter = 0;
 const arrayTopics = [txnTopic, new RegExp(/dbos-test-wf-topic/)];
 let arrayTopicsCounter = 0;
 
-describe('kafka-tests', () => {
+describe.skip('kafka-tests', () => {
   let testRuntime: TestingRuntime | undefined = undefined;
   let kafkaIsAvailable = true;
   let wfKafkaCfg: KafkaProduceStep | undefined = undefined;

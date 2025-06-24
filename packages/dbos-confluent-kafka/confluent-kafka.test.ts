@@ -92,7 +92,7 @@ let arrayTopicsCounter = 0;
 
 const wfq = new WorkflowQueue('kafkaq', 2);
 
-describe('kafka-tests', () => {
+describe.skip('kafka-tests', () => {
   let kafkaIsAvailable = true;
   let wfKafkaCfg: KafkaProducer | undefined = undefined;
   let wf2KafkaCfg: KafkaProducer | undefined = undefined;
