@@ -1,22 +1,22 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB, withTimeout } from './test-helpers';
-import { Kafka as KafkaJS, KafkaMessage, logLevel, KafkaConfig } from 'kafkajs';
-import { KafkaReceiver } from '..';
+import { ConfluentKafkaReceiver } from '..';
 import { EventEmitter } from 'node:events';
+import { KafkaJS } from '@confluentinc/kafka-javascript';
 
 const kafkaConfig = {
   clientId: 'dbos-kafka-test',
   brokers: [process.env['KAFKA_BROKER'] ?? 'localhost:9092'],
   requestTimeout: 100,
   retry: { retries: 5 },
-  logLevel: logLevel.NOTHING,
+  logLevel: 0,
 };
 
-const kafkaReceiver = new KafkaReceiver(kafkaConfig);
+const kafkaReceiver = new ConfluentKafkaReceiver(kafkaConfig);
 
 interface KafkaEvents {
-  message: (funcName: string, topic: string, partition: number, message: KafkaMessage) => void;
+  message: (funcName: string, topic: string, partition: number, message: KafkaJS.Message) => void;
 }
 
 class KafkaEmitter extends EventEmitter {
@@ -32,13 +32,13 @@ class KafkaEmitter extends EventEmitter {
 type KafkaMessageEvent = {
   topic: string;
   partition: number;
-  message: KafkaMessage;
+  message: KafkaJS.Message;
 };
 
 function waitForMessage(emitter: KafkaEmitter, funcName: string, timeoutMS = 30000): Promise<KafkaMessageEvent> {
   return withTimeout(
     new Promise<KafkaMessageEvent>((resolve) => {
-      const handler = (f: string, topic: string, partition: number, message: KafkaMessage) => {
+      const handler = (f: string, topic: string, partition: number, message: KafkaJS.Message) => {
         if (f === funcName) {
           emitter.off('message', handler);
           resolve({ topic, partition, message });
@@ -56,37 +56,38 @@ class KafkaTestClass {
 
   @kafkaReceiver.eventConsumer('string-topic')
   @DBOS.workflow()
-  static async stringTopic(topic: string, partition: number, message: KafkaMessage) {
+  static async stringTopic(topic: string, partition: number, message: KafkaJS.Message) {
     await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'stringTopic', topic, partition, message);
   }
 
-  @kafkaReceiver.eventConsumer(/regex-topic-.*/i)
+  @kafkaReceiver.eventConsumer(/^regex-topic-.*/)
   @DBOS.workflow()
-  static async regexTopic(topic: string, partition: number, message: KafkaMessage) {
+  static async regexTopic(topic: string, partition: number, message: KafkaJS.Message) {
     await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'regexTopic', topic, partition, message);
   }
 
   @kafkaReceiver.eventConsumer(['a-topic', 'b-topic'])
   @DBOS.workflow()
-  static async stringArrayTopic(topic: string, partition: number, message: KafkaMessage) {
+  static async stringArrayTopic(topic: string, partition: number, message: KafkaJS.Message) {
     await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'stringArrayTopic', topic, partition, message);
   }
 
-  @kafkaReceiver.eventConsumer([/z-topic-.*/i, /y-topic-.*/i])
+  @kafkaReceiver.eventConsumer([/^z-topic-.*/, /^y-topic-.*/])
   @DBOS.workflow()
-  static async regexArrayTopic(topic: string, partition: number, message: KafkaMessage) {
+  static async regexArrayTopic(topic: string, partition: number, message: KafkaJS.Message) {
     await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'regexArrayTopic', topic, partition, message);
   }
 }
 
-async function ensureTopicsExist(kafkaConfig: KafkaConfig, topics: string[]) {
-  const kafka = new KafkaJS(kafkaConfig);
+async function ensureTopicsExist(kafkaConfig: KafkaJS.KafkaConfig, topics: string[]) {
+  const kafka = new KafkaJS.Kafka({ kafkaJS: kafkaConfig });
   const admin = kafka.admin();
   try {
+    await admin.connect();
     const existingTopics = await admin.listTopics();
     const topicsToCreate = topics.filter((t) => !existingTopics.includes(t));
     if (topicsToCreate.length > 0) {
@@ -94,21 +95,18 @@ async function ensureTopicsExist(kafkaConfig: KafkaConfig, topics: string[]) {
     }
     return true;
   } catch (e) {
+    const message = e instanceof Error ? e.message : String(e);
+    DBOS.logger.error(message);
     return false;
   } finally {
     await admin.disconnect();
   }
 }
 
-describe('kafkajs-receive', () => {
+describe('confluent-kafka-receive', () => {
   let kafkaIsAvailable = false;
 
   beforeAll(async () => {
-    // Create topics used in tests
-    // As per https://kafka.js.org/docs/consuming:
-    //    When supplying a regular expression, the consumer will not match topics created after the subscription.
-    //    If your broker has topic-A and topic-B, you subscribe to /topic-.*/, then topic-C is created,
-    //    your consumer would not be automatically subscribed to topic-C.
     const topics = ['string-topic', 'regex-topic-foo', 'a-topic', 'b-topic', 'z-topic-foo', 'y-topic-foo'];
     kafkaIsAvailable = await ensureTopicsExist(kafkaConfig, topics);
 
@@ -140,7 +138,7 @@ describe('kafkajs-receive', () => {
 
     const topic = `string-topic`;
     const message = `test-message-${Date.now()}`;
-    const kafka = new KafkaJS(kafkaConfig);
+    const kafka = new KafkaJS.Kafka({ kafkaJS: kafkaConfig });
     const producer = kafka.producer();
     try {
       await producer.connect();
@@ -161,7 +159,7 @@ describe('kafkajs-receive', () => {
 
     const topic = `regex-topic-foo`;
     const message = `test-message-${Date.now()}`;
-    const kafka = new KafkaJS(kafkaConfig);
+    const kafka = new KafkaJS.Kafka({ kafkaJS: kafkaConfig });
     const producer = kafka.producer();
     try {
       await producer.connect();
@@ -182,7 +180,7 @@ describe('kafkajs-receive', () => {
 
     const topic = `a-topic`;
     const message = `test-message-${Date.now()}`;
-    const kafka = new KafkaJS(kafkaConfig);
+    const kafka = new KafkaJS.Kafka({ kafkaJS: kafkaConfig });
     const producer = kafka.producer();
     try {
       await producer.connect();
@@ -203,7 +201,7 @@ describe('kafkajs-receive', () => {
 
     const topic = `b-topic`;
     const message = `test-message-${Date.now()}`;
-    const kafka = new KafkaJS(kafkaConfig);
+    const kafka = new KafkaJS.Kafka({ kafkaJS: kafkaConfig });
     const producer = kafka.producer();
     try {
       await producer.connect();
@@ -224,7 +222,7 @@ describe('kafkajs-receive', () => {
 
     const topic = `z-topic-foo`;
     const message = `test-message-${Date.now()}`;
-    const kafka = new KafkaJS(kafkaConfig);
+    const kafka = new KafkaJS.Kafka({ kafkaJS: kafkaConfig });
     const producer = kafka.producer();
     try {
       await producer.connect();
@@ -245,7 +243,7 @@ describe('kafkajs-receive', () => {
 
     const topic = `y-topic-foo`;
     const message = `test-message-${Date.now()}`;
-    const kafka = new KafkaJS(kafkaConfig);
+    const kafka = new KafkaJS.Kafka({ kafkaJS: kafkaConfig });
     const producer = kafka.producer();
     try {
       await producer.connect();
