@@ -29,7 +29,7 @@ export { DBOSResponseError, DBOSWorkflowConflictError } from './error';
 
 export { TransactionConfig, TransactionFunction } from './transaction';
 
-export { StoredProcedureContext, StoredProcedureConfig } from './procedure';
+export { StoredProcedureConfig } from './procedure';
 
 export {
   WorkflowConfig,
@@ -54,6 +54,9 @@ export {
   // Parameter Decorators
   MethodParameter,
   ArgName,
+
+  // ORM Class Decorators
+  OrmEntities,
 } from './decorators';
 
 export {
@@ -110,9 +113,3 @@ export { Kafka, KafkaConsume } from './kafka/kafka';
 export { DBOSContext } from './context';
 
 export { InitContext } from './dbos';
-
-export { TransactionContext } from './transaction';
-
-export { WorkflowContext } from './workflow';
-
-export { StepContext } from './step';

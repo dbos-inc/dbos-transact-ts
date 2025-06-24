@@ -108,20 +108,6 @@ export function getNextWFID(assignedID?: string) {
   return wfId;
 }
 
-export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: () => Promise<R>) {
-  return await asyncLocalCtx.run(
-    {
-      ctx,
-      idAssignedForNextWorkflow: ctx.workflowUUID,
-      request: ctx.request,
-      authenticatedRoles: ctx.authenticatedRoles,
-      authenticatedUser: ctx.authenticatedUser,
-      span: ctx.span,
-    },
-    callback,
-  );
-}
-
 export async function runWithTopContext<R>(ctx: DBOSLocalCtx, callback: () => Promise<R>): Promise<R> {
   return await asyncLocalCtx.run(ctx, callback);
 }

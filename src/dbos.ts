@@ -26,6 +26,7 @@ import {
   GetWorkflowsOutput,
   StepInfo,
   WorkflowConfig,
+  WorkflowContext,
   WorkflowFunction,
   WorkflowParams,
   WorkflowStatus,
@@ -78,7 +79,7 @@ import {
   UserDatabaseClient,
   UserDatabaseName,
 } from './user_database';
-import { TransactionConfig, TransactionContextImpl, TransactionFunction } from './transaction';
+import { TransactionConfig, TransactionContext, TransactionContextImpl, TransactionFunction } from './transaction';
 
 import Koa from 'koa';
 import { Application as ExpressApp } from 'express';
@@ -89,19 +90,10 @@ import { randomUUID } from 'node:crypto';
 
 import { PoolClient } from 'pg';
 import { Knex } from 'knex';
-import { StepConfig, StepFunction } from './step';
-import {
-  DBOSLifecycleCallback,
-  DBOSMethodMiddlewareInstaller,
-  requestArgValidation,
-  StepContext,
-  StoredProcedureContext,
-  TransactionContext,
-  WorkflowContext,
-  WorkflowHandle,
-} from '.';
+import { StepConfig, StepContext, StepFunction } from './step';
+import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
 import { ConfiguredInstance } from '.';
-import { StoredProcedure, StoredProcedureConfig } from './procedure';
+import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
