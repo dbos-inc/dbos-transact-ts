@@ -15,7 +15,7 @@ import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
-import { runWithHandlerContext } from '../context';
+import { runWithTopContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
 import { globalTimeout } from '../dbos-runtime/workflow_management';
@@ -729,13 +729,19 @@ export class DBOSHttpServer {
           } else {
             // Directly invoke the handler code.
             let cresult: unknown;
-            await runWithHandlerContext(oc, async () => {
-              if (ro.passContext) {
-                cresult = await ro.invoke(undefined, [oc, ...args]);
-              } else {
+            await runWithTopContext(
+              {
+                koaContext: oc.koaContext,
+                idAssignedForNextWorkflow: oc.workflowUUID,
+                request: oc.request,
+                authenticatedRoles: oc.authenticatedRoles,
+                authenticatedUser: oc.authenticatedUser,
+                span: oc.span,
+              },
+              async () => {
                 cresult = await ro.invoke(undefined, [...args]);
-              }
-            });
+              },
+            );
             const retValue = cresult!;
 
             // Set the body to the return value unless the body is already set by the handler.

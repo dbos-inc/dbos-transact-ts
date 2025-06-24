@@ -13,6 +13,7 @@ import { DBOSInvalidWorkflowTransitionError } from './error';
 import { StoredProcedureContextImpl } from './procedure';
 import { HandlerContextImpl } from './httpServer/handler';
 import { globalParams } from './utils';
+import Koa from 'koa';
 
 export interface StepStatus {
   stepID: number;
@@ -43,6 +44,7 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   curTxFunctionId?: number;
   isInStoredProc?: boolean;
   sqlClient?: UserDatabaseClient;
+  koaContext?: Koa.Context;
 }
 
 export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
