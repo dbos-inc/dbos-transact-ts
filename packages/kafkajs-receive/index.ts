@@ -111,6 +111,7 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
   }
 
   eventConsumer(topics: string | RegExp | Array<string | RegExp>, queueName?: string, config?: ConsumerConfig) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
     const $this = this;
     function methodDecorator<This, Args extends [string, number, KafkaMessage], Return>(
       target: object,

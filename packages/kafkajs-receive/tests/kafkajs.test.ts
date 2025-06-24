@@ -1,19 +1,9 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB, withTimeout } from './test-helpers';
-import {
-  Kafka as KafkaJS,
-  Consumer,
-  ConsumerConfig,
-  KafkaConfig,
-  KafkaMessage,
-  KafkaJSProtocolError,
-  logLevel,
-} from 'kafkajs';
+import { Kafka as KafkaJS, KafkaConfig, KafkaMessage, logLevel } from 'kafkajs';
 import { KafkaReceiver } from '..';
 import { EventEmitter } from 'node:events';
-
-const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 const kafkaConfig = {
   clientId: 'dbos-kafka-test',
@@ -67,30 +57,34 @@ class KafkaTestClass {
   @kafkaReceiver.eventConsumer('string-topic')
   @DBOS.workflow()
   static async stringTopic(topic: string, partition: number, message: KafkaMessage) {
+    await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'stringTopic', topic, partition, message);
   }
 
   @kafkaReceiver.eventConsumer(/regex-topic-.*/i)
   @DBOS.workflow()
   static async regexTopic(topic: string, partition: number, message: KafkaMessage) {
+    await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'regexTopic', topic, partition, message);
   }
 
   @kafkaReceiver.eventConsumer(['a-topic', 'b-topic'])
   @DBOS.workflow()
   static async stringArrayTopic(topic: string, partition: number, message: KafkaMessage) {
+    await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'stringArrayTopic', topic, partition, message);
   }
 
   @kafkaReceiver.eventConsumer([/z-topic-.*/i, /y-topic-.*/i])
   @DBOS.workflow()
   static async regexArrayTopic(topic: string, partition: number, message: KafkaMessage) {
+    await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'regexArrayTopic', topic, partition, message);
   }
 }
 
 async function verifyKafka(config: KafkaConfig) {
-  const kafka = new KafkaJS(kafkaConfig);
+  const kafka = new KafkaJS(config);
   const admin = kafka.admin();
   try {
     await admin.connect();

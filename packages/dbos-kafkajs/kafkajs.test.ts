@@ -1,4 +1,4 @@
-import { DBOS, DBOSConfig, WorkflowQueue, parseConfigFile } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSConfig, WorkflowQueue } from '@dbos-inc/dbos-sdk';
 
 import { KafkaConfig, Kafka, KafkaConsume, logLevel, KafkaProduceStep, KafkaMessage, Partitioners } from './index';
 
