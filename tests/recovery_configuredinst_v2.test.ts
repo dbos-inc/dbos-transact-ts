@@ -1,4 +1,4 @@
-import { configureInstance, ConfiguredInstance, DBOS } from '../src';
+import { ConfiguredInstance, DBOS } from '../src';
 
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
@@ -51,8 +51,8 @@ class CCRecovery extends ConfiguredInstance {
   }
 }
 
-const configA = configureInstance(CCRecovery, 'configA', new CCRConfig());
-const configB = configureInstance(CCRecovery, 'configB', new CCRConfig());
+const configA = new CCRecovery('configA', new CCRConfig());
+const configB = new CCRecovery('configB', new CCRConfig());
 
 describe('recovery-cc-tests', () => {
   let config: DBOSConfig;

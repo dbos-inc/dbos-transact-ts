@@ -152,8 +152,3 @@ export { TransactionContext } from './transaction';
 export { WorkflowContext } from './workflow';
 
 export { StepContext as CommunicatorContext, StepContext } from './step';
-
-export {
-  // Class Instances
-  configureInstance,
-} from './decorators';
