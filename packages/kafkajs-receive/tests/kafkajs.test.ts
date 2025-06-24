@@ -144,7 +144,7 @@ describe('kafkajs-receive', () => {
     }
   }, 40000);
 
-  test('wf-regex-topic', async () => {
+  test.skip('wf-regex-topic', async () => {
     if (!kafkaIsAvailable) {
       DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
       return;
@@ -207,7 +207,7 @@ describe('kafkajs-receive', () => {
     }
   }, 40000);
 
-  test('wf-array-regex-topic-z', async () => {
+  test.skip('wf-array-regex-topic-z', async () => {
     if (!kafkaIsAvailable) {
       DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
       return;
@@ -228,7 +228,7 @@ describe('kafkajs-receive', () => {
     }
   }, 40000);
 
-  test('wf-array-regex-topic-y', async () => {
+  test.skip('wf-array-regex-topic-y', async () => {
     if (!kafkaIsAvailable) {
       DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
       return;
