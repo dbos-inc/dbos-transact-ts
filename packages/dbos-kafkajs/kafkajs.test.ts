@@ -1,19 +1,7 @@
-import {
-  DBOS,
-  DBOSConfig,
-  TestingRuntime,
-  Transaction,
-  TransactionContext,
-  Workflow,
-  WorkflowContext,
-  WorkflowQueue,
-  createTestingRuntime, // This test intentionally tests v1 and v2
-  parseConfigFile,
-} from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSConfig, WorkflowQueue, parseConfigFile } from '@dbos-inc/dbos-sdk';
 
 import { KafkaConfig, Kafka, KafkaConsume, logLevel, KafkaProduceStep, KafkaMessage, Partitioners } from './index';
 
-import { Knex } from 'knex';
 import { Client } from 'pg';
 
 // TODO: Remove as part of V1 cleanup
@@ -85,7 +73,6 @@ const wfq = new WorkflowQueue('kafkaq', 2);
 
 const txnTopic = 'dbos-test-txn-topic';
 const txnMessage = 'dbos-txn';
-let txnCounter = 0;
 
 const wfTopic = 'dbos-test-wf-topic';
 const wfMessage = 'dbos-wf';
@@ -98,7 +85,6 @@ const arrayTopics = [txnTopic, new RegExp(/dbos-test-wf-topic/)];
 let arrayTopicsCounter = 0;
 
 describe('kafka-tests', () => {
-  let testRuntime: TestingRuntime | undefined = undefined;
   let kafkaIsAvailable = true;
   let wfKafkaCfg: KafkaProduceStep | undefined = undefined;
   let txKafkaCfg: KafkaProduceStep | undefined = undefined;
@@ -108,6 +94,7 @@ describe('kafka-tests', () => {
     if (process.env['KAFKA_BROKER']) {
       kafkaIsAvailable = true;
       const [config] = parseConfigFile({ configfile: 'kafkajs-test-dbos-config.yaml' });
+      DBOS.setConfig(config);
       await setUpDBOSTestDb(config);
     } else {
       kafkaIsAvailable = false;
@@ -125,14 +112,13 @@ describe('kafka-tests', () => {
       txKafkaCfg = new KafkaProduceStep('txKafka', kafkaConfig, txnTopic, {
         createPartitioner: Partitioners.DefaultPartitioner,
       });
-
-      testRuntime = await createTestingRuntime(undefined, 'kafkajs-test-dbos-config.yaml');
+      await DBOS.launch();
     }
   }, 30000);
 
   afterEach(async () => {
     if (kafkaIsAvailable) {
-      await testRuntime?.destroy();
+      await DBOS.shutdown();
       await wfKafkaCfg?.disconnect();
       await txKafkaCfg?.disconnect();
     }
@@ -145,12 +131,10 @@ describe('kafka-tests', () => {
     }
 
     // Send messages
-    await testRuntime?.invoke(txKafkaCfg!).sendMessage({ value: txnMessage }); // v1 API
-    await wfKafkaCfg!.send({ value: wfMessage }); // v2 API
+    await txKafkaCfg!.send({ value: txnMessage });
+    await wfKafkaCfg!.send({ value: wfMessage });
 
     // Check that both messages are consumed
-    await DBOSTestClass.txnPromise;
-    expect(txnCounter).toBe(1);
     await DBOSTestClass.wfPromise;
     expect(wfCounter).toBe(1);
     await DBOSTestClass.patternTopicPromise;
@@ -162,11 +146,6 @@ describe('kafka-tests', () => {
 
 @Kafka(kafkaConfig)
 class DBOSTestClass {
-  static txnResolve: () => void;
-  static txnPromise = new Promise<void>((r) => {
-    DBOSTestClass.txnResolve = r;
-  });
-
   static wfResolve: () => void;
   static wfPromise = new Promise<void>((r) => {
     DBOSTestClass.wfResolve = r;
@@ -182,19 +161,9 @@ class DBOSTestClass {
     DBOSTestClass.arrayTopicsResolve = r;
   });
 
-  @KafkaConsume(txnTopic)
-  @Transaction()
-  static async testTxn(_ctxt: TransactionContext<Knex>, topic: string, _partition: number, message: KafkaMessage) {
-    if (topic === txnTopic && message.value?.toString() === txnMessage) {
-      txnCounter = txnCounter + 1;
-      DBOSTestClass.txnResolve();
-    }
-    await DBOSTestClass.txnPromise;
-  }
-
   @KafkaConsume(wfTopic)
-  @Workflow()
-  static async testWorkflow(_ctxt: WorkflowContext, topic: string, _partition: number, message: KafkaMessage) {
+  @DBOS.workflow()
+  static async testWorkflow(topic: string, _partition: number, message: KafkaMessage) {
     if (topic === wfTopic && message.value?.toString() === wfMessage) {
       wfCounter = wfCounter + 1;
       DBOSTestClass.wfResolve();
@@ -217,13 +186,8 @@ class DBOSTestClass {
   }
 
   @KafkaConsume(arrayTopics)
-  @Workflow()
-  static async testConsumeTopicsArray(
-    _ctxt: WorkflowContext,
-    topic: string,
-    _partition: number,
-    message: KafkaMessage,
-  ) {
+  @DBOS.workflow()
+  static async testConsumeTopicsArray(topic: string, _partition: number, message: KafkaMessage) {
     const isWfMessage = topic === wfTopic && message.value?.toString() === wfMessage;
     const isTxnMessage = topic === txnTopic && message.value?.toString() === txnMessage;
     if (isWfMessage || isTxnMessage) {
