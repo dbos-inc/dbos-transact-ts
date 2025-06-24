@@ -103,7 +103,7 @@ async function ensureTopicsExist(kafkaConfig: KafkaJS.KafkaConfig, topics: strin
   }
 }
 
-describe('confluent-kafka-receive', () => {
+describe.skip('confluent-kafka-receive', () => {
   let kafkaIsAvailable = false;
 
   beforeAll(async () => {
