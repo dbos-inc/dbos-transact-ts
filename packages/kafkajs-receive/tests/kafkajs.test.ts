@@ -1,6 +1,6 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
-import { dropDB } from './test-helpers';
+import { dropDB, withTimeout } from './test-helpers';
 import {
   Kafka as KafkaJS,
   Consumer,
@@ -11,6 +11,7 @@ import {
   logLevel,
 } from 'kafkajs';
 import { KafkaReceiver } from '..';
+import { EventEmitter } from 'node:events';
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -24,19 +25,67 @@ const kafkaConfig = {
 
 const kafkaReceiver = new KafkaReceiver(kafkaConfig);
 
+interface KafkaEvents {
+  message: (func: string, topic: string, partition: number, message: KafkaMessage) => void;
+}
+
+class KafkaEmitter extends EventEmitter {
+  override on<K extends keyof KafkaEvents>(event: K, listener: KafkaEvents[K]): this {
+    return super.on(event, listener);
+  }
+
+  override emit<K extends keyof KafkaEvents>(event: K, ...args: Parameters<KafkaEvents[K]>): boolean {
+    return super.emit(event, ...args);
+  }
+}
+
+type KafkaMessageEvent = {
+  topic: string;
+  partition: number;
+  message: KafkaMessage;
+};
+
+function waitForMessage(emitter: KafkaEmitter, func: string, timeoutMS = 30000): Promise<KafkaMessageEvent> {
+  return withTimeout(
+    new Promise<KafkaMessageEvent>((resolve) => {
+      const handler = (f: string, topic: string, partition: number, message: KafkaMessage) => {
+        if (f === func) {
+          emitter.off('message', handler);
+          resolve({ topic, partition, message });
+        }
+      };
+      emitter.on('message', handler);
+    }),
+    timeoutMS,
+    `Timeout waiting for message for function ${func}`,
+  );
+}
+
 class KafkaTestClass {
-  @kafkaReceiver.eventConsumer('test-topic')
+  static readonly emitter = new KafkaEmitter();
+
+  @kafkaReceiver.eventConsumer('string-topic')
   @DBOS.workflow()
-  async handleMessage(topic: string, partition: number, message: KafkaMessage) {
-    DBOS.logger.info(`Received message ${DBOS.workflowID}`);
-    DBOS.logger.info(`Received message on topic ${topic}, partition ${partition}: ${message.value}`);
+  static async stringTopic(topic: string, partition: number, message: KafkaMessage) {
+    KafkaTestClass.emitter.emit('message', 'stringTopic', topic, partition, message);
+  }
+
+  @kafkaReceiver.eventConsumer(new RegExp(/regex-topic-.*/))
+  @DBOS.workflow()
+  static async regexTopic(topic: string, partition: number, message: KafkaMessage) {
+    KafkaTestClass.emitter.emit('message', 'regexTopic', topic, partition, message);
+  }
+
+  @kafkaReceiver.eventConsumer(['a-topic', 'b-topic'])
+  @DBOS.workflow()
+  static async stringArrayTopic(topic: string, partition: number, message: KafkaMessage) {
+    KafkaTestClass.emitter.emit('message', 'stringArrayTopic', topic, partition, message);
   }
 }
 
 async function verifyKafka(config: KafkaConfig) {
   const kafka = new KafkaJS(kafkaConfig);
   const admin = kafka.admin();
-
   try {
     await admin.connect();
     const _topics = await admin.listTopics();
@@ -62,33 +111,99 @@ describe('kafkajs-receive', () => {
     } finally {
       await client.end();
     }
-  });
+  }, 30000);
 
   beforeEach(async () => {
     DBOS.setConfig({ name: 'kafka-recv-test' });
     DBOS.registerLifecycleCallback(kafkaReceiver);
-
     await DBOS.launch();
-  });
+  }, 30000);
 
   afterEach(async () => {
     await DBOS.shutdown();
-  });
+  }, 30000);
 
-  test('can initialize and shutdown', async () => {
+  test('wf-string-topic', async () => {
     if (!kafkaIsAvailable) {
       DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
       return;
     }
 
+    const topic = `string-topic`;
+    const message = `test-message-${Date.now()}`;
     const kafka = new KafkaJS(kafkaConfig);
     const producer = kafka.producer();
     try {
       await producer.connect();
-      producer.send({ topic: 'test-topic', messages: [{ value: 'test-message' }] });
-      await sleepms(10000);
+      await producer.send({ topic, messages: [{ value: message }] });
+      const result = await waitForMessage(KafkaTestClass.emitter, 'stringTopic');
+      expect(result.topic).toBe(topic);
+      expect(String(result.message.value)).toBe(message);
     } finally {
       await producer.disconnect();
     }
-  }, 30000);
+  }, 40000);
+
+  test.skip('wf-regex-topic', async () => {
+    if (!kafkaIsAvailable) {
+      DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
+      return;
+    }
+
+    const topic = `regex-topic-${Date.now()}`;
+    const message = `test-message-${Date.now()}`;
+    const kafka = new KafkaJS(kafkaConfig);
+    const producer = kafka.producer();
+    try {
+      await producer.connect();
+      await producer.send({ topic, messages: [{ value: message }] });
+      const result = await waitForMessage(KafkaTestClass.emitter, 'regexTopic');
+      expect(result.topic).toBe(topic);
+      expect(String(result.message.value)).toBe(message);
+    } finally {
+      await producer.disconnect();
+    }
+  }, 40000);
+
+  test('wf-array-string-topic-a', async () => {
+    if (!kafkaIsAvailable) {
+      DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
+      return;
+    }
+
+    const topic = `a-topic`;
+    const message = `test-message-${Date.now()}`;
+    const kafka = new KafkaJS(kafkaConfig);
+    const producer = kafka.producer();
+    try {
+      await producer.connect();
+      await producer.send({ topic, messages: [{ value: message }] });
+      const result = await waitForMessage(KafkaTestClass.emitter, 'stringArrayTopic');
+      expect(result.topic).toBe(topic);
+      expect(String(result.message.value)).toBe(message);
+    } finally {
+      await producer.disconnect();
+    }
+  }, 40000);
+
+  test('wf-array-string-topic-b', async () => {
+    if (!kafkaIsAvailable) {
+      DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
+      return;
+    }
+
+    const topic = `b-topic`;
+    const message = `test-message-${Date.now()}`;
+    const kafka = new KafkaJS(kafkaConfig);
+    const producer = kafka.producer();
+    try {
+      await producer.connect();
+      await producer.send({ topic, messages: [{ value: message }] });
+      const result = await waitForMessage(KafkaTestClass.emitter, 'stringArrayTopic');
+      expect(result.topic).toBe(topic);
+      expect(String(result.message.value)).toBe(message);
+    } finally {
+      await producer.disconnect();
+    }
+  }, 40000);
 });

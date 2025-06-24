@@ -42,15 +42,13 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
     for (const regOp of DBOS.getAssociatedInfo(this)) {
       const func = regOp.methodReg.registeredFunction as KafkaMessageHandler<unknown> | undefined;
       if (func === undefined) {
-        // TODO: log?
-        continue;
+        continue; // TODO: Log?
       }
 
       const methodConfig = regOp.methodConfig as KafkaMethodConfig;
       const topics = methodConfig.topics ?? [];
       if (topics.length === 0) {
-        // log?
-        continue;
+        continue; // TODO: Log?
       }
 
       const { name, className } = regOp.methodReg;
@@ -59,12 +57,13 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
       await consumer.connect();
 
       // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
-      // If topic autocreation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
+      // If topic auto-creation is on and you try to subscribe to a nonexistent topic, KafkaJS should retry until the topic is created.
       // However, it has a bug where it won't. Thus, we retry instead.
       let { retryTime } = this.retryConfig;
       for (let i = 1; i <= maxRetries; i++) {
         try {
           await consumer.subscribe({ topics: topics, fromBeginning: true });
+          break;
         } catch (e) {
           if (e instanceof KafkaJSProtocolError && e.code === 3 && i < maxRetries) {
             await sleepms(retryTime);
@@ -78,7 +77,7 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
       await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
           try {
-            const workflowID = `kafka-unique-id-${topic}-${partition}-${config.groupId}-${message.offset}`;
+            const workflowID = `kafkajs-${topic}-${partition}-${config.groupId}-${message.offset}`;
             const wfParams = { workflowID, queueName: methodConfig.queueName };
             await DBOS.startWorkflow(func, wfParams)(topic, partition, message);
           } catch (e) {
