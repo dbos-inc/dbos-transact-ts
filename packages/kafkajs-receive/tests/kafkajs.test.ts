@@ -1,7 +1,7 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB, withTimeout } from './test-helpers';
-import { Kafka as KafkaJS, KafkaMessage, logLevel, Admin } from 'kafkajs';
+import { Kafka as KafkaJS, KafkaMessage, logLevel, Admin, KafkaConfig } from 'kafkajs';
 import { KafkaReceiver } from '..';
 import { EventEmitter } from 'node:events';
 
@@ -83,12 +83,20 @@ class KafkaTestClass {
   }
 }
 
-async function verifyKafka(admin: Admin) {
+async function ensureTopicsExist(kafkaConfig: KafkaConfig, topics: string[]) {
+  const kafka = new KafkaJS(kafkaConfig);
+  const admin = kafka.admin();
   try {
-    const _topics = await admin.listTopics();
+    const existingTopics = await admin.listTopics();
+    const topicsToCreate = topics.filter((t) => !existingTopics.includes(t));
+    if (topicsToCreate.length > 0) {
+      await admin.createTopics({ topics: topicsToCreate.map((t) => ({ topic: t })) });
+    }
     return true;
   } catch (e) {
     return false;
+  } finally {
+    await admin.disconnect();
   }
 }
 
@@ -96,31 +104,21 @@ describe('kafkajs-receive', () => {
   let kafkaIsAvailable = false;
 
   beforeAll(async () => {
-    const kafka = new KafkaJS(kafkaConfig);
-    const admin = kafka.admin();
-    try {
-      kafkaIsAvailable = await verifyKafka(admin);
-      if (kafkaIsAvailable) {
-        // Create topics used in tests
-        // As per https://kafka.js.org/docs/consuming:
-        //    When supplying a regular expression, the consumer will not match topics created after the subscription.
-        //    If your broker has topic-A and topic-B, you subscribe to /topic-.*/, then topic-C is created,
-        //    your consumer would not be automatically subscribed to topic-C.
-        await admin.createTopics({
-          topics: [{ topic: 'regex-topic-foo' }, { topic: 'z-topic-foo' }, { topic: 'y-topic-foo' }],
-        });
+    // Create topics used in tests
+    // As per https://kafka.js.org/docs/consuming:
+    //    When supplying a regular expression, the consumer will not match topics created after the subscription.
+    //    If your broker has topic-A and topic-B, you subscribe to /topic-.*/, then topic-C is created,
+    //    your consumer would not be automatically subscribed to topic-C.
+    const topics = ['string-topic', 'regex-topic-foo', 'a-topic', 'b-topic', 'z-topic-foo', 'y-topic-foo'];
+    kafkaIsAvailable = await ensureTopicsExist(kafkaConfig, topics);
 
-        const client = new Client({ user: 'postgres', database: 'postgres' });
-        try {
-          await client.connect();
-          await dropDB(client, 'kafka_recv_test', true);
-          await dropDB(client, 'kafka_recv_test_dbos_sys', true);
-        } finally {
-          await client.end();
-        }
-      }
+    const client = new Client({ user: 'postgres', database: 'postgres' });
+    try {
+      await client.connect();
+      await dropDB(client, 'kafka_recv_test', true);
+      await dropDB(client, 'kafka_recv_test_dbos_sys', true);
     } finally {
-      await admin.disconnect();
+      await client.end();
     }
   }, 30000);
 
@@ -231,7 +229,7 @@ describe('kafkajs-receive', () => {
     try {
       await producer.connect();
       await producer.send({ topic, messages: [{ value: message }] });
-      const result = await waitForMessage(KafkaTestClass.emitter, 'stringArrayTopic');
+      const result = await waitForMessage(KafkaTestClass.emitter, 'regexArrayTopic');
       expect(result.topic).toBe(topic);
       expect(String(result.message.value)).toBe(message);
     } finally {
@@ -252,7 +250,7 @@ describe('kafkajs-receive', () => {
     try {
       await producer.connect();
       await producer.send({ topic, messages: [{ value: message }] });
-      const result = await waitForMessage(KafkaTestClass.emitter, 'stringArrayTopic');
+      const result = await waitForMessage(KafkaTestClass.emitter, 'regexArrayTopic');
       expect(result.topic).toBe(topic);
       expect(String(result.message.value)).toBe(message);
     } finally {
