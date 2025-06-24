@@ -108,8 +108,4 @@ export {
 
 // Deprecated items below here...
 
-export { Kafka, KafkaConsume } from './kafka/kafka';
-
-export { DBOSContext } from './context';
-
 export { InitContext } from './dbos';
