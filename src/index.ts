@@ -110,8 +110,6 @@ export {
 
 export { Kafka, KafkaConsume } from './kafka/kafka';
 
-export { createTestingRuntime, TestingRuntime } from './testing/testing_runtime';
-
 export { DBOSContext } from './context';
 
 export { InitContext } from './dbos';
