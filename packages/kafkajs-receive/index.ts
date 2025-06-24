@@ -1,15 +1,7 @@
 import { DBOS, DBOSLifecycleCallback } from '@dbos-inc/dbos-sdk';
-import {
-  Kafka as KafkaJS,
-  Consumer,
-  ConsumerConfig,
-  KafkaConfig,
-  KafkaMessage,
-  Message,
-  KafkaJSProtocolError,
-} from 'kafkajs';
+import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError } from 'kafkajs';
 
-type KafkaMessageHandler = (topic: string, partition: number, message: KafkaMessage) => Promise<void>;
+type KafkaMessageHandler<Return> = (topic: string, partition: number, message: KafkaMessage) => Promise<Return>;
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -19,7 +11,7 @@ interface KafkaMethodConfig {
   queueName?: string;
 }
 
-interface RetryConfig {
+interface KafkaRetryConfig {
   maxRetries: number;
   retryTime: number;
   multiplier: number;
@@ -34,25 +26,21 @@ function safeGroupName(className: string, methodName: string, topics: Array<stri
 }
 
 export class KafkaReceiver extends DBOSLifecycleCallback {
-  #kafka: KafkaJS | undefined;
   readonly #consumers = new Array<Consumer>();
 
   constructor(
     private readonly config: KafkaConfig,
-    private readonly retryConfig: RetryConfig = { maxRetries: 5, retryTime: 300, multiplier: 2 },
+    private readonly retryConfig: KafkaRetryConfig = { maxRetries: 5, retryTime: 300, multiplier: 2 },
   ) {
     super();
   }
 
   override async initialize() {
-    if (this.#kafka === undefined) {
-      this.#kafka = new KafkaJS(this.config);
-    }
-
     const { maxRetries, multiplier } = this.retryConfig;
+    const kafka = new KafkaJS(this.config);
 
     for (const regOp of DBOS.getAssociatedInfo(this)) {
-      const func = regOp.methodReg.registeredFunction as KafkaMessageHandler | undefined;
+      const func = regOp.methodReg.registeredFunction as KafkaMessageHandler<unknown> | undefined;
       if (func === undefined) {
         // TODO: log?
         continue;
@@ -67,7 +55,7 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
 
       const { name, className } = regOp.methodReg;
       const config = methodConfig.config ?? { groupId: safeGroupName(className, name, topics) };
-      const consumer = this.#kafka.consumer(config);
+      const consumer = kafka.consumer(config);
       await consumer.connect();
 
       // A temporary workaround for https://github.com/tulios/kafkajs/pull/1558 until it gets fixed
@@ -107,7 +95,6 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
 
   override async destroy() {
     const disconnectPromises = this.#consumers.splice(0, this.#consumers.length).map((c) => c.disconnect());
-    this.#kafka = undefined;
     await Promise.allSettled(disconnectPromises);
   }
 
@@ -124,23 +111,24 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
     }
   }
 
-  eventConsumer(topics: string | RegExp | Array<string | RegExp>, config?: ConsumerConfig, queueName?: string) {
+  eventConsumer(topics: string | RegExp | Array<string | RegExp>, queueName?: string, config?: ConsumerConfig) {
     const $this = this;
-    function methodDecorator<This, Args extends [Message], Return>(
+    function methodDecorator<This, Args extends [string, number, KafkaMessage], Return>(
       target: object,
       propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { regInfo } = DBOS.associateFunctionWithInfo($this, descriptor.value!, {
-        classOrInst: target,
-        name: String(propertyKey),
-      });
-      const kafkaRegInfo = regInfo as KafkaMethodConfig;
+      if (descriptor.value) {
+        const { regInfo } = DBOS.associateFunctionWithInfo($this, descriptor.value, {
+          classOrInst: target,
+          name: String(propertyKey),
+        });
 
-      kafkaRegInfo.topics = Array.isArray(topics) ? topics : [topics];
-      kafkaRegInfo.config = config;
-      kafkaRegInfo.queueName = queueName;
-
+        const kafkaRegInfo = regInfo as KafkaMethodConfig;
+        kafkaRegInfo.topics = Array.isArray(topics) ? topics : [topics];
+        kafkaRegInfo.queueName = queueName;
+        kafkaRegInfo.config = config;
+      }
       return descriptor;
     }
     return methodDecorator;
