@@ -736,6 +736,7 @@ export class DBOSHttpServer {
                 request: oc.request,
                 authenticatedRoles: oc.authenticatedRoles,
                 authenticatedUser: oc.authenticatedUser,
+                assumedRole: oc.assumedRole,
                 span: oc.span,
               },
               async () => {
