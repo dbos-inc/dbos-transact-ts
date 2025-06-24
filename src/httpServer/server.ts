@@ -2,24 +2,27 @@ import Koa, { Context } from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from '@koa/cors';
-import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
+import { HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
 import { Workflow, GetWorkflowsInput, GetQueuedWorkflowsInput } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
-import { DBOSExecutor } from '../dbos-executor';
-import { GlobalLogger as Logger } from '../telemetry/logs';
-import { MiddlewareDefaults } from './middleware';
-import { SpanStatusCode, trace, ROOT_CONTEXT } from '@opentelemetry/api';
+import { DBOSExecutor, OperationType } from '../dbos-executor';
+import { Logger as DBOSLogger, GlobalLogger as Logger } from '../telemetry/logs';
+import { getOrGenerateRequestID, MiddlewareDefaults, RequestIDHeader } from './middleware';
+import { SpanStatusCode, trace, ROOT_CONTEXT, defaultTextMapGetter } from '@opentelemetry/api';
 import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
-import { runWithHandlerContext } from '../context';
+import { DBOSLocalCtx, HTTPRequest, runWithTopContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
 import { globalTimeout } from '../dbos-runtime/workflow_management';
 import { WorkflowStatus } from '../workflow';
+import { W3CTraceContextPropagator } from '@opentelemetry/core';
+import { Span } from '@opentelemetry/sdk-trace-base';
+import { DBOS } from '../dbos';
 
 /**
  * Utility function to convert WorkflowStatus object to underscore format
@@ -623,7 +626,45 @@ export class DBOSHttpServer {
 
       // Wrapper function that parses request and send response.
       const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-        const oc: HandlerContextImpl = new HandlerContextImpl(dbosExec, koaCtxt);
+        const requestID = getOrGenerateRequestID(koaCtxt.request.headers);
+        koaCtxt.set(RequestIDHeader, requestID);
+
+        const httpTracer = new W3CTraceContextPropagator();
+        const extractedSpanContext = trace.getSpanContext(
+          httpTracer.extract(ROOT_CONTEXT, koaCtxt.request.headers, defaultTextMapGetter),
+        );
+        let span: Span;
+        const spanAttributes = {
+          operationType: OperationType.HANDLER,
+          requestID: requestID,
+          requestIP: koaCtxt.request.ip,
+          requestURL: koaCtxt.request.url,
+          requestMethod: koaCtxt.request.method,
+        };
+        if (extractedSpanContext === undefined) {
+          span = dbosExec.tracer.startSpan(koaCtxt.url, spanAttributes);
+        } else {
+          extractedSpanContext.isRemote = true;
+          span = dbosExec.tracer.startSpanWithContext(extractedSpanContext, koaCtxt.url, spanAttributes);
+        }
+
+        const dctx: DBOSLocalCtx = {
+          span,
+          request: {
+            headers: koaCtxt.request.headers,
+            rawHeaders: koaCtxt.req.rawHeaders,
+            params: koaCtxt.params,
+            body: koaCtxt.request.body,
+            rawBody: koaCtxt.request.rawBody,
+            query: koaCtxt.request.query,
+            querystring: koaCtxt.request.querystring,
+            url: koaCtxt.request.url,
+            ip: koaCtxt.request.ip,
+            requestID: requestID,
+          } satisfies HTTPRequest,
+          koaContext: koaCtxt,
+          operationType: OperationType.HANDLER,
+        };
 
         try {
           // Check for auth first
@@ -632,18 +673,18 @@ export class DBOSHttpServer {
               name: ro.name,
               requiredRole: ro.getRequiredRoles(),
               koaContext: koaCtxt,
-              logger: oc.logger,
-              span: oc.span,
+              logger: new DBOSLogger(dbosExec.logger, { span }),
+              span,
               getConfig: (key: string, def) => {
-                return oc.getConfig(key, def);
+                return DBOS.getConfig(key, def);
               },
               query: (query, ...args) => {
                 return dbosExec.userDatabase.queryFunction(query, ...args);
               },
             });
             if (res) {
-              oc.authenticatedUser = res.authenticatedUser;
-              oc.authenticatedRoles = res.authenticatedRoles;
+              dctx.authenticatedUser = res.authenticatedUser;
+              dctx.authenticatedRoles = res.authenticatedRoles;
             }
           }
 
@@ -698,9 +739,9 @@ export class DBOSHttpServer {
             //console.log(`found arg ${marg.name} ${idx} ${args[idx-1]}`);
           });
 
-          // Extract workflow UUID from headers (if any).
-          // We pass in the specified workflow UUID to workflows and transactions, but doesn't restrict how handlers use it.
-          const headerWorkflowUUID = koaCtxt.get(WorkflowUUIDHeader);
+          // Extract workflow ID from headers (if any).
+          // We pass in the specified workflow ID to workflows and transactions, but doesn't restrict how handlers use it.
+          dctx.idAssignedForNextWorkflow = koaCtxt.get(WorkflowUUIDHeader);
 
           // Finally, invoke the transaction/workflow/plain function and properly set HTTP response.
           // If functions return successfully and hasn't set the body, we set the body to the function return value. The status code will be automatically set to 200 or 204 (if the body is null/undefined).
@@ -709,48 +750,46 @@ export class DBOSHttpServer {
           // - If an error contains a `status` field, we return the specified status code.
           // - Otherwise, we return 500.
           // configuredInstance is currently null; we don't allow configured handlers now.
-          const wfParams = { parentCtx: oc, workflowUUID: headerWorkflowUUID, configuredInstance: null };
-          if (ro.txnConfig) {
-            koaCtxt.body = await dbosExec.transaction(
-              ro.registeredFunction as Transaction<unknown[], unknown>,
-              wfParams,
-              ...args,
-            );
-          } else if (ro.workflowConfig) {
-            koaCtxt.body = await (
-              await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
-            ).getResult();
-          } else if (ro.stepConfig) {
-            koaCtxt.body = await dbosExec.external(
-              ro.registeredFunction as StepFunction<unknown[], unknown>,
-              wfParams,
-              ...args,
-            );
-          } else {
-            // Directly invoke the handler code.
-            let cresult: unknown;
-            await runWithHandlerContext(oc, async () => {
-              if (ro.passContext) {
-                cresult = await ro.invoke(undefined, [oc, ...args]);
-              } else {
-                cresult = await ro.invoke(undefined, [...args]);
-              }
-            });
-            const retValue = cresult!;
+          const wfParams = {
+            workflowUUID: dctx.idAssignedForNextWorkflow,
+            configuredInstance: null,
+          };
+          await runWithTopContext(dctx, async () => {
+            if (ro.txnConfig) {
+              koaCtxt.body = await dbosExec.transaction(
+                ro.registeredFunction as Transaction<unknown[], unknown>,
+                wfParams,
+                ...args,
+              );
+            } else if (ro.workflowConfig) {
+              koaCtxt.body = await (
+                await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
+              ).getResult();
+            } else if (ro.stepConfig) {
+              koaCtxt.body = await dbosExec.external(
+                ro.registeredFunction as StepFunction<unknown[], unknown>,
+                wfParams,
+                ...args,
+              );
+            } else {
+              // Directly invoke the handler code.
+              const cresult = await ro.invoke(undefined, [...args]);
+              const retValue = cresult!;
 
-            // Set the body to the return value unless the body is already set by the handler.
-            if (koaCtxt.body === undefined) {
-              koaCtxt.body = retValue;
+              // Set the body to the return value unless the body is already set by the handler.
+              if (koaCtxt.body === undefined) {
+                koaCtxt.body = retValue;
+              }
             }
-          }
-          oc.span.setStatus({ code: SpanStatusCode.OK });
+          });
+          dctx.span?.setStatus({ code: SpanStatusCode.OK });
         } catch (e) {
           if (e instanceof Error) {
             const annotated_e = e as Error & { dbos_already_logged?: boolean };
             if (annotated_e.dbos_already_logged !== true) {
-              oc.logger.error(e);
+              DBOS.logger.error(e);
             }
-            oc.span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+            dctx.span?.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
             let st = (e as DBOSResponseError)?.status || 500;
             if (isDataValidationError(e)) {
               st = 400; // Set to 400: client-side error.
@@ -765,8 +804,8 @@ export class DBOSHttpServer {
           } else {
             // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
             // using stringify() will not produce a pretty output, because our format function uses stringify() too.
-            oc.logger.error(DBOSJSON.stringify(e));
-            oc.span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
+            DBOS.logger.error(DBOSJSON.stringify(e));
+            dctx.span?.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
             koaCtxt.body = e;
             koaCtxt.status = 500;
           }
@@ -778,8 +817,8 @@ export class DBOSHttpServer {
           interface Carrier {
             context: Koa.Context;
           }
-          oc.W3CTraceContextPropagator.inject(
-            trace.setSpanContext(ROOT_CONTEXT, oc.span.spanContext()),
+          httpTracer.inject(
+            trace.setSpanContext(ROOT_CONTEXT, dctx.span!.spanContext()),
             {
               context: koaCtxt,
             },
@@ -789,7 +828,7 @@ export class DBOSHttpServer {
               },
             },
           );
-          dbosExec.tracer.endSpan(oc.span);
+          dbosExec.tracer.endSpan(dctx.span!);
           await koaNext();
         }
       };

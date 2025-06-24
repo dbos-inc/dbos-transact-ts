@@ -1,10 +1,9 @@
 import 'reflect-metadata';
 
-import { TransactionConfig, TransactionContext } from './transaction';
-import { WorkflowConfig, WorkflowContext } from './workflow';
-import { StepConfig, StepContext } from './step';
+import { TransactionConfig } from './transaction';
+import { WorkflowConfig } from './workflow';
+import { StepConfig } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
-import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
 import { DataSourceTransactionHandler } from './datasource';
@@ -746,22 +745,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   return methReg;
 }
 
-export function registerAndWrapFunctionTakingContext<This, Args extends unknown[], Return>(
-  target: object,
-  propertyKey: string,
-  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-) {
-  ensureDBOSIsNotLaunched();
-  if (!descriptor.value) {
-    throw Error('Use of decorator when original method is undefined');
-  }
-
-  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, true);
-  descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
-
-  return { descriptor, registration };
-}
-
 export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string,
@@ -1045,94 +1028,6 @@ export function configureInstance<R extends ConfiguredInstance, T extends unknow
   return inst;
 }
 
-///////////////////////
-/* METHOD DECORATORS */
-///////////////////////
-
-/**
- * @deprecated Use `@DBOS.workflow`
- * To upgrade to DBOS 2.0+ syntax:
- *   Use `@DBOS.workflow` to decorate the method
- *   Remove the `WorkflowContext` parameter
- *   Use `DBOS` instead of the context to access DBOS functions
- *   Change all callers of the decorated function to call the function directly, or with `DBOS.startWorkflow`
- */
-export function Workflow(config: WorkflowConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.setWorkflowConfig(config);
-    return descriptor;
-  }
-  return decorator;
-}
-
-/**
- * @deprecated Use `@DBOS.transaction`
- * To upgrade to DBOS 2.0+ syntax:
- *   Use `@DBOS.transaction` to decorate the method
- *   Remove the `TransactionContext` parameter
- *   Use `DBOS` instead of the context to access DBOS functions
- *   Change all callers to call the decorated function directly
- */
-export function Transaction(config: TransactionConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.setTxnConfig(config);
-    return descriptor;
-  }
-  return decorator;
-}
-
-/**
- * @deprecated Use `@DBOS.storedProcedure`
- * To upgrade to DBOS 2.0+ syntax:
- *   Use `@DBOS.storedProcedure` to decorate the method
- *   Remove the context parameter and use `DBOS` instead of the context to access DBOS functions
- *   Change all callers to call the decorated function directly
- */
-export function StoredProcedure(config: StoredProcedureConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StoredProcedureContext, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.setProcConfig(config);
-    return descriptor;
-  }
-  return decorator;
-}
-
-/**
- * @deprecated Use `@DBOS.step`
- * To upgrade to DBOS 2.0+ syntax:
- *   Use `@DBOS.step` to decorate the method
- *   Remove the `StepContext` parameter
- *   Use `DBOS` instead of the context to access DBOS functions
- *   Change all callers to call the decorated function directly
- */
-export function Step(config: StepConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StepContext, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.setStepConfig(config);
-    return descriptor;
-  }
-  return decorator;
-}
-
 /**
  * @deprecated Use ORM DSs
  */
@@ -1152,20 +1047,6 @@ export function DBOSInitializer() {
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   ) {
     const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-    registration.init = true;
-    return descriptor;
-  }
-  return decorator;
-}
-
-/** @deprecated */
-export function DBOSDeploy() {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }
