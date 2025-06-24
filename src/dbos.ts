@@ -10,6 +10,7 @@ import {
   getNextWFID,
   StepStatus,
   DBOSContextOptions,
+  functionIDGetIncrement,
 } from './context';
 import {
   DBOSConfig,
@@ -236,12 +237,11 @@ export function runInternalStep<T>(callback: () => Promise<T>, funcName: string,
       // OK to use directly
       return callback();
     } else if (DBOS.isInWorkflow()) {
-      const wfctx = assertCurrentWorkflowContext();
       return DBOSExecutor.globalInstance!.runInternalStep<T>(
         callback,
         funcName,
         DBOS.workflowID!, // assume DBOS.workflowID is defined because of assertCurrentWorkflowContext call above
-        wfctx.functionIDGetIncrement(),
+        functionIDGetIncrement(),
         childWFID,
       );
     } else {
@@ -900,8 +900,7 @@ export class DBOS {
         // OK to use directly
         return DBOS.#executor.getWorkflowStatus(workflowID);
       } else if (DBOS.isInWorkflow()) {
-        const wfctx = assertCurrentWorkflowContext();
-        return DBOS.#executor.getWorkflowStatus(workflowID, DBOS.workflowID, wfctx.functionIDGetIncrement());
+        return DBOS.#executor.getWorkflowStatus(workflowID, DBOS.workflowID, functionIDGetIncrement());
       } else {
         throw new DBOSInvalidWorkflowTransitionError(
           'Invalid call to `getWorkflowStatus` inside a `transaction` or `procedure`',
@@ -920,7 +919,7 @@ export class DBOS {
   static async getResult<T>(workflowID: string, timeoutSeconds?: number): Promise<T | null> {
     let timerFuncID: number | undefined = undefined;
     if (DBOS.isWithinWorkflow() && timeoutSeconds !== undefined) {
-      timerFuncID = assertCurrentWorkflowContext().functionIDGetIncrement();
+      timerFuncID = functionIDGetIncrement();
     }
     return await runInternalStep(
       async () => {
@@ -1709,7 +1708,7 @@ export class DBOS {
       }
 
       const wfctx = assertCurrentWorkflowContext();
-      const funcId = wfctx.functionIDGetIncrement();
+      const funcId = functionIDGetIncrement();
       const wfParams: WorkflowParams = {
         workflowUUID: wfId || wfctx.workflowUUID + '-' + funcId,
         parentCtx: wfctx,

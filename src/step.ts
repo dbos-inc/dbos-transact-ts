@@ -34,7 +34,7 @@ export interface StepContext extends DBOSContext {
 }
 
 export class StepContextImpl extends DBOSContextImpl implements StepContext {
-  readonly functionID: number;
+  readonly moveThisFunctionID: number;
   readonly retriesAllowed: boolean;
   readonly intervalSeconds: number;
   readonly maxAttempts: number;
@@ -50,7 +50,7 @@ export class StepContextImpl extends DBOSContextImpl implements StepContext {
     commName: string,
   ) {
     super(commName, span, logger, workflowContext);
-    this.functionID = functionID;
+    this.moveThisFunctionID = functionID;
     this.retriesAllowed = params.retriesAllowed ?? false;
     this.intervalSeconds = params.intervalSeconds ?? 1;
     this.maxAttempts = params.maxAttempts ?? 3;

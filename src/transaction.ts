@@ -51,7 +51,7 @@ export class TransactionContextImpl<T extends UserDatabaseClient>
     workflowContext: WorkflowContextImpl,
     span: Span,
     logger: Logger,
-    readonly functionID: number,
+    readonly moveThisFunctionID: number,
     operationName: string,
   ) {
     super(operationName, span, logger, workflowContext);

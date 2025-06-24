@@ -80,6 +80,7 @@ import {
   runWithStepContext,
   runWithStoredProcContext,
   getNextWFID,
+  functionIDGetIncrement,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
@@ -1153,7 +1154,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
-    const funcId = wfCtx.functionIDGetIncrement();
+    const funcId = functionIDGetIncrement();
     const span: Span = this.tracer.startSpan(
       txn.name,
       {
@@ -1360,7 +1361,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
     const executeLocally = this.isDebugging || (procInfo.config.executeLocally ?? false);
-    const funcId = wfCtx.functionIDGetIncrement();
+    const funcId = functionIDGetIncrement();
     const span: Span = this.tracer.startSpan(
       proc.name,
       {
@@ -1716,7 +1717,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
-    const funcID = wfCtx.functionIDGetIncrement();
+    const funcID = functionIDGetIncrement();
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
     const span: Span = this.tracer.startSpan(
@@ -1738,12 +1739,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, stepConfig, stepFnName);
 
     // Check if this execution previously happened, returning its original result if it did.
-    const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfCtx.workflowUUID, ctxt.functionID);
+    const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(
+      wfCtx.workflowUUID,
+      ctxt.moveThisFunctionID,
+    );
     if (checkr) {
       if (checkr.functionName !== ctxt.operationName) {
         throw new DBOSUnexpectedStepError(
           ctxt.workflowUUID,
-          ctxt.functionID,
+          ctxt.moveThisFunctionID,
           ctxt.operationName,
           checkr.functionName ?? '?',
         );
@@ -1833,17 +1837,29 @@ export class DBOSExecutor implements DBOSExecutorContext {
     if (result === dbosNull) {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, ctxt.maxAttempts, errors) : err;
-      await this.systemDatabase.recordOperationResult(wfCtx.workflowUUID, ctxt.functionID, ctxt.operationName, true, {
-        error: DBOSJSON.stringify(serializeError(err)),
-      });
+      await this.systemDatabase.recordOperationResult(
+        wfCtx.workflowUUID,
+        ctxt.moveThisFunctionID,
+        ctxt.operationName,
+        true,
+        {
+          error: DBOSJSON.stringify(serializeError(err)),
+        },
+      );
       ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(ctxt.span);
       throw err as Error;
     } else {
       // Record the execution and return.
-      await this.systemDatabase.recordOperationResult(wfCtx.workflowUUID, ctxt.functionID, ctxt.operationName, true, {
-        output: DBOSJSON.stringify(result),
-      });
+      await this.systemDatabase.recordOperationResult(
+        wfCtx.workflowUUID,
+        ctxt.moveThisFunctionID,
+        ctxt.operationName,
+        true,
+        {
+          output: DBOSJSON.stringify(result),
+        },
+      );
       ctxt.span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(ctxt.span);
       return result as R;

@@ -37,10 +37,11 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   ctx?: DBOSContext;
   parentCtx?: DBOSLocalCtx;
   workflowId?: string;
+  curWFFunctionId?: number; // If currently in a WF, the current call number / ID
   inRecovery?: boolean;
   curStepFunctionId?: number; // If currently in a step, its function ID
   stepStatus?: StepStatus; // If currently in a step, its public status object
-  curTxFunctionId?: number;
+  curTxFunctionId?: number; // If currently in a tx, its function ID
   isInStoredProc?: boolean;
   sqlClient?: UserDatabaseClient;
   koaContext?: Koa.Context;
@@ -108,6 +109,17 @@ export function getNextWFID(assignedID?: string) {
   return wfId;
 }
 
+export function functionIDGetIncrement(): number {
+  const pctx = getCurrentContextStore();
+  if (!pctx) throw new DBOSInvalidWorkflowTransitionError(`Attempt to get a call ID number outside of a workflow`);
+  if (!isInWorkflowCtx(pctx))
+    throw new DBOSInvalidWorkflowTransitionError(
+      `Attempt to get a call ID number in a workflow that is already in a call`,
+    );
+  if (pctx.curWFFunctionId === undefined) pctx.curWFFunctionId = 0;
+  return pctx.curWFFunctionId++;
+}
+
 export async function runWithTopContext<R>(ctx: DBOSLocalCtx, callback: () => Promise<R>): Promise<R> {
   return await asyncLocalCtx.run(ctx, callback);
 }
@@ -124,7 +136,7 @@ export async function runWithTransactionContext<Client extends UserDatabaseClien
     {
       ctx,
       workflowId: ctx.workflowUUID,
-      curTxFunctionId: ctx.functionID,
+      curTxFunctionId: ctx.moveThisFunctionID,
       parentCtx: pctx,
     },
     callback,
@@ -140,7 +152,7 @@ export async function runWithStoredProcContext<R>(ctx: StoredProcedureContextImp
     {
       ctx,
       workflowId: ctx.workflowUUID,
-      curTxFunctionId: ctx.functionID,
+      curTxFunctionId: ctx.moveThisFunctionID,
       parentCtx: pctx,
       isInStoredProc: true,
     },
@@ -172,7 +184,7 @@ export async function runWithStepContext<R>(
   if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
 
   const stepStatus: StepStatus = {
-    stepID: ctx.functionID,
+    stepID: ctx.moveThisFunctionID,
     currentAttempt: currentAttempt,
     maxAttempts: currentAttempt ? ctx.maxAttempts : undefined,
   };
@@ -182,7 +194,7 @@ export async function runWithStepContext<R>(
       ctx,
       stepStatus: stepStatus,
       workflowId: ctx.workflowUUID,
-      curStepFunctionId: ctx.functionID,
+      curStepFunctionId: ctx.moveThisFunctionID,
       parentCtx: pctx,
     },
     callback,

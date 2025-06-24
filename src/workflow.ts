@@ -3,7 +3,7 @@ import { DBOSExecutor, OperationType } from './dbos-executor';
 import { Transaction, TransactionContext } from './transaction';
 import { StepFunction, StepContext } from './step';
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
-import { DBOSContext, DBOSContextImpl } from './context';
+import { DBOSContext, DBOSContextImpl, functionIDGetIncrement } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
 import { StoredProcedure, StoredProcedureContext } from './procedure';
 import { InvokeFuncsInst } from './httpServer/handler';
@@ -220,7 +220,6 @@ export interface WorkflowContext extends DBOSContext {
 }
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
-  functionID: number = 0;
   readonly #dbosExec;
   readonly isTempWorkflow: boolean;
   readonly maxRecoveryAttempts;
@@ -257,10 +256,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     this.maxRecoveryAttempts = workflowConfig.maxRecoveryAttempts ? workflowConfig.maxRecoveryAttempts : 50;
   }
 
-  functionIDGetIncrement(): number {
-    return this.functionID++;
-  }
-
   /**
    * Invoke another workflow as its child workflow and return a workflow handle.
    * The child workflow is guaranteed to be executed exactly once, even if the workflow is retried with the same UUID.
@@ -269,7 +264,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    */
   async startChildWorkflow<T extends unknown[], R>(wf: Workflow<T, R>, ...args: T): Promise<WorkflowHandle<R>> {
     // Note: cannot use invoke for childWorkflow because of potential recursive types on the workflow itself.
-    const funcId = this.functionIDGetIncrement();
+    const funcId = functionIDGetIncrement();
     const childUUID: string = this.workflowUUID + '-' + funcId;
     return this.#dbosExec.internalWorkflow(
       wf,
@@ -301,7 +296,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     const ops = getRegisteredOperations(object);
     const proxy: Record<string, unknown> = {};
 
-    const funcId = this.functionIDGetIncrement();
+    const funcId = functionIDGetIncrement();
     const childUUID = workflowUUID || this.workflowUUID + '-' + funcId;
 
     const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
@@ -399,7 +394,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * The message can optionally be tagged with a topic.
    */
   async send<T>(destinationUUID: string, message: T, topic?: string): Promise<void> {
-    const functionID: number = this.functionIDGetIncrement();
+    const functionID: number = functionIDGetIncrement();
     await this.#dbosExec.systemDatabase.send(
       this.workflowUUID,
       functionID,
@@ -418,8 +413,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     topic?: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
-    const functionID: number = this.functionIDGetIncrement();
-    const timeoutFunctionID: number = this.functionIDGetIncrement();
+    const functionID: number = functionIDGetIncrement();
+    const timeoutFunctionID: number = functionIDGetIncrement();
     return DBOSJSON.parse(
       await this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, timeoutFunctionID, topic, timeoutSeconds),
     ) as T;
@@ -430,7 +425,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Events are immutable once set.
    */
   async setEvent<T>(key: string, value: T) {
-    const functionID: number = this.functionIDGetIncrement();
+    const functionID = functionIDGetIncrement();
     await this.#dbosExec.systemDatabase.setEvent(this.workflowUUID, functionID, key, DBOSJSON.stringify(value));
   }
 
@@ -482,8 +477,8 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     key: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
-    const functionID: number = this.functionIDGetIncrement();
-    const timeoutFunctionID = this.functionIDGetIncrement();
+    const functionID: number = functionIDGetIncrement();
+    const timeoutFunctionID = functionIDGetIncrement();
     const params = {
       workflowID: this.workflowUUID,
       functionID,
@@ -496,7 +491,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * Retrieve a handle for a workflow UUID.
    */
   retrieveWorkflow<R>(targetID: string): WorkflowHandle<R> {
-    const functionID: number = this.functionIDGetIncrement();
+    const functionID: number = functionIDGetIncrement();
     return new RetrievedHandle(this.#dbosExec.systemDatabase, targetID, this.workflowUUID, functionID);
   }
 
@@ -507,7 +502,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     if (durationMS <= 0) {
       return;
     }
-    const functionID = this.functionIDGetIncrement();
+    const functionID = functionIDGetIncrement();
     await this.#dbosExec.systemDatabase.durableSleepms(this.workflowUUID, functionID, durationMS);
   }
 
