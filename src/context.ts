@@ -272,6 +272,10 @@ export class DBOSContextImpl implements DBOSContext {
       this.authenticatedRoles = parentCtx.authenticatedRoles;
       this.assumedRole = parentCtx.assumedRole;
       this.workflowUUID = parentCtx.workflowUUID;
+    } else {
+      this.authenticatedUser = getCurrentContextStore()?.authenticatedUser ?? '';
+      this.authenticatedRoles = getCurrentContextStore()?.authenticatedRoles ?? [];
+      this.assumedRole = getCurrentContextStore()?.assumedRole ?? '';
     }
     this.logger = new DBOSLogger(logger, this);
   }

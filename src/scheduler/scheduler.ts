@@ -1,6 +1,6 @@
-import { DBOS, DBOSEventReceiverState, WorkflowContext } from '..';
+import { DBOS, DBOSEventReceiverState } from '..';
 import { DBOSExecutor } from '../dbos-executor';
-import { MethodRegistrationBase, registerAndWrapFunctionTakingContext } from '../decorators';
+import { MethodRegistrationBase } from '../decorators';
 import { TimeMatcher } from './crontab';
 import { Workflow } from '../workflow';
 
@@ -49,22 +49,6 @@ export type ScheduledArgs = [Date, Date];
 
 export interface SchedulerRegistrationBase extends MethodRegistrationBase {
   schedulerConfig?: SchedulerConfig;
-}
-
-/** @deprecated Remove decorated method's `WorkflowContext` argument and use `@DBOS.scheduled` */
-export function Scheduled(schedulerConfig: SchedulerConfig) {
-  function scheddec<This, Ctx extends WorkflowContext, Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: ScheduledArgs) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    const schedRegistration = registration as unknown as SchedulerRegistrationBase;
-    schedRegistration.schedulerConfig = schedulerConfig;
-
-    return descriptor;
-  }
-  return scheddec;
 }
 
 ///////////////////////////

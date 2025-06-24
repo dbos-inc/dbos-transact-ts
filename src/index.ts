@@ -2,7 +2,7 @@ export { DBOS } from './dbos';
 
 export { DBOSClient } from './client';
 
-export { SchedulerMode, SchedulerConfig, Scheduled } from './scheduler/scheduler';
+export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler';
 
 export {
   // Extensions for others to register event receivers/pollers
@@ -54,9 +54,6 @@ export {
   // Parameter Decorators
   MethodParameter,
   ArgName,
-
-  // ORM Class Decorators
-  OrmEntities,
 } from './decorators';
 
 export {
@@ -113,15 +110,6 @@ export { Kafka, KafkaConsume } from './kafka/kafka';
 export { DBOSContext } from './context';
 
 export { InitContext } from './dbos';
-
-export {
-  // Method Decorators
-  Transaction,
-  Workflow,
-  Step,
-  StoredProcedure,
-  DBOSDeploy,
-} from './decorators';
 
 export { TransactionContext } from './transaction';
 
