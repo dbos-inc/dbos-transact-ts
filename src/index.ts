@@ -41,12 +41,7 @@ export {
   WorkflowStatus,
 } from './workflow';
 
-export {
-  StepConfig as CommunicatorConfig,
-  StepFunction as CommunicatorFunction,
-  StepConfig,
-  StepFunction,
-} from './step';
+export { StepConfig, StepFunction } from './step';
 
 export {
   // Method Decorators
@@ -137,23 +132,12 @@ export {
   Transaction,
   Workflow,
   Step,
-  Step as Communicator,
   StoredProcedure,
   DBOSDeploy,
 } from './decorators';
-
-export {
-  // OpenApi Decorators
-  OpenApiSecurityScheme,
-} from './httpServer/middleware';
 
 export { TransactionContext } from './transaction';
 
 export { WorkflowContext } from './workflow';
 
-export { StepContext as CommunicatorContext, StepContext } from './step';
-
-export {
-  // Class Instances
-  configureInstance,
-} from './decorators';
+export { StepContext } from './step';
