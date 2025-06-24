@@ -11,7 +11,6 @@ import { TransactionContextImpl } from './transaction';
 import { StepContextImpl } from './step';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import { StoredProcedureContextImpl } from './procedure';
-import { HandlerContextImpl } from './httpServer/handler';
 import { globalParams } from './utils';
 import Koa from 'koa';
 
@@ -110,20 +109,6 @@ export function getNextWFID(assignedID?: string) {
 }
 
 export async function runWithDBOSContext<R>(ctx: DBOSContext, callback: () => Promise<R>) {
-  return await asyncLocalCtx.run(
-    {
-      ctx,
-      idAssignedForNextWorkflow: ctx.workflowUUID,
-      request: ctx.request,
-      authenticatedRoles: ctx.authenticatedRoles,
-      authenticatedUser: ctx.authenticatedUser,
-      span: ctx.span,
-    },
-    callback,
-  );
-}
-
-export async function runWithHandlerContext<R>(ctx: HandlerContextImpl, callback: () => Promise<R>) {
   return await asyncLocalCtx.run(
     {
       ctx,

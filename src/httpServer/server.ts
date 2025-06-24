@@ -2,13 +2,13 @@ import Koa, { Context } from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from '@koa/cors';
-import { HandlerContextImpl, HandlerRegistrationBase } from './handler';
+import { HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
 import { Workflow, GetWorkflowsInput, GetQueuedWorkflowsInput } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor, OperationType } from '../dbos-executor';
-import { GlobalLogger as Logger } from '../telemetry/logs';
+import { Logger as DBOSLogger, GlobalLogger as Logger } from '../telemetry/logs';
 import { getOrGenerateRequestID, MiddlewareDefaults, RequestIDHeader } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT, defaultTextMapGetter } from '@opentelemetry/api';
 import { StepFunction } from '../step';
@@ -669,13 +669,12 @@ export class DBOSHttpServer {
         try {
           // Check for auth first
           if (defaults?.authMiddleware) {
-            const hc = new HandlerContextImpl(dbosExec, koaCtxt);
             const res = await defaults.authMiddleware({
               name: ro.name,
               requiredRole: ro.getRequiredRoles(),
               koaContext: koaCtxt,
-              logger: hc.logger,
-              span: hc.span,
+              logger: new DBOSLogger(dbosExec.logger, { span }),
+              span,
               getConfig: (key: string, def) => {
                 return DBOS.getConfig(key, def);
               },
