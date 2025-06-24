@@ -1,7 +1,7 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB, withTimeout } from './test-helpers';
-import { Kafka as KafkaJS, KafkaConfig, KafkaMessage, logLevel } from 'kafkajs';
+import { Kafka as KafkaJS, KafkaMessage, logLevel, Admin } from 'kafkajs';
 import { KafkaReceiver } from '..';
 import { EventEmitter } from 'node:events';
 
@@ -83,17 +83,12 @@ class KafkaTestClass {
   }
 }
 
-async function verifyKafka(config: KafkaConfig) {
-  const kafka = new KafkaJS(config);
-  const admin = kafka.admin();
+async function verifyKafka(admin: Admin) {
   try {
-    await admin.connect();
     const _topics = await admin.listTopics();
     return true;
   } catch (e) {
     return false;
-  } finally {
-    await admin.disconnect();
   }
 }
 
@@ -101,15 +96,31 @@ describe('kafkajs-receive', () => {
   let kafkaIsAvailable = false;
 
   beforeAll(async () => {
-    kafkaIsAvailable = await verifyKafka(kafkaConfig);
-
-    const client = new Client({ user: 'postgres', database: 'postgres' });
+    const kafka = new KafkaJS(kafkaConfig);
+    const admin = kafka.admin();
     try {
-      await client.connect();
-      await dropDB(client, 'kafka_recv_test', true);
-      await dropDB(client, 'kafka_recv_test_dbos_sys', true);
+      kafkaIsAvailable = await verifyKafka(admin);
+      if (kafkaIsAvailable) {
+        // Create topics used in tests
+        // As per https://kafka.js.org/docs/consuming:
+        //    When supplying a regular expression, the consumer will not match topics created after the subscription.
+        //    If your broker has topic-A and topic-B, you subscribe to /topic-.*/, then topic-C is created,
+        //    your consumer would not be automatically subscribed to topic-C.
+        await admin.createTopics({
+          topics: [{ topic: 'regex-topic-foo' }, { topic: 'z-topic-foo' }, { topic: 'y-topic-foo' }],
+        });
+
+        const client = new Client({ user: 'postgres', database: 'postgres' });
+        try {
+          await client.connect();
+          await dropDB(client, 'kafka_recv_test', true);
+          await dropDB(client, 'kafka_recv_test_dbos_sys', true);
+        } finally {
+          await client.end();
+        }
+      }
     } finally {
-      await client.end();
+      await admin.disconnect();
     }
   }, 30000);
 
@@ -144,7 +155,7 @@ describe('kafkajs-receive', () => {
     }
   }, 40000);
 
-  test.skip('wf-regex-topic', async () => {
+  test('wf-regex-topic', async () => {
     if (!kafkaIsAvailable) {
       DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
       return;
@@ -207,7 +218,7 @@ describe('kafkajs-receive', () => {
     }
   }, 40000);
 
-  test.skip('wf-array-regex-topic-z', async () => {
+  test('wf-array-regex-topic-z', async () => {
     if (!kafkaIsAvailable) {
       DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
       return;
@@ -228,7 +239,7 @@ describe('kafkajs-receive', () => {
     }
   }, 40000);
 
-  test.skip('wf-array-regex-topic-y', async () => {
+  test('wf-array-regex-topic-y', async () => {
     if (!kafkaIsAvailable) {
       DBOS.logger.warn('Kafka unavailable, skipping Kafka tests');
       return;
