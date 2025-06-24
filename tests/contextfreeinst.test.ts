@@ -1,4 +1,4 @@
-import { ConfiguredInstance, configureInstance, DBOS, WorkflowQueue } from '../src';
+import { ConfiguredInstance, DBOS, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 
 class TestFunctions extends ConfiguredInstance {
@@ -120,8 +120,8 @@ class TestSec2 extends ConfiguredInstance {
   }
 }
 
-const instA = new TestFunctions('A'); // New way
-const instB = configureInstance(TestFunctions, 'B'); // Old way
+const instA = new TestFunctions('A');
+const instB = new TestFunctions('B');
 
 async function main() {
   // First hurdle - configuration.
@@ -275,7 +275,7 @@ async function main6() {
 }
 
 async function main7() {
-  const testSecInst = DBOS.configureInstance(TestSec, 'Sec1');
+  const testSecInst = new TestSec('Sec1');
   const testSec2Inst = new TestSec2('Sec2');
 
   const config = generateDBOSTestConfig();
