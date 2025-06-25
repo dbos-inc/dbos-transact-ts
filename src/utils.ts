@@ -186,8 +186,8 @@ export function interceptStreams(onMessage: (msg: string, stream: 'stdout' | 'st
   const intercept = (stream: 'stdout' | 'stderr', originalWrite: typeof process.stdout.write) => {
     return (
       chunk: Uint8Array | string,
-      encodingOrCb?: BufferEncoding | ((err?: Error | null | undefined) => void),
-      cb?: (err?: Error | null | undefined) => void,
+      encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
+      cb?: (err?: Error | null) => void,
     ): boolean => {
       const message = chunk.toString();
       onMessage(message, stream);

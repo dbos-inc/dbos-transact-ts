@@ -132,6 +132,7 @@ async function setupTopics(kafka: Kafka, topics: string[]) {
   }
 }
 
+// eslint-disable-next-line @typescript-eslint/no-floating-promises
 suite('kafkajs-receive', async () => {
   const kafkaAvailable = await validateKafka(kafkaConfig);
   let producer: Producer | undefined = undefined;
@@ -201,6 +202,7 @@ suite('kafkajs-receive', async () => {
   );
 
   for (const { functionName, topic } of testCases) {
+    // eslint-disable-next-line @typescript-eslint/no-floating-promises
     test(`${topic}-${functionName}`, { skip: !kafkaAvailable, timeout: 40000 }, async () => {
       const message = `test-message-${Date.now()}`;
       await producer!.send({ topic, messages: [{ value: message }] });
