@@ -24,6 +24,7 @@ import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
   GetWorkflowsOutput,
+  RetrievedHandle,
   StepInfo,
   WorkflowConfig,
   WorkflowContext,
@@ -68,7 +69,7 @@ import {
   registerMiddlewareInstaller,
   MethodRegistrationBase,
 } from './decorators';
-import { globalParams, sleepms } from './utils';
+import { DBOSJSON, globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
 import { koaTracingMiddleware, expressTracingMiddleware, honoTracingMiddleware } from './httpServer/middleware';
 import { Server } from 'http';
@@ -900,7 +901,8 @@ export class DBOS {
           'Invalid call to `retrieveWorkflow` inside a `transaction` or `step`',
         );
       }
-      return (getCurrentDBOSContext()! as WorkflowContext).retrieveWorkflow(workflowID);
+      const functionID: number = functionIDGetIncrement();
+      return new RetrievedHandle(DBOSExecutor.globalInstance!.systemDatabase, workflowID, DBOS.workflowID, functionID);
     }
     return DBOS.#executor.retrieveWorkflow(workflowID);
   }
@@ -1007,7 +1009,11 @@ export class DBOS {
       if (DBOS.isInTransaction()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.sleep` inside a `transaction`');
       }
-      return (getCurrentDBOSContext()! as WorkflowContext).sleepms(durationMS);
+      const functionID = functionIDGetIncrement();
+      if (durationMS <= 0) {
+        return;
+      }
+      return await DBOSExecutor.globalInstance!.systemDatabase.durableSleepms(DBOS.workflowID!, functionID, durationMS);
     }
     await sleepms(durationMS);
   }
@@ -1289,9 +1295,16 @@ export class DBOS {
           'Invalid call to `DBOS.send` with an idempotency key from within a workflow',
         );
       }
-      return (getCurrentDBOSContext() as WorkflowContext).send(destinationID, message, topic);
+      const functionID: number = functionIDGetIncrement();
+      return await DBOSExecutor.globalInstance!.systemDatabase.send(
+        DBOS.workflowID!,
+        functionID,
+        destinationID,
+        DBOSJSON.stringify(message),
+        topic,
+      );
     }
-    return DBOS.#executor.send(destinationID, message, topic, idempotencyKey);
+    return DBOS.#executor.send(destinationID, message, topic, idempotencyKey); // Temp WF variant
   }
 
   /**
@@ -1309,11 +1322,19 @@ export class DBOS {
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `DBOS.setEvent` inside a `step` or `transaction`',
-        );
+        throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.recv` inside a `step` or `transaction`');
       }
-      return (getCurrentDBOSContext() as WorkflowContext).recv<T>(topic, timeoutSeconds);
+      const functionID: number = functionIDGetIncrement();
+      const timeoutFunctionID: number = functionIDGetIncrement();
+      return DBOSJSON.parse(
+        await DBOSExecutor.globalInstance!.systemDatabase.recv(
+          DBOS.workflowID!,
+          functionID,
+          timeoutFunctionID,
+          topic,
+          timeoutSeconds,
+        ),
+      ) as T;
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.recv` outside of a workflow'); // Only workflows can recv
   }
@@ -1334,7 +1355,13 @@ export class DBOS {
           'Invalid call to `DBOS.setEvent` inside a `step` or `transaction`',
         );
       }
-      return (getCurrentDBOSContext() as WorkflowContext).setEvent(key, value);
+      const functionID = functionIDGetIncrement();
+      return DBOSExecutor.globalInstance!.systemDatabase.setEvent(
+        DBOS.workflowID!,
+        functionID,
+        key,
+        DBOSJSON.stringify(value),
+      );
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.setEvent` outside of a workflow'); // Only workflows can set event
   }
@@ -1358,7 +1385,21 @@ export class DBOS {
           'Invalid call to `DBOS.getEvent` inside a `step` or `transaction`',
         );
       }
-      return (getCurrentDBOSContext() as WorkflowContext).getEvent(workflowID, key, timeoutSeconds);
+      const functionID: number = functionIDGetIncrement();
+      const timeoutFunctionID = functionIDGetIncrement();
+      const params = {
+        workflowID: DBOS.workflowID!,
+        functionID,
+        timeoutFunctionID,
+      };
+      return DBOSJSON.parse(
+        await DBOSExecutor.globalInstance!.systemDatabase.getEvent(
+          workflowID,
+          key,
+          timeoutSeconds ?? DBOSExecutor.defaultNotificationTimeoutSec,
+          params,
+        ),
+      ) as T;
     }
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
   }
