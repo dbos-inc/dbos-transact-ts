@@ -223,7 +223,6 @@ suite('confluent-kafka-receive', async () => {
   beforeEach(async () => {
     if (kafkaAvailable) {
       DBOS.setConfig({ name: 'conf-kafka-recv-test' });
-      DBOS.registerLifecycleCallback(kafkaReceiver);
       await DBOS.launch();
     }
   });

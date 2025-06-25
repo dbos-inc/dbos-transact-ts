@@ -187,7 +187,6 @@ suite('kafkajs-receive', async () => {
   beforeEach(async () => {
     if (producer) {
       DBOS.setConfig({ name: 'kafka-recv-test' });
-      DBOS.registerLifecycleCallback(kafkaReceiver);
       await DBOS.launch();
     }
   });

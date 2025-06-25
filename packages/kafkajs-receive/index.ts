@@ -35,6 +35,7 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
     private readonly retryConfig: KafkaRetryConfig = { maxRetries: 5, retryTime: 300, multiplier: 2 },
   ) {
     super();
+    DBOS.registerLifecycleCallback(this);
   }
 
   override async initialize() {
