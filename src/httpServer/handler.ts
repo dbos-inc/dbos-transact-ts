@@ -4,14 +4,13 @@ import {
   MethodRegistrationBase,
   ConfiguredInstance,
 } from '../decorators';
-import { TailParameters, WorkflowHandle, WorkflowContext, WFInvokeFuncs, WFInvokeFuncsInst } from '../workflow';
+import { TailParameters, WorkflowHandle, WorkflowContext, WFInvokeFuncs } from '../workflow';
 import { APITypes, ArgSources } from './handlerTypes';
 
 // local type declarations for workflow functions
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
 export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
-export type InvokeFuncsInst<T> = WFInvokeFuncsInst<T>;
 
 export type AsyncHandlerWfFuncs<T> = T extends ConfiguredInstance
   ? never

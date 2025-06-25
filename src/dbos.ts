@@ -1,6 +1,5 @@
 import { Span } from '@opentelemetry/sdk-trace-base';
 import {
-  assertCurrentDBOSContext,
   assertCurrentWorkflowContext,
   getCurrentContextStore,
   getCurrentDBOSContext,
@@ -80,7 +79,7 @@ import {
   UserDatabaseClient,
   UserDatabaseName,
 } from './user_database';
-import { TransactionConfig, TransactionContext, TransactionContextImpl, TransactionFunction } from './transaction';
+import { TransactionConfig, TransactionFunction } from './transaction';
 
 import Koa from 'koa';
 import { Application as ExpressApp } from 'express';
@@ -91,10 +90,10 @@ import { randomUUID } from 'node:crypto';
 
 import { PoolClient } from 'pg';
 import { Knex } from 'knex';
-import { StepConfig, StepContext, StepFunction } from './step';
+import { StepConfig, StepFunction } from './step';
 import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
 import { ConfiguredInstance } from '.';
-import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext } from './procedure';
+import { StoredProcedure, StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
@@ -145,38 +144,6 @@ type InvokeFunctionsAsyncInst<T> = T extends ConfiguredInstance
 export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any
   ? P
   : never;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type TxFunc = (ctxt: TransactionContext<any>, ...args: any[]) => Promise<any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type StepFunc = (ctxt: StepContext, ...args: any[]) => Promise<any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WorkflowFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<any>;
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type ProcFunc = (ctxt: StoredProcedureContext, ...args: any[]) => Promise<any>;
-
-// Utility type that only includes transaction/step/proc functions + converts the method signature to exclude the context parameter
-type InvokeFuncs<T> = T extends ConfiguredInstance
-  ? never
-  : {
-      [P in keyof T as T[P] extends TxFunc | StepFunc | ProcFunc | WorkflowFunc ? P : never]: T[P] extends
-        | TxFunc
-        | StepFunc
-        | ProcFunc
-        | WorkflowFunc
-        ? (...args: TailParameters<T[P]>) => ReturnType<T[P]>
-        : never;
-    };
-
-type InvokeFuncsInst<T> = T extends ConfiguredInstance
-  ? {
-      [P in keyof T as T[P] extends TxFunc | StepFunc | WorkflowFunc ? P : never]: T[P] extends
-        | TxFunc
-        | StepFunc
-        | WorkflowFunc
-        ? (...args: TailParameters<T[P]>) => ReturnType<T[P]>
-        : never;
-    }
-  : never;
 
 function httpApiDec(verb: APITypes, url: string) {
   return function apidec<This, Args extends unknown[], Return>(
@@ -192,29 +159,6 @@ function httpApiDec(verb: APITypes, url: string) {
 
     return descriptor;
   };
-}
-
-// Fill in any proxy functions with error-throwing stubs
-//  (Goal being to give a clearer error message)
-function augmentProxy(target: object, proxy: Record<string, unknown>) {
-  let proto = target;
-  while (proto && proto !== Object.prototype) {
-    for (const k of Reflect.ownKeys(proto)) {
-      if (typeof k === 'symbol') continue;
-      if (k === 'constructor' || k === 'caller' || k === 'callee' || k === 'arguments') continue; // Skip constructor
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-        if (typeof (target as any)[k] !== 'function') continue;
-        if (!Object.hasOwn(proxy, k)) {
-          proxy[k] = (..._args: unknown[]) => {
-            throw new DBOSNotRegisteredError(k, `${k} is not a registered DBOS function`);
-          };
-        }
-      } catch (e) {}
-    }
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
-    proto = Object.getPrototypeOf(proto);
-  }
 }
 
 export interface StartWorkflowParams {
@@ -726,10 +670,10 @@ export class DBOS {
   // sql session (various forms)
   /** @returns the current SQL client; only allowed within `@DBOS.transaction` functions */
   static get sqlClient(): UserDatabaseClient {
-    if (!DBOS.isInTransaction())
+    const c = getCurrentContextStore()?.sqlClient;
+    if (!DBOS.isInTransaction() || !c)
       throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
-    const ctx = assertCurrentDBOSContext() as TransactionContextImpl<UserDatabaseClient>;
-    return ctx.client;
+    return c;
   }
 
   /**
@@ -1320,202 +1264,6 @@ export class DBOS {
     };
 
     return new Proxy(target, handler);
-  }
-
-  /** @deprecated Adjust target function to exclude its `DBOSContext` argument, and then call the function directly */
-  static invoke<T extends ConfiguredInstance>(targetCfg: T): InvokeFuncsInst<T>;
-  /** @deprecated Adjust target function to exclude its `DBOSContext` argument, and then call the function directly */
-  static invoke<T extends object>(targetClass: T): InvokeFuncs<T>;
-  static invoke<T extends object>(object: T | ConfiguredInstance): InvokeFuncs<T> | InvokeFuncsInst<T> {
-    if (!DBOS.isWithinWorkflow()) {
-      const pctx = getCurrentContextStore();
-      let span = pctx?.span;
-      if (!span) {
-        span = DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
-          operationType: pctx?.operationType,
-          authenticatedUser: pctx?.authenticatedUser,
-          assumedRole: pctx?.assumedRole,
-          authenticatedRoles: pctx?.authenticatedRoles,
-        });
-      }
-
-      let parentCtx: DBOSContextImpl | undefined = undefined;
-      if (pctx) {
-        parentCtx = pctx.ctx as DBOSContextImpl;
-      }
-      if (!parentCtx) {
-        parentCtx = new DBOSContextImpl(pctx?.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
-        parentCtx.request = pctx?.request || {};
-        parentCtx.authenticatedUser = pctx?.authenticatedUser || '';
-        parentCtx.assumedRole = pctx?.assumedRole || '';
-        parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
-      }
-      const wfParams: WorkflowParams = {
-        parentCtx,
-      };
-
-      // Run the temp workflow way...
-      if (typeof object === 'function') {
-        const ops = getRegisteredOperations(object);
-
-        const proxy: Record<string, unknown> = {};
-        for (const op of ops) {
-          proxy[op.name] = op.txnConfig
-            ? (...args: unknown[]) =>
-                DBOSExecutor.globalInstance!.transaction(
-                  op.registeredFunction as TransactionFunction<unknown[], unknown>,
-                  wfParams,
-                  ...args,
-                )
-            : op.stepConfig
-              ? (...args: unknown[]) =>
-                  DBOSExecutor.globalInstance!.external(
-                    op.registeredFunction as StepFunction<unknown[], unknown>,
-                    wfParams,
-                    ...args,
-                  )
-              : op.procConfig
-                ? (...args: unknown[]) =>
-                    DBOSExecutor.globalInstance!.procedure<unknown[], unknown>(
-                      op.registeredFunction as StoredProcedure<unknown[], unknown>,
-                      wfParams,
-                      ...args,
-                    )
-                : op.workflowConfig
-                  ? async (...args: unknown[]) =>
-                      (
-                        await DBOSExecutor.globalInstance!.workflow<unknown[], unknown>(
-                          op.registeredFunction as WorkflowFunction<unknown[], unknown>,
-                          wfParams,
-                          ...args,
-                        )
-                      ).getResult()
-                  : (..._args: unknown[]) => {
-                      throw new DBOSNotRegisteredError(
-                        op.name,
-                        `${op.name} is not a registered DBOS step, transaction, or procedure`,
-                      );
-                    };
-        }
-
-        augmentProxy(object, proxy);
-
-        return proxy as InvokeFuncs<T>;
-      } else {
-        const targetInst = object as ConfiguredInstance;
-        const ops = getRegisteredOperations(targetInst);
-
-        const proxy: Record<string, unknown> = {};
-        for (const op of ops) {
-          proxy[op.name] = op.txnConfig
-            ? (...args: unknown[]) =>
-                DBOSExecutor.globalInstance!.transaction(
-                  op.registeredFunction as TransactionFunction<unknown[], unknown>,
-                  { ...wfParams, configuredInstance: targetInst },
-                  ...args,
-                )
-            : op.stepConfig
-              ? (...args: unknown[]) =>
-                  DBOSExecutor.globalInstance!.external(
-                    op.registeredFunction as StepFunction<unknown[], unknown>,
-                    { ...wfParams, configuredInstance: targetInst },
-                    ...args,
-                  )
-              : op.workflowConfig
-                ? async (...args: unknown[]) =>
-                    (
-                      await DBOSExecutor.globalInstance!.workflow(
-                        op.registeredFunction as WorkflowFunction<unknown[], unknown>,
-                        { ...wfParams, configuredInstance: targetInst },
-                        ...args,
-                      )
-                    ).getResult()
-                : (..._args: unknown[]) => {
-                    throw new DBOSNotRegisteredError(
-                      op.name,
-                      `${op.name} is not a registered DBOS step or transaction`,
-                    );
-                  };
-        }
-
-        augmentProxy(targetInst, proxy);
-
-        return proxy as InvokeFuncsInst<T>;
-      }
-    }
-    const wfctx = assertCurrentWorkflowContext();
-    if (typeof object === 'function') {
-      const ops = getRegisteredOperations(object);
-
-      const proxy: Record<string, unknown> = {};
-      for (const op of ops) {
-        proxy[op.name] = op.txnConfig
-          ? (...args: unknown[]) =>
-              DBOSExecutor.globalInstance!.callTransactionFunction(
-                op.registeredFunction as TransactionFunction<unknown[], unknown>,
-                null,
-                wfctx,
-                ...args,
-              )
-          : op.stepConfig
-            ? (...args: unknown[]) =>
-                DBOSExecutor.globalInstance!.callStepFunction(
-                  op.registeredFunction as StepFunction<unknown[], unknown>,
-                  undefined,
-                  undefined,
-                  null,
-                  wfctx,
-                  ...args,
-                )
-            : op.procConfig
-              ? (...args: unknown[]) =>
-                  DBOSExecutor.globalInstance!.callProcedureFunction(
-                    op.registeredFunction as StoredProcedure<unknown[], unknown>,
-                    wfctx,
-                    ...args,
-                  )
-              : (..._args: unknown[]) => {
-                  throw new DBOSNotRegisteredError(
-                    op.name,
-                    `${op.name} is not a registered DBOS step, transaction, or procedure`,
-                  );
-                };
-      }
-
-      augmentProxy(object, proxy);
-
-      return proxy as InvokeFuncs<T>;
-    } else {
-      const targetInst = object as ConfiguredInstance;
-      const ops = getRegisteredOperations(targetInst);
-
-      const proxy: Record<string, unknown> = {};
-      for (const op of ops) {
-        proxy[op.name] = op.txnConfig
-          ? (...args: unknown[]) =>
-              DBOSExecutor.globalInstance!.callTransactionFunction(
-                op.registeredFunction as TransactionFunction<unknown[], unknown>,
-                targetInst,
-                wfctx,
-                ...args,
-              )
-          : op.stepConfig
-            ? (...args: unknown[]) =>
-                DBOSExecutor.globalInstance!.callStepFunction(
-                  op.registeredFunction as StepFunction<unknown[], unknown>,
-                  undefined,
-                  undefined,
-                  targetInst,
-                  wfctx,
-                  ...args,
-                )
-            : undefined;
-      }
-
-      augmentProxy(targetInst, proxy);
-
-      return proxy as InvokeFuncsInst<T>;
-    }
   }
 
   /**
