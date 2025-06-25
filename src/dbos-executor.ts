@@ -30,7 +30,7 @@ import {
   type StepInfo,
 } from './workflow';
 
-import { IsolationLevel, type Transaction, type TransactionConfig, TransactionContextImpl } from './transaction';
+import { IsolationLevel, type TransactionConfig } from './transaction';
 import { type StepConfig, StepContextImpl, type StepFunction } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
@@ -173,7 +173,7 @@ interface WorkflowRegInfo {
 }
 
 interface TransactionRegInfo {
-  transaction: Transaction<unknown[], unknown>;
+  transaction: (...args: unknown[]) => Promise<unknown>;
   config: TransactionConfig;
   registration: MethodRegistrationBase;
 }
@@ -603,7 +603,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerTransaction(ro: MethodRegistrationBase) {
-    const txf = ro.registeredFunction as Transaction<unknown[], unknown>;
+    const txf = ro.registeredFunction as (...args: unknown[]) => Promise<unknown>;
     const tfn = ro.className + '.' + ro.name;
 
     if (this.transactionInfoMap.has(tfn)) {
@@ -1180,15 +1180,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       let prevResultFound = false;
       const workflowUUID = wfCtx.workflowUUID;
       const wrappedTransaction = async (client: UserDatabaseClient): Promise<R> => {
-        const tCtxt = new TransactionContextImpl(
-          this.userDatabase.getName(),
-          client,
-          wfCtx,
-          span,
-          this.logger,
-          txn.name,
-        );
-
         // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
         // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
         let prevResult: R | Error | DBOSNull = dbosNull;
@@ -1200,7 +1191,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           txn_snapshot = executionResult.txn_snapshot;
           if (prevResult !== dbosNull) {
             prevResultFound = true;
-            tCtxt.span.setAttribute('cached', true);
+            span.setAttribute('cached', true);
 
             if (this.debugMode === DebugMode.TIME_TRAVEL) {
               // for time travel debugging, navigate the proxy to the time of this transaction's snapshot
@@ -1232,7 +1223,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             return await runWithTopContext(
               {
                 ...parentCtx!,
-                ctx: tCtxt,
+                ctx: undefined,
                 workflowId: wfCtx.workflowUUID,
                 curTxFunctionId: funcId,
                 parentCtx,
@@ -1280,7 +1271,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             (error) => this.userDatabase.isKeyConflictError(error),
             txn.name,
           );
-          tCtxt.span.setAttribute('pg_txn_id', pg_txn_id);
+          span.setAttribute('pg_txn_id', pg_txn_id);
         } catch (error) {
           if (this.userDatabase.isFailedSqlTransactionError(error)) {
             this.logger.error(
