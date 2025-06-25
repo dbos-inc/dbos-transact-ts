@@ -136,6 +136,15 @@ suite('kafkajs-receive', async () => {
   const kafkaAvailable = await validateKafka(kafkaConfig);
   let producer: Producer | undefined = undefined;
 
+  const testCases = [
+    { topic: 'string-topic', functionName: 'stringTopic' },
+    { topic: 'regex-topic-foo', functionName: 'regexTopic' },
+    { topic: 'a-topic', functionName: 'stringArrayTopic' },
+    { topic: 'b-topic', functionName: 'stringArrayTopic' },
+    { topic: 'z-topic-foo', functionName: 'regexArrayTopic' },
+    { topic: 'y-topic-foo', functionName: 'regexArrayTopic' },
+  ];
+
   before(
     async () => {
       if (!kafkaAvailable) {
@@ -149,7 +158,7 @@ suite('kafkajs-receive', async () => {
       //    When supplying a regular expression, the consumer will not match topics created after the subscription.
       //    If your broker has topic-A and topic-B, you subscribe to /topic-.*/, then topic-C is created,
       //    your consumer would not be automatically subscribed to topic-C.
-      const topics = ['string-topic', 'regex-topic-foo', 'a-topic', 'b-topic', 'z-topic-foo', 'y-topic-foo'];
+      const topics = testCases.map((tc) => tc.topic);
       await setupTopics(kafka, topics);
 
       producer = kafka.producer();
@@ -191,63 +200,14 @@ suite('kafkajs-receive', async () => {
     { timeout: 30000 },
   );
 
-  test('wf-string-topic', { skip: !kafkaAvailable, timeout: 40000 }, async () => {
-    const topic = `string-topic`;
-    const message = `test-message-${Date.now()}`;
-    await producer!.send({ topic, messages: [{ value: message }] });
-    const result = await waitForMessage(KafkaTestClass.emitter, 'stringTopic', topic);
+  for (const { functionName, topic } of testCases) {
+    test(`${topic}-${functionName}`, { skip: !kafkaAvailable, timeout: 40000 }, async () => {
+      const message = `test-message-${Date.now()}`;
+      await producer!.send({ topic, messages: [{ value: message }] });
+      const result = await waitForMessage(KafkaTestClass.emitter, functionName, topic);
 
-    assert.equal(topic, result.topic);
-    assert.equal(message, String(result.message.value));
-  });
-
-  test('wf-regex-topic', { skip: !kafkaAvailable, timeout: 40000 }, async () => {
-    const topic = `regex-topic-foo`;
-    const message = `test-message-${Date.now()}`;
-    await producer!.send({ topic, messages: [{ value: message }] });
-    const result = await waitForMessage(KafkaTestClass.emitter, 'regexTopic', topic);
-
-    assert.equal(topic, result.topic);
-    assert.equal(message, String(result.message.value));
-  });
-
-  test('wf-array-string-topic-a', { skip: !kafkaAvailable, timeout: 40000 }, async () => {
-    const topic = `a-topic`;
-    const message = `test-message-${Date.now()}`;
-    await producer!.send({ topic, messages: [{ value: message }] });
-    const result = await waitForMessage(KafkaTestClass.emitter, 'stringArrayTopic', topic);
-
-    assert.equal(topic, result.topic);
-    assert.equal(message, String(result.message.value));
-  });
-
-  test('wf-array-string-topic-b', { skip: !kafkaAvailable, timeout: 40000 }, async () => {
-    const topic = `b-topic`;
-    const message = `test-message-${Date.now()}`;
-    await producer!.send({ topic, messages: [{ value: message }] });
-    const result = await waitForMessage(KafkaTestClass.emitter, 'stringArrayTopic', topic);
-
-    assert.equal(topic, result.topic);
-    assert.equal(message, String(result.message.value));
-  });
-
-  test('wf-array-regex-topic-z', { skip: !kafkaAvailable, timeout: 40000 }, async () => {
-    const topic = `z-topic-foo`;
-    const message = `test-message-${Date.now()}`;
-    await producer!.send({ topic, messages: [{ value: message }] });
-    const result = await waitForMessage(KafkaTestClass.emitter, 'regexArrayTopic', topic);
-
-    assert.equal(topic, result.topic);
-    assert.equal(message, String(result.message.value));
-  });
-
-  test('wf-array-regex-topic-y', { skip: !kafkaAvailable, timeout: 40000 }, async () => {
-    const topic = `y-topic-foo`;
-    const message = `test-message-${Date.now()}`;
-    await producer!.send({ topic, messages: [{ value: message }] });
-    const result = await waitForMessage(KafkaTestClass.emitter, 'regexArrayTopic', topic);
-
-    assert.equal(topic, result.topic);
-    assert.equal(message, String(result.message.value));
-  });
+      assert.equal(topic, result.topic);
+      assert.equal(message, String(result.message.value));
+    });
+  }
 });
