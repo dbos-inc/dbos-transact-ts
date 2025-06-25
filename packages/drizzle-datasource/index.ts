@@ -201,7 +201,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
 export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
   // User calls this... DBOS not directly involved...
-  static getClient(p?: DrizzleTransactionHandler): NodePgDatabase<{ [key: string]: object }> {
+  static #getClient(p?: DrizzleTransactionHandler): NodePgDatabase<{ [key: string]: object }> {
     if (!DBOS.isInTransaction()) {
       throw new Error('Invalid use of DrizzleDataSource.client outside of a DBOS transaction');
     }
@@ -216,11 +216,11 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
   }
 
   static get client() {
-    return DrizzleDataSource.getClient(undefined);
+    return DrizzleDataSource.#getClient(undefined);
   }
 
   get client() {
-    return DrizzleDataSource.getClient(this.#provider);
+    return DrizzleDataSource.#getClient(this.#provider);
   }
 
   static async initializeDBOSSchema(config: ClientConfig): Promise<void> {
@@ -245,8 +245,8 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, config?: TransactionConfig) {
-    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: TransactionConfig) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(

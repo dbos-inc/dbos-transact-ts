@@ -191,7 +191,7 @@ function isKnex(value: Knex | Knex.Config): value is Knex {
 }
 
 export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
-  static getClient(p?: KnexTransactionHandler) {
+  static #getClient(p?: KnexTransactionHandler) {
     if (!DBOS.isInTransaction()) {
       throw new Error('invalid use of KnexDataSource.client outside of a DBOS transaction.');
     }
@@ -204,11 +204,11 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
   }
 
   static get client(): Knex.Transaction {
-    return KnexDataSource.getClient(undefined);
+    return KnexDataSource.#getClient(undefined);
   }
 
   get client(): Knex.Transaction {
-    return KnexDataSource.getClient(this.#provider);
+    return KnexDataSource.#getClient(this.#provider);
   }
 
   static async initializeDBOSSchema(knexOrConfig: Knex.Config) {
@@ -256,8 +256,8 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, config?: TransactionConfig) {
-    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: TransactionConfig) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(

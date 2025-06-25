@@ -211,7 +211,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
 }
 
 export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransactionOptions> {
-  static getClient(p?: NodePostgresTransactionHandler): ClientBase {
+  static #getClient(p?: NodePostgresTransactionHandler): ClientBase {
     if (!DBOS.isInTransaction()) {
       throw new Error('Invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
     }
@@ -226,11 +226,11 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
   }
 
   static get client() {
-    return NodePostgresDataSource.getClient(undefined);
+    return NodePostgresDataSource.#getClient(undefined);
   }
 
   get client() {
-    return NodePostgresDataSource.getClient(this.#provider);
+    return NodePostgresDataSource.#getClient(this.#provider);
   }
 
   static async initializeDBOSSchema(config: ClientConfig): Promise<void> {
@@ -254,8 +254,8 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, config?: NodePostgresTransactionOptions) {
-    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: NodePostgresTransactionOptions) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(

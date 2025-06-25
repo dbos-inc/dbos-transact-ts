@@ -186,7 +186,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
             await entityManager.query('SET TRANSACTION READ ONLY');
           }
 
-          const result = await asyncLocalCtx.run({ entityManager: entityManager, owner: this }, async () => {
+          const result = await asyncLocalCtx.run({ entityManager, owner: this }, async () => {
             return await func.call(target, ...args);
           });
 
@@ -226,7 +226,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
 
 export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfig> {
   // User calls this... DBOS not directly involved...
-  static getEntityManager(p?: TypeOrmTransactionHandler): EntityManager {
+  static #getEntityManager(p?: TypeOrmTransactionHandler): EntityManager {
     if (!DBOS.isInTransaction()) {
       throw new Error('Invalid use of TypeOrmDataSource.entityManager outside of a DBOS transaction');
     }
@@ -242,11 +242,11 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
   }
 
   static get entityManager() {
-    return TypeOrmDataSource.getEntityManager(undefined);
+    return TypeOrmDataSource.#getEntityManager(undefined);
   }
 
   get entityManager() {
-    return TypeOrmDataSource.getEntityManager(this.#provider);
+    return TypeOrmDataSource.#getEntityManager(this.#provider);
   }
 
   static async initializeDBOSSchema(config: PoolConfig): Promise<void> {
@@ -272,14 +272,14 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
   }
 
   /**
-   * Run `callback` as a transaction against this DataSource
-   * @param callback Function to run within a transactional context
+   * Run `func` as a transaction against this DataSource
+   * @param func Function to run within a transactional context
    * @param funcName Name to record for the transaction
    * @param config Transaction configuration (isolation, etc)
-   * @returns Return value from `callback`
+   * @returns Return value from `func`
    */
-  async runTransaction<T>(callback: () => Promise<T>, config?: TypeORMTransactionConfig) {
-    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: TypeORMTransactionConfig) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   /**
