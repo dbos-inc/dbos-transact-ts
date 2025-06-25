@@ -76,11 +76,12 @@ import knex, { Knex } from 'knex';
 import {
   DBOSContextImpl,
   runWithWorkflowContext,
-  runWithTransactionContext,
   runWithStepContext,
   runWithStoredProcContext,
   getNextWFID,
   functionIDGetIncrement,
+  runWithTopContext,
+  getCurrentContextStore,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
@@ -1181,7 +1182,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
           wfCtx,
           span,
           this.logger,
-          funcId,
           txn.name,
         );
 
@@ -1222,16 +1222,27 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         // Execute the user's transaction.
+        const parentCtx = getCurrentContextStore();
         const result = await (async function () {
           try {
-            return await runWithTransactionContext(tCtxt, async () => {
-              if (txnInfo.registration.passContext) {
-                return await txn.call(clsinst, tCtxt, ...args);
-              } else {
-                const tf = txn as unknown as (...args: T) => Promise<R>;
-                return await tf.call(clsinst, ...args);
-              }
-            });
+            return await runWithTopContext(
+              {
+                ...parentCtx!,
+                ctx: tCtxt,
+                workflowId: wfCtx.workflowUUID,
+                curTxFunctionId: funcId,
+                parentCtx,
+                sqlClient: client,
+              },
+              async () => {
+                if (txnInfo.registration.passContext) {
+                  return await txn.call(clsinst, tCtxt, ...args);
+                } else {
+                  const tf = txn as unknown as (...args: T) => Promise<R>;
+                  return await tf.call(clsinst, ...args);
+                }
+              },
+            );
           } catch (e) {
             return e instanceof Error ? e : new Error(`${e as any}`);
           }
