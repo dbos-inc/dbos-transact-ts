@@ -87,6 +87,9 @@ export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
 
       await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
+          DBOS.logger.warn(
+            `ConfluentKafkaReceiver message on topic ${topic} partition ${partition} offset ${message.offset}`,
+          );
           try {
             const workflowID = `confluent-kafka-${topic}-${partition}-${config['group.id']}-${message.offset}`;
             const wfParams = { workflowID, queueName: methodConfig.queueName };

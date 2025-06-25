@@ -76,6 +76,7 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
 
       await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
+          DBOS.logger.debug(`KafkaReceiver message on topic ${topic} partition ${partition} offset ${message.offset}`);
           try {
             const workflowID = `kafkajs-${topic}-${partition}-${config.groupId}-${message.offset}`;
             const wfParams = { workflowID, queueName: methodConfig.queueName };
