@@ -124,10 +124,10 @@ export async function runWithTopContext<R>(ctx: DBOSLocalCtx, callback: () => Pr
 
 export async function runWithDataSourceContext<R>(callnum: number, callback: () => Promise<R>) {
   // Check we are in a workflow context and not in a step / transaction already
-  const pctx = getCurrentContextStore();
+  const pctx = getCurrentContextStore() ?? {};
   return await asyncLocalCtx.run(
     {
-      workflowId: pctx?.workflowId,
+      ...pctx,
       curTxFunctionId: callnum,
       parentCtx: pctx,
     },
