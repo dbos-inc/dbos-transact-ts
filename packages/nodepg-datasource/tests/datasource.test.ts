@@ -43,7 +43,7 @@ describe('NodePostgresDataSource', () => {
       }
     }
 
-    await NodePostgresDataSource.initializeInternalSchema(config);
+    await NodePostgresDataSource.initializeDBOSSchema(config);
   });
 
   afterAll(async () => {
@@ -399,7 +399,7 @@ async function insertWorkflowReg(user: string) {
 }
 
 async function insertWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => insertFunction(user), 'insertFunction');
+  return await dataSource.runTransaction(() => insertFunction(user), { name: 'insertFunction' });
 }
 
 async function errorWorkflowReg(user: string) {
@@ -407,7 +407,7 @@ async function errorWorkflowReg(user: string) {
 }
 
 async function errorWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => errorFunction(user), 'errorFunction');
+  return await dataSource.runTransaction(() => errorFunction(user), { name: 'errorFunction' });
 }
 
 async function readWorkflowReg(user: string) {
@@ -415,7 +415,7 @@ async function readWorkflowReg(user: string) {
 }
 
 async function readWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => readFunction(user), 'readFunction', { readOnly: true });
+  return await dataSource.runTransaction(() => readFunction(user), { name: 'readFunction', readOnly: true });
 }
 
 async function staticWorkflow(user: string) {

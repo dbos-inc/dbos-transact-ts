@@ -11,12 +11,16 @@ import {
   registerTransaction,
   runTransaction,
   PGIsolationLevel as IsolationLevel,
-  PGTransactionConfig as PostgresTransactionOptions,
+  PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
+
+interface PostgresTransactionOptions extends PGTransactionConfig {
+  name?: string;
+}
 
 export { IsolationLevel, PostgresTransactionOptions };
 
@@ -186,7 +190,7 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     return ctx.client;
   }
 
-  static async initializeInternalSchema(options: Options = {}): Promise<void> {
+  static async initializeDBOSSchema(options: Options = {}): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
       await pg.unsafe(createTransactionCompletionSchemaPG);
@@ -206,16 +210,15 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, name: string, config?: PostgresTransactionOptions) {
-    return await runTransaction(callback, name, { dsName: this.name, config });
+  async runTransaction<T>(callback: () => Promise<T>, config?: PostgresTransactionOptions) {
+    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: PostgresTransactionOptions,
-    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   transaction(config?: PostgresTransactionOptions) {
@@ -230,7 +233,7 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, { name: String(propertyKey), ...config });
 
       return descriptor;
     };

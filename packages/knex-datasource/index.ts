@@ -27,7 +27,7 @@ interface KnexDataSourceContext {
   client: Knex.Transaction;
 }
 
-export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'>;
+export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'> & { name?: string };
 
 const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
@@ -201,7 +201,7 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     return ctx.client;
   }
 
-  static async initializeSchema(knexOrConfig: Knex.Config) {
+  static async initializeDBOSSchema(knexOrConfig: Knex.Config) {
     if (isKnex(knexOrConfig)) {
       await $initSchema(knexOrConfig);
     } else {
@@ -219,7 +219,7 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
   }
 
-  static async uninitializeSchema(knexOrConfig: Knex.Config) {
+  static async uninitializeDBOSSchema(knexOrConfig: Knex.Config) {
     if (isKnex(knexOrConfig)) {
       await $uninitSchema(knexOrConfig);
     } else {
@@ -246,16 +246,15 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(callback: () => Promise<T>, config?: TransactionConfig) {
+    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: TransactionConfig,
-    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   transaction(config?: TransactionConfig) {
@@ -270,7 +269,7 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, { name: String(propertyKey), ...config });
 
       return descriptor;
     };

@@ -16,6 +16,10 @@ import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
 
+export interface TypeORMTransactionConfig extends PGTransactionConfig {
+  name?: string;
+}
+
 interface DBOSTypeOrmLocalCtx {
   entityManager: EntityManager;
 }
@@ -219,7 +223,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   }
 }
 
-export class TypeOrmDataSource implements DBOSDataSource<PGTransactionConfig> {
+export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfig> {
   // User calls this... DBOS not directly involved...
   static get entityManager(): EntityManager {
     if (!DBOS.isInTransaction()) {
@@ -233,7 +237,7 @@ export class TypeOrmDataSource implements DBOSDataSource<PGTransactionConfig> {
     return ctx.entityManager;
   }
 
-  static async initializeInternalSchema(config: PoolConfig): Promise<void> {
+  static async initializeDBOSSchema(config: PoolConfig): Promise<void> {
     const ds = await TypeOrmTransactionHandler.createInstance(config, []);
     try {
       await ds.query(createTransactionCompletionSchemaPG);
@@ -262,8 +266,8 @@ export class TypeOrmDataSource implements DBOSDataSource<PGTransactionConfig> {
    * @param config Transaction configuration (isolation, etc)
    * @returns Return value from `callback`
    */
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: PGTransactionConfig) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(callback: () => Promise<T>, config?: TypeORMTransactionConfig) {
+    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
   }
 
   /**
@@ -277,16 +281,15 @@ export class TypeOrmDataSource implements DBOSDataSource<PGTransactionConfig> {
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: PGTransactionConfig,
-    name?: string,
+    config?: TypeORMTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   /**
    * Decorator establishing function as a transaction
    */
-  transaction(config?: PGTransactionConfig) {
+  transaction(config?: TypeORMTransactionConfig) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
@@ -298,7 +301,7 @@ export class TypeOrmDataSource implements DBOSDataSource<PGTransactionConfig> {
         throw new Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, { name: String(propertyKey), ...config });
 
       return descriptor;
     };

@@ -19,9 +19,10 @@ import { sql } from 'drizzle-orm';
 
 interface DrizzleLocalCtx {
   client: NodePgDatabase<{ [key: string]: object }>;
+  owner: DrizzleTransactionHandler;
 }
 
-export type TransactionConfig = Pick<PgTransactionConfig, 'isolationLevel' | 'accessMode'>;
+export type TransactionConfig = Pick<PgTransactionConfig, 'isolationLevel' | 'accessMode'> & { name?: string };
 
 const asyncLocalCtx = new AsyncLocalStorage<DrizzleLocalCtx>();
 
@@ -163,7 +164,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
         const result = await this.#drizzle.transaction(
           async (client) => {
             // execute user's transaction function
-            const result = await asyncLocalCtx.run({ client }, async () => {
+            const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
               return await func.call(target, ...args);
             });
 
@@ -211,7 +212,7 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
     return ctx.client;
   }
 
-  static async initializeInternalSchema(config: ClientConfig): Promise<void> {
+  static async initializeDBOSSchema(config: ClientConfig): Promise<void> {
     const client = new Client(config);
     try {
       await client.connect();
@@ -233,16 +234,15 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(callback: () => Promise<T>, config?: TransactionConfig) {
+    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: TransactionConfig,
-    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   // decorator
@@ -258,7 +258,7 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
         throw new Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, { name: String(propertyKey), ...config });
 
       return descriptor;
     };

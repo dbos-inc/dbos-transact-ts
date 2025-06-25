@@ -9,7 +9,7 @@ import {
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
-  PGTransactionConfig as NodePostgresTransactionOptions,
+  PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
@@ -19,6 +19,10 @@ import { SuperJSON } from 'superjson';
 
 interface NodePostgresDataSourceContext {
   client: ClientBase;
+}
+
+interface NodePostgresTransactionOptions extends PGTransactionConfig {
+  name?: string;
 }
 
 export { NodePostgresTransactionOptions };
@@ -217,7 +221,7 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     return ctx.client;
   }
 
-  static async initializeInternalSchema(config: ClientConfig): Promise<void> {
+  static async initializeDBOSSchema(config: ClientConfig): Promise<void> {
     const client = new Client(config);
     try {
       await client.connect();
@@ -238,16 +242,15 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(callback: () => Promise<T>, config?: NodePostgresTransactionOptions) {
+    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: NodePostgresTransactionOptions,
-    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   transaction(config?: NodePostgresTransactionOptions) {
@@ -262,7 +265,7 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, { name: String(propertyKey), ...config });
 
       return descriptor;
     };

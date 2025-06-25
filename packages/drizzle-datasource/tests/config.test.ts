@@ -17,7 +17,7 @@ describe('DrizzleDataSource.configure', () => {
   });
 
   test('configure creates tx outputs table', async () => {
-    await DrizzleDataSource.initializeInternalSchema(config);
+    await DrizzleDataSource.initializeDBOSSchema(config);
 
     const client = new Client(config);
     try {
