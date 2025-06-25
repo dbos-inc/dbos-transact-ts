@@ -169,7 +169,7 @@ suite('kafkajs-receive', async () => {
       const client = new Client({ user: 'postgres', database: 'postgres' });
       try {
         await client.connect();
-        Promise.all([dropDB(client, 'kafka_recv_test', true), dropDB(client, 'kafka_recv_test_dbos_sys', true)]);
+        await Promise.all([dropDB(client, 'kafka_recv_test', true), dropDB(client, 'kafka_recv_test_dbos_sys', true)]);
       } finally {
         await client.end();
       }
