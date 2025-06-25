@@ -1,7 +1,7 @@
 {
   "name": "@dbos-inc/confluent-kafka-receive",
   "version": "0.0.0-placeholder",
-  "description": "DBOS event reciever for Kafka using KafkaJS",
+  "description": "DBOS event reciever for Kafka using the Confluent JavaScript Client for Apache Kafka",
   "license": "MIT",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",

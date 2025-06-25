@@ -33,6 +33,8 @@ function isKafkaError(e: unknown): e is KafkaError {
   return false;
 }
 
+export type ConsumerTopics = string | RegExp | Array<string | RegExp>;
+
 export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
   readonly #consumers = new Array<KafkaJS.Consumer>();
 
@@ -124,11 +126,30 @@ export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
     }
   }
 
-  eventConsumer(
-    topics: string | RegExp | Array<string | RegExp>,
-    queueName?: string,
-    config?: KafkaJS.ConsumerConstructorConfig,
+  registerConsumer<This, Args extends unknown[], Return>(
+    func: (this: This, ...args: Args) => Promise<Return>,
+    topics: ConsumerTopics,
+    options: {
+      classOrInst?: object;
+      className?: string;
+      name?: string;
+      queueName?: string;
+      config?: KafkaJS.ConsumerConstructorConfig;
+    } = {},
   ) {
+    const { regInfo } = DBOS.associateFunctionWithInfo(this, func, {
+      classOrInst: options.classOrInst,
+      className: options.className,
+      name: options.name ?? func.name,
+    });
+
+    const kafkaRegInfo = regInfo as KafkaMethodConfig;
+    kafkaRegInfo.topics = Array.isArray(topics) ? topics : [topics];
+    kafkaRegInfo.queueName = options.queueName;
+    kafkaRegInfo.config = options.config;
+  }
+
+  consumer(topics: ConsumerTopics, options: { queueName?: string; config?: KafkaJS.ConsumerConstructorConfig } = {}) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const $this = this;
     function methodDecorator<This, Args extends [string, number, KafkaJS.Message], Return>(
@@ -137,15 +158,12 @@ export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       if (descriptor.value) {
-        const { regInfo } = DBOS.associateFunctionWithInfo($this, descriptor.value, {
+        $this.registerConsumer(descriptor.value, topics, {
           classOrInst: target,
           name: String(propertyKey),
+          queueName: options.queueName,
+          config: options.config,
         });
-
-        const kafkaRegInfo = regInfo as KafkaMethodConfig;
-        kafkaRegInfo.topics = Array.isArray(topics) ? topics : [topics];
-        kafkaRegInfo.queueName = queueName;
-        kafkaRegInfo.config = config;
       }
       return descriptor;
     }

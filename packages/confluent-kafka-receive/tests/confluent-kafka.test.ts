@@ -63,34 +63,42 @@ function waitForMessage(
 class KafkaTestClass {
   static readonly emitter = new KafkaEmitter();
 
-  @kafkaReceiver.eventConsumer('string-topic')
+  @kafkaReceiver.consumer('string-topic')
   @DBOS.workflow()
   static async stringTopic(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
     await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'stringTopic', topic, partition, message);
   }
 
-  @kafkaReceiver.eventConsumer(/^regex-topic-.*/)
+  @kafkaReceiver.consumer(/^regex-topic-.*/)
   @DBOS.workflow()
   static async regexTopic(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
     await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'regexTopic', topic, partition, message);
   }
 
-  @kafkaReceiver.eventConsumer(['a-topic', 'b-topic'])
+  @kafkaReceiver.consumer(['a-topic', 'b-topic'])
   @DBOS.workflow()
   static async stringArrayTopic(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
     await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'stringArrayTopic', topic, partition, message);
   }
 
-  @kafkaReceiver.eventConsumer([/^z-topic-.*/, /^y-topic-.*/])
+  @kafkaReceiver.consumer([/^z-topic-.*/, /^y-topic-.*/])
   @DBOS.workflow()
   static async regexArrayTopic(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
     await Promise.resolve();
     KafkaTestClass.emitter.emit('message', 'regexArrayTopic', topic, partition, message);
   }
+
+  static async registeredConsumer(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
+    await Promise.resolve();
+    KafkaTestClass.emitter.emit('message', 'registeredConsumer', topic, partition, message);
+  }
 }
+
+KafkaTestClass.registeredConsumer = DBOS.registerWorkflow(KafkaTestClass.registeredConsumer, 'registeredConsumer');
+kafkaReceiver.registerConsumer(KafkaTestClass.registeredConsumer, 'registered-topic');
 
 async function validateKafka(config: KafkaConfig) {
   const kafka = new Kafka(config);
@@ -177,6 +185,7 @@ suite('confluent-kafka-receive', async () => {
     { topic: 'b-topic', functionName: 'stringArrayTopic' },
     { topic: 'z-topic-foo', functionName: 'regexArrayTopic' },
     { topic: 'y-topic-foo', functionName: 'regexArrayTopic' },
+    { topic: 'registered-topic', functionName: 'registeredConsumer' },
   ];
 
   before(async () => {
@@ -197,8 +206,10 @@ suite('confluent-kafka-receive', async () => {
     const client = new Client({ user: 'postgres', database: 'postgres' });
     try {
       await client.connect();
-      await dropDB(client, 'conf_kafka_recv_test', true);
-      await dropDB(client, 'conf_kafka_recv_test_dbos_sys', true);
+      await Promise.all([
+        dropDB(client, 'conf_kafka_recv_test', true),
+        dropDB(client, 'conf_kafka_recv_test_dbos_sys', true),
+      ]);
     } finally {
       await client.end();
     }

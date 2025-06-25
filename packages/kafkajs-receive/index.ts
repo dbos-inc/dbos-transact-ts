@@ -27,13 +27,6 @@ function safeGroupName(className: string, methodName: string, topics: Array<stri
 
 export type ConsumerTopics = string | RegExp | Array<string | RegExp>;
 
-export type ConsumerOptions = {
-  queueName?: string;
-  config?: ConsumerConfig;
-};
-
-type AnyConstructor = new (...args: unknown[]) => object;
-
 export class KafkaReceiver extends DBOSLifecycleCallback {
   readonly #consumers = new Array<Consumer>();
 
@@ -143,7 +136,7 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
     kafkaRegInfo.config = options.config;
   }
 
-  consumer(topics: ConsumerTopics, { queueName, config }: ConsumerOptions = {}) {
+  consumer(topics: ConsumerTopics, options: { queueName?: string; config?: ConsumerConfig } = {}) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const $this = this;
     function methodDecorator<This, Args extends [string, number, KafkaMessage], Return>(
@@ -155,8 +148,8 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
         $this.registerConsumer(descriptor.value, topics, {
           classOrInst: target,
           name: String(propertyKey),
-          queueName,
-          config,
+          queueName: options.queueName,
+          config: options.config,
         });
       }
       return descriptor;

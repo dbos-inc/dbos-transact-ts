@@ -161,23 +161,15 @@ suite('kafkajs-receive', async () => {
       }
 
       const kafka = new Kafka(kafkaConfig);
-
-      // Create topics used in tests
-      // As per https://kafka.js.org/docs/consuming:
-      //    When supplying a regular expression, the consumer will not match topics created after the subscription.
-      //    If your broker has topic-A and topic-B, you subscribe to /topic-.*/, then topic-C is created,
-      //    your consumer would not be automatically subscribed to topic-C.
-      const topics = testCases.map((tc) => tc.topic);
-      await setupTopics(kafka, topics);
-
       producer = kafka.producer();
-      await producer.connect();
+
+      const topics = testCases.map((tc) => tc.topic);
+      await Promise.all([setupTopics(kafka, topics), producer.connect()]);
 
       const client = new Client({ user: 'postgres', database: 'postgres' });
       try {
         await client.connect();
-        await dropDB(client, 'kafka_recv_test', true);
-        await dropDB(client, 'kafka_recv_test_dbos_sys', true);
+        Promise.all([dropDB(client, 'kafka_recv_test', true), dropDB(client, 'kafka_recv_test_dbos_sys', true)]);
       } finally {
         await client.end();
       }
