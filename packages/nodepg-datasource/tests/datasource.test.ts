@@ -347,7 +347,7 @@ async function errorFunction(user: string) {
 }
 
 async function readFunction(user: string) {
-  const { rows } = await NodePostgresDataSource.client.query<Pick<greetings, 'greet_count'>>(
+  const { rows } = await dataSource.client.query<Pick<greetings, 'greet_count'>>(
     `SELECT greet_count
      FROM greetings
      WHERE name = $1`,

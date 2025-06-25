@@ -356,7 +356,7 @@ async function errorFunction(user: string) {
 }
 
 async function readFunction(user: string) {
-  const result = await TypeOrmDataSource.entityManager.findOneBy(Greeting, { name: user });
+  const result = await dataSource.entityManager.findOneBy(Greeting, { name: user });
 
   return { user, greet_count: result?.greet_count, now: Date.now() };
 }

@@ -19,6 +19,7 @@ import { SuperJSON } from 'superjson';
 
 interface NodePostgresDataSourceContext {
   client: ClientBase;
+  owner: NodePostgresTransactionHandler;
 }
 
 interface NodePostgresTransactionOptions extends PGTransactionConfig {
@@ -172,7 +173,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
       try {
         const result = await this.#transaction<Return>(async (client) => {
           // execute user's transaction function
-          const result = await asyncLocalCtx.run({ client }, async () => {
+          const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
             return (await func.call(target, ...args)) as Return;
           });
 
@@ -210,15 +211,26 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
 }
 
 export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransactionOptions> {
-  static get client(): ClientBase {
+  static getClient(p?: NodePostgresTransactionHandler): ClientBase {
     if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+    }
+    if (p && p !== ctx.owner) {
+      throw new Error('Use of `NodePostgresDataSource.client` from the wrong object');
     }
     return ctx.client;
+  }
+
+  static get client() {
+    return NodePostgresDataSource.getClient(undefined);
+  }
+
+  get client() {
+    return NodePostgresDataSource.getClient(this.#provider);
   }
 
   static async initializeDBOSSchema(config: ClientConfig): Promise<void> {

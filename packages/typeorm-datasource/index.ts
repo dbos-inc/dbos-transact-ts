@@ -22,6 +22,7 @@ export interface TypeORMTransactionConfig extends PGTransactionConfig {
 
 interface DBOSTypeOrmLocalCtx {
   entityManager: EntityManager;
+  owner: TypeOrmTransactionHandler;
 }
 
 const asyncLocalCtx = new AsyncLocalStorage<DBOSTypeOrmLocalCtx>();
@@ -185,7 +186,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
             await entityManager.query('SET TRANSACTION READ ONLY');
           }
 
-          const result = await asyncLocalCtx.run({ entityManager: entityManager }, async () => {
+          const result = await asyncLocalCtx.run({ entityManager: entityManager, owner: this }, async () => {
             return await func.call(target, ...args);
           });
 
@@ -225,7 +226,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
 
 export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfig> {
   // User calls this... DBOS not directly involved...
-  static get entityManager(): EntityManager {
+  static getEntityManager(p?: TypeOrmTransactionHandler): EntityManager {
     if (!DBOS.isInTransaction()) {
       throw new Error('Invalid use of TypeOrmDataSource.entityManager outside of a DBOS transaction');
     }
@@ -233,8 +234,19 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     if (!ctx) {
       throw new Error('Invalid use of TypeOrmDataSource.entityManager outside of a DBOS transaction');
     }
+    if (p && p !== ctx.owner) {
+      throw new Error('Invalid retrieval of `TypeOrmDataSource.entityManager` from the wrong instance');
+    }
 
     return ctx.entityManager;
+  }
+
+  static get entityManager() {
+    return TypeOrmDataSource.getEntityManager(undefined);
+  }
+
+  get entityManager() {
+    return TypeOrmDataSource.getEntityManager(this.#provider);
   }
 
   static async initializeDBOSSchema(config: PoolConfig): Promise<void> {

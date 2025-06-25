@@ -329,10 +329,11 @@ export interface greetings {
 }
 
 async function insertFunction(user: string) {
-  const rows = await KnexDataSource.client<greetings>('greetings')
+  const rows = await dataSource
+    .client<greetings>('greetings')
     .insert({ name: user, greet_count: 1 })
     .onConflict('name')
-    .merge({ greet_count: KnexDataSource.client.raw('greetings.greet_count + 1') })
+    .merge({ greet_count: dataSource.client.raw('greetings.greet_count + 1') })
     .returning('greet_count');
   const row = rows.length > 0 ? rows[0] : undefined;
 

@@ -363,7 +363,7 @@ async function errorFunction(user: string) {
 }
 
 async function readFunction(user: string) {
-  const result = await DrizzleDataSource.client
+  const result = await dataSource.client
     .select({ greet_count: greetingsTable.greet_count })
     .from(greetingsTable)
     .where(eq(greetingsTable.name, user));

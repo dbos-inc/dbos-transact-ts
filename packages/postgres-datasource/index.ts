@@ -26,6 +26,7 @@ export { IsolationLevel, PostgresTransactionOptions };
 
 interface PostgresDataSourceContext {
   client: postgres.TransactionSql;
+  owner: PostgresTransactionHandler;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -146,7 +147,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
       try {
         const result = await this.#db.begin<Return>(`${isolationLevel} ${accessMode}`, async (client) => {
           // execute user's transaction function
-          const result = await asyncLocalCtx.run({ client }, async () => {
+          const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
             return (await func.call(target, ...args)) as Return;
           });
 
@@ -179,15 +180,26 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 }
 
 export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOptions> {
-  static get client(): postgres.TransactionSql {
+  static getClient(p?: PostgresTransactionHandler): postgres.TransactionSql {
     if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of PostgresDataSource.client outside of a DBOS transaction.');
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of PostgresDataSource.client outside of a DBOS transaction.');
+    }
+    if (p && p !== ctx.owner) {
+      throw new Error('Invalid retrieval of `PostgresDataSource.client` from the wrong instance.');
     }
     return ctx.client;
+  }
+
+  static get client() {
+    return PostgresDataSource.getClient(undefined);
+  }
+
+  get client() {
+    return PostgresDataSource.getClient(this.#provider);
   }
 
   static async initializeDBOSSchema(options: Options = {}): Promise<void> {
