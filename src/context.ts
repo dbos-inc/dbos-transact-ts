@@ -153,6 +153,7 @@ export async function runWithStepContext<R>(
 
   return await asyncLocalCtx.run(
     {
+      ...pctx,
       ctx,
       stepStatus: stepStatus,
       workflowId: ctx.workflowUUID,
@@ -164,9 +165,11 @@ export async function runWithStepContext<R>(
 }
 
 export async function runWithWorkflowContext<R>(ctx: WorkflowContext, callback: () => Promise<R>) {
+  const pctx = getCurrentContextStore() ?? {};
   // TODO: Check context, this could be a child workflow?
   return await asyncLocalCtx.run(
     {
+      ...pctx,
       ctx,
       workflowId: ctx.workflowUUID,
     },
