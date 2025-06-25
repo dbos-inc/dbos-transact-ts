@@ -11,7 +11,7 @@ This package is based on the [Confluent JavaScript Client for Apache Kafka](http
 
 ## Configuring a Confluent Kafka Receiver
 
-First, ensure that the DBOS KafkaJS Receiver package is installed into the application:
+First, ensure that the DBOS Confluent Kafka Receiver package is installed into the application:
 
 ```
 npm install --save @dbos-inc/confluent-kafka-receive
@@ -144,53 +144,6 @@ class KafkaTestClass {
   }
 }
 ```
-
-### Imports
-
-First, ensure that the package classes are imported:
-
-```typescript
-import { KafkaConfig, logLevel, KafkaProduceStep, Partitioners } from '@dbos-inc/dbos-kafkajs';
-```
-
-### Selecting A Configuration
-
-`KafkaProduceStep` is a configured class. This means that the configuration (or config file key name) must be provided when a class instance is created, for example:
-
-```typescript
-const kafkaConfig: KafkaConfig = {
-  clientId: 'dbos-kafka-test',
-  brokers: [`${process.env['KAFKA_BROKER'] ?? 'localhost:9092'}`],
-  requestTimeout: 100, // FOR TESTING
-  retry: {
-    // FOR TESTING
-    retries: 5,
-  },
-  logLevel: logLevel.NOTHING, // FOR TESTING
-};
-
-kafkaCfg = new KafkaProduceStep('defKafka', kafkaConfig, defTopic, {
-  createPartitioner: Partitioners.DefaultPartitioner,
-});
-```
-
-### Sending
-
-Within a [DBOS Workflow](https://docs.dbos.dev/typescript/tutorials/workflow-tutorial), call the `KafkaProduceStep` function from a workflow:
-
-```typescript
-const sendRes = await kafkaCfg.send({ value: ourMessage });
-```
-
-## Receiving Messages
-
-A tutorial for receiving and processing Kafka messages can be found [here](https://docs.dbos.dev/typescript/tutorials/requestsandevents/kafka-integration). This library provides an alternate implementation of the Kafka consumer that can be updated independently of the DBOS Transact core packages.
-
-## Simple Testing
-
-The `kafkajs.test.ts` file included in the source repository demonstrates sending and processing Kafka messages. Before running, set the following environment variables:
-
-- `KAFKA_BROKER`: Broker URL
 
 ## Next Steps
 
