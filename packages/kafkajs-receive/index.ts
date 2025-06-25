@@ -25,6 +25,15 @@ function safeGroupName(className: string, methodName: string, topics: Array<stri
   return `dbos-kafka-group-${safeGroupIdPart}`.slice(0, 255);
 }
 
+export type ConsumerTopics = string | RegExp | Array<string | RegExp>;
+
+export type ConsumerOptions = {
+  queueName?: string;
+  config?: ConsumerConfig;
+};
+
+type AnyConstructor = new (...args: unknown[]) => object;
+
 export class KafkaReceiver extends DBOSLifecycleCallback {
   readonly #consumers = new Array<Consumer>();
 
@@ -111,7 +120,30 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
     }
   }
 
-  eventConsumer(topics: string | RegExp | Array<string | RegExp>, queueName?: string, config?: ConsumerConfig) {
+  registerConsumer<This, Args extends unknown[], Return>(
+    func: (this: This, ...args: Args) => Promise<Return>,
+    topics: ConsumerTopics,
+    options: {
+      classOrInst?: object;
+      className?: string;
+      name?: string;
+      queueName?: string;
+      config?: ConsumerConfig;
+    } = {},
+  ) {
+    const { regInfo } = DBOS.associateFunctionWithInfo(this, func, {
+      classOrInst: options.classOrInst,
+      className: options.className,
+      name: options.name ?? func.name,
+    });
+
+    const kafkaRegInfo = regInfo as KafkaMethodConfig;
+    kafkaRegInfo.topics = Array.isArray(topics) ? topics : [topics];
+    kafkaRegInfo.queueName = options.queueName;
+    kafkaRegInfo.config = options.config;
+  }
+
+  consumer(topics: ConsumerTopics, { queueName, config }: ConsumerOptions = {}) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const $this = this;
     function methodDecorator<This, Args extends [string, number, KafkaMessage], Return>(
@@ -120,15 +152,12 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       if (descriptor.value) {
-        const { regInfo } = DBOS.associateFunctionWithInfo($this, descriptor.value, {
+        $this.registerConsumer(descriptor.value, topics, {
           classOrInst: target,
           name: String(propertyKey),
+          queueName,
+          config,
         });
-
-        const kafkaRegInfo = regInfo as KafkaMethodConfig;
-        kafkaRegInfo.topics = Array.isArray(topics) ? topics : [topics];
-        kafkaRegInfo.queueName = queueName;
-        kafkaRegInfo.config = config;
       }
       return descriptor;
     }
