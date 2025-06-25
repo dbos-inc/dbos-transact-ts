@@ -183,19 +183,16 @@ const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);
 
 export function interceptStreams(onMessage: (msg: string, stream: 'stdout' | 'stderr') => void) {
-  const intercept = (
-    stream: 'stdout' | 'stderr',
-    originalWrite: (chunk: Uint8Array | string, encoding?: BufferEncoding, cb?: (err?: Error) => void) => boolean,
-  ) => {
+  const intercept = (stream: 'stdout' | 'stderr', originalWrite: typeof process.stdout.write) => {
     return (
       chunk: Uint8Array | string,
-      encodingOrCb?: BufferEncoding | ((err?: Error) => void),
-      cb?: (err?: Error) => void,
+      encodingOrCb?: BufferEncoding | ((err?: Error | null) => void),
+      cb?: (err?: Error | null) => void,
     ): boolean => {
       const message = chunk.toString();
       onMessage(message, stream);
       if (typeof encodingOrCb === 'function') {
-        return originalWrite(chunk, undefined, encodingOrCb); // Handle case where encodingOrCb is a callback
+        return originalWrite(chunk, encodingOrCb); // Handle case where encodingOrCb is a callback
       } else {
         return originalWrite(chunk, encodingOrCb as BufferEncoding, cb); // Handle case where encodingOrCb is a BufferEncoding
       }
