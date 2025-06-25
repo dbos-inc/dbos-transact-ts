@@ -13,7 +13,6 @@ import {
 } from 'kafkajs';
 import { DBOS, ConfiguredInstance, DBOSEventReceiver } from '@dbos-inc/dbos-sdk';
 import { associateClassWithEventReceiver, associateMethodWithEventReceiver } from '@dbos-inc/dbos-sdk';
-import { TransactionFunction } from '@dbos-inc/dbos-sdk';
 import { WorkflowFunction } from '@dbos-inc/dbos-sdk';
 import { Error as DBOSError } from '@dbos-inc/dbos-sdk';
 import { DBOSExecutorContext } from '@dbos-inc/dbos-sdk';
@@ -111,7 +110,7 @@ export class DBOSKafka implements DBOSEventReceiver {
               if (method.txnConfig) {
                 // Execute the transaction
                 await this.executor!.transaction(
-                  method.registeredFunction as TransactionFunction<unknown[], unknown>,
+                  method.registeredFunction as (...args: unknown[]) => Promise<unknown>,
                   wfParams,
                   ...args,
                 );

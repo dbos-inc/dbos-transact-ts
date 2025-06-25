@@ -8,8 +8,6 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 
 /** @deprecated */
 export type Transaction<T extends unknown[], R> = (ctxt: TransactionContext<any>, ...args: T) => Promise<R>;
-/** @deprecated */
-export type TransactionFunction<T extends unknown[], R> = Transaction<T, R>;
 
 /**
  * Configuration for `@DBOS.transaction` functions

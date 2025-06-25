@@ -4,7 +4,6 @@ import { bodyParser } from '@koa/bodyparser';
 import cors from '@koa/cors';
 import { HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
-import { Transaction } from '../transaction';
 import { Workflow, GetWorkflowsInput, GetQueuedWorkflowsInput } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor, OperationType } from '../dbos-executor';
@@ -757,7 +756,7 @@ export class DBOSHttpServer {
           await runWithTopContext(dctx, async () => {
             if (ro.txnConfig) {
               koaCtxt.body = await dbosExec.transaction(
-                ro.registeredFunction as Transaction<unknown[], unknown>,
+                ro.registeredFunction as (...args: unknown[]) => Promise<unknown>,
                 wfParams,
                 ...args,
               );

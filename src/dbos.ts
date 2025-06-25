@@ -79,7 +79,7 @@ import {
   UserDatabaseClient,
   UserDatabaseName,
 } from './user_database';
-import { TransactionConfig, TransactionFunction } from './transaction';
+import { TransactionConfig } from './transaction';
 
 import Koa from 'koa';
 import { Application as ExpressApp } from 'express';
@@ -1511,8 +1511,14 @@ export class DBOS {
         return DBOSExecutor.globalInstance!.internalWorkflow(func, wfParams, workflowID, funcNum, ...args);
       }
       if (regOP.txnConfig) {
-        const func = regOP.registeredFunction as TransactionFunction<Args, Return>;
-        return DBOSExecutor.globalInstance!.startTransactionTempWF(func, wfParams, workflowID, funcNum, ...args);
+        const func = regOP.registeredFunction;
+        return DBOSExecutor.globalInstance!.startTransactionTempWF(
+          func as (...args: Args) => Promise<Return>,
+          wfParams,
+          workflowID,
+          funcNum,
+          ...args,
+        );
       }
       if (regOP.stepConfig) {
         const func = regOP.registeredFunction as StepFunction<Args, Return>;
@@ -1584,7 +1590,7 @@ export class DBOS {
 
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callTransactionFunction(
-            registration.registeredFunction as unknown as TransactionFunction<Args, Return>,
+            registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
             inst ?? null,
             wfctx,
             ...rawArgs,
@@ -1622,7 +1628,7 @@ export class DBOS {
         };
 
         return await DBOS.#executor.transaction(
-          registration.registeredFunction as unknown as TransactionFunction<Args, Return>,
+          registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
           wfParams,
           ...rawArgs,
         );

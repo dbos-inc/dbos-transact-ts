@@ -664,7 +664,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return { wfInfo, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
 
-  getTransactionInfo(tf: Transaction<unknown[], unknown>) {
+  getTransactionInfo<T extends unknown[], R>(tf: (...args: T) => Promise<R>) {
     const tfname = getRegisteredMethodClassName(tf) + '.' + tf.name;
     return this.transactionInfoMap.get(tfname);
   }
@@ -1109,12 +1109,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return rows;
   }
 
-  async transaction<T extends unknown[], R>(txn: Transaction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async transaction<T extends unknown[], R>(
+    txn: (...args: T) => Promise<R>,
+    params: WorkflowParams,
+    ...args: T
+  ): Promise<R> {
     return await (await this.startTransactionTempWF(txn, params, undefined, undefined, ...args)).getResult();
   }
 
   async startTransactionTempWF<T extends unknown[], R>(
-    txn: Transaction<T, R>,
+    txn: (...args: T) => Promise<R>,
     params: InternalWorkflowParams,
     callerUUID?: string,
     callerFunctionID?: number,
@@ -1140,12 +1144,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async callTransactionFunction<T extends unknown[], R>(
-    txn: Transaction<T, R>,
+    txn: (...args: T) => Promise<R>,
     clsinst: ConfiguredInstance | null,
     wfCtx: WorkflowContextImpl,
     ...args: T
   ): Promise<R> {
-    const txnInfo = this.getTransactionInfo(txn as Transaction<unknown[], unknown>);
+    const txnInfo = this.getTransactionInfo(txn);
     if (txnInfo === undefined) {
       throw new DBOSNotRegisteredError(txn.name);
     }
@@ -1235,12 +1239,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
                 sqlClient: client,
               },
               async () => {
-                if (txnInfo.registration.passContext) {
-                  return await txn.call(clsinst, tCtxt, ...args);
-                } else {
-                  const tf = txn as unknown as (...args: T) => Promise<R>;
-                  return await tf.call(clsinst, ...args);
-                }
+                const tf = txn as unknown as (...args: T) => Promise<R>;
+                return await tf.call(clsinst, ...args);
               },
             );
           } catch (e) {
@@ -2162,7 +2162,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
 
       return await this.startTransactionTempWF(
-        txnInfo.transaction,
+        txnInfo.transaction as (...args: unknown[]) => Promise<unknown>,
         {
           workflowUUID: workflowStartID,
           parentCtx: parentCtx ?? undefined,

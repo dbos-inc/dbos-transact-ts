@@ -9,7 +9,6 @@ import type {
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
-import type { TransactionFunction } from './transaction';
 import type { MethodRegistrationBase } from './decorators';
 import type { StepFunction } from './step';
 import type { Notification } from 'pg';
@@ -66,7 +65,7 @@ export interface DBOSExecutorContext {
    * Invoke a transaction function.
    *  Note that functions can be called directly instead of using this interface.
    */
-  transaction<T extends unknown[], R>(txn: TransactionFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+  transaction<T extends unknown[], R>(txn: (...args: T) => Promise<R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   /**
    * Invoke a workflow function.

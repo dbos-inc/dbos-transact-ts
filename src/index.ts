@@ -27,7 +27,7 @@ export * as Error from './error';
 
 export { DBOSResponseError, DBOSWorkflowConflictError } from './error';
 
-export { TransactionConfig, TransactionFunction } from './transaction';
+export { TransactionConfig } from './transaction';
 
 export { StoredProcedureConfig } from './procedure';
 

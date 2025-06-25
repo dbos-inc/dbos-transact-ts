@@ -5,7 +5,6 @@ import {
   DBOSEventReceiver,
   DBOSExecutorContext,
   WorkflowFunction,
-  TransactionFunction,
   associateClassWithEventReceiver,
   associateMethodWithEventReceiver,
 } from '@dbos-inc/dbos-sdk';
@@ -102,7 +101,7 @@ export class DBOSConfluentKafka implements DBOSEventReceiver {
               if (method.txnConfig) {
                 // Execute the transaction
                 await this.executor!.transaction(
-                  method.registeredFunction as TransactionFunction<unknown[], unknown>,
+                  method.registeredFunction as (...args: unknown[]) => Promise<unknown>,
                   wfParams,
                   ...args,
                 );
