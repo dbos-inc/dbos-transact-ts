@@ -1224,6 +1224,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
             return await runWithTopContext(
               {
                 ...parentCtx!,
+                authenticatedRoles: wfCtx.authenticatedRoles ?? parentCtx?.authenticatedRoles,
+                authenticatedUser: wfCtx.authenticatedUser ?? parentCtx?.authenticatedUser,
                 ctx: undefined,
                 workflowId: wfCtx.workflowUUID,
                 curTxFunctionId: funcId,
