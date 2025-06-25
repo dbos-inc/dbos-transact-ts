@@ -553,6 +553,8 @@ export class DBOS {
   static get logger(): DLogger {
     const ctx = getCurrentDBOSContext();
     if (ctx) return ctx.logger;
+    const lctx = getCurrentContextStore();
+    if (lctx?.logger) return lctx.logger;
     const executor = DBOSExecutor.globalInstance;
     if (executor) return executor.logger;
     return new GlobalLogger();

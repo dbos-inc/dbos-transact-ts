@@ -22,6 +22,7 @@ export interface DBOSContextOptions {
   idAssignedForNextWorkflow?: string;
   queueAssignedForWorkflows?: string;
   span?: Span;
+  logger?: DBOSLogger;
   authenticatedUser?: string;
   authenticatedRoles?: string[];
   assumedRole?: string;
@@ -122,6 +123,21 @@ export async function runWithTopContext<R>(ctx: DBOSLocalCtx, callback: () => Pr
   return await asyncLocalCtx.run(ctx, callback);
 }
 
+export async function runWithParentContext<R>(
+  pctx: DBOSLocalCtx,
+  ctx: DBOSLocalCtx,
+  callback: () => Promise<R>,
+): Promise<R> {
+  return await asyncLocalCtx.run(
+    {
+      ...pctx,
+      workflowTimeoutMS: undefined, // Becomes deadline
+      ...ctx,
+    },
+    callback,
+  );
+}
+
 export async function runWithDataSourceContext<R>(callnum: number, callback: () => Promise<R>) {
   // Check we are in a workflow context and not in a step / transaction already
   const pctx = getCurrentContextStore() ?? {};
@@ -170,6 +186,7 @@ export async function runWithWorkflowContext<R>(ctx: WorkflowContext, callback: 
   return await asyncLocalCtx.run(
     {
       ...pctx,
+      workflowTimeoutMS: undefined, // Use D/L
       ctx,
       workflowId: ctx.workflowUUID,
     },

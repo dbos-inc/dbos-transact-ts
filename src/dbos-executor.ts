@@ -80,7 +80,7 @@ import {
   runWithStepContext,
   getNextWFID,
   functionIDGetIncrement,
-  runWithTopContext,
+  runWithParentContext,
   getCurrentContextStore,
   isInWorkflowCtx,
 } from './context';
@@ -1221,9 +1221,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const parentCtx = getCurrentContextStore();
         const result = await (async function () {
           try {
-            return await runWithTopContext(
+            return await runWithParentContext(
+              parentCtx!,
               {
-                ...parentCtx!,
                 authenticatedRoles: wfCtx.authenticatedRoles ?? parentCtx?.authenticatedRoles,
                 authenticatedUser: wfCtx.authenticatedUser ?? parentCtx?.authenticatedUser,
                 ctx: undefined,
@@ -1462,9 +1462,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
             const pctx = getCurrentContextStore();
             if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
             if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
-            return await runWithTopContext(
+            return await runWithParentContext(
+              pctx,
               {
-                ...pctx,
                 ctx: undefined,
                 curTxFunctionId: funcId,
                 parentCtx: pctx,
@@ -1721,11 +1721,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
     ...args: T
   ): Promise<R> {
     stepFnName = stepFnName ?? stepFn.name ?? '<unnamed>';
-    let passContext = false;
     if (!stepConfig) {
       const stepReg = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
       stepConfig = stepReg?.config;
-      passContext = stepReg?.registration.passContext ?? true;
     }
     if (stepConfig === undefined) {
       throw new DBOSNotRegisteredError(stepFnName);
@@ -1799,16 +1797,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
           await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
 
           let cresult: R | undefined;
-          if (passContext) {
-            await runWithStepContext(ctxt, numAttempts, async () => {
-              cresult = await stepFn.call(clsInst, ctxt, ...args);
-            });
-          } else {
-            await runWithStepContext(ctxt, numAttempts, async () => {
-              const sf = stepFn as unknown as (...args: T) => Promise<R>;
-              cresult = await sf.call(clsInst, ...args);
-            });
-          }
+          await runWithStepContext(ctxt, numAttempts, async () => {
+            const sf = stepFn as unknown as (...args: T) => Promise<R>;
+            cresult = await sf.call(clsInst, ...args);
+          });
           result = cresult!;
         } catch (error) {
           const e = error as Error;
@@ -1833,16 +1825,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       try {
         let cresult: R | undefined;
-        if (passContext) {
-          await runWithStepContext(ctxt, undefined, async () => {
-            cresult = await stepFn.call(clsInst, ctxt, ...args);
-          });
-        } else {
-          await runWithStepContext(ctxt, undefined, async () => {
-            const sf = stepFn as unknown as (...args: T) => Promise<R>;
-            cresult = await sf.call(clsInst, ...args);
-          });
-        }
+        await runWithStepContext(ctxt, undefined, async () => {
+          const sf = stepFn as unknown as (...args: T) => Promise<R>;
+          cresult = await sf.call(clsInst, ...args);
+        });
         result = cresult!;
       } catch (error) {
         err = error as Error;
