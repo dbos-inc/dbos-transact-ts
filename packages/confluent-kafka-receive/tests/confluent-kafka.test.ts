@@ -4,17 +4,16 @@ import assert from 'node:assert/strict';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client } from 'pg';
 import { dropDB, withTimeout } from './test-helpers';
-import { Kafka, KafkaConfig, Producer } from 'kafkajs';
+import { Kafka, KafkaConfig, Producer, Admin, ConfigResourceTypes } from 'kafkajs';
 import { EventEmitter } from 'node:events';
 import { ConfluentKafkaReceiver } from '..';
 import { KafkaJS as ConfluentKafkaJS } from '@confluentinc/kafka-javascript';
 
 const kafkaConfig = {
-  clientId: 'dbos-kafka-test',
+  clientId: 'dbos-conf-kafka-test',
   brokers: [process.env['KAFKA_BROKER'] ?? 'localhost:9092'],
-  requestTimeout: 100,
   retry: { retries: 5 },
-  logLevel: 0,
+  logLevel: 2,
 };
 
 const kafkaReceiver = new ConfluentKafkaReceiver(kafkaConfig);
@@ -109,33 +108,67 @@ async function validateKafka(config: KafkaConfig) {
   }
 }
 
-async function setupTopics(kafka: Kafka, topics: string[]) {
-  const admin = kafka.admin();
-  try {
-    await admin.connect();
-    // Delete and recreate topics to ensure a clean state
-    const existingTopics = await admin.listTopics();
-    const topicsToDelete = topics.filter((t) => existingTopics.includes(t));
-    await admin.deleteTopics({ topics: topicsToDelete, timeout: 5000 });
+async function createTopics(admin: Admin, topics: string[]) {
+  const existingTopics = await admin.listTopics();
+  const topicsToCreate = topics.filter((t) => !existingTopics.includes(t));
+  await admin.createTopics({
+    topics: topicsToCreate.map((t) => ({
+      topic: t,
+      numPartitions: 1,
+      replicationFactor: 1,
+    })),
+    timeout: 5000,
+  });
+}
 
-    await new Promise((r) => setTimeout(r, 3000));
-    await admin.createTopics({
-      topics: topics.map((t) => ({
-        topic: t,
-        numPartitions: 1,
-        replicationFactor: 1,
-      })),
-      timeout: 5000,
-    });
-  } finally {
-    await admin.disconnect();
-  }
+async function purgeTopic(admin: Admin, topic: string) {
+  const { resources } = await admin.describeConfigs({
+    includeSynonyms: false,
+    resources: [
+      {
+        type: ConfigResourceTypes.TOPIC,
+        name: topic,
+        configNames: ['retention.ms'],
+      },
+    ],
+  });
+
+  const resource = resources.find((r) => r.resourceName === topic);
+  const configEntry = (resource?.configEntries ?? []).find((ce) => ce.configName === 'retention.ms');
+  const retentionMS = configEntry?.configValue ?? '604800000';
+
+  await admin.alterConfigs({
+    validateOnly: false,
+    resources: [
+      {
+        type: ConfigResourceTypes.TOPIC,
+        name: topic,
+        configEntries: [{ name: 'retention.ms', value: '0' }],
+      },
+    ],
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 2000));
+
+  await admin.alterConfigs({
+    validateOnly: false,
+    resources: [
+      {
+        type: ConfigResourceTypes.TOPIC,
+        name: topic,
+        configEntries: [{ name: 'retention.ms', value: retentionMS }],
+      },
+    ],
+  });
+
+  await new Promise((resolve) => setTimeout(resolve, 2000));
 }
 
 // eslint-disable-next-line @typescript-eslint/no-floating-promises
 suite('confluent-kafka-receive', async () => {
   const kafkaAvailable = await validateKafka(kafkaConfig);
   let producer: Producer | undefined = undefined;
+  let admin: Admin | undefined = undefined;
 
   const testCases = [
     { topic: 'string-topic', functionName: 'stringTopic' },
@@ -146,67 +179,57 @@ suite('confluent-kafka-receive', async () => {
     { topic: 'y-topic-foo', functionName: 'regexArrayTopic' },
   ];
 
-  before(
-    async () => {
-      if (!kafkaAvailable) {
-        return;
-      }
+  before(async () => {
+    if (!kafkaAvailable) {
+      return;
+    }
 
-      const kafka = new Kafka(kafkaConfig);
+    const kafka = new Kafka(kafkaConfig);
+    producer = kafka.producer();
+    admin = kafka.admin();
+    await Promise.all([producer.connect(), admin.connect()]);
 
-      // Create topics used in tests
-      // As per https://kafka.js.org/docs/consuming:
-      //    When supplying a regular expression, the consumer will not match topics created after the subscription.
-      //    If your broker has topic-A and topic-B, you subscribe to /topic-.*/, then topic-C is created,
-      //    your consumer would not be automatically subscribed to topic-C.
-      const topics = testCases.map((tc) => tc.topic);
-      await setupTopics(kafka, topics);
+    await createTopics(
+      admin,
+      testCases.map((tc) => tc.topic),
+    );
 
-      producer = kafka.producer();
-      await producer.connect();
+    const client = new Client({ user: 'postgres', database: 'postgres' });
+    try {
+      await client.connect();
+      await dropDB(client, 'conf_kafka_recv_test', true);
+      await dropDB(client, 'conf_kafka_recv_test_dbos_sys', true);
+    } finally {
+      await client.end();
+    }
+  });
 
-      const client = new Client({ user: 'postgres', database: 'postgres' });
-      try {
-        await client.connect();
-        await dropDB(client, 'conf_kafka_recv_test', true);
-        await dropDB(client, 'conf_kafka_recv_test_dbos_sys', true);
-      } finally {
-        await client.end();
-      }
-    },
-    { timeout: 30000 },
-  );
-
-  after(
-    async () => {
-      await producer?.disconnect();
-    },
-    { timeout: 30000 },
-  );
+  after(async () => {
+    await admin?.disconnect();
+    await producer?.disconnect();
+  });
 
   beforeEach(async () => {
-    if (producer) {
+    if (kafkaAvailable) {
       DBOS.setConfig({ name: 'conf-kafka-recv-test' });
       DBOS.registerLifecycleCallback(kafkaReceiver);
       await DBOS.launch();
     }
   });
 
-  afterEach(
-    async () => {
-      if (producer) {
-        await DBOS.shutdown();
-      }
-    },
-    { timeout: 30000 },
-  );
+  afterEach(async () => {
+    if (kafkaAvailable) {
+      await DBOS.shutdown();
+    }
+  });
 
   for (const { functionName, topic } of testCases) {
     // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    test(`${topic}-${functionName}`, { skip: !kafkaAvailable, timeout: 40000 }, async () => {
+    test(`${topic}-${functionName}`, { skip: !kafkaAvailable, timeout: 125000 }, async () => {
+      await purgeTopic(admin!, topic);
       const message = `test-message-${Date.now()}`;
       await producer!.send({ topic, messages: [{ value: message }] });
-      const result = await waitForMessage(KafkaTestClass.emitter, functionName, topic);
+      const result = await waitForMessage(KafkaTestClass.emitter, functionName, topic, 120000);
 
       assert.equal(topic, result.topic);
       assert.equal(message, String(result.message.value));
