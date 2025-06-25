@@ -12,7 +12,7 @@
     "directory": "packages/confluent-kafka-receive"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
+    "build": "tsc --project tsconfig.build.json",
     "pretest": "npm run build",
     "test": "tsx --test tests/*.test.ts"
   },
