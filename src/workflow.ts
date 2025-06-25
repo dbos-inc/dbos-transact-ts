@@ -3,8 +3,7 @@ import { DBOSExecutor, OperationType } from './dbos-executor';
 import { StepFunction } from './step';
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { DBOSContext, DBOSContextImpl, functionIDGetIncrement } from './context';
-import { ConfiguredInstance, getRegisteredOperations } from './decorators';
-import { WorkflowQueue } from './wfqueue';
+import { ConfiguredInstance } from './decorators';
 import { DBOSJSON } from './utils';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
@@ -130,30 +129,6 @@ export const StatusString = {
   ENQUEUED: 'ENQUEUED',
 } as const;
 
-type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
-export type WfInvokeWfs<T> = {
-  [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-};
-export type WfInvokeWfsAsync<T> = {
-  [P in keyof T]: T[P] extends WFFunc
-    ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>>
-    : never;
-};
-
-export type WfInvokeWfsInst<T> = T extends ConfiguredInstance
-  ? {
-      [P in keyof T]: T[P] extends WFFunc ? (...args: TailParameters<T[P]>) => ReturnType<T[P]> : never;
-    }
-  : never;
-
-export type WfInvokeWfsInstAsync<T> = T extends ConfiguredInstance
-  ? {
-      [P in keyof T]: T[P] extends WFFunc
-        ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>>
-        : never;
-    }
-  : never;
-
 /**
  * @deprecated This class is no longer necessary
  * To update to Transact 2.0+
@@ -162,13 +137,6 @@ export type WfInvokeWfsInstAsync<T> = T extends ConfiguredInstance
  *   Adjust callers to call the function directly, or to use `DBOS.startWorkflow`
  */
 export interface WorkflowContext extends DBOSContext {
-  startWorkflow<T extends ConfiguredInstance>(
-    targetClass: T,
-    workflowUUID?: string,
-    queue?: WorkflowQueue,
-  ): WfInvokeWfsInstAsync<T>;
-  startWorkflow<T extends object>(targetClass: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T>;
-
   send<T>(destinationID: string, message: T, topic?: string): Promise<void>;
   recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
   setEvent<T>(key: string, value: T): Promise<void>;
@@ -215,69 +183,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
     this.applicationConfig = dbosExec.config.application;
     this.maxRecoveryAttempts = workflowConfig.maxRecoveryAttempts ? workflowConfig.maxRecoveryAttempts : 50;
-  }
-
-  /**
-   * Generate a proxy object for the provided class that wraps direct calls (i.e. OpClass.someMethod(param))
-   * to use WorkflowContext.Transaction(OpClass.someMethod, param);
-   */
-  proxyInvokeWF<T extends object>(
-    object: T,
-    workflowUUID: string | undefined,
-    asyncWf: boolean,
-    configuredInstance: ConfiguredInstance | null,
-    queue?: WorkflowQueue,
-  ): WfInvokeWfsAsync<T> {
-    const ops = getRegisteredOperations(object);
-    const proxy: Record<string, unknown> = {};
-
-    const funcId = functionIDGetIncrement();
-    const childUUID = workflowUUID || this.workflowUUID + '-' + funcId;
-
-    const params = { workflowUUID: childUUID, parentCtx: this, configuredInstance, queueName: queue?.name };
-
-    for (const op of ops) {
-      if (asyncWf) {
-        proxy[op.name] = op.workflowConfig
-          ? (...args: unknown[]) =>
-              this.#dbosExec.internalWorkflow(
-                op.registeredFunction as Workflow<unknown[], unknown>,
-                params,
-                this.workflowUUID,
-                funcId,
-                ...args,
-              )
-          : undefined;
-      } else {
-        proxy[op.name] = op.workflowConfig
-          ? (...args: unknown[]) =>
-              this.#dbosExec
-                .internalWorkflow(
-                  op.registeredFunction as Workflow<unknown[], unknown>,
-                  params,
-                  this.workflowUUID,
-                  funcId,
-                  ...args,
-                )
-                .then((handle) => handle.getResult())
-          : undefined;
-      }
-    }
-    return proxy as WfInvokeWfsAsync<T>;
-  }
-
-  startWorkflow<T extends object>(target: T, workflowUUID?: string, queue?: WorkflowQueue): WfInvokeWfsAsync<T> {
-    if (typeof target === 'function') {
-      return this.proxyInvokeWF(target, workflowUUID, true, null, queue) as unknown as WfInvokeWfsAsync<T>;
-    } else {
-      return this.proxyInvokeWF(
-        target,
-        workflowUUID,
-        true,
-        target as ConfiguredInstance,
-        queue,
-      ) as unknown as WfInvokeWfsAsync<T>;
-    }
   }
 
   // TODO: ConfiguredInstance support
