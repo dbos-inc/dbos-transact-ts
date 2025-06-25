@@ -4,7 +4,6 @@ import { StepFunction } from './step';
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { DBOSContext, DBOSContextImpl, functionIDGetIncrement } from './context';
 import { ConfiguredInstance, getRegisteredOperations } from './decorators';
-import { StoredProcedure } from './procedure';
 import { WorkflowQueue } from './wfqueue';
 import { DBOSJSON } from './utils';
 import { DBOS, runInternalStep } from './dbos';
@@ -282,7 +281,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   }
 
   // TODO: ConfiguredInstance support
-  async procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, ...args: T): Promise<R> {
+  async procedure<T extends unknown[], R>(proc: (...args: T) => Promise<R>, ...args: T): Promise<R> {
     return this.#dbosExec.callProcedureFunction(proc, this, ...args);
   }
 

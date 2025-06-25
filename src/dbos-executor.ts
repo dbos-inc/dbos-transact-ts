@@ -13,6 +13,7 @@ import {
   DBOSUnexpectedStepError,
   DBOSInvalidQueuePriorityError,
   DBOSAwaitedWorkflowCancelledError,
+  DBOSInvalidWorkflowTransitionError,
 } from './error';
 import {
   InvokedHandle,
@@ -77,17 +78,17 @@ import {
   DBOSContextImpl,
   runWithWorkflowContext,
   runWithStepContext,
-  runWithStoredProcContext,
   getNextWFID,
   functionIDGetIncrement,
   runWithTopContext,
   getCurrentContextStore,
+  isInWorkflowCtx,
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
 import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
-import { StoredProcedure, StoredProcedureConfig, StoredProcedureContextImpl } from './procedure';
+import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
 import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
 
@@ -165,7 +166,7 @@ export enum DebugMode {
 }
 
 interface WorkflowRegInfo {
-  workflow: Workflow<unknown[], unknown>;
+  workflow: (...args: unknown[]) => Promise<unknown>;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   workflowOrigFunction: Function;
   config: WorkflowConfig;
@@ -179,13 +180,13 @@ interface TransactionRegInfo {
 }
 
 interface StepRegInfo {
-  step: StepFunction<unknown[], unknown>;
+  step: (...args: unknown[]) => Promise<unknown>;
   config: StepConfig;
   registration: MethodRegistrationBase;
 }
 
 interface ProcedureRegInfo {
-  procedure: StoredProcedure<unknown[], unknown>;
+  procedure: (...args: unknown[]) => Promise<unknown>;
   config: StoredProcedureConfig;
   registration: MethodRegistrationBase;
 }
@@ -584,7 +585,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /* WORKFLOW OPERATIONS */
 
   #registerWorkflow(ro: MethodRegistrationBase) {
-    const wf = ro.registeredFunction as Workflow<unknown[], unknown>;
+    const wf = ro.registeredFunction as (...args: unknown[]) => Promise<unknown>;
     if (wf.name === DBOSExecutor.tempWorkflowName) {
       throw new DBOSError(`Unexpected use of reserved workflow name: ${wf.name}`);
     }
@@ -619,7 +620,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerStep(ro: MethodRegistrationBase) {
-    const comm = ro.registeredFunction as StepFunction<unknown[], unknown>;
+    const comm = ro.registeredFunction as (...args: unknown[]) => Promise<unknown>;
     const cfn = ro.className + '.' + ro.name;
     if (this.stepInfoMap.has(cfn)) {
       throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
@@ -634,7 +635,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerProcedure(ro: MethodRegistrationBase) {
-    const proc = ro.registeredFunction as StoredProcedure<unknown[], unknown>;
+    const proc = ro.registeredFunction as (...args: unknown[]) => Promise<unknown>;
     const cfn = ro.className + '.' + ro.name;
 
     if (this.procedureInfoMap.has(cfn)) {
@@ -694,11 +695,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return { commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName) };
   }
 
-  getProcedureClassName<T extends unknown[], R>(pf: StoredProcedure<T, R>) {
+  getProcedureClassName<T extends unknown[], R>(pf: (...args: T) => Promise<R>) {
     return getRegisteredMethodClassName(pf);
   }
 
-  getProcedureInfo<T extends unknown[], R>(pf: StoredProcedure<T, R>) {
+  getProcedureInfo<T extends unknown[], R>(pf: (...args: T) => Promise<R>) {
     const pfName = getRegisteredMethodClassName(pf) + '.' + pf.name;
     return this.procedureInfoMap.get(pfName);
   }
@@ -1330,7 +1331,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async procedure<T extends unknown[], R>(
+    proc: (...args: T) => Promise<R>,
+    params: WorkflowParams,
+    ...args: T
+  ): Promise<R> {
     // Create a workflow and call procedure.
     const temp_workflow = async (ctxt: WorkflowContext, ...args: T) => {
       const ctxtImpl = ctxt as WorkflowContextImpl;
@@ -1351,7 +1356,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async callProcedureFunction<T extends unknown[], R>(
-    proc: StoredProcedure<T, R>,
+    proc: (...args: T) => Promise<R>,
     wfCtx: WorkflowContextImpl,
     ...args: T
   ): Promise<R> {
@@ -1394,7 +1399,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async #callProcedureFunctionLocal<T extends unknown[], R>(
-    proc: StoredProcedure<T, R>,
+    proc: (...args: T) => Promise<R>,
     args: T,
     wfCtx: WorkflowContextImpl,
     span: Span,
@@ -1410,8 +1415,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       let txn_snapshot = 'invalid';
       const wrappedProcedure = async (client: PoolClient): Promise<R> => {
-        const ctxt = new StoredProcedureContextImpl(client, wfCtx, span, this.logger, funcId, proc.name);
-
         let prevResult: R | Error | DBOSNull = dbosNull;
         const queryFunc = <T>(sql: string, args: unknown[]) =>
           this.procedurePool.query(sql, args).then((v) => v.rows as T[]);
@@ -1425,7 +1428,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           prevResult = executionResult.result;
           txn_snapshot = executionResult.txn_snapshot;
           if (prevResult !== dbosNull) {
-            ctxt.span.setAttribute('cached', true);
+            span.setAttribute('cached', true);
 
             if (this.debugMode === DebugMode.TIME_TRAVEL) {
               // for time travel debugging, navigate the proxy to the time of this transaction's snapshot
@@ -1453,14 +1456,23 @@ export class DBOSExecutor implements DBOSExecutorContext {
         // Execute the user's transaction.
         const result = await (async function () {
           try {
-            return await runWithStoredProcContext(ctxt, async () => {
-              if (procInfo.registration.passContext) {
-                return await proc(ctxt, ...args);
-              } else {
+            // Check we are in a workflow context and not in a step / transaction already
+            const pctx = getCurrentContextStore();
+            if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
+            if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
+            return await runWithTopContext(
+              {
+                ...pctx,
+                ctx: undefined,
+                curTxFunctionId: funcId,
+                parentCtx: pctx,
+                isInStoredProc: true,
+              },
+              async () => {
                 const pf = proc as unknown as (...args: T) => Promise<R>;
                 return await pf(...args);
-              }
-            });
+              },
+            );
           } catch (e) {
             return e instanceof Error ? e : new Error(`${e as any}`);
           }
@@ -1497,7 +1509,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         );
 
         // const pg_txn_id = await wfCtx.recordOutputProc<R>(client, funcId, txn_snapshot, result);
-        ctxt.span.setAttribute('pg_txn_id', pg_txn_id);
+        span.setAttribute('pg_txn_id', pg_txn_id);
 
         return result;
       };
@@ -1561,7 +1573,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async #callProcedureFunctionRemote<T extends unknown[], R>(
-    proc: StoredProcedure<T, R>,
+    proc: (...args: T) => Promise<R>,
     args: T,
     wfCtx: WorkflowContextImpl,
     span: Span,
@@ -1595,7 +1607,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return_value: { output?: R; error?: unknown; txn_id?: string; txn_snapshot?: string; created_at?: number };
     };
     const [{ return_value }] = await this.#invokeStoredProc<ReturnValue>(
-      proc as StoredProcedure<unknown[], unknown>,
+      proc as (...args: unknown[]) => Promise<unknown>,
       $args,
     );
 
@@ -1615,7 +1627,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async #invokeStoredProc<R extends QueryResultRow = any>(
-    proc: StoredProcedure<unknown[], unknown>,
+    proc: (...args: unknown[]) => Promise<unknown>,
     args: unknown[],
   ): Promise<R[]> {
     const client = await this.procedurePool.connect();

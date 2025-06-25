@@ -12,7 +12,6 @@ import type {
 import type { MethodRegistrationBase } from './decorators';
 import type { StepFunction } from './step';
 import type { Notification } from 'pg';
-import type { StoredProcedure } from './procedure';
 
 export type DBNotification = Notification;
 export type DBNotificationCallback = (n: DBNotification) => void;
@@ -89,7 +88,7 @@ export interface DBOSExecutorContext {
    * Invoke a stored procedure function.
    *  Note that functions can be called directly instead of using this interface.
    */
-  procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+  procedure<T extends unknown[], R>(proc: (...args: T) => Promise<R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   /**
    * Send a messsage to workflow with a given ID.

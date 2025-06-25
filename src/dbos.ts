@@ -93,7 +93,7 @@ import { Knex } from 'knex';
 import { StepConfig, StepFunction } from './step';
 import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
 import { ConfiguredInstance } from '.';
-import { StoredProcedure, StoredProcedureConfig } from './procedure';
+import { StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
@@ -1669,7 +1669,7 @@ export class DBOS {
         if (DBOS.isWithinWorkflow()) {
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callProcedureFunction(
-            registration.registeredFunction as unknown as StoredProcedure<Args, Return>,
+            registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
             wfctx,
             ...rawArgs,
           );
@@ -1706,7 +1706,7 @@ export class DBOS {
         };
 
         return await DBOS.#executor.procedure(
-          registration.registeredFunction as unknown as StoredProcedure<Args, Return>,
+          registration.registeredFunction as (...args: Args) => Promise<Return>,
           wfParams,
           ...rawArgs,
         );
