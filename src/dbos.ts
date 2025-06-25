@@ -27,7 +27,6 @@ import {
   RetrievedHandle,
   StepInfo,
   WorkflowConfig,
-  WorkflowContext,
   WorkflowFunction,
   WorkflowParams,
   WorkflowStatus,
