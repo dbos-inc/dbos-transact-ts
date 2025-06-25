@@ -87,7 +87,7 @@ export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
 
       await consumer.run({
         eachMessage: async ({ topic, partition, message }) => {
-          DBOS.logger.warn(
+          DBOS.logger.debug(
             `ConfluentKafkaReceiver message on topic ${topic} partition ${partition} offset ${message.offset}`,
           );
           try {

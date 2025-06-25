@@ -19,7 +19,7 @@ const kafkaConfig = {
 const kafkaReceiver = new KafkaReceiver(kafkaConfig);
 
 interface KafkaEvents {
-  message: (funcName: string, topic: string, partition: number, message: KafkaMessage) => void;
+  message: (functionName: string, topic: string, partition: number, message: KafkaMessage) => void;
 }
 
 class KafkaEmitter extends EventEmitter {
@@ -28,8 +28,7 @@ class KafkaEmitter extends EventEmitter {
   }
 
   override emit<K extends keyof KafkaEvents>(event: K, ...args: Parameters<KafkaEvents[K]>): boolean {
-    DBOS.logger.info(`KafkaEmitter topic ${args[1]} partition ${args[2]} offset ${args[3].offset}`);
-
+    DBOS.logger.info(`KafkaEmitter topic ${args[1]} partition ${args[2]}`);
     return super.emit(event, ...args);
   }
 }
