@@ -44,9 +44,7 @@ class KafkaExample {
   }
 }
 
-KafkaExample.registeredConsumerWorkflow = DBOS.registerWorkflow(KafkaExample.registeredConsumerWorkflow, {
-  name: 'registeredConsumerWorkflow',
-});
+KafkaExample.registeredConsumerWorkflow = DBOS.registerWorkflow(KafkaExample.registeredConsumerWorkflow);
 kafkaReceiver.registerConsumer(KafkaExample.registeredConsumerWorkflow, 'another-example-topic');
 ```
 
@@ -77,9 +75,7 @@ class KafkaExample {
   }
 }
 
-KafkaExample.registeredConsumerWorkflow = DBOS.registerWorkflow(KafkaExample.registeredConsumerWorkflow, {
-  name: 'registeredConsumerWorkflow',
-});
+KafkaExample.registeredConsumerWorkflow = DBOS.registerWorkflow(KafkaExample.registeredConsumerWorkflow);
 kafkaReceiver.registerConsumer(KafkaExample.registeredConsumerWorkflow, 'another-example-topic', {
   config: { groupId: 'custom-group-id' },
 });
@@ -103,9 +99,7 @@ class KafkaExample {
   }
 }
 
-KafkaExample.registeredConsumerWorkflow = DBOS.registerWorkflow(KafkaExample.registeredConsumerWorkflow, {
-  name: 'registeredConsumerWorkflow',
-});
+KafkaExample.registeredConsumerWorkflow = DBOS.registerWorkflow(KafkaExample.registeredConsumerWorkflow);
 kafkaReceiver.registerConsumer(KafkaExample.registeredConsumerWorkflow, 'another-example-topic', {
   queueName: 'example-queue',
 });

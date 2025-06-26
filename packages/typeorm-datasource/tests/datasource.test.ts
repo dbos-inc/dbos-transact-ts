@@ -435,11 +435,11 @@ async function instanceWorkflow(user: string) {
   return [result, readResult];
 }
 
-const regInsertWorkflowReg = DBOS.registerWorkflow(insertWorkflowReg, { name: 'insertWorkflowReg' });
-const regInsertWorkflowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx, { name: 'insertWorkflowRunTx' });
-const regErrorWorkflowReg = DBOS.registerWorkflow(errorWorkflowReg, { name: 'errorWorkflowReg' });
-const regErrorWorkflowRunTx = DBOS.registerWorkflow(errorWorkflowRunTx, { name: 'errorWorkflowRunTx' });
-const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg, { name: 'readWorkflowReg' });
-const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx, { name: 'readWorkflowRunTx' });
-const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow, { name: 'staticWorkflow' });
-const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow, { name: 'instanceWorkflow' });
+const regInsertWorkflowReg = DBOS.registerWorkflow(insertWorkflowReg);
+const regInsertWorkflowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx);
+const regErrorWorkflowReg = DBOS.registerWorkflow(errorWorkflowReg);
+const regErrorWorkflowRunTx = DBOS.registerWorkflow(errorWorkflowRunTx);
+const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg);
+const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx);
+const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow);
+const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow);

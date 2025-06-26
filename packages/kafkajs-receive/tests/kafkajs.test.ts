@@ -97,9 +97,7 @@ class KafkaTestClass {
   }
 }
 
-KafkaTestClass.registeredConsumer = DBOS.registerWorkflow(KafkaTestClass.registeredConsumer, {
-  name: 'registeredConsumer',
-});
+KafkaTestClass.registeredConsumer = DBOS.registerWorkflow(KafkaTestClass.registeredConsumer);
 kafkaReceiver.registerConsumer(KafkaTestClass.registeredConsumer, 'registered-topic');
 
 async function validateKafka(config: KafkaConfig) {

@@ -36,7 +36,9 @@ async function sendMessageInternal(msg: MessageWithOptionalQueueUrl) {
   }
 }
 
-const sendMessageStep = DBOS.registerStep(sendMessageInternal, { name: 'Send SQS Message' });
+const sendMessageStep = DBOS.registerStep(sendMessageInternal, {
+  name: 'Send SQS Message',
+});
 
 const sqsReceiver = new SQSReceiver({
   client: createSQS,
