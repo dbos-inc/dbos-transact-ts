@@ -3,17 +3,17 @@ const { ConfiguredInstance, DBOS } = require('../src');
 const { generateDBOSTestConfig, setUpDBOSTestDb } = require('./helpers');
 const { DBOSInvalidWorkflowTransitionError } = require('../src/error');
 
-async function stepFunctionGuts() {
+async function stepFunctionInternal() {
   expect(DBOS.isInStep()).toBe(true);
   expect(DBOS.isWithinWorkflow()).toBe(true);
   return Promise.resolve('My second step result');
 }
 
-const stepFunction = DBOS.registerStep(stepFunctionGuts, {
+const stepFunction = DBOS.registerStep(stepFunctionInternal, {
   name: 'MySecondStep',
 });
 
-async function wfFunctionGuts() {
+async function wfFunctionInternal() {
   const p1 = await DBOS.runStep(async () => Promise.resolve('My first step result'), { name: 'MyFirstStep' });
 
   const p2 = await stepFunction();
@@ -21,7 +21,7 @@ async function wfFunctionGuts() {
   return p1 + '|' + p2;
 }
 
-const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
+const wfFunction = DBOS.registerWorkflow(wfFunctionInternal, { name: 'workflow' });
 
 describe('decoratorless-api-basic-tests', () => {
   let config;
@@ -88,7 +88,7 @@ async function classStepsWFFuncGuts() {
   return `${rv1}-${rv2}`;
 }
 
-const classStepsWF = DBOS.registerWorkflow(classStepsWFFuncGuts, 'classStepsWF');
+const classStepsWF = DBOS.registerWorkflow(classStepsWFFuncGuts, { name: 'classStepsWF' });
 
 describe('decoratorless-api-class-tests', () => {
   let config;
@@ -152,19 +152,17 @@ class StaticAndInstanceWFs extends ConfiguredInstance {
 const wfi34 = new StaticAndInstanceWFs(4, 3);
 const wfi56 = new StaticAndInstanceWFs(6, 5);
 
-StaticAndInstanceWFs.staticWF = DBOS.registerWorkflow(StaticAndInstanceWFs.staticWF, 'staticWF', {
-  classOrInst: StaticAndInstanceWFs,
+StaticAndInstanceWFs.staticWF = DBOS.registerWorkflow(StaticAndInstanceWFs.staticWF, {
+  name: 'staticWF',
+  ctorOrProto: StaticAndInstanceWFs,
   className: 'StaticAndInstanceWFs',
 });
 
-StaticAndInstanceWFs.prototype.instanceWF = DBOS.registerWorkflow(
-  StaticAndInstanceWFs.prototype.instanceWF,
-  'instanceWF',
-  {
-    classOrInst: StaticAndInstanceWFs,
-    className: 'StaticAndInstanceWFs',
-  },
-);
+StaticAndInstanceWFs.prototype.instanceWF = DBOS.registerWorkflow(StaticAndInstanceWFs.prototype.instanceWF, {
+  name: 'instanceWF',
+  ctorOrProto: StaticAndInstanceWFs,
+  className: 'StaticAndInstanceWFs',
+});
 
 describe('decoratorless-api-class-tests', () => {
   let config;
@@ -223,7 +221,7 @@ async function argsWFFuncGuts(a, b) {
   return `${a}-${b}`;
 }
 
-const argsWF = DBOS.registerWorkflow(argsWFFuncGuts, 'argsWF');
+const argsWF = DBOS.registerWorkflow(argsWFFuncGuts, { name: 'argsWF' });
 
 async function stepFuncBare() {
   expect(DBOS.isWithinWorkflow()).toBe(false);

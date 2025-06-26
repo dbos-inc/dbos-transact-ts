@@ -131,7 +131,7 @@ export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
     func: (this: This, ...args: Args) => Promise<Return>,
     topics: ConsumerTopics,
     options: {
-      classOrInst?: object;
+      ctorOrProto?: object;
       className?: string;
       name?: string;
       queueName?: string;
@@ -139,7 +139,7 @@ export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
     } = {},
   ) {
     const { regInfo } = DBOS.associateFunctionWithInfo(this, func, {
-      classOrInst: options.classOrInst,
+      ctorOrProto: options.ctorOrProto,
       className: options.className,
       name: options.name ?? func.name,
     });
@@ -160,7 +160,7 @@ export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
     ) {
       if (descriptor.value) {
         $this.registerConsumer(descriptor.value, topics, {
-          classOrInst: target,
+          ctorOrProto: target,
           name: String(propertyKey),
           queueName: options.queueName,
           config: options.config,

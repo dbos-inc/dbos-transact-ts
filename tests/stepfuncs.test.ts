@@ -38,7 +38,7 @@ async function wfFunctionGuts() {
 
 // Workflow functions must always be registered before launch; this
 //  allows recovery to occur.
-const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
+const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, { name: 'workflow' });
 
 describe('decoratorless-api-basic-tests', () => {
   let config: DBOSConfig;
@@ -109,7 +109,7 @@ async function classStepsWFFuncGuts() {
   return `${rv1}-${rv2}`;
 }
 
-const classStepsWF = DBOS.registerWorkflow(classStepsWFFuncGuts, 'classStepsWF');
+const classStepsWF = DBOS.registerWorkflow(classStepsWFFuncGuts, { name: 'classStepsWF' });
 
 // runAsStep no config instance
 describe('decoratorless-api-class-tests', () => {
@@ -177,17 +177,18 @@ class StaticAndInstanceWFs extends ConfiguredInstance {
 const wfi34 = new StaticAndInstanceWFs(4, 3);
 const wfi56 = new StaticAndInstanceWFs(6, 5);
 
-StaticAndInstanceWFs.staticWF = DBOS.registerWorkflow(StaticAndInstanceWFs.staticWF, 'staticWF', {
-  classOrInst: StaticAndInstanceWFs,
+StaticAndInstanceWFs.staticWF = DBOS.registerWorkflow(StaticAndInstanceWFs.staticWF, {
+  name: 'staticWF',
+  ctorOrProto: StaticAndInstanceWFs,
   className: 'StaticAndInstanceWFs',
 });
 
 StaticAndInstanceWFs.prototype.instanceWF = DBOS.registerWorkflow(
   // eslint-disable-next-line @typescript-eslint/unbound-method
   StaticAndInstanceWFs.prototype.instanceWF,
-  'instanceWF',
   {
-    classOrInst: StaticAndInstanceWFs,
+    name: 'instanceWF',
+    ctorOrProto: StaticAndInstanceWFs,
     className: 'StaticAndInstanceWFs',
   },
 );
@@ -259,7 +260,7 @@ async function argsWFFuncGuts(a: number, b: string) {
   return Promise.resolve(`${a}-${b}`);
 }
 
-const argsWF = DBOS.registerWorkflow(argsWFFuncGuts, 'argsWF');
+const argsWF = DBOS.registerWorkflow(argsWFFuncGuts, { name: 'argsWF' });
 
 async function stepFuncBare() {
   // expect(DBOS.isInStep()).toBe(true); // TODO should be true
