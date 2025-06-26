@@ -25,9 +25,10 @@ interface transaction_completion {
 
 interface KnexDataSourceContext {
   client: Knex.Transaction;
+  owner: KnexTransactionHandler;
 }
 
-export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'>;
+export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'> & { name?: string };
 
 const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
@@ -151,7 +152,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
         const result = await this.#knexDB.transaction<Return>(
           async (client) => {
             // execute user's transaction function
-            const result = await asyncLocalCtx.run({ client }, async () => {
+            const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
               return (await func.call(target, ...args)) as Return;
             });
 
@@ -190,7 +191,7 @@ function isKnex(value: Knex | Knex.Config): value is Knex {
 }
 
 export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
-  static get client(): Knex.Transaction {
+  static #getClient(p?: KnexTransactionHandler) {
     if (!DBOS.isInTransaction()) {
       throw new Error('invalid use of KnexDataSource.client outside of a DBOS transaction.');
     }
@@ -198,10 +199,19 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     if (!ctx) {
       throw new Error('invalid use of KnexDataSource.client outside of a DBOS transaction.');
     }
+    if (p && p !== ctx.owner) throw new Error('Request of `KnexDataSource.client` from the wrong object.');
     return ctx.client;
   }
 
-  static async initializeSchema(knexOrConfig: Knex.Config) {
+  static get client(): Knex.Transaction {
+    return KnexDataSource.#getClient(undefined);
+  }
+
+  get client(): Knex.Transaction {
+    return KnexDataSource.#getClient(this.#provider);
+  }
+
+  static async initializeDBOSSchema(knexOrConfig: Knex.Config) {
     if (isKnex(knexOrConfig)) {
       await $initSchema(knexOrConfig);
     } else {
@@ -219,7 +229,7 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
   }
 
-  static async uninitializeSchema(knexOrConfig: Knex.Config) {
+  static async uninitializeDBOSSchema(knexOrConfig: Knex.Config) {
     if (isKnex(knexOrConfig)) {
       await $uninitSchema(knexOrConfig);
     } else {
@@ -246,16 +256,15 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: TransactionConfig) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: TransactionConfig,
-    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   transaction(config?: TransactionConfig) {
@@ -270,7 +279,10 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, {
+        ...config,
+        name: config?.name ?? String(propertyKey),
+      });
 
       return descriptor;
     };

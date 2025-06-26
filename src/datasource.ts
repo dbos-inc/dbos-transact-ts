@@ -40,7 +40,7 @@ export interface DataSourceTransactionHandler {
  * This is the suggested interface guideline for presenting to the end user, but not
  *   strictly required.
  */
-export interface DBOSDataSource<Config> {
+export interface DBOSDataSource<Config extends { name?: string }> {
   readonly name: string;
 
   /**
@@ -50,7 +50,7 @@ export interface DBOSDataSource<Config> {
    * @param name - Step name to show in the system database, traces, etc.
    * @param config - Transaction configuration options
    */
-  runTransaction<T>(callback: () => Promise<T>, name: string, config?: Config): Promise<T>;
+  runTransaction<T>(callback: () => Promise<T>, config?: Config): Promise<T>;
 
   /**
    * Register function as DBOS transaction, to be called within the context
@@ -66,7 +66,6 @@ export interface DBOSDataSource<Config> {
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: Config,
-    name?: string,
   ): (this: This, ...args: Args) => Promise<Return>;
 
   /**
@@ -83,18 +82,15 @@ export interface DBOSDataSource<Config> {
 
   // In addition to the named methods above, there should also be a way to get the
   //  strongly-typed transaction client object:
-  //   `static get whateverClient(): WhateverClient;`
+  //   `static get client(): WhateverClient;`
+  //   `get client(): WhateverClient;`
 
   // A way to initialize the internal schema used by the DS for transaction tracking
   //  This is only for testing, it should be documented how to create this entirely
   //  outside of DBOS.
-  //   `async initializeInternalSchema(): Promise<void>;`
+  //   `async initializeDBOSSchema(): Promise<void>;`
   //  or, it can be static, such as:
-  //   `static async initializeInternalSchema(options: Config)`
-
-  // A way to initialize the user's schema (for ORMs that are capable of this)
-  //  Again, this is only for testing, it should be doable entirely outside of DBOS
-  // `async createSchema(...)`
+  //   `static async initializeDBOSSchema(c: Config | Connection)`
 }
 
 /// Calling into DBOS
