@@ -245,7 +245,10 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, { name: String(propertyKey), ...config });
+      descriptor.value = ds.registerTransaction(descriptor.value, {
+        ...config,
+        name: config?.name ?? String(propertyKey),
+      });
 
       return descriptor;
     };
