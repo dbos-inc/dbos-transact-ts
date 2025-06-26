@@ -498,11 +498,11 @@ describe('running-admin-server-tests', () => {
       status: StatusString.SUCCESS,
     });
 
-    // Sleep 1 second
-    await sleepms(1000);
-
     // Record time between workflows (this will be used for filtering)
     const firstWorkflowTime = new Date().toISOString();
+
+    // Sleep 1 second
+    await sleepms(1000);
 
     // Run second workflow
     const handle2 = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(789);
