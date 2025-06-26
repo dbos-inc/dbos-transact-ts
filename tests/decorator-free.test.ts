@@ -37,7 +37,7 @@ function wfRegRetry(value: number) {
 
 const regWFRegStep = DBOS.registerWorkflow(wfRegStep, { name: 'wfRegStep' });
 const regWFRunStep = DBOS.registerWorkflow(wfRunStep, { name: 'wfRunStep' });
-const regWFRunRetry = DBOS.registerWorkflow(wfRegRetry, { name: 'wfRegRetry' });
+const regWFRunRetry = DBOS.registerWorkflow(wfRegRetry);
 
 class TestClass extends ConfiguredInstance {
   @DBOS.workflow()
@@ -564,7 +564,7 @@ describe('registerWorkflow-tests', () => {
       return DBOS.runStep(() => stepTest(value), { name: 'stepTest-runStep' });
     }
 
-    DBOS.registerWorkflow(workflow1, { name: 'workflow1' });
+    DBOS.registerWorkflow(workflow1);
     expect(() => DBOS.registerWorkflow(workflow2, { name: 'workflow1' })).toThrow(DBOSConflictingRegistrationError);
   });
 });
