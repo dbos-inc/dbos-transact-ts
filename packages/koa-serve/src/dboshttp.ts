@@ -88,7 +88,7 @@ export function isClientRequestError(e: Error) {
   return DBOSErrors.isDataValidationError(e);
 }
 
-export class DBOSHTTPBase extends DBOSLifecycleCallback {
+export class DBOSHTTPBase implements DBOSLifecycleCallback {
   static HTTP_OPERATION_TYPE: string = 'http';
 
   static get httpRequest(): DBOSHTTPRequest {
@@ -171,7 +171,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
     return arginfo?.argSource ?? ArgSources.AUTO;
   }
 
-  override logRegisteredEndpoints(): void {
+  logRegisteredEndpoints(): void {
     DBOS.logger.info('HTTP endpoints supported:');
     const eps = DBOS.getAssociatedInfo(this);
 

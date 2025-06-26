@@ -28,18 +28,17 @@ function safeGroupName(className: string, methodName: string, topics: Array<stri
 
 export type ConsumerTopics = string | RegExp | Array<string | RegExp>;
 
-export class KafkaReceiver extends DBOSLifecycleCallback {
+export class KafkaReceiver implements DBOSLifecycleCallback {
   readonly #consumers = new Array<Consumer>();
 
   constructor(
     private readonly config: KafkaConfig,
     private readonly retryConfig: KafkaRetryConfig = { maxRetries: 5, retryTime: 300, multiplier: 2 },
   ) {
-    super();
     DBOS.registerLifecycleCallback(this);
   }
 
-  override async initialize() {
+  async initialize() {
     const { maxRetries, multiplier } = this.retryConfig;
     const kafka = new KafkaJS(this.config);
 
@@ -97,12 +96,12 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
     }
   }
 
-  override async destroy() {
+  async destroy() {
     const disconnectPromises = this.#consumers.splice(0, this.#consumers.length).map((c) => c.disconnect());
     await Promise.allSettled(disconnectPromises);
   }
 
-  override logRegisteredEndpoints() {
+  logRegisteredEndpoints() {
     DBOS.logger.info('KafkaJS receiver endpoints:');
 
     const regOps = DBOS.getAssociatedInfo(this);
@@ -125,7 +124,7 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
       queueName?: string;
       config?: ConsumerConfig;
     } = {},
-  ) {
+  ): void {
     const { regInfo } = DBOS.associateFunctionWithInfo(this, func, {
       classOrInst: options.classOrInst,
       className: options.className,
