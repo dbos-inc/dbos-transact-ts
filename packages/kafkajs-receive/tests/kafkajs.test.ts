@@ -19,7 +19,7 @@ const kafkaConfig = {
 const kafkaReceiver = new KafkaReceiver(kafkaConfig);
 
 interface KafkaEvents {
-  message: (functionName: string, topic: string, partition: number, message: KafkaMessage) => void;
+  message: (functionName: string, topic: string, partition: number, message: KafkaMessage, workflowID?: string) => void;
 }
 
 class KafkaEmitter extends EventEmitter {
@@ -37,6 +37,7 @@ type KafkaMessageEvent = {
   topic: string;
   partition: number;
   message: KafkaMessage;
+  workflowID?: string;
 };
 
 function waitForMessage(
@@ -47,10 +48,10 @@ function waitForMessage(
 ): Promise<KafkaMessageEvent> {
   return withTimeout(
     new Promise<KafkaMessageEvent>((resolve) => {
-      const handler = (f: string, t: string, partition: number, message: KafkaMessage) => {
+      const handler = (f: string, t: string, partition: number, message: KafkaMessage, workflowID?: string) => {
         if (f === funcName && t === topic) {
           emitter.off('message', handler);
-          resolve({ topic: t, partition, message });
+          resolve({ topic: t, partition, message, workflowID });
         }
       };
       emitter.on('message', handler);
@@ -67,33 +68,33 @@ class KafkaTestClass {
   @DBOS.workflow()
   static async stringTopic(topic: string, partition: number, message: KafkaMessage) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'stringTopic', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'stringTopic', topic, partition, message, DBOS.workflowID);
   }
 
   @kafkaReceiver.consumer(/regex-topic-.*/i)
   @DBOS.workflow()
   static async regexTopic(topic: string, partition: number, message: KafkaMessage) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'regexTopic', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'regexTopic', topic, partition, message, DBOS.workflowID);
   }
 
   @kafkaReceiver.consumer(['a-topic', 'b-topic'])
   @DBOS.workflow()
   static async stringArrayTopic(topic: string, partition: number, message: KafkaMessage) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'stringArrayTopic', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'stringArrayTopic', topic, partition, message, DBOS.workflowID);
   }
 
   @kafkaReceiver.consumer([/z-topic-.*/i, /y-topic-.*/i])
   @DBOS.workflow()
   static async regexArrayTopic(topic: string, partition: number, message: KafkaMessage) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'regexArrayTopic', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'regexArrayTopic', topic, partition, message, DBOS.workflowID);
   }
 
   static async registeredConsumer(topic: string, partition: number, message: KafkaMessage) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'registeredConsumer', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'registeredConsumer', topic, partition, message, DBOS.workflowID);
   }
 }
 
@@ -209,6 +210,10 @@ suite('kafkajs-receive', async () => {
 
       assert.equal(topic, result.topic);
       assert.equal(message, String(result.message.value));
+      assert(!!result.workflowID);
+
+      const status = await DBOS.getWorkflowStatus(result.workflowID);
+      assert(!!status);
     });
   }
 });
