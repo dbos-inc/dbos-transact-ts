@@ -17,29 +17,6 @@ import { DBOSWorkflowCancelledError } from '../../src/error';
 import * as protocol from '../../src/conductor/protocol';
 
 // Add type definitions for admin server API responses
-interface WorkflowResponse {
-  workflow_id: string;
-  status: string;
-  workflow_name: string;
-  workflow_class_name: string;
-  workflow_config_name?: string;
-  queue_name?: string;
-  authenticated_user?: string;
-  assumed_role?: string;
-  authenticated_roles?: string[];
-  output?: unknown;
-  error?: unknown;
-  input?: unknown[];
-  executor_id?: string;
-  app_version?: string;
-  application_id?: string;
-  recovery_attempts?: number;
-  created_at?: number;
-  updated_at?: number;
-  timeout_ms?: number;
-  deadline_epoch_ms?: number;
-}
-
 interface ErrorResponse {
   error: string;
 }
