@@ -14,6 +14,7 @@ import { Client } from 'pg';
 import { step_info } from '../../schemas/system_db_schema';
 import http from 'http';
 import { DBOSWorkflowCancelledError } from '../../src/error';
+import * as protocol from '../../src/conductor/protocol';
 
 // Add type definitions for admin server API responses
 interface WorkflowResponse {
@@ -519,10 +520,10 @@ describe('running-admin-server-tests', () => {
       body: JSON.stringify({}),
     });
     expect(response.status).toBe(200);
-    let workflows = (await response.json()) as WorkflowResponse[];
+    let workflows = (await response.json()) as protocol.WorkflowsOutput[];
 
     // Both workflows should appear in the results
-    const workflowIds = workflows.map((w) => w.workflow_id);
+    const workflowIds = workflows.map((w) => w.WorkflowUUID);
     expect(workflows.length).toBe(2);
     expect(workflowIds).toContain(handle1.workflowID);
     expect(workflowIds).toContain(handle2.workflowID);
@@ -541,13 +542,150 @@ describe('running-admin-server-tests', () => {
       }),
     });
     expect(response.status).toBe(200);
-    workflows = (await response.json()) as WorkflowResponse[];
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
 
     // Only the second workflow should be returned since it was created after firstWorkflowTime
     expect(workflows.length).toBe(1);
-    expect(workflows[0].workflow_id).toBe(handle2.workflowID);
-    expect(workflows[0].status).toBe(StatusString.SUCCESS);
-    expect(workflows[0].workflow_name).toBe('exampleWorkflow');
+    expect(workflows[0].WorkflowUUID).toBe(handle2.workflowID);
+    expect(workflows[0].Status).toBe(StatusString.SUCCESS);
+    expect(workflows[0].WorkflowName).toBe('exampleWorkflow');
+
+    // Verify sort_dsc inverts the order
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sort_desc: true,
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+    expect(workflows[0].WorkflowUUID).toBe(handle2.workflowID);
+    expect(workflows[1].WorkflowUUID).toBe(handle1.workflowID);
+
+    // Test all other filters
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_uuids: ['not-a-valid-uuid'],
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(0);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_uuids: [handle1.workflowID, handle2.workflowID],
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        authenticated_user: 'no-user',
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(0);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_name: 'exampleWorkflow',
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        end_time: firstWorkflowTime,
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(1);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        status: 'SUCCESS', // TODO: this should be a list
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        application_version: globalParams.appVersion,
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        limit: 1,
+        offset: 1,
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].WorkflowUUID).toBe(handle2.workflowID);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_id_prefix: handle1.workflowID.substring(0, 10),
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].WorkflowUUID).toBe(handle1.workflowID);
   });
 
   test('test-admin-list-queued-workflows', async () => {
