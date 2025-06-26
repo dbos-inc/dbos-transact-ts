@@ -560,7 +560,7 @@ export class DBOSHttpServer {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const workflow = await dbosExec.getWorkflowStatus(workflowId);
       if (workflow) {
-        koaCtxt.body = workflowStatusToUnderscoreFormat(workflow);
+        koaCtxt.body = new protocol.WorkflowsOutput(workflow);
         koaCtxt.status = 200;
       } else {
         koaCtxt.status = 404;
