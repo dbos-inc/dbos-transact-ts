@@ -1,7 +1,8 @@
 import { DBOS, DBOSLifecycleCallback } from '@dbos-inc/dbos-sdk';
 import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError } from 'kafkajs';
 
-type KafkaMessageHandler<Return> = (topic: string, partition: number, message: KafkaMessage) => Promise<Return>;
+export type KafkaArgs = [string, number, KafkaMessage];
+type KafkaMessageHandler<Return> = (...args: KafkaArgs) => Promise<Return>;
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
@@ -114,8 +115,8 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
     }
   }
 
-  registerConsumer<This, Args extends unknown[], Return>(
-    func: (this: This, ...args: Args) => Promise<Return>,
+  registerConsumer<This, Return>(
+    func: (this: This, ...args: KafkaArgs) => Promise<Return>,
     topics: ConsumerTopics,
     options: {
       classOrInst?: object;
@@ -140,10 +141,10 @@ export class KafkaReceiver extends DBOSLifecycleCallback {
   consumer(topics: ConsumerTopics, options: { queueName?: string; config?: ConsumerConfig } = {}) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const $this = this;
-    function methodDecorator<This, Args extends [string, number, KafkaMessage], Return>(
+    function methodDecorator<This, Return>(
       target: object,
       propertyKey: PropertyKey,
-      descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: KafkaArgs) => Promise<Return>>,
     ) {
       if (descriptor.value) {
         $this.registerConsumer(descriptor.value, topics, {
