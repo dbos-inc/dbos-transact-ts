@@ -26,6 +26,7 @@ import {
   GetWorkflowsOutput,
   StepInfo,
   WorkflowConfig,
+  WorkflowContext,
   WorkflowFunction,
   WorkflowParams,
   WorkflowStatus,
@@ -78,7 +79,7 @@ import {
   UserDatabaseClient,
   UserDatabaseName,
 } from './user_database';
-import { TransactionConfig, TransactionContextImpl, TransactionFunction } from './transaction';
+import { TransactionConfig, TransactionContext, TransactionContextImpl, TransactionFunction } from './transaction';
 
 import Koa from 'koa';
 import { Application as ExpressApp } from 'express';
@@ -89,20 +90,10 @@ import { randomUUID } from 'node:crypto';
 
 import { PoolClient } from 'pg';
 import { Knex } from 'knex';
-import { StepConfig, StepFunction } from './step';
-import {
-  DBOSLifecycleCallback,
-  DBOSMethodMiddlewareInstaller,
-  HandlerContext,
-  requestArgValidation,
-  StepContext,
-  StoredProcedureContext,
-  TransactionContext,
-  WorkflowContext,
-  WorkflowHandle,
-} from '.';
+import { StepConfig, StepContext, StepFunction } from './step';
+import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
 import { ConfiguredInstance } from '.';
-import { StoredProcedure, StoredProcedureConfig } from './procedure';
+import { StoredProcedure, StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { set } from 'lodash';
@@ -631,9 +622,7 @@ export class DBOS {
 
   /** Get the current DBOS tracing span, appropriate to the current context */
   static get span(): Span | undefined {
-    const ctx = getCurrentDBOSContext();
-    if (ctx) return ctx.span;
-    return undefined;
+    return getCurrentDBOSContext()?.span ?? getCurrentContextStore()?.span;
   }
 
   /**
@@ -642,7 +631,7 @@ export class DBOS {
    *  and set it using `withTracedContext` or `runWithContext`
    */
   static requestObject(): object | undefined {
-    return getCurrentDBOSContext()?.request;
+    return getCurrentDBOSContext()?.request ?? getCurrentContextStore()?.request;
   }
 
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
@@ -659,7 +648,7 @@ export class DBOS {
 
   /** Get the current Koa context (within `@DBOS.getApi` et al) */
   static getKoaContext(): Koa.Context | undefined {
-    return (getCurrentDBOSContext() as HandlerContext)?.koaContext;
+    return getCurrentContextStore()?.koaContext;
   }
 
   /** Get the current Koa context (within `@DBOS.getApi` et al) */
@@ -691,15 +680,15 @@ export class DBOS {
 
   /** Get the current authenticated user */
   static get authenticatedUser(): string {
-    return getCurrentDBOSContext()?.authenticatedUser ?? '';
+    return getCurrentDBOSContext()?.authenticatedUser ?? getCurrentContextStore()?.authenticatedUser ?? '';
   }
   /** Get the roles granted to the current authenticated user */
   static get authenticatedRoles(): string[] {
-    return getCurrentDBOSContext()?.authenticatedRoles ?? [];
+    return getCurrentDBOSContext()?.authenticatedRoles ?? getCurrentContextStore()?.authenticatedRoles ?? [];
   }
   /** Get the role assumed by the current user giving authorization to execute the current function */
   static get assumedRole(): string {
-    return getCurrentDBOSContext()?.assumedRole ?? '';
+    return getCurrentDBOSContext()?.assumedRole ?? getCurrentContextStore()?.assumedRole ?? '';
   }
 
   /** @returns true if called from within a transaction, false otherwise */

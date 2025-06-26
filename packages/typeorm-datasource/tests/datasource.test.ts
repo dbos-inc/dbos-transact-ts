@@ -42,7 +42,7 @@ describe('TypeOrmDataSource', () => {
       }
     }
 
-    await TypeOrmDataSource.initializeInternalSchema(config);
+    await TypeOrmDataSource.initializeDBOSSchema(config);
 
     {
       const ds = new DataSource({
@@ -356,7 +356,7 @@ async function errorFunction(user: string) {
 }
 
 async function readFunction(user: string) {
-  const result = await TypeOrmDataSource.entityManager.findOneBy(Greeting, { name: user });
+  const result = await dataSource.entityManager.findOneBy(Greeting, { name: user });
 
   return { user, greet_count: result?.greet_count, now: Date.now() };
 }
@@ -403,7 +403,7 @@ async function insertWorkflowReg(user: string) {
 }
 
 async function insertWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => insertFunction(user), 'insertFunction');
+  return await dataSource.runTransaction(() => insertFunction(user), { name: 'insertFunction' });
 }
 
 async function errorWorkflowReg(user: string) {
@@ -411,7 +411,7 @@ async function errorWorkflowReg(user: string) {
 }
 
 async function errorWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => errorFunction(user), 'errorFunction');
+  return await dataSource.runTransaction(() => errorFunction(user), { name: 'errorFunction' });
 }
 
 async function readWorkflowReg(user: string) {
@@ -419,7 +419,7 @@ async function readWorkflowReg(user: string) {
 }
 
 async function readWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => readFunction(user), 'readFunction', { readOnly: true });
+  return await dataSource.runTransaction(() => readFunction(user), { name: 'readFunction', readOnly: true });
 }
 
 async function staticWorkflow(user: string) {

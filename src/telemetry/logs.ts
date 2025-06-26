@@ -1,6 +1,5 @@
 import { transports, createLogger, format, Logger as IWinstonLogger } from 'winston';
 import TransportStream = require('winston-transport'); // eslint-disable-line @typescript-eslint/no-require-imports
-import { DBOSContextImpl } from '../context';
 import { Logger as OTelLogger, LogAttributes, SeverityNumber } from '@opentelemetry/api-logs';
 import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
 import { Span } from '@opentelemetry/sdk-trace-base';
@@ -141,10 +140,10 @@ export class Logger implements DLogger {
   readonly metadata: ContextualMetadata;
   constructor(
     private readonly globalLogger: GlobalLogger,
-    readonly ctx: DBOSContextImpl,
+    readonly ctx: { span: Span | (() => Span) },
   ) {
     this.metadata = {
-      span: ctx.span,
+      span: typeof ctx.span === 'function' ? ctx.span() : ctx.span,
       includeContextMetadata: this.globalLogger.addContextMetadata,
     };
   }

@@ -9,7 +9,7 @@ import {
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
-  PGTransactionConfig as NodePostgresTransactionOptions,
+  PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
@@ -19,6 +19,11 @@ import { SuperJSON } from 'superjson';
 
 interface NodePostgresDataSourceContext {
   client: ClientBase;
+  owner: NodePostgresTransactionHandler;
+}
+
+interface NodePostgresTransactionOptions extends PGTransactionConfig {
+  name?: string;
 }
 
 export { NodePostgresTransactionOptions };
@@ -168,7 +173,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
       try {
         const result = await this.#transaction<Return>(async (client) => {
           // execute user's transaction function
-          const result = await asyncLocalCtx.run({ client }, async () => {
+          const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
             return (await func.call(target, ...args)) as Return;
           });
 
@@ -206,18 +211,29 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
 }
 
 export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransactionOptions> {
-  static get client(): ClientBase {
+  static #getClient(p?: NodePostgresTransactionHandler): ClientBase {
     if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+    }
+    if (p && p !== ctx.owner) {
+      throw new Error('Use of `NodePostgresDataSource.client` from the wrong object');
     }
     return ctx.client;
   }
 
-  static async initializeInternalSchema(config: ClientConfig): Promise<void> {
+  static get client() {
+    return NodePostgresDataSource.#getClient(undefined);
+  }
+
+  get client() {
+    return NodePostgresDataSource.#getClient(this.#provider);
+  }
+
+  static async initializeDBOSSchema(config: ClientConfig): Promise<void> {
     const client = new Client(config);
     try {
       await client.connect();
@@ -238,16 +254,15 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: NodePostgresTransactionOptions) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: NodePostgresTransactionOptions,
-    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   transaction(config?: NodePostgresTransactionOptions) {
@@ -262,7 +277,10 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, {
+        ...config,
+        name: config?.name ?? String(propertyKey),
+      });
 
       return descriptor;
     };

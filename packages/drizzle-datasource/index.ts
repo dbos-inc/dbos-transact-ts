@@ -19,9 +19,10 @@ import { sql } from 'drizzle-orm';
 
 interface DrizzleLocalCtx {
   client: NodePgDatabase<{ [key: string]: object }>;
+  owner: DrizzleTransactionHandler;
 }
 
-export type TransactionConfig = Pick<PgTransactionConfig, 'isolationLevel' | 'accessMode'>;
+export type TransactionConfig = Pick<PgTransactionConfig, 'isolationLevel' | 'accessMode'> & { name?: string };
 
 const asyncLocalCtx = new AsyncLocalStorage<DrizzleLocalCtx>();
 
@@ -163,7 +164,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
         const result = await this.#drizzle.transaction(
           async (client) => {
             // execute user's transaction function
-            const result = await asyncLocalCtx.run({ client }, async () => {
+            const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
               return await func.call(target, ...args);
             });
 
@@ -200,7 +201,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
 export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
   // User calls this... DBOS not directly involved...
-  static get client(): NodePgDatabase<{ [key: string]: object }> {
+  static #getClient(p?: DrizzleTransactionHandler): NodePgDatabase<{ [key: string]: object }> {
     if (!DBOS.isInTransaction()) {
       throw new Error('Invalid use of DrizzleDataSource.client outside of a DBOS transaction');
     }
@@ -208,10 +209,21 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
     if (!ctx) {
       throw new Error('Invalid use of DrizzleDataSource.client outside of a DBOS transaction');
     }
+    if (p && p !== ctx.owner) {
+      throw new Error('Invalid retrieval of `DrizzleDataSource.client` from the incorrect object');
+    }
     return ctx.client;
   }
 
-  static async initializeInternalSchema(config: ClientConfig): Promise<void> {
+  static get client() {
+    return DrizzleDataSource.#getClient(undefined);
+  }
+
+  get client() {
+    return DrizzleDataSource.#getClient(this.#provider);
+  }
+
+  static async initializeDBOSSchema(config: ClientConfig): Promise<void> {
     const client = new Client(config);
     try {
       await client.connect();
@@ -233,16 +245,15 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: TransactionConfig) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: TransactionConfig,
-    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   // decorator
@@ -258,7 +269,10 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
         throw new Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, {
+        ...config,
+        name: config?.name ?? String(propertyKey),
+      });
 
       return descriptor;
     };

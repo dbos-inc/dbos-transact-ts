@@ -14,6 +14,7 @@ import { Client } from 'pg';
 import { step_info } from '../../schemas/system_db_schema';
 import http from 'http';
 import { DBOSWorkflowCancelledError } from '../../src/error';
+import * as protocol from '../../src/conductor/protocol';
 
 // Add type definitions for admin server API responses
 interface WorkflowResponse {
@@ -497,11 +498,11 @@ describe('running-admin-server-tests', () => {
       status: StatusString.SUCCESS,
     });
 
-    // Sleep 1 second
-    await sleepms(1000);
-
     // Record time between workflows (this will be used for filtering)
     const firstWorkflowTime = new Date().toISOString();
+
+    // Sleep 1 second
+    await sleepms(1000);
 
     // Run second workflow
     const handle2 = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(789);
@@ -519,13 +520,34 @@ describe('running-admin-server-tests', () => {
       body: JSON.stringify({}),
     });
     expect(response.status).toBe(200);
-    let workflows = (await response.json()) as WorkflowResponse[];
+    let workflows = (await response.json()) as protocol.WorkflowsOutput[];
 
     // Both workflows should appear in the results
-    const workflowIds = workflows.map((w) => w.workflow_id);
+    const workflowIds = workflows.map((w) => w.WorkflowUUID);
     expect(workflows.length).toBe(2);
     expect(workflowIds).toContain(handle1.workflowID);
     expect(workflowIds).toContain(handle2.workflowID);
+
+    // Make sure it contains all the expected fields
+    expect(workflows[0].WorkflowUUID).toBeDefined();
+    expect(workflows[0].WorkflowUUID).toBe(handle1.workflowID);
+    expect(workflows[0].Status).toBe(StatusString.SUCCESS);
+    expect(workflows[0].WorkflowName).toBe('exampleWorkflow');
+    expect(workflows[0].WorkflowClassName).toBe('TestAdminWorkflow');
+    expect(workflows[0].WorkflowConfigName).toBeUndefined();
+    expect(workflows[0].QueueName).toBeUndefined();
+    expect(workflows[0].AuthenticatedUser).toBeUndefined();
+    expect(workflows[0].AssumedRole).toBeUndefined();
+    expect(workflows[0].AuthenticatedRoles).toBeUndefined();
+    expect(workflows[0].Output).toContain('456');
+    expect(workflows[0].Error).toBeUndefined();
+    expect(workflows[0].Input).toContain('456');
+    expect(workflows[0].ExecutorID).toBe(globalParams.executorID);
+    expect(workflows[0].CreatedAt).toBeDefined();
+    expect(workflows[0].CreatedAt?.length).toBeGreaterThan(0);
+    expect(workflows[0].UpdatedAt).toBeDefined();
+    expect(workflows[0].UpdatedAt?.length).toBeGreaterThan(0);
+    expect(workflows[0].ApplicationVersion).toBe(globalParams.appVersion);
 
     // Test POST /workflows - list with filtering by start time and workflow IDs
     // This should only return the second workflow since we filter by time after the first workflow
@@ -541,13 +563,150 @@ describe('running-admin-server-tests', () => {
       }),
     });
     expect(response.status).toBe(200);
-    workflows = (await response.json()) as WorkflowResponse[];
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
 
     // Only the second workflow should be returned since it was created after firstWorkflowTime
     expect(workflows.length).toBe(1);
-    expect(workflows[0].workflow_id).toBe(handle2.workflowID);
-    expect(workflows[0].status).toBe(StatusString.SUCCESS);
-    expect(workflows[0].workflow_name).toBe('exampleWorkflow');
+    expect(workflows[0].WorkflowUUID).toBe(handle2.workflowID);
+    expect(workflows[0].Status).toBe(StatusString.SUCCESS);
+    expect(workflows[0].WorkflowName).toBe('exampleWorkflow');
+
+    // Verify sort_dsc inverts the order
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sort_desc: true,
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+    expect(workflows[0].WorkflowUUID).toBe(handle2.workflowID);
+    expect(workflows[1].WorkflowUUID).toBe(handle1.workflowID);
+
+    // Test all other filters
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_uuids: ['not-a-valid-uuid'],
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(0);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_uuids: [handle1.workflowID, handle2.workflowID],
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        authenticated_user: 'no-user',
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(0);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_name: 'exampleWorkflow',
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        end_time: firstWorkflowTime,
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(1);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        status: 'SUCCESS', // TODO: this should be a list
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        application_version: globalParams.appVersion,
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(2);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        limit: 1,
+        offset: 1,
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].WorkflowUUID).toBe(handle2.workflowID);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_id_prefix: handle1.workflowID.substring(0, 10),
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].WorkflowUUID).toBe(handle1.workflowID);
   });
 
   test('test-admin-list-queued-workflows', async () => {
@@ -558,6 +717,9 @@ describe('running-admin-server-tests', () => {
     const handle1 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();
     const handle2 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();
     const handle3 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueue.name }).blockedWorkflow();
+
+    const firstBatchTime = new Date().toISOString();
+    await sleepms(50); // Ensure the time is different for the next batch
 
     // Also enqueue a workflow in a different queue
     const handle4 = await DBOS.startWorkflow(TestAdminWorkflow, { queueName: testQueueOne.name }).blockedWorkflow();
@@ -571,10 +733,31 @@ describe('running-admin-server-tests', () => {
       body: JSON.stringify({}),
     });
     expect(response.status).toBe(200);
-    let queuedWorkflows = (await response.json()) as WorkflowResponse[];
+    let queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
 
     // Should have at least 4 workflows (the ones we just enqueued)
     expect(queuedWorkflows.length).toBeGreaterThanOrEqual(4);
+
+    // Make sure it contains all the expected fields
+    expect(queuedWorkflows[0].WorkflowUUID).toBeDefined();
+    expect(queuedWorkflows[0].WorkflowUUID).toBe(handle1.workflowID);
+    expect([StatusString.ENQUEUED, StatusString.PENDING]).toContain(queuedWorkflows[0].Status);
+    expect(queuedWorkflows[0].WorkflowName).toBe('blockedWorkflow');
+    expect(queuedWorkflows[0].WorkflowClassName).toBe('TestAdminWorkflow');
+    expect(queuedWorkflows[0].WorkflowConfigName).toBeUndefined();
+    expect(queuedWorkflows[0].QueueName).toBe(testQueue.name);
+    expect(queuedWorkflows[0].AuthenticatedUser).toBeUndefined();
+    expect(queuedWorkflows[0].AssumedRole).toBeUndefined();
+    expect(queuedWorkflows[0].AuthenticatedRoles).toBeUndefined();
+    expect(queuedWorkflows[0].Output).toBeUndefined();
+    expect(queuedWorkflows[0].Error).toBeUndefined();
+    expect(queuedWorkflows[0].Input).toBeDefined();
+    expect(queuedWorkflows[0].ExecutorID).toBe(globalParams.executorID);
+    expect(queuedWorkflows[0].CreatedAt).toBeDefined();
+    expect(queuedWorkflows[0].CreatedAt?.length).toBeGreaterThan(0);
+    expect(queuedWorkflows[0].UpdatedAt).toBeDefined();
+    expect(queuedWorkflows[0].UpdatedAt?.length).toBeGreaterThan(0);
+    expect(queuedWorkflows[0].ApplicationVersion).toBe(globalParams.appVersion);
 
     // Test filtering by queue name
     response = await fetch(`http://localhost:3001/queues`, {
@@ -587,13 +770,13 @@ describe('running-admin-server-tests', () => {
       }),
     });
     expect(response.status).toBe(200);
-    queuedWorkflows = (await response.json()) as WorkflowResponse[];
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
 
     // Should have exactly 3 workflows for this specific queue
     expect(queuedWorkflows.length).toBe(3);
     queuedWorkflows.forEach((wf) => {
-      expect(wf.queue_name).toBe(testQueue.name);
-      expect(wf.workflow_name).toBe('blockedWorkflow');
+      expect(wf.QueueName).toBe(testQueue.name);
+      expect(wf.WorkflowName).toBe('blockedWorkflow');
     });
 
     // Test with limit
@@ -607,10 +790,111 @@ describe('running-admin-server-tests', () => {
       }),
     });
     expect(response.status).toBe(200);
-    queuedWorkflows = (await response.json()) as WorkflowResponse[];
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
 
     // Should have exactly 2 workflows
     expect(queuedWorkflows.length).toBe(2);
+
+    // Verify sort_dsc inverts the order
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        sort_desc: true,
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(queuedWorkflows.length).toBeGreaterThanOrEqual(4);
+    expect(queuedWorkflows[0].WorkflowUUID).toBe(handle4.workflowID);
+    expect(queuedWorkflows[1].WorkflowUUID).toBe(handle3.workflowID);
+    expect(queuedWorkflows[2].WorkflowUUID).toBe(handle2.workflowID);
+    expect(queuedWorkflows[3].WorkflowUUID).toBe(handle1.workflowID);
+
+    // Test all other filters
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        workflow_name: 'blockedWorkflow',
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(queuedWorkflows.length).toBe(4);
+
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        end_time: firstBatchTime,
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(queuedWorkflows.length).toBe(3);
+
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        start_time: new Date().toISOString(),
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(queuedWorkflows.length).toBe(0);
+
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        status: StatusString.ENQUEUED, // TODO: this should be a list
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(queuedWorkflows.length).toBeGreaterThanOrEqual(0);
+
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        limit: 1,
+        offset: 1,
+        queue_name: testQueue.name,
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(queuedWorkflows.length).toBe(1);
+    expect(queuedWorkflows[0].WorkflowUUID).toBe(handle2.workflowID);
+
+    // Test with non-existent queue
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        queue_name: 'non-existent-queue',
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(queuedWorkflows.length).toBe(0);
 
     // Cancel all the workflows to clean up
     await DBOS.cancelWorkflow(handle1.workflowID);

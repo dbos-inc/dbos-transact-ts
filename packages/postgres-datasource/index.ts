@@ -11,17 +11,22 @@ import {
   registerTransaction,
   runTransaction,
   PGIsolationLevel as IsolationLevel,
-  PGTransactionConfig as PostgresTransactionOptions,
+  PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';
 
+interface PostgresTransactionOptions extends PGTransactionConfig {
+  name?: string;
+}
+
 export { IsolationLevel, PostgresTransactionOptions };
 
 interface PostgresDataSourceContext {
   client: postgres.TransactionSql;
+  owner: PostgresTransactionHandler;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
@@ -142,7 +147,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
       try {
         const result = await this.#db.begin<Return>(`${isolationLevel} ${accessMode}`, async (client) => {
           // execute user's transaction function
-          const result = await asyncLocalCtx.run({ client }, async () => {
+          const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
             return (await func.call(target, ...args)) as Return;
           });
 
@@ -175,18 +180,29 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 }
 
 export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOptions> {
-  static get client(): postgres.TransactionSql {
+  static #getClient(p?: PostgresTransactionHandler): postgres.TransactionSql {
     if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of PostgresDataSource.client outside of a DBOS transaction.');
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('invalid use of PostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of PostgresDataSource.client outside of a DBOS transaction.');
+    }
+    if (p && p !== ctx.owner) {
+      throw new Error('Invalid retrieval of `PostgresDataSource.client` from the wrong instance.');
     }
     return ctx.client;
   }
 
-  static async initializeInternalSchema(options: Options = {}): Promise<void> {
+  static get client() {
+    return PostgresDataSource.#getClient(undefined);
+  }
+
+  get client() {
+    return PostgresDataSource.#getClient(this.#provider);
+  }
+
+  static async initializeDBOSSchema(options: Options = {}): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
       await pg.unsafe(createTransactionCompletionSchemaPG);
@@ -206,16 +222,15 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, name: string, config?: PostgresTransactionOptions) {
-    return await runTransaction(callback, name, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: PostgresTransactionOptions) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: PostgresTransactionOptions,
-    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   transaction(config?: PostgresTransactionOptions) {
@@ -230,7 +245,10 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, {
+        ...config,
+        name: config?.name ?? String(propertyKey),
+      });
 
       return descriptor;
     };
