@@ -475,7 +475,7 @@ export class DBOSHttpServer {
         authenticated_user?: string;
         start_time?: string;
         end_time?: string;
-        status?: (typeof StatusString)[keyof typeof StatusString];
+        status?: (typeof StatusString)[keyof typeof StatusString]; // TODO: this should be a list of statuses.
         application_version?: string;
         limit?: number;
         offset?: number;
@@ -520,7 +520,7 @@ export class DBOSHttpServer {
         workflow_name?: string;
         start_time?: string;
         end_time?: string;
-        status?: string;
+        status?: (typeof StatusString)[keyof typeof StatusString]; // TODO: this should be a list of statuses.
         queue_name?: string;
         limit?: number;
         offset?: number;
@@ -532,7 +532,7 @@ export class DBOSHttpServer {
         workflowName: body.workflow_name,
         startTime: body.start_time,
         endTime: body.end_time,
-        status: body.status as GetQueuedWorkflowsInput['status'],
+        status: body.status,
         queueName: body.queue_name,
         limit: body.limit,
         offset: body.offset,
@@ -542,7 +542,7 @@ export class DBOSHttpServer {
       const workflows = await dbosExec.listQueuedWorkflows(input);
 
       // Map result to the underscore format.
-      koaCtxt.body = workflows.map(workflowStatusToUnderscoreFormat);
+      koaCtxt.body = workflows.map((wf) => new protocol.WorkflowsOutput(wf));
       koaCtxt.status = 200;
     };
     router.post(listQueuedWorkflowsUrl, listQueuedWorkflowsHandler);
