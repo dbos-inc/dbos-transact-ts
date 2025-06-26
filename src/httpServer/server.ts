@@ -5,7 +5,7 @@ import cors from '@koa/cors';
 import { HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
 import { Transaction } from '../transaction';
-import { Workflow, GetWorkflowsInput, GetQueuedWorkflowsInput } from '../workflow';
+import { Workflow, GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor, OperationType } from '../dbos-executor';
 import { Logger as DBOSLogger, GlobalLogger as Logger } from '../telemetry/logs';
@@ -23,6 +23,7 @@ import { WorkflowStatus } from '../workflow';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { DBOS } from '../dbos';
+import * as protocol from '../conductor/protocol';
 
 /**
  * Utility function to convert WorkflowStatus object to underscore format
@@ -469,12 +470,12 @@ export class DBOSHttpServer {
     const listWorkflowsUrl = '/workflows';
     const listWorkflowsHandler = async (koaCtxt: Koa.Context) => {
       const body = koaCtxt.request.body as {
-        workflow_ids?: string[];
+        workflow_uuids?: string[];
         workflow_name?: string;
         authenticated_user?: string;
         start_time?: string;
         end_time?: string;
-        status?: string;
+        status?: (typeof StatusString)[keyof typeof StatusString]; // TODO: this should be a list of statuses.
         application_version?: string;
         limit?: number;
         offset?: number;
@@ -484,12 +485,12 @@ export class DBOSHttpServer {
 
       // Map request body keys to GetWorkflowsInput properties
       const input: GetWorkflowsInput = {
-        workflowIDs: body.workflow_ids,
+        workflowIDs: body.workflow_uuids,
         workflowName: body.workflow_name,
         authenticatedUser: body.authenticated_user,
         startTime: body.start_time,
         endTime: body.end_time,
-        status: body.status as GetWorkflowsInput['status'],
+        status: body.status,
         applicationVersion: body.application_version,
         limit: body.limit,
         offset: body.offset,
@@ -500,7 +501,7 @@ export class DBOSHttpServer {
       const workflows = await dbosExec.listWorkflows(input);
 
       // Map result to the underscore format.
-      koaCtxt.body = workflows.map(workflowStatusToUnderscoreFormat);
+      koaCtxt.body = workflows.map((wf) => new protocol.WorkflowsOutput(wf));
       koaCtxt.status = 200;
     };
     router.post(listWorkflowsUrl, listWorkflowsHandler);
@@ -519,7 +520,7 @@ export class DBOSHttpServer {
         workflow_name?: string;
         start_time?: string;
         end_time?: string;
-        status?: string;
+        status?: (typeof StatusString)[keyof typeof StatusString]; // TODO: this should be a list of statuses.
         queue_name?: string;
         limit?: number;
         offset?: number;
@@ -531,7 +532,7 @@ export class DBOSHttpServer {
         workflowName: body.workflow_name,
         startTime: body.start_time,
         endTime: body.end_time,
-        status: body.status as GetQueuedWorkflowsInput['status'],
+        status: body.status,
         queueName: body.queue_name,
         limit: body.limit,
         offset: body.offset,
@@ -541,7 +542,7 @@ export class DBOSHttpServer {
       const workflows = await dbosExec.listQueuedWorkflows(input);
 
       // Map result to the underscore format.
-      koaCtxt.body = workflows.map(workflowStatusToUnderscoreFormat);
+      koaCtxt.body = workflows.map((wf) => new protocol.WorkflowsOutput(wf));
       koaCtxt.status = 200;
     };
     router.post(listQueuedWorkflowsUrl, listQueuedWorkflowsHandler);
