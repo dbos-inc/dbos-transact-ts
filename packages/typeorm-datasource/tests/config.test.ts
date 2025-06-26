@@ -17,7 +17,7 @@ describe('TypeOrmDataSource.configure', () => {
   });
 
   test('configure creates tx outputs table', async () => {
-    await TypeOrmDataSource.initializeInternalSchema(config);
+    await TypeOrmDataSource.initializeDBOSSchema(config);
 
     const client = new Client(config);
     try {
