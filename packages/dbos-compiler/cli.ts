@@ -5,10 +5,10 @@ import { Command, Option } from 'commander';
 import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
-import { generateCreate, generateDrop } from './generator.js';
+import { generateCreate, generateDrop } from './generator';
 import { parseConfigFile } from '@dbos-inc/dbos-sdk';
 import { Client, ClientConfig } from 'pg';
-import { CompileMethodInfo, compile, hasError } from './compiler.js';
+import { CompileMethodInfo, compile, hasError } from './compiler';
 
 async function emitScriptFiles(outDir: string, project: tsm.Project) {
   await fsp.mkdir(outDir, { recursive: true });
