@@ -25,7 +25,6 @@ import {
   RetrievedHandle,
   WorkflowContextImpl,
   StatusString,
-  type ContextFreeFunction,
   type WorkflowStatus,
   type GetQueuedWorkflowsInput,
   type StepInfo,
@@ -890,7 +889,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const callResult = await runWithWorkflowContext(wCtxt, () => {
           const callPromise = passContext
             ? wf.call(params.configuredInstance, wCtxt, ...args)
-            : (wf as unknown as ContextFreeFunction<T, R>).call(params.configuredInstance, ...args);
+            : (wf as unknown as TypedAsyncFunction<T, R>).call(params.configuredInstance, ...args);
 
           if ($deadlineEpochMS === undefined) {
             return callPromise;
