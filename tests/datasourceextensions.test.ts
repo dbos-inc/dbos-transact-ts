@@ -375,7 +375,7 @@ async function wfFunctionGuts() {
 
 // Workflow functions must always be registered before launch; this
 //  allows recovery to occur.
-const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
+const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, { name: 'workflow' });
 
 // Intentionally initialize DS after we've already tried to register a transaction to it
 const dsa = new DBOSKnexDS('knexA', config.poolConfig);

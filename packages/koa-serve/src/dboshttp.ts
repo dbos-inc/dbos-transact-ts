@@ -108,7 +108,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { registration, regInfo } = DBOS.associateFunctionWithInfo(er, descriptor.value!, {
-        classOrInst: target,
+        ctorOrProto: target,
         name: propertyKey,
       });
       const handlerRegistration = regInfo as DBOSHTTPMethodInfo;
@@ -156,7 +156,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         Object.getOwnPropertyDescriptor(target, propertyKey)!.value,
         {
-          classOrInst: target,
+          ctorOrProto: target,
           name: propertyKey.toString(),
           param: parameterIndex,
         },
