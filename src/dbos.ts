@@ -765,9 +765,6 @@ export class DBOS {
    * @param defaultValue - value to return if `key` does not exist in the configuration
    */
   static getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    const ctx = getCurrentDBOSContext();
-    if (ctx && defaultValue) return ctx.getConfig<T>(key, defaultValue);
-    if (ctx) return ctx.getConfig<T>(key);
     if (DBOS.#executor) return DBOS.#executor.getConfig(key, defaultValue);
     return defaultValue;
   }
@@ -1508,7 +1505,7 @@ export class DBOS {
         timeoutMS,
         // Detach child deadline if a null timeout is configured
         deadlineEpochMS:
-          params.timeoutMS === null || pctx?.workflowTimeoutMS === null ? undefined : wfctx.deadlineEpochMS,
+          params.timeoutMS === null || pctx?.workflowTimeoutMS === null ? undefined : pctx?.deadlineEpochMS,
         enqueueOptions: params.enqueueOptions,
       };
 

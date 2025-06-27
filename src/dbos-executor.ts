@@ -762,25 +762,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(wf.name);
     }
     const wConfig = wInfo.config;
+    const maxRecoveryAttempts = wConfig.maxRecoveryAttempts ? wConfig.maxRecoveryAttempts : 50;
 
     const passContext = wInfo.registration?.passContext ?? true;
-    const wCtxt = new WorkflowContextImpl(
-      this,
-      params.parentCtx,
-      workflowID,
-      wConfig,
-      wf.name,
-      timeoutMS,
-      deadlineEpochMS,
-      params.tempWfType,
-      params.tempWfName,
-    );
+    const wCtxt = new WorkflowContextImpl(this, params.parentCtx, workflowID, wConfig, wf.name);
+
+    const isTempWorkflow = DBOSExecutor.tempWorkflowName === wf.name;
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
       status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
       workflowName: wf.name,
-      workflowClassName: wCtxt.isTempWorkflow ? '' : getRegisteredMethodClassName(wf),
+      workflowClassName: isTempWorkflow ? '' : getRegisteredMethodClassName(wf),
       workflowConfigName: params.configuredInstance?.name || '',
       queueName: params.queueName,
       authenticatedUser: wCtxt.authenticatedUser,
@@ -800,8 +793,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       priority: priority ?? 0,
     };
 
-    if (wCtxt.isTempWorkflow) {
-      internalStatus.workflowName = `${DBOSExecutor.tempWorkflowName}-${wCtxt.tempWfOperationType}-${wCtxt.tempWfOperationName}`;
+    if (isTempWorkflow) {
+      internalStatus.workflowName = `${DBOSExecutor.tempWorkflowName}-${params.tempWfType}-${params.tempWfName}`;
       internalStatus.workflowClassName = params.tempWfClass ?? '';
     }
 
@@ -830,7 +823,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!, callerID, callerFunctionID);
         }
       }
-      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, wCtxt.maxRecoveryAttempts);
+      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(callerID, callerFunctionID, internalStatus.workflowName, true, {

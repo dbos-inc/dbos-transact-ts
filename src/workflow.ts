@@ -134,20 +134,12 @@ export interface WorkflowContext extends DBOSContext {
 }
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
-  readonly #dbosExec;
-  readonly isTempWorkflow: boolean;
-  readonly maxRecoveryAttempts;
-
   constructor(
     dbosExec: DBOSExecutor,
     parentCtx: DBOSContextImpl | undefined,
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string,
-    readonly timeoutMS: number | undefined | null,
-    readonly deadlineEpochMS: number | undefined,
-    readonly tempWfOperationType: string = '', // "transaction", "procedure", "external", or "send"
-    readonly tempWfOperationName: string = '', // Name for the temporary workflow operation
   ) {
     const span = dbosExec.tracer.startSpan(
       workflowName,
@@ -163,10 +155,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     );
     super(workflowName, span, dbosExec.logger, parentCtx);
     this.workflowUUID = workflowUUID;
-    this.#dbosExec = dbosExec;
-    this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
-    this.applicationConfig = dbosExec.config.application;
-    this.maxRecoveryAttempts = workflowConfig.maxRecoveryAttempts ? workflowConfig.maxRecoveryAttempts : 50;
   }
 }
 

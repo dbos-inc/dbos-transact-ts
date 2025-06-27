@@ -1,10 +1,8 @@
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { GlobalLogger as Logger, Logger as DBOSLogger } from './telemetry/logs';
-import { get } from 'lodash';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { UserDatabaseClient } from './user_database';
-import { DBOSConfigKeyTypeError } from './error';
 import { AsyncLocalStorage } from 'async_hooks';
 import { WorkflowContextImpl } from './workflow';
 import { DBOSInvalidWorkflowTransitionError } from './error';
@@ -213,9 +211,6 @@ export interface DBOSContext {
 
   readonly logger: DBOSLogger;
   readonly span: Span;
-
-  getConfig<T>(key: string): T | undefined;
-  getConfig<T>(key: string, defaultValue: T): T;
 }
 
 export class DBOSContextImpl implements DBOSContext {
@@ -246,17 +241,5 @@ export class DBOSContextImpl implements DBOSContext {
       this.assumedRole = getCurrentContextStore()?.assumedRole ?? '';
     }
     this.logger = new DBOSLogger(logger, this);
-  }
-
-  applicationConfig?: object;
-  getConfig<T>(key: string): T | undefined;
-  getConfig<T>(key: string, defaultValue: T): T;
-  getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    const value = get(this.applicationConfig, key, defaultValue);
-    // If the key is found and the default value is provided, check whether the value is of the same type.
-    if (value && defaultValue && typeof value !== typeof defaultValue) {
-      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
-    }
-    return value;
   }
 }
