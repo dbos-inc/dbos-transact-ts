@@ -8,16 +8,17 @@ import {
 } from '../compiler.js';
 import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
 import { makeTestProject } from './test-utility.js';
-import { describe, it, expect } from 'vitest';
+import { suite, test } from 'node:test';
+import assert from 'node:assert/strict';
 
-describe('parser', () => {
+suite('parser', () => {
   const { project } = makeTestProject(sampleDbosClass);
   const { project: aliasProject } = makeTestProject(sampleDbosClassAliased);
   const file = project.getSourceFileOrThrow('operations.ts');
   const cls = file.getClassOrThrow('Test');
 
   function testProject(name: string, project: tsm.Project) {
-    it(`getDbosMethodKind ${name}`, () => {
+    test(`getDbosMethodKind ${name}`, () => {
       const file = project.getSourceFileOrThrow('operations.ts');
       const cls = file.getClassOrThrow('Test');
       const entries = cls.getStaticMethods().map((m) => [m.getName(), parseDbosMethodInfo(m)]);
@@ -59,15 +60,15 @@ describe('parser', () => {
         }),
       );
 
-      expect(actual).toEqual(expected);
+      assert.deepEqual(actual, expected);
     });
   }
 
   testProject('project', project);
   testProject('aliasProject', aliasProject);
 
-  describe('aliased getDecoratorInfo', () => {
-    it('testGetHandler', () => {
+  suite('aliased getDecoratorInfo', () => {
+    test('testGetHandler', () => {
       const file = aliasProject.getSourceFileOrThrow('operations.ts');
       const cls = file.getClassOrThrow('Test');
       const method = cls.getStaticMethodOrThrow('testGetHandler');
@@ -85,8 +86,8 @@ describe('parser', () => {
     });
   });
 
-  describe('getDecoratorInfo', () => {
-    it('testGetHandler', () => {
+  suite('getDecoratorInfo', () => {
+    test('testGetHandler', () => {
       const method = cls.getStaticMethodOrThrow('testGetHandler');
 
       const expected = <DecoratorInfo[]>[
@@ -101,7 +102,7 @@ describe('parser', () => {
       testDecorators(expected, method.getDecorators());
     });
 
-    it('testGetHandlerWorkflow', () => {
+    test('testGetHandlerWorkflow', () => {
       const method = cls.getStaticMethodOrThrow('testGetHandlerWorkflow');
 
       const expected: DecoratorInfo[] = [
@@ -122,7 +123,7 @@ describe('parser', () => {
       testDecorators(expected, method.getDecorators());
     });
 
-    it('testConfiguredProcedure', () => {
+    test('testConfiguredProcedure', () => {
       const method = cls.getStaticMethodOrThrow('testConfiguredProcedure');
 
       const expected: DecoratorInfo[] = [
@@ -138,36 +139,44 @@ describe('parser', () => {
     });
   });
 
-  describe('getStoredProcConfig', () => {
-    it('fake', () => {
-      expect(true);
+  suite('getStoredProcConfig', () => {
+    test('fake', () => {
+      assert(true);
     });
 
     const data = {
-      testProcedure: {},
-      testReadOnlyProcedure: { readOnly: true },
-      testRepeatableReadProcedure: { isolationLevel: 'REPEATABLE READ' },
-      testConfiguredProcedure: { readOnly: true, isolationLevel: 'READ COMMITTED' },
-      testLocalProcedure: { executeLocally: true },
-      testLocalReadOnlyProcedure: { readOnly: true, executeLocally: true },
-      testLocalRepeatableReadProcedure: { isolationLevel: 'REPEATABLE READ', executeLocally: true },
+      testProcedure: { executeLocally: undefined, readOnly: undefined, isolationLevel: undefined },
+      testReadOnlyProcedure: { executeLocally: undefined, readOnly: true, isolationLevel: undefined },
+      testRepeatableReadProcedure: {
+        executeLocally: undefined,
+        readOnly: undefined,
+        isolationLevel: 'REPEATABLE READ',
+      },
+      testConfiguredProcedure: { executeLocally: undefined, readOnly: true, isolationLevel: 'READ COMMITTED' },
+      testLocalProcedure: { executeLocally: true, readOnly: undefined, isolationLevel: undefined },
+      testLocalReadOnlyProcedure: { readOnly: true, executeLocally: true, isolationLevel: undefined },
+      testLocalRepeatableReadProcedure: {
+        readOnly: undefined,
+        isolationLevel: 'REPEATABLE READ',
+        executeLocally: true,
+      },
       testLocalConfiguredProcedure: { readOnly: true, isolationLevel: 'READ COMMITTED', executeLocally: true },
     };
 
     for (const [name, config] of Object.entries(data)) {
-      it(name, () => {
+      test(name, () => {
         const expected = { ...config, version: 1 };
         const method = cls.getStaticMethodOrThrow(name);
         const [_, actual] = mapStoredProcConfig([method, 1]);
-        expect(actual).toEqual(expected);
+        assert.deepEqual(actual, expected);
       });
 
       const v2name = `${name}_v2`;
-      it(v2name, () => {
+      test(v2name, () => {
         const expected = { ...config, version: 2 };
         const method = cls.getStaticMethodOrThrow(v2name);
         const [_, actual] = mapStoredProcConfig([method, 2]);
-        expect(actual).toEqual(expected);
+        assert.deepEqual(actual, expected);
       });
     }
   });
@@ -181,7 +190,7 @@ interface DecoratorInfo {
 }
 
 function testDecorators(expected: DecoratorInfo[], actual: tsm.Decorator[]) {
-  expect(actual.length).toEqual(expected.length);
+  assert.equal(actual.length, expected.length);
   for (let i = 0; i < expected.length; i++) {
     testDecorator(expected[i], actual[i]);
   }
@@ -195,15 +204,15 @@ function testDecorator(expected: DecoratorInfo, actual: tsm.Decorator) {
     : expr.asKindOrThrow(tsm.SyntaxKind.PropertyAccessExpression).getExpressionIfKindOrThrow(tsm.SyntaxKind.Identifier);
 
   const impSpec = parseImportSpecifier(idExpr);
-  expect(impSpec).not.toBeNull();
+  assert(impSpec !== undefined);
 
   const { name, alias } = impSpec!.getStructure();
   const modSpec = impSpec!.getImportDeclaration().getModuleSpecifier();
 
-  expect(expected.name).toEqual(name);
-  expect(expected.alias).toEqual(alias);
-  expect(expected.module).toEqual(modSpec.getLiteralText());
+  assert.equal(expected.name, name);
+  assert.equal(expected.alias, alias);
+  assert.equal(expected.module, modSpec.getLiteralText());
 
   const args = callExpr.getArguments().map(parseDecoratorArgument) ?? undefined;
-  expect(args).toEqual(expected.args);
+  assert.deepEqual(args, expected.args);
 }
