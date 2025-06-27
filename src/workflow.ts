@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
-import { DBOSContext, DBOSContextImpl, functionIDGetIncrement } from './context';
+import { DBOSContext, DBOSContextImpl } from './context';
 import { ConfiguredInstance } from './decorators';
 import { DBOSJSON } from './utils';
 import { DBOS, runInternalStep } from './dbos';
@@ -11,11 +11,6 @@ import { EnqueueOptions } from './system_database';
 export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
 /** @deprecated */
 export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
-
-// Utility type that removes the initial parameter of a function
-export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any
-  ? P
-  : never;
 
 export interface WorkflowParams {
   workflowUUID?: string;
@@ -135,7 +130,7 @@ export const StatusString = {
  *   Adjust callers to call the function directly, or to use `DBOS.startWorkflow`
  */
 export interface WorkflowContext extends DBOSContext {
-  send<T>(destinationID: string, message: T, topic?: string): Promise<void>;
+  foo?: () => void;
 }
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
@@ -173,21 +168,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
     this.applicationConfig = dbosExec.config.application;
     this.maxRecoveryAttempts = workflowConfig.maxRecoveryAttempts ? workflowConfig.maxRecoveryAttempts : 50;
-  }
-
-  /**
-   * Send a message to a workflow identified by a UUID.
-   * The message can optionally be tagged with a topic.
-   */
-  async send<T>(destinationUUID: string, message: T, topic?: string): Promise<void> {
-    const functionID: number = functionIDGetIncrement();
-    await this.#dbosExec.systemDatabase.send(
-      this.workflowUUID,
-      functionID,
-      destinationUUID,
-      DBOSJSON.stringify(message),
-      topic,
-    );
   }
 }
 

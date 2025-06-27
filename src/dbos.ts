@@ -141,12 +141,6 @@ type InvokeFunctionsAsyncInst<T> = T extends ConfiguredInstance
     }
   : never;
 
-// local type declarations for invoking old-style transaction and step function
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export type TailParameters<T extends (arg: any, args: any[]) => any> = T extends (arg: any, ...args: infer P) => any
-  ? P
-  : never;
-
 function httpApiDec(verb: APITypes, url: string) {
   return function apidec<This, Args extends unknown[], Return>(
     target: object,

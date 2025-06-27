@@ -1849,12 +1849,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async send<T>(destinationUUID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send<T>(destinationId: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
-    const temp_workflow = async (ctxt: WorkflowContext, destinationUUID: string, message: T, topic?: string) => {
-      return await ctxt.send<T>(destinationUUID, message, topic);
+    const temp_workflow = async (_ctxt: WorkflowContext, destinationId: string, message: T, topic?: string) => {
+      const ctx = getCurrentContextStore();
+      const functionID: number = functionIDGetIncrement();
+      await this.systemDatabase.send(ctx!.workflowId!, functionID, destinationId, DBOSJSON.stringify(message), topic);
     };
-    const workflowUUID = idempotencyKey ? destinationUUID + idempotencyKey : undefined;
+    const workflowUUID = idempotencyKey ? destinationId + idempotencyKey : undefined;
     return (
       await this.workflow(
         temp_workflow,
@@ -1863,7 +1865,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           tempWfType: TempWorkflowType.send,
           configuredInstance: null,
         },
-        destinationUUID,
+        destinationId,
         message,
         topic,
       )
@@ -2121,7 +2123,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       );
     }
 
-    let temp_workflow: Workflow<unknown[], unknown>;
     if (nameArr[1] === TempWorkflowType.transaction) {
       const { txnInfo, clsInst } = this.getTransactionInfoByNames(
         wfStatus.workflowClassName,
@@ -2170,9 +2171,12 @@ export class DBOSExecutor implements DBOSExecutorContext {
         ...inputs,
       );
     } else if (nameArr[1] === TempWorkflowType.send) {
-      temp_workflow = async (ctxt: WorkflowContext, ...args: unknown[]) => {
-        return await ctxt.send<unknown>(args[0] as string, args[1], args[2] as string); // id, value, topic
+      const swf = async (_ctxt: WorkflowContext, destinationID: string, message: unknown, topic?: string) => {
+        const ctx = getCurrentContextStore();
+        const functionID: number = functionIDGetIncrement();
+        await this.systemDatabase.send(ctx!.workflowId!, functionID, destinationID, DBOSJSON.stringify(message), topic);
       };
+      const temp_workflow = swf as UntypedAsyncFunction;
       return this.workflow(
         temp_workflow,
         {
