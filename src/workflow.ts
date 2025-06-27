@@ -136,11 +136,6 @@ export const StatusString = {
  */
 export interface WorkflowContext extends DBOSContext {
   send<T>(destinationID: string, message: T, topic?: string): Promise<void>;
-  recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null>;
-  setEvent<T>(key: string, value: T): Promise<void>;
-  getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
-
-  retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R>;
 }
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
@@ -193,57 +188,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
       DBOSJSON.stringify(message),
       topic,
     );
-  }
-
-  /**
-   * Consume and return the oldest unconsumed message sent to your UUID.
-   * If a topic is specified, retrieve the oldest message tagged with that topic.
-   * Otherwise, retrieve the oldest message with no topic.
-   */
-  async recv<T>(
-    topic?: string,
-    timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
-  ): Promise<T | null> {
-    const functionID: number = functionIDGetIncrement();
-    const timeoutFunctionID: number = functionIDGetIncrement();
-    return DBOSJSON.parse(
-      await this.#dbosExec.systemDatabase.recv(this.workflowUUID, functionID, timeoutFunctionID, topic, timeoutSeconds),
-    ) as T;
-  }
-
-  /**
-   * Emit a workflow event, represented as a key-value pair.
-   * Events are immutable once set.
-   */
-  async setEvent<T>(key: string, value: T) {
-    const functionID = functionIDGetIncrement();
-    await this.#dbosExec.systemDatabase.setEvent(this.workflowUUID, functionID, key, DBOSJSON.stringify(value));
-  }
-
-  /**
-   * Wait for a workflow to emit an event, then return its value.
-   */
-  async getEvent<T>(
-    targetUUID: string,
-    key: string,
-    timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
-  ): Promise<T | null> {
-    const functionID: number = functionIDGetIncrement();
-    const timeoutFunctionID = functionIDGetIncrement();
-    const params = {
-      workflowID: this.workflowUUID,
-      functionID,
-      timeoutFunctionID,
-    };
-    return DBOSJSON.parse(await this.#dbosExec.systemDatabase.getEvent(targetUUID, key, timeoutSeconds, params)) as T;
-  }
-
-  /**
-   * Retrieve a handle for a workflow UUID.
-   */
-  retrieveWorkflow<R>(targetID: string): WorkflowHandle<R> {
-    const functionID: number = functionIDGetIncrement();
-    return new RetrievedHandle(this.#dbosExec.systemDatabase, targetID, this.workflowUUID, functionID);
   }
 }
 
