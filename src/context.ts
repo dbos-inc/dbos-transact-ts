@@ -7,7 +7,6 @@ import { UserDatabaseClient } from './user_database';
 import { DBOSConfigKeyTypeError } from './error';
 import { AsyncLocalStorage } from 'async_hooks';
 import { WorkflowContext, WorkflowContextImpl } from './workflow';
-import { StepContextImpl } from './step';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import { globalParams } from './utils';
 import Koa from 'koa';
@@ -151,29 +150,28 @@ export async function runWithDataSourceContext<R>(callnum: number, callback: () 
   );
 }
 
-export async function runWithStepContext<R>(
-  ctx: StepContextImpl,
+export async function runInStepContext<R>(
+  pctx: DBOSLocalCtx,
+  stepID: number,
+  maxAttempts: number | undefined,
   currentAttempt: number | undefined,
   callback: () => Promise<R>,
 ) {
   // Check we are in a workflow context and not in a step / transaction already
-  const pctx = getCurrentContextStore();
   if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
   if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
 
   const stepStatus: StepStatus = {
-    stepID: ctx.moveThisFunctionID,
+    stepID: stepID,
     currentAttempt: currentAttempt,
-    maxAttempts: currentAttempt ? ctx.maxAttempts : undefined,
+    maxAttempts: currentAttempt ? maxAttempts : undefined,
   };
 
-  return await asyncLocalCtx.run(
+  return await runWithParentContext(
+    pctx,
     {
-      ...pctx,
-      ctx,
       stepStatus: stepStatus,
-      workflowId: ctx.workflowUUID,
-      curStepFunctionId: ctx.moveThisFunctionID,
+      curStepFunctionId: stepID,
       parentCtx: pctx,
     },
     callback,

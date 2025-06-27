@@ -32,7 +32,7 @@ import {
 } from './workflow';
 
 import { IsolationLevel, type TransactionConfig } from './transaction';
-import { type StepConfig, StepContextImpl, type StepFunction } from './step';
+import { type StepConfig, type StepFunction } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
@@ -77,7 +77,7 @@ import knex, { Knex } from 'knex';
 import {
   DBOSContextImpl,
   runWithWorkflowContext,
-  runWithStepContext,
+  runInStepContext,
   getNextWFID,
   functionIDGetIncrement,
   runWithParentContext,
@@ -1717,7 +1717,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     stepFnName: string | undefined,
     stepConfig: StepConfig | undefined,
     clsInst: object | null,
-    wfCtx: WorkflowContextImpl,
+    _wfCtx: WorkflowContextImpl,
     ...args: T
   ): Promise<R> {
     stepFnName = stepFnName ?? stepFn.name ?? '<unnamed>';
@@ -1729,7 +1729,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(stepFnName);
     }
 
-    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
+    const lctx = getCurrentContextStore()!;
+    const wfid = lctx.workflowId!;
+
+    await this.systemDatabase.checkIfCanceled(wfid);
 
     const funcID = functionIDGetIncrement();
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
@@ -1737,67 +1740,59 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const span: Span = this.tracer.startSpan(
       stepFnName,
       {
-        operationUUID: wfCtx.workflowUUID,
+        operationUUID: wfid,
         operationType: OperationType.COMMUNICATOR,
-        authenticatedUser: wfCtx.authenticatedUser,
-        assumedRole: wfCtx.assumedRole,
-        authenticatedRoles: wfCtx.authenticatedRoles,
+        authenticatedUser: lctx.authenticatedUser,
+        assumedRole: lctx.assumedRole,
+        authenticatedRoles: lctx.authenticatedRoles,
         retriesAllowed: stepConfig.retriesAllowed,
         intervalSeconds: stepConfig.intervalSeconds,
         maxAttempts: stepConfig.maxAttempts,
         backoffRate: stepConfig.backoffRate,
       },
-      wfCtx.span,
+      lctx.span,
     );
-
-    const ctxt: StepContextImpl = new StepContextImpl(wfCtx, funcID, span, this.logger, stepConfig, stepFnName);
 
     // Check if this execution previously happened, returning its original result if it did.
-    const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(
-      wfCtx.workflowUUID,
-      ctxt.moveThisFunctionID,
-    );
+    const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfid, funcID);
     if (checkr) {
-      if (checkr.functionName !== ctxt.operationName) {
-        throw new DBOSUnexpectedStepError(
-          ctxt.workflowUUID,
-          ctxt.moveThisFunctionID,
-          ctxt.operationName,
-          checkr.functionName ?? '?',
-        );
+      if (checkr.functionName !== stepFnName) {
+        throw new DBOSUnexpectedStepError(wfid, funcID, stepFnName, checkr.functionName ?? '?');
       }
       const check = DBOSExecutor.reviveResultOrError<R>(checkr);
-      ctxt.span.setAttribute('cached', true);
-      ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.tracer.endSpan(ctxt.span);
+      span.setAttribute('cached', true);
+      span.setStatus({ code: SpanStatusCode.OK });
+      this.tracer.endSpan(span);
       return check;
     }
 
     if (this.isDebugging) {
       throw new DBOSDebuggerError(
-        `Failed to find the recorded output for the step: workflow UUID: ${wfCtx.workflowUUID}, step number: ${funcID}`,
+        `Failed to find the recorded output for the step: workflow UUID: ${wfid}, step number: ${funcID}`,
       );
     }
+
+    const maxAttempts = stepConfig.maxAttempts ?? 3;
 
     // Execute the step function.  If it throws an exception, retry with exponential backoff.
     // After reaching the maximum number of retries, throw an DBOSError.
     let result: R | DBOSNull = dbosNull;
     let err: Error | DBOSNull = dbosNull;
     const errors: Error[] = [];
-    if (ctxt.retriesAllowed) {
-      let numAttempts = 0;
-      let intervalSeconds: number = ctxt.intervalSeconds;
+    if (stepConfig.retriesAllowed) {
+      let attemptNum = 0;
+      let intervalSeconds: number = stepConfig.intervalSeconds ?? 1;
       if (intervalSeconds > maxRetryIntervalSec) {
         this.logger.warn(
           `Step config interval exceeds maximum allowed interval, capped to ${maxRetryIntervalSec} seconds!`,
         );
       }
-      while (result === dbosNull && numAttempts++ < ctxt.maxAttempts) {
+      while (result === dbosNull && attemptNum++ < (maxAttempts ?? 3)) {
         try {
-          await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
+          await this.systemDatabase.checkIfCanceled(wfid);
 
           let cresult: R | undefined;
-          await runWithStepContext(ctxt, numAttempts, async () => {
+          await runInStepContext(lctx, funcID, maxAttempts, attemptNum, async () => {
             const sf = stepFn as unknown as (...args: T) => Promise<R>;
             cresult = await sf.call(clsInst, ...args);
           });
@@ -1806,18 +1801,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
           const e = error as Error;
           errors.push(e);
           this.logger.warn(
-            `Error in step being automatically retried. Attempt ${numAttempts} of ${ctxt.maxAttempts}. ${e.stack}`,
+            `Error in step being automatically retried. Attempt ${attemptNum} of ${maxAttempts}. ${e.stack}`,
           );
           span.addEvent(
-            `Step attempt ${numAttempts + 1} failed`,
+            `Step attempt ${attemptNum + 1} failed`,
             { retryIntervalSeconds: intervalSeconds, error: (error as Error).message },
             performance.now(),
           );
-          if (numAttempts < ctxt.maxAttempts) {
+          if (attemptNum < maxAttempts) {
             // Sleep for an interval, then increase the interval by backoffRate.
             // Cap at the maximum allowed retry interval.
             await sleepms(intervalSeconds * 1000);
-            intervalSeconds *= ctxt.backoffRate;
+            intervalSeconds *= stepConfig.backoffRate ?? 2;
             intervalSeconds = intervalSeconds < maxRetryIntervalSec ? intervalSeconds : maxRetryIntervalSec;
           }
         }
@@ -1825,7 +1820,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       try {
         let cresult: R | undefined;
-        await runWithStepContext(ctxt, undefined, async () => {
+        await runInStepContext(lctx, funcID, maxAttempts, undefined, async () => {
           const sf = stepFn as unknown as (...args: T) => Promise<R>;
           cresult = await sf.call(clsInst, ...args);
         });
@@ -1838,32 +1833,20 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // `result` can only be dbosNull when the step timed out
     if (result === dbosNull) {
       // Record the error, then throw it.
-      err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, ctxt.maxAttempts, errors) : err;
-      await this.systemDatabase.recordOperationResult(
-        wfCtx.workflowUUID,
-        ctxt.moveThisFunctionID,
-        ctxt.operationName,
-        true,
-        {
-          error: DBOSJSON.stringify(serializeError(err)),
-        },
-      );
-      ctxt.span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
-      this.tracer.endSpan(ctxt.span);
+      err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, maxAttempts, errors) : err;
+      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, {
+        error: DBOSJSON.stringify(serializeError(err)),
+      });
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+      this.tracer.endSpan(span);
       throw err as Error;
     } else {
       // Record the execution and return.
-      await this.systemDatabase.recordOperationResult(
-        wfCtx.workflowUUID,
-        ctxt.moveThisFunctionID,
-        ctxt.operationName,
-        true,
-        {
-          output: DBOSJSON.stringify(result),
-        },
-      );
-      ctxt.span.setStatus({ code: SpanStatusCode.OK });
-      this.tracer.endSpan(ctxt.span);
+      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, {
+        output: DBOSJSON.stringify(result),
+      });
+      span.setStatus({ code: SpanStatusCode.OK });
+      this.tracer.endSpan(span);
       return result as R;
     }
   }
