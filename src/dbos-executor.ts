@@ -77,7 +77,6 @@ import { SpanStatusCode } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import {
   DBOSContextImpl,
-  runWithWorkflowContext,
   runInStepContext,
   getNextWFID,
   functionIDGetIncrement,
@@ -756,6 +755,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
     }
 
+    const pctx = getCurrentContextStore();
+
     const wInfo = this.getWorkflowInfo(wf as Workflow<unknown[], unknown>);
     if (wInfo === undefined) {
       throw new DBOSNotRegisteredError(wf.name);
@@ -769,7 +770,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
       workflowID,
       wConfig,
       wf.name,
-      presetID,
       timeoutMS,
       deadlineEpochMS,
       params.tempWfType,
@@ -886,17 +886,27 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       // Execute the workflow.
       try {
-        const callResult = await runWithWorkflowContext(wCtxt, () => {
-          const callPromise = passContext
-            ? wf.call(params.configuredInstance, wCtxt, ...args)
-            : (wf as unknown as TypedAsyncFunction<T, R>).call(params.configuredInstance, ...args);
+        const callResult = await runWithParentContext(
+          pctx,
+          {
+            ctx: wCtxt,
+            presetID,
+            timeoutMS,
+            deadlineEpochMS,
+            workflowId: workflowID,
+          },
+          () => {
+            const callPromise = passContext
+              ? wf.call(params.configuredInstance, wCtxt, ...args)
+              : (wf as unknown as TypedAsyncFunction<T, R>).call(params.configuredInstance, ...args);
 
-          if ($deadlineEpochMS === undefined) {
-            return callPromise;
-          } else {
-            return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
-          }
-        });
+            if ($deadlineEpochMS === undefined) {
+              return callPromise;
+            } else {
+              return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
+            }
+          },
+        );
 
         if (this.isDebugging) {
           const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
@@ -1155,7 +1165,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(txn.name);
     }
 
-    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
+    const pctx = getCurrentContextStore()!;
+    const wfid = pctx.workflowId!;
+
+    await this.systemDatabase.checkIfCanceled(wfid);
 
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
@@ -1186,7 +1199,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         let prevResult: R | Error | DBOSNull = dbosNull;
         const queryFunc = <T>(sql: string, args: unknown[]) =>
           this.userDatabase.queryWithClient<T>(client, sql, ...args);
-        if (wfCtx.presetUUID) {
+        if (pctx.presetID) {
           const executionResult = await this.#checkExecution<R>(queryFunc, workflowUUID, funcId, txn.name);
           prevResult = executionResult.result;
           txn_snapshot = executionResult.txn_snapshot;
@@ -1222,7 +1235,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const result = await (async function () {
           try {
             return await runWithParentContext(
-              parentCtx!,
+              parentCtx,
               {
                 authenticatedRoles: wfCtx.authenticatedRoles ?? parentCtx?.authenticatedRoles,
                 authenticatedUser: wfCtx.authenticatedUser ?? parentCtx?.authenticatedUser,
@@ -1412,21 +1425,19 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
 
+    const pctx = getCurrentContextStore()!;
+    const wfid = pctx.workflowId!;
+
     while (true) {
-      await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
+      await this.systemDatabase.checkIfCanceled(wfid);
 
       let txn_snapshot = 'invalid';
       const wrappedProcedure = async (client: PoolClient): Promise<R> => {
         let prevResult: R | Error | DBOSNull = dbosNull;
         const queryFunc = <T>(sql: string, args: unknown[]) =>
           this.procedurePool.query(sql, args).then((v) => v.rows as T[]);
-        if (wfCtx.presetUUID) {
-          const executionResult = await this.#checkExecution<R>(
-            queryFunc,
-            wfCtx.workflowUUID,
-            funcId,
-            wfCtx.operationName,
-          );
+        if (pctx.presetID) {
+          const executionResult = await this.#checkExecution<R>(queryFunc, wfid, funcId, wfCtx.operationName);
           prevResult = executionResult.result;
           txn_snapshot = executionResult.txn_snapshot;
           if (prevResult !== dbosNull) {
@@ -1586,7 +1597,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSDebuggerError("Can't invoke stored procedure in debug mode.");
     }
 
-    await this.systemDatabase.checkIfCanceled(wfCtx.workflowUUID);
+    const pctx = getCurrentContextStore()!;
+    const wfid = pctx.workflowId!;
+
+    await this.systemDatabase.checkIfCanceled(wfid);
 
     const $jsonCtx = {
       request: wfCtx.request,
@@ -1598,7 +1612,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     // TODO (Qian/Harry): remove this unshift when we remove the resultBuffer argument
     // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on
     // args and bufferedResults before being passed to #invokeStoredProc
-    const $args = [wfCtx.workflowUUID, funcId, wfCtx.presetUUID, $jsonCtx, null, JSON.stringify(args)] as unknown[];
+    const $args = [wfCtx.workflowUUID, funcId, pctx.presetID, $jsonCtx, null, JSON.stringify(args)] as unknown[];
 
     const readonly = config.readOnly ?? false;
     if (!readonly) {

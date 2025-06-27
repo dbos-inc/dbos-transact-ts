@@ -6,7 +6,7 @@ import { ParsedUrlQuery } from 'querystring';
 import { UserDatabaseClient } from './user_database';
 import { DBOSConfigKeyTypeError } from './error';
 import { AsyncLocalStorage } from 'async_hooks';
-import { WorkflowContext, WorkflowContextImpl } from './workflow';
+import { WorkflowContextImpl } from './workflow';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import { globalParams } from './utils';
 import Koa from 'koa';
@@ -36,6 +36,9 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   parentCtx?: DBOSLocalCtx;
   workflowId?: string;
   curWFFunctionId?: number; // If currently in a WF, the current call number / ID
+  presetID?: boolean;
+  timeoutMS?: number | null;
+  deadlineEpochMS?: number;
   inRecovery?: boolean;
   curStepFunctionId?: number; // If currently in a step, its function ID
   stepStatus?: StepStatus; // If currently in a step, its public status object
@@ -123,7 +126,7 @@ export async function runWithTopContext<R>(ctx: DBOSLocalCtx, callback: () => Pr
 }
 
 export async function runWithParentContext<R>(
-  pctx: DBOSLocalCtx,
+  pctx: DBOSLocalCtx | undefined,
   ctx: DBOSLocalCtx,
   callback: () => Promise<R>,
 ): Promise<R> {
@@ -131,6 +134,7 @@ export async function runWithParentContext<R>(
     {
       ...pctx,
       workflowTimeoutMS: undefined, // Becomes deadline
+      parentCtx: pctx,
       ...ctx,
     },
     callback,
@@ -173,20 +177,6 @@ export async function runInStepContext<R>(
       stepStatus: stepStatus,
       curStepFunctionId: stepID,
       parentCtx: pctx,
-    },
-    callback,
-  );
-}
-
-export async function runWithWorkflowContext<R>(ctx: WorkflowContext, callback: () => Promise<R>) {
-  const pctx = getCurrentContextStore() ?? {};
-  // TODO: Check context, this could be a child workflow?
-  return await asyncLocalCtx.run(
-    {
-      ...pctx,
-      workflowTimeoutMS: undefined, // Use D/L
-      ctx,
-      workflowId: ctx.workflowUUID,
     },
     callback,
   );

@@ -144,7 +144,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     workflowUUID: string,
     readonly workflowConfig: WorkflowConfig,
     workflowName: string,
-    readonly presetUUID: boolean,
     readonly timeoutMS: number | undefined | null,
     readonly deadlineEpochMS: number | undefined,
     readonly tempWfOperationType: string = '', // "transaction", "procedure", "external", or "send"
