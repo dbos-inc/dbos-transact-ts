@@ -8,6 +8,9 @@ import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
 import { DataSourceTransactionHandler } from './datasource';
 
+export type TypedAsyncFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
+export type UntypedAsyncFunction = TypedAsyncFunction<unknown[], unknown>;
+
 /**
  * Interface for integrating into the DBOS startup/shutdown lifecycle
  */

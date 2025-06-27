@@ -10,7 +10,6 @@ import type {
   WorkflowStatus,
 } from './workflow';
 import type { MethodRegistrationBase } from './decorators';
-import type { StepFunction } from './step';
 import type { Notification } from 'pg';
 
 export type DBNotification = Notification;
@@ -81,7 +80,7 @@ export interface DBOSExecutorContext {
    * Invoke a step function.
    *  Note that functions can be called directly instead of using this interface.
    */
-  external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+  external<T extends unknown[], R>(func: (...args: T) => Promise<R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   /**
    * @deprecated

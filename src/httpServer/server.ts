@@ -10,7 +10,6 @@ import { DBOSExecutor, OperationType } from '../dbos-executor';
 import { Logger as DBOSLogger, GlobalLogger as Logger } from '../telemetry/logs';
 import { getOrGenerateRequestID, MiddlewareDefaults, RequestIDHeader } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT, defaultTextMapGetter } from '@opentelemetry/api';
-import { StepFunction } from '../step';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
@@ -23,6 +22,7 @@ import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { DBOS } from '../dbos';
 import * as protocol from '../conductor/protocol';
+import { UntypedAsyncFunction } from '../decorators';
 
 /**
  * Utility function to convert WorkflowStatus object to underscore format
@@ -757,7 +757,7 @@ export class DBOSHttpServer {
           await runWithTopContext(dctx, async () => {
             if (ro.txnConfig) {
               koaCtxt.body = await dbosExec.transaction(
-                ro.registeredFunction as (...args: unknown[]) => Promise<unknown>,
+                ro.registeredFunction as UntypedAsyncFunction,
                 wfParams,
                 ...args,
               );
@@ -766,11 +766,7 @@ export class DBOSHttpServer {
                 await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
               ).getResult();
             } else if (ro.stepConfig) {
-              koaCtxt.body = await dbosExec.external(
-                ro.registeredFunction as StepFunction<unknown[], unknown>,
-                wfParams,
-                ...args,
-              );
+              koaCtxt.body = await dbosExec.external(ro.registeredFunction as UntypedAsyncFunction, wfParams, ...args);
             } else {
               // Directly invoke the handler code.
               const cresult = await ro.invoke(undefined, [...args]);

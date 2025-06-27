@@ -67,6 +67,8 @@ import {
   transactionalDataSources,
   registerMiddlewareInstaller,
   MethodRegistrationBase,
+  TypedAsyncFunction,
+  UntypedAsyncFunction,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
@@ -90,7 +92,7 @@ import { randomUUID } from 'node:crypto';
 
 import { PoolClient } from 'pg';
 import { Knex } from 'knex';
-import { StepConfig, StepFunction } from './step';
+import { StepConfig } from './step';
 import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
 import { ConfiguredInstance } from '.';
 import { StoredProcedureConfig } from './procedure';
@@ -1235,7 +1237,7 @@ export class DBOS {
    */
   static startWorkflow<T extends object>(targetClass: T, params?: StartWorkflowParams): InvokeFunctionsAsync<T>;
   static startWorkflow(
-    target: ((...args: unknown[]) => Promise<unknown>) | ConfiguredInstance | object,
+    target: UntypedAsyncFunction | ConfiguredInstance | object,
     params?: StartWorkflowParams,
   ): unknown {
     const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
@@ -1568,7 +1570,7 @@ export class DBOS {
         );
       }
       if (regOP.stepConfig) {
-        const func = regOP.registeredFunction as StepFunction<Args, Return>;
+        const func = regOP.registeredFunction as TypedAsyncFunction<Args, Return>;
         return DBOSExecutor.globalInstance!.startStepTempWF(func, wfParams, workflowID, funcNum, ...args);
       }
 
@@ -1814,7 +1816,7 @@ export class DBOS {
           }
           const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callStepFunction(
-            registration.registeredFunction as unknown as StepFunction<Args, Return>,
+            registration.registeredFunction as unknown as TypedAsyncFunction<Args, Return>,
             undefined,
             undefined,
             inst ?? null,
@@ -1854,7 +1856,7 @@ export class DBOS {
         };
 
         return await DBOS.#executor.external(
-          registration.registeredFunction as unknown as StepFunction<Args, Return>,
+          registration.registeredFunction as unknown as TypedAsyncFunction<Args, Return>,
           wfParams,
           ...rawArgs,
         );
@@ -1901,7 +1903,7 @@ export class DBOS {
         }
         const wfctx = assertCurrentWorkflowContext();
         return await DBOSExecutor.globalInstance!.callStepFunction(
-          func as unknown as StepFunction<Args, Return>,
+          func as unknown as TypedAsyncFunction<Args, Return>,
           name,
           config,
           inst ?? null,
@@ -1941,7 +1943,7 @@ export class DBOS {
       }
       const wfctx = assertCurrentWorkflowContext();
       return DBOSExecutor.globalInstance!.callStepFunction<[], Return>(
-        func as unknown as StepFunction<[], Return>,
+        func as unknown as TypedAsyncFunction<[], Return>,
         name,
         config,
         null,

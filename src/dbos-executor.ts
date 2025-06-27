@@ -32,7 +32,7 @@ import {
 } from './workflow';
 
 import { IsolationLevel, type TransactionConfig } from './transaction';
-import { type StepConfig, type StepFunction } from './step';
+import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { GlobalLogger as Logger } from './telemetry/logs';
@@ -70,6 +70,8 @@ import {
   getAllRegisteredClassNames,
   getRegisteredOperationsByClassname,
   getLifecycleListeners,
+  UntypedAsyncFunction,
+  TypedAsyncFunction,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -166,27 +168,26 @@ export enum DebugMode {
 }
 
 interface WorkflowRegInfo {
-  workflow: (...args: unknown[]) => Promise<unknown>;
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  workflowOrigFunction: Function;
+  workflow: UntypedAsyncFunction;
+  workflowOrigFunction: UntypedAsyncFunction;
   config: WorkflowConfig;
   registration?: MethodRegistrationBase; // Always set except for temp WF...
 }
 
 interface TransactionRegInfo {
-  transaction: (...args: unknown[]) => Promise<unknown>;
+  transaction: UntypedAsyncFunction;
   config: TransactionConfig;
   registration: MethodRegistrationBase;
 }
 
 interface StepRegInfo {
-  step: (...args: unknown[]) => Promise<unknown>;
+  step: UntypedAsyncFunction;
   config: StepConfig;
   registration: MethodRegistrationBase;
 }
 
 interface ProcedureRegInfo {
-  procedure: (...args: unknown[]) => Promise<unknown>;
+  procedure: UntypedAsyncFunction;
   config: StoredProcedureConfig;
   registration: MethodRegistrationBase;
 }
@@ -585,7 +586,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   /* WORKFLOW OPERATIONS */
 
   #registerWorkflow(ro: MethodRegistrationBase) {
-    const wf = ro.registeredFunction as (...args: unknown[]) => Promise<unknown>;
+    const wf = ro.registeredFunction as UntypedAsyncFunction;
     if (wf.name === DBOSExecutor.tempWorkflowName) {
       throw new DBOSError(`Unexpected use of reserved workflow name: ${wf.name}`);
     }
@@ -595,7 +596,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
     const workflowInfo: WorkflowRegInfo = {
       workflow: wf,
-      workflowOrigFunction: ro.origFunction,
+      workflowOrigFunction: ro.origFunction as UntypedAsyncFunction,
       config: { ...ro.workflowConfig },
       registration: ro,
     };
@@ -604,7 +605,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerTransaction(ro: MethodRegistrationBase) {
-    const txf = ro.registeredFunction as (...args: unknown[]) => Promise<unknown>;
+    const txf = ro.registeredFunction as UntypedAsyncFunction;
     const tfn = ro.className + '.' + ro.name;
 
     if (this.transactionInfoMap.has(tfn)) {
@@ -620,7 +621,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerStep(ro: MethodRegistrationBase) {
-    const comm = ro.registeredFunction as (...args: unknown[]) => Promise<unknown>;
+    const comm = ro.registeredFunction as UntypedAsyncFunction;
     const cfn = ro.className + '.' + ro.name;
     if (this.stepInfoMap.has(cfn)) {
       throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
@@ -635,7 +636,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerProcedure(ro: MethodRegistrationBase) {
-    const proc = ro.registeredFunction as (...args: unknown[]) => Promise<unknown>;
+    const proc = ro.registeredFunction as UntypedAsyncFunction;
     const cfn = ro.className + '.' + ro.name;
 
     if (this.procedureInfoMap.has(cfn)) {
@@ -680,7 +681,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return { txnInfo, clsInst: getConfiguredInstance(className, cfgName) };
   }
 
-  getStepInfo(cf: StepFunction<unknown[], unknown>) {
+  getStepInfo(cf: UntypedAsyncFunction) {
     const cfname = getRegisteredMethodClassName(cf) + '.' + cf.name;
     return this.stepInfoMap.get(cfname);
   }
@@ -1608,10 +1609,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     type ReturnValue = {
       return_value: { output?: R; error?: unknown; txn_id?: string; txn_snapshot?: string; created_at?: number };
     };
-    const [{ return_value }] = await this.#invokeStoredProc<ReturnValue>(
-      proc as (...args: unknown[]) => Promise<unknown>,
-      $args,
-    );
+    const [{ return_value }] = await this.#invokeStoredProc<ReturnValue>(proc as UntypedAsyncFunction, $args);
 
     const { error, output, txn_id } = return_value;
 
@@ -1628,10 +1626,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return output!;
   }
 
-  async #invokeStoredProc<R extends QueryResultRow = any>(
-    proc: (...args: unknown[]) => Promise<unknown>,
-    args: unknown[],
-  ): Promise<R[]> {
+  async #invokeStoredProc<R extends QueryResultRow = any>(proc: UntypedAsyncFunction, args: unknown[]): Promise<R[]> {
     const client = await this.procedurePool.connect();
     const log = (msg: NoticeMessage) => this.#logNotice(msg);
 
@@ -1669,12 +1664,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R> {
+  async external<T extends unknown[], R>(
+    stepFn: TypedAsyncFunction<T, R>,
+    params: WorkflowParams,
+    ...args: T
+  ): Promise<R> {
     return await (await this.startStepTempWF(stepFn, params, undefined, undefined, ...args)).getResult();
   }
 
   async startStepTempWF<T extends unknown[], R>(
-    stepFn: StepFunction<T, R>,
+    stepFn: TypedAsyncFunction<T, R>,
     params: InternalWorkflowParams,
     callerUUID?: string,
     callerFunctionID?: number,
@@ -1713,7 +1712,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * The step may execute many times, but once it is complete, it will not re-execute.
    */
   async callStepFunction<T extends unknown[], R>(
-    stepFn: StepFunction<T, R>,
+    stepFn: TypedAsyncFunction<T, R>,
     stepFnName: string | undefined,
     stepConfig: StepConfig | undefined,
     clsInst: object | null,
@@ -1722,7 +1721,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   ): Promise<R> {
     stepFnName = stepFnName ?? stepFn.name ?? '<unnamed>';
     if (!stepConfig) {
-      const stepReg = this.getStepInfo(stepFn as StepFunction<unknown[], unknown>);
+      const stepReg = this.getStepInfo(stepFn as (...args: unknown[]) => Promise<unknown>);
       stepConfig = stepReg?.config;
     }
     if (stepConfig === undefined) {
@@ -2136,7 +2135,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
 
       return await this.startTransactionTempWF(
-        txnInfo.transaction as (...args: unknown[]) => Promise<unknown>,
+        txnInfo.transaction,
         {
           workflowUUID: workflowStartID,
           parentCtx: parentCtx ?? undefined,

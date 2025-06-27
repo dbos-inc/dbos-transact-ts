@@ -1,9 +1,8 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { DBOSExecutor, OperationType } from './dbos-executor';
-import { StepFunction } from './step';
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { DBOSContext, DBOSContextImpl, functionIDGetIncrement } from './context';
-import { ConfiguredInstance } from './decorators';
+import { ConfiguredInstance, TypedAsyncFunction } from './decorators';
 import { DBOSJSON } from './utils';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
@@ -210,7 +209,7 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
    * The step may execute many times, but once it is complete, it will not re-execute.
    */
   async external<T extends unknown[], R>(
-    stepFn: StepFunction<T, R>,
+    stepFn: TypedAsyncFunction<T, R>,
     clsInst: ConfiguredInstance | null,
     ...args: T
   ): Promise<R> {

@@ -41,7 +41,7 @@ export {
   WorkflowStatus,
 } from './workflow';
 
-export { StepConfig, StepFunction } from './step';
+export { StepConfig } from './step';
 
 export {
   // Method Decorators
