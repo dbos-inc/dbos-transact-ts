@@ -17,41 +17,11 @@ import { DBOSLocalCtx, HTTPRequest, runWithTopContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
 import { globalTimeout } from '../dbos-runtime/workflow_management';
-import { WorkflowStatus } from '../workflow';
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { DBOS } from '../dbos';
 import * as protocol from '../conductor/protocol';
 import { UntypedAsyncFunction } from '../decorators';
-
-/**
- * Utility function to convert WorkflowStatus object to underscore format
- * for HTTP API responses.
- */
-function workflowStatusToUnderscoreFormat(wf: WorkflowStatus) {
-  return {
-    workflow_id: wf.workflowID,
-    status: wf.status,
-    workflow_name: wf.workflowName,
-    workflow_class_name: wf.workflowClassName,
-    workflow_config_name: wf.workflowConfigName,
-    queue_name: wf.queueName,
-    authenticated_user: wf.authenticatedUser,
-    assumed_role: wf.assumedRole,
-    authenticated_roles: wf.authenticatedRoles,
-    output: wf.output,
-    error: wf.error,
-    input: wf.input,
-    executor_id: wf.executorId,
-    app_version: wf.applicationVersion,
-    application_id: wf.applicationID,
-    recovery_attempts: wf.recoveryAttempts,
-    created_at: wf.createdAt,
-    updated_at: wf.updatedAt,
-    timeout_ms: wf.timeoutMS,
-    deadline_epoch_ms: wf.deadlineEpochMS,
-  };
-}
 
 export type QueueMetadataResponse = QueueParameters & { name: string };
 
@@ -559,7 +529,7 @@ export class DBOSHttpServer {
       const workflowId = (koaCtxt.params as { workflow_id: string }).workflow_id;
       const workflow = await dbosExec.getWorkflowStatus(workflowId);
       if (workflow) {
-        koaCtxt.body = workflowStatusToUnderscoreFormat(workflow);
+        koaCtxt.body = new protocol.WorkflowsOutput(workflow);
         koaCtxt.status = 200;
       } else {
         koaCtxt.status = 404;
