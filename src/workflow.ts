@@ -2,7 +2,7 @@
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { DBOSContext, DBOSContextImpl, functionIDGetIncrement } from './context';
-import { ConfiguredInstance, TypedAsyncFunction } from './decorators';
+import { ConfiguredInstance } from './decorators';
 import { DBOSJSON } from './utils';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
@@ -181,38 +181,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
     this.isTempWorkflow = DBOSExecutor.tempWorkflowName === workflowName;
     this.applicationConfig = dbosExec.config.application;
     this.maxRecoveryAttempts = workflowConfig.maxRecoveryAttempts ? workflowConfig.maxRecoveryAttempts : 50;
-  }
-
-  // TODO: ConfiguredInstance support
-  async procedure<T extends unknown[], R>(proc: (...args: T) => Promise<R>, ...args: T): Promise<R> {
-    return this.#dbosExec.callProcedureFunction(proc, this, ...args);
-  }
-
-  /**
-   * Execute a transactional function.
-   * The transaction is guaranteed to execute exactly once, even if the workflow is retried with the same UUID.
-   * If the transaction encounters a Postgres serialization error, retry it.
-   * If it encounters any other error, throw it.
-   */
-  async transaction<T extends unknown[], R>(
-    txn: (...args: T) => Promise<R>,
-    clsinst: ConfiguredInstance | null,
-    ...args: T
-  ): Promise<R> {
-    return this.#dbosExec.callTransactionFunction(txn, clsinst, this, ...args);
-  }
-
-  /**
-   * Execute a step function.
-   * If it encounters any error, retry according to its configured retry policy until the maximum number of attempts is reached, then throw an DBOSError.
-   * The step may execute many times, but once it is complete, it will not re-execute.
-   */
-  async external<T extends unknown[], R>(
-    stepFn: TypedAsyncFunction<T, R>,
-    clsInst: ConfiguredInstance | null,
-    ...args: T
-  ): Promise<R> {
-    return this.#dbosExec.callStepFunction(stepFn, undefined, undefined, clsInst, this, ...args);
   }
 
   /**
