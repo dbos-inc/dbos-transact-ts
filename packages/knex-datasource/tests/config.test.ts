@@ -3,7 +3,7 @@ import { KnexDataSource } from '../index';
 import { dropDB, ensureDB } from './test-helpers';
 import knex from 'knex';
 
-describe('KnexDataSource.initializeSchema', () => {
+describe('KnexDataSource.initializeDBOSSchema', () => {
   const config = { user: 'postgres', database: 'knex_ds_config_test' };
 
   beforeEach(async () => {
@@ -32,9 +32,9 @@ describe('KnexDataSource.initializeSchema', () => {
     return result.rows[0].exists;
   }
 
-  test('initializeSchema-with-config', async () => {
+  test('initializeDBOSSchema-with-config', async () => {
     const knexConfig = { client: 'pg', connection: config };
-    await KnexDataSource.initializeSchema(knexConfig);
+    await KnexDataSource.initializeDBOSSchema(knexConfig);
 
     const client = new Client(config);
     try {
@@ -42,7 +42,7 @@ describe('KnexDataSource.initializeSchema', () => {
       await expect(txCompletionTableExists(client)).resolves.toBe(true);
       await expect(queryTxCompletionTable(client)).resolves.toEqual(0);
 
-      await KnexDataSource.uninitializeSchema(knexConfig);
+      await KnexDataSource.uninitializeDBOSSchema(knexConfig);
 
       await expect(txCompletionTableExists(client)).resolves.toBe(false);
     } finally {
@@ -50,17 +50,17 @@ describe('KnexDataSource.initializeSchema', () => {
     }
   });
 
-  test('initializeSchema-with-knex', async () => {
+  test('initializeDBOSSchema-with-knex', async () => {
     const knexDB = knex({ client: 'pg', connection: config });
     const client = new Client(config);
     try {
-      await KnexDataSource.initializeSchema(knexDB);
+      await KnexDataSource.initializeDBOSSchema(knexDB);
       await client.connect();
 
       await expect(txCompletionTableExists(client)).resolves.toBe(true);
       await expect(queryTxCompletionTable(client)).resolves.toEqual(0);
 
-      await KnexDataSource.uninitializeSchema(knexDB);
+      await KnexDataSource.uninitializeDBOSSchema(knexDB);
 
       await expect(txCompletionTableExists(client)).resolves.toBe(false);
     } finally {

@@ -1459,14 +1459,19 @@ export class DBOS {
    */
   static registerWorkflow<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     options: {
-      classOrInst?: object;
+      name?: string;
+      ctorOrProto?: object;
       className?: string;
       config?: WorkflowConfig;
     } = {},
   ): (this: This, ...args: Args) => Promise<Return> {
-    const { registration } = registerAndWrapDBOSFunctionByName(options.classOrInst, options.className, name, func);
+    const { registration } = registerAndWrapDBOSFunctionByName(
+      options.ctorOrProto,
+      options.className,
+      options.name ?? func.name,
+      func,
+    );
     return DBOS.#getWorkflowInvoker(registration, options.config);
   }
 
@@ -2060,12 +2065,12 @@ export class DBOS {
     external: AnyConstructor | object | string,
     func: (this: This, ...args: Args) => Promise<Return>,
     target: {
-      classOrInst?: object;
+      ctorOrProto?: object;
       className?: string;
       name: string;
     },
   ) {
-    return associateMethodWithExternal(external, target.classOrInst, target.className, target.name, func);
+    return associateMethodWithExternal(external, target.ctorOrProto, target.className, target.name, func);
   }
 
   /**
@@ -2075,7 +2080,7 @@ export class DBOS {
     external: AnyConstructor | object | string,
     func: (this: This, ...args: Args) => Promise<Return>,
     target: {
-      classOrInst?: object;
+      ctorOrProto?: object;
       className?: string;
       name: string;
       param: number | string;
@@ -2083,7 +2088,7 @@ export class DBOS {
   ) {
     return associateParameterWithExternal(
       external,
-      target.classOrInst,
+      target.ctorOrProto,
       target.className,
       target.name,
       func,

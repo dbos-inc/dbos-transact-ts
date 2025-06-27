@@ -12,7 +12,7 @@ import {
   registerTransaction,
   runTransaction,
   PGIsolationLevel as IsolationLevel,
-  PGTransactionConfig as KnexTransactionConfig,
+  type PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
 } from '../src/datasource';
@@ -28,6 +28,9 @@ import { DBOSJSON, sleepms } from '../src/utils';
 /*
  * Knex user data access interface
  */
+interface KnexTransactionConfig extends PGTransactionConfig {
+  name?: string;
+}
 
 // This stuff is all specific to PG DBs...
 //  We are also agnostic about whether there are admin credentials to do this, or not...
@@ -280,8 +283,8 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
     return ctx.knexClient;
   }
 
-  // initializeInternalSchema - this is up to the user to call.  It's not part of DBOS lifecycle
-  async initializeInternalSchema(): Promise<void> {
+  // initializeDBOSSchema - this is up to the user to call.  It's not part of DBOS lifecycle
+  async initializeDBOSSchema(): Promise<void> {
     const knex = this.#provider.createInstance();
     try {
       const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
@@ -310,10 +313,9 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
   static registerTransaction<This, Args extends unknown[], Return>(
     dsname: string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(dsname, func, { name }, config);
+    return registerTransaction(dsname, func, { name: config?.name ?? func.name }, config);
   }
 
   // Custom TX decorator
@@ -329,14 +331,14 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, config, config?.name ?? String(propertyKey));
 
       return descriptor;
     };
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, name: string, config?: KnexTransactionConfig) {
-    return await runTransaction(callback, name, { dsName: this.name, config });
+  async runTransaction<T>(callback: () => Promise<T>, config?: KnexTransactionConfig) {
+    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
   }
 }
 
@@ -354,7 +356,7 @@ async function txFunctionGuts() {
 }
 
 // It is not clear if we want to encourage this pattern of registering early by DS name, but it does work
-const txFunc = DBOSKnexDS.registerTransaction('knexA', txFunctionGuts, 'MySecondTx', {});
+const txFunc = DBOSKnexDS.registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' });
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
@@ -362,8 +364,7 @@ async function wfFunctionGuts() {
     async () => {
       return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My first tx result' as a")).rows[0].a;
     },
-    'MyFirstTx',
-    { readOnly: true },
+    { name: 'MyFirstTx', readOnly: true },
   );
 
   // Transaction variant 1: Use a registered DBOS transaction function
@@ -374,7 +375,7 @@ async function wfFunctionGuts() {
 
 // Workflow functions must always be registered before launch; this
 //  allows recovery to occur.
-const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
+const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, { name: 'workflow' });
 
 // Intentionally initialize DS after we've already tried to register a transaction to it
 const dsa = new DBOSKnexDS('knexA', config.poolConfig);
@@ -427,7 +428,7 @@ const txFuncNoWF = dsa.registerTransaction(txFunctionGutsNoWF, {});
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
     await setUpDBOSTestDb(config);
-    await dsa.initializeInternalSchema();
+    await dsa.initializeDBOSSchema();
     DBOS.setConfig(config);
   });
 
@@ -460,8 +461,7 @@ describe('decoratorless-api-tests', () => {
       async () => {
         return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Bare outside wf' as a")).rows[0].a;
       },
-      'MyFirstTx',
-      { readOnly: true },
+      { name: 'MyFirstTx', readOnly: true },
     );
     expect(p1).toBe('Bare outside wf');
 

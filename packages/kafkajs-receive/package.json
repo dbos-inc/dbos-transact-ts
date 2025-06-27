@@ -1,0 +1,28 @@
+{
+  "name": "@dbos-inc/kafkajs-receive",
+  "version": "0.0.0-placeholder",
+  "description": "DBOS event reciever for Kafka using KafkaJS",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "homepage": "https://docs.dbos.dev/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-transact-ts",
+    "directory": "packages/kafkajs-receive"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "pretest": "npm run build",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "kafkajs": "^2.2.4"
+  },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3"
+  }
+}

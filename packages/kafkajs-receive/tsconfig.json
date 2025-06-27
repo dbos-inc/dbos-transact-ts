@@ -1,0 +1,8 @@
+/* Visit https://aka.ms/tsconfig to read more about this file */
+{
+  "extends": "../../tsconfig.shared.json",
+  "compilerOptions": {
+    "noEmit": true
+  },
+  "include": ["index.ts", "tests/*.ts"]
+}

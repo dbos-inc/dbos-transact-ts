@@ -43,7 +43,7 @@ describe('PostgresDataSource', () => {
       }
     }
 
-    await PostgresDataSource.initializeInternalSchema(config);
+    await PostgresDataSource.initializeDBOSSchema(config);
   });
 
   afterAll(async () => {
@@ -345,7 +345,7 @@ async function errorFunction(user: string) {
 }
 
 async function readFunction(user: string) {
-  const rows = await PostgresDataSource.client<Pick<greetings, 'greet_count'>[]>`
+  const rows = await dataSource.client<Pick<greetings, 'greet_count'>[]>`
     SELECT greet_count
     FROM greetings
     WHERE name = ${user}`;
@@ -395,7 +395,7 @@ async function insertWorkflowReg(user: string) {
 }
 
 async function insertWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => insertFunction(user), 'insertFunction');
+  return await dataSource.runTransaction(() => insertFunction(user), { name: 'insertFunction' });
 }
 
 async function errorWorkflowReg(user: string) {
@@ -403,7 +403,7 @@ async function errorWorkflowReg(user: string) {
 }
 
 async function errorWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => errorFunction(user), 'errorFunction');
+  return await dataSource.runTransaction(() => errorFunction(user), { name: 'errorFunction' });
 }
 
 async function readWorkflowReg(user: string) {
@@ -411,7 +411,7 @@ async function readWorkflowReg(user: string) {
 }
 
 async function readWorkflowRunTx(user: string) {
-  return await dataSource.runTransaction(() => readFunction(user), 'readFunction', { readOnly: true });
+  return await dataSource.runTransaction(() => readFunction(user), { name: 'readFunction', readOnly: true });
 }
 
 async function staticWorkflow(user: string) {
@@ -427,11 +427,11 @@ async function instanceWorkflow(user: string) {
   return [result, readResult];
 }
 
-const regInsertWorkflowReg = DBOS.registerWorkflow(insertWorkflowReg, 'insertWorkflowReg');
-const regInsertWorkflowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx, 'insertWorkflowRunTx');
-const regErrorWorkflowReg = DBOS.registerWorkflow(errorWorkflowReg, 'errorWorkflowReg');
-const regErrorWorkflowRunTx = DBOS.registerWorkflow(errorWorkflowRunTx, 'errorWorkflowRunTx');
-const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg, 'readWorkflowReg');
-const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx, 'readWorkflowRunTx');
-const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow, 'staticWorkflow');
-const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow, 'instanceWorkflow');
+const regInsertWorkflowReg = DBOS.registerWorkflow(insertWorkflowReg);
+const regInsertWorkflowRunTx = DBOS.registerWorkflow(insertWorkflowRunTx);
+const regErrorWorkflowReg = DBOS.registerWorkflow(errorWorkflowReg);
+const regErrorWorkflowRunTx = DBOS.registerWorkflow(errorWorkflowRunTx);
+const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg);
+const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx);
+const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow);
+const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow);

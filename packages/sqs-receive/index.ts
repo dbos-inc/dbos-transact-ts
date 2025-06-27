@@ -210,7 +210,7 @@ class SQSReceiver extends DBOSLifecycleCallback {
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { regInfo: receiverInfo } = DBOS.associateFunctionWithInfo(er, inDescriptor.value!, {
-        classOrInst: target,
+        ctorOrProto: target,
         name: propertyKey,
       });
 
