@@ -141,9 +141,6 @@ export interface WorkflowContext extends DBOSContext {
   getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null>;
 
   retrieveWorkflow<R>(workflowID: string): WorkflowHandle<R>;
-
-  sleepms(durationMS: number): Promise<void>;
-  sleep(durationSec: number): Promise<void>;
 }
 
 export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
@@ -247,21 +244,6 @@ export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowCont
   retrieveWorkflow<R>(targetID: string): WorkflowHandle<R> {
     const functionID: number = functionIDGetIncrement();
     return new RetrievedHandle(this.#dbosExec.systemDatabase, targetID, this.workflowUUID, functionID);
-  }
-
-  /**
-   * Sleep for the duration.
-   */
-  async sleepms(durationMS: number): Promise<void> {
-    if (durationMS <= 0) {
-      return;
-    }
-    const functionID = functionIDGetIncrement();
-    await this.#dbosExec.systemDatabase.durableSleepms(this.workflowUUID, functionID, durationMS);
-  }
-
-  async sleep(durationSec: number): Promise<void> {
-    return this.sleepms(durationSec * 1000);
   }
 }
 
