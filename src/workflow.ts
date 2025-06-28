@@ -1,16 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { DBOSExecutor, OperationType } from './dbos-executor';
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
-import { DBOSContext, DBOSContextImpl } from './context';
+import { DBOSContextImpl } from './context';
 import { ConfiguredInstance } from './decorators';
 import { DBOSJSON } from './utils';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
-
-/** @deprecated */
-export type Workflow<T extends unknown[], R> = (ctxt: WorkflowContext, ...args: T) => Promise<R>;
-/** @deprecated */
-export type WorkflowFunction<T extends unknown[], R> = Workflow<T, R>;
 
 export interface WorkflowParams {
   workflowUUID?: string;
@@ -123,42 +117,6 @@ export const StatusString = {
 } as const;
 
 /**
- * @deprecated This class is no longer necessary
- * To update to Transact 2.0+
- *   Remove `WorkflowContext` from function parameter lists
- *   Use `DBOS.` to access DBOS context within affected functions
- *   Adjust callers to call the function directly, or to use `DBOS.startWorkflow`
- */
-export interface WorkflowContext extends DBOSContext {
-  foo?: () => void;
-}
-
-export class WorkflowContextImpl extends DBOSContextImpl implements WorkflowContext {
-  constructor(
-    dbosExec: DBOSExecutor,
-    parentCtx: DBOSContextImpl | undefined,
-    workflowUUID: string,
-    readonly workflowConfig: WorkflowConfig,
-    workflowName: string,
-  ) {
-    const span = dbosExec.tracer.startSpan(
-      workflowName,
-      {
-        status: StatusString.PENDING,
-        operationUUID: workflowUUID,
-        operationType: OperationType.WORKFLOW,
-        authenticatedUser: parentCtx?.authenticatedUser ?? '',
-        authenticatedRoles: parentCtx?.authenticatedRoles ?? [],
-        assumedRole: parentCtx?.assumedRole ?? '',
-      },
-      parentCtx?.span,
-    );
-    super(workflowName, span, dbosExec.logger, parentCtx);
-    this.workflowUUID = workflowUUID;
-  }
-}
-
-/**
  * Object representing an active or completed workflow execution, identified by the workflow UUID.
  * Allows retrieval of information about the workflow.
  */
@@ -196,7 +154,7 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     readonly workflowPromise: Promise<R>,
     readonly workflowUUID: string,
     readonly workflowName: string,
-    readonly callerUUID?: string, // This is the call that started the WF
+    readonly callerWFID?: string, // This is the call that started the WF
     readonly callerFunctionID?: number, // This is the call that started the WF
   ) {}
 
@@ -235,7 +193,7 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
   constructor(
     readonly systemDatabase: SystemDatabase,
     readonly workflowUUID: string,
-    readonly callerUUID?: string,
+    readonly callerWFID?: string,
     readonly callerFunctionID?: number,
   ) {}
 

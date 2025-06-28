@@ -4,7 +4,6 @@ import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { UserDatabaseClient } from './user_database';
 import { AsyncLocalStorage } from 'async_hooks';
-import { WorkflowContextImpl } from './workflow';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import { globalParams } from './utils';
 import Koa from 'koa';
@@ -84,15 +83,6 @@ export function assertCurrentDBOSContext(): DBOSContext {
   const ctx = asyncLocalCtx.getStore()?.ctx;
   if (!ctx) throw new DBOSInvalidWorkflowTransitionError('No current DBOS Context');
   return ctx;
-}
-
-export function assertCurrentWorkflowContext(): WorkflowContextImpl {
-  const ctxs = getCurrentContextStore();
-  if (!ctxs || !isInWorkflowCtx(ctxs)) {
-    throw new DBOSInvalidWorkflowTransitionError();
-  }
-  const ctx = assertCurrentDBOSContext();
-  return ctx as WorkflowContextImpl;
 }
 
 export function getNextWFID(assignedID?: string) {

@@ -1,6 +1,5 @@
 import { Span } from '@opentelemetry/sdk-trace-base';
 import {
-  assertCurrentWorkflowContext,
   getCurrentContextStore,
   getCurrentDBOSContext,
   HTTPRequest,
@@ -27,7 +26,6 @@ import {
   RetrievedHandle,
   StepInfo,
   WorkflowConfig,
-  WorkflowFunction,
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
@@ -180,7 +178,7 @@ export function runInternalStep<T>(callback: () => Promise<T>, funcName: string,
       return DBOSExecutor.globalInstance!.runInternalStep<T>(
         callback,
         funcName,
-        DBOS.workflowID!, // assume DBOS.workflowID is defined because of assertCurrentWorkflowContext call above
+        DBOS.workflowID!,
         functionIDGetIncrement(),
         childWFID,
       );
@@ -1495,11 +1493,11 @@ export class DBOS {
         );
       }
 
-      const wfctx = assertCurrentWorkflowContext();
+      const pctx = getCurrentContextStore()!;
+      const pwfid = pctx.workflowId!;
       const funcId = functionIDGetIncrement();
       const wfParams: WorkflowParams = {
-        workflowUUID: wfId || wfctx.workflowUUID + '-' + funcId,
-        parentCtx: wfctx,
+        workflowUUID: wfId || pwfid + '-' + funcId,
         configuredInstance: instance,
         queueName,
         timeoutMS,
@@ -1509,7 +1507,7 @@ export class DBOS {
         enqueueOptions: params.enqueueOptions,
       };
 
-      return await invokeRegOp(wfParams, wfctx.workflowUUID, funcId);
+      return await invokeRegOp(wfParams, pwfid, funcId);
     } else {
       // Else, we setup a parent context that includes all the potential metadata the application could have set in DBOSLocalCtx
       let parentCtx: DBOSContextImpl | undefined = undefined;
@@ -1547,7 +1545,7 @@ export class DBOS {
 
     function invokeRegOp(wfParams: WorkflowParams, workflowID: string | undefined, funcNum: number | undefined) {
       if (regOP.workflowConfig) {
-        const func = regOP.registeredFunction as WorkflowFunction<Args, Return>;
+        const func = regOP.registeredFunction as TypedAsyncFunction<Args, Return>;
         return DBOSExecutor.globalInstance!.internalWorkflow(func, wfParams, workflowID, funcNum, ...args);
       }
       if (regOP.txnConfig) {
@@ -1628,11 +1626,9 @@ export class DBOS {
             );
           }
 
-          const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callTransactionFunction(
             registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
             inst ?? null,
-            wfctx,
             ...rawArgs,
           );
         }
@@ -1707,10 +1703,8 @@ export class DBOS {
         }
 
         if (DBOS.isWithinWorkflow()) {
-          const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callProcedureFunction(
             registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
-            wfctx,
             ...rawArgs,
           );
         }
@@ -1805,13 +1799,11 @@ export class DBOS {
             // There should probably be checks here about the compatibility of the StepConfig...
             return registration.registeredFunction!.call(this, ...rawArgs);
           }
-          const wfctx = assertCurrentWorkflowContext();
           return await DBOSExecutor.globalInstance!.callStepFunction(
             registration.registeredFunction as unknown as TypedAsyncFunction<Args, Return>,
             undefined,
             undefined,
             inst ?? null,
-            wfctx,
             ...rawArgs,
           );
         }
@@ -1892,13 +1884,11 @@ export class DBOS {
           // There should probably be checks here about the compatibility of the StepConfig...
           return func.call(this, ...rawArgs);
         }
-        const wfctx = assertCurrentWorkflowContext();
         return await DBOSExecutor.globalInstance!.callStepFunction(
           func as unknown as TypedAsyncFunction<Args, Return>,
           name,
           config,
           inst ?? null,
-          wfctx,
           ...rawArgs,
         );
       }
@@ -1932,13 +1922,11 @@ export class DBOS {
         // There should probably be checks here about the compatibility of the StepConfig...
         return func();
       }
-      const wfctx = assertCurrentWorkflowContext();
       return DBOSExecutor.globalInstance!.callStepFunction<[], Return>(
         func as unknown as TypedAsyncFunction<[], Return>,
         name,
         config,
         null,
-        wfctx,
       );
     }
 

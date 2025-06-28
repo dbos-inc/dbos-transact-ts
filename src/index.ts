@@ -34,7 +34,6 @@ export { StoredProcedureConfig } from './procedure';
 export {
   WorkflowConfig,
   WorkflowHandle,
-  WorkflowFunction,
   StatusString,
   GetWorkflowsInput,
   GetQueuedWorkflowsInput,

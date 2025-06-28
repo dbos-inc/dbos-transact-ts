@@ -4,7 +4,6 @@ import type {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
   StepInfo,
-  WorkflowFunction,
   WorkflowHandle,
   WorkflowParams,
   WorkflowStatus,
@@ -70,7 +69,7 @@ export interface DBOSExecutorContext {
    *  Note that functions can be enqueued directly with `DBOS.startWorkflow` instead of using this interface.
    */
   workflow<T extends unknown[], R>(
-    wf: WorkflowFunction<T, R>,
+    wf: (...args: T) => Promise<R>,
     params: WorkflowParams,
     ...args: T
   ): Promise<WorkflowHandle<R>>;

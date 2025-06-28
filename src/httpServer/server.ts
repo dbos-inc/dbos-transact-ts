@@ -4,7 +4,7 @@ import { bodyParser } from '@koa/bodyparser';
 import cors from '@koa/cors';
 import { HandlerRegistrationBase } from './handler';
 import { ArgSources, APITypes } from './handlerTypes';
-import { Workflow, GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from '../workflow';
+import { GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor, OperationType } from '../dbos-executor';
 import { Logger as DBOSLogger, GlobalLogger as Logger } from '../telemetry/logs';
@@ -660,11 +660,8 @@ export class DBOSHttpServer {
 
           // Parse the arguments.
           const args: unknown[] = [];
-          ro.args.forEach((marg, idx) => {
+          ro.args.forEach((marg) => {
             marg.argSource = marg.argSource ?? ArgSources.DEFAULT; // Assign a default value.
-            if (idx === 0 && ro.passContext) {
-              return; // Do not parse the context.
-            }
 
             let foundArg = undefined;
             const isQueryMethod = ro.apiType === APITypes.GET || ro.apiType === APITypes.DELETE;
@@ -733,7 +730,7 @@ export class DBOSHttpServer {
               );
             } else if (ro.workflowConfig) {
               koaCtxt.body = await (
-                await dbosExec.workflow(ro.registeredFunction as Workflow<unknown[], unknown>, wfParams, ...args)
+                await dbosExec.workflow(ro.registeredFunction as UntypedAsyncFunction, wfParams, ...args)
               ).getResult();
             } else if (ro.stepConfig) {
               koaCtxt.body = await dbosExec.external(ro.registeredFunction as UntypedAsyncFunction, wfParams, ...args);

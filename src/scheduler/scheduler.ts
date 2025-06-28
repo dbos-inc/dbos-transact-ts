@@ -1,8 +1,7 @@
 import { DBOS, DBOSEventReceiverState } from '..';
 import { DBOSExecutor } from '../dbos-executor';
-import { MethodRegistrationBase } from '../decorators';
+import { MethodRegistrationBase, TypedAsyncFunction } from '../decorators';
 import { TimeMatcher } from './crontab';
-import { Workflow } from '../workflow';
 
 ////
 // Configuration
@@ -193,7 +192,7 @@ class DetachableLoop {
       if (this.scheduledMethod.workflowConfig) {
         // Execute the workflow
         await this.dbosExec.workflow(
-          this.scheduledMethod.registeredFunction as Workflow<ScheduledArgs, unknown>,
+          this.scheduledMethod.registeredFunction as TypedAsyncFunction<ScheduledArgs, unknown>,
           wfParams,
           ...args,
         );
