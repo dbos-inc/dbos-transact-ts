@@ -1,10 +1,8 @@
 import { Span } from '@opentelemetry/sdk-trace-base';
 import {
   getCurrentContextStore,
-  getCurrentDBOSContext,
   HTTPRequest,
   runWithTopContext,
-  DBOSContextImpl,
   getNextWFID,
   StepStatus,
   DBOSContextOptions,
@@ -545,8 +543,6 @@ export class DBOS {
   //////
   /** Get the current DBOS Logger, appropriate to the current context */
   static get logger(): DLogger {
-    const ctx = getCurrentDBOSContext();
-    if (ctx) return ctx.logger;
     const lctx = getCurrentContextStore();
     if (lctx?.logger) return lctx.logger;
     const executor = DBOSExecutor.globalInstance;
@@ -562,7 +558,7 @@ export class DBOS {
 
   /** Get the current DBOS tracing span, appropriate to the current context */
   static get span(): Span | undefined {
-    return getCurrentDBOSContext()?.span ?? getCurrentContextStore()?.span;
+    return getCurrentContextStore()?.span;
   }
 
   /**
@@ -571,7 +567,7 @@ export class DBOS {
    *  and set it using `withTracedContext` or `runWithContext`
    */
   static requestObject(): object | undefined {
-    return getCurrentDBOSContext()?.request ?? getCurrentContextStore()?.request;
+    return getCurrentContextStore()?.request;
   }
 
   /** Get the current HTTP request (within `@DBOS.getApi` et al) */
@@ -600,7 +596,7 @@ export class DBOS {
 
   /** Get the current workflow ID */
   static get workflowID(): string | undefined {
-    return getCurrentContextStore()?.workflowId ?? getCurrentDBOSContext()?.workflowUUID;
+    return getCurrentContextStore()?.workflowId;
   }
 
   /** Get the current step number, within the current workflow */
@@ -620,15 +616,15 @@ export class DBOS {
 
   /** Get the current authenticated user */
   static get authenticatedUser(): string {
-    return getCurrentDBOSContext()?.authenticatedUser ?? getCurrentContextStore()?.authenticatedUser ?? '';
+    return getCurrentContextStore()?.authenticatedUser ?? '';
   }
   /** Get the roles granted to the current authenticated user */
   static get authenticatedRoles(): string[] {
-    return getCurrentDBOSContext()?.authenticatedRoles ?? getCurrentContextStore()?.authenticatedRoles ?? [];
+    return getCurrentContextStore()?.authenticatedRoles ?? [];
   }
   /** Get the role assumed by the current user giving authorization to execute the current function */
   static get assumedRole(): string {
-    return getCurrentDBOSContext()?.assumedRole ?? getCurrentContextStore()?.assumedRole ?? '';
+    return getCurrentContextStore()?.assumedRole ?? '';
   }
 
   /** @returns true if called from within a transaction, false otherwise */
@@ -1172,20 +1168,8 @@ export class DBOS {
           authenticatedRoles: options.authenticatedRoles,
         });
       }
-      const ctx = new DBOSContextImpl(options.operationCaller || 'topContext', span, DBOS.logger as GlobalLogger);
-      ctx.request = options.request || {};
-      ctx.authenticatedUser = options.authenticatedUser || '';
-      ctx.assumedRole = options.assumedRole || '';
-      ctx.authenticatedRoles = options.authenticatedRoles || [];
-      ctx.workflowUUID = options.idAssignedForNextWorkflow || '';
 
-      return runWithTopContext(
-        {
-          ...options,
-          ctx,
-        },
-        callback,
-      );
+      return runWithTopContext(options, callback);
     }
   }
 
@@ -1510,10 +1494,9 @@ export class DBOS {
       return await invokeRegOp(wfParams, pwfid, funcId);
     } else {
       // Else, we setup a parent context that includes all the potential metadata the application could have set in DBOSLocalCtx
-      let parentCtx: DBOSContextImpl | undefined = undefined;
       if (pctx) {
         // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
-        const span =
+        pctx.span =
           pctx.span ??
           DBOS.#executor.tracer.startSpan(pctx.operationCaller || 'workflowCaller', {
             operationUUID: wfId,
@@ -1522,13 +1505,6 @@ export class DBOS {
             assumedRole: pctx.assumedRole,
             authenticatedRoles: pctx.authenticatedRoles,
           });
-
-        parentCtx = new DBOSContextImpl(pctx.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
-        parentCtx.request = pctx.request ?? {};
-        parentCtx.authenticatedUser = pctx.authenticatedUser ?? '';
-        parentCtx.assumedRole = pctx.assumedRole ?? '';
-        parentCtx.authenticatedRoles = pctx.authenticatedRoles ?? [];
-        parentCtx.workflowUUID = wfId ?? '';
       }
 
       const wfParams: InternalWorkflowParams = {
@@ -1536,7 +1512,6 @@ export class DBOS {
         queueName,
         enqueueOptions: params.enqueueOptions,
         configuredInstance: instance,
-        parentCtx,
         timeoutMS,
       };
 
@@ -1636,30 +1611,19 @@ export class DBOS {
         const wfId = getNextWFID(undefined);
 
         const pctx = getCurrentContextStore();
-        let span = pctx?.span;
-        if (!span) {
-          span = DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
-            operationType: pctx?.operationType,
-            authenticatedUser: pctx?.authenticatedUser,
-            assumedRole: pctx?.assumedRole,
-            authenticatedRoles: pctx?.authenticatedRoles,
-          });
+        if (pctx) {
+          pctx.span =
+            pctx.span ??
+            DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+              operationType: pctx?.operationType,
+              authenticatedUser: pctx?.authenticatedUser,
+              assumedRole: pctx?.assumedRole,
+              authenticatedRoles: pctx?.authenticatedRoles,
+            });
         }
 
-        let parentCtx: DBOSContextImpl | undefined = undefined;
-        if (pctx) {
-          parentCtx = pctx.ctx as DBOSContextImpl;
-        }
-        if (!parentCtx) {
-          parentCtx = new DBOSContextImpl(pctx?.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
-          parentCtx.request = pctx?.request || {};
-          parentCtx.authenticatedUser = pctx?.authenticatedUser || '';
-          parentCtx.assumedRole = pctx?.assumedRole || '';
-          parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
-        }
         const wfParams: WorkflowParams = {
           configuredInstance: inst,
-          parentCtx,
           workflowUUID: wfId,
         };
 
@@ -1711,31 +1675,19 @@ export class DBOS {
 
         const wfId = getNextWFID(undefined);
 
-        const pctx = getCurrentContextStore();
-        let span = pctx?.span;
-        if (!span) {
-          span = DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
-            operationType: pctx?.operationType,
-            authenticatedUser: pctx?.authenticatedUser,
-            assumedRole: pctx?.assumedRole,
-            authenticatedRoles: pctx?.authenticatedRoles,
-          });
-        }
-
-        let parentCtx: DBOSContextImpl | undefined = undefined;
+        const pctx = getCurrentContextStore()!;
         if (pctx) {
-          parentCtx = pctx.ctx as DBOSContextImpl;
-        }
-        if (!parentCtx) {
-          parentCtx = new DBOSContextImpl(pctx?.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
-          parentCtx.request = pctx?.request || {};
-          parentCtx.authenticatedUser = pctx?.authenticatedUser || '';
-          parentCtx.assumedRole = pctx?.assumedRole || '';
-          parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
+          pctx.span =
+            pctx.span ??
+            DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+              operationType: pctx?.operationType,
+              authenticatedUser: pctx?.authenticatedUser,
+              assumedRole: pctx?.assumedRole,
+              authenticatedRoles: pctx?.authenticatedRoles,
+            });
         }
 
         const wfParams: WorkflowParams = {
-          parentCtx,
           workflowUUID: wfId,
         };
 
@@ -1811,30 +1763,19 @@ export class DBOS {
         const wfId = getNextWFID(undefined);
 
         const pctx = getCurrentContextStore();
-        let span = pctx?.span;
-        if (!span) {
-          span = DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
-            operationType: pctx?.operationType,
-            authenticatedUser: pctx?.authenticatedUser,
-            assumedRole: pctx?.assumedRole,
-            authenticatedRoles: pctx?.authenticatedRoles,
-          });
+        if (pctx) {
+          pctx.span =
+            pctx.span ??
+            DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
+              operationType: pctx?.operationType,
+              authenticatedUser: pctx?.authenticatedUser,
+              assumedRole: pctx?.assumedRole,
+              authenticatedRoles: pctx?.authenticatedRoles,
+            });
         }
 
-        let parentCtx: DBOSContextImpl | undefined = undefined;
-        if (pctx) {
-          parentCtx = pctx.ctx as DBOSContextImpl;
-        }
-        if (!parentCtx) {
-          parentCtx = new DBOSContextImpl(pctx?.operationCaller || 'workflowCaller', span, DBOS.logger as GlobalLogger);
-          parentCtx.request = pctx?.request || {};
-          parentCtx.authenticatedUser = pctx?.authenticatedUser || '';
-          parentCtx.assumedRole = pctx?.assumedRole || '';
-          parentCtx.authenticatedRoles = pctx?.authenticatedRoles || [];
-        }
         const wfParams: WorkflowParams = {
           configuredInstance: inst,
-          parentCtx,
           workflowUUID: wfId,
         };
 

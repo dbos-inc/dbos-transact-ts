@@ -59,13 +59,6 @@ export {
 } from './decorators';
 
 export {
-  RequiredRole,
-
-  // Class Decorators
-  DefaultRequiredRole,
-} from './authdecorators';
-
-export {
   ArgRequired,
   ArgOptional,
   ArgDate,

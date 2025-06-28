@@ -1,11 +1,10 @@
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { GlobalLogger as Logger, Logger as DBOSLogger } from './telemetry/logs';
+import { Logger as DBOSLogger } from './telemetry/logs';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { UserDatabaseClient } from './user_database';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSInvalidWorkflowTransitionError } from './error';
-import { globalParams } from './utils';
 import Koa from 'koa';
 
 export interface StepStatus {
@@ -29,7 +28,6 @@ export interface DBOSContextOptions {
 }
 
 export interface DBOSLocalCtx extends DBOSContextOptions {
-  ctx?: DBOSContext;
   parentCtx?: DBOSLocalCtx;
   workflowId?: string;
   curWFFunctionId?: number; // If currently in a WF, the current call number / ID
@@ -73,16 +71,6 @@ export const asyncLocalCtx = new AsyncLocalStorage<DBOSLocalCtx>();
 
 export function getCurrentContextStore(): DBOSLocalCtx | undefined {
   return asyncLocalCtx.getStore();
-}
-
-export function getCurrentDBOSContext(): DBOSContext | undefined {
-  return asyncLocalCtx.getStore()?.ctx;
-}
-
-export function assertCurrentDBOSContext(): DBOSContext {
-  const ctx = asyncLocalCtx.getStore()?.ctx;
-  if (!ctx) throw new DBOSInvalidWorkflowTransitionError('No current DBOS Context');
-  return ctx;
 }
 
 export function getNextWFID(assignedID?: string) {
@@ -187,49 +175,4 @@ export interface HTTPRequest {
   readonly method?: string; // Request HTTP method.
   readonly ip?: string; // Request remote address.
   readonly requestID?: string; // Request ID. Gathered from headers or generated if missing.
-}
-
-/**
- * @deprecated Use `DBOS.workflow`, `DBOS.step`, `DBOS.transaction`, and other decorators that do not pass contexts around.
- */
-export interface DBOSContext {
-  readonly request: object;
-  readonly workflowUUID: string;
-  readonly authenticatedUser: string;
-  readonly authenticatedRoles: string[];
-  readonly assumedRole: string;
-
-  readonly logger: DBOSLogger;
-  readonly span: Span;
-}
-
-export class DBOSContextImpl implements DBOSContext {
-  request: object = {}; // Raw incoming HTTP request.
-  authenticatedUser: string = ''; // The user that has been authenticated
-  authenticatedRoles: string[] = []; // All roles the user has according to authentication
-  assumedRole: string = ''; // Role in use - that user has and provided authorization to current function
-  workflowUUID: string = ''; // Workflow UUID. Empty for HandlerContexts.
-  executorID: string = globalParams.executorID; // Executor ID. Gathered from the environment and "local" otherwise
-  applicationID: string = globalParams.appID; // Application ID. Gathered from the environment and empty otherwise
-  readonly logger: DBOSLogger; // Wrapper around the global logger for this context.
-
-  constructor(
-    readonly operationName: string,
-    readonly span: Span,
-    logger: Logger,
-    parentCtx?: DBOSContextImpl,
-  ) {
-    if (parentCtx) {
-      this.request = parentCtx.request;
-      this.authenticatedUser = parentCtx.authenticatedUser;
-      this.authenticatedRoles = parentCtx.authenticatedRoles;
-      this.assumedRole = parentCtx.assumedRole;
-      this.workflowUUID = parentCtx.workflowUUID;
-    } else {
-      this.authenticatedUser = getCurrentContextStore()?.authenticatedUser ?? '';
-      this.authenticatedRoles = getCurrentContextStore()?.authenticatedRoles ?? [];
-      this.assumedRole = getCurrentContextStore()?.assumedRole ?? '';
-    }
-    this.logger = new DBOSLogger(logger, this);
-  }
 }

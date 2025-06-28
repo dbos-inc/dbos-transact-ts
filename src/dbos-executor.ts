@@ -1235,7 +1235,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
               {
                 authenticatedRoles: pctx?.authenticatedRoles,
                 authenticatedUser: pctx?.authenticatedUser,
-                ctx: undefined,
                 workflowId: wfid,
                 curTxFunctionId: funcId,
                 parentCtx: pctx,
@@ -1469,7 +1468,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
             return await runWithParentContext(
               pctx,
               {
-                ctx: undefined,
                 curTxFunctionId: funcId,
                 parentCtx: pctx,
                 isInStoredProc: true,

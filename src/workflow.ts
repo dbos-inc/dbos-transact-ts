@@ -1,6 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
-import { DBOSContextImpl } from './context';
 import { ConfiguredInstance } from './decorators';
 import { DBOSJSON } from './utils';
 import { DBOS, runInternalStep } from './dbos';
@@ -8,7 +7,6 @@ import { EnqueueOptions } from './system_database';
 
 export interface WorkflowParams {
   workflowUUID?: string;
-  parentCtx?: DBOSContextImpl;
   configuredInstance?: ConfiguredInstance | null;
   queueName?: string;
   executeWorkflow?: boolean; // If queueName is set, this will not be run unless executeWorkflow is true.
