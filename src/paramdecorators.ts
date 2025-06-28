@@ -239,10 +239,6 @@ registerMiddlewareInstaller(logMiddleware);
 export function logMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationBase, args: Args) {
   // Argument logging
   args.forEach((argValue, idx) => {
-    if (idx === 0 && methReg.passContext) {
-      return;
-    }
-
     let loggedArgValue = argValue;
     const logMask = getLoggerArgInfo(methReg.args[idx]).logMask;
 
@@ -275,10 +271,6 @@ function validateMethodArgs<Args extends unknown[]>(methReg: MethodRegistrationB
 
   // Input validation
   methReg.args.forEach((argDescriptor, idx) => {
-    if (idx === 0 && methReg.passContext) {
-      return;
-    }
-
     let argValue = args[idx];
 
     // So... there is such a thing as "undefined", and another thing called "null"

@@ -27,21 +27,20 @@ export * as Error from './error';
 
 export { DBOSResponseError, DBOSWorkflowConflictError } from './error';
 
-export { TransactionConfig, TransactionFunction } from './transaction';
+export { TransactionConfig } from './transaction';
 
 export { StoredProcedureConfig } from './procedure';
 
 export {
   WorkflowConfig,
   WorkflowHandle,
-  WorkflowFunction,
   StatusString,
   GetWorkflowsInput,
   GetQueuedWorkflowsInput,
   WorkflowStatus,
 } from './workflow';
 
-export { StepConfig, StepFunction } from './step';
+export { StepConfig } from './step';
 
 export {
   // Method Decorators
@@ -58,13 +57,6 @@ export {
   // ORM Class Decorators
   OrmEntities,
 } from './decorators';
-
-export {
-  RequiredRole,
-
-  // Class Decorators
-  DefaultRequiredRole,
-} from './authdecorators';
 
 export {
   ArgRequired,

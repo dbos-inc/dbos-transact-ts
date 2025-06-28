@@ -619,9 +619,9 @@ class DBOSTestClass {
   }
 
   @DBOS.workflow()
-  static async sendWorkflow(destinationUUID: string) {
-    await DBOS.send(destinationUUID, 'message1');
-    await DBOS.send(destinationUUID, 'message2');
+  static async sendWorkflow(destinationId: string) {
+    await DBOS.send(destinationId, 'message1');
+    await DBOS.send(destinationId, 'message2');
   }
 
   @DBOS.workflow()

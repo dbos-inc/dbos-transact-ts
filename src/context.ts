@@ -1,17 +1,10 @@
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { GlobalLogger as Logger, Logger as DBOSLogger } from './telemetry/logs';
-import { get } from 'lodash';
+import { Logger as DBOSLogger } from './telemetry/logs';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { UserDatabaseClient } from './user_database';
-import { DBOSConfigKeyTypeError } from './error';
 import { AsyncLocalStorage } from 'async_hooks';
-import { WorkflowContext, WorkflowContextImpl } from './workflow';
-import { TransactionContextImpl } from './transaction';
-import { StepContextImpl } from './step';
 import { DBOSInvalidWorkflowTransitionError } from './error';
-import { StoredProcedureContextImpl } from './procedure';
-import { globalParams } from './utils';
 import Koa from 'koa';
 
 export interface StepStatus {
@@ -24,6 +17,7 @@ export interface DBOSContextOptions {
   idAssignedForNextWorkflow?: string;
   queueAssignedForWorkflows?: string;
   span?: Span;
+  logger?: DBOSLogger;
   authenticatedUser?: string;
   authenticatedRoles?: string[];
   assumedRole?: string;
@@ -34,13 +28,16 @@ export interface DBOSContextOptions {
 }
 
 export interface DBOSLocalCtx extends DBOSContextOptions {
-  ctx?: DBOSContext;
   parentCtx?: DBOSLocalCtx;
   workflowId?: string;
+  curWFFunctionId?: number; // If currently in a WF, the current call number / ID
+  presetID?: boolean;
+  timeoutMS?: number | null;
+  deadlineEpochMS?: number;
   inRecovery?: boolean;
   curStepFunctionId?: number; // If currently in a step, its function ID
   stepStatus?: StepStatus; // If currently in a step, its public status object
-  curTxFunctionId?: number;
+  curTxFunctionId?: number; // If currently in a tx, its function ID
   isInStoredProc?: boolean;
   sqlClient?: UserDatabaseClient;
   koaContext?: Koa.Context;
@@ -76,25 +73,6 @@ export function getCurrentContextStore(): DBOSLocalCtx | undefined {
   return asyncLocalCtx.getStore();
 }
 
-export function getCurrentDBOSContext(): DBOSContext | undefined {
-  return asyncLocalCtx.getStore()?.ctx;
-}
-
-export function assertCurrentDBOSContext(): DBOSContext {
-  const ctx = asyncLocalCtx.getStore()?.ctx;
-  if (!ctx) throw new DBOSInvalidWorkflowTransitionError('No current DBOS Context');
-  return ctx;
-}
-
-export function assertCurrentWorkflowContext(): WorkflowContextImpl {
-  const ctxs = getCurrentContextStore();
-  if (!ctxs || !isInWorkflowCtx(ctxs)) {
-    throw new DBOSInvalidWorkflowTransitionError();
-  }
-  const ctx = assertCurrentDBOSContext();
-  return ctx as WorkflowContextImpl;
-}
-
 export function getNextWFID(assignedID?: string) {
   let wfId = assignedID;
   if (!wfId) {
@@ -108,41 +86,32 @@ export function getNextWFID(assignedID?: string) {
   return wfId;
 }
 
+export function functionIDGetIncrement(): number {
+  const pctx = getCurrentContextStore();
+  if (!pctx) throw new DBOSInvalidWorkflowTransitionError(`Attempt to get a call ID number outside of a workflow`);
+  if (!isInWorkflowCtx(pctx))
+    throw new DBOSInvalidWorkflowTransitionError(
+      `Attempt to get a call ID number in a workflow that is already in a call`,
+    );
+  if (pctx.curWFFunctionId === undefined) pctx.curWFFunctionId = 0;
+  return pctx.curWFFunctionId++;
+}
+
 export async function runWithTopContext<R>(ctx: DBOSLocalCtx, callback: () => Promise<R>): Promise<R> {
   return await asyncLocalCtx.run(ctx, callback);
 }
 
-export async function runWithTransactionContext<Client extends UserDatabaseClient, R>(
-  ctx: TransactionContextImpl<Client>,
+export async function runWithParentContext<R>(
+  pctx: DBOSLocalCtx | undefined,
+  ctx: DBOSLocalCtx,
   callback: () => Promise<R>,
-) {
-  // Check we are in a workflow context and not in a step / transaction already
-  const pctx = getCurrentContextStore();
-  if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
-  if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
+): Promise<R> {
   return await asyncLocalCtx.run(
     {
-      ctx,
-      workflowId: ctx.workflowUUID,
-      curTxFunctionId: ctx.functionID,
+      ...pctx,
+      workflowTimeoutMS: undefined, // Becomes deadline
       parentCtx: pctx,
-    },
-    callback,
-  );
-}
-
-export async function runWithStoredProcContext<R>(ctx: StoredProcedureContextImpl, callback: () => Promise<R>) {
-  // Check we are in a workflow context and not in a step / transaction already
-  const pctx = getCurrentContextStore();
-  if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
-  if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
-  return await asyncLocalCtx.run(
-    {
-      ctx,
-      workflowId: ctx.workflowUUID,
-      curTxFunctionId: ctx.functionID,
-      parentCtx: pctx,
-      isInStoredProc: true,
+      ...ctx,
     },
     callback,
   );
@@ -150,10 +119,10 @@ export async function runWithStoredProcContext<R>(ctx: StoredProcedureContextImp
 
 export async function runWithDataSourceContext<R>(callnum: number, callback: () => Promise<R>) {
   // Check we are in a workflow context and not in a step / transaction already
-  const pctx = getCurrentContextStore();
+  const pctx = getCurrentContextStore() ?? {};
   return await asyncLocalCtx.run(
     {
-      workflowId: pctx?.workflowId,
+      ...pctx,
       curTxFunctionId: callnum,
       parentCtx: pctx,
     },
@@ -161,40 +130,29 @@ export async function runWithDataSourceContext<R>(callnum: number, callback: () 
   );
 }
 
-export async function runWithStepContext<R>(
-  ctx: StepContextImpl,
+export async function runInStepContext<R>(
+  pctx: DBOSLocalCtx,
+  stepID: number,
+  maxAttempts: number | undefined,
   currentAttempt: number | undefined,
   callback: () => Promise<R>,
 ) {
   // Check we are in a workflow context and not in a step / transaction already
-  const pctx = getCurrentContextStore();
   if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
   if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
 
   const stepStatus: StepStatus = {
-    stepID: ctx.functionID,
+    stepID: stepID,
     currentAttempt: currentAttempt,
-    maxAttempts: currentAttempt ? ctx.maxAttempts : undefined,
+    maxAttempts: currentAttempt ? maxAttempts : undefined,
   };
 
-  return await asyncLocalCtx.run(
+  return await runWithParentContext(
+    pctx,
     {
-      ctx,
       stepStatus: stepStatus,
-      workflowId: ctx.workflowUUID,
-      curStepFunctionId: ctx.functionID,
+      curStepFunctionId: stepID,
       parentCtx: pctx,
-    },
-    callback,
-  );
-}
-
-export async function runWithWorkflowContext<R>(ctx: WorkflowContext, callback: () => Promise<R>) {
-  // TODO: Check context, this could be a child workflow?
-  return await asyncLocalCtx.run(
-    {
-      ctx,
-      workflowId: ctx.workflowUUID,
     },
     callback,
   );
@@ -217,64 +175,4 @@ export interface HTTPRequest {
   readonly method?: string; // Request HTTP method.
   readonly ip?: string; // Request remote address.
   readonly requestID?: string; // Request ID. Gathered from headers or generated if missing.
-}
-
-/**
- * @deprecated Use `DBOS.workflow`, `DBOS.step`, `DBOS.transaction`, and other decorators that do not pass contexts around.
- */
-export interface DBOSContext {
-  readonly request: object;
-  readonly workflowUUID: string;
-  readonly authenticatedUser: string;
-  readonly authenticatedRoles: string[];
-  readonly assumedRole: string;
-
-  readonly logger: DBOSLogger;
-  readonly span: Span;
-
-  getConfig<T>(key: string): T | undefined;
-  getConfig<T>(key: string, defaultValue: T): T;
-}
-
-export class DBOSContextImpl implements DBOSContext {
-  request: object = {}; // Raw incoming HTTP request.
-  authenticatedUser: string = ''; // The user that has been authenticated
-  authenticatedRoles: string[] = []; // All roles the user has according to authentication
-  assumedRole: string = ''; // Role in use - that user has and provided authorization to current function
-  workflowUUID: string = ''; // Workflow UUID. Empty for HandlerContexts.
-  executorID: string = globalParams.executorID; // Executor ID. Gathered from the environment and "local" otherwise
-  applicationID: string = globalParams.appID; // Application ID. Gathered from the environment and empty otherwise
-  readonly logger: DBOSLogger; // Wrapper around the global logger for this context.
-
-  constructor(
-    readonly operationName: string,
-    readonly span: Span,
-    logger: Logger,
-    parentCtx?: DBOSContextImpl,
-  ) {
-    if (parentCtx) {
-      this.request = parentCtx.request;
-      this.authenticatedUser = parentCtx.authenticatedUser;
-      this.authenticatedRoles = parentCtx.authenticatedRoles;
-      this.assumedRole = parentCtx.assumedRole;
-      this.workflowUUID = parentCtx.workflowUUID;
-    } else {
-      this.authenticatedUser = getCurrentContextStore()?.authenticatedUser ?? '';
-      this.authenticatedRoles = getCurrentContextStore()?.authenticatedRoles ?? [];
-      this.assumedRole = getCurrentContextStore()?.assumedRole ?? '';
-    }
-    this.logger = new DBOSLogger(logger, this);
-  }
-
-  applicationConfig?: object;
-  getConfig<T>(key: string): T | undefined;
-  getConfig<T>(key: string, defaultValue: T): T;
-  getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    const value = get(this.applicationConfig, key, defaultValue);
-    // If the key is found and the default value is provided, check whether the value is of the same type.
-    if (value && defaultValue && typeof value !== typeof defaultValue) {
-      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
-    }
-    return value;
-  }
 }

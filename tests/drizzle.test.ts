@@ -136,7 +136,7 @@ describe('drizzle-tests', () => {
   });
 
   test('drizzle-return-void', async () => {
-    await expect(DBOS.invoke(TestClass).returnVoid()).resolves.not.toThrow();
+    await expect(TestClass.returnVoid()).resolves.not.toThrow();
   });
 
   test('drizzle-duplicate-workflows', async () => {

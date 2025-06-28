@@ -65,7 +65,7 @@ describe('failures-tests', () => {
     expect(FailureTestClass.cnt).toBe(1);
 
     // A run with a generated UUID should fail normally
-    await expect(DBOS.invoke(FailureTestClass).testReadonlyError()).rejects.toThrow(new Error('test error'));
+    await expect(FailureTestClass.testReadonlyError()).rejects.toThrow(new Error('test error'));
     expect(FailureTestClass.cnt).toBe(2);
   });
 
@@ -114,12 +114,12 @@ describe('failures-tests', () => {
 
   test('failing-step', async () => {
     let startTime = Date.now();
-    await expect(DBOS.invoke(FailureTestClass).testFailStep()).resolves.toBe(2);
+    await expect(FailureTestClass.testFailStep()).resolves.toBe(2);
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
 
     startTime = Date.now();
     try {
-      await DBOS.invoke(FailureTestClass).testFailStep();
+      await FailureTestClass.testFailStep();
       expect(true).toBe(false); // An exception should be thrown first
     } catch (error) {
       const e = error as DBOSMaxStepRetriesError;
@@ -148,8 +148,6 @@ describe('failures-tests', () => {
   });
 
   test('no-registration-startwf', async () => {
-    // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of NotRegisteredError.
-
     // Invoke an unregistered workflow.
     expect(() => DBOS.startWorkflow(FailureTestClass).noRegWorkflow2(10)).toThrow(DBOSNotRegisteredError);
 

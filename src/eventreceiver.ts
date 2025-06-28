@@ -4,16 +4,12 @@ import type {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
   StepInfo,
-  WorkflowFunction,
   WorkflowHandle,
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
-import type { TransactionFunction } from './transaction';
 import type { MethodRegistrationBase } from './decorators';
-import type { StepFunction } from './step';
 import type { Notification } from 'pg';
-import type { StoredProcedure } from './procedure';
 
 export type DBNotification = Notification;
 export type DBNotificationCallback = (n: DBNotification) => void;
@@ -66,14 +62,14 @@ export interface DBOSExecutorContext {
    * Invoke a transaction function.
    *  Note that functions can be called directly instead of using this interface.
    */
-  transaction<T extends unknown[], R>(txn: TransactionFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+  transaction<T extends unknown[], R>(txn: (...args: T) => Promise<R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   /**
    * Invoke a workflow function.
    *  Note that functions can be enqueued directly with `DBOS.startWorkflow` instead of using this interface.
    */
   workflow<T extends unknown[], R>(
-    wf: WorkflowFunction<T, R>,
+    wf: (...args: T) => Promise<R>,
     params: WorkflowParams,
     ...args: T
   ): Promise<WorkflowHandle<R>>;
@@ -83,14 +79,14 @@ export interface DBOSExecutorContext {
    * Invoke a step function.
    *  Note that functions can be called directly instead of using this interface.
    */
-  external<T extends unknown[], R>(stepFn: StepFunction<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+  external<T extends unknown[], R>(func: (...args: T) => Promise<R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   /**
    * @deprecated
    * Invoke a stored procedure function.
    *  Note that functions can be called directly instead of using this interface.
    */
-  procedure<T extends unknown[], R>(proc: StoredProcedure<T, R>, params: WorkflowParams, ...args: T): Promise<R>;
+  procedure<T extends unknown[], R>(proc: (...args: T) => Promise<R>, params: WorkflowParams, ...args: T): Promise<R>;
 
   /**
    * Send a messsage to workflow with a given ID.
