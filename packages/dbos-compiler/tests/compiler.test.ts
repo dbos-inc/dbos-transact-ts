@@ -2,18 +2,22 @@ import tsm from 'ts-morph';
 import {
   checkStoredProc,
   collectUsedDeclarations,
+  errorContext,
   getStoredProcMethods,
   mapStoredProcConfig,
   removeDecorators,
   removeNonProcDbosMethods,
   removeUnusedDeclarations,
-} from '../compiler.js';
-import { makeTestProject, readTestContent } from './test-utility.js';
-import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
-import { describe, it, expect } from 'vitest';
+} from '../compiler';
+import { formatDiagnostics, makeTestProject, readTestContent } from './test-utility';
+import { sampleDbosClass, sampleDbosClassAliased, testCodeTypes } from './test-code';
+import { suite, test } from 'node:test';
+import assert from 'node:assert/strict';
 
-describe('compiler', () => {
-  it('removeDbosMethods', () => {
+suite('compiler', async () => {
+  const testCodeProcCount = testCodeTypes.filter(([_name, type]) => type === 'storedProcedure').length;
+
+  await test('removeDbosMethods', () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow('operations.ts');
 
@@ -21,11 +25,19 @@ describe('compiler', () => {
 
     const testClass = file.getClassOrThrow('Test');
     const methods = testClass.getStaticMethods();
-    expect(methods.length).toBe(16);
-    expect(testClass.getStaticMethod('testProcedure')).toBeDefined();
+    assert.equal(testCodeProcCount, methods.length);
+
+    for (const [name, type] of testCodeTypes) {
+      const method = testClass.getStaticMethod(name);
+      if (type === 'storedProcedure') {
+        assert.notEqual(method, undefined, `Expected method ${name} to be present`);
+      } else {
+        assert.equal(method, undefined, `Expected method ${name} to be absent`);
+      }
+    }
   });
 
-  it('aliased removeDbosMethods', () => {
+  await test('aliased removeDbosMethods', () => {
     const { project } = makeTestProject(sampleDbosClassAliased);
     const file = project.getSourceFileOrThrow('operations.ts');
 
@@ -33,99 +45,157 @@ describe('compiler', () => {
 
     const testClass = file.getClassOrThrow('Test');
     const methods = testClass.getStaticMethods();
-    expect(methods.length).toBe(16);
-    expect(testClass.getStaticMethod('testProcedure')).toBeDefined();
+    assert.equal(testCodeProcCount, methods.length);
+
+    for (const [name, type] of testCodeTypes) {
+      const method = testClass.getStaticMethod(name);
+      if (type === 'storedProcedure') {
+        assert.notEqual(method, undefined, `Expected method ${name} to be present`);
+      } else {
+        assert.equal(method, undefined, `Expected method ${name} to be absent`);
+      }
+    }
   });
 
-  it('getProcMethods', () => {
+  await test('getProcMethods', () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow('operations.ts');
+    const testClass = file.getClassOrThrow('Test');
 
     const procMethods = getStoredProcMethods(file);
 
-    expect(procMethods.length).toBe(16);
-    const testClass = file.getClassOrThrow('Test');
-    const testProcMethod = testClass.getStaticMethodOrThrow('testProcedure');
-    expect(procMethods[0][0]).toEqual(testProcMethod);
+    assert.equal(testCodeProcCount, procMethods.length);
+
+    for (const [name, type] of testCodeTypes) {
+      if (type !== 'storedProcedure') {
+        continue;
+      }
+      const method = procMethods.find(([m]) => m.getName() === name);
+      assert(method, `Expected method ${name} to be present in stored procedures`);
+      const $method = testClass.getStaticMethodOrThrow(name);
+      assert.equal(method[0], $method, `Expected method ${name} to be present`);
+    }
   });
 
-  it('removeDecorators', () => {
+  await test('removeDecorators', () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow('operations.ts');
 
     removeDecorators(file);
 
-    let decoratorFound = false;
     file.forEachDescendant((node) => {
       if (tsm.Node.isDecorator(node)) {
-        decoratorFound = true;
+        assert.fail('Found a decorator after removing them');
       }
     });
-    expect(decoratorFound).toBe(false);
   });
 
-  it('fails to compile really long routine names', () => {
+  await test('fails to compile really long routine names', () => {
     const longMethodNameFile = /*ts*/ `
-      import { StoredProcedure } from "@dbos-inc/dbos-sdk";
+      import { DBOS } from "@dbos-inc/dbos-sdk";
       export class TestOne {
-        @StoredProcedure()
+        @DBOS.storedProcedure()
         static async testStoredProcedureWithReallyLongNameThatIsLongerThanTheMaximumAllowedLength(): Promise<void> {}
       }`;
 
     const { project } = makeTestProject(longMethodNameFile);
     const file = project.getSourceFileOrThrow('operations.ts');
     const procMethods = getStoredProcMethods(file).map(mapStoredProcConfig);
-    expect(procMethods.length).toBe(1);
+    assert.equal(procMethods.length, 1);
 
     const diags = procMethods.flatMap(checkStoredProc);
-    expect(diags.length).toBe(1);
-    expect(diags[0].category === tsm.DiagnosticCategory.Error);
+    assert.equal(diags.length, 1);
+    assert.equal(diags[0].category, tsm.DiagnosticCategory.Error);
   });
 
-  it('executeLocally warns', () => {
+  await test('executeLocally warns', () => {
     const executeLocallyFile = /*ts*/ `
-    import { StoredProcedure } from "@dbos-inc/dbos-sdk";
+      import { DBOS } from "@dbos-inc/dbos-sdk";
 
-    export class TestOne {
-      @StoredProcedure({ executeLocally: true })
-      static async testStoredProcedure(): Promise<void> {}
-    }`;
+      export class TestOne {
+        @DBOS.storedProcedure({ executeLocally: true })
+        static async testStoredProcedure(): Promise<void> {}
+      }`;
     const { project } = makeTestProject(executeLocallyFile);
     const file = project.getSourceFileOrThrow('operations.ts');
     const procMethods = getStoredProcMethods(file).map(mapStoredProcConfig);
-    expect(procMethods.length).toBe(1);
-    expect(procMethods[0][1].executeLocally).toBe(true);
+    assert.equal(procMethods.length, 1);
+    assert(procMethods[0][1].executeLocally);
 
     const diags = procMethods.flatMap(checkStoredProc);
-    expect(diags.length).toBe(1);
-    expect(diags[0].category === tsm.DiagnosticCategory.Warning);
+    assert.equal(diags.length, 1);
+    assert.equal(diags[0].category, tsm.DiagnosticCategory.Warning);
   });
 
-  it('single file compile', async () => {
+  await test('single file compile', async () => {
     const main = await readTestContent('main.ts.txt');
     const { project } = makeTestProject(main);
 
     const files = project.getSourceFiles();
-    expect(files.length).toBe(3);
+    assert.equal(3, files.length);
     const file = files.find((f) => f.getBaseName() === 'operations.ts')!;
-    expect(file).toBeDefined();
+    assert(file);
 
     const methods = getStoredProcMethods(file).map(mapStoredProcConfig);
-    expect(methods.length).toBe(1);
+    assert.equal(methods.length, 1);
 
     const $class = file.getClass('Example')!;
-    expect($class).toBeDefined();
+    assert($class);
 
-    expect(file.getFunction('main')).toBeDefined();
+    assert(file.getFunction('main'));
 
-    expect($class.getStaticMethods().length).toBe(4);
+    assert.equal($class.getStaticMethods().length, 4);
     removeNonProcDbosMethods(file);
-    expect($class.getStaticMethods().length).toBe(1);
+    assert.equal($class.getStaticMethods().length, 1);
 
     const usedDecls = collectUsedDeclarations(project, methods);
-    expect(usedDecls.size).toBe(12);
+    assert.equal(usedDecls.size, 12);
 
     removeUnusedDeclarations(file, usedDecls);
-    expect(file.getFunction('main')).toBeUndefined();
+    assert.equal(file.getFunction('main'), undefined, 'Main function should be removed');
   });
-});
+
+  await test('v1 compile error', () => {
+    const v1StoredProc = /*ts*/ `
+      import { StoredProcedure, StoredProcedureContext } from "@dbos-inc/dbos-sdk";
+      export class TestOne {
+        @StoredProcedure()
+        static async testProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+      }`;
+
+    const dbosSdk = /*ts*/ `
+      declare module "@dbos-inc/dbos-sdk" {
+        export interface StoredProcedureConfig {
+          isolationLevel?: "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
+          readOnly?: boolean;
+          executeLocally?: boolean;
+        }
+
+        export function StoredProcedure(config?: StoredProcedureConfig);
+
+        export interface DBOSContext { }
+        export interface StoredProcedureContext extends DBOSContext { }
+      }`;
+
+    const project = new tsm.Project({
+      compilerOptions: {
+        target: tsm.ScriptTarget.ES2015,
+      },
+      useInMemoryFileSystem: true,
+    });
+
+    project.createSourceFile('dbos-sdk.d.ts', dbosSdk);
+    const file = project.createSourceFile('operations.ts', v1StoredProc);
+
+    const diags = project.getPreEmitDiagnostics();
+    if (diags.length > 0) {
+      assert.fail(formatDiagnostics(diags));
+    }
+
+    const diagnostics = new Array<tsm.ts.Diagnostic>();
+    const procMethods = errorContext.run(diagnostics, () => getStoredProcMethods(file));
+    assert.equal(procMethods.length, 0);
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0].category, tsm.DiagnosticCategory.Error);
+  });
+}).catch(assert.fail);
