@@ -1471,9 +1471,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
                 curTxFunctionId: funcId,
                 parentCtx: pctx,
                 isInStoredProc: true,
+                sqlClient: client,
               },
               async () => {
-                const pf = proc as unknown as (...args: T) => Promise<R>;
+                const pf = proc as unknown as TypedAsyncFunction<T, R>;
                 return await pf(...args);
               },
             );
