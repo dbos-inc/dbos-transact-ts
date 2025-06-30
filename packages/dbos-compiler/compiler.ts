@@ -17,7 +17,7 @@ export interface StoredProcedureConfig {
 }
 
 export type DecoratorArgument = boolean | string | number | DecoratorArgument[] | Record<string, unknown>;
-type DbosDecoratorKind = 'handler' | 'storedProcedure' | 'transaction' | 'workflow' | 'step' | 'initializer';
+export type DbosDecoratorKind = 'handler' | 'storedProcedure' | 'transaction' | 'workflow' | 'step' | 'initializer';
 
 interface DbosDecoratorInfo {
   kind: DbosDecoratorKind;
@@ -373,7 +373,7 @@ function createDiagnostic(messageText: string, options?: DiagnosticOptions): tsm
   };
 }
 
-export function parseImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {
+function parseImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {
   const symbol = node?.getSymbol();
   if (symbol) {
     const importSpecifiers = symbol

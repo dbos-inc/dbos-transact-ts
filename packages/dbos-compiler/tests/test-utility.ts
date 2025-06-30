@@ -91,20 +91,6 @@ declare module "@dbos-inc/dbos-sdk" {
     executeLocally?: boolean;
   }
 
-  export function GetApi(url:string);
-  export function PostApi(url:string);
-  export function PutApi(url:string);
-  export function PatchApi(url:string);
-  export function DeleteApi(url:string);
-
-  export function Workflow(config?: WorkflowConfig);
-  export function Communicator(config?: StepConfig);
-  export function Step(config?: StepConfig);
-  export function Transaction(config?: TransactionConfig);
-  export function StoredProcedure(config?: StoredProcedureConfig);
-  export function DBOSDeploy();
-  export function DBOSInitializer();
-
   export interface HandlerContext extends DBOSContext { }
   export interface WorkflowContext extends DBOSContext { }
   export interface CommunicatorContext extends DBOSContext { }

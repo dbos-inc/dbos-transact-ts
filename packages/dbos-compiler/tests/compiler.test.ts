@@ -7,13 +7,15 @@ import {
   removeDecorators,
   removeNonProcDbosMethods,
   removeUnusedDeclarations,
-} from '../compiler.js';
-import { makeTestProject, readTestContent } from './test-utility.js';
-import { sampleDbosClass, sampleDbosClassAliased } from './test-code.js';
+} from '../compiler';
+import { makeTestProject, readTestContent } from './test-utility';
+import { sampleDbosClass, sampleDbosClassAliased, testCodeTypes } from './test-code';
 import { suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 suite('compiler', () => {
+  const testCodeProcCount = testCodeTypes.filter(([name, type]) => type === 'storedProcedure').length;
+
   test('removeDbosMethods', () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow('operations.ts');
@@ -22,8 +24,16 @@ suite('compiler', () => {
 
     const testClass = file.getClassOrThrow('Test');
     const methods = testClass.getStaticMethods();
-    assert(methods.length == 16);
-    assert(testClass.getStaticMethod('testProcedure') !== undefined);
+    assert.equal(testCodeProcCount, methods.length);
+
+    for (const [name, type] of testCodeTypes) {
+      const method = testClass.getStaticMethod(name);
+      if (type === 'storedProcedure') {
+        assert.notEqual(method, undefined, `Expected method ${name} to be present`);
+      } else {
+        assert.equal(method, undefined, `Expected method ${name} to be absent`);
+      }
+    }
   });
 
   test('aliased removeDbosMethods', () => {
@@ -34,20 +44,36 @@ suite('compiler', () => {
 
     const testClass = file.getClassOrThrow('Test');
     const methods = testClass.getStaticMethods();
-    assert(methods.length == 16);
-    assert(testClass.getStaticMethod('testProcedure') !== undefined);
+    assert.equal(testCodeProcCount, methods.length);
+
+    for (const [name, type] of testCodeTypes) {
+      const method = testClass.getStaticMethod(name);
+      if (type === 'storedProcedure') {
+        assert.notEqual(method, undefined, `Expected method ${name} to be present`);
+      } else {
+        assert.equal(method, undefined, `Expected method ${name} to be absent`);
+      }
+    }
   });
 
   test('getProcMethods', () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow('operations.ts');
+    const testClass = file.getClassOrThrow('Test');
 
     const procMethods = getStoredProcMethods(file);
 
-    assert(procMethods.length === 16);
-    const testClass = file.getClassOrThrow('Test');
-    const testProcMethod = testClass.getStaticMethodOrThrow('testProcedure');
-    assert.equal(procMethods[0][0], testProcMethod);
+    assert.equal(testCodeProcCount, procMethods.length);
+
+    for (const [name, type] of testCodeTypes) {
+      if (type !== 'storedProcedure') {
+        continue;
+      }
+      const method = procMethods.find(([m]) => m.getName() === name);
+      assert(method, `Expected method ${name} to be present in stored procedures`);
+      const $method = testClass.getStaticMethodOrThrow(name);
+      assert.equal(method[0], $method, `Expected method ${name} to be present`);
+    }
   });
 
   test('removeDecorators', () => {
@@ -56,50 +82,48 @@ suite('compiler', () => {
 
     removeDecorators(file);
 
-    let decoratorFound = false;
     file.forEachDescendant((node) => {
       if (tsm.Node.isDecorator(node)) {
-        decoratorFound = true;
+        assert.fail('Found a decorator after removing them');
       }
     });
-    assert(decoratorFound === false);
   });
 
   test('fails to compile really long routine names', () => {
     const longMethodNameFile = /*ts*/ `
-      import { StoredProcedure } from "@dbos-inc/dbos-sdk";
+      import { DBOS } from "@dbos-inc/dbos-sdk";
       export class TestOne {
-        @StoredProcedure()
+        @DBOS.storedProcedure()
         static async testStoredProcedureWithReallyLongNameThatIsLongerThanTheMaximumAllowedLength(): Promise<void> {}
       }`;
 
     const { project } = makeTestProject(longMethodNameFile);
     const file = project.getSourceFileOrThrow('operations.ts');
     const procMethods = getStoredProcMethods(file).map(mapStoredProcConfig);
-    assert(procMethods.length === 1);
+    assert.equal(procMethods.length, 1);
 
     const diags = procMethods.flatMap(checkStoredProc);
-    assert(diags.length === 1);
-    assert(diags[0].category === tsm.DiagnosticCategory.Error);
+    assert.equal(diags.length, 1);
+    assert.equal(diags[0].category, tsm.DiagnosticCategory.Error);
   });
 
   test('executeLocally warns', () => {
     const executeLocallyFile = /*ts*/ `
-    import { StoredProcedure } from "@dbos-inc/dbos-sdk";
+      import { DBOS } from "@dbos-inc/dbos-sdk";
 
-    export class TestOne {
-      @StoredProcedure({ executeLocally: true })
-      static async testStoredProcedure(): Promise<void> {}
-    }`;
+      export class TestOne {
+        @DBOS.storedProcedure({ executeLocally: true })
+        static async testStoredProcedure(): Promise<void> {}
+      }`;
     const { project } = makeTestProject(executeLocallyFile);
     const file = project.getSourceFileOrThrow('operations.ts');
     const procMethods = getStoredProcMethods(file).map(mapStoredProcConfig);
-    assert((procMethods.length = 1));
+    assert.equal(procMethods.length, 1);
     assert(procMethods[0][1].executeLocally);
 
     const diags = procMethods.flatMap(checkStoredProc);
-    assert(diags.length === 1);
-    assert(diags[0].category === tsm.DiagnosticCategory.Warning);
+    assert.equal(diags.length, 1);
+    assert.equal(diags[0].category, tsm.DiagnosticCategory.Warning);
   });
 
   test('single file compile', async () => {
@@ -107,26 +131,26 @@ suite('compiler', () => {
     const { project } = makeTestProject(main);
 
     const files = project.getSourceFiles();
-    assert(files.length === 3);
+    assert.equal(3, files.length);
     const file = files.find((f) => f.getBaseName() === 'operations.ts')!;
-    assert(file !== undefined);
+    assert(file);
 
     const methods = getStoredProcMethods(file).map(mapStoredProcConfig);
-    assert(methods.length === 1);
+    assert.equal(methods.length, 1);
 
     const $class = file.getClass('Example')!;
-    assert($class !== undefined);
+    assert($class);
 
-    assert(file.getFunction('main') !== undefined);
+    assert(file.getFunction('main'));
 
-    assert($class.getStaticMethods().length === 4);
+    assert.equal($class.getStaticMethods().length, 4);
     removeNonProcDbosMethods(file);
-    assert($class.getStaticMethods().length === 1);
+    assert.equal($class.getStaticMethods().length, 1);
 
     const usedDecls = collectUsedDeclarations(project, methods);
-    assert(usedDecls.size === 12);
+    assert.equal(usedDecls.size, 12);
 
     removeUnusedDeclarations(file, usedDecls);
-    assert(file.getFunction('main') === undefined);
+    assert.equal(file.getFunction('main'), undefined, 'Main function should be removed');
   });
 });
