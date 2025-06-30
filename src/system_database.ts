@@ -178,7 +178,7 @@ export interface WorkflowStatusInternal {
   authenticatedUser: string;
   output: string | null;
   error: string | null; // Serialized error
-  input: string;
+  input: string | null;
   assumedRole: string;
   authenticatedRoles: string[];
   request: object;
@@ -479,14 +479,14 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     authenticatedUser: row.authenticated_user,
     assumedRole: row.assumed_role,
     authenticatedRoles: JSON.parse(row.authenticated_roles) as string[],
-    request: JSON.parse(row.request) as object,
+    request: row.request ? (JSON.parse(row.request) as object) : {},
     executorId: row.executor_id,
     createdAt: Number(row.created_at),
     updatedAt: Number(row.updated_at),
     applicationVersion: row.application_version,
     applicationID: row.application_id,
     recoveryAttempts: Number(row.recovery_attempts),
-    input: row.inputs,
+    input: row.inputs ? row.inputs : null,
     timeoutMS: row.workflow_timeout_ms ? Number(row.workflow_timeout_ms) : undefined,
     deadlineEpochMS: row.workflow_deadline_epoch_ms ? Number(row.workflow_deadline_epoch_ms) : undefined,
     deduplicationID: row.deduplication_id ?? undefined,
@@ -1698,12 +1698,41 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]> {
     const schemaName = DBOSExecutor.systemDBSchemaName;
+    const selectColumns = [
+      'workflow_uuid',
+      'status',
+      'name',
+      'recovery_attempts',
+      'config_name',
+      'class_name',
+      'authenticated_user',
+      'authenticated_roles',
+      'assumed_role',
+      'queue_name',
+      'executor_id',
+      'created_at',
+      'updated_at',
+      'application_version',
+      'application_id',
+      'workflow_deadline_epoch_ms',
+      'workflow_timeout_ms',
+    ];
+
+    input.loadInput = input.loadInput ?? true;
+    input.loadOutput = input.loadOutput ?? true;
+    if (input.loadInput) {
+      selectColumns.push('inputs');
+      selectColumns.push('request');
+    }
+
+    if (input.loadOutput) {
+      selectColumns.push('output', 'error');
+    }
 
     input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`).orderBy(
-      `${schemaName}.workflow_status.created_at`,
-      input.sortDesc ? 'desc' : 'asc',
-    );
+    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
+      .select(...selectColumns)
+      .orderBy(`${schemaName}.workflow_status.created_at`, input.sortDesc ? 'desc' : 'asc');
     if (input.workflowName) {
       query = query.where(`${schemaName}.workflow_status.name`, input.workflowName);
     }
@@ -1740,9 +1769,35 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
     const schemaName = DBOSExecutor.systemDBSchemaName;
+    const selectColumns = [
+      'workflow_uuid',
+      'status',
+      'name',
+      'recovery_attempts',
+      'config_name',
+      'class_name',
+      'authenticated_user',
+      'authenticated_roles',
+      'assumed_role',
+      'queue_name',
+      'executor_id',
+      'created_at',
+      'updated_at',
+      'application_version',
+      'application_id',
+      'workflow_deadline_epoch_ms',
+      'workflow_timeout_ms',
+    ];
+
+    input.loadInput = input.loadInput ?? true;
+    if (input.loadInput) {
+      selectColumns.push('inputs');
+      selectColumns.push('request');
+    }
 
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
     let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
+      .select(...selectColumns)
       .whereNotNull(`${schemaName}.workflow_status.queue_name`)
       .whereIn(`${schemaName}.workflow_status.status`, [StatusString.ENQUEUED, StatusString.PENDING])
       .orderBy(`${schemaName}.workflow_status.created_at`, sortDesc ? 'desc' : 'asc');
