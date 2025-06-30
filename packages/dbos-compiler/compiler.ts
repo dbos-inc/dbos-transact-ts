@@ -1,4 +1,7 @@
 import tsm from 'ts-morph';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+export const errorContext = new AsyncLocalStorage<Array<tsm.ts.Diagnostic>>();
 
 export type CompileMethodInfo = readonly [tsm.MethodDeclaration, StoredProcedureConfig];
 export type CompileResult = {
@@ -46,7 +49,10 @@ export function compile(configFileOrProject: string | tsm.Project): CompileResul
         })
       : configFileOrProject;
 
-  const methods = project.getSourceFiles().flatMap(getStoredProcMethods).map(mapStoredProcConfig);
+  const methods = errorContext.run(diagnostics, () =>
+    project.getSourceFiles().flatMap(getStoredProcMethods).map(mapStoredProcConfig),
+  );
+
   if (methods.length === 0) {
     diagnostics.push(createDiagnostic('No stored procedure methods found'));
   } else {
@@ -411,7 +417,12 @@ function parseDbosDecoratorInfo(node: tsm.Decorator): DbosDecoratorInfo | undefi
     if (impSpec && isDbosImport(impSpec)) {
       const kind = parseImportSpecifierStructureKind(impSpec.getStructure());
       if (kind) {
-        return { kind, version: 1 };
+        const ctx = errorContext.getStore();
+        if (!ctx) {
+          throw new Error('No error context found');
+        }
+        ctx.push(createDiagnostic(`v1 decorators not supported`, { node }));
+        return undefined;
       }
     }
   }

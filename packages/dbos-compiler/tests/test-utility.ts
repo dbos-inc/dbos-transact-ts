@@ -33,7 +33,7 @@ export function makeTestProject(...sources: TestSource[]) {
   return { project, sourceFiles };
 }
 
-function formatDiagnostics(diags: readonly tsm.Diagnostic[]) {
+export function formatDiagnostics(diags: readonly tsm.Diagnostic[]) {
   if (diags.length === 0) {
     return;
   }
@@ -45,7 +45,7 @@ function formatDiagnostics(diags: readonly tsm.Diagnostic[]) {
       tsm.ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase(),
   };
 
-  return tsm.ts.formatDiagnosticsWithColorAndContext(
+  return tsm.ts.formatDiagnostics(
     diags.map((d) => d.compilerObject),
     formatHost,
   );

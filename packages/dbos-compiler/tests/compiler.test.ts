@@ -2,16 +2,18 @@ import tsm from 'ts-morph';
 import {
   checkStoredProc,
   collectUsedDeclarations,
+  errorContext,
   getStoredProcMethods,
   mapStoredProcConfig,
   removeDecorators,
   removeNonProcDbosMethods,
   removeUnusedDeclarations,
 } from '../compiler';
-import { makeTestProject, readTestContent } from './test-utility';
+import { formatDiagnostics, makeTestProject, readTestContent } from './test-utility';
 import { sampleDbosClass, sampleDbosClassAliased, testCodeTypes } from './test-code';
 import { suite, test } from 'node:test';
 import assert from 'node:assert/strict';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 suite('compiler', () => {
   const testCodeProcCount = testCodeTypes.filter(([name, type]) => type === 'storedProcedure').length;
@@ -152,5 +154,49 @@ suite('compiler', () => {
 
     removeUnusedDeclarations(file, usedDecls);
     assert.equal(file.getFunction('main'), undefined, 'Main function should be removed');
+  });
+
+  test('v1 compile error', () => {
+    const v1StoredProc = /*ts*/ `
+      import { StoredProcedure, StoredProcedureContext } from "@dbos-inc/dbos-sdk";
+      export class TestOne {
+        @StoredProcedure()
+        static async testProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+      }`;
+
+    const dbosSdk = /*ts*/ `
+      declare module "@dbos-inc/dbos-sdk" {
+        export interface StoredProcedureConfig {
+          isolationLevel?: "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
+          readOnly?: boolean;
+          executeLocally?: boolean;
+        }
+
+        export function StoredProcedure(config?: StoredProcedureConfig);
+
+        export interface DBOSContext { }
+        export interface StoredProcedureContext extends DBOSContext { }
+      }`;
+
+    const project = new tsm.Project({
+      compilerOptions: {
+        target: tsm.ScriptTarget.ES2015,
+      },
+      useInMemoryFileSystem: true,
+    });
+
+    project.createSourceFile('dbos-sdk.d.ts', dbosSdk);
+    const file = project.createSourceFile('operations.ts', v1StoredProc);
+
+    const diags = project.getPreEmitDiagnostics();
+    if (diags.length > 0) {
+      assert.fail(formatDiagnostics(diags));
+    }
+
+    const diagnostics = new Array<tsm.ts.Diagnostic>();
+    const procMethods = errorContext.run(diagnostics, () => getStoredProcMethods(file));
+    assert.equal(procMethods.length, 0);
+    assert.equal(diagnostics.length, 1);
+    assert.equal(diagnostics[0].category, tsm.DiagnosticCategory.Error);
   });
 });
