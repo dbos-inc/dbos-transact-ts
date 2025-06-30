@@ -1721,8 +1721,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     input.loadInput = input.loadInput ?? true;
     input.loadOutput = input.loadOutput ?? true;
     if (input.loadInput) {
-      selectColumns.push('inputs');
-      selectColumns.push('request');
+      selectColumns.push('inputs', 'request');
     }
 
     if (input.loadOutput) {
@@ -1791,8 +1790,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     input.loadInput = input.loadInput ?? true;
     if (input.loadInput) {
-      selectColumns.push('inputs');
-      selectColumns.push('request');
+      selectColumns.push('inputs', 'request');
     }
 
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
