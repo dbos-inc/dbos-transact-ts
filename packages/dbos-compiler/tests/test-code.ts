@@ -1,16 +1,7 @@
 import { DbosDecoratorKind } from '../compiler';
 
 export const sampleDbosClass = /*ts*/ `
-import {
-  DBOS,
-  HandlerContext,
-  WorkflowContext,
-  CommunicatorContext,
-  StepContext,
-  TransactionContext,
-  StoredProcedureContext,
-  InitContext,
-} from "@dbos-inc/dbos-sdk";
+import { DBOS } from "@dbos-inc/dbos-sdk";
 import { Knex } from 'knex';
 
 export class Test {
@@ -54,59 +45,50 @@ export class Test {
   static async testTransaction(message: string): Promise<void> {  }
 
   @DBOS.storedProcedure()
-  static async testProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testProcedure(message: string): Promise<void> {  }
 
   @DBOS.storedProcedure({ readOnly: true })
-  static async testReadOnlyProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testReadOnlyProcedure(message: string): Promise<void> {  }
 
   @DBOS.storedProcedure({ isolationLevel: "REPEATABLE READ" })
-  static async testRepeatableReadProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testRepeatableReadProcedure(message: string): Promise<void> {  }
 
   @DBOS.storedProcedure({ readOnly: true, isolationLevel: "READ COMMITTED" })
-  static async testConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testConfiguredProcedure(message: string): Promise<void> {  }
 
   @DBOS.storedProcedure({ executeLocally: true})
-  static async testLocalProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testLocalProcedure(message: string): Promise<void> {  }
 
   @DBOS.storedProcedure({ readOnly: true, executeLocally: true })
-  static async testLocalReadOnlyProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testLocalReadOnlyProcedure(message: string): Promise<void> {  }
 
   @DBOS.storedProcedure({ isolationLevel: "REPEATABLE READ", executeLocally: true })
-  static async testLocalRepeatableReadProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testLocalRepeatableReadProcedure(message: string): Promise<void> {  }
 
   @DBOS.storedProcedure({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true })
-  static async testLocalConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testLocalConfiguredProcedure(message: string): Promise<void> {  }
 }
 `;
 
 export const sampleDbosClassAliased = /*ts*/ `
-import {
-  DBOS as TestDBOS,
-  HandlerContext,
-  WorkflowContext,
-  CommunicatorContext,
-  StepContext,
-  TransactionContext,
-  StoredProcedureContext,
-  InitContext,
-} from "@dbos-inc/dbos-sdk";
+import { DBOS as TestDBOS } from "@dbos-inc/dbos-sdk";
 import { Knex } from 'knex';
 
 export class Test {
   @TestDBOS.getApi('/test')
-  static async testGetHandler(ctxt: HandlerContext): Promise<void> {  }
+  static async testGetHandler(): Promise<void> {  }
 
   @TestDBOS.postApi('/test')
-  static async testPostHandler(ctxt: HandlerContext): Promise<void> {  }
+  static async testPostHandler(): Promise<void> {  }
 
   @TestDBOS.patchApi('/test')
-  static async testPatchHandler(ctxt: HandlerContext): Promise<void> {  }
+  static async testPatchHandler(): Promise<void> {  }
 
   @TestDBOS.putApi('/test')
-  static async testPutHandler(ctxt: HandlerContext): Promise<void> {  }
+  static async testPutHandler(): Promise<void> {  }
 
   @TestDBOS.deleteApi('/test')
-  static async testDeleteHandler(ctxt: HandlerContext): Promise<void> {  }
+  static async testDeleteHandler(): Promise<void> {  }
 
   @TestDBOS.getApi('/test')
   @TestDBOS.workflow()
@@ -133,28 +115,28 @@ export class Test {
   static async testTransaction(message: string): Promise<void> {  }
 
   @TestDBOS.storedProcedure()
-  static async testProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testProcedure(message: string): Promise<void> {  }
 
   @TestDBOS.storedProcedure({ readOnly: true })
-  static async testReadOnlyProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testReadOnlyProcedure(message: string): Promise<void> {  }
 
   @TestDBOS.storedProcedure({ isolationLevel: "REPEATABLE READ" })
-  static async testRepeatableReadProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testRepeatableReadProcedure(message: string): Promise<void> {  }
 
   @TestDBOS.storedProcedure({ readOnly: true, isolationLevel: "READ COMMITTED" })
-  static async testConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testConfiguredProcedure(message: string): Promise<void> {  }
 
   @TestDBOS.storedProcedure({ executeLocally: true})
-  static async testLocalProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testLocalProcedure(message: string): Promise<void> {  }
 
   @TestDBOS.storedProcedure({ readOnly: true, executeLocally: true })
-  static async testLocalReadOnlyProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testLocalReadOnlyProcedure(message: string): Promise<void> {  }
 
   @TestDBOS.storedProcedure({ isolationLevel: "REPEATABLE READ", executeLocally: true })
-  static async testLocalRepeatableReadProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testLocalRepeatableReadProcedure(message: string): Promise<void> {  }
 
   @TestDBOS.storedProcedure({ readOnly: true, isolationLevel: "READ COMMITTED", executeLocally: true })
-  static async testLocalConfiguredProcedure(ctxt: StoredProcedureContext, message: string): Promise<void> {  }
+  static async testLocalConfiguredProcedure(message: string): Promise<void> {  }
 }`;
 
 export const testCodeTypes: [string, DbosDecoratorKind][] = [

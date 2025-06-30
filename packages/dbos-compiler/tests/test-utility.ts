@@ -70,10 +70,6 @@ declare module "@dbos-inc/dbos-sdk" {
     query<T>(query: string, values?: any[]): Promise<{ rows: T[] }>;
   }
 
-  export interface DBOSContext {
-    readonly logger: Logger;
-  }
-
   export interface WorkflowConfig { }
   export interface TransactionConfig {
     isolationLevel?: "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
@@ -85,19 +81,12 @@ declare module "@dbos-inc/dbos-sdk" {
     maxAttempts?: number;
     backoffRate?: number;
   }
+
   export interface StoredProcedureConfig {
     isolationLevel?: "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
     readOnly?: boolean;
     executeLocally?: boolean;
   }
-
-  export interface HandlerContext extends DBOSContext { }
-  export interface WorkflowContext extends DBOSContext { }
-  export interface CommunicatorContext extends DBOSContext { }
-  export interface StepContext extends DBOSContext { }
-  export interface TransactionContext<T> extends DBOSContext { }
-  export interface StoredProcedureContext extends DBOSContext { }
-  export interface InitContext extends DBOSContext {}
 
   export class DBOS {
     static readonly logger: Logger;
