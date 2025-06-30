@@ -1,7 +1,7 @@
 import path from 'node:path';
 import tsm from 'ts-morph';
 import { Liquid } from 'liquidjs';
-import type { StoredProcedureConfig, CompileMethodInfo } from './compiler.js';
+import type { StoredProcedureConfig, CompileMethodInfo } from './compiler';
 
 const engine = new Liquid({
   root: path.resolve(__dirname, '..', 'templates'),

@@ -35,9 +35,9 @@ function wfRegRetry(value: number) {
   return regRetryTest(value);
 }
 
-const regWFRegStep = DBOS.registerWorkflow(wfRegStep, 'wfRegStep');
-const regWFRunStep = DBOS.registerWorkflow(wfRunStep, 'wfRunStep');
-const regWFRunRetry = DBOS.registerWorkflow(wfRegRetry, 'wfRegRetry');
+const regWFRegStep = DBOS.registerWorkflow(wfRegStep, { name: 'wfRegStep' });
+const regWFRunStep = DBOS.registerWorkflow(wfRunStep, { name: 'wfRunStep' });
+const regWFRunRetry = DBOS.registerWorkflow(wfRegRetry);
 
 class TestClass extends ConfiguredInstance {
   @DBOS.workflow()
@@ -104,24 +104,25 @@ const inst = new TestClass('TestClassInstance');
 
 TestClass.stepTestStatic = DBOS.registerStep(TestClass.stepTestStatic);
 TestClass.retryTestStatic = DBOS.registerStep(TestClass.retryTestStatic, { retriesAllowed: true });
-TestClass.wfRegStepStatic = DBOS.registerWorkflow(TestClass.wfRegStepStatic, 'TestClass.wfRegStepStatic');
-TestClass.wfRunStepStatic = DBOS.registerWorkflow(TestClass.wfRunStepStatic, 'TestClass.wfRunStepStatic');
-TestClass.wfRegRetryStatic = DBOS.registerWorkflow(TestClass.wfRegRetryStatic, 'TestClass.wfRegRetryStatic');
+TestClass.wfRegStepStatic = DBOS.registerWorkflow(TestClass.wfRegStepStatic, { name: 'TestClass.wfRegStepStatic' });
+TestClass.wfRunStepStatic = DBOS.registerWorkflow(TestClass.wfRunStepStatic, { name: 'TestClass.wfRunStepStatic' });
+TestClass.wfRegRetryStatic = DBOS.registerWorkflow(TestClass.wfRegRetryStatic, { name: 'TestClass.wfRegRetryStatic' });
 
 /* eslint-disable @typescript-eslint/unbound-method */
 TestClass.prototype.stepTest = DBOS.registerStep(TestClass.prototype.stepTest);
 TestClass.prototype.retryTest = DBOS.registerStep(TestClass.prototype.retryTest, { retriesAllowed: true });
-TestClass.prototype.wfRegStep = DBOS.registerWorkflow(TestClass.prototype.wfRegStep, 'TestClass.prototype.wfRegStep', {
-  classOrInst: TestClass,
+TestClass.prototype.wfRegStep = DBOS.registerWorkflow(TestClass.prototype.wfRegStep, {
+  name: 'TestClass.prototype.wfRegStep',
+  ctorOrProto: TestClass,
 });
-TestClass.prototype.wfRunStep = DBOS.registerWorkflow(TestClass.prototype.wfRunStep, 'TestClass.prototype.wfRunStep', {
-  classOrInst: TestClass,
+TestClass.prototype.wfRunStep = DBOS.registerWorkflow(TestClass.prototype.wfRunStep, {
+  name: 'TestClass.prototype.wfRunStep',
+  ctorOrProto: TestClass,
 });
-TestClass.prototype.wfRegRetry = DBOS.registerWorkflow(
-  TestClass.prototype.wfRegRetry,
-  'TestClass.prototype.wfRegRetry',
-  { classOrInst: TestClass },
-);
+TestClass.prototype.wfRegRetry = DBOS.registerWorkflow(TestClass.prototype.wfRegRetry, {
+  name: 'TestClass.prototype.wfRegRetry',
+  ctorOrProto: TestClass,
+});
 /* eslint-enable @typescript-eslint/unbound-method */
 
 describe('decorator-free-tests', () => {
@@ -563,7 +564,7 @@ describe('registerWorkflow-tests', () => {
       return DBOS.runStep(() => stepTest(value), { name: 'stepTest-runStep' });
     }
 
-    DBOS.registerWorkflow(workflow1, 'workflow1');
-    expect(() => DBOS.registerWorkflow(workflow2, 'workflow1')).toThrow(DBOSConflictingRegistrationError);
+    DBOS.registerWorkflow(workflow1);
+    expect(() => DBOS.registerWorkflow(workflow2, { name: 'workflow1' })).toThrow(DBOSConflictingRegistrationError);
   });
 });

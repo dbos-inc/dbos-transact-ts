@@ -17,29 +17,6 @@ import { DBOSWorkflowCancelledError } from '../../src/error';
 import * as protocol from '../../src/conductor/protocol';
 
 // Add type definitions for admin server API responses
-interface WorkflowResponse {
-  workflow_id: string;
-  status: string;
-  workflow_name: string;
-  workflow_class_name: string;
-  workflow_config_name?: string;
-  queue_name?: string;
-  authenticated_user?: string;
-  assumed_role?: string;
-  authenticated_roles?: string[];
-  output?: unknown;
-  error?: unknown;
-  input?: unknown[];
-  executor_id?: string;
-  app_version?: string;
-  application_id?: string;
-  recovery_attempts?: number;
-  created_at?: number;
-  updated_at?: number;
-  timeout_ms?: number;
-  deadline_epoch_ms?: number;
-}
-
 interface ErrorResponse {
   error: string;
 }
@@ -473,10 +450,24 @@ describe('running-admin-server-tests', () => {
       },
     });
     expect(response.status).toBe(200);
-    const workflow = (await response.json()) as WorkflowResponse;
-    expect(workflow.workflow_id).toBe(handle.workflowID);
-    expect(workflow.status).toBe(StatusString.SUCCESS);
-    expect(workflow.workflow_name).toBe('exampleWorkflow');
+    const workflow = (await response.json()) as protocol.WorkflowsOutput;
+    expect(workflow.WorkflowUUID).toBe(handle.workflowID);
+    expect(workflow.Status).toBe(StatusString.SUCCESS);
+    expect(workflow.WorkflowName).toBe('exampleWorkflow');
+    expect(workflow.WorkflowConfigName).toBeUndefined();
+    expect(workflow.QueueName).toBeUndefined();
+    expect(workflow.AuthenticatedUser).toBeUndefined();
+    expect(workflow.AssumedRole).toBeUndefined();
+    expect(workflow.AuthenticatedRoles).toBeUndefined();
+    expect(workflow.Output).toContain('123');
+    expect(workflow.Error).toBeUndefined();
+    expect(workflow.Input).toContain('123');
+    expect(workflow.ExecutorID).toBe(globalParams.executorID);
+    expect(workflow.CreatedAt).toBeDefined();
+    expect(workflow.CreatedAt?.length).toBeGreaterThan(0);
+    expect(workflow.UpdatedAt).toBeDefined();
+    expect(workflow.UpdatedAt?.length).toBeGreaterThan(0);
+    expect(workflow.ApplicationVersion).toBe(globalParams.appVersion);
 
     // Test GET /workflows/:workflow_id - non-existing workflow
     response = await fetch(`http://localhost:3001/workflows/non-existing-workflow-id`, {

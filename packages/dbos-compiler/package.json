@@ -11,20 +11,15 @@
   "homepage": "https://docs.dbos.dev/",
   "scripts": {
     "build": "tsc --project tsconfig.json",
-    "test": "npm run build && vitest run"
+    "pretest": "npm run build",
+    "test": "tsx --test tests/*.test.ts"
   },
   "bin": {
     "dbosc": "./dist/cli.js"
   },
   "devDependencies": {
-    "@tsconfig/node20": "^20.1.4",
-    "@types/diff": "^5.2.1",
     "@types/pg": "^8.11.6",
-    "colors": "^1.4.0",
-    "diff": "^5.2.0",
-    "strip-literal": "^2.1.0",
-    "typescript": "^5.4.5",
-    "vitest": "^3.0.6"
+    "tsx": "^4.20.3"
   },
   "dependencies": {
     "commander": "^12.1.0",

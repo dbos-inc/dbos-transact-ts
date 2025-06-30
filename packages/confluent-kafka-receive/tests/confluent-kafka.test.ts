@@ -19,7 +19,13 @@ const kafkaConfig = {
 const kafkaReceiver = new ConfluentKafkaReceiver(kafkaConfig);
 
 interface KafkaEvents {
-  message: (functionName: string, topic: string, partition: number, message: ConfluentKafkaJS.Message) => void;
+  message: (
+    functionName: string,
+    topic: string,
+    partition: number,
+    message: ConfluentKafkaJS.Message,
+    workflowID?: string,
+  ) => void;
 }
 
 class KafkaEmitter extends EventEmitter {
@@ -37,6 +43,7 @@ type KafkaMessageEvent = {
   topic: string;
   partition: number;
   message: ConfluentKafkaJS.Message;
+  workflowID?: string;
 };
 
 function waitForMessage(
@@ -47,10 +54,16 @@ function waitForMessage(
 ): Promise<KafkaMessageEvent> {
   return withTimeout(
     new Promise<KafkaMessageEvent>((resolve) => {
-      const handler = (f: string, t: string, partition: number, message: ConfluentKafkaJS.Message) => {
+      const handler = (
+        f: string,
+        t: string,
+        partition: number,
+        message: ConfluentKafkaJS.Message,
+        workflowID?: string,
+      ) => {
         if (f === funcName && t === topic) {
           emitter.off('message', handler);
-          resolve({ topic: t, partition, message });
+          resolve({ topic: t, partition, message, workflowID });
         }
       };
       emitter.on('message', handler);
@@ -67,37 +80,37 @@ class KafkaTestClass {
   @DBOS.workflow()
   static async stringTopic(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'stringTopic', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'stringTopic', topic, partition, message, DBOS.workflowID);
   }
 
   @kafkaReceiver.consumer(/^regex-topic-.*/)
   @DBOS.workflow()
   static async regexTopic(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'regexTopic', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'regexTopic', topic, partition, message, DBOS.workflowID);
   }
 
   @kafkaReceiver.consumer(['a-topic', 'b-topic'])
   @DBOS.workflow()
   static async stringArrayTopic(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'stringArrayTopic', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'stringArrayTopic', topic, partition, message, DBOS.workflowID);
   }
 
   @kafkaReceiver.consumer([/^z-topic-.*/, /^y-topic-.*/])
   @DBOS.workflow()
   static async regexArrayTopic(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'regexArrayTopic', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'regexArrayTopic', topic, partition, message, DBOS.workflowID);
   }
 
   static async registeredConsumer(topic: string, partition: number, message: ConfluentKafkaJS.Message) {
     await Promise.resolve();
-    KafkaTestClass.emitter.emit('message', 'registeredConsumer', topic, partition, message);
+    KafkaTestClass.emitter.emit('message', 'registeredConsumer', topic, partition, message, DBOS.workflowID);
   }
 }
 
-KafkaTestClass.registeredConsumer = DBOS.registerWorkflow(KafkaTestClass.registeredConsumer, 'registeredConsumer');
+KafkaTestClass.registeredConsumer = DBOS.registerWorkflow(KafkaTestClass.registeredConsumer);
 kafkaReceiver.registerConsumer(KafkaTestClass.registeredConsumer, 'registered-topic');
 
 async function validateKafka(config: KafkaConfig) {
@@ -172,7 +185,6 @@ async function purgeTopic(admin: Admin, topic: string) {
   await new Promise((resolve) => setTimeout(resolve, 2000));
 }
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 suite('confluent-kafka-receive', async () => {
   const kafkaAvailable = await validateKafka(kafkaConfig);
   let producer: Producer | undefined = undefined;
@@ -234,8 +246,7 @@ suite('confluent-kafka-receive', async () => {
   });
 
   for (const { functionName, topic } of testCases) {
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    test(`${topic}-${functionName}`, { skip: !kafkaAvailable, timeout: 125000 }, async () => {
+    await test(`${topic}-${functionName}`, { skip: !kafkaAvailable, timeout: 125000 }, async () => {
       await purgeTopic(admin!, topic);
       const message = `test-message-${Date.now()}`;
       await producer!.send({ topic, messages: [{ value: message }] });
@@ -243,6 +254,10 @@ suite('confluent-kafka-receive', async () => {
 
       assert.equal(topic, result.topic);
       assert.equal(message, String(result.message.value));
+      assert(!!result.workflowID);
+
+      const status = await DBOS.getWorkflowStatus(result.workflowID);
+      assert(!!status);
     });
   }
-});
+}).catch(assert.fail);
