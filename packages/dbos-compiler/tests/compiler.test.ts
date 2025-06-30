@@ -13,12 +13,11 @@ import { formatDiagnostics, makeTestProject, readTestContent } from './test-util
 import { sampleDbosClass, sampleDbosClassAliased, testCodeTypes } from './test-code';
 import { suite, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { AsyncLocalStorage } from 'node:async_hooks';
 
-suite('compiler', () => {
-  const testCodeProcCount = testCodeTypes.filter(([name, type]) => type === 'storedProcedure').length;
+suite('compiler', async () => {
+  const testCodeProcCount = testCodeTypes.filter(([_name, type]) => type === 'storedProcedure').length;
 
-  test('removeDbosMethods', () => {
+  await test('removeDbosMethods', () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow('operations.ts');
 
@@ -38,7 +37,7 @@ suite('compiler', () => {
     }
   });
 
-  test('aliased removeDbosMethods', () => {
+  await test('aliased removeDbosMethods', () => {
     const { project } = makeTestProject(sampleDbosClassAliased);
     const file = project.getSourceFileOrThrow('operations.ts');
 
@@ -58,7 +57,7 @@ suite('compiler', () => {
     }
   });
 
-  test('getProcMethods', () => {
+  await test('getProcMethods', () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow('operations.ts');
     const testClass = file.getClassOrThrow('Test');
@@ -78,7 +77,7 @@ suite('compiler', () => {
     }
   });
 
-  test('removeDecorators', () => {
+  await test('removeDecorators', () => {
     const { project } = makeTestProject(sampleDbosClass);
     const file = project.getSourceFileOrThrow('operations.ts');
 
@@ -91,7 +90,7 @@ suite('compiler', () => {
     });
   });
 
-  test('fails to compile really long routine names', () => {
+  await test('fails to compile really long routine names', () => {
     const longMethodNameFile = /*ts*/ `
       import { DBOS } from "@dbos-inc/dbos-sdk";
       export class TestOne {
@@ -109,7 +108,7 @@ suite('compiler', () => {
     assert.equal(diags[0].category, tsm.DiagnosticCategory.Error);
   });
 
-  test('executeLocally warns', () => {
+  await test('executeLocally warns', () => {
     const executeLocallyFile = /*ts*/ `
       import { DBOS } from "@dbos-inc/dbos-sdk";
 
@@ -128,7 +127,7 @@ suite('compiler', () => {
     assert.equal(diags[0].category, tsm.DiagnosticCategory.Warning);
   });
 
-  test('single file compile', async () => {
+  await test('single file compile', async () => {
     const main = await readTestContent('main.ts.txt');
     const { project } = makeTestProject(main);
 
@@ -156,7 +155,7 @@ suite('compiler', () => {
     assert.equal(file.getFunction('main'), undefined, 'Main function should be removed');
   });
 
-  test('v1 compile error', () => {
+  await test('v1 compile error', () => {
     const v1StoredProc = /*ts*/ `
       import { StoredProcedure, StoredProcedureContext } from "@dbos-inc/dbos-sdk";
       export class TestOne {
@@ -199,4 +198,4 @@ suite('compiler', () => {
     assert.equal(diagnostics.length, 1);
     assert.equal(diagnostics[0].category, tsm.DiagnosticCategory.Error);
   });
-});
+}).catch(assert.fail);
