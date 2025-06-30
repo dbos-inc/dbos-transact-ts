@@ -530,15 +530,34 @@ describe('running-admin-server-tests', () => {
     expect(workflows[0].AuthenticatedUser).toBeUndefined();
     expect(workflows[0].AssumedRole).toBeUndefined();
     expect(workflows[0].AuthenticatedRoles).toBeUndefined();
-    expect(workflows[0].Output).toContain('456');
+    // By default, input and output are not loaded
+    expect(workflows[0].Output).toBeUndefined();
     expect(workflows[0].Error).toBeUndefined();
-    expect(workflows[0].Input).toContain('456');
+    expect(workflows[0].Input).toBeUndefined();
     expect(workflows[0].ExecutorID).toBe(globalParams.executorID);
     expect(workflows[0].CreatedAt).toBeDefined();
     expect(workflows[0].CreatedAt?.length).toBeGreaterThan(0);
     expect(workflows[0].UpdatedAt).toBeDefined();
     expect(workflows[0].UpdatedAt?.length).toBeGreaterThan(0);
     expect(workflows[0].ApplicationVersion).toBe(globalParams.appVersion);
+
+    // Only load input and output if requested
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        load_input: true,
+        load_output: true,
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+
+    expect(workflows[0].Output).toContain('456');
+    expect(workflows[0].Error).toBeUndefined();
+    expect(workflows[0].Input).toContain('456');
 
     // Test POST /workflows - list with filtering by start time and workflow IDs
     // This should only return the second workflow since we filter by time after the first workflow
@@ -742,13 +761,30 @@ describe('running-admin-server-tests', () => {
     expect(queuedWorkflows[0].AuthenticatedRoles).toBeUndefined();
     expect(queuedWorkflows[0].Output).toBeUndefined();
     expect(queuedWorkflows[0].Error).toBeUndefined();
-    expect(queuedWorkflows[0].Input).toBeDefined();
+    // By default, input is not loaded
+    expect(queuedWorkflows[0].Input).toBeUndefined();
     expect(queuedWorkflows[0].ExecutorID).toBe(globalParams.executorID);
     expect(queuedWorkflows[0].CreatedAt).toBeDefined();
     expect(queuedWorkflows[0].CreatedAt?.length).toBeGreaterThan(0);
     expect(queuedWorkflows[0].UpdatedAt).toBeDefined();
     expect(queuedWorkflows[0].UpdatedAt?.length).toBeGreaterThan(0);
     expect(queuedWorkflows[0].ApplicationVersion).toBe(globalParams.appVersion);
+
+    // Only load input if requested
+    response = await fetch(`http://localhost:3001/queues`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        load_input: true,
+      }),
+    });
+    expect(response.status).toBe(200);
+    queuedWorkflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(queuedWorkflows.length).toBeGreaterThanOrEqual(4);
+
+    expect(queuedWorkflows[0].Input).toBeDefined();
 
     // Test filtering by queue name
     response = await fetch(`http://localhost:3001/queues`, {

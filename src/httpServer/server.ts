@@ -451,6 +451,8 @@ export class DBOSHttpServer {
         offset?: number;
         sort_desc?: boolean;
         workflow_id_prefix?: string;
+        load_input?: boolean; // Load the input of the workflow (default false)
+        load_output?: boolean; // Load the output of the workflow (default false)
       };
 
       // Map request body keys to GetWorkflowsInput properties
@@ -466,6 +468,8 @@ export class DBOSHttpServer {
         offset: body.offset,
         sortDesc: body.sort_desc,
         workflow_id_prefix: body.workflow_id_prefix,
+        loadInput: body.load_input ?? false, // Default to false
+        loadOutput: body.load_output ?? false, // Default to false
       };
 
       const workflows = await dbosExec.listWorkflows(input);
@@ -495,6 +499,7 @@ export class DBOSHttpServer {
         limit?: number;
         offset?: number;
         sort_desc?: boolean;
+        load_input?: boolean; // Load the input of the workflow (default false)
       };
 
       // Map request body keys to GetQueuedWorkflowsInput properties
@@ -507,6 +512,7 @@ export class DBOSHttpServer {
         limit: body.limit,
         offset: body.offset,
         sortDesc: body.sort_desc,
+        loadInput: body.load_input ?? false, // Default to false
       };
 
       const workflows = await dbosExec.listQueuedWorkflows(input);

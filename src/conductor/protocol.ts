@@ -134,6 +134,8 @@ export interface ListWorkflowsBody {
   limit?: number;
   offset?: number;
   sort_desc: boolean;
+  load_input?: boolean; // Load the input of the workflow (default false)
+  load_output?: boolean; // Load the output of the workflow (default false)
 }
 
 export class WorkflowsOutput {
@@ -221,6 +223,7 @@ export interface ListQueuedWorkflowsBody {
   limit?: number;
   offset?: number;
   sort_desc: boolean;
+  load_input?: boolean; // Load the input of the workflow (default false)
 }
 
 export class ListQueuedWorkflowsRequest implements BaseMessage {
