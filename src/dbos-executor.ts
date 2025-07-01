@@ -160,12 +160,6 @@ export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
   return isDeprecated;
 }
 
-export enum DebugMode {
-  DISABLED,
-  ENABLED,
-  TIME_TRAVEL,
-}
-
 export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
@@ -191,7 +185,7 @@ type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
 
 export interface DBOSExecutorOptions {
   systemDatabase?: SystemDatabase;
-  debugMode?: DebugMode;
+  debugMode?: boolean;
 }
 
 export class DBOSExecutor implements DBOSExecutorContext {
@@ -209,21 +203,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   static readonly defaultNotificationTimeoutSec = 60;
 
-  readonly debugMode: DebugMode;
-  get isDebugging() {
-    switch (this.debugMode) {
-      case DebugMode.DISABLED:
-        return false;
-      case DebugMode.ENABLED:
-      case DebugMode.TIME_TRAVEL:
-        return true;
-      default: {
-        const _never: never = this.debugMode;
-        // eslint-disable-next-line @typescript-eslint/restrict-template-expressions
-        throw new Error(`Unexpected DBOS debug mode: ${this.debugMode}`);
-      }
-    }
-  }
+  readonly debugMode: boolean;
 
   static systemDBSchemaName = 'dbos';
 
@@ -245,7 +225,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     readonly config: DBOSConfigInternal,
     { systemDatabase, debugMode }: DBOSExecutorOptions = {},
   ) {
-    this.debugMode = debugMode ?? DebugMode.DISABLED;
+    this.debugMode = debugMode ?? false;
 
     // Set configured environment variables
     if (config.env) {
@@ -268,7 +248,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.logger = new Logger(this.telemetryCollector, this.config.telemetry.logs);
     this.tracer = new Tracer(this.telemetryCollector);
 
-    if (this.isDebugging) {
+    if (this.debugMode) {
       this.logger.info('Running in debug mode!');
     }
 
@@ -391,7 +371,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.debug(`Loaded ${length} ORM entities`);
       }
 
-      if (!this.isDebugging) {
+      if (!this.debugMode) {
         await createDBIfDoesNotExist(this.config.poolConfig, this.logger);
       }
       this.configureDbClient();
@@ -402,8 +382,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       }
 
       // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
-      await this.userDatabase.init(this.isDebugging);
-      if (!this.isDebugging) {
+      await this.userDatabase.init(this.debugMode);
+      if (!this.debugMode) {
         await this.systemDatabase.init();
       }
     } catch (err) {
@@ -424,7 +404,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.initialized = true;
 
     // Only execute init code if under non-debug mode
-    if (!this.isDebugging) {
+    if (!this.debugMode) {
       for (const cls of classnames) {
         // Init its configurations
         const creg = getClassRegistrationByName(cls);
@@ -620,7 +600,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
-    if (this.isDebugging) {
+    if (this.debugMode) {
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
       if (!wfStatus) {
         throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowID}`);
@@ -685,7 +665,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       e.dbos_already_logged = true;
       internalStatus.error = DBOSJSON.stringify(serializeError(e));
       internalStatus.status = StatusString.ERROR;
-      if (!exec.isDebugging) {
+      if (!exec.debugMode) {
         await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       }
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
@@ -715,7 +695,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           },
         );
 
-        if (this.isDebugging) {
+        if (this.debugMode) {
           const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
             (await this.systemDatabase.awaitWorkflowResult(workflowID))!,
           );
@@ -738,7 +718,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
         internalStatus.output = DBOSJSON.stringify(result);
         internalStatus.status = StatusString.SUCCESS;
-        if (!this.isDebugging) {
+        if (!this.debugMode) {
           await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
         }
         span.setStatus({ code: SpanStatusCode.OK });
@@ -771,7 +751,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     };
 
     if (
-      this.isDebugging ||
+      this.debugMode ||
       (status !== 'SUCCESS' && status !== 'ERROR' && (params.queueName === undefined || params.executeWorkflow))
     ) {
       const workflowPromise: Promise<R> = runWorkflow();
@@ -862,7 +842,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     isKeyConflict: (error: unknown) => boolean,
     function_name: string,
   ): Promise<string> {
-    if (this.isDebugging) {
+    if (this.debugMode) {
       throw new DBOSDebuggerError('Cannot record output in debug mode.');
     }
     try {
@@ -894,7 +874,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     isKeyConflict: (error: unknown) => boolean,
     function_name: string,
   ): Promise<void> {
-    if (this.isDebugging) {
+    if (this.debugMode) {
       throw new DBOSDebuggerError('Cannot record error in debug mode.');
     }
     try {
@@ -1011,16 +991,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
             prevResultFound = true;
             span.setAttribute('cached', true);
 
-            if (this.debugMode === DebugMode.TIME_TRAVEL) {
-              // for time travel debugging, navigate the proxy to the time of this transaction's snapshot
-              await queryFunc(`--proxy:${executionResult.txn_id ?? ''}:${txn_snapshot}`, []);
+            // Return/throw the previous result
+            if (prevResult instanceof Error) {
+              throw prevResult;
             } else {
-              // otherwise, return/throw the previous result
-              if (prevResult instanceof Error) {
-                throw prevResult;
-              } else {
-                return prevResult as R;
-              }
+              return prevResult as R;
             }
           }
         } else {
@@ -1028,7 +1003,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           txn_snapshot = await DBOSExecutor.#retrieveSnapshot(queryFunc);
         }
 
-        if (this.isDebugging && prevResult === dbosNull) {
+        if (this.debugMode && prevResult === dbosNull) {
           throw new DBOSDebuggerError(
             `Failed to find the recorded output for the transaction: workflow UUID ${wfid}, step number ${funcId}`,
           );
@@ -1057,7 +1032,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           }
         })();
 
-        if (this.isDebugging) {
+        if (this.debugMode) {
           if (prevResult instanceof Error) {
             throw prevResult;
           }
@@ -1183,7 +1158,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     await this.systemDatabase.checkIfCanceled(wfid);
 
-    const executeLocally = this.isDebugging || (procConfig.executeLocally ?? false);
+    const executeLocally = this.debugMode || (procConfig.executeLocally ?? false);
     const funcId = functionIDGetIncrement();
     const span: Span = this.tracer.startSpan(
       proc.name,
@@ -1243,16 +1218,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
           if (prevResult !== dbosNull) {
             span.setAttribute('cached', true);
 
-            if (this.debugMode === DebugMode.TIME_TRAVEL) {
-              // for time travel debugging, navigate the proxy to the time of this transaction's snapshot
-              await queryFunc(`--proxy:${executionResult.txn_id ?? ''}:${txn_snapshot}`, []);
+            // Return/throw the previous result
+            if (prevResult instanceof Error) {
+              throw prevResult;
             } else {
-              // otherwise, return/throw the previous result
-              if (prevResult instanceof Error) {
-                throw prevResult;
-              } else {
-                return prevResult as R;
-              }
+              return prevResult as R;
             }
           }
         } else {
@@ -1260,7 +1230,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           txn_snapshot = await DBOSExecutor.#retrieveSnapshot(queryFunc);
         }
 
-        if (this.isDebugging && prevResult === dbosNull) {
+        if (this.debugMode && prevResult === dbosNull) {
           throw new DBOSDebuggerError(
             `Failed to find the recorded output for the procedure: workflow UUID ${wfid}, step number ${funcId}`,
           );
@@ -1291,7 +1261,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           }
         })();
 
-        if (this.isDebugging) {
+        if (this.debugMode) {
           if (prevResult instanceof Error) {
             throw prevResult;
           }
@@ -1334,7 +1304,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
-        if (!this.isDebugging) {
+        if (!this.debugMode) {
           if (this.userDatabase.isRetriableTransactionError(err)) {
             // serialization_failure in PostgreSQL
             span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
@@ -1384,7 +1354,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     config: StoredProcedureConfig,
     funcId: number,
   ): Promise<R> {
-    if (this.isDebugging) {
+    if (this.debugMode) {
       throw new DBOSDebuggerError("Can't invoke stored procedure in debug mode.");
     }
 
@@ -1560,7 +1530,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       return check;
     }
 
-    if (this.isDebugging) {
+    if (this.debugMode) {
       throw new DBOSDebuggerError(
         `Failed to find the recorded output for the step: workflow UUID: ${wfid}, step number: ${funcID}`,
       );
@@ -1785,7 +1755,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
   async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
-    if (this.isDebugging) {
+    if (this.debugMode) {
       throw new DBOSDebuggerError('Cannot recover pending workflows in debug mode.');
     }
 
