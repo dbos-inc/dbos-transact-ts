@@ -36,18 +36,17 @@ function isKafkaError(e: unknown): e is KafkaError {
 
 export type ConsumerTopics = string | RegExp | Array<string | RegExp>;
 
-export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
+export class ConfluentKafkaReceiver implements DBOSLifecycleCallback {
   readonly #consumers = new Array<KafkaJS.Consumer>();
 
   constructor(
     private readonly config: KafkaJS.KafkaConfig,
     private readonly retryConfig: KafkaRetryConfig = { maxRetries: 5, retryTime: 300, multiplier: 2 },
   ) {
-    super();
     DBOS.registerLifecycleCallback(this);
   }
 
-  override async initialize() {
+  async initialize() {
     const { maxRetries, multiplier } = this.retryConfig;
     const clientId = this.config.clientId ?? 'dbos-confluent-kafka-receiver';
     const kafka = new KafkaJS.Kafka({ kafkaJS: { ...this.config, clientId } });
@@ -110,12 +109,12 @@ export class ConfluentKafkaReceiver extends DBOSLifecycleCallback {
     }
   }
 
-  override async destroy() {
+  async destroy() {
     const disconnectPromises = this.#consumers.splice(0, this.#consumers.length).map((c) => c.disconnect());
     await Promise.allSettled(disconnectPromises);
   }
 
-  override logRegisteredEndpoints() {
+  logRegisteredEndpoints() {
     DBOS.logger.info('KafkaJS receiver endpoints:');
 
     const regOps = DBOS.getAssociatedInfo(this);

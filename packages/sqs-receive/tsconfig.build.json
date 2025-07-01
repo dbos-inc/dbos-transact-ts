@@ -2,7 +2,7 @@
 {
   "extends": "../../tsconfig.shared.json",
   "compilerOptions": {
-    "noEmit": true
+    "outDir": "./dist"
   },
-  "include": ["index.ts", "tests/*.ts"]
+  "include": ["index.ts"]
 }

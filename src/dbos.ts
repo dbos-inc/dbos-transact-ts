@@ -411,7 +411,7 @@ export class DBOS {
       evtRcvr.logRegisteredEndpoints();
     }
     for (const lcl of getLifecycleListeners()) {
-      lcl.logRegisteredEndpoints();
+      lcl.logRegisteredEndpoints?.();
     }
   }
 
