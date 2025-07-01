@@ -387,7 +387,7 @@ describe('workflow-management-tests', () => {
   test('test-restart-transaction', async () => {
     TestEndpoints.tries = 0;
 
-    await DBOS.invoke(TestEndpoints).testTransaction();
+    await TestEndpoints.testTransaction();
     expect(TestEndpoints.tries).toBe(1);
 
     let result = await systemDBClient.query<{ status: string; workflow_uuid: string; name: string }>(

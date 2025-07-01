@@ -4,10 +4,10 @@ import {
   DBOSConfig,
   DBOSEventReceiver,
   DBOSExecutorContext,
-  WorkflowFunction,
   associateClassWithEventReceiver,
   associateMethodWithEventReceiver,
 } from '../src';
+import { UntypedAsyncFunction } from '../src/decorators';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 export interface ERDefaults {
@@ -31,13 +31,7 @@ class ERD implements DBOSEventReceiver {
       for (const mtd of mtds) {
         const cs = (mtd.classConfig as ERDefaults).classval ?? '';
         const ms = (mtd.methodConfig as ERSpecifics).methodval ?? '';
-        await this.executor!.workflow(
-          mtd.methodReg.registeredFunction as unknown as WorkflowFunction<[string, string, number], unknown>,
-          {},
-          cs,
-          ms,
-          i,
-        );
+        await this.executor!.workflow(mtd.methodReg.registeredFunction as UntypedAsyncFunction, {}, cs, ms, i);
       }
     }
   }
