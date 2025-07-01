@@ -8,20 +8,19 @@ import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
 import { DataSourceTransactionHandler } from './datasource';
 
+export type TypedAsyncFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
+export type UntypedAsyncFunction = TypedAsyncFunction<unknown[], unknown>;
+
 /**
  * Interface for integrating into the DBOS startup/shutdown lifecycle
  */
-export abstract class DBOSLifecycleCallback {
+export interface DBOSLifecycleCallback {
   /** Called back during DBOS launch */
-  initialize(): Promise<void> {
-    return Promise.resolve();
-  }
+  initialize?(): Promise<void>;
   /** Called back upon shutdown (usually in tests) to close connections and free resources */
-  destroy(): Promise<void> {
-    return Promise.resolve();
-  }
+  destroy?(): Promise<void>;
   /** Called at launch; Implementers should emit a diagnostic list of all registrations */
-  logRegisteredEndpoints(): void {}
+  logRegisteredEndpoints?(): void;
 }
 
 const lifecycleListeners: DBOSLifecycleCallback[] = [];
@@ -322,8 +321,6 @@ export interface MethodRegistrationBase {
   registeredFunction: Function | undefined; // Function that is called by DBOS engine, including input validation and role check
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   origFunction: Function; // Function that the app provided
-  // Pass context as first arg?
-  readonly passContext: boolean;
 
   // Add an interceptor that, when function is run, get a chance to process arguments / throw errors
   addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum?: number): void;
@@ -347,12 +344,10 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   }
 
   args: MethodParameter[] = [];
-  passContext: boolean = false;
 
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean, passContext: boolean) {
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean) {
     this.origFunction = origFunc;
     this.isInstance = isInstance;
-    this.passContext = passContext;
   }
 
   needInitialized: boolean = true;
@@ -662,7 +657,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   className: string | undefined,
   propertyKey: string | symbol,
   func: (this: This, ...args: Args) => Promise<Return>,
-  passContext: boolean,
 ) {
   let regtarget: AnyConstructor | undefined = undefined;
   let isInstance = false;
@@ -688,18 +682,11 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
   const fname = propertyKey.toString();
   if (!classReg.registeredOperations.has(fname)) {
-    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(func, isInstance, passContext));
+    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(func, isInstance));
   }
   const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(
     fname,
   )! as MethodRegistration<This, Args, Return>;
-
-  // Note: We cannot tell if the method takes a context or not.
-  //  Our @Workflow, @Transaction, and @Step decorators are the only ones that would know to set passContext.
-  // So, if passContext is indicated, add it to the registration.
-  if (passContext && !methReg.passContext) {
-    methReg.passContext = true;
-  }
 
   if (methReg.needInitialized) {
     methReg.needInitialized = false;
@@ -755,7 +742,7 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
     throw Error('Use of decorator when original method is undefined');
   }
 
-  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, false);
+  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value);
   descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
 
   return { descriptor, registration };
@@ -769,7 +756,7 @@ export function registerAndWrapDBOSFunctionByName<This, Args extends unknown[], 
 ) {
   ensureDBOSIsNotLaunched();
 
-  const registration = getOrCreateMethodRegistration(target, className, funcName, func, false);
+  const registration = getOrCreateMethodRegistration(target, className, funcName, func);
 
   return { registration };
 }

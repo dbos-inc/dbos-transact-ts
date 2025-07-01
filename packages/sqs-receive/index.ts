@@ -25,18 +25,16 @@ interface SQSRecvMethodConfig {
   config?: SQSConfig;
 }
 
-class SQSReceiver extends DBOSLifecycleCallback {
-  config?: SQSConfig;
-
-  constructor(config?: SQSConfig) {
-    super();
+class SQSReceiver implements DBOSLifecycleCallback {
+  constructor(readonly config?: SQSConfig) {
     this.config = config;
+    DBOS.registerLifecycleCallback(this);
   }
 
   listeners: Promise<void>[] = [];
   isShuttingDown = false;
 
-  override async destroy() {
+  async destroy() {
     this.isShuttingDown = true;
     try {
       await Promise.allSettled(this.listeners);
@@ -68,7 +66,7 @@ class SQSReceiver extends DBOSLifecycleCallback {
     const _validateSQSConfiguration = await client.send(new GetQueueAttributesCommand(params));
   }
 
-  override async initialize() {
+  async initialize() {
     const regops = DBOS.getAssociatedInfo(this);
 
     for (const regop of regops) {
@@ -168,7 +166,7 @@ class SQSReceiver extends DBOSLifecycleCallback {
     }
   }
 
-  override logRegisteredEndpoints() {
+  logRegisteredEndpoints() {
     DBOS.logger.info('SQS receiver endpoints:');
 
     const eps = DBOS.getAssociatedInfo(this);

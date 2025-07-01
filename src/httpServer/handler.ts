@@ -1,25 +1,5 @@
-import {
-  MethodParameter,
-  getOrCreateMethodArgsRegistration,
-  MethodRegistrationBase,
-  ConfiguredInstance,
-} from '../decorators';
-import { TailParameters, WorkflowHandle, WorkflowContext, WFInvokeFuncs, WFInvokeFuncsInst } from '../workflow';
+import { MethodParameter, getOrCreateMethodArgsRegistration, MethodRegistrationBase } from '../decorators';
 import { APITypes, ArgSources } from './handlerTypes';
-
-// local type declarations for workflow functions
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-type WFFunc = (ctxt: WorkflowContext, ...args: any[]) => Promise<unknown>;
-export type InvokeFuncs<T> = WFInvokeFuncs<T> & AsyncHandlerWfFuncs<T>;
-export type InvokeFuncsInst<T> = WFInvokeFuncsInst<T>;
-
-export type AsyncHandlerWfFuncs<T> = T extends ConfiguredInstance
-  ? never
-  : {
-      [P in keyof T as T[P] extends WFFunc ? P : never]: T[P] extends WFFunc
-        ? (...args: TailParameters<T[P]>) => Promise<WorkflowHandle<Awaited<ReturnType<T[P]>>>>
-        : never;
-    };
 
 export interface HandlerRegistrationBase extends MethodRegistrationBase {
   apiType: APITypes;

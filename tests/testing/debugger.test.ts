@@ -1,7 +1,7 @@
 import { DBOSInitializer, DBOS } from '../../src/';
 import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { randomUUID } from 'node:crypto';
-import { DBOSConfigInternal, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfigInternal } from '../../src/dbos-executor';
 import { Client } from 'pg';
 
 const testTableName = 'debugger_test_kv';
@@ -10,13 +10,11 @@ describe('debugger-test', () => {
   let username: string;
   let config: DBOSConfigInternal;
   let debugConfig: DBOSConfigInternal;
-  let debugProxyConfig: DBOSConfigInternal;
   let systemDBClient: Client;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined);
-    debugProxyConfig = generateDBOSTestConfig(undefined);
     username = config.poolConfig.user || 'postgres';
     await setUpDBOSTestDb(config);
   });
@@ -84,9 +82,9 @@ describe('debugger-test', () => {
     }
 
     @DBOS.workflow()
-    static async sendWorkflow(destinationUUID: string) {
-      await DBOS.send(destinationUUID, 'message1');
-      await DBOS.send(destinationUUID, 'message2');
+    static async sendWorkflow(destinationId: string) {
+      await DBOS.send(destinationId, 'message1');
+      await DBOS.send(destinationId, 'message2');
     }
 
     @DBOS.workflow()
@@ -162,7 +160,7 @@ describe('debugger-test', () => {
     await DBOS.shutdown();
 
     // Execute again in debug mode.
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       const debugRes = await DebuggerTest.testWorkflow(username);
       expect(debugRes).toBe(1);
@@ -171,22 +169,15 @@ describe('debugger-test', () => {
 
     // Execute again with the provided UUID.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     const debugRes1 = await (await executeWorkflowById(wfUUID)).getResult();
     expect(debugRes1).toBe(1);
-    await DBOS.shutdown();
-
-    // And as time travel
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    const debugRestt = await (await executeWorkflowById(wfUUID)).getResult();
-    expect(debugRestt).toBe(1);
     await DBOS.shutdown();
 
     // Execute a non-exist UUID should fail under debugger.
     const wfUUID2 = randomUUID();
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID2, async () => {
       await expect(DebuggerTest.testWorkflow(username)).rejects.toThrow(
         `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
@@ -216,21 +207,11 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       const debugRes = await DebuggerTest.debugWF(100);
       expect(DebuggerTest.debugCount).toBe(1);
       expect(debugRes).toBe(1000);
-    });
-    await DBOS.shutdown();
-
-    // And as time travel
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    await DBOS.withNextWorkflowID(wfUUID, async () => {
-      const ttdbgRes = await DebuggerTest.debugWF(100);
-      expect(DebuggerTest.debugCount).toBe(2);
-      expect(ttdbgRes).toBe(1000);
     });
     await DBOS.shutdown();
   });
@@ -248,16 +229,7 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode, should return the correct value
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
-    await DBOS.withNextWorkflowID(wfUUID, async () => {
-      const res = await DebuggerTest.sleepWorkflow(2);
-      expect(res).toBe(3);
-    });
-    await DBOS.shutdown();
-
-    // Proxy mode should return the same result
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       const res = await DebuggerTest.sleepWorkflow(2);
       expect(res).toBe(3);
@@ -289,7 +261,7 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       await expect(DebuggerTest.voidFunction()).resolves.toBeFalsy();
       expect(DebuggerTest.count).toBe(1);
@@ -325,7 +297,7 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       await expect(DebuggerTest.testFunction(username)).resolves.toBe(1);
     });
@@ -346,12 +318,6 @@ describe('debugger-test', () => {
       /DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
     );
     await DBOS.shutdown();
-
-    // Proxy mode should return the same result.
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
-    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
-    await DBOS.shutdown();
   });
 
   test('debug-step', async () => {
@@ -369,7 +335,7 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       await expect(DebuggerTest.testStep()).resolves.toBe(1);
     });
@@ -417,7 +383,7 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(recvUUID, async () => {
       await expect(DebuggerTest.receiveWorkflow()).resolves.toBeTruthy();
     });
@@ -443,7 +409,7 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(setUUID, async () => {
       await expect(DebuggerTest.setEventWorkflow()).resolves.toBe(0);
     });
@@ -466,7 +432,7 @@ describe('debugger-test', () => {
 
     // Execute again with the provided UUID, should still get the same output.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
     expect(DebuggerTest.count).toBe(2);
 

@@ -206,6 +206,8 @@ export class Conductor {
               limit: body.limit,
               offset: body.offset,
               sortDesc: body.sort_desc,
+              loadInput: body.load_input ?? false, // Default to false if not provided
+              loadOutput: body.load_output ?? false, // Default to false if not provided
             };
             let workflowsOutput: protocol.WorkflowsOutput[] = [];
             try {
@@ -230,6 +232,7 @@ export class Conductor {
               queueName: bodyQueued.queue_name,
               offset: bodyQueued.offset,
               sortDesc: bodyQueued.sort_desc,
+              loadInput: bodyQueued.load_input ?? false, // Default to false if not provided
             };
             let queuedWFOutput: protocol.WorkflowsOutput[] = [];
             try {

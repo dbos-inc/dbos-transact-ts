@@ -275,6 +275,18 @@ describe('workflow-management-tests', () => {
 
       const getInfo = await getWorkflow(sysdb, info.workflowID);
       expect(info).toEqual(getInfo);
+
+      // Test ignoring input and output
+      input.loadInput = false;
+      input.loadOutput = false;
+      const noIOInfos = await listWorkflows(sysdb, input);
+      expect(noIOInfos.length).toBe(2);
+      expect(noIOInfos[0].input).toBeUndefined();
+      expect(noIOInfos[0].output).toBeUndefined();
+      expect(noIOInfos[0].error).toBeUndefined();
+      expect(noIOInfos[1].input).toBeUndefined();
+      expect(noIOInfos[1].output).toBeUndefined();
+      expect(noIOInfos[1].error).toBeUndefined();
     } finally {
       await sysdb.destroy();
     }
@@ -375,7 +387,7 @@ describe('workflow-management-tests', () => {
   test('test-restart-transaction', async () => {
     TestEndpoints.tries = 0;
 
-    await DBOS.invoke(TestEndpoints).testTransaction();
+    await TestEndpoints.testTransaction();
     expect(TestEndpoints.tries).toBe(1);
 
     let result = await systemDBClient.query<{ status: string; workflow_uuid: string; name: string }>(
@@ -547,6 +559,14 @@ describe('test-list-queues', () => {
       expect(output.length).toBe(TestListQueues.queuedSteps);
       for (let i = 0; i < TestListQueues.queuedSteps; i++) {
         expect(output[i].input).toEqual([i]);
+      }
+
+      // Test ignoring input
+      input.loadInput = false;
+      output = await listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
+      for (let i = 0; i < TestListQueues.queuedSteps; i++) {
+        expect(output[i].input).toBeUndefined();
       }
 
       input = {
