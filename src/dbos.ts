@@ -49,7 +49,7 @@ import {
   DBOS_AUTH,
   getLifecycleListeners,
   getRegisteredOperations,
-  getRegistrationForFunction,
+  getFunctionRegistration,
   getRegistrationsForExternal,
   insertAllMiddleware,
   MethodAuth,
@@ -407,9 +407,6 @@ export class DBOS {
     DBOSExecutor.globalInstance.logRegisteredHTTPUrls();
     DBOSExecutor.globalInstance.scheduler?.logRegisteredSchedulerEndpoints();
     wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
-    for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
-      evtRcvr.logRegisteredEndpoints();
-    }
     for (const lcl of getLifecycleListeners()) {
       lcl.logRegisteredEndpoints();
     }
@@ -1224,7 +1221,7 @@ export class DBOS {
 
     const handler: ProxyHandler<object> = {
       apply(target, _thisArg, args) {
-        const regOp = getRegistrationForFunction(target);
+        const regOp = getFunctionRegistration(target);
         if (!regOp) {
           // eslint-disable-next-line @typescript-eslint/no-base-to-string
           const name = typeof target === 'function' ? target.name : target.toString();
@@ -1235,7 +1232,7 @@ export class DBOS {
       get(target, p, receiver) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const func = Reflect.get(target, p, receiver);
-        const regOp = getRegistrationForFunction(func) ?? regOps.find((op) => op.name === p);
+        const regOp = getFunctionRegistration(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
           return (...args: unknown[]) => DBOS.#invokeWorkflow(instance, regOp, args, params);
         }

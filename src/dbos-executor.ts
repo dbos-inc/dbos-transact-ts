@@ -90,7 +90,7 @@ import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
+import { DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
 
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -279,8 +279,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   typeormEntities: Function[] = [];
   drizzleEntities: { [key: string]: object } = {};
 
-  eventReceivers: DBOSEventReceiver[] = [];
-
   scheduler?: DBOSScheduler = undefined;
   wfqEnded?: Promise<void> = undefined;
 
@@ -418,21 +416,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       } else if (ro.procConfig) {
         this.#registerProcedure(ro);
       }
-      for (const [evtRcvr, _cfg] of ro.eventReceiverInfo) {
-        if (!this.eventReceivers.includes(evtRcvr)) this.eventReceivers.push(evtRcvr);
-      }
     }
-  }
-
-  getRegistrationsFor(obj: DBOSEventReceiver) {
-    const res: { methodConfig: unknown; classConfig: unknown; methodReg: MethodRegistrationBase }[] = [];
-    for (const r of this.registeredOperations) {
-      if (!r.eventReceiverInfo.has(obj)) continue;
-      const methodConfig = r.eventReceiverInfo.get(obj)!;
-      const classConfig = r.defaults?.eventReceiverInfo.get(obj) ?? {};
-      res.push({ methodReg: r, methodConfig, classConfig });
-    }
-    return res;
   }
 
   async init(classes?: object[]): Promise<void> {
@@ -690,7 +674,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       throw new DBOSNotRegisteredError(cfname, `Step function name '${cfname}' is not registered.`);
     }
 
-    return { commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName) };
+    return { stepInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName) };
   }
 
   getProcedureInfo<T extends unknown[], R>(pf: (...args: T) => Promise<R>) {
@@ -2020,9 +2004,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     this.wfqEnded = wfQueueRunner.dispatchLoop(this);
 
-    for (const evtRcvr of this.eventReceivers) {
-      await evtRcvr.initialize(this);
-    }
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize();
     }
@@ -2038,21 +2019,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
       }
     }
-    this.logger.debug('Deactivating event receivers');
-    for (const evtRcvr of this.eventReceivers || []) {
-      try {
-        await evtRcvr.destroy();
-      } catch (err) {
-        const e = err as Error;
-        this.logger.warn(`Error destroying event receiver: ${e.message}`);
-      }
-    }
+    this.logger.debug('Deactivating scheduler');
     try {
       await this.scheduler?.destroyScheduler();
     } catch (err) {
       const e = err as Error;
       this.logger.warn(`Error destroying scheduler: ${e.message}`);
     }
+    this.logger.debug('Deactivating queue runner');
     if (stopQueueThread) {
       try {
         wfQueueRunner.stop();
@@ -2135,18 +2109,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
         );
       });
     } else if (nameArr[1] === TempWorkflowType.step) {
-      const { commInfo, clsInst } = this.getStepInfoByNames(
+      const { stepInfo, clsInst } = this.getStepInfoByNames(
         wfStatus.workflowClassName,
         nameArr[2],
         wfStatus.workflowConfigName,
       );
-      if (!commInfo) {
+      if (!stepInfo) {
         this.logger.error(`Cannot find step info for UUID ${workflowID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
       return await runWithTopContext(recoverCtx, async () => {
         return await this.startStepTempWF(
-          commInfo.step,
+          stepInfo.step,
           {
             workflowUUID: workflowStartID,
             configuredInstance: clsInst,

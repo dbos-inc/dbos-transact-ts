@@ -4,20 +4,7 @@ export { DBOSClient } from './client';
 
 export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler';
 
-export {
-  // Extensions for others to register event receivers/pollers
-  associateMethodWithEventReceiver,
-  associateClassWithEventReceiver,
-} from './decorators';
-
-export {
-  DBOSEventReceiver,
-  DBOSEventReceiverRegistration,
-  DBOSExecutorContext,
-  DBNotification,
-  DBNotificationListener,
-  DBOSEventReceiverState,
-} from './eventreceiver';
+export { DBOSExecutorContext, DBNotification, DBNotificationListener, DBOSEventReceiverState } from './eventreceiver';
 
 export { DBOSLifecycleCallback } from './decorators';
 

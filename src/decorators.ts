@@ -4,7 +4,6 @@ import { TransactionConfig } from './transaction';
 import { WorkflowConfig } from './workflow';
 import { StepConfig } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
-import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
 import { DataSourceTransactionHandler } from './datasource';
 
@@ -268,7 +267,6 @@ export interface RegistrationDefaults {
 
   getRegisteredInfo(reg: AnyConstructor | object | string): unknown;
 
-  eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
   externalRegInfo: Map<AnyConstructor | object | string, unknown>;
 }
 
@@ -288,8 +286,6 @@ export interface MethodRegistrationBase {
   procConfig?: TransactionConfig;
   isInstance: boolean;
 
-  // This is for DBOSEventReceivers (an older approach) to keep stuff
-  eventReceiverInfo: Map<DBOSEventReceiver, unknown>;
   // This is for any class or object to keep stuff associated with a class
   externalRegInfo: Map<AnyConstructor | object | string, unknown>;
 
@@ -338,7 +334,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   stepConfig?: StepConfig;
   procConfig?: TransactionConfig;
   regLocation?: string[];
-  eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
   getRegisteredInfo(reg: AnyConstructor | object | string) {
@@ -445,7 +440,6 @@ export class ClassRegistration implements RegistrationDefaults {
   configuredInstances: Map<string, ConfiguredInstance> = new Map();
   configuredInstanceRegLocs: Map<string, string[]> = new Map();
 
-  eventReceiverInfo: Map<DBOSEventReceiver, unknown> = new Map();
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
   getRegisteredInfo(reg: AnyConstructor | object | string) {
@@ -567,8 +561,16 @@ export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<u
   functionToRegistration.set(func, reg);
 }
 
-export function getRegistrationForFunction(func: unknown): MethodRegistration<unknown, unknown[], unknown> | undefined {
+export function getFunctionRegistration(func: unknown): MethodRegistration<unknown, unknown[], unknown> | undefined {
   return functionToRegistration.get(func);
+}
+
+export function getFunctionRegistrationByName(className: string, name: string) {
+  const clsreg = getClassRegistrationByName(className, false);
+  if (!clsreg) return undefined;
+  const methReg = clsreg.registeredOperations.get(name);
+  if (!methReg) return undefined;
+  return methReg;
 }
 
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
@@ -595,7 +597,7 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
 export function getRegisteredFunctionsByClassname(target: string): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
   const cls = getClassRegistrationByName(target);
-  cls.registeredOperations?.forEach((m) => registeredOperations.push(m));
+  cls?.registeredOperations?.forEach((m) => registeredOperations.push(m));
   return registeredOperations;
 }
 
@@ -853,52 +855,6 @@ export function registerTransactionalDataSource(name: string, ds: DataSourceTran
 export function getTransactionalDataSource(name: string) {
   if (transactionalDataSources.has(name)) return transactionalDataSources.get(name)!;
   throw new DBOSNotRegisteredError(name, `Data source '${name}' is not registered`);
-}
-
-// DBOS Event Receiver (v1, sort of v2, probably remove)
-
-/**
- * Associates a class with a `DBOSEventReceiver`, which will be calling the class's DBOS methods.
- * Allows class-level default values or other storage to be associated with the class, rather than
- *   separately for each registered method.
- *
- * @param rcvr - Event receiver which will dispatch DBOS methods from the class specified by `ctor`
- * @param ctor - Constructor of the class that is being registered and associated with `rcvr`
- * @returns - Class-specific registration info cumulatively collected for `rcvr`
- */
-export function associateClassWithEventReceiver<CT extends { new (...args: unknown[]): object }>(
-  rcvr: DBOSEventReceiver,
-  ctor: CT,
-) {
-  const clsReg = getOrCreateClassRegistration(ctor);
-  if (!clsReg.eventReceiverInfo.has(rcvr)) {
-    clsReg.eventReceiverInfo.set(rcvr, {});
-  }
-  return clsReg.eventReceiverInfo.get(rcvr)!;
-}
-
-/**
- * Associates a workflow method with a `DBOSEventReceiver` which will be in charge of calling the method
- *   in response to received events.
- * This version is to be used in "Stage 2" decorators, as it applies the DBOS wrapper to the registered method.
- *
- * @param rcvr - `DBOSEventReceiver` instance that should be informed of the `target` method's registration
- * @param target - A DBOS method to associate with the event receiver
- * @param propertyKey - For Stage 2 decorator use, this is the property key used for replacing the method with its wrapper
- * @param inDescriptor - For Stage 2 decorator use, this is the method descriptor used for replacing the method with its wrapper
- * @returns The new method descriptor, registration, and event receiver info
- */
-export function associateMethodWithEventReceiver<This, Args extends unknown[], Return>(
-  rcvr: DBOSEventReceiver,
-  target: object,
-  propertyKey: string,
-  inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-) {
-  const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-  if (!registration.eventReceiverInfo.has(rcvr)) {
-    registration.eventReceiverInfo.set(rcvr, {});
-  }
-  return { descriptor, registration, receiverInfo: registration.eventReceiverInfo.get(rcvr)! };
 }
 
 export function associateClassWithExternal(

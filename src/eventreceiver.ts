@@ -8,28 +8,12 @@ import type {
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
-import type { MethodRegistrationBase } from './decorators';
 import type { Notification } from 'pg';
 
 export type DBNotification = Notification;
 export type DBNotificationCallback = (n: DBNotification) => void;
 export interface DBNotificationListener {
   close(): Promise<void>;
-}
-
-/**
- * Interface for registration information provided to `DBOSEventReceiver`
- *  instances about each method and containing class.  This contains any
- *  information stored by the decorators that registered the method with
- *  its event receiver.
- */
-export interface DBOSEventReceiverRegistration {
-  /** Method-level configuration information, as stored by the event receiver's decorators (or other registration mechanism) */
-  methodConfig: unknown;
-  /** Class-level configuration information, as stored by the event receiver's decorators (or other registration mechanism) */
-  classConfig: unknown;
-  /** Method to dispatch, and associated DBOS registration information */
-  methodReg: MethodRegistrationBase;
 }
 
 /*
@@ -47,16 +31,6 @@ export interface DBOSExecutorContext {
   getConfig<T>(key: string): T | undefined;
   /** @deprecated */
   getConfig<T>(key: string, defaultValue: T): T;
-
-  /**
-   * Get the registrations for a receiver
-   * @param eri - all registrations for this `DBOSEventReceiver` will be returned
-   * @returns array of all methods registered for the receiver, including:
-   *  methodConfig: the method info the receiver stored
-   *  classConfig: the class info the receiver stored
-   *  methodReg: the method registration (w/ workflow, transaction, function, and other info)
-   */
-  getRegistrationsFor(eri: DBOSEventReceiver): DBOSEventReceiverRegistration[];
 
   /**
    * Invoke a transaction function.
@@ -146,31 +120,7 @@ export interface DBOSExecutorContext {
 }
 
 /**
- * Interface for DBOS pluggable event receivers.
- *  This is for things like kafka, SQS, HTTP, schedulers, etc., that listen or poll
- *    for events and dispatch workflows in response.
- * A `DBOSEventReceiver` will be:
- *  Registered with DBOS executor when any endpoint workflow function needs it
- *  Initialized with the executor during launch
- *  Destroyed upon any clean `shutdown()`
- * It is the implementer's job to keep going and dispatch workflows between
- *  `initialize` and `destroy`
- */
-export interface DBOSEventReceiver {
-  /** Executor, for providing state and dispatching DBOS workflows or other methods */
-  executor?: DBOSExecutorContext;
-  /** Called upon shutdown (usually in tests) to stop event receivers and free resources */
-  destroy(): Promise<void>;
-  /** Called during DBOS launch to indicate that event receiving should start */
-  initialize(executor: DBOSExecutorContext): Promise<void>;
-  /** Called at launch; Implementers should emit a diagnostic list of all registrations */
-  logRegisteredEndpoints(): void;
-}
-
-/**
- * State item to be kept in the DBOS system database on behalf of `DBOSEventReceiver`s
- * @see DBOSEventReceiver.upsertEventDispatchState
- * @see DBOSEventReceiver.getEventDispatchState
+ * State item to be kept in the DBOS system database on behalf of clients
  */
 export interface DBOSEventReceiverState {
   /** Name of event receiver service */
