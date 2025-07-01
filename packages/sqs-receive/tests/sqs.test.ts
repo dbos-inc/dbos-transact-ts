@@ -1,4 +1,4 @@
-import { after, afterEach, before, beforeEach, suite, test } from 'node:test';
+import { afterEach, beforeEach, suite, test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import { Message, SendMessageCommand, SendMessageCommandInput, SQSClient } from '@aws-sdk/client-sqs';
@@ -63,12 +63,6 @@ class SQSRcv {
 
 suite('sqs-tests', async () => {
   const sqsAvailable = process.env['AWS_REGION'] && process.env['SQS_QUEUE_URL'];
-
-  before(async () => {
-    if (!sqsAvailable) {
-      return;
-    }
-  });
 
   beforeEach(async () => {
     if (sqsAvailable) {
