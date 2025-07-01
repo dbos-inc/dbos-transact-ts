@@ -47,6 +47,7 @@ import {
   ClassAuthDefaults,
   configureInstance,
   DBOS_AUTH,
+  ExternalRegistration,
   getLifecycleListeners,
   getRegisteredOperations,
   getFunctionRegistration,
@@ -2016,7 +2017,11 @@ export class DBOS {
   }
 
   /** Get registrations */
-  static getAssociatedInfo(external: AnyConstructor | object | string, cls?: object | string, funcName?: string) {
+  static getAssociatedInfo(
+    external: AnyConstructor | object | string,
+    cls?: object | string,
+    funcName?: string,
+  ): readonly ExternalRegistration[] {
     return getRegistrationsForExternal(external, cls, funcName);
   }
 }
