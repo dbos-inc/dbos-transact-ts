@@ -6,6 +6,7 @@ import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
   getTransactionalDataSource,
   registerAndWrapDBOSFunctionByName,
+  registerFunctionWrapper,
   registerTransactionalDataSource,
 } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
@@ -178,6 +179,8 @@ export function registerTransaction<This, Args extends unknown[], Return>(
   dsName: string,
   func: (this: This, ...args: Args) => Promise<Return>,
   options: {
+    ctorOrProto?: object;
+    className?: string;
     name: string;
   },
   config?: unknown,
@@ -185,8 +188,8 @@ export function registerTransaction<This, Args extends unknown[], Return>(
   const dsn = dsName ?? '<default>';
 
   const reg = registerAndWrapDBOSFunctionByName(
-    undefined, // target
-    undefined, // classame
+    options?.ctorOrProto,
+    options.className,
     options.name || func.name,
     func,
   );
@@ -224,7 +227,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
     );
   };
 
-  reg.registration.wrappedFunction = invokeWrapper;
+  registerFunctionWrapper(invokeWrapper, reg.registration);
 
   Object.defineProperty(invokeWrapper, 'name', {
     value: options.name,

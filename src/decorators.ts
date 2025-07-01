@@ -553,8 +553,12 @@ export function getRegisteredFunctionName(func: unknown): string {
   return getRegisteredFunctionFullName(func).name;
 }
 
-export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<unknown, unknown[], unknown>) {
-  functionToRegistration.set(func, reg);
+export function registerFunctionWrapper<This, Args extends unknown[], Return>(
+  func: (this: This, ...args: Args) => Promise<Return>,
+  reg: MethodRegistration<This, Args, Return>,
+) {
+  reg.wrappedFunction = func;
+  functionToRegistration.set(func, reg as MethodRegistration<unknown, unknown[], unknown>);
 }
 
 export function getFunctionRegistration(func: unknown): MethodRegistration<unknown, unknown[], unknown> | undefined {
@@ -597,24 +601,24 @@ export function getRegisteredFunctionsByClassname(target: string): ReadonlyArray
   return registeredOperations;
 }
 
-const methodArgsByFunction: Map<string, MethodParameter[]> = new Map();
+const methodArgsByFunction: Map<unknown, MethodParameter[]> = new Map();
 
 export function getOrCreateMethodArgsRegistration(
   target: object | undefined,
-  className: string | undefined,
   funcName: string | symbol,
-  func?: (...args: unknown[]) => unknown,
+  origFunc?: (...args: unknown[]) => unknown,
 ): MethodParameter[] {
   let regtarget = target;
   if (regtarget && typeof regtarget !== 'function') {
     regtarget = regtarget.constructor;
   }
 
-  className = className ?? (target ? getNameForClass(target) : '');
+  if (!origFunc) {
+    origFunc = Object.getOwnPropertyDescriptor(target, funcName)!.value as UntypedAsyncFunction;
+  }
 
-  const mkey = className + '|' + funcName.toString();
+  let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(origFunc);
 
-  let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(mkey);
   if (mParameters === undefined) {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     let designParamTypes: Function[] | undefined = undefined;
@@ -625,8 +629,8 @@ export function getOrCreateMethodArgsRegistration(
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
     } else {
-      if (func) {
-        const argnames = getArgNames(func);
+      if (origFunc) {
+        const argnames = getArgNames(origFunc);
         mParameters = argnames.map((_value, index) => new MethodParameter(index));
       } else {
         const descriptor = Object.getOwnPropertyDescriptor(target, funcName);
@@ -636,7 +640,7 @@ export function getOrCreateMethodArgsRegistration(
       }
     }
 
-    methodArgsByFunction.set(mkey, mParameters);
+    methodArgsByFunction.set(origFunc, mParameters);
   }
 
   return mParameters;
@@ -684,12 +688,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     methReg.className = classReg.name;
     methReg.defaults = classReg;
 
-    methReg.args = getOrCreateMethodArgsRegistration(
-      target,
-      className,
-      propertyKey,
-      func as (...args: unknown[]) => unknown,
-    );
+    methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey, func as UntypedAsyncFunction);
 
     const argNames = getArgNames(func);
 
@@ -746,7 +745,8 @@ export function registerAndWrapDBOSFunctionByName<This, Args extends unknown[], 
 ) {
   ensureDBOSIsNotLaunched();
 
-  const registration = getOrCreateMethodRegistration(target, className, funcName, func);
+  const freg = getFunctionRegistration(func) as MethodRegistration<This, Args, Return>;
+  const registration = freg ?? getOrCreateMethodRegistration(target, className, funcName, func);
 
   return { registration };
 }
@@ -995,7 +995,7 @@ export function getRegistrationsForExternal(
 
 export function ArgName(name: string) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
+    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
