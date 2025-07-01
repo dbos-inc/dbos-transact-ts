@@ -196,6 +196,8 @@ export function registerTransaction<This, Args extends unknown[], Return>(
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     const ds = getTransactionalDataSource(dsn);
+    const callFunc = reg.registration.registeredFunction ?? reg.registration.origFunction;
+
     if (!DBOS.isWithinWorkflow()) {
       if (getNextWFID(undefined)) {
         throw new DBOSInvalidWorkflowTransitionError(
@@ -204,7 +206,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
       }
 
       return await runWithDataSourceContext(0, async () => {
-        return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
+        return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
       });
     }
 
@@ -218,7 +220,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
     return DBOSExecutor.globalInstance!.runInternalStep<Return>(
       async () => {
         return await runWithDataSourceContext(callnum, async () => {
-          return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
+          return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
         });
       },
       options.name,
