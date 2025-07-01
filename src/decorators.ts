@@ -928,17 +928,23 @@ export function associateParameterWithExternal<This, Args extends unknown[], Ret
   return param.externalRegInfo.get(external)!;
 }
 
+export interface ExternalRegistration {
+  classConfig?: unknown;
+  methodConfig?: unknown;
+  paramConfig: {
+    name: string;
+    index: number;
+    paramConfig?: object;
+  }[];
+  methodReg: MethodRegistrationBase;
+}
+
 export function getRegistrationsForExternal(
   external: AnyConstructor | object | string,
   cls?: object | string,
   funcName?: string,
-) {
-  const res: {
-    methodConfig?: unknown;
-    classConfig?: unknown;
-    methodReg: MethodRegistrationBase;
-    paramConfig: { name: string; index: number; paramConfig?: object }[];
-  }[] = [];
+): readonly ExternalRegistration[] {
+  const res = new Array<ExternalRegistration>();
 
   if (cls) {
     const clsname = typeof cls === 'string' ? cls : getNameForClass(cls);

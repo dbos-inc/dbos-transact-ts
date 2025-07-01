@@ -6,7 +6,7 @@ export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler';
 
 export { DBOSExecutorContext, DBNotification, DBNotificationListener, DBOSEventReceiverState } from './eventreceiver';
 
-export { DBOSLifecycleCallback } from './decorators';
+export { DBOSLifecycleCallback, ExternalRegistration } from './decorators';
 
 export { WorkflowQueue } from './wfqueue';
 
