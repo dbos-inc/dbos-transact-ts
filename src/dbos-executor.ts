@@ -24,6 +24,7 @@ import {
   type WorkflowStatus,
   type GetQueuedWorkflowsInput,
   type StepInfo,
+  WorkflowConfig,
 } from './workflow';
 
 import { IsolationLevel, type TransactionConfig } from './transaction';
@@ -557,11 +558,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const pctx = getCurrentContextStore();
 
-    const wInfo = getFunctionRegistration(wf);
-    if (!wInfo || !wInfo.workflowConfig) {
-      throw new DBOSNotRegisteredError(wf.name);
+    let wConfig: WorkflowConfig = {};
+    if (wf.name !== DBOSExecutor.tempWorkflowName) {
+      const wInfo = getFunctionRegistration(wf);
+      if (!wInfo || !wInfo.workflowConfig) {
+        throw new DBOSNotRegisteredError(wf.name);
+      }
+      wConfig = wInfo.workflowConfig;
     }
-    const wConfig = wInfo.workflowConfig;
+
     const maxRecoveryAttempts = wConfig.maxRecoveryAttempts ? wConfig.maxRecoveryAttempts : 50;
 
     const wfname = wf.name; // TODO: Should be what was registered in wfInfo...
