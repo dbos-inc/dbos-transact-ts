@@ -64,6 +64,8 @@ export interface GetWorkflowsInput {
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
   workflow_id_prefix?: string;
+  loadInput?: boolean; // Load the input of the workflow (default true)
+  loadOutput?: boolean; // Load the output of the workflow (default true)
 }
 
 export interface GetQueuedWorkflowsInput {
@@ -75,6 +77,7 @@ export interface GetQueuedWorkflowsInput {
   queueName?: string; // The queue
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
+  loadInput?: boolean; // Load the input of the workflow (default true)
 }
 
 export interface GetWorkflowsOutput {
