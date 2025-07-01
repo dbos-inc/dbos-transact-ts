@@ -1,5 +1,8 @@
+import { after, afterEach, before, beforeEach, suite, test } from 'node:test';
+import assert from 'node:assert/strict';
+
 import { Message, SendMessageCommand, SendMessageCommandInput, SQSClient } from '@aws-sdk/client-sqs';
-import { SQSReceiver } from './index';
+import { SQSReceiver } from '..';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
@@ -58,42 +61,30 @@ class SQSRcv {
   }
 }
 
-describe('sqs-tests', () => {
-  let sqsIsAvailable = true;
+suite('sqs-tests', async () => {
+  const sqsAvailable = process.env['AWS_REGION'] && process.env['SQS_QUEUE_URL'];
 
-  beforeAll(() => {
-    // Check if SES is available and update app config, skip the test if it's not
-    if (!process.env['AWS_REGION'] || !process.env['SQS_QUEUE_URL']) {
-      sqsIsAvailable = false;
-    } else {
-      // This would normally be a global or static or something
-      DBOS.setConfig({ name: 'dbossqstest' });
+  before(async () => {
+    if (!sqsAvailable) {
+      return;
     }
   });
 
   beforeEach(async () => {
-    if (sqsIsAvailable) {
-      DBOS.registerLifecycleCallback(sqsReceiver);
+    if (sqsAvailable) {
+      DBOS.setConfig({ name: 'dbossqstest' });
       await DBOS.launch();
-    } else {
-      console.log(
-        'SQS Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and SQS_QUEUE_URL',
-      );
     }
   });
 
   afterEach(async () => {
-    if (sqsIsAvailable) {
+    if (sqsAvailable) {
       await DBOS.shutdown();
     }
-  }, 10000);
+  });
 
   // This tests receive also; which is already wired up
-  test('sqs-send', async () => {
-    if (!sqsIsAvailable) {
-      console.log('SQS unavailable, skipping SQS tests');
-      return;
-    }
+  await test('sqs-send', { skip: !sqsAvailable }, async () => {
     const sv: ValueObj = {
       val: 10,
     };
@@ -110,4 +101,4 @@ describe('sqs-tests', () => {
     expect(SQSRcv.msgRcvCount).toBe(1);
     expect(SQSRcv.msgValueSum).toBe(10);
   });
-});
+}).catch(assert.fail);

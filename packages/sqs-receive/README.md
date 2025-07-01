@@ -79,7 +79,7 @@ class SQSEventProcessor {
 }
 ```
 
-Finally, register your SQS receiver, and launch DBOS:
+Finally, launch DBOS. Your SQS receiver is automatically registered with DBOS on construction.
 
 ```typescript
 DBOS.registerLifecycleCallback(sqsReceiver);
