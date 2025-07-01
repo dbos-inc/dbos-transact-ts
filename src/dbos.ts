@@ -13,7 +13,6 @@ import {
   DBOSConfigInternal,
   isDeprecatedDBOSConfig,
   DBOSExecutor,
-  DebugMode,
   InternalWorkflowParams,
 } from './dbos-executor';
 import { Tracer } from './telemetry/traces';
@@ -114,7 +113,7 @@ export interface DBOSLaunchOptions {
   // For DBOS Conductor
   conductorURL?: string;
   conductorKey?: string;
-  debugMode?: DebugMode;
+  debugMode?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -197,10 +196,9 @@ export class DBOS {
   static appServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
 
-  private static getDebugModeFromEnv(): DebugMode {
+  private static getDebugModeFromEnv(): boolean {
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
-    const isDebugging = debugWorkflowId !== undefined;
-    return isDebugging ? DebugMode.ENABLED : DebugMode.DISABLED;
+    return debugWorkflowId !== undefined;
   }
 
   /**
@@ -216,8 +214,8 @@ export class DBOS {
 
   private static translateConfig() {
     if (DBOS.#dbosConfig && !isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
-      const isDebugging = DBOS.getDebugModeFromEnv() !== DebugMode.DISABLED;
-      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.#dbosConfig, isDebugging);
+      const debugMode = DBOS.getDebugModeFromEnv();
+      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.#dbosConfig, debugMode);
       if (process.env.DBOS__CLOUD === 'true') {
         [DBOS.#dbosConfig, DBOS.#runtimeConfig] = overwrite_config(
           DBOS.#dbosConfig as DBOSConfigInternal,
@@ -291,7 +289,6 @@ export class DBOS {
       return;
     }
     const debugMode = options?.debugMode ?? DBOS.getDebugModeFromEnv();
-    const isDebugging = debugMode !== DebugMode.DISABLED;
 
     if (options?.conductorKey) {
       // Use a generated executor ID.
@@ -300,7 +297,7 @@ export class DBOS {
 
     // Initialize the DBOS executor
     if (!DBOS.#dbosConfig) {
-      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = parseConfigFile({ forceConsole: isDebugging });
+      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = parseConfigFile({ forceConsole: debugMode });
     } else if (!isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
       DBOS.translateConfig(); // This is a defensive measure for users who'd do DBOS.config = X instead of using DBOS.setConfig()
     }
@@ -325,7 +322,6 @@ export class DBOS {
       DBOS.logger.info(`Workflow Debugging complete. Exiting process.`);
       await executor.destroy();
       process.exit(0);
-      return; // return for cases where process.exit is mocked
     }
 
     await DBOSExecutor.globalInstance.initEventReceivers();

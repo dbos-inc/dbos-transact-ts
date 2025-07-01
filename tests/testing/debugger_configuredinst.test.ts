@@ -1,7 +1,7 @@
 import { ConfiguredInstance, DBOS } from '../../src/';
 import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { randomUUID } from 'node:crypto';
-import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfig } from '../../src/dbos-executor';
 
 class DebuggerCCTest extends ConfiguredInstance {
   constructor(name: string) {
@@ -68,7 +68,7 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       const res = await configR.mixedWorkflow(23);
       expect(res).toBe('configA23commcwf5-23');
