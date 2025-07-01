@@ -21,7 +21,7 @@ import { W3CTraceContextPropagator } from '@opentelemetry/core';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { DBOS } from '../dbos';
 import * as protocol from '../conductor/protocol';
-import { UntypedAsyncFunction } from '../decorators';
+import { getAllRegisteredFunctions, UntypedAsyncFunction } from '../decorators';
 
 export type QueueMetadataResponse = QueueParameters & { name: string };
 
@@ -553,7 +553,7 @@ export class DBOSHttpServer {
     const globalMiddlewares: Set<Koa.Middleware> = new Set();
     // Register user declared endpoints, wrap around the endpoint with request parsing and response.
     DBOSHttpServer.nRegisteredEndpoints = 0;
-    dbosExec.registeredOperations.forEach((registeredOperation) => {
+    getAllRegisteredFunctions().forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistrationBase;
       if (!ro.apiURL) return;
 

@@ -787,6 +787,17 @@ export function getAllRegisteredClassNames() {
   return cnames;
 }
 
+export function getAllRegisteredFunctions() {
+  const s: Set<MethodRegistrationBase> = new Set();
+  const fregs: MethodRegistrationBase[] = [];
+  for (const [_f, reg] of functionToRegistration) {
+    if (s.has(reg)) continue;
+    fregs.push(reg);
+    s.add(reg);
+  }
+  return fregs;
+}
+
 export function getClassRegistrationByName(name: string, create: boolean = false) {
   if (!classesByName.has(name) && !create) {
     throw new DBOSNotRegisteredError(name, `Class '${name}' is not registered`);
@@ -866,7 +877,7 @@ export function associateClassWithExternal(
   return clsreg.getRegisteredInfo(external);
 }
 
-// Event receiver - v2/v3
+// Event receiver v3
 
 /*
  * Associates a DBOS function or method with an external class or object.
