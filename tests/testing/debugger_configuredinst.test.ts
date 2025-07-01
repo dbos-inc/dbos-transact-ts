@@ -1,7 +1,7 @@
 import { ConfiguredInstance, DBOS } from '../../src/';
 import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { randomUUID } from 'node:crypto';
-import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfig } from '../../src/dbos-executor';
 
 class DebuggerCCTest extends ConfiguredInstance {
   constructor(name: string) {
@@ -48,12 +48,10 @@ const configR = new DebuggerCCTest('configA');
 describe('debugger-test', () => {
   let config: DBOSConfig;
   let debugConfig: DBOSConfig;
-  let debugProxyConfig: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined);
-    debugProxyConfig = generateDBOSTestConfig(undefined);
     await setUpDBOSTestDb(config);
   });
 
@@ -70,19 +68,13 @@ describe('debugger-test', () => {
 
     // Execute again in debug mode.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       const res = await configR.mixedWorkflow(23);
       expect(res).toBe('configA23commcwf5-23');
     });
 
     // Execute again with the provided UUID.
-    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('configA23commcwf5-23');
-    await DBOS.shutdown();
-
-    // TT Mode
-    DBOS.setConfig(debugProxyConfig);
-    await DBOS.launch({ debugMode: DebugMode.TIME_TRAVEL });
     await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('configA23commcwf5-23');
     await DBOS.shutdown();
   });

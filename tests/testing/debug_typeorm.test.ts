@@ -1,7 +1,7 @@
 import { DBOS, OrmEntities } from '../../src/';
 import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { randomUUID } from 'node:crypto';
-import { DBOSConfig, DebugMode } from '../../src/dbos-executor';
+import { DBOSConfig } from '../../src/dbos-executor';
 import { Column, Entity, EntityManager, PrimaryColumn } from 'typeorm';
 import { UserDatabaseName } from '../../src/user_database';
 
@@ -58,7 +58,7 @@ describe('typeorm-debugger-test', () => {
 
     // Execute again in debug mode.
     DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: DebugMode.ENABLED });
+    await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       await expect(KVController.testTxn('test', 'value')).resolves.toBe('test');
     });
