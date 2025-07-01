@@ -60,15 +60,17 @@ import {
 import {
   MethodRegistrationBase,
   MethodRegistration,
-  getRegisteredMethodClassName,
-  getRegisteredMethodName,
+  getRegisteredFunctionFullName,
+  getRegisteredFunctionClassName,
+  getRegisteredFunctionName,
   getConfiguredInstance,
   ConfiguredInstance,
   getNameForClass,
   getClassRegistrationByName,
   getAllRegisteredClassNames,
-  getRegisteredOperationsByClassname,
+  getRegisteredFunctionsByClassname,
   getLifecycleListeners,
+  getRegisteredFunctionQualifiedName,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -404,7 +406,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   #registerClass(clsname: string) {
-    const registeredClassOperations = getRegisteredOperationsByClassname(clsname);
+    const registeredClassOperations = getRegisteredFunctionsByClassname(clsname);
     this.registeredOperations.push(...registeredClassOperations);
     for (const ro of registeredClassOperations) {
       if (ro.workflowConfig) {
@@ -648,8 +650,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   getWorkflowInfo(wf: Workflow<unknown[], unknown>) {
-    const wfname =
-      wf.name === DBOSExecutor.tempWorkflowName ? wf.name : getRegisteredMethodClassName(wf) + '.' + wf.name;
+    const wfname = wf.name === DBOSExecutor.tempWorkflowName ? wf.name : getRegisteredFunctionQualifiedName(wf);
     return this.workflowInfoMap.get(wfname);
   }
 
@@ -663,7 +664,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   getTransactionInfo(tf: Transaction<unknown[], unknown>) {
-    const tfname = getRegisteredMethodClassName(tf) + '.' + tf.name;
+    const tfname = getRegisteredFunctionQualifiedName(tf);
     return this.transactionInfoMap.get(tfname);
   }
   getTransactionInfoByNames(className: string, functionName: string, cfgName: string) {
@@ -678,7 +679,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   getStepInfo(cf: StepFunction<unknown[], unknown>) {
-    const cfname = getRegisteredMethodClassName(cf) + '.' + cf.name;
+    const cfname = getRegisteredFunctionQualifiedName(cf);
     return this.stepInfoMap.get(cfname);
   }
   getStepInfoByNames(className: string, functionName: string, cfgName: string) {
@@ -692,12 +693,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return { commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName) };
   }
 
-  getProcedureClassName<T extends unknown[], R>(pf: StoredProcedure<T, R>) {
-    return getRegisteredMethodClassName(pf);
-  }
-
   getProcedureInfo<T extends unknown[], R>(pf: StoredProcedure<T, R>) {
-    const pfName = getRegisteredMethodClassName(pf) + '.' + pf.name;
+    const pfName = getRegisteredFunctionQualifiedName(pf);
     return this.procedureInfoMap.get(pfName);
   }
   // TODO: getProcedureInfoByNames??
@@ -776,8 +773,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
       status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
-      workflowName: wf.name,
-      workflowClassName: wCtxt.isTempWorkflow ? '' : getRegisteredMethodClassName(wf),
+      workflowName: getRegisteredFunctionName(wf),
+      workflowClassName: wCtxt.isTempWorkflow ? '' : getRegisteredFunctionClassName(wf),
       workflowConfigName: params.configuredInstance?.name || '',
       queueName: params.queueName,
       authenticatedUser: wCtxt.authenticatedUser,
@@ -1128,8 +1125,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       {
         ...params,
         tempWfType: TempWorkflowType.transaction,
-        tempWfName: getRegisteredMethodName(txn),
-        tempWfClass: getRegisteredMethodClassName(txn),
+        tempWfName: getRegisteredFunctionName(txn),
+        tempWfClass: getRegisteredFunctionClassName(txn),
       },
       callerUUID,
       callerFunctionID,
@@ -1339,8 +1336,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         {
           ...params,
           tempWfType: TempWorkflowType.procedure,
-          tempWfName: getRegisteredMethodName(proc),
-          tempWfClass: getRegisteredMethodClassName(proc),
+          tempWfName: getRegisteredFunctionName(proc),
+          tempWfClass: getRegisteredFunctionClassName(proc),
         },
         ...args,
       )
@@ -1618,8 +1615,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const client = await this.procedurePool.connect();
     const log = (msg: NoticeMessage) => this.#logNotice(msg);
 
-    const procClassName = this.getProcedureClassName(proc);
-    const plainProcName = `${procClassName}_${proc.name}_p`;
+    const procname = getRegisteredFunctionFullName(proc);
+    const plainProcName = `${procname.className}_${procname.name}_p`;
     const procName = globalParams.wasComputed ? plainProcName : `v${globalParams.appVersion}_${plainProcName}`;
 
     const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
@@ -1681,8 +1678,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       {
         ...params,
         tempWfType: TempWorkflowType.step,
-        tempWfName: getRegisteredMethodName(stepFn),
-        tempWfClass: getRegisteredMethodClassName(stepFn),
+        tempWfName: getRegisteredFunctionName(stepFn),
+        tempWfClass: getRegisteredFunctionClassName(stepFn),
       },
       callerUUID,
       callerFunctionID,

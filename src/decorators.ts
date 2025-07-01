@@ -8,6 +8,10 @@ import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
 import { DataSourceTransactionHandler } from './datasource';
 
+////////////
+// Interfaces
+////////////
+
 /**
  * Interface for integrating into the DBOS startup/shutdown lifecycle
  */
@@ -24,35 +28,9 @@ export abstract class DBOSLifecycleCallback {
   logRegisteredEndpoints(): void {}
 }
 
-const lifecycleListeners: DBOSLifecycleCallback[] = [];
-export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
-  if (!lifecycleListeners.includes(lcl)) lifecycleListeners.push(lcl);
-}
-export function getLifecycleListeners() {
-  return lifecycleListeners as readonly DBOSLifecycleCallback[];
-}
-
 // Middleware installation
 export interface DBOSMethodMiddlewareInstaller {
   installMiddleware(methodReg: MethodRegistrationBase): void;
-}
-let installedMiddleware = false;
-const middlewareInstallers: DBOSMethodMiddlewareInstaller[] = [];
-export function registerMiddlewareInstaller(i: DBOSMethodMiddlewareInstaller) {
-  if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
-  if (!middlewareInstallers.includes(i)) middlewareInstallers.push(i);
-}
-export function insertAllMiddleware() {
-  if (installedMiddleware) return;
-  installedMiddleware = true;
-
-  for (const [_cn, c] of classesByName) {
-    for (const [_fn, f] of c.reg.registeredOperations) {
-      for (const i of middlewareInstallers) {
-        i.installMiddleware(f);
-      }
-    }
-  }
 }
 
 /**
@@ -272,10 +250,6 @@ export class MethodParameter {
   }
 }
 
-//////////////////////////////////////////
-/* REGISTRATION OBJECTS and read access */
-//////////////////////////////////////////
-
 export const DBOS_AUTH = 'auth';
 
 export interface ClassAuthDefaults {
@@ -440,17 +414,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   }
 }
 
-function registerClassInstance(inst: ConfiguredInstance, name: string) {
-  const creg = getOrCreateClassRegistration(inst.constructor as AnyConstructor);
-  if (creg.configuredInstances.has(name)) {
-    throw new DBOSConflictingRegistrationError(
-      `An instance of class '${inst.constructor.name}' with name '${name}' was already registered.  Earlier registration occurred at:\n${(creg.configuredInstanceRegLocs.get(name) ?? []).join('\n')}`,
-    );
-  }
-  creg.configuredInstances.set(name, inst);
-  creg.configuredInstanceRegLocs.set(name, new StackGrabber().getCleanStack(3) ?? []);
-}
-
 export abstract class ConfiguredInstance {
   readonly name: string;
   constructor(name: string) {
@@ -510,6 +473,11 @@ class StackGrabber extends Error {
   }
 }
 
+////////////
+// Global registration structures and functions
+////////////
+
+// Track if DBOS is launched, and if so, from where
 let dbosLaunchPoint: string[] | undefined = undefined;
 export function recordDBOSLaunch() {
   dbosLaunchPoint = new StackGrabber().getCleanStack(2); // Remove one for record, one for registerAndWrap...
@@ -526,27 +494,82 @@ export function ensureDBOSIsNotLaunched() {
   }
 }
 
-// This is a bit ugly, if we got the class / instance it would help avoid this auxiliary structure
-const methodToRegistration: Map<unknown, MethodRegistration<unknown, unknown[], unknown>> = new Map();
-export function getRegisteredMethodClassName(func: unknown): string {
-  let rv: string = '';
-  if (methodToRegistration.has(func)) {
-    rv = methodToRegistration.get(func)!.className;
-  }
-  return rv;
+// DBOS launch lifecycle listener
+const lifecycleListeners: DBOSLifecycleCallback[] = [];
+export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
+  if (!lifecycleListeners.includes(lcl)) lifecycleListeners.push(lcl);
 }
-export function getRegisteredMethodName(func: unknown): string {
-  let rv: string = '';
-  if (methodToRegistration.has(func)) {
-    rv = methodToRegistration.get(func)!.name;
-  }
-  return rv;
+export function getLifecycleListeners() {
+  return lifecycleListeners as readonly DBOSLifecycleCallback[];
 }
+
+// Middleware installers - insert middleware in registered functions prior to launch
+let installedMiddleware = false;
+const middlewareInstallers: DBOSMethodMiddlewareInstaller[] = [];
+
+export function registerMiddlewareInstaller(i: DBOSMethodMiddlewareInstaller) {
+  if (installedMiddleware) throw new TypeError('Attempt to provide method middleware after insertion was performed');
+  if (!middlewareInstallers.includes(i)) middlewareInstallers.push(i);
+}
+
+export function insertAllMiddleware() {
+  if (installedMiddleware) return;
+  installedMiddleware = true;
+
+  for (const [_cn, c] of classesByName) {
+    for (const [_fn, f] of c.reg.registeredOperations) {
+      for (const i of middlewareInstallers) {
+        i.installMiddleware(f);
+      }
+    }
+  }
+}
+
+// Registration of functions, and classes
+const functionToRegistration: Map<unknown, MethodRegistration<unknown, unknown[], unknown>> = new Map();
+
+// Registration of instance, by constructor+name
+function registerClassInstance(inst: ConfiguredInstance, instname: string) {
+  const creg = getOrCreateClassRegistration(inst.constructor as AnyConstructor);
+  if (creg.configuredInstances.has(instname)) {
+    throw new DBOSConflictingRegistrationError(
+      `An instance of class '${inst.constructor.name}' with name '${instname}' was already registered.  Earlier registration occurred at:\n${(creg.configuredInstanceRegLocs.get(instname) ?? []).join('\n')}`,
+    );
+  }
+  creg.configuredInstances.set(instname, inst);
+  creg.configuredInstanceRegLocs.set(instname, new StackGrabber().getCleanStack(3) ?? []);
+}
+
+export function getRegisteredFunctionFullName(func: unknown) {
+  let className: string = '';
+  let funcName: string = (func as { name?: string }).name ?? '';
+  if (functionToRegistration.has(func)) {
+    const fr = functionToRegistration.get(func)!;
+    className = fr.className;
+    funcName = fr.name;
+  }
+  return { className, name: funcName };
+}
+
+export function getRegisteredFunctionQualifiedName(func: unknown) {
+  const fn = getRegisteredFunctionFullName(func);
+  return fn.className + '.' + fn.name;
+}
+
+export function getRegisteredFunctionClassName(func: unknown): string {
+  return getRegisteredFunctionFullName(func).className;
+}
+
+export function getRegisteredFunctionName(func: unknown): string {
+  return getRegisteredFunctionFullName(func).name;
+}
+
 export function registerFunctionWrapper(func: unknown, reg: MethodRegistration<unknown, unknown[], unknown>) {
-  methodToRegistration.set(func, reg);
+  functionToRegistration.set(func, reg);
 }
+
 export function getRegistrationForFunction(func: unknown): MethodRegistration<unknown, unknown[], unknown> | undefined {
-  return methodToRegistration.get(func);
+  return functionToRegistration.get(func);
 }
 
 export function getRegisteredOperations(target: object): ReadonlyArray<MethodRegistrationBase> {
@@ -570,47 +593,12 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
   return registeredOperations;
 }
 
-export function getRegisteredOperationsByClassname(target: string): ReadonlyArray<MethodRegistrationBase> {
+export function getRegisteredFunctionsByClassname(target: string): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
   const cls = getClassRegistrationByName(target);
   cls.registeredOperations?.forEach((m) => registeredOperations.push(m));
   return registeredOperations;
 }
-
-export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
-  const classReg = classesByName.get(clsname)?.reg;
-  if (!classReg) return null;
-  return classReg.configuredInstances.get(cfgname) ?? null;
-}
-
-/////
-// Transactional data source registration
-/////
-export const transactionalDataSources: Map<string, DataSourceTransactionHandler> = new Map();
-
-// Register data source (user version)
-export function registerTransactionalDataSource(name: string, ds: DataSourceTransactionHandler) {
-  if (transactionalDataSources.has(name)) {
-    if (transactionalDataSources.get(name) !== ds) {
-      throw new DBOSConflictingRegistrationError(`Data source with name ${name} is already registered`);
-    }
-    return;
-  }
-  ensureDBOSIsNotLaunched();
-  transactionalDataSources.set(name, ds);
-}
-
-export function getTransactionalDataSource(name: string) {
-  if (transactionalDataSources.has(name)) return transactionalDataSources.get(name)!;
-  throw new DBOSNotRegisteredError(name, `Data source '${name}' is not registered`);
-}
-
-////////////////////////////////////////////////////////////////////////////////
-// DECORATOR REGISTRATION
-// These manage registration objects, creating them at decorator evaluation time
-// and making wrapped methods available for function registration at runtime
-// initialization time.
-////////////////////////////////////////////////////////////////////////////////
 
 const methodArgsByFunction: Map<string, MethodParameter[]> = new Map();
 
@@ -738,8 +726,8 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
     methReg.registeredFunction = wrappedMethod;
 
-    methodToRegistration.set(methReg.registeredFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
-    methodToRegistration.set(methReg.origFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
+    functionToRegistration.set(methReg.registeredFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
+    functionToRegistration.set(methReg.origFunction, methReg as MethodRegistration<unknown, unknown[], unknown>);
   }
 
   return methReg;
@@ -838,6 +826,46 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
   return clsReg;
 }
 
+/** @deprecated Use `new` */
+export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
+  cls: new (name: string, ...args: T) => R,
+  name: string,
+  ...args: T
+): R {
+  const inst = new cls(name, ...args);
+  return inst;
+}
+
+export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
+  const classReg = classesByName.get(clsname)?.reg;
+  if (!classReg) return null;
+  return classReg.configuredInstances.get(cfgname) ?? null;
+}
+
+/////
+// Transactional data source registration
+/////
+export const transactionalDataSources: Map<string, DataSourceTransactionHandler> = new Map();
+
+// Register data source (user version)
+export function registerTransactionalDataSource(name: string, ds: DataSourceTransactionHandler) {
+  if (transactionalDataSources.has(name)) {
+    if (transactionalDataSources.get(name) !== ds) {
+      throw new DBOSConflictingRegistrationError(`Data source with name ${name} is already registered`);
+    }
+    return;
+  }
+  ensureDBOSIsNotLaunched();
+  transactionalDataSources.set(name, ds);
+}
+
+export function getTransactionalDataSource(name: string) {
+  if (transactionalDataSources.has(name)) return transactionalDataSources.get(name)!;
+  throw new DBOSNotRegisteredError(name, `Data source '${name}' is not registered`);
+}
+
+// DBOS Event Receiver (v1, sort of v2, probably remove)
+
 /**
  * Associates a class with a `DBOSEventReceiver`, which will be calling the class's DBOS methods.
  * Allows class-level default values or other storage to be associated with the class, rather than
@@ -856,15 +884,6 @@ export function associateClassWithEventReceiver<CT extends { new (...args: unkno
     clsReg.eventReceiverInfo.set(rcvr, {});
   }
   return clsReg.eventReceiverInfo.get(rcvr)!;
-}
-
-export function associateClassWithExternal(
-  external: AnyConstructor | object | string,
-  cls: AnyConstructor | string,
-): object {
-  const clsn: string = typeof cls === 'string' ? cls : getNameForClass(cls);
-  const clsreg = getClassRegistrationByName(clsn, true);
-  return clsreg.getRegisteredInfo(external);
 }
 
 /**
@@ -891,6 +910,17 @@ export function associateMethodWithEventReceiver<This, Args extends unknown[], R
   return { descriptor, registration, receiverInfo: registration.eventReceiverInfo.get(rcvr)! };
 }
 
+export function associateClassWithExternal(
+  external: AnyConstructor | object | string,
+  cls: AnyConstructor | string,
+): object {
+  const clsn: string = typeof cls === 'string' ? cls : getNameForClass(cls);
+  const clsreg = getClassRegistrationByName(clsn, true);
+  return clsreg.getRegisteredInfo(external);
+}
+
+// Event receiver - v2/v3
+
 /*
  * Associates a DBOS function or method with an external class or object.
  *   Likely, this will be invoking or intercepting the method.
@@ -913,7 +943,7 @@ export function associateMethodWithExternal<This, Args extends unknown[], Return
 }
 
 /*
- * Associates a DBOS function or method with an external class or object.
+ * Associates a DBOS function or method parameters with an external class or object.
  *   Likely, this will be invoking or intercepting the method.
  */
 export function associateParameterWithExternal<This, Args extends unknown[], Return>(
@@ -1001,6 +1031,10 @@ export function getRegistrationsForExternal(
   }
 }
 
+////////////
+// Decorator-oriented
+////////////
+
 //////////////////////////
 /* PARAMETER DECORATORS */
 //////////////////////////
@@ -1017,16 +1051,6 @@ export function ArgName(name: string) {
 ///////////////////////
 /* CLASS DECORATORS */
 ///////////////////////
-
-/** @deprecated Use `new` */
-export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
-  cls: new (name: string, ...args: T) => R,
-  name: string,
-  ...args: T
-): R {
-  const inst = new cls(name, ...args);
-  return inst;
-}
 
 /**
  * @deprecated Use ORM DSs

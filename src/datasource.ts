@@ -3,7 +3,11 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 import { assertCurrentWorkflowContext, getNextWFID, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
-import { getTransactionalDataSource, registerTransactionalDataSource } from './decorators';
+import {
+  getTransactionalDataSource,
+  registerAndWrapDBOSFunctionByName,
+  registerTransactionalDataSource,
+} from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 
 /**
@@ -181,6 +185,13 @@ export function registerTransaction<This, Args extends unknown[], Return>(
 ): (this: This, ...args: Args) => Promise<Return> {
   const dsn = dsName ?? '<default>';
 
+  const reg = registerAndWrapDBOSFunctionByName(
+    undefined, // target
+    undefined, // classame
+    options.name || func.name,
+    func,
+  );
+
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     const ds = getTransactionalDataSource(dsn);
     if (!DBOS.isWithinWorkflow()) {
@@ -215,9 +226,12 @@ export function registerTransaction<This, Args extends unknown[], Return>(
     );
   };
 
+  reg.registration.wrappedFunction = invokeWrapper;
+
   Object.defineProperty(invokeWrapper, 'name', {
     value: options.name,
   });
+
   return invokeWrapper;
 }
 

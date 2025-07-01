@@ -78,7 +78,10 @@ describe('KnexDataSource', () => {
     console.log(`${JSON.stringify(response1)}`);
     expect(response1.statusCode).toBe(200);
     const response2 = await request(app.callback()).get('/api/i2?user=jeremy');
+    console.log(`${JSON.stringify(response2)}`);
     expect(response2.statusCode).toBe(200);
+    const response3 = await request(app.callback()).get('/api/i2');
+    expect(response3.statusCode).toBe(400);
   });
 });
 
