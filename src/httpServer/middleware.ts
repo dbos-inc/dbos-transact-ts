@@ -143,19 +143,6 @@ export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
 }
 
 /////////////////////////////////
-/* OPEN API DECORATORS (Moved) */
-/////////////////////////////////
-
-/**
- * @deprecated The `@OpenApiSecurityScheme` decorator function has moved to an extension package.
- * Please install @dbos-inc/dbos-openapi, and update your import.
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export function OpenApiSecurityScheme(securityScheme: unknown) {
-  throw new Error('@OpenApiSecurityScheme has been moved to the @dbos-inc/dbos-openapi package as of v2.0');
-}
-
-/////////////////////////////////
 /* HTTP APP TRACING MIDDLEWARES */
 /////////////////////////////////
 

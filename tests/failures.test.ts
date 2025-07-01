@@ -1,16 +1,6 @@
-import {
-  WorkflowContext,
-  TransactionContext,
-  StepContext,
-  Step,
-  Workflow,
-  Transaction,
-  ArgOptional,
-  DBOS,
-  ConfiguredInstance,
-} from '../src/';
+import { ArgOptional, DBOS, ConfiguredInstance } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
-import { DatabaseError, PoolClient } from 'pg';
+import { DatabaseError } from 'pg';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError, DBOSUnexpectedStepError } from '../src/error';
@@ -18,7 +8,6 @@ import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import assert from 'assert';
 
 const testTableName = 'dbos_failure_test_kv';
-type TestTransactionContext = TransactionContext<PoolClient>;
 
 describe('failures-tests', () => {
   let config: DBOSConfig;
@@ -76,7 +65,7 @@ describe('failures-tests', () => {
     expect(FailureTestClass.cnt).toBe(1);
 
     // A run with a generated UUID should fail normally
-    await expect(DBOS.invoke(FailureTestClass).testReadonlyError()).rejects.toThrow(new Error('test error'));
+    await expect(FailureTestClass.testReadonlyError()).rejects.toThrow(new Error('test error'));
     expect(FailureTestClass.cnt).toBe(2);
   });
 
@@ -119,18 +108,18 @@ describe('failures-tests', () => {
 
   test('serialization-error', async () => {
     // Should succeed after retrying 10 times.
-    await expect(DBOS.invoke(FailureTestClass).testSerialWorkflow(10)).resolves.toBe(10);
+    await expect(FailureTestClass.testSerialWorkflow(10)).resolves.toBe(10);
     expect(FailureTestClass.cnt).toBe(10);
   });
 
   test('failing-step', async () => {
     let startTime = Date.now();
-    await expect(DBOS.invoke(FailureTestClass).testFailStep()).resolves.toBe(2);
+    await expect(FailureTestClass.testFailStep()).resolves.toBe(2);
     expect(Date.now() - startTime).toBeGreaterThanOrEqual(1000);
 
     startTime = Date.now();
     try {
-      await DBOS.invoke(FailureTestClass).testFailStep();
+      await FailureTestClass.testFailStep();
       expect(true).toBe(false); // An exception should be thrown first
     } catch (error) {
       const e = error as DBOSMaxStepRetriesError;
@@ -158,22 +147,7 @@ describe('failures-tests', () => {
     expect(FailureTestClass.cnt).toBe(1);
   });
 
-  test('no-registration-invoke', async () => {
-    // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of NotRegisteredError.
-
-    // Invoke an unregistered workflow.
-    expect(() => DBOS.invoke(FailureTestClass).noRegWorkflow(10)).toThrow(DBOSNotRegisteredError);
-
-    // Invoke an unregistered transaction.
-    expect(() => DBOS.invoke(FailureTestClass).noRegTransaction(10)).toThrow(DBOSNotRegisteredError);
-
-    // Invoke an unregistered step in a workflow.
-    await expect(DBOS.invoke(FailureTestClass).testCommWorkflow()).rejects.toThrow();
-  });
-
   test('no-registration-startwf', async () => {
-    // Note: since we use invoke() in testing runtime, it throws "TypeError: ...is not a function" instead of NotRegisteredError.
-
     // Invoke an unregistered workflow.
     expect(() => DBOS.startWorkflow(FailureTestClass).noRegWorkflow2(10)).toThrow(DBOSNotRegisteredError);
 
@@ -298,8 +272,8 @@ class FailureTestClass extends ConfiguredInstance {
     return rows[0];
   }
 
-  @Transaction()
-  static async testSerialError(_ctxt: TestTransactionContext, maxRetry: number) {
+  @DBOS.transaction()
+  static async testSerialError(maxRetry: number) {
     if (FailureTestClass.cnt !== maxRetry) {
       const err = new DatabaseError('serialization error', 10, 'error');
       err.code = '40001';
@@ -309,15 +283,15 @@ class FailureTestClass extends ConfiguredInstance {
     return Promise.resolve(maxRetry);
   }
 
-  @Workflow()
-  static async testSerialWorkflow(ctxt: WorkflowContext, maxRetry: number) {
-    return await ctxt.invoke(FailureTestClass).testSerialError(maxRetry);
+  @DBOS.workflow()
+  static async testSerialWorkflow(maxRetry: number) {
+    return await FailureTestClass.testSerialError(maxRetry);
   }
 
-  @Step({ retriesAllowed: true, intervalSeconds: 1, maxAttempts: 2 })
-  static async testFailStep(ctxt: StepContext) {
+  @DBOS.step({ retriesAllowed: true, intervalSeconds: 1, maxAttempts: 2 })
+  static async testFailStep() {
     FailureTestClass.cnt++;
-    if (ctxt.retriesAllowed && FailureTestClass.cnt !== ctxt.maxAttempts) {
+    if (FailureTestClass.cnt !== DBOS.stepStatus!.maxAttempts) {
       throw new Error('bad number');
     }
     return Promise.resolve(FailureTestClass.cnt);
@@ -329,30 +303,12 @@ class FailureTestClass extends ConfiguredInstance {
     return Promise.reject(new Error('failed no retry'));
   }
 
-  // Test decorator registration works.
-  static async noRegComm(_ctxt: StepContext, code: number) {
-    return Promise.resolve(code + 1);
-  }
-
-  static async noRegTransaction(_ctxt: TestTransactionContext, code: number) {
-    return Promise.resolve(code + 1);
-  }
-
-  static async noRegWorkflow(_ctxt: WorkflowContext, code: number) {
-    return Promise.resolve(code + 1);
-  }
-
   static async noRegWorkflow2(code: number) {
     return Promise.resolve(code + 1);
   }
 
   async noRegFunction(code: number) {
     return Promise.resolve(code + 1);
-  }
-
-  @Workflow()
-  static async testCommWorkflow(ctxt: WorkflowContext) {
-    return await ctxt.invoke(FailureTestClass).noRegComm(1);
   }
 }
 

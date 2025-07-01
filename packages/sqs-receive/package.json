@@ -1,0 +1,29 @@
+{
+  "name": "@dbos-inc/sqs-receive",
+  "version": "0.0.0-placeholder",
+  "description": "DBOS event receiver for AWS SQS queues",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-transact-ts",
+    "directory": "packages/sqs-receive"
+  },
+  "homepage": "https://docs.dbos.dev/",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc --project tsconfig.build.json",
+    "pretest": "npm run build",
+    "test": "tsx --test tests/*.test.ts"
+  },
+  "dependencies": {
+    "@aws-sdk/client-sqs": "^3.596.0"
+  },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "*",
+    "@dbos-inc/aws-config": "*"
+  },
+  "devDependencies": {
+    "tsx": "^4.20.3"
+  }
+}

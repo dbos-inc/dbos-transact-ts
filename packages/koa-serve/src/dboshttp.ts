@@ -88,7 +88,7 @@ export function isClientRequestError(e: Error) {
   return DBOSErrors.isDataValidationError(e);
 }
 
-export class DBOSHTTPBase extends DBOSLifecycleCallback {
+export class DBOSHTTPBase implements DBOSLifecycleCallback {
   static HTTP_OPERATION_TYPE: string = 'http';
 
   static get httpRequest(): DBOSHTTPRequest {
@@ -108,7 +108,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       const { registration, regInfo } = DBOS.associateFunctionWithInfo(er, descriptor.value!, {
-        classOrInst: target,
+        ctorOrProto: target,
         name: propertyKey,
       });
       const handlerRegistration = regInfo as DBOSHTTPMethodInfo;
@@ -156,7 +156,7 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         Object.getOwnPropertyDescriptor(target, propertyKey)!.value,
         {
-          classOrInst: target,
+          ctorOrProto: target,
           name: propertyKey.toString(),
           param: parameterIndex,
         },
@@ -171,14 +171,14 @@ export class DBOSHTTPBase extends DBOSLifecycleCallback {
     return arginfo?.argSource ?? ArgSources.AUTO;
   }
 
-  override logRegisteredEndpoints(): void {
+  logRegisteredEndpoints(): void {
     DBOS.logger.info('HTTP endpoints supported:');
     const eps = DBOS.getAssociatedInfo(this);
 
     for (const e of eps) {
       const { methodConfig, methodReg } = e;
       const httpmethod = methodConfig as DBOSHTTPMethodInfo;
-      for (const ro of httpmethod.registrations ?? []) {
+      for (const ro of httpmethod?.registrations ?? []) {
         if (ro.apiURL) {
           DBOS.logger.info('    ' + ro.apiType.padEnd(6) + '  :  ' + ro.apiURL);
           const roles = methodReg.getRequiredRoles();

@@ -2,15 +2,12 @@ import {
   DBNotification,
   DBOS,
   DBOSConfig,
-  DBOSContext,
   DBOSEventReceiver,
   DBOSExecutorContext,
-  Workflow,
-  WorkflowContext,
-  WorkflowFunction,
   associateClassWithEventReceiver,
   associateMethodWithEventReceiver,
 } from '../src';
+import { UntypedAsyncFunction } from '../src/decorators';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 export interface ERDefaults {
@@ -34,13 +31,7 @@ class ERD implements DBOSEventReceiver {
       for (const mtd of mtds) {
         const cs = (mtd.classConfig as ERDefaults).classval ?? '';
         const ms = (mtd.methodConfig as ERSpecifics).methodval ?? '';
-        await this.executor!.workflow(
-          mtd.methodReg.registeredFunction as unknown as WorkflowFunction<[string, string, number], unknown>,
-          {},
-          cs,
-          ms,
-          i,
-        );
+        await this.executor!.workflow(mtd.methodReg.registeredFunction as UntypedAsyncFunction, {}, cs, ms, i);
       }
     }
   }
@@ -67,10 +58,10 @@ export function EventReceiverConfigure(cfg: string) {
 
 // Decorators - method
 export function EventConsumer(config?: string) {
-  function mtddec<This, Ctx extends DBOSContext, Return>(
+  function mtddec<This, Return>(
     target: object,
     propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: [string, string, number]) => Promise<Return>>,
+    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: [string, string, number]) => Promise<Return>>,
   ) {
     const { descriptor, receiverInfo } = associateMethodWithEventReceiver(erd, target, propertyKey, inDescriptor);
 
@@ -87,16 +78,16 @@ class MyEventReceiver {
   static callNumSum = 0;
 
   @EventConsumer('method1')
-  @Workflow()
-  static async method1(_ctx: WorkflowContext, cv: string, mv: string, en: number) {
+  @DBOS.workflow()
+  static async method1(cv: string, mv: string, en: number) {
     if (cv !== 'myclass' || mv !== 'method1') throw new Error('Info missing!');
     MyEventReceiver.callNumSum += en;
     return Promise.resolve();
   }
 
   @EventConsumer('method2')
-  @Workflow()
-  static async method2(_ctx: WorkflowContext, cv: string, mv: string, en: number) {
+  @DBOS.workflow()
+  static async method2(cv: string, mv: string, en: number) {
     if (cv !== 'myclass' || mv !== 'method2') throw new Error('Info missing!');
     MyEventReceiver.callNumSum += 10 * en;
     return Promise.resolve();

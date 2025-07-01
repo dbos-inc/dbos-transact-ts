@@ -12,18 +12,25 @@ import {
   registerTransaction,
   runTransaction,
   PGIsolationLevel as IsolationLevel,
-  PGTransactionConfig as KnexTransactionConfig,
+  type PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
 } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
-import { DBOSFailedSqlTransactionError, DBOSInvalidWorkflowTransitionError } from '../src/error';
+import {
+  DBOSNotAuthorizedError,
+  DBOSFailedSqlTransactionError,
+  DBOSInvalidWorkflowTransitionError,
+} from '../src/error';
 import { DBOSJSON, sleepms } from '../src/utils';
 
 /*
  * Knex user data access interface
  */
+interface KnexTransactionConfig extends PGTransactionConfig {
+  name?: string;
+}
 
 // This stuff is all specific to PG DBs...
 //  We are also agnostic about whether there are admin credentials to do this, or not...
@@ -137,7 +144,7 @@ class KnexDSTH implements DataSourceTransactionHandler {
             //     It can be run on a second iteration if insert has failed.
             // OTOH, to be pessimistic, this should be LOCK / SELECT FOR UPDATE'd
 
-            if (shouldCheckOutput && !readOnly) {
+            if (shouldCheckOutput && !readOnly && wfid) {
               const executionResult = await this.#checkExecution<Return>(transactionClient, wfid, funcnum);
 
               if (executionResult) {
@@ -151,9 +158,9 @@ class KnexDSTH implements DataSourceTransactionHandler {
                 return await func.call(target, ...args);
               });
 
-              // Save result
+              // Save result if not read-only, and in workflow
               try {
-                if (!readOnly) {
+                if (!readOnly && wfid) {
                   await this.#recordOutput(transactionClient, wfid, funcnum, res);
                 }
               } catch (e) {
@@ -276,8 +283,8 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
     return ctx.knexClient;
   }
 
-  // initializeInternalSchema - this is up to the user to call.  It's not part of DBOS lifecycle
-  async initializeInternalSchema(): Promise<void> {
+  // initializeDBOSSchema - this is up to the user to call.  It's not part of DBOS lifecycle
+  async initializeDBOSSchema(): Promise<void> {
     const knex = this.#provider.createInstance();
     try {
       const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
@@ -297,19 +304,18 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: KnexTransactionConfig,
+    name?: string,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
   }
 
   static registerTransaction<This, Args extends unknown[], Return>(
     dsname: string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: KnexTransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(dsname, func, { name }, config);
+    return registerTransaction(dsname, func, { name: config?.name ?? func.name }, config);
   }
 
   // Custom TX decorator
@@ -318,21 +324,21 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
       _target: object,
-      propertyKey: string,
+      propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       if (!descriptor.value) {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+      descriptor.value = ds.registerTransaction(descriptor.value, config, config?.name ?? String(propertyKey));
 
       return descriptor;
     };
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, name: string, config?: KnexTransactionConfig) {
-    return await runTransaction(callback, name, { dsName: this.name, config });
+  async runTransaction<T>(callback: () => Promise<T>, config?: KnexTransactionConfig) {
+    return await runTransaction(callback, config?.name ?? callback.name, { dsName: this.name, config });
   }
 }
 
@@ -349,8 +355,8 @@ async function txFunctionGuts() {
   return res.rows[0].a;
 }
 
-// It is not clear if we want to encourage this pattern, but it does work
-const txFunc = DBOSKnexDS.registerTransaction('knexA', txFunctionGuts, 'MySecondTx', {});
+// It is not clear if we want to encourage this pattern of registering early by DS name, but it does work
+const txFunc = DBOSKnexDS.registerTransaction('knexA', txFunctionGuts, { name: 'MySecondTx' });
 
 async function wfFunctionGuts() {
   // Transaction variant 2: Let DBOS run a code snippet as a step
@@ -358,8 +364,7 @@ async function wfFunctionGuts() {
     async () => {
       return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'My first tx result' as a")).rows[0].a;
     },
-    'MyFirstTx',
-    { readOnly: true },
+    { name: 'MyFirstTx', readOnly: true },
   );
 
   // Transaction variant 1: Use a registered DBOS transaction function
@@ -370,7 +375,7 @@ async function wfFunctionGuts() {
 
 // Workflow functions must always be registered before launch; this
 //  allows recovery to occur.
-const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, 'workflow');
+const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, { name: 'workflow' });
 
 // Intentionally initialize DS after we've already tried to register a transaction to it
 const dsa = new DBOSKnexDS('knexA', config.poolConfig);
@@ -387,12 +392,43 @@ class DBWFI {
   static async wf() {
     return await DBWFI.tx();
   }
+
+  @DBOS.requiredRole(['user'])
+  @dsa.transaction({ readOnly: true })
+  static async sectx1() {
+    return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Secure Tx1' as a")).rows[0].a;
+  }
+
+  @dsa.transaction({ readOnly: true })
+  @DBOS.requiredRole(['user'])
+  static async sectx2() {
+    return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Secure Tx1' as a")).rows[0].a;
+  }
+
+  @DBOS.workflow()
+  static async wfs1() {
+    return await DBWFI.sectx1();
+  }
+
+  @DBOS.workflow()
+  static async wfs2() {
+    return await DBWFI.sectx2();
+  }
 }
+
+async function txFunctionGutsNoWF() {
+  expect(DBOS.isInTransaction()).toBe(true);
+  expect(DBOS.isWithinWorkflow()).toBe(false);
+  const res = await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'NoWF Tx Result' as a");
+  return res.rows[0].a;
+}
+
+const txFuncNoWF = dsa.registerTransaction(txFunctionGutsNoWF, {});
 
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
     await setUpDBOSTestDb(config);
-    await dsa.initializeInternalSchema();
+    await dsa.initializeDBOSSchema();
     DBOS.setConfig(config);
   });
 
@@ -418,6 +454,22 @@ describe('decoratorless-api-tests', () => {
     expect(wfsteps[0].name).toBe('MyFirstTx');
     expect(wfsteps[1].functionID).toBe(1);
     expect(wfsteps[1].name).toBe('MySecondTx');
+
+    // Check that the bare transaction does not start a workflow
+    const nwsBefore = (await DBOS.listWorkflows({})).length;
+    const p1 = await dsa.runTransaction(
+      async () => {
+        return (await DBOSKnexDS.knexClient.raw<{ rows: { a: string }[] }>("SELECT 'Bare outside wf' as a")).rows[0].a;
+      },
+      { name: 'MyFirstTx', readOnly: true },
+    );
+    expect(p1).toBe('Bare outside wf');
+
+    const res = await txFuncNoWF();
+    expect(res).toBe('NoWF Tx Result');
+
+    const nwsAfter = (await DBOS.listWorkflows({})).length;
+    expect(nwsAfter - nwsBefore).toBe(0);
   });
 
   test('decorated-tx-wf-functions', async () => {
@@ -432,5 +484,25 @@ describe('decoratorless-api-tests', () => {
     expect(wfsteps.length).toBe(1);
     expect(wfsteps[0].functionID).toBe(0);
     expect(wfsteps[0].name).toBe('tx');
+
+    // Check that the bare transaction does not start a workflow
+    const nwsBefore = (await DBOS.listWorkflows({})).length;
+    expect(nwsBefore).toBeGreaterThanOrEqual(1);
+    const res = await DBWFI.tx();
+    expect(res).toBe('My decorated tx result');
+    const nwsAfter = (await DBOS.listWorkflows({})).length;
+    expect(nwsAfter - nwsBefore).toBe(0);
+
+    //  (If WF requested by providing an ID, this is an error)
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await expect(DBWFI.tx()).rejects.toThrow(DBOSInvalidWorkflowTransitionError);
+    });
+  });
+
+  test('security-plus-dstxns', async () => {
+    await expect(DBWFI.sectx1()).rejects.toThrow(DBOSNotAuthorizedError);
+    await expect(DBWFI.sectx2()).rejects.toThrow(DBOSNotAuthorizedError);
+    await expect(DBWFI.wfs1()).rejects.toThrow(DBOSNotAuthorizedError);
+    await expect(DBWFI.wfs2()).rejects.toThrow(DBOSNotAuthorizedError);
   });
 });

@@ -9,6 +9,8 @@ import {
   runTransaction,
   DBOSDataSource,
   registerDataSource,
+  createTransactionCompletionSchemaPG,
+  createTransactionCompletionTablePG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
@@ -18,60 +20,91 @@ interface transaction_completion {
   workflow_id: string;
   function_num: number;
   output: string | null;
+  error: string | null;
 }
 
 interface KnexDataSourceContext {
   client: Knex.Transaction;
+  owner: KnexTransactionHandler;
 }
 
-export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'>;
+export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'> & { name?: string };
 
 const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
-class KnexDSTH implements DataSourceTransactionHandler {
-  readonly name: string;
+class KnexTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'KnexDataSource';
-  readonly #knexDB: Knex;
+  #knexDBField: Knex | undefined;
 
-  constructor(name: string, config: Knex.Config) {
-    this.name = name;
-    this.#knexDB = knex(config);
+  constructor(
+    readonly name: string,
+    private readonly config: Knex.Config,
+  ) {}
+
+  async initialize(): Promise<void> {
+    const knexDB = this.#knexDBField;
+    this.#knexDBField = knex(this.config);
+    await knexDB?.destroy();
   }
 
-  initialize(): Promise<void> {
-    return Promise.resolve();
+  async destroy(): Promise<void> {
+    const knexDB = this.#knexDBField;
+    this.#knexDBField = undefined;
+    await knexDB?.destroy();
   }
 
-  destroy(): Promise<void> {
-    return this.#knexDB.destroy();
+  get #knexDB() {
+    if (!this.#knexDBField) {
+      throw new Error(`DataSource ${this.name} is not initialized.`);
+    }
+    return this.#knexDBField;
   }
 
-  static async #checkExecution(
-    client: Knex.Transaction,
+  async #checkExecution(
     workflowID: string,
-    functionNum: number,
-  ): Promise<{ output: string | null } | undefined> {
-    const result = await client<transaction_completion>('transaction_completion')
+    stepID: number,
+  ): Promise<{ output: string | null } | { error: string } | undefined> {
+    const result = await this.#knexDB<transaction_completion>('transaction_completion')
       .withSchema('dbos')
-      .select('output')
+      .select('output', 'error')
       .where({
         workflow_id: workflowID,
-        function_num: functionNum,
+        function_num: stepID,
       })
       .first();
-    return result === undefined ? undefined : { output: result.output };
+    if (result === undefined) {
+      return undefined;
+    }
+    const { output, error } = result;
+    return error !== null ? { error } : { output };
+  }
+
+  async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
+    try {
+      await this.#knexDB<transaction_completion>('transaction_completion').withSchema('dbos').insert({
+        workflow_id: workflowID,
+        function_num: stepID,
+        error,
+      });
+    } catch (error) {
+      if (isPGKeyConflictError(error)) {
+        throw new DBOSWorkflowConflictError(workflowID);
+      } else {
+        throw error;
+      }
+    }
   }
 
   static async #recordOutput(
     client: Knex.Transaction,
     workflowID: string,
-    functionNum: number,
+    stepID: number,
     output: string | null,
   ): Promise<void> {
     try {
       await client<transaction_completion>('transaction_completion').withSchema('dbos').insert({
         workflow_id: workflowID,
-        function_num: functionNum,
+        function_num: stepID,
         output,
       });
     } catch (error) {
@@ -90,68 +123,61 @@ class KnexDSTH implements DataSourceTransactionHandler {
     ...args: Args
   ): Promise<Return> {
     const workflowID = DBOS.workflowID;
-    if (workflowID === undefined) {
-      throw new Error('Workflow ID is not set.');
-    }
-    const functionNum = DBOS.stepID;
-    if (functionNum === undefined) {
-      throw new Error('Function Number is not set.');
+    const stepID = DBOS.stepID;
+    if (workflowID !== undefined && stepID === undefined) {
+      throw new Error('DBOS.stepID is undefined inside a workflow.');
     }
 
     const readOnly = config?.readOnly ?? false;
+    const saveResults = !readOnly && workflowID !== undefined;
+
+    // Retry loop if appropriate
     let retryWaitMS = 1;
     const backoffFactor = 1.5;
-    const maxRetryWaitMS = 2000;
+    const maxRetryWaitMS = 2000; // Maximum wait 2 seconds.
 
     while (true) {
+      // Check to see if this tx has already been executed
+      const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
+      if (previousResult) {
+        DBOS.span?.setAttribute('cached', true);
+
+        if ('error' in previousResult) {
+          throw SuperJSON.parse(previousResult.error);
+        }
+        return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
+      }
+
       try {
         const result = await this.#knexDB.transaction<Return>(
           async (client) => {
-            // Check to see if this tx has already been executed
-            const previousResult = readOnly
-              ? undefined
-              : await KnexDSTH.#checkExecution(client, workflowID, functionNum);
-            if (previousResult) {
-              return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
-            }
-
             // execute user's transaction function
-            const result = await asyncLocalCtx.run({ client }, async () => {
+            const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
               return (await func.call(target, ...args)) as Return;
             });
 
             // save the output of read/write transactions
-            if (!readOnly) {
-              await KnexDSTH.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
-
-              // Note, existing code wraps #recordOutput call in a try/catch block that
-              // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.
-              // However, existing code doesn't make any logic decisions based on that error type.
-              // DBOSFailedSqlTransactionError does stored WF ID and function name, so I assume that info is logged out somewhere
+            if (saveResults) {
+              await KnexTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
             }
 
             return result;
           },
           { isolationLevel: config?.isolationLevel, readOnly: config?.readOnly },
         );
-        // TODO: span.setStatus({ code: SpanStatusCode.OK });
-        // TODO: this.tracer.endSpan(span);
 
         return result;
       } catch (error) {
         if (isPGRetriableTransactionError(error)) {
-          // TODO: span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
+          DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
           retryWaitMS = Math.min(retryWaitMS * backoffFactor, maxRetryWaitMS);
           continue;
         } else {
-          // TODO: span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-          // TODO: this.tracer.endSpan(span);
-
-          // TODO: currently, we are *not* recording errors in the txOutput table.
-          // For normal execution, this is fine because we also store tx step results (output and error) in the sysdb operation output table.
-          // However, I'm concerned that we have a dueling execution hole where one tx fails while another succeeds.
-          // This implies that we can end up in a situation where the step output records an error but the txOutput table records success.
+          if (saveResults) {
+            const message = SuperJSON.stringify(error);
+            await this.#recordError(workflowID, stepID!, message);
+          }
 
           throw error;
         }
@@ -160,55 +186,85 @@ class KnexDSTH implements DataSourceTransactionHandler {
   }
 }
 
+function isKnex(value: Knex | Knex.Config): value is Knex {
+  return 'raw' in value;
+}
+
 export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
-  static get client(): Knex.Transaction {
+  static #getClient(p?: KnexTransactionHandler) {
     if (!DBOS.isInTransaction()) {
       throw new Error('invalid use of KnexDataSource.client outside of a DBOS transaction.');
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('No async local context found.');
+      throw new Error('invalid use of KnexDataSource.client outside of a DBOS transaction.');
     }
+    if (p && p !== ctx.owner) throw new Error('Request of `KnexDataSource.client` from the wrong object.');
     return ctx.client;
   }
 
-  static async initializeInternalSchema(config: Knex.Config) {
-    const knexDB = knex(config);
-    try {
-      await knexDB.schema.createSchemaIfNotExists('dbos');
-      const exists = await knexDB.schema.withSchema('dbos').hasTable('transaction_completion');
-      if (!exists) {
-        await knexDB.schema.withSchema('dbos').createTable('transaction_completion', (table) => {
-          table.string('workflow_id').notNullable();
-          table.integer('function_num').notNullable();
-          table.string('output').nullable();
-          table.primary(['workflow_id', 'function_num']);
-        });
+  static get client(): Knex.Transaction {
+    return KnexDataSource.#getClient(undefined);
+  }
+
+  get client(): Knex.Transaction {
+    return KnexDataSource.#getClient(this.#provider);
+  }
+
+  static async initializeDBOSSchema(knexOrConfig: Knex.Config) {
+    if (isKnex(knexOrConfig)) {
+      await $initSchema(knexOrConfig);
+    } else {
+      const knexDB = knex(knexOrConfig);
+      try {
+        await $initSchema(knexDB);
+      } finally {
+        await knexDB.destroy();
       }
-    } finally {
-      await knexDB.destroy();
+    }
+
+    async function $initSchema(knexDB: Knex) {
+      await knexDB.raw(createTransactionCompletionSchemaPG);
+      await knexDB.raw(createTransactionCompletionTablePG);
     }
   }
 
-  readonly name: string;
-  #provider: KnexDSTH;
+  static async uninitializeDBOSSchema(knexOrConfig: Knex.Config) {
+    if (isKnex(knexOrConfig)) {
+      await $uninitSchema(knexOrConfig);
+    } else {
+      const knexDB = knex(knexOrConfig);
+      try {
+        await $uninitSchema(knexDB);
+      } finally {
+        await knexDB.destroy();
+      }
+    }
 
-  constructor(name: string, config: Knex.Config) {
-    this.name = name;
-    this.#provider = new KnexDSTH(name, config);
+    async function $uninitSchema(knexDB: Knex) {
+      await knexDB.raw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos;');
+    }
+  }
+
+  #provider: KnexTransactionHandler;
+
+  constructor(
+    readonly name: string,
+    config: Knex.Config,
+  ) {
+    this.#provider = new KnexTransactionHandler(name, config);
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: TransactionConfig) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: TransactionConfig) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: TransactionConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   transaction(config?: TransactionConfig) {
@@ -216,14 +272,17 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
       _target: object,
-      propertyKey: string,
+      propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       if (!descriptor.value) {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+      descriptor.value = ds.registerTransaction(descriptor.value, {
+        ...config,
+        name: config?.name ?? String(propertyKey),
+      });
 
       return descriptor;
     };

@@ -46,7 +46,6 @@ class ERD implements DBOSLifecycleCallback {
     this.initialized = true;
     return Promise.resolve();
   }
-  logRegisteredEndpoints() {}
 }
 
 const erd = new ERD();
@@ -68,7 +67,7 @@ export function EventConsumer(config?: string) {
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: [string, string, number]) => Promise<Return>>,
   ) {
     const { regInfo: receiverInfo } = DBOS.associateFunctionWithInfo(erd, inDescriptor.value!, {
-      classOrInst: target,
+      ctorOrProto: target,
       name: propertyKey,
     });
 

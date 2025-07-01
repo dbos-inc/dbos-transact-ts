@@ -1,6 +1,6 @@
 import { SpanStatusCode } from '@opentelemetry/api';
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { assertCurrentWorkflowContext, runWithDataSourceContext } from './context';
+import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import { getTransactionalDataSource, registerTransactionalDataSource } from './decorators';
@@ -40,7 +40,7 @@ export interface DataSourceTransactionHandler {
  * This is the suggested interface guideline for presenting to the end user, but not
  *   strictly required.
  */
-export interface DBOSDataSource<Config> {
+export interface DBOSDataSource<Config extends { name?: string }> {
   readonly name: string;
 
   /**
@@ -50,7 +50,7 @@ export interface DBOSDataSource<Config> {
    * @param name - Step name to show in the system database, traces, etc.
    * @param config - Transaction configuration options
    */
-  runTransaction<T>(callback: () => Promise<T>, name: string, config?: Config): Promise<T>;
+  runTransaction<T>(callback: () => Promise<T>, config?: Config): Promise<T>;
 
   /**
    * Register function as DBOS transaction, to be called within the context
@@ -65,7 +65,6 @@ export interface DBOSDataSource<Config> {
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: Config,
   ): (this: This, ...args: Args) => Promise<Return>;
 
@@ -83,18 +82,15 @@ export interface DBOSDataSource<Config> {
 
   // In addition to the named methods above, there should also be a way to get the
   //  strongly-typed transaction client object:
-  //   `static get whateverClient(): WhateverClient;`
+  //   `static get client(): WhateverClient;`
+  //   `get client(): WhateverClient;`
 
   // A way to initialize the internal schema used by the DS for transaction tracking
   //  This is only for testing, it should be documented how to create this entirely
   //  outside of DBOS.
-  //   `async initializeInternalSchema(): Promise<void>;`
+  //   `async initializeDBOSSchema(): Promise<void>;`
   //  or, it can be static, such as:
-  //   `static async initializeInternalSchema(options: Config)`
-
-  // A way to initialize the user's schema (for ORMs that are capable of this)
-  //  Again, this is only for testing, it should be doable entirely outside of DBOS
-  // `async createSchema(...)`
+  //   `static async initializeDBOSSchema(c: Config | Connection)`
 }
 
 /// Calling into DBOS
@@ -115,31 +111,38 @@ export async function runTransaction<T>(
   funcName: string,
   options: { dsName?: string; config?: unknown } = {},
 ) {
-  if (!DBOS.isWithinWorkflow) {
-    throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` outside of a workflow`);
+  const dsn = options.dsName ?? '<default>';
+  const ds = getTransactionalDataSource(dsn);
+
+  if (!DBOS.isWithinWorkflow()) {
+    if (getNextWFID(undefined)) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Invalid call to transaction '${funcName}' outside of a workflow; with directive to start a workflow.`,
+      );
+    }
+    return await runWithDataSourceContext(0, async () => {
+      return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
+    });
   }
   if (!DBOS.isInWorkflow()) {
     throw new DBOSInvalidWorkflowTransitionError(
       `Invalid call to \`${funcName}\` inside a \`step\`, \`transaction\`, or \`procedure\``,
     );
   }
-  const dsn = options.dsName ?? '<default>';
-  const ds = getTransactionalDataSource(dsn);
 
-  const wfctx = assertCurrentWorkflowContext();
-  const callnum = wfctx.functionIDGetIncrement();
+  const callnum = functionIDGetIncrement();
 
   const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
     funcName,
     {
-      operationUUID: wfctx.workflowUUID,
+      operationUUID: DBOS.workflowID,
       operationType: OperationType.TRANSACTION,
-      authenticatedUser: wfctx.authenticatedUser,
-      assumedRole: wfctx.assumedRole,
-      authenticatedRoles: wfctx.authenticatedRoles,
+      authenticatedUser: DBOS.authenticatedUser,
+      assumedRole: DBOS.assumedRole,
+      authenticatedRoles: DBOS.authenticatedRoles,
       // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
     },
-    wfctx.span,
+    DBOS.span,
   );
 
   try {
@@ -178,8 +181,17 @@ export function registerTransaction<This, Args extends unknown[], Return>(
   const dsn = dsName ?? '<default>';
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+    const ds = getTransactionalDataSource(dsn);
     if (!DBOS.isWithinWorkflow()) {
-      throw new DBOSInvalidWorkflowTransitionError(`Call to transaction '${options.name}' outside of a workflow`);
+      if (getNextWFID(undefined)) {
+        throw new DBOSInvalidWorkflowTransitionError(
+          `Call to transaction '${options.name}' made without starting workflow`,
+        );
+      }
+
+      return await runWithDataSourceContext(0, async () => {
+        return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
+      });
     }
 
     if (DBOS.isInTransaction() || DBOS.isInStep()) {
@@ -188,10 +200,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
       );
     }
 
-    const ds = getTransactionalDataSource(dsn);
-
-    const wfctx = assertCurrentWorkflowContext();
-    const callnum = wfctx.functionIDGetIncrement();
+    const callnum = functionIDGetIncrement();
     return DBOSExecutor.globalInstance!.runInternalStep<Return>(
       async () => {
         return await runWithDataSourceContext(callnum, async () => {

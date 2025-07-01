@@ -1,15 +1,16 @@
 {
   "name": "@dbos-inc/postgres-datasource",
   "version": "0.0.0-placeholder",
-  "description": "",
+  "description": "DBOS DataSource library for Postgres database client",
   "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "homepage": "https://docs.dbos.dev/",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact-ts",
-    "directory": "packages/knex-datasource"
+    "directory": "packages/postgres-datasource"
   },
-  "homepage": "https://docs.dbos.dev/",
-  "main": "index.js",
   "scripts": {
     "build": "tsc --project tsconfig.json",
     "test": "jest --detectOpenHandles"

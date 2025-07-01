@@ -9,7 +9,7 @@ import {
   isPGKeyConflictError,
   registerTransaction,
   runTransaction,
-  PGTransactionConfig as NodePostgresTransactionOptions,
+  PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
 } from '@dbos-inc/dbos-sdk/datasource';
@@ -19,47 +19,67 @@ import { SuperJSON } from 'superjson';
 
 interface NodePostgresDataSourceContext {
   client: ClientBase;
+  owner: NodePostgresTransactionHandler;
+}
+
+interface NodePostgresTransactionOptions extends PGTransactionConfig {
+  name?: string;
 }
 
 export { NodePostgresTransactionOptions };
 
 const asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
 
-class NodePGDSTH implements DataSourceTransactionHandler {
-  readonly name: string;
+class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'NodePostgresDataSource';
-  readonly #pool: Pool;
+  #poolField: Pool | undefined;
 
-  constructor(name: string, config: PoolConfig) {
-    this.name = name;
-    this.#pool = new Pool(config);
+  constructor(
+    readonly name: string,
+    private readonly config: PoolConfig,
+  ) {}
+
+  async initialize(): Promise<void> {
+    const pool = this.#poolField;
+    this.#poolField = new Pool(this.config);
+    await pool?.end();
   }
 
-  initialize(): Promise<void> {
-    return Promise.resolve();
+  async destroy(): Promise<void> {
+    const pool = this.#poolField;
+    this.#poolField = undefined;
+    await pool?.end();
   }
 
-  destroy(): Promise<void> {
-    return this.#pool.end();
+  get #pool(): Pool {
+    if (!this.#poolField) {
+      throw new Error(`DataSource ${this.name} is not initialized.`);
+    }
+    return this.#poolField;
   }
 
-  static async #checkExecution(
-    client: ClientBase,
+  async #checkExecution(
     workflowID: string,
-    functionNum: number,
-  ): Promise<{ output: string | null } | undefined> {
-    const { rows } = await client.query<{ output: string }>(
-      /*sql*/ `SELECT output FROM dbos.transaction_completion
+    stepID: number,
+  ): Promise<{ output: string | null } | { error: string } | undefined> {
+    type Result = { output: string | null; error: string | null };
+    const { rows } = await this.#pool.query<Result>(
+      /*sql*/
+      `SELECT output, error FROM dbos.transaction_completion
        WHERE workflow_id = $1 AND function_num = $2`,
-      [workflowID, functionNum],
+      [workflowID, stepID],
     );
-    return rows.length > 0 ? { output: rows[0].output } : undefined;
+    if (rows.length === 0) {
+      return undefined;
+    }
+    const { output, error } = rows[0];
+    return error !== null ? { error } : { output };
   }
 
   static async #recordOutput(
     client: ClientBase,
     workflowID: string,
-    functionNum: number,
+    stepID: number,
     output: string | null,
   ): Promise<void> {
     try {
@@ -67,7 +87,24 @@ class NodePGDSTH implements DataSourceTransactionHandler {
         /*sql*/
         `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
          VALUES ($1, $2, $3)`,
-        [workflowID, functionNum, output],
+        [workflowID, stepID, output],
+      );
+    } catch (error) {
+      if (isPGKeyConflictError(error)) {
+        throw new DBOSWorkflowConflictError(workflowID);
+      } else {
+        throw error;
+      }
+    }
+  }
+
+  async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
+    try {
+      await this.#pool.query(
+        /*sql*/
+        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
+         VALUES ($1, $2, $3)`,
+        [workflowID, stepID, error],
       );
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -107,68 +144,64 @@ class NodePGDSTH implements DataSourceTransactionHandler {
     ...args: Args
   ): Promise<Return> {
     const workflowID = DBOS.workflowID;
-    if (workflowID === undefined) {
-      throw new Error('Workflow ID is not set.');
-    }
-    const functionNum = DBOS.stepID;
-    if (functionNum === undefined) {
-      throw new Error('Function Number is not set.');
+    const stepID = DBOS.stepID;
+    if (workflowID !== undefined && stepID === undefined) {
+      throw new Error('DBOS.stepID is undefined inside a workflow.');
     }
 
     const readOnly = config?.readOnly ?? false;
+    const saveResults = !readOnly && workflowID !== undefined;
+
+    // Retry loop if appropriate
     let retryWaitMS = 1;
     const backoffFactor = 1.5;
-    const maxRetryWaitMS = 2000;
+    const maxRetryWaitMS = 2000; // Maximum wait 2 seconds.
 
     while (true) {
+      // Check to see if this tx has already been executed
+      const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
+      if (previousResult) {
+        DBOS.span?.setAttribute('cached', true);
+
+        if ('error' in previousResult) {
+          throw SuperJSON.parse(previousResult.error);
+        }
+
+        return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
+      }
+
       try {
-        const result = await this.#transaction<Return>(
-          async (client) => {
-            // Check to see if this tx has already been executed
-            const previousResult = readOnly
-              ? undefined
-              : await NodePGDSTH.#checkExecution(client, workflowID, functionNum);
-            if (previousResult) {
-              return (previousResult.output ? SuperJSON.parse(previousResult.output) : null) as Return;
-            }
+        const result = await this.#transaction<Return>(async (client) => {
+          // execute user's transaction function
+          const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
+            return (await func.call(target, ...args)) as Return;
+          });
 
-            // execute user's transaction function
-            const result = await asyncLocalCtx.run({ client }, async () => {
-              return (await func.call(target, ...args)) as Return;
-            });
+          // save the output of read/write transactions
+          if (saveResults) {
+            await NodePostgresTransactionHandler.#recordOutput(
+              client,
+              workflowID,
+              stepID!,
+              SuperJSON.stringify(result),
+            );
+          }
 
-            // save the output of read/write transactions
-            if (!readOnly) {
-              await NodePGDSTH.#recordOutput(client, workflowID, functionNum, SuperJSON.stringify(result));
-
-              // Note, existing code wraps #recordOutput call in a try/catch block that
-              // converts DB error with code 25P02 to DBOSFailedSqlTransactionError.
-              // However, existing code doesn't make any logic decisions based on that error type.
-              // DBOSFailedSqlTransactionError does stored WF ID and function name, so I assume that info is logged out somewhere
-            }
-
-            return result;
-          },
-          { isolationLevel: config?.isolationLevel, readOnly: config?.readOnly },
-        );
-        // TODO: span.setStatus({ code: SpanStatusCode.OK });
-        // TODO: this.tracer.endSpan(span);
+          return result;
+        }, config);
 
         return result;
       } catch (error) {
         if (isPGRetriableTransactionError(error)) {
-          // TODO: span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
+          DBOS.span?.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMS }, performance.now());
           await new Promise((resolve) => setTimeout(resolve, retryWaitMS));
           retryWaitMS = Math.min(retryWaitMS * backoffFactor, maxRetryWaitMS);
           continue;
         } else {
-          // TODO: span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-          // TODO: this.tracer.endSpan(span);
-
-          // TODO: currently, we are *not* recording errors in the txOutput table.
-          // For normal execution, this is fine because we also store tx step results (output and error) in the sysdb operation output table.
-          // However, I'm concerned that we have a dueling execution hole where one tx fails while another succeeds.
-          // This implies that we can end up in a situation where the step output records an error but the txOutput table records success.
+          if (saveResults) {
+            const message = SuperJSON.stringify(error);
+            await this.#recordError(workflowID, stepID!, message);
+          }
 
           throw error;
         }
@@ -178,18 +211,29 @@ class NodePGDSTH implements DataSourceTransactionHandler {
 }
 
 export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransactionOptions> {
-  static get client(): ClientBase {
+  static #getClient(p?: NodePostgresTransactionHandler): ClientBase {
     if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+      throw new Error('Invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('No async local context found.');
+      throw new Error('Invalid use of NodePostgresDataSource.client outside of a DBOS transaction.');
+    }
+    if (p && p !== ctx.owner) {
+      throw new Error('Use of `NodePostgresDataSource.client` from the wrong object');
     }
     return ctx.client;
   }
 
-  static async initializeInternalSchema(config: ClientConfig): Promise<void> {
+  static get client() {
+    return NodePostgresDataSource.#getClient(undefined);
+  }
+
+  get client() {
+    return NodePostgresDataSource.#getClient(this.#provider);
+  }
+
+  static async initializeDBOSSchema(config: ClientConfig): Promise<void> {
     const client = new Client(config);
     try {
       await client.connect();
@@ -200,25 +244,25 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     }
   }
 
-  readonly name: string;
-  #provider: NodePGDSTH;
+  #provider: NodePostgresTransactionHandler;
 
-  constructor(name: string, config: PoolConfig) {
-    this.name = name;
-    this.#provider = new NodePGDSTH(name, config);
+  constructor(
+    readonly name: string,
+    config: PoolConfig,
+  ) {
+    this.#provider = new NodePostgresTransactionHandler(name, config);
     registerDataSource(this.#provider);
   }
 
-  async runTransaction<T>(callback: () => Promise<T>, funcName: string, config?: NodePostgresTransactionOptions) {
-    return await runTransaction(callback, funcName, { dsName: this.name, config });
+  async runTransaction<T>(func: () => Promise<T>, config?: NodePostgresTransactionOptions) {
+    return await runTransaction(func, config?.name ?? func.name, { dsName: this.name, config });
   }
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    name: string,
     config?: NodePostgresTransactionOptions,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name }, config);
+    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
   }
 
   transaction(config?: NodePostgresTransactionOptions) {
@@ -226,14 +270,17 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
       _target: object,
-      propertyKey: string,
+      propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
       if (!descriptor.value) {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, propertyKey.toString(), config);
+      descriptor.value = ds.registerTransaction(descriptor.value, {
+        ...config,
+        name: config?.name ?? String(propertyKey),
+      });
 
       return descriptor;
     };

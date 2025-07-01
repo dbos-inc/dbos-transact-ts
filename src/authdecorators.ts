@@ -1,8 +1,6 @@
-import { DBOSContext, DBOSContextImpl, getCurrentDBOSContext } from './context';
+import { getCurrentContextStore } from './context';
 import { DBOS } from './dbos';
 import {
-  associateClassWithExternal,
-  associateMethodWithExternal,
   ClassAuthDefaults,
   DBOS_AUTH,
   DBOSMethodMiddlewareInstaller,
@@ -23,7 +21,9 @@ function checkMethodAuth(methReg: MethodRegistrationBase, args: unknown[]) {
     for (const role of requiredRoles) {
       if (set.has(role)) {
         authorized = true;
-        (getCurrentDBOSContext() as DBOSContextImpl).assumedRole = role;
+        if (getCurrentContextStore()) {
+          getCurrentContextStore()!.assumedRole = role;
+        }
         break;
       }
     }
@@ -54,37 +54,4 @@ const authChecker = new AuthChecker();
 
 export function registerAuthChecker() {
   registerMiddlewareInstaller(authChecker);
-}
-
-/** @deprecated Use `DBOS.defaultRequiredRole` */
-export function DefaultRequiredRole(anyOf: string[]) {
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
-    const clsreg = associateClassWithExternal(DBOS_AUTH, ctor) as ClassAuthDefaults;
-    clsreg.requiredRole = anyOf;
-    registerAuthChecker();
-  }
-  return clsdec;
-}
-
-/**
- * @deprecated - use `DBOS.requiredRole`
- */
-export function RequiredRole(anyOf: string[]) {
-  function apidec<This, Ctx extends DBOSContext, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: Ctx, ...args: Args) => Promise<Return>>,
-  ) {
-    const rr = associateMethodWithExternal(DBOS_AUTH, target, undefined, propertyKey.toString(), inDescriptor.value!);
-
-    (rr.regInfo as MethodAuth).requiredRole = anyOf;
-
-    inDescriptor.value = rr.registration.wrappedFunction ?? rr.registration.registeredFunction;
-
-    registerAuthChecker();
-
-    return inDescriptor;
-  }
-  return apidec;
 }

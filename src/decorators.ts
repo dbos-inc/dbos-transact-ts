@@ -1,28 +1,26 @@
 import 'reflect-metadata';
 
-import { TransactionConfig, TransactionContext } from './transaction';
-import { WorkflowConfig, WorkflowContext } from './workflow';
-import { StepConfig, StepContext } from './step';
+import { TransactionConfig } from './transaction';
+import { WorkflowConfig } from './workflow';
+import { StepConfig } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
-import { StoredProcedureConfig, StoredProcedureContext } from './procedure';
 import { DBOSEventReceiver } from './eventreceiver';
 import { InitContext } from './dbos';
 import { DataSourceTransactionHandler } from './datasource';
 
+export type TypedAsyncFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
+export type UntypedAsyncFunction = TypedAsyncFunction<unknown[], unknown>;
+
 /**
  * Interface for integrating into the DBOS startup/shutdown lifecycle
  */
-export abstract class DBOSLifecycleCallback {
+export interface DBOSLifecycleCallback {
   /** Called back during DBOS launch */
-  initialize(): Promise<void> {
-    return Promise.resolve();
-  }
+  initialize?(): Promise<void>;
   /** Called back upon shutdown (usually in tests) to close connections and free resources */
-  destroy(): Promise<void> {
-    return Promise.resolve();
-  }
+  destroy?(): Promise<void>;
   /** Called at launch; Implementers should emit a diagnostic list of all registrations */
-  logRegisteredEndpoints(): void {}
+  logRegisteredEndpoints?(): void;
 }
 
 const lifecycleListeners: DBOSLifecycleCallback[] = [];
@@ -323,8 +321,6 @@ export interface MethodRegistrationBase {
   registeredFunction: Function | undefined; // Function that is called by DBOS engine, including input validation and role check
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   origFunction: Function; // Function that the app provided
-  // Pass context as first arg?
-  readonly passContext: boolean;
 
   // Add an interceptor that, when function is run, get a chance to process arguments / throw errors
   addEntryInterceptor(func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[], seqNum?: number): void;
@@ -348,12 +344,10 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   }
 
   args: MethodParameter[] = [];
-  passContext: boolean = false;
 
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean, passContext: boolean) {
+  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean) {
     this.origFunction = origFunc;
     this.isInstance = isInstance;
-    this.passContext = passContext;
   }
 
   needInitialized: boolean = true;
@@ -663,7 +657,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   className: string | undefined,
   propertyKey: string | symbol,
   func: (this: This, ...args: Args) => Promise<Return>,
-  passContext: boolean,
 ) {
   let regtarget: AnyConstructor | undefined = undefined;
   let isInstance = false;
@@ -689,18 +682,11 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
 
   const fname = propertyKey.toString();
   if (!classReg.registeredOperations.has(fname)) {
-    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(func, isInstance, passContext));
+    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(func, isInstance));
   }
   const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(
     fname,
   )! as MethodRegistration<This, Args, Return>;
-
-  // Note: We cannot tell if the method takes a context or not.
-  //  Our @Workflow, @Transaction, and @Step decorators are the only ones that would know to set passContext.
-  // So, if passContext is indicated, add it to the registration.
-  if (passContext && !methReg.passContext) {
-    methReg.passContext = true;
-  }
 
   if (methReg.needInitialized) {
     methReg.needInitialized = false;
@@ -746,22 +732,6 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   return methReg;
 }
 
-export function registerAndWrapFunctionTakingContext<This, Args extends unknown[], Return>(
-  target: object,
-  propertyKey: string,
-  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-) {
-  ensureDBOSIsNotLaunched();
-  if (!descriptor.value) {
-    throw Error('Use of decorator when original method is undefined');
-  }
-
-  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, true);
-  descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
-
-  return { descriptor, registration };
-}
-
 export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: string,
@@ -772,7 +742,7 @@ export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return
     throw Error('Use of decorator when original method is undefined');
   }
 
-  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value, false);
+  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value);
   descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
 
   return { descriptor, registration };
@@ -786,7 +756,7 @@ export function registerAndWrapDBOSFunctionByName<This, Args extends unknown[], 
 ) {
   ensureDBOSIsNotLaunched();
 
-  const registration = getOrCreateMethodRegistration(target, className, funcName, func, false);
+  const registration = getOrCreateMethodRegistration(target, className, funcName, func);
 
   return { registration };
 }
@@ -967,8 +937,8 @@ export function getRegistrationsForExternal(
   funcName?: string,
 ) {
   const res: {
-    methodConfig: unknown;
-    classConfig: unknown;
+    methodConfig?: unknown;
+    classConfig?: unknown;
     methodReg: MethodRegistrationBase;
     paramConfig: { name: string; index: number; paramConfig?: object }[];
   }[] = [];
@@ -1045,94 +1015,6 @@ export function configureInstance<R extends ConfiguredInstance, T extends unknow
   return inst;
 }
 
-///////////////////////
-/* METHOD DECORATORS */
-///////////////////////
-
-/**
- * @deprecated Use `@DBOS.workflow`
- * To upgrade to DBOS 2.0+ syntax:
- *   Use `@DBOS.workflow` to decorate the method
- *   Remove the `WorkflowContext` parameter
- *   Use `DBOS` instead of the context to access DBOS functions
- *   Change all callers of the decorated function to call the function directly, or with `DBOS.startWorkflow`
- */
-export function Workflow(config: WorkflowConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: WorkflowContext, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.setWorkflowConfig(config);
-    return descriptor;
-  }
-  return decorator;
-}
-
-/**
- * @deprecated Use `@DBOS.transaction`
- * To upgrade to DBOS 2.0+ syntax:
- *   Use `@DBOS.transaction` to decorate the method
- *   Remove the `TransactionContext` parameter
- *   Use `DBOS` instead of the context to access DBOS functions
- *   Change all callers to call the decorated function directly
- */
-export function Transaction(config: TransactionConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: TransactionContext<any>, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.setTxnConfig(config);
-    return descriptor;
-  }
-  return decorator;
-}
-
-/**
- * @deprecated Use `@DBOS.storedProcedure`
- * To upgrade to DBOS 2.0+ syntax:
- *   Use `@DBOS.storedProcedure` to decorate the method
- *   Remove the context parameter and use `DBOS` instead of the context to access DBOS functions
- *   Change all callers to call the decorated function directly
- */
-export function StoredProcedure(config: StoredProcedureConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StoredProcedureContext, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.setProcConfig(config);
-    return descriptor;
-  }
-  return decorator;
-}
-
-/**
- * @deprecated Use `@DBOS.step`
- * To upgrade to DBOS 2.0+ syntax:
- *   Use `@DBOS.step` to decorate the method
- *   Remove the `StepContext` parameter
- *   Use `DBOS` instead of the context to access DBOS functions
- *   Change all callers to call the decorated function directly
- */
-export function Step(config: StepConfig = {}) {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: StepContext, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
-    registration.setStepConfig(config);
-    return descriptor;
-  }
-  return decorator;
-}
-
 /**
  * @deprecated Use ORM DSs
  */
@@ -1152,20 +1034,6 @@ export function DBOSInitializer() {
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   ) {
     const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-    registration.init = true;
-    return descriptor;
-  }
-  return decorator;
-}
-
-/** @deprecated */
-export function DBOSDeploy() {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ctx: InitContext, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = registerAndWrapFunctionTakingContext(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }

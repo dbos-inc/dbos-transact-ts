@@ -1,4 +1,7 @@
 import tsm from 'ts-morph';
+import { AsyncLocalStorage } from 'node:async_hooks';
+
+export const errorContext = new AsyncLocalStorage<Array<tsm.ts.Diagnostic>>();
 
 export type CompileMethodInfo = readonly [tsm.MethodDeclaration, StoredProcedureConfig];
 export type CompileResult = {
@@ -17,7 +20,7 @@ export interface StoredProcedureConfig {
 }
 
 export type DecoratorArgument = boolean | string | number | DecoratorArgument[] | Record<string, unknown>;
-type DbosDecoratorKind = 'handler' | 'storedProcedure' | 'transaction' | 'workflow' | 'step' | 'initializer';
+export type DbosDecoratorKind = 'handler' | 'storedProcedure' | 'transaction' | 'workflow' | 'step' | 'initializer';
 
 interface DbosDecoratorInfo {
   kind: DbosDecoratorKind;
@@ -46,7 +49,10 @@ export function compile(configFileOrProject: string | tsm.Project): CompileResul
         })
       : configFileOrProject;
 
-  const methods = project.getSourceFiles().flatMap(getStoredProcMethods).map(mapStoredProcConfig);
+  const methods = errorContext.run(diagnostics, () =>
+    project.getSourceFiles().flatMap(getStoredProcMethods).map(mapStoredProcConfig),
+  );
+
   if (methods.length === 0) {
     diagnostics.push(createDiagnostic('No stored procedure methods found'));
   } else {
@@ -373,7 +379,7 @@ function createDiagnostic(messageText: string, options?: DiagnosticOptions): tsm
   };
 }
 
-export function parseImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {
+function parseImportSpecifier(node: tsm.Identifier | undefined): tsm.ImportSpecifier | undefined {
   const symbol = node?.getSymbol();
   if (symbol) {
     const importSpecifiers = symbol
@@ -411,7 +417,12 @@ function parseDbosDecoratorInfo(node: tsm.Decorator): DbosDecoratorInfo | undefi
     if (impSpec && isDbosImport(impSpec)) {
       const kind = parseImportSpecifierStructureKind(impSpec.getStructure());
       if (kind) {
-        return { kind, version: 1 };
+        const ctx = errorContext.getStore();
+        if (!ctx) {
+          throw new Error('No error context found');
+        }
+        ctx.push(createDiagnostic(`v1 decorators not supported`, { node }));
+        return undefined;
       }
     }
   }
