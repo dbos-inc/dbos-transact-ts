@@ -329,6 +329,7 @@ export class DBOS {
       DBOS.logger.info(`Workflow Debugging complete. Exiting process.`);
       await executor.destroy();
       process.exit(0);
+      return; // return for cases where process.exit is mocked
     }
 
     await DBOSExecutor.globalInstance.initEventReceivers();
