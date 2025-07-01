@@ -1,6 +1,6 @@
 import { SpanStatusCode } from '@opentelemetry/api';
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { assertCurrentWorkflowContext, getNextWFID, runWithDataSourceContext } from './context';
+import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
@@ -134,20 +134,19 @@ export async function runTransaction<T>(
     );
   }
 
-  const wfctx = assertCurrentWorkflowContext();
-  const callnum = wfctx.functionIDGetIncrement();
+  const callnum = functionIDGetIncrement();
 
   const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
     funcName,
     {
-      operationUUID: wfctx.workflowUUID,
+      operationUUID: DBOS.workflowID,
       operationType: OperationType.TRANSACTION,
-      authenticatedUser: wfctx.authenticatedUser,
-      assumedRole: wfctx.assumedRole,
-      authenticatedRoles: wfctx.authenticatedRoles,
+      authenticatedUser: DBOS.authenticatedUser,
+      assumedRole: DBOS.assumedRole,
+      authenticatedRoles: DBOS.authenticatedRoles,
       // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
     },
-    wfctx.span,
+    DBOS.span,
   );
 
   try {
@@ -212,8 +211,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
       );
     }
 
-    const wfctx = assertCurrentWorkflowContext();
-    const callnum = wfctx.functionIDGetIncrement();
+    const callnum = functionIDGetIncrement();
     return DBOSExecutor.globalInstance!.runInternalStep<Return>(
       async () => {
         return await runWithDataSourceContext(callnum, async () => {

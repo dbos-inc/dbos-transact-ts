@@ -33,7 +33,7 @@ export function makeTestProject(...sources: TestSource[]) {
   return { project, sourceFiles };
 }
 
-function formatDiagnostics(diags: readonly tsm.Diagnostic[]) {
+export function formatDiagnostics(diags: readonly tsm.Diagnostic[]) {
   if (diags.length === 0) {
     return;
   }
@@ -45,7 +45,7 @@ function formatDiagnostics(diags: readonly tsm.Diagnostic[]) {
       tsm.ts.sys.useCaseSensitiveFileNames ? fileName : fileName.toLowerCase(),
   };
 
-  return tsm.ts.formatDiagnosticsWithColorAndContext(
+  return tsm.ts.formatDiagnostics(
     diags.map((d) => d.compilerObject),
     formatHost,
   );
@@ -70,10 +70,6 @@ declare module "@dbos-inc/dbos-sdk" {
     query<T>(query: string, values?: any[]): Promise<{ rows: T[] }>;
   }
 
-  export interface DBOSContext {
-    readonly logger: Logger;
-  }
-
   export interface WorkflowConfig { }
   export interface TransactionConfig {
     isolationLevel?: "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
@@ -85,33 +81,12 @@ declare module "@dbos-inc/dbos-sdk" {
     maxAttempts?: number;
     backoffRate?: number;
   }
+
   export interface StoredProcedureConfig {
     isolationLevel?: "READ UNCOMMITTED" | "READ COMMITTED" | "REPEATABLE READ" | "SERIALIZABLE";
     readOnly?: boolean;
     executeLocally?: boolean;
   }
-
-  export function GetApi(url:string);
-  export function PostApi(url:string);
-  export function PutApi(url:string);
-  export function PatchApi(url:string);
-  export function DeleteApi(url:string);
-
-  export function Workflow(config?: WorkflowConfig);
-  export function Communicator(config?: StepConfig);
-  export function Step(config?: StepConfig);
-  export function Transaction(config?: TransactionConfig);
-  export function StoredProcedure(config?: StoredProcedureConfig);
-  export function DBOSDeploy();
-  export function DBOSInitializer();
-
-  export interface HandlerContext extends DBOSContext { }
-  export interface WorkflowContext extends DBOSContext { }
-  export interface CommunicatorContext extends DBOSContext { }
-  export interface StepContext extends DBOSContext { }
-  export interface TransactionContext<T> extends DBOSContext { }
-  export interface StoredProcedureContext extends DBOSContext { }
-  export interface InitContext extends DBOSContext {}
 
   export class DBOS {
     static readonly logger: Logger;

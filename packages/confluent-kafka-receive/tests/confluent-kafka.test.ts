@@ -185,7 +185,6 @@ async function purgeTopic(admin: Admin, topic: string) {
   await new Promise((resolve) => setTimeout(resolve, 2000));
 }
 
-// eslint-disable-next-line @typescript-eslint/no-floating-promises
 suite('confluent-kafka-receive', async () => {
   const kafkaAvailable = await validateKafka(kafkaConfig);
   let producer: Producer | undefined = undefined;
@@ -247,8 +246,7 @@ suite('confluent-kafka-receive', async () => {
   });
 
   for (const { functionName, topic } of testCases) {
-    // eslint-disable-next-line @typescript-eslint/no-floating-promises
-    test(`${topic}-${functionName}`, { skip: !kafkaAvailable, timeout: 125000 }, async () => {
+    await test(`${topic}-${functionName}`, { skip: !kafkaAvailable, timeout: 125000 }, async () => {
       await purgeTopic(admin!, topic);
       const message = `test-message-${Date.now()}`;
       await producer!.send({ topic, messages: [{ value: message }] });
@@ -262,4 +260,4 @@ suite('confluent-kafka-receive', async () => {
       assert(!!status);
     });
   }
-});
+}).catch(assert.fail);

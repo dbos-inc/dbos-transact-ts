@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "scripts": {
     "build": "tsc",
-    "test": "npx dbos migrate && jest",
+    "test": "npx dbos migrate && jest --detectOpenHandles",
     "dev": "nodemon",
     "start": "npx dbos start"
   },
