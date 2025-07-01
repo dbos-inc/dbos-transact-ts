@@ -17,17 +17,13 @@ export type UntypedAsyncFunction = TypedAsyncFunction<unknown[], unknown>;
 /**
  * Interface for integrating into the DBOS startup/shutdown lifecycle
  */
-export abstract class DBOSLifecycleCallback {
+export interface DBOSLifecycleCallback {
   /** Called back during DBOS launch */
-  initialize(): Promise<void> {
-    return Promise.resolve();
-  }
+  initialize?(): Promise<void>;
   /** Called back upon shutdown (usually in tests) to close connections and free resources */
-  destroy(): Promise<void> {
-    return Promise.resolve();
-  }
+  destroy?(): Promise<void>;
   /** Called at launch; Implementers should emit a diagnostic list of all registrations */
-  logRegisteredEndpoints(): void {}
+  logRegisteredEndpoints?(): void;
 }
 
 // Middleware installation

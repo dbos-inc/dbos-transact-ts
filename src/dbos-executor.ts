@@ -1827,7 +1827,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.wfqEnded = wfQueueRunner.dispatchLoop(this);
 
     for (const lcl of getLifecycleListeners()) {
-      await lcl.initialize();
+      await lcl.initialize?.();
     }
   }
 
@@ -1835,7 +1835,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     this.logger.debug('Deactivating lifecycle listeners');
     for (const lcl of getLifecycleListeners()) {
       try {
-        await lcl.destroy();
+        await lcl.destroy?.();
       } catch (err) {
         const e = err as Error;
         this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);

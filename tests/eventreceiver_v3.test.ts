@@ -46,7 +46,6 @@ class ERD implements DBOSLifecycleCallback {
     this.initialized = true;
     return Promise.resolve();
   }
-  logRegisteredEndpoints() {}
 }
 
 const erd = new ERD();

@@ -408,7 +408,7 @@ export class DBOS {
     DBOSExecutor.globalInstance.scheduler?.logRegisteredSchedulerEndpoints();
     wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
     for (const lcl of getLifecycleListeners()) {
-      lcl.logRegisteredEndpoints();
+      lcl.logRegisteredEndpoints?.();
     }
   }
 
