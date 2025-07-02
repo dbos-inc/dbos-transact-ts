@@ -31,7 +31,7 @@ import { IsolationLevel, type TransactionConfig } from './transaction';
 import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
-import { GlobalLogger as Logger } from './telemetry/logs';
+import { GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import type { TelemetryConfig } from './telemetry';
 import { Pool, type PoolClient, type PoolConfig, type QueryResultRow } from 'pg';
@@ -251,7 +251,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   static systemDBSchemaName = 'dbos';
 
-  readonly logger: Logger;
+  readonly logger: GlobalLogger;
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   typeormEntities: Function[] = [];
@@ -291,7 +291,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // We always setup a collector to drain the signals queue, even if we don't have an exporter.
       this.telemetryCollector = new TelemetryCollector();
     }
-    this.logger = new Logger(this.telemetryCollector, this.config.telemetry.logs);
+    this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs);
     this.tracer = new Tracer(this.telemetryCollector);
 
     if (this.debugMode) {

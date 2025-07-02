@@ -1,5 +1,5 @@
 import { Tracer } from './telemetry/traces';
-import { GlobalLogger as Logger } from './telemetry/logs';
+import { GlobalLogger } from './telemetry/logs';
 import type {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
@@ -39,7 +39,7 @@ export interface DBOSEventReceiverRegistration {
  */
 export interface DBOSExecutorContext {
   /** Logging service; @deprecated: Use `DBOS.logger` instead. */
-  readonly logger: Logger;
+  readonly logger: GlobalLogger;
   /** Tracing service; @deprecated: Use `DBOS.tracer` instead.  */
   readonly tracer: Tracer;
 

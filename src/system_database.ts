@@ -18,7 +18,7 @@ import {
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
 import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
-import { GlobalLogger as Logger } from './telemetry/logs';
+import { GlobalLogger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
 import path from 'path';
 import { WorkflowQueue } from './wfqueue';
@@ -205,7 +205,7 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
-export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: Logger) {
+export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: GlobalLogger) {
   const migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
   const knexConfig = {
     client: 'pg',
@@ -620,7 +620,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   constructor(
     readonly pgPoolConfig: PoolConfig,
     readonly systemDatabaseName: string,
-    readonly logger: Logger,
+    readonly logger: GlobalLogger,
     readonly sysDbPoolSize?: number,
   ) {
     // Craft a db string from the app db string, replacing the database name:

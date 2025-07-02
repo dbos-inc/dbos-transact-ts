@@ -136,7 +136,7 @@ export interface DLogger {
 }
 
 // Wrapper around our global logger. Expected to be instantiated by a new contexts so they can inject contextual metadata
-export class Logger implements DLogger {
+export class DBOSContextualLogger implements DLogger {
   readonly metadata: ContextualMetadata;
   constructor(
     private readonly globalLogger: GlobalLogger,

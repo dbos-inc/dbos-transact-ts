@@ -1,5 +1,5 @@
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { Logger as DBOSLogger } from './telemetry/logs';
+import { DBOSContextualLogger } from './telemetry/logs';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { UserDatabaseClient } from './user_database';
@@ -17,7 +17,7 @@ export interface DBOSContextOptions {
   idAssignedForNextWorkflow?: string;
   queueAssignedForWorkflows?: string;
   span?: Span;
-  logger?: DBOSLogger;
+  logger?: DBOSContextualLogger;
   authenticatedUser?: string;
   authenticatedRoles?: string[];
   assumedRole?: string;
