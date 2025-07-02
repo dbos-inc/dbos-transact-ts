@@ -13,6 +13,7 @@ import {
   DBOSConfigInternal,
   isDeprecatedDBOSConfig,
   DBOSExecutor,
+  DBOSEventReceiverState,
   InternalWorkflowParams,
 } from './dbos-executor';
 import { Tracer } from './telemetry/traces';
@@ -26,7 +27,6 @@ import {
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
-import { DBOSEventReceiverState, DBOSExecutorContext } from './eventreceiver';
 import { DLogger, GlobalLogger } from './telemetry/logs';
 import {
   DBOSConfigKeyTypeError,
@@ -164,7 +164,7 @@ export function getExecutor() {
   if (!DBOSExecutor.globalInstance) {
     throw new DBOSExecutorNotInitializedError();
   }
-  return DBOSExecutor.globalInstance as DBOSExecutorContext;
+  return DBOSExecutor.globalInstance;
 }
 
 export function runInternalStep<T>(callback: () => Promise<T>, funcName: string, childWFID?: string): Promise<T> {

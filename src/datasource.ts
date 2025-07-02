@@ -10,6 +10,7 @@ import {
   registerTransactionalDataSource,
 } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
+import type { Notification } from 'pg';
 
 /**
  * This interface is to be used for implementers of transactional data sources
@@ -299,4 +300,10 @@ export function isPGKeyConflictError(error: unknown): boolean {
 
 export function isPGFailedSqlTransactionError(error: unknown): boolean {
   return getPGErrorCode(error) === '25P02';
+}
+
+export type PGDBNotification = Notification;
+export type PGDBNotificationCallback = (n: PGDBNotification) => void;
+export interface PGDBNotificationListener {
+  close(): Promise<void>;
 }

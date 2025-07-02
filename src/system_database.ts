@@ -1,4 +1,4 @@
-import { DBOSConfigInternal, DBOSExecutor } from './dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor, DBOSEventReceiverState } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
   DBOSWorkflowConflictError,
@@ -22,7 +22,6 @@ import { GlobalLogger as Logger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
 import path from 'path';
 import { WorkflowQueue } from './wfqueue';
-import { DBOSEventReceiverState } from './eventreceiver';
 import { randomUUID } from 'crypto';
 
 /* Result from Sys DB */

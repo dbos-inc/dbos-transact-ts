@@ -91,13 +91,13 @@ import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
+import { GetWorkflowsInput, InitContext } from '.';
 
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DBOSScheduler } from './scheduler/scheduler';
-import { DBOSEventReceiverState, DBNotificationCallback, DBNotificationListener } from './eventreceiver';
+import { PGDBNotificationCallback, PGDBNotificationListener } from './datasource';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
 import {
@@ -183,12 +183,30 @@ export const TempWorkflowType = {
 
 type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
 
+/**
+ * State item to be kept in the DBOS system database on behalf of clients
+ */
+export interface DBOSEventReceiverState {
+  /** Name of event receiver service */
+  service: string;
+  /** Fully qualified function name for which state is kept */
+  workflowFnName: string;
+  /** subkey within the service+workflowFnName */
+  key: string;
+  /** Value kept for the service+workflowFnName+key combination */
+  value?: string;
+  /** Updated time (used to version the value) */
+  updateTime?: number;
+  /** Updated sequence number (used to version the value) */
+  updateSeq?: bigint;
+}
+
 export interface DBOSExecutorOptions {
   systemDatabase?: SystemDatabase;
   debugMode?: boolean;
 }
 
-export class DBOSExecutor implements DBOSExecutorContext {
+export class DBOSExecutor {
   initialized: boolean;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
@@ -1727,7 +1745,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async userDBListen(channels: string[], callback: DBNotificationCallback): Promise<DBNotificationListener> {
+  async userDBListen(channels: string[], callback: PGDBNotificationCallback): Promise<PGDBNotificationListener> {
     const notificationsClient = await this.procedurePool.connect();
     for (const nname of channels) {
       await notificationsClient.query(`LISTEN ${nname};`);
