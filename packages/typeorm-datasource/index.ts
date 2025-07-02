@@ -294,8 +294,18 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: TypeORMTransactionConfig,
+    target?: { ctorOrProto?: object; className?: string },
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
+    return registerTransaction(
+      this.name,
+      func,
+      {
+        name: config?.name ?? func.name,
+        className: target?.className,
+        ctorOrProto: target?.ctorOrProto,
+      },
+      config,
+    );
   }
 
   /**
@@ -305,7 +315,7 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
-      _target: object,
+      target: object,
       propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
@@ -313,10 +323,14 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
         throw new Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, {
-        ...config,
-        name: config?.name ?? String(propertyKey),
-      });
+      descriptor.value = ds.registerTransaction(
+        descriptor.value,
+        {
+          ...config,
+          name: config?.name ?? String(propertyKey),
+        },
+        { ctorOrProto: target },
+      );
 
       return descriptor;
     };

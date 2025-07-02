@@ -305,9 +305,18 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: KnexTransactionConfig,
-    name?: string,
+    target?: { ctorOrProto?: object; className?: string },
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(
+      this.name,
+      func,
+      {
+        name: config?.name ?? func.name,
+        className: target?.className,
+        ctorOrProto: target?.ctorOrProto,
+      },
+      config,
+    );
   }
 
   static registerTransaction<This, Args extends unknown[], Return>(
@@ -323,7 +332,7 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
-      _target: object,
+      target: object,
       propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
@@ -331,7 +340,14 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, config?.name ?? String(propertyKey));
+      descriptor.value = ds.registerTransaction(
+        descriptor.value,
+        {
+          ...config,
+          name: config?.name ?? String(propertyKey),
+        },
+        { ctorOrProto: target },
+      );
 
       return descriptor;
     };

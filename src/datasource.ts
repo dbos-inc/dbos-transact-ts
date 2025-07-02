@@ -64,13 +64,14 @@ export interface DBOSDataSource<Config extends { name?: string }> {
    * Providing a static version of this functionality is optional.
    *
    * @param func - Function to wrap
-   * @param name - Name of function
-   * @param config - Transaction settings
+   * @param config - Transaction settings, including function `name`
+   * @param target - Class name, or class ctor/prototype
    * @returns Wrapped function, to be called instead of `func`
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: Config,
+    target?: { ctorOrProto?: object; className?: string },
   ): (this: This, ...args: Args) => Promise<Return>;
 
   /**
