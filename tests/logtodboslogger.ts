@@ -1,5 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { generateDBOSTestConfig } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 class WF {
   @DBOS.step()
@@ -23,18 +23,20 @@ class WF {
 
 async function main() {
   const config = generateDBOSTestConfig();
-  /*
   if (!config.telemetry.logs) {
-    config.telemetry.logs = {addContextMetadata: true};
+    config.telemetry.logs = {};
   }
   config.telemetry.logs.addContextMetadata = true;
   config.telemetry.logs.forceConsole = true;
-  */
+  config.telemetry.logs.logLevel = 'debug';
+  config.telemetry.logs.silent = false;
+  await setUpDBOSTestDb(config);
+
   DBOS.setConfig(config);
   await DBOS.launch();
-  //await DBOS.withNextWorkflowID('loggerWorkflowId', async() =>{
-  DBOS.logger.info(`The computed answer is ${await WF.loggingWorkflow()}`);
-  //});
+  await DBOS.withNextWorkflowID('loggerWorkflowId', async () => {
+    DBOS.logger.info(`The computed answer is ${await WF.loggingWorkflow()}`);
+  });
   await DBOS.shutdown();
 }
 

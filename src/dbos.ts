@@ -1151,6 +1151,7 @@ export class DBOS {
         }
       }
     } else {
+      const span = options.span;
       if (!options.span) {
         options.span = DBOS.#executor.tracer.startSpan('topContext', {
           operationUUID: options.idAssignedForNextWorkflow,
@@ -1161,7 +1162,11 @@ export class DBOS {
         });
       }
 
-      return runWithTopContext(options, callback);
+      try {
+        return await runWithTopContext(options, callback);
+      } finally {
+        options.span = span;
+      }
     }
   }
 

@@ -6,6 +6,7 @@ import { UserDatabaseClient } from './user_database';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import Koa from 'koa';
+import { DBOSExecutor } from './dbos-executor';
 
 export interface StepStatus {
   stepID: number;
@@ -147,12 +148,15 @@ export async function runInStepContext<R>(
     maxAttempts: currentAttempt ? maxAttempts : undefined,
   };
 
+  const span = pctx.span;
+
   return await runWithParentContext(
     pctx,
     {
       stepStatus: stepStatus,
       curStepFunctionId: stepID,
       parentCtx: pctx,
+      logger: span ? new DBOSContextualLogger(DBOSExecutor.globalInstance!.logger, { span }) : pctx.logger,
     },
     callback,
   );

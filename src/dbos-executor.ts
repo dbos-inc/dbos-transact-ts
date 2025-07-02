@@ -31,7 +31,7 @@ import { IsolationLevel, type TransactionConfig } from './transaction';
 import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
-import { GlobalLogger } from './telemetry/logs';
+import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import type { TelemetryConfig } from './telemetry';
 import { Pool, type PoolClient, type PoolConfig, type QueryResultRow } from 'pg';
@@ -876,6 +876,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
             timeoutMS,
             deadlineEpochMS,
             workflowId: workflowID,
+            logger: new DBOSContextualLogger(this.logger, { span }),
           },
           () => {
             const callPromise = wf.call(params.configuredInstance, ...args);
@@ -1203,6 +1204,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         // Execute the user's transaction.
+        const elog = this.logger;
         const result = await (async function () {
           try {
             return await runWithParentContext(
@@ -1214,6 +1216,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
                 curTxFunctionId: funcId,
                 parentCtx: pctx,
                 sqlClient: client,
+                logger: new DBOSContextualLogger(elog, { span }),
               },
               async () => {
                 const tf = txn as unknown as (...args: T) => Promise<R>;
@@ -1429,6 +1432,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         // Execute the user's transaction.
+        const elog = this.logger;
         const result = await (async function () {
           try {
             // Check we are in a workflow context and not in a step / transaction already
@@ -1442,6 +1446,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
                 parentCtx: pctx,
                 isInStoredProc: true,
                 sqlClient: client,
+                logger: new DBOSContextualLogger(elog, { span }),
               },
               async () => {
                 const pf = proc as unknown as TypedAsyncFunction<T, R>;
