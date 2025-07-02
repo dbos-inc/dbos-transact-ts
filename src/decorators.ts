@@ -7,9 +7,7 @@ import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './erro
 import { InitContext } from './dbos';
 import { DataSourceTransactionHandler } from './datasource';
 
-////////////
-// Interfaces
-////////////
+// #region Interfaces and supporting types
 
 export type TypedAsyncFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
 export type UntypedAsyncFunction = TypedAsyncFunction<unknown[], unknown>;
@@ -448,6 +446,10 @@ export class ClassRegistration implements RegistrationDefaults {
   constructor() {}
 }
 
+// #endregion
+
+// #region Global registration structures and functions
+
 class StackGrabber extends Error {
   constructor() {
     super('StackGrabber');
@@ -461,10 +463,6 @@ class StackGrabber extends Error {
       .map((l) => '>>> ' + l.replace(/^\s*at\s*/, '')); // Remove the first lines
   }
 }
-
-////////////
-// Global registration structures and functions
-////////////
 
 // Track if DBOS is launched, and if so, from where
 let dbosLaunchPoint: string[] | undefined = undefined;
@@ -826,25 +824,16 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
   return clsReg;
 }
 
-/** @deprecated Use `new` */
-export function configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
-  cls: new (name: string, ...args: T) => R,
-  name: string,
-  ...args: T
-): R {
-  const inst = new cls(name, ...args);
-  return inst;
-}
-
 export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
   const classReg = classesByName.get(clsname)?.reg;
   if (!classReg) return null;
   return classReg.configuredInstances.get(cfgname) ?? null;
 }
 
-/////
-// Transactional data source registration
-/////
+// #endregion
+
+// #region Transactional data source registration
+
 export const transactionalDataSources: Map<string, DataSourceTransactionHandler> = new Map();
 
 // Register data source (user version)
@@ -864,6 +853,10 @@ export function getTransactionalDataSource(name: string) {
   throw new DBOSNotRegisteredError(name, `Data source '${name}' is not registered`);
 }
 
+// #endregion
+
+// #region External (event receiver v3)
+
 export function associateClassWithExternal(
   external: AnyConstructor | object | string,
   cls: AnyConstructor | string,
@@ -872,8 +865,6 @@ export function associateClassWithExternal(
   const clsreg = getClassRegistrationByName(clsn, true);
   return clsreg.getRegisteredInfo(external);
 }
-
-// Event receiver v3
 
 /*
  * Associates a DBOS function or method with an external class or object.
@@ -991,13 +982,9 @@ export function getRegistrationsForExternal(
   }
 }
 
-////////////
-// Decorator-oriented
-////////////
+// #endregion
 
-//////////////////////////
-/* PARAMETER DECORATORS */
-//////////////////////////
+// #region Parameter decorators
 
 export function ArgName(name: string) {
   return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
@@ -1008,10 +995,9 @@ export function ArgName(name: string) {
   };
 }
 
-///////////////////////
-/* CLASS DECORATORS */
-///////////////////////
+// #endregion
 
+// #region Class decorators
 /**
  * @deprecated Use ORM DSs
  */
@@ -1024,6 +1010,9 @@ export function OrmEntities(entities: Function[] | { [key: string]: object } = [
   return clsdec;
 }
 
+// #endregion
+
+// #region Method decorators
 export function DBOSInitializer() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,
@@ -1036,3 +1025,5 @@ export function DBOSInitializer() {
   }
   return decorator;
 }
+
+// #endregion
