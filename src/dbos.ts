@@ -1269,7 +1269,7 @@ export class DBOS {
         topic,
       );
     }
-    return DBOS.#executor.send(destinationID, message, topic, idempotencyKey); // Temp WF variant
+    return DBOS.#executor.runSendTempWF(destinationID, message, topic, idempotencyKey); // Temp WF variant
   }
 
   /**
@@ -1618,7 +1618,7 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.#executor.transaction(
+        return await DBOS.#executor.runTransactionTempWF(
           registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
           wfParams,
           ...rawArgs,
@@ -1682,7 +1682,7 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.#executor.procedure(
+        return await DBOS.#executor.runProcedureTempWF(
           registration.registeredFunction as (...args: Args) => Promise<Return>,
           wfParams,
           ...rawArgs,
@@ -1770,8 +1770,8 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.#executor.external(
-          registration.registeredFunction as unknown as TypedAsyncFunction<Args, Return>,
+        return await DBOS.#executor.runStepTempWF(
+          registration.registeredFunction as TypedAsyncFunction<Args, Return>,
           wfParams,
           ...rawArgs,
         );

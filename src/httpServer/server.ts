@@ -729,7 +729,7 @@ export class DBOSHttpServer {
           };
           await runWithTopContext(dctx, async () => {
             if (ro.txnConfig) {
-              koaCtxt.body = await dbosExec.transaction(
+              koaCtxt.body = await dbosExec.runTransactionTempWF(
                 ro.registeredFunction as UntypedAsyncFunction,
                 wfParams,
                 ...args,
@@ -739,7 +739,11 @@ export class DBOSHttpServer {
                 await dbosExec.workflow(ro.registeredFunction as UntypedAsyncFunction, wfParams, ...args)
               ).getResult();
             } else if (ro.stepConfig) {
-              koaCtxt.body = await dbosExec.external(ro.registeredFunction as UntypedAsyncFunction, wfParams, ...args);
+              koaCtxt.body = await dbosExec.runStepTempWF(
+                ro.registeredFunction as UntypedAsyncFunction,
+                wfParams,
+                ...args,
+              );
             } else {
               // Directly invoke the handler code.
               const cresult = await ro.invoke(undefined, [...args]);

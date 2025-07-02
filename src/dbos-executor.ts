@@ -97,7 +97,6 @@ import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DBOSScheduler } from './scheduler/scheduler';
-import { PGDBNotificationCallback, PGDBNotificationListener } from './datasource';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
 import {
@@ -925,7 +924,7 @@ export class DBOSExecutor {
     return rows;
   }
 
-  async transaction<T extends unknown[], R>(
+  async runTransactionTempWF<T extends unknown[], R>(
     txn: (...args: T) => Promise<R>,
     params: WorkflowParams,
     ...args: T
@@ -1141,7 +1140,7 @@ export class DBOSExecutor {
     }
   }
 
-  async procedure<T extends unknown[], R>(
+  async runProcedureTempWF<T extends unknown[], R>(
     proc: (...args: T) => Promise<R>,
     params: WorkflowParams,
     ...args: T
@@ -1456,7 +1455,7 @@ export class DBOSExecutor {
     }
   }
 
-  async external<T extends unknown[], R>(
+  async runStepTempWF<T extends unknown[], R>(
     stepFn: TypedAsyncFunction<T, R>,
     params: WorkflowParams,
     ...args: T
@@ -1633,7 +1632,7 @@ export class DBOSExecutor {
     }
   }
 
-  async send<T>(destinationId: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  async runSendTempWF<T>(destinationId: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const temp_workflow = async (destinationId: string, message: T, topic?: string) => {
       const ctx = getCurrentContextStore();
@@ -1671,7 +1670,6 @@ export class DBOSExecutor {
    * Fork a workflow.
    * The forked workflow will be assigned a new ID.
    */
-
   forkWorkflow(
     workflowID: string,
     startStep: number,
@@ -1743,28 +1741,6 @@ export class DBOSExecutor {
     } else {
       return await this.userDatabase.query(sql);
     }
-  }
-
-  async userDBListen(channels: string[], callback: PGDBNotificationCallback): Promise<PGDBNotificationListener> {
-    const notificationsClient = await this.procedurePool.connect();
-    for (const nname of channels) {
-      await notificationsClient.query(`LISTEN ${nname};`);
-    }
-
-    notificationsClient.on('notification', callback);
-
-    return {
-      close: async () => {
-        for (const nname of channels) {
-          try {
-            await notificationsClient.query(`UNLISTEN ${nname};`);
-          } catch (e) {
-            this.logger.warn(e);
-          }
-          notificationsClient.release();
-        }
-      },
-    };
   }
 
   /* INTERNAL HELPERS */
