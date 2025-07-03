@@ -26,21 +26,15 @@ export enum SchedulerMode {
 /**
  * Configuration for a `@DBOS.scheduled` workflow
  */
-export class SchedulerConfig {
-  /** Schedule, in 5- or 6-spot crontab format; defaults to scheduling every minute */
-  crontab: string = '* * * * *';
+export interface SchedulerConfig {
+  /** Schedule, in 5- or 6-spot crontab format */
+  crontab: string;
   /**
    * Indicates whether or not to retroactively start workflows that were scheduled during
    *  times when the app was not running.  @see `SchedulerMode`.
    */
-  mode?: SchedulerMode = SchedulerMode.ExactlyOncePerIntervalWhenActive;
-  /** If set, workflows will be enqueued on the named queue, rather than being started immediately */
-  queueName?: string;
-}
-
-interface SchedulerMethodConfig {
-  crontab?: string;
   mode?: SchedulerMode;
+  /** If set, workflows will be enqueued on the named queue, rather than being started immediately */
   queueName?: string;
 }
 
@@ -173,8 +167,8 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
   static #getConfig(regOp: { methodConfig?: unknown; methodReg: MethodRegistrationBase }) {
     const name = `${regOp.methodReg.className}.${regOp.methodReg.name}`;
-    const methodConfig = regOp.methodConfig as SchedulerMethodConfig;
-    const crontab = methodConfig.crontab ?? '* * * * *';
+    const methodConfig = regOp.methodConfig as SchedulerConfig;
+    const crontab = methodConfig.crontab;
     const mode = methodConfig.mode ?? SchedulerMode.ExactlyOncePerIntervalWhenActive;
     const queueName = methodConfig.queueName;
     return { name, crontab, mode, queueName };
@@ -202,13 +196,13 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
   // below or getAssociatedInfo above
   static registerScheduled<This, Return>(
     func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
+    crontab: string,
     options: {
       ctorOrProto?: object;
       className?: string;
       name?: string;
-      queueName?: string;
-      crontab?: string;
       mode?: SchedulerMode;
+      queueName?: string;
     } = {},
   ) {
     const { regInfo } = DBOS.associateFunctionWithInfo(SCHEDULER_EVENT_SERVICE_NAME, func, {
@@ -217,8 +211,8 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
       name: options.name ?? func.name,
     });
 
-    const schedRegInfo = regInfo as SchedulerMethodConfig;
-    schedRegInfo.crontab = options.crontab;
+    const schedRegInfo = regInfo as SchedulerConfig;
+    schedRegInfo.crontab = crontab;
     schedRegInfo.mode = options.mode;
     schedRegInfo.queueName = options.queueName;
   }

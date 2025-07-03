@@ -1377,17 +1377,18 @@ export class DBOS {
    */
   static registerScheduled<This, Return>(
     func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
+    crontab: string,
     options: {
       ctorOrProto?: object;
       className?: string;
       name?: string;
-      crontab?: string;
       mode?: SchedulerMode;
       queueName?: string;
     } = {},
   ) {
-    ScheduledReceiver.registerScheduled(func, options);
+    ScheduledReceiver.registerScheduled(func, crontab, options);
   }
+
   //////
   // Decorators
   //////
@@ -1402,10 +1403,9 @@ export class DBOS {
       descriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>,
     ) {
       if (descriptor.value) {
-        DBOS.registerScheduled(descriptor.value, {
+        DBOS.registerScheduled(descriptor.value, config.crontab, {
           ctorOrProto: target,
           name: String(propertyKey),
-          crontab: config.crontab,
           mode: config.mode,
           queueName: config.queueName,
         });
