@@ -70,6 +70,7 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
     DBOS.registerLifecycleCallback(this);
   }
 
+  // eslint-disable-next-line @typescript-eslint/require-await
   async initialize(): Promise<void> {
     for (const regOp of DBOS.getAssociatedInfo(SCHEDULER_EVENT_SERVICE_NAME)) {
       const func = regOp.methodReg.registeredFunction as ScheduledMessageHandler<unknown> | undefined;
@@ -127,10 +128,12 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
       if (sleepTime > 0) {
         await new Promise<void>((resolve, reject) => {
+          // eslint-disable-next-line prefer-const
           let timeoutID: NodeJS.Timeout;
 
           const onAbort = () => {
             clearTimeout(timeoutID);
+            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
             reject();
           };
 
@@ -138,6 +141,7 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
           if (signal.aborted) {
             signal.removeEventListener('abort', onAbort);
+            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
             return reject();
           }
 
