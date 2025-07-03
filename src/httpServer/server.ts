@@ -645,23 +645,25 @@ export class DBOSHttpServer {
         try {
           // Check for auth first
           if (defaults?.authMiddleware) {
-            const res = await defaults.authMiddleware({
-              name: ro.name,
-              requiredRole: ro.getRequiredRoles(),
-              koaContext: koaCtxt,
-              logger: dbosExec.ctxLogger,
-              span,
-              getConfig: (key: string, def) => {
-                return DBOS.getConfig(key, def);
-              },
-              query: (query, ...args) => {
-                return dbosExec.userDatabase.queryFunction(query, ...args);
-              },
+            await runWithTopContext(dctx, async () => {
+              const res = await defaults.authMiddleware!({
+                name: ro.name,
+                requiredRole: ro.getRequiredRoles(),
+                koaContext: koaCtxt,
+                logger: dbosExec.ctxLogger,
+                span,
+                getConfig: (key: string, def) => {
+                  return DBOS.getConfig(key, def);
+                },
+                query: (query, ...args) => {
+                  return dbosExec.userDatabase.queryFunction(query, ...args);
+                },
+              });
+              if (res) {
+                dctx.authenticatedUser = res.authenticatedUser;
+                dctx.authenticatedRoles = res.authenticatedRoles;
+              }
             });
-            if (res) {
-              dctx.authenticatedUser = res.authenticatedUser;
-              dctx.authenticatedRoles = res.authenticatedRoles;
-            }
           }
 
           // Parse the arguments.
