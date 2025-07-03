@@ -44,11 +44,7 @@ export interface SchedulerConfig {
 
 // Scheduled Time. Actual Time.
 export type ScheduledArgs = [Date, Date];
-type ScheduledMessageHandler<Return> = (...args: ScheduledArgs) => Promise<Return>;
-
-export interface SchedulerRegistrationBase extends MethodRegistrationBase {
-  schedulerConfig?: SchedulerConfig;
-}
+type ScheduledHandler<Return> = (...args: ScheduledArgs) => Promise<Return>;
 
 ///////////////////////////
 // Scheduler Management
@@ -67,20 +63,28 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
   // eslint-disable-next-line @typescript-eslint/require-await
   async initialize(): Promise<void> {
     for (const regOp of DBOS.getAssociatedInfo(SCHEDULER_EVENT_SERVICE_NAME)) {
-      const func = regOp.methodReg.registeredFunction as ScheduledMessageHandler<unknown> | undefined;
-      if (func === undefined) {
-        continue; // TODO: Log?
+      if (regOp.methodReg.registeredFunction === undefined) {
+        DBOS.logger.warn(
+          `Scheduled workflow ${regOp.methodReg.className}.${regOp.methodReg.name} is missing registered function; skipping`,
+        );
+        continue;
       }
-      const { name, crontab, mode, queueName } = ScheduledReceiver.#getConfig(regOp);
-      const timeMatcher = new TimeMatcher(crontab);
 
+      const { crontab, mode, queueName } = regOp.methodConfig as Partial<SchedulerConfig>;
+      if (!crontab) {
+        DBOS.logger.warn(
+          `Scheduled workflow ${regOp.methodReg.className}.${regOp.methodReg.name} is missing crontab; skipping`,
+        );
+        continue;
+      }
+
+      const timeMatcher = new TimeMatcher(crontab);
       const promise = ScheduledReceiver.#schedulerLoop(
-        func,
-        name,
-        this.#controller.signal,
+        regOp.methodReg,
         timeMatcher,
-        mode,
+        mode ?? SchedulerMode.ExactlyOncePerIntervalWhenActive,
         queueName,
+        this.#controller.signal,
       );
       this.#disposables.push(promise);
     }
@@ -95,19 +99,25 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
   logRegisteredEndpoints(): void {
     DBOS.logger.info('Scheduled endpoints:');
     for (const regOp of DBOS.getAssociatedInfo(SCHEDULER_EVENT_SERVICE_NAME)) {
-      const { name, crontab, mode } = ScheduledReceiver.#getConfig(regOp);
-      DBOS.logger.info(`    ${name} @ ${crontab}; ${mode}`);
+      const name = `${regOp.methodReg.className}.${regOp.methodReg.name}`;
+      const { crontab, mode } = regOp.methodConfig as Partial<SchedulerConfig>;
+      if (crontab) {
+        DBOS.logger.info(`    ${name} @ ${crontab}; ${mode ?? SchedulerMode.ExactlyOncePerIntervalWhenActive}`);
+      } else {
+        DBOS.logger.info(`    ${name} is missing crontab; skipping`);
+      }
     }
   }
 
   static async #schedulerLoop(
-    func: ScheduledMessageHandler<unknown>,
-    name: string,
-    signal: AbortSignal,
+    methodReg: MethodRegistrationBase,
     timeMatcher: TimeMatcher,
     mode: SchedulerMode,
-    queueName?: string,
+    queueName: string | undefined,
+    signal: AbortSignal,
   ) {
+    const name = `${methodReg.className}.${methodReg.name}`;
+
     let lastExec = new Date().setMilliseconds(0);
     if (mode === SchedulerMode.ExactlyOncePerInterval) {
       const lastState = await DBOS.getEventDispatchState(SCHEDULER_EVENT_SERVICE_NAME, name, 'lastState');
@@ -156,22 +166,17 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
       }
 
       const date = new Date(nextExec);
-      const workflowID = `sched-${name}-${date.toISOString()}`;
-      const wfParams = { workflowID, queueName };
-      DBOS.logger.debug(`Executing scheduled workflow ${workflowID}`);
-      await DBOS.startWorkflow(func, wfParams)(date, new Date());
+      if (methodReg.workflowConfig && methodReg.registeredFunction) {
+        const workflowID = `sched-${name}-${date.toISOString()}`;
+        const wfParams = { workflowID, queueName };
+        DBOS.logger.debug(`Executing scheduled workflow ${workflowID}`);
+        await DBOS.startWorkflow(methodReg.registeredFunction as ScheduledHandler<unknown>, wfParams)(date, new Date());
+      } else {
+        DBOS.logger.error(`${name} is @scheduled but not a workflow`);
+      }
 
       lastExec = await ScheduledReceiver.#setLastExecTime(name, nextExec);
     }
-  }
-
-  static #getConfig(regOp: { methodConfig?: unknown; methodReg: MethodRegistrationBase }) {
-    const name = `${regOp.methodReg.className}.${regOp.methodReg.name}`;
-    const methodConfig = regOp.methodConfig as SchedulerConfig;
-    const crontab = methodConfig.crontab;
-    const mode = methodConfig.mode ?? SchedulerMode.ExactlyOncePerIntervalWhenActive;
-    const queueName = methodConfig.queueName;
-    return { name, crontab, mode, queueName };
   }
 
   static async #setLastExecTime(name: string, time: number) {
@@ -191,9 +196,11 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
     return time;
   }
 
-  // registerScheduled is static so it can be called before an instance is created during DBOS.launch
-  // This also means we can't use the instance as the external info key for associateFunctionWithInfo
-  // below or getAssociatedInfo above
+  // registerScheduled is static so it can be called before an instance is created during DBOS.launch.
+  // This means we can't use the instance as the external info key for associateFunctionWithInfo below
+  // or in getAssociatedInfo above...which means we can only have one scheduled receiver instance.
+  // However, since this is an internal receiver, it's safe to assume there is ever only one instnace.
+
   static registerScheduled<This, Return>(
     func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
     crontab: string,
