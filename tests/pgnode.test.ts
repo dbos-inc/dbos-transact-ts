@@ -1,5 +1,4 @@
 import { DBOS } from '../src';
-import { getExecutor } from '../src/dbos';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { UserDatabaseName } from '../src/user_database';
@@ -29,7 +28,7 @@ describe('pgnode-engine-config-tests', () => {
     DBOS.setConfig(config);
     await DBOS.launch();
     try {
-      const sysDbClient = ((getExecutor() as DBOSExecutor).systemDatabase as PostgresSystemDatabase).knexDB;
+      const sysDbClient = (DBOSExecutor.globalInstance!.systemDatabase as PostgresSystemDatabase).knexDB;
       // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
       expect((sysDbClient as any).context.client.config.pool.max).toEqual(42);
       await TestEngine.testEngine();

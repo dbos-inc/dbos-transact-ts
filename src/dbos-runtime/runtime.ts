@@ -63,13 +63,6 @@ export class DBOSRuntime {
 
       wfQueueRunner.logRegisteredEndpoints(this.dbosExec);
       this.wfQueueRunner = wfQueueRunner.dispatchLoop(this.dbosExec);
-
-      for (const evtRcvr of this.dbosExec.eventReceivers) {
-        await evtRcvr.initialize(this.dbosExec);
-      }
-      for (const evtRcvr of this.dbosExec.eventReceivers) {
-        evtRcvr.logRegisteredEndpoints();
-      }
     } catch (error) {
       if (!this.dbosExec) {
         throw error;
@@ -133,9 +126,6 @@ export class DBOSRuntime {
     } catch (err) {
       const e = err as Error;
       this.dbosExec?.logger.warn(`Error destroying workflow queue runner: ${e.message}`);
-    }
-    for (const evtRcvr of this.dbosExec?.eventReceivers || []) {
-      await evtRcvr.destroy();
     }
     if (this.servers) {
       this.servers.appServer?.close();
