@@ -1,6 +1,5 @@
 import { DBOS, DBOSEventReceiverState } from '..';
-import { DBOSExecutor } from '../dbos-executor';
-import { MethodRegistrationBase, TypedAsyncFunction } from '../decorators';
+import { DBOSLifecycleCallback, MethodRegistrationBase } from '../decorators';
 import { TimeMatcher } from './crontab';
 
 ////
@@ -39,12 +38,19 @@ export class SchedulerConfig {
   queueName?: string;
 }
 
+interface SchedulerMethodConfig {
+  crontab?: string;
+  mode?: SchedulerMode;
+  queueName?: string;
+}
+
 ////
 // Method Decorator
 ////
 
 // Scheduled Time. Actual Time.
 export type ScheduledArgs = [Date, Date];
+type ScheduledMessageHandler<Return> = (...args: ScheduledArgs) => Promise<Return>;
 
 export interface SchedulerRegistrationBase extends MethodRegistrationBase {
   schedulerConfig?: SchedulerConfig;
@@ -54,172 +60,159 @@ export interface SchedulerRegistrationBase extends MethodRegistrationBase {
 // Scheduler Management
 ///////////////////////////
 
-export class DBOSScheduler {
-  constructor(readonly dbosExec: DBOSExecutor) {
-    dbosExec.scheduler = this;
-  }
-
-  schedLoops: DetachableLoop[] = [];
-  schedTasks: Promise<void>[] = [];
-
-  initScheduler() {
-    for (const registeredOperation of this.dbosExec.registeredOperations) {
-      const ro = registeredOperation as SchedulerRegistrationBase;
-      if (ro.schedulerConfig) {
-        const loop = new DetachableLoop(
-          this.dbosExec,
-          ro.schedulerConfig.crontab ?? '* * * * *',
-          ro.schedulerConfig.mode ?? SchedulerMode.ExactlyOncePerInterval,
-          ro,
-          ro.schedulerConfig?.queueName,
-        );
-        this.schedLoops.push(loop);
-        this.schedTasks.push(loop.startLoop());
-      }
-    }
-  }
-
-  async destroyScheduler() {
-    for (const l of this.schedLoops) {
-      l.setStopLoopFlag();
-    }
-    this.schedLoops = [];
-    try {
-      await Promise.allSettled(this.schedTasks);
-    } catch (e) {
-      //  What gets caught here is the loop stopping, which is what we wanted.
-    }
-    this.schedTasks = [];
-  }
-
-  logRegisteredSchedulerEndpoints() {
-    DBOS.logger.info('Scheduled endpoints:');
-    this.dbosExec.registeredOperations.forEach((registeredOperation) => {
-      const ro = registeredOperation as SchedulerRegistrationBase;
-      if (ro.schedulerConfig) {
-        DBOS.logger.info(
-          `    ${ro.name} @ ${ro.schedulerConfig.crontab}; ${ro.schedulerConfig.mode ?? SchedulerMode.ExactlyOncePerInterval}`,
-        );
-      }
-    });
-  }
-}
-
 const SCHEDULER_EVENT_SERVICE_NAME = 'dbos.scheduler';
 
-class DetachableLoop {
-  private isRunning: boolean = false;
-  private interruptResolve?: () => void;
-  private lastExec: Date;
-  private timeMatcher: TimeMatcher;
-  private scheduledMethodName: string;
+export class ScheduledReceiver implements DBOSLifecycleCallback {
+  readonly #controller = new AbortController();
+  readonly #disposables = new Array<Promise<void>>();
 
-  constructor(
-    readonly dbosExec: DBOSExecutor,
-    readonly crontab: string,
-    readonly schedMode: SchedulerMode,
-    readonly scheduledMethod: SchedulerRegistrationBase,
-    readonly queueName?: string,
-  ) {
-    this.lastExec = new Date();
-    this.lastExec.setMilliseconds(0);
-    this.timeMatcher = new TimeMatcher(crontab);
-    this.scheduledMethodName = `${scheduledMethod.className}.${scheduledMethod.name}`;
+  constructor() {
+    DBOS.registerLifecycleCallback(this);
   }
 
-  async startLoop(): Promise<void> {
-    // See if the exec time is available in durable storage...
-    if (this.schedMode === SchedulerMode.ExactlyOncePerInterval) {
-      const lastState = await DBOS.getEventDispatchState(
-        SCHEDULER_EVENT_SERVICE_NAME,
-        this.scheduledMethodName,
-        'lastState',
+  async initialize(): Promise<void> {
+    for (const regOp of DBOS.getAssociatedInfo(this)) {
+      const func = regOp.methodReg.registeredFunction as ScheduledMessageHandler<unknown> | undefined;
+      if (func === undefined) {
+        continue; // TODO: Log?
+      }
+      const { name, crontab, mode, queueName } = ScheduledReceiver.#getConfig(regOp);
+      const timeMatcher = new TimeMatcher(crontab);
+
+      const promise = ScheduledReceiver.#schedulerLoop(
+        func,
+        name,
+        this.#controller.signal,
+        timeMatcher,
+        mode,
+        queueName,
       );
-      const lasttm = lastState?.value;
-      if (lasttm) {
-        this.lastExec = new Date(parseFloat(lasttm));
+      this.#disposables.push(promise);
+    }
+  }
+
+  async destroy(): Promise<void> {
+    this.#controller.abort();
+    const promises = this.#disposables.splice(0);
+    await Promise.allSettled(promises);
+  }
+
+  logRegisteredEndpoints(): void {
+    DBOS.logger.info('Scheduled endpoints:');
+    for (const regOp of DBOS.getAssociatedInfo(this)) {
+      const { name, crontab, mode } = ScheduledReceiver.#getConfig(regOp);
+      DBOS.logger.info(`    ${name} @ ${crontab}; ${mode}`);
+    }
+  }
+
+  static async #schedulerLoop(
+    func: ScheduledMessageHandler<unknown>,
+    name: string,
+    signal: AbortSignal,
+    timeMatcher: TimeMatcher,
+    mode: SchedulerMode,
+    queueName?: string,
+  ) {
+    let lastExec = new Date().setMilliseconds(0);
+    if (mode === SchedulerMode.ExactlyOncePerInterval) {
+      const lastState = await DBOS.getEventDispatchState(SCHEDULER_EVENT_SERVICE_NAME, name, 'lastState');
+      if (lastState?.value) {
+        lastExec = parseFloat(lastState.value);
       }
     }
 
-    this.isRunning = true;
-    while (this.isRunning) {
-      const nextExecTime = this.timeMatcher.nextWakeupTime(this.lastExec);
-      const sleepTime = nextExecTime.getTime() - Date.now();
+    while (!signal.aborted) {
+      const nextExec = timeMatcher.nextWakeupTime(lastExec).getTime();
+      const sleepTime = nextExec - Date.now();
 
       if (sleepTime > 0) {
-        // Wait for either the timeout or an interruption
-        let timer: NodeJS.Timeout;
-        const timeoutPromise = new Promise<void>((resolve) => {
-          timer = setTimeout(() => {
+        await new Promise<void>((resolve, reject) => {
+          let timeoutID: NodeJS.Timeout;
+
+          const onAbort = () => {
+            clearTimeout(timeoutID);
+            reject();
+          };
+
+          signal.addEventListener('abort', onAbort, { once: true });
+
+          if (signal.aborted) {
+            signal.removeEventListener('abort', onAbort);
+            return reject();
+          }
+
+          timeoutID = setTimeout(() => {
+            signal.removeEventListener('abort', onAbort);
             resolve();
           }, sleepTime);
         });
-        await Promise.race([timeoutPromise, new Promise<void>((_, reject) => (this.interruptResolve = reject))]).catch(
-          () => {
-            DBOS.logger.debug('Scheduler loop interrupted!');
-          },
-        ); // Interrupt sleep throws
-        clearTimeout(timer!);
       }
 
-      if (!this.isRunning) {
+      if (signal.aborted) {
         break;
       }
 
-      // Check crontab
-      // If this "wake up" time is not on the schedule, we shouldn't execute.
-      //  (While ATOW this wake-up time is a scheduled run time, it is not
-      //   contractually obligated to be so.  If this is obligated to be a
-      //   scheduled execution time, then we could make this an assertion
-      //   instead of a check.)
-      if (!this.timeMatcher.match(nextExecTime)) {
-        this.lastExec = nextExecTime;
+      if (!timeMatcher.match(nextExec)) {
+        lastExec = nextExec;
         continue;
       }
 
-      // Init workflow
-      const workflowUUID = `sched-${this.scheduledMethodName}-${nextExecTime.toISOString()}`;
-      DBOS.logger.debug(`Executing scheduled workflow ${workflowUUID}`);
-      const wfParams = {
-        workflowUUID: workflowUUID,
-        configuredInstance: null,
-        queueName: this.queueName,
-      };
-      // All operations annotated with Scheduled decorators must take in these four
-      const args: ScheduledArgs = [nextExecTime, new Date()];
+      const date = new Date(nextExec);
+      const workflowID = `sched-${name}-${date.toISOString()}`;
+      const wfParams = { workflowID, queueName };
+      DBOS.logger.debug(`Executing scheduled workflow ${workflowID}`);
+      await DBOS.startWorkflow(func, wfParams)(date, new Date());
 
-      // We currently only support scheduled workflows
-      if (this.scheduledMethod.workflowConfig) {
-        // Execute the workflow
-        await this.dbosExec.workflow(
-          this.scheduledMethod.registeredFunction as TypedAsyncFunction<ScheduledArgs, unknown>,
-          wfParams,
-          ...args,
-        );
-      } else {
-        DBOS.logger.error(`Function ${this.scheduledMethodName} is @scheduled but not a workflow`);
-      }
-
-      // Record the time of the wf kicked off
-      const ers: DBOSEventReceiverState = {
-        service: SCHEDULER_EVENT_SERVICE_NAME,
-        workflowFnName: this.scheduledMethodName,
-        key: 'lastState',
-        value: `${nextExecTime.getTime()}`,
-        updateTime: nextExecTime.getTime(),
-      };
-      const updRec = await DBOS.upsertEventDispatchState(ers);
-      const dbTime = parseFloat(updRec.value!);
-      if (dbTime && dbTime > nextExecTime.getTime()) nextExecTime.setTime(dbTime);
-      this.lastExec = nextExecTime;
+      lastExec = await ScheduledReceiver.#setLastExecTime(name, nextExec);
     }
   }
 
-  setStopLoopFlag() {
-    if (!this.isRunning) return;
-    this.isRunning = false;
-    if (this.interruptResolve) {
-      this.interruptResolve(); // Trigger the interruption
+  static #getConfig(regOp: { methodConfig?: unknown; methodReg: MethodRegistrationBase }) {
+    const name = `${regOp.methodReg.className}.${regOp.methodReg.name}`;
+    const methodConfig = regOp.methodConfig as SchedulerMethodConfig;
+    const crontab = methodConfig.crontab ?? '* * * * *';
+    const mode = methodConfig.mode ?? SchedulerMode.ExactlyOncePerIntervalWhenActive;
+    const queueName = methodConfig.queueName;
+    return { name, crontab, mode, queueName };
+  }
+
+  static async #setLastExecTime(name: string, time: number) {
+    // Record the time of the wf kicked off
+    const state: DBOSEventReceiverState = {
+      service: SCHEDULER_EVENT_SERVICE_NAME,
+      workflowFnName: name,
+      key: 'lastState',
+      value: `${time}`,
+      updateTime: time,
+    };
+    const newState = await DBOS.upsertEventDispatchState(state);
+    const dbTime = parseFloat(newState.value!);
+    if (dbTime && dbTime > time) {
+      return dbTime;
     }
+    return time;
+  }
+
+  static registerScheduled<This, Return>(
+    func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
+    options: {
+      ctorOrProto?: object;
+      className?: string;
+      name?: string;
+      queueName?: string;
+      crontab?: string;
+      mode?: SchedulerMode;
+    } = {},
+  ) {
+    const { regInfo } = DBOS.associateFunctionWithInfo(this, func, {
+      ctorOrProto: options.ctorOrProto,
+      className: options.className,
+      name: options.name ?? func.name,
+    });
+
+    const schedRegInfo = regInfo as SchedulerMethodConfig;
+    schedRegInfo.crontab = options.crontab;
+    schedRegInfo.mode = options.mode;
+    schedRegInfo.queueName = options.queueName;
   }
 }
