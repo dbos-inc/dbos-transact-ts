@@ -7,7 +7,7 @@ import { ArgSources, APITypes } from './handlerTypes';
 import { GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor, OperationType } from '../dbos-executor';
-import { DBOSContextualLogger, GlobalLogger } from '../telemetry/logs';
+import { GlobalLogger } from '../telemetry/logs';
 import { getOrGenerateRequestID, MiddlewareDefaults, RequestIDHeader } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT, defaultTextMapGetter } from '@opentelemetry/api';
 import * as net from 'net';
@@ -649,7 +649,7 @@ export class DBOSHttpServer {
               name: ro.name,
               requiredRole: ro.getRequiredRoles(),
               koaContext: koaCtxt,
-              logger: new DBOSContextualLogger(dbosExec.logger, { span }),
+              logger: dbosExec.ctxLogger,
               span,
               getConfig: (key: string, def) => {
                 return DBOS.getConfig(key, def);

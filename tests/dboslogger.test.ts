@@ -20,10 +20,55 @@ describe('dbos-logger', () => {
     let foundWf = false;
     const lines = result.stdout.split('\n');
     for (const l of lines) {
-      if (/Info: WFID should be logged .*"operationUUID":"loggerWorkflowId"/.test(l)) foundWf = true;
-      if (/Info: Step should be logged .*"operationUUID":"loggerWorkflowId"/.test(l)) foundStep = true;
-      if (/Info: Transaction should be logged .*"operationUUID":"loggerWorkflowId"/.test(l)) foundTx = true;
+      if (
+        /Info: WFID should be logged/.test(l) &&
+        /"operationType":"workflow"/.test(l) &&
+        /"operationName":"loggingWorkflow"/ &&
+        /"operationUUID":"loggerWorkflowId"/.test(l) &&
+        /"authenticatedUser":""/.test(l) &&
+        /"authenticatedRoles":\[\]/.test(l) &&
+        /"assumedRole":""/.test(l)
+      ) {
+        foundWf = true;
+      }
+
+      if (
+        /Info: Step should be logged/.test(l) &&
+        /"operationType":"step"/.test(l) &&
+        /"operationName":"loggingStep"/ &&
+        /"operationUUID":"loggerWorkflowId"/.test(l) &&
+        /"authenticatedUser":""/.test(l) &&
+        /"authenticatedRoles":\[\]/.test(l) &&
+        /"assumedRole":""/.test(l)
+      ) {
+        foundStep = true;
+      }
+
+      if (
+        /Info: Transaction should be logged/.test(l) &&
+        /"operationType":"transaction"/.test(l) &&
+        /"operationName":"loggingTransaction"/ &&
+        /"operationUUID":"loggerWorkflowId"/.test(l) &&
+        /"authenticatedUser":""/.test(l) &&
+        /"authenticatedRoles":\[\]/.test(l) &&
+        /"assumedRole":""/.test(l)
+      ) {
+        foundTx = true;
+      }
     }
+
+    if (!foundWf || !foundStep || !foundTx) {
+      console.warn(
+        `
+*** This test is about to fail, something was not found. ***
+  Found workflow: ${foundWf}.
+  Found step: ${foundStep}.
+  Found transaction: ${foundTx}.
+The log was:\n${result.stdout}
+`,
+      );
+    }
+
     expect(foundWf).toBeTruthy();
     expect(foundStep).toBeTruthy();
     expect(foundTx).toBeTruthy();

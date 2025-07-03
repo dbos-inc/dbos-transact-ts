@@ -118,7 +118,7 @@ export async function runWithParentContext<R>(
   );
 }
 
-export async function runWithDataSourceContext<R>(callnum: number, callback: () => Promise<R>) {
+export async function runWithDataSourceContext<R>(span: Span | undefined, callnum: number, callback: () => Promise<R>) {
   // Check we are in a workflow context and not in a step / transaction already
   const pctx = getCurrentContextStore() ?? {};
   return await asyncLocalCtx.run(
@@ -126,6 +126,8 @@ export async function runWithDataSourceContext<R>(callnum: number, callback: () 
       ...pctx,
       curTxFunctionId: callnum,
       parentCtx: pctx,
+      span: span ? span : pctx.span,
+      logger: DBOSExecutor.globalInstance!.ctxLogger,
     },
     callback,
   );
@@ -134,6 +136,7 @@ export async function runWithDataSourceContext<R>(callnum: number, callback: () 
 export async function runInStepContext<R>(
   pctx: DBOSLocalCtx,
   stepID: number,
+  span: Span,
   maxAttempts: number | undefined,
   currentAttempt: number | undefined,
   callback: () => Promise<R>,
@@ -148,15 +151,14 @@ export async function runInStepContext<R>(
     maxAttempts: currentAttempt ? maxAttempts : undefined,
   };
 
-  const span = pctx.span;
-
   return await runWithParentContext(
     pctx,
     {
       stepStatus: stepStatus,
       curStepFunctionId: stepID,
       parentCtx: pctx,
-      logger: span ? new DBOSContextualLogger(DBOSExecutor.globalInstance!.logger, { span }) : pctx.logger,
+      logger: DBOSExecutor.globalInstance!.ctxLogger,
+      span,
     },
     callback,
   );
