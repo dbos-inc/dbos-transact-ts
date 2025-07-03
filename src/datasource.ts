@@ -127,7 +127,7 @@ export async function runTransaction<T>(
         `Invalid call to transaction '${funcName}' outside of a workflow; with directive to start a workflow.`,
       );
     }
-    return await runWithDataSourceContext(0, async () => {
+    return await runWithDataSourceContext(undefined, 0, async () => {
       return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
     });
   }
@@ -144,9 +144,10 @@ export async function runTransaction<T>(
     {
       operationUUID: DBOS.workflowID,
       operationType: OperationType.TRANSACTION,
-      authenticatedUser: DBOS.authenticatedUser,
-      assumedRole: DBOS.assumedRole,
-      authenticatedRoles: DBOS.authenticatedRoles,
+      operationName: funcName,
+      authenticatedUser: DBOS.authenticatedUser ?? '',
+      assumedRole: DBOS.assumedRole ?? '',
+      authenticatedRoles: DBOS.authenticatedRoles ?? [],
       // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
     },
     DBOS.span,
@@ -155,7 +156,7 @@ export async function runTransaction<T>(
   try {
     const res = await DBOSExecutor.globalInstance!.runInternalStep<T>(
       async () => {
-        return await runWithDataSourceContext(callnum, async () => {
+        return await runWithDataSourceContext(span, callnum, async () => {
           return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
         });
       },
@@ -189,12 +190,8 @@ export function registerTransaction<This, Args extends unknown[], Return>(
 ): (this: This, ...args: Args) => Promise<Return> {
   const dsn = dsName ?? '<default>';
 
-  const reg = registerAndWrapDBOSFunctionByName(
-    options?.ctorOrProto,
-    options.className,
-    options.name || func.name,
-    func,
-  );
+  const funcName = options.name ?? func.name;
+  const reg = registerAndWrapDBOSFunctionByName(options?.ctorOrProto, options.className, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     const ds = getTransactionalDataSource(dsn);
@@ -207,7 +204,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
         );
       }
 
-      return await runWithDataSourceContext(0, async () => {
+      return await runWithDataSourceContext(undefined, 0, async () => {
         return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
       });
     }
@@ -218,17 +215,41 @@ export function registerTransaction<This, Args extends unknown[], Return>(
       );
     }
 
-    const callnum = functionIDGetIncrement();
-    return DBOSExecutor.globalInstance!.runInternalStep<Return>(
-      async () => {
-        return await runWithDataSourceContext(callnum, async () => {
-          return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
-        });
+    const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
+      funcName,
+      {
+        operationUUID: DBOS.workflowID,
+        operationType: OperationType.TRANSACTION,
+        operationName: funcName,
+        authenticatedUser: DBOS.authenticatedUser ?? '',
+        assumedRole: DBOS.assumedRole ?? '',
+        authenticatedRoles: DBOS.authenticatedRoles ?? [],
+        // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
       },
-      options.name,
-      DBOS.workflowID!,
-      callnum,
+      DBOS.span,
     );
+
+    const callnum = functionIDGetIncrement();
+    try {
+      const res = await DBOSExecutor.globalInstance!.runInternalStep<Return>(
+        async () => {
+          return await runWithDataSourceContext(span, callnum, async () => {
+            return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
+          });
+        },
+        funcName,
+        DBOS.workflowID!,
+        callnum,
+      );
+      span.setStatus({ code: SpanStatusCode.OK });
+      DBOSExecutor.globalInstance!.tracer.endSpan(span);
+      return res;
+    } catch (err) {
+      const e = err as Error;
+      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+      DBOSExecutor.globalInstance!.tracer.endSpan(span);
+      throw err;
+    }
   };
 
   registerFunctionWrapper(invokeWrapper, reg.registration);
