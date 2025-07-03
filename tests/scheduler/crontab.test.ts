@@ -360,229 +360,320 @@ describe('pattern-validation', () => {
 
 describe('TimeMatcher', () => {
   describe('wildcard', () => {
-    it('should accept wildcard for second', () => {
-      const matcher = new TimeMatcher('* * * * * *');
-      expect(matcher.match(new Date())).toBe(true);
+    const tests = [
+      {
+        name: 'wildcard for second',
+        pattern: '* * * * * *',
+        date: new Date(new Date().setMilliseconds(0)),
+        expected: true,
+      },
+      { name: 'wildcard for minute', pattern: '0 * * * * *', date: new Date(2018, 0, 1, 10, 20, 0), expected: true },
+      { name: 'wildcard for minute', pattern: '0 * * * * *', date: new Date(2018, 0, 1, 10, 20, 1), expected: false },
+      { name: 'wildcard for hour', pattern: '0 0 * * * *', date: new Date(2018, 0, 1, 10, 0, 0), expected: true },
+      { name: 'wildcard for hour', pattern: '0 0 * * * *', date: new Date(2018, 0, 1, 10, 1, 0), expected: false },
+      { name: 'wildcard for day', pattern: '0 0 0 * * *', date: new Date(2018, 0, 1, 0, 0, 0), expected: true },
+      { name: 'wildcard for day', pattern: '0 0 0 * * *', date: new Date(2018, 0, 1, 1, 0, 0), expected: false },
+      { name: 'wildcard for month', pattern: '0 0 0 1 * *', date: new Date(2018, 0, 1, 0, 0, 0), expected: true },
+      { name: 'wildcard for month', pattern: '0 0 0 1 * *', date: new Date(2018, 0, 2, 0, 0, 0), expected: false },
+      { name: 'wildcard for weekday', pattern: '0 0 0 1 4 *', date: new Date(2018, 3, 1, 0, 0, 0), expected: true },
+      { name: 'wildcard for weekday', pattern: '0 0 0 1 4 *', date: new Date(2018, 3, 2, 0, 0, 0), expected: false },
+    ];
+
+    test.each(tests)('should accept $name Date ($expected)', ({ pattern, date, expected }) => {
+      const matcher = new TimeMatcher(pattern);
+      expect(matcher.match(date)).toBe(expected);
     });
 
-    it('should accept wildcard for minute', () => {
-      const matcher = new TimeMatcher('0 * * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 10, 20, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 10, 20, 1))).toBe(false);
-    });
-
-    it('should accept wildcard for hour', () => {
-      const matcher = new TimeMatcher('0 0 * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 10, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 10, 1, 0))).toBe(false);
-    });
-
-    it('should accept wildcard for day', () => {
-      const matcher = new TimeMatcher('0 0 0 * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 1, 0, 0))).toBe(false);
-    });
-
-    it('should accept wildcard for month', () => {
-      const matcher = new TimeMatcher('0 0 0 1 * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 2, 0, 0, 0))).toBe(false);
-    });
-
-    it('should accept wildcard for week day', () => {
-      const matcher = new TimeMatcher('0 0 0 1 4 *');
-      expect(matcher.match(new Date(2018, 3, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 3, 2, 0, 0, 0))).toBe(false);
+    test.each(tests)('should accept $name time ($expected)', ({ pattern, date, expected }) => {
+      const time = date.getTime();
+      const matcher = new TimeMatcher(pattern);
+      expect(matcher.match(time)).toBe(expected);
     });
   });
 
   describe('single value', () => {
-    it('should accept single value for second', () => {
-      const matcher = new TimeMatcher('5 * * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 5))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 6))).toBe(false);
+    const tests = [
+      { name: 'second', pattern: '5 * * * * *', date: new Date(2018, 0, 1, 0, 0, 5), expected: true },
+      { name: 'second', pattern: '5 * * * * *', date: new Date(2018, 0, 1, 0, 0, 6), expected: false },
+      { name: 'minute', pattern: '0 5 * * * *', date: new Date(2018, 0, 1, 0, 5, 0), expected: true },
+      { name: 'minute', pattern: '0 5 * * * *', date: new Date(2018, 0, 1, 0, 6, 0), expected: false },
+      { name: 'hour', pattern: '0 0 5 * * *', date: new Date(2018, 0, 1, 5, 0, 0), expected: true },
+      { name: 'hour', pattern: '0 0 5 * * *', date: new Date(2018, 0, 1, 6, 0, 0), expected: false },
+      { name: 'day', pattern: '0 0 0 5 * *', date: new Date(2018, 0, 5, 0, 0, 0), expected: true },
+      { name: 'day', pattern: '0 0 0 5 * *', date: new Date(2018, 0, 6, 0, 0, 0), expected: false },
+      { name: 'month', pattern: '0 0 0 1 5 *', date: new Date(2018, 4, 1, 0, 0, 0), expected: true },
+      { name: 'month', pattern: '0 0 0 1 5 *', date: new Date(2018, 5, 1, 0, 0, 0), expected: false },
+      { name: 'weekday', pattern: '0 0 0 * * monday', date: new Date(2018, 4, 7, 0, 0, 0), expected: true },
+      { name: 'weekday', pattern: '0 0 0 * * monday', date: new Date(2018, 4, 8, 0, 0, 0), expected: false },
+    ];
+
+    test.each(tests)('should accept single value for $name ($expected)', ({ pattern, date, expected }) => {
+      const matcher = new TimeMatcher(pattern);
+      expect(matcher.match(date)).toBe(expected);
     });
 
-    it('should accept single value for minute', () => {
-      const matcher = new TimeMatcher('0 5 * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 5, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 6, 0))).toBe(false);
-    });
-
-    it('should accept single value for hour', () => {
-      const matcher = new TimeMatcher('0 0 5 * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 5, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 6, 0, 0))).toBe(false);
-    });
-
-    it('should accept single value for day', () => {
-      const matcher = new TimeMatcher('0 0 0 5 * *');
-      expect(matcher.match(new Date(2018, 0, 5, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 6, 0, 0, 0))).toBe(false);
-    });
-
-    it('should accept single value for month', () => {
-      const matcher = new TimeMatcher('0 0 0 1 5 *');
-      expect(matcher.match(new Date(2018, 4, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 5, 1, 0, 0, 0))).toBe(false);
-    });
-
-    it('should accept single value for week day', () => {
-      const matcher = new TimeMatcher('0 0 0 * * monday');
-      expect(matcher.match(new Date(2018, 4, 7, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 4, 8, 0, 0, 0))).toBe(false);
+    test.each(tests)('should accept single value for $name time ($expected)', ({ pattern, date, expected }) => {
+      const time = date.getTime();
+      const matcher = new TimeMatcher(pattern);
+      expect(matcher.match(time)).toBe(expected);
     });
   });
 
   describe('multiple values', () => {
-    it('should accept multiple values for second', () => {
-      const matcher = new TimeMatcher('5,6 * * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 5))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 6))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 7))).toBe(false);
+    const tests = [
+      {
+        name: 'second',
+        pattern: '5,6 * * * * *',
+        dates: [
+          { date: new Date(2018, 0, 1, 0, 0, 5), expected: true },
+          { date: new Date(2018, 0, 1, 0, 0, 6), expected: true },
+          { date: new Date(2018, 0, 1, 0, 0, 7), expected: false },
+        ],
+      },
+      {
+        name: 'minute',
+        pattern: '0 5,6 * * * *',
+        dates: [
+          { date: new Date(2018, 0, 1, 0, 5, 0), expected: true },
+          { date: new Date(2018, 0, 1, 0, 6, 0), expected: true },
+          { date: new Date(2018, 0, 1, 0, 7, 0), expected: false },
+        ],
+      },
+      {
+        name: 'hour',
+        pattern: '0 0 5,6 * * *',
+        dates: [
+          { date: new Date(2018, 0, 1, 5, 0, 0), expected: true },
+          { date: new Date(2018, 0, 1, 6, 0, 0), expected: true },
+          { date: new Date(2018, 0, 1, 7, 0, 0), expected: false },
+        ],
+      },
+      {
+        name: 'day',
+        pattern: '0 0 0 5,6 * *',
+        dates: [
+          { date: new Date(2018, 0, 5, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 6, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 7, 0, 0, 0), expected: false },
+        ],
+      },
+      {
+        name: 'month',
+        pattern: '0 0 0 1 may,june *',
+        dates: [
+          { date: new Date(2018, 4, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 5, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 6, 1, 0, 0, 0), expected: false },
+        ],
+      },
+      {
+        name: 'week day',
+        pattern: '0 0 0 * * monday,tue',
+        dates: [
+          { date: new Date(2018, 4, 7, 0, 0, 0), expected: true },
+          { date: new Date(2018, 4, 8, 0, 0, 0), expected: true },
+          { date: new Date(2018, 4, 9, 0, 0, 0), expected: false },
+        ],
+      },
+    ];
+
+    test.each(tests)('should accept multiple date values for $name', ({ pattern, dates }) => {
+      const matcher = new TimeMatcher(pattern);
+      dates.forEach(({ date, expected }) => {
+        expect(matcher.match(date)).toBe(expected);
+      });
     });
 
-    it('should accept multiple values for minute', () => {
-      const matcher = new TimeMatcher('0 5,6 * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 5, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 6, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 7, 0))).toBe(false);
-    });
-
-    it('should accept multiple values for hour', () => {
-      const matcher = new TimeMatcher('0 0 5,6 * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 5, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 6, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 7, 0, 0))).toBe(false);
-    });
-
-    it('should accept multiple values for day', () => {
-      const matcher = new TimeMatcher('0 0 0 5,6 * *');
-      expect(matcher.match(new Date(2018, 0, 5, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 6, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 7, 0, 0, 0))).toBe(false);
-    });
-
-    it('should accept multiple values for month', () => {
-      const matcher = new TimeMatcher('0 0 0 1 may,june *');
-      expect(matcher.match(new Date(2018, 4, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 5, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 6, 1, 0, 0, 0))).toBe(false);
-    });
-
-    it('should accept multiple values for week day', () => {
-      const matcher = new TimeMatcher('0 0 0 * * monday,tue');
-      expect(matcher.match(new Date(2018, 4, 7, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 4, 8, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 4, 9, 0, 0, 0))).toBe(false);
+    test.each(tests)('should accept multiple time values for $name', ({ pattern, dates }) => {
+      const matcher = new TimeMatcher(pattern);
+      dates.forEach(({ date, expected }) => {
+        const time = date.getTime();
+        expect(matcher.match(time)).toBe(expected);
+      });
     });
   });
 
   describe('range', () => {
-    it('should accept range for second', () => {
-      const matcher = new TimeMatcher('5-7 * * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 5))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 6))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 7))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 8))).toBe(false);
+    const tests = [
+      {
+        name: 'second',
+        pattern: '5-7 * * * * *',
+        cases: [
+          { date: new Date(2018, 0, 1, 0, 0, 5), expected: true },
+          { date: new Date(2018, 0, 1, 0, 0, 6), expected: true },
+          { date: new Date(2018, 0, 1, 0, 0, 7), expected: true },
+          { date: new Date(2018, 0, 1, 0, 0, 8), expected: false },
+        ],
+      },
+      {
+        name: 'minute',
+        pattern: '0 5-7 * * * *',
+        cases: [
+          { date: new Date(2018, 0, 1, 0, 5, 0), expected: true },
+          { date: new Date(2018, 0, 1, 0, 6, 0), expected: true },
+          { date: new Date(2018, 0, 1, 0, 7, 0), expected: true },
+          { date: new Date(2018, 0, 1, 0, 8, 0), expected: false },
+        ],
+      },
+      {
+        name: 'hour',
+        pattern: '0 0 5-7 * * *',
+        cases: [
+          { date: new Date(2018, 0, 1, 5, 0, 0), expected: true },
+          { date: new Date(2018, 0, 1, 6, 0, 0), expected: true },
+          { date: new Date(2018, 0, 1, 7, 0, 0), expected: true },
+          { date: new Date(2018, 0, 1, 8, 0, 0), expected: false },
+        ],
+      },
+      {
+        name: 'day',
+        pattern: '0 0 0 5-7 * *',
+        cases: [
+          { date: new Date(2018, 0, 5, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 6, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 7, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 8, 0, 0, 0), expected: false },
+        ],
+      },
+      {
+        name: 'month',
+        pattern: '0 0 0 1 may-july *',
+        cases: [
+          { date: new Date(2018, 4, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 5, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 6, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 7, 1, 0, 0, 0), expected: false },
+        ],
+      },
+      {
+        name: 'week day',
+        pattern: '0 0 0 * * monday-wed',
+        cases: [
+          { date: new Date(2018, 4, 7, 0, 0, 0), expected: true },
+          { date: new Date(2018, 4, 8, 0, 0, 0), expected: true },
+          { date: new Date(2018, 4, 9, 0, 0, 0), expected: true },
+          { date: new Date(2018, 4, 10, 0, 0, 0), expected: false },
+        ],
+      },
+    ];
+
+    test.each(tests)('should accept range for $name', ({ pattern, cases }) => {
+      const matcher = new TimeMatcher(pattern);
+      cases.forEach(({ date, expected }) => {
+        expect(matcher.match(date)).toBe(expected);
+      });
     });
 
-    it('should accept range for minute', () => {
-      const matcher = new TimeMatcher('0 5-7 * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 5, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 6, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 7, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 8, 0))).toBe(false);
-    });
-
-    it('should accept range for hour', () => {
-      const matcher = new TimeMatcher('0 0 5-7 * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 5, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 6, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 7, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 8, 0, 0))).toBe(false);
-    });
-
-    it('should accept range for day', () => {
-      const matcher = new TimeMatcher('0 0 0 5-7 * *');
-      expect(matcher.match(new Date(2018, 0, 5, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 6, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 7, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 8, 0, 0, 0))).toBe(false);
-    });
-
-    it('should accept range for month', () => {
-      const matcher = new TimeMatcher('0 0 0 1 may-july *');
-      expect(matcher.match(new Date(2018, 4, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 5, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 6, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 7, 1, 0, 0, 0))).toBe(false);
-    });
-
-    it('should accept range for week day', () => {
-      const matcher = new TimeMatcher('0 0 0 * * monday-wed');
-      expect(matcher.match(new Date(2018, 4, 7, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 4, 8, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 4, 9, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 4, 10, 0, 0, 0))).toBe(false);
+    test.each(tests)('should accept range for $name', ({ pattern, cases }) => {
+      const matcher = new TimeMatcher(pattern);
+      cases.forEach(({ date, expected }) => {
+        const time = date.getTime();
+        expect(matcher.match(time)).toBe(expected);
+      });
     });
   });
 
   describe('step values', () => {
-    it('should accept step values for second', () => {
-      const matcher = new TimeMatcher('*/2 * * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 2))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 6))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 0, 7))).toBe(false);
+    const tests = [
+      {
+        name: 'second',
+        pattern: '*/2 * * * * *',
+        cases: [
+          { date: new Date(2018, 0, 1, 0, 0, 2), expected: true },
+          { date: new Date(2018, 0, 1, 0, 0, 6), expected: true },
+          { date: new Date(2018, 0, 1, 0, 0, 7), expected: false },
+        ],
+      },
+      {
+        name: 'minute',
+        pattern: '0 */2 * * * *',
+        cases: [
+          { date: new Date(2018, 0, 1, 0, 2, 0), expected: true },
+          { date: new Date(2018, 0, 1, 0, 6, 0), expected: true },
+          { date: new Date(2018, 0, 1, 0, 7, 0), expected: false },
+        ],
+      },
+      {
+        name: 'hour',
+        pattern: '0 0 */2 * * *',
+        cases: [
+          { date: new Date(2018, 0, 1, 2, 0, 0), expected: true },
+          { date: new Date(2018, 0, 1, 6, 0, 0), expected: true },
+          { date: new Date(2018, 0, 1, 7, 0, 0), expected: false },
+        ],
+      },
+      {
+        name: 'day',
+        pattern: '0 0 0 */2 * *',
+        cases: [
+          { date: new Date(2018, 0, 2, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 6, 0, 0, 0), expected: true },
+          { date: new Date(2018, 0, 7, 0, 0, 0), expected: false },
+        ],
+      },
+      {
+        name: 'month',
+        pattern: '0 0 0 1 */2 *',
+        cases: [
+          { date: new Date(2018, 1, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 5, 1, 0, 0, 0), expected: true },
+          { date: new Date(2018, 6, 1, 0, 0, 0), expected: false },
+        ],
+      },
+      {
+        name: 'week day',
+        pattern: '0 0 0 * * */2',
+        cases: [
+          { date: new Date(2018, 4, 6, 0, 0, 0), expected: true },
+          { date: new Date(2018, 4, 8, 0, 0, 0), expected: true },
+          { date: new Date(2018, 4, 9, 0, 0, 0), expected: false },
+        ],
+      },
+    ];
+
+    test.each(tests)('should accept step values for $name', ({ pattern, cases }) => {
+      const matcher = new TimeMatcher(pattern);
+      cases.forEach(({ date, expected }) => {
+        expect(matcher.match(date)).toBe(expected);
+      });
     });
 
-    it('should accept step values for minute', () => {
-      const matcher = new TimeMatcher('0 */2 * * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 0, 2, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 6, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 0, 7, 0))).toBe(false);
-    });
-
-    it('should accept step values for hour', () => {
-      const matcher = new TimeMatcher('0 0 */2 * * *');
-      expect(matcher.match(new Date(2018, 0, 1, 2, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 6, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 1, 7, 0, 0))).toBe(false);
-    });
-
-    it('should accept step values for day', () => {
-      const matcher = new TimeMatcher('0 0 0 */2 * *');
-      expect(matcher.match(new Date(2018, 0, 2, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 6, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 0, 7, 0, 0, 0))).toBe(false);
-    });
-
-    it('should accept step values for month', () => {
-      const matcher = new TimeMatcher('0 0 0 1 */2 *');
-      expect(matcher.match(new Date(2018, 1, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 5, 1, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 6, 1, 0, 0, 0))).toBe(false);
-    });
-
-    it('should accept step values for week day', () => {
-      const matcher = new TimeMatcher('0 0 0 * * */2');
-      expect(matcher.match(new Date(2018, 4, 6, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 4, 8, 0, 0, 0))).toBe(true);
-      expect(matcher.match(new Date(2018, 4, 9, 0, 0, 0))).toBe(false);
+    test.each(tests)('should accept step values for $name time', ({ pattern, cases }) => {
+      const matcher = new TimeMatcher(pattern);
+      cases.forEach(({ date, expected }) => {
+        const time = date.getTime();
+        expect(matcher.match(time)).toBe(expected);
+      });
     });
   });
 
   describe('timezone', () => {
-    it('should match with timezone America/Sao_Paulo', () => {
-      const matcher = new TimeMatcher('0 0 0 * * *', 'America/Sao_Paulo');
-      const utcTime = new Date('Thu Oct 11 2018 03:00:00Z');
-      expect(matcher.match(utcTime)).toBe(true);
+    const tests = [
+      {
+        name: 'America/Sao_Paulo',
+        pattern: '0 0 0 * * *',
+        timezone: 'America/Sao_Paulo',
+        date: new Date('Thu Oct 11 2018 03:00:00Z'),
+        expected: true,
+      },
+      {
+        name: 'Europe/Rome',
+        pattern: '0 0 0 * * *',
+        timezone: 'Europe/Rome',
+        date: new Date('Thu Oct 11 2018 22:00:00Z'),
+        expected: true,
+      },
+    ];
+
+    test.each(tests)('should match with timezone $name', ({ pattern, timezone, date, expected }) => {
+      const matcher = new TimeMatcher(pattern, timezone);
+      expect(matcher.match(date)).toBe(expected);
     });
 
-    it('should match with timezone Europe/Rome', () => {
-      const matcher = new TimeMatcher('0 0 0 * * *', 'Europe/Rome');
-      const utcTime = new Date('Thu Oct 11 2018 22:00:00Z');
-      expect(matcher.match(utcTime)).toBe(true);
+    test.each(tests)('should match with timezone $name time', ({ pattern, timezone, date, expected }) => {
+      const matcher = new TimeMatcher(pattern, timezone);
+      const time = date.getTime();
+      expect(matcher.match(time)).toBe(expected);
     });
 
     /*

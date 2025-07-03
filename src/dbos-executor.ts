@@ -93,7 +93,7 @@ import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext 
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
-import { DBOSScheduler } from './scheduler/scheduler';
+import { ScheduledReceiver } from './scheduler/scheduler';
 import { DBOSEventReceiverState, DBNotificationCallback, DBNotificationListener } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
@@ -260,7 +260,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   eventReceivers: DBOSEventReceiver[] = [];
 
-  scheduler?: DBOSScheduler = undefined;
+  scheduler = new ScheduledReceiver();
   wfqEnded?: Promise<void> = undefined;
 
   readonly executorID: string = globalParams.executorID;
@@ -2001,10 +2001,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async initEventReceivers() {
-    this.scheduler = new DBOSScheduler(this);
-
-    this.scheduler.initScheduler();
-
     this.wfqEnded = wfQueueRunner.dispatchLoop(this);
 
     for (const evtRcvr of this.eventReceivers) {
@@ -2033,12 +2029,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         const e = err as Error;
         this.logger.warn(`Error destroying event receiver: ${e.message}`);
       }
-    }
-    try {
-      await this.scheduler?.destroyScheduler();
-    } catch (err) {
-      const e = err as Error;
-      this.logger.warn(`Error destroying scheduler: ${e.message}`);
     }
     if (stopQueueThread) {
       try {

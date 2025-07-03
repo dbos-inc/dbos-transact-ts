@@ -6,7 +6,7 @@ import { DBOSFailLoadOperationsError } from '../error';
 import path from 'node:path';
 import { Server } from 'http';
 import { pathToFileURL } from 'url';
-import { DBOSScheduler } from '../scheduler/scheduler';
+import { ScheduledReceiver } from '../scheduler/scheduler';
 import { wfQueueRunner } from '../wfqueue';
 import { DBOS } from '../dbos';
 
@@ -29,7 +29,7 @@ export class DBOSRuntime {
   private dbosConfig: DBOSConfigInternal;
   private dbosExec?: DBOSExecutor = undefined;
   private servers: { appServer?: Server; adminServer: Server } | undefined;
-  private scheduler?: DBOSScheduler = undefined;
+  private scheduler: ScheduledReceiver = new ScheduledReceiver();
   private wfQueueRunner?: Promise<void> = undefined;
 
   constructor(
@@ -57,9 +57,8 @@ export class DBOSRuntime {
       this.servers = await server.listen(this.runtimeConfig.port, this.runtimeConfig.admin_port);
       this.dbosExec.logRegisteredHTTPUrls();
 
-      this.scheduler = new DBOSScheduler(this.dbosExec);
-      this.scheduler.initScheduler();
-      this.scheduler.logRegisteredSchedulerEndpoints();
+      await this.scheduler.initialize();
+      this.scheduler.logRegisteredEndpoints();
 
       wfQueueRunner.logRegisteredEndpoints(this.dbosExec);
       this.wfQueueRunner = wfQueueRunner.dispatchLoop(this.dbosExec);
@@ -126,7 +125,7 @@ export class DBOSRuntime {
    * Shut down the HTTP and other services and destroy workflow executor.
    */
   async destroy() {
-    await this.scheduler?.destroyScheduler();
+    await this.scheduler.destroy();
     try {
       wfQueueRunner.stop();
       await this.wfQueueRunner;
