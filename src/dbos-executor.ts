@@ -31,7 +31,7 @@ import { IsolationLevel, type TransactionConfig } from './transaction';
 import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
-import { GlobalLogger as Logger } from './telemetry/logs';
+import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import type { TelemetryConfig } from './telemetry';
 import { Pool, type PoolClient, type PoolConfig, type QueryResultRow } from 'pg';
@@ -192,7 +192,7 @@ export const OperationType = {
   HANDLER: 'handler',
   WORKFLOW: 'workflow',
   TRANSACTION: 'transaction',
-  COMMUNICATOR: 'communicator',
+  STEP: 'step',
   PROCEDURE: 'procedure',
 } as const;
 
@@ -251,7 +251,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   static systemDBSchemaName = 'dbos';
 
-  readonly logger: Logger;
+  readonly logger: GlobalLogger;
+  readonly ctxLogger: DBOSContextualLogger;
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   typeormEntities: Function[] = [];
@@ -291,7 +292,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       // We always setup a collector to drain the signals queue, even if we don't have an exporter.
       this.telemetryCollector = new TelemetryCollector();
     }
-    this.logger = new Logger(this.telemetryCollector, this.config.telemetry.logs);
+    this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs);
+    this.ctxLogger = new DBOSContextualLogger(this.logger, () => getCurrentContextStore()!.span!);
     this.tracer = new Tracer(this.telemetryCollector);
 
     if (this.debugMode) {
@@ -750,6 +752,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         status: StatusString.PENDING,
         operationUUID: workflowID,
         operationType: OperationType.WORKFLOW,
+        operationName: wInfo.registration?.name ?? wf.name,
         authenticatedUser: pctx?.authenticatedUser ?? '',
         authenticatedRoles: pctx?.authenticatedRoles ?? [],
         assumedRole: pctx?.assumedRole ?? '',
@@ -876,6 +879,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
             timeoutMS,
             deadlineEpochMS,
             workflowId: workflowID,
+            span,
+            logger: this.ctxLogger,
           },
           () => {
             const callPromise = wf.call(params.configuredInstance, ...args);
@@ -1157,9 +1162,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       {
         operationUUID: wfid,
         operationType: OperationType.TRANSACTION,
-        authenticatedUser: pctx.authenticatedUser,
-        assumedRole: pctx.assumedRole,
-        authenticatedRoles: pctx.authenticatedRoles,
+        operationName: txn.name,
+        authenticatedUser: pctx.authenticatedUser ?? '',
+        assumedRole: pctx.assumedRole ?? '',
+        authenticatedRoles: pctx.authenticatedRoles ?? [],
         isolationLevel: txnInfo.config.isolationLevel,
       },
       pctx.span,
@@ -1203,6 +1209,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         // Execute the user's transaction.
+        const ctxlog = this.ctxLogger;
         const result = await (async function () {
           try {
             return await runWithParentContext(
@@ -1214,6 +1221,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
                 curTxFunctionId: funcId,
                 parentCtx: pctx,
                 sqlClient: client,
+                logger: ctxlog,
+                span,
               },
               async () => {
                 const tf = txn as unknown as (...args: T) => Promise<R>;
@@ -1357,9 +1366,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
       {
         operationUUID: wfid,
         operationType: OperationType.PROCEDURE,
-        authenticatedUser: pctx.authenticatedUser,
-        assumedRole: pctx.assumedRole,
-        authenticatedRoles: pctx.authenticatedRoles,
+        operationName: proc.name,
+        authenticatedUser: pctx.authenticatedUser ?? '',
+        assumedRole: pctx.assumedRole ?? '',
+        authenticatedRoles: pctx.authenticatedRoles ?? [],
         isolationLevel: procInfo.config.isolationLevel,
         executeLocally,
       },
@@ -1429,6 +1439,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
 
         // Execute the user's transaction.
+        const ctxlog = this.ctxLogger;
         const result = await (async function () {
           try {
             // Check we are in a workflow context and not in a step / transaction already
@@ -1442,6 +1453,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
                 parentCtx: pctx,
                 isInStoredProc: true,
                 sqlClient: client,
+                logger: ctxlog,
+                span,
               },
               async () => {
                 const pf = proc as unknown as TypedAsyncFunction<T, R>;
@@ -1697,10 +1710,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
       stepFnName,
       {
         operationUUID: wfid,
-        operationType: OperationType.COMMUNICATOR,
-        authenticatedUser: lctx.authenticatedUser,
-        assumedRole: lctx.assumedRole,
-        authenticatedRoles: lctx.authenticatedRoles,
+        operationType: OperationType.STEP,
+        operationName: stepFnName,
+        authenticatedUser: lctx.authenticatedUser ?? '',
+        assumedRole: lctx.assumedRole ?? '',
+        authenticatedRoles: lctx.authenticatedRoles ?? [],
         retriesAllowed: stepConfig.retriesAllowed,
         intervalSeconds: stepConfig.intervalSeconds,
         maxAttempts: stepConfig.maxAttempts,
@@ -1748,7 +1762,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
           await this.systemDatabase.checkIfCanceled(wfid);
 
           let cresult: R | undefined;
-          await runInStepContext(lctx, funcID, maxAttempts, attemptNum, async () => {
+          await runInStepContext(lctx, funcID, span, maxAttempts, attemptNum, async () => {
             const sf = stepFn as unknown as (...args: T) => Promise<R>;
             cresult = await sf.call(clsInst, ...args);
           });
@@ -1776,7 +1790,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     } else {
       try {
         let cresult: R | undefined;
-        await runInStepContext(lctx, funcID, maxAttempts, undefined, async () => {
+        await runInStepContext(lctx, funcID, span, maxAttempts, undefined, async () => {
           const sf = stepFn as unknown as (...args: T) => Promise<R>;
           cresult = await sf.call(clsInst, ...args);
         });

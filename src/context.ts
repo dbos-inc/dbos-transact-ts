@@ -1,11 +1,12 @@
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { Logger as DBOSLogger } from './telemetry/logs';
+import { DBOSContextualLogger } from './telemetry/logs';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { UserDatabaseClient } from './user_database';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import Koa from 'koa';
+import { DBOSExecutor } from './dbos-executor';
 
 export interface StepStatus {
   stepID: number;
@@ -17,7 +18,7 @@ export interface DBOSContextOptions {
   idAssignedForNextWorkflow?: string;
   queueAssignedForWorkflows?: string;
   span?: Span;
-  logger?: DBOSLogger;
+  logger?: DBOSContextualLogger;
   authenticatedUser?: string;
   authenticatedRoles?: string[];
   assumedRole?: string;
@@ -117,7 +118,7 @@ export async function runWithParentContext<R>(
   );
 }
 
-export async function runWithDataSourceContext<R>(callnum: number, callback: () => Promise<R>) {
+export async function runWithDataSourceContext<R>(span: Span | undefined, callnum: number, callback: () => Promise<R>) {
   // Check we are in a workflow context and not in a step / transaction already
   const pctx = getCurrentContextStore() ?? {};
   return await asyncLocalCtx.run(
@@ -125,6 +126,8 @@ export async function runWithDataSourceContext<R>(callnum: number, callback: () 
       ...pctx,
       curTxFunctionId: callnum,
       parentCtx: pctx,
+      span: span ? span : pctx.span,
+      logger: DBOSExecutor.globalInstance!.ctxLogger,
     },
     callback,
   );
@@ -133,6 +136,7 @@ export async function runWithDataSourceContext<R>(callnum: number, callback: () 
 export async function runInStepContext<R>(
   pctx: DBOSLocalCtx,
   stepID: number,
+  span: Span,
   maxAttempts: number | undefined,
   currentAttempt: number | undefined,
   callback: () => Promise<R>,
@@ -153,6 +157,8 @@ export async function runInStepContext<R>(
       stepStatus: stepStatus,
       curStepFunctionId: stepID,
       parentCtx: pctx,
+      logger: DBOSExecutor.globalInstance!.ctxLogger,
+      span,
     },
     callback,
   );

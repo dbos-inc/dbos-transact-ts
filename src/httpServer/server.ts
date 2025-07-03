@@ -7,7 +7,7 @@ import { ArgSources, APITypes } from './handlerTypes';
 import { GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from '../workflow';
 import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidationError } from '../error';
 import { DBOSExecutor, OperationType } from '../dbos-executor';
-import { Logger as DBOSLogger, GlobalLogger as Logger } from '../telemetry/logs';
+import { GlobalLogger } from '../telemetry/logs';
 import { getOrGenerateRequestID, MiddlewareDefaults, RequestIDHeader } from './middleware';
 import { SpanStatusCode, trace, ROOT_CONTEXT, defaultTextMapGetter } from '@opentelemetry/api';
 import * as net from 'net';
@@ -37,7 +37,7 @@ export class DBOSHttpServer {
   readonly app: Koa;
   readonly adminApp: Koa;
   readonly applicationRouter: Router;
-  readonly logger: Logger;
+  readonly logger: GlobalLogger;
   static nRegisteredEndpoints: number = 0;
   static instance?: DBOSHttpServer = undefined;
 
@@ -110,7 +110,7 @@ export class DBOSHttpServer {
     return appServer;
   }
 
-  static async checkPortAvailabilityIPv4Ipv6(port: number, logger: Logger) {
+  static async checkPortAvailabilityIPv4Ipv6(port: number, logger: GlobalLogger) {
     try {
       await this.checkPortAvailability(port, '127.0.0.1');
     } catch (error) {
@@ -645,23 +645,25 @@ export class DBOSHttpServer {
         try {
           // Check for auth first
           if (defaults?.authMiddleware) {
-            const res = await defaults.authMiddleware({
-              name: ro.name,
-              requiredRole: ro.getRequiredRoles(),
-              koaContext: koaCtxt,
-              logger: new DBOSLogger(dbosExec.logger, { span }),
-              span,
-              getConfig: (key: string, def) => {
-                return DBOS.getConfig(key, def);
-              },
-              query: (query, ...args) => {
-                return dbosExec.userDatabase.queryFunction(query, ...args);
-              },
+            await runWithTopContext(dctx, async () => {
+              const res = await defaults.authMiddleware!({
+                name: ro.name,
+                requiredRole: ro.getRequiredRoles(),
+                koaContext: koaCtxt,
+                logger: dbosExec.ctxLogger,
+                span,
+                getConfig: (key: string, def) => {
+                  return DBOS.getConfig(key, def);
+                },
+                query: (query, ...args) => {
+                  return dbosExec.userDatabase.queryFunction(query, ...args);
+                },
+              });
+              if (res) {
+                dctx.authenticatedUser = res.authenticatedUser;
+                dctx.authenticatedRoles = res.authenticatedRoles;
+              }
             });
-            if (res) {
-              dctx.authenticatedUser = res.authenticatedUser;
-              dctx.authenticatedRoles = res.authenticatedRoles;
-            }
           }
 
           // Parse the arguments.

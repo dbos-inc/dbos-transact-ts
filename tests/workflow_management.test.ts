@@ -7,7 +7,7 @@ import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
-import { GlobalLogger as Logger } from '../src/telemetry/logs';
+import { GlobalLogger } from '../src/telemetry/logs';
 import {
   getWorkflow,
   globalTimeout,
@@ -236,7 +236,7 @@ describe('workflow-management-tests', () => {
     const failResponse = await request(DBOS.getHTTPHandlersCallback()!).post('/fail/alice');
     expect(failResponse.statusCode).toBe(500);
 
-    const logger = new Logger();
+    const logger = new GlobalLogger();
     const sysdb = new PostgresSystemDatabase(config.poolConfig, config.system_database, logger);
     try {
       const input: GetWorkflowsInput = {};
@@ -542,7 +542,7 @@ describe('test-list-queues', () => {
       await e.wait();
     }
 
-    const logger = new Logger();
+    const logger = new GlobalLogger();
     const sysdb = new PostgresSystemDatabase(config.poolConfig, config.system_database, logger);
     try {
       let input: GetQueuedWorkflowsInput = {};
@@ -1221,7 +1221,7 @@ describe('test-list-steps', () => {
     const result2 = await handle.getResult();
     expect(result1).toEqual(result2);
 
-    const sysdb = new PostgresSystemDatabase(config.poolConfig, config.system_database, new Logger());
+    const sysdb = new PostgresSystemDatabase(config.poolConfig, config.system_database, new GlobalLogger());
     try {
       const wfs = await listWorkflows(sysdb, {});
       expect(wfs.length).toBe(2);
