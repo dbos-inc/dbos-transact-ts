@@ -71,7 +71,7 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
   }
 
   async initialize(): Promise<void> {
-    for (const regOp of DBOS.getAssociatedInfo(this)) {
+    for (const regOp of DBOS.getAssociatedInfo(SCHEDULER_EVENT_SERVICE_NAME)) {
       const func = regOp.methodReg.registeredFunction as ScheduledMessageHandler<unknown> | undefined;
       if (func === undefined) {
         continue; // TODO: Log?
@@ -99,7 +99,7 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
   logRegisteredEndpoints(): void {
     DBOS.logger.info('Scheduled endpoints:');
-    for (const regOp of DBOS.getAssociatedInfo(this)) {
+    for (const regOp of DBOS.getAssociatedInfo(SCHEDULER_EVENT_SERVICE_NAME)) {
       const { name, crontab, mode } = ScheduledReceiver.#getConfig(regOp);
       DBOS.logger.info(`    ${name} @ ${crontab}; ${mode}`);
     }
@@ -193,6 +193,9 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
     return time;
   }
 
+  // registerScheduled is static so it can be called before an instance is created during DBOS.launch
+  // This also means we can't use the instance as the external info key for associateFunctionWithInfo
+  // below or getAssociatedInfo above
   static registerScheduled<This, Return>(
     func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
     options: {
@@ -204,7 +207,7 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
       mode?: SchedulerMode;
     } = {},
   ) {
-    const { regInfo } = DBOS.associateFunctionWithInfo(this, func, {
+    const { regInfo } = DBOS.associateFunctionWithInfo(SCHEDULER_EVENT_SERVICE_NAME, func, {
       ctorOrProto: options.ctorOrProto,
       className: options.className,
       name: options.name ?? func.name,

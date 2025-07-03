@@ -38,7 +38,7 @@ import {
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
-import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
+import { ScheduledArgs, ScheduledReceiver, SchedulerConfig, SchedulerMode } from './scheduler/scheduler';
 import {
   associateClassWithExternal,
   associateMethodWithExternal,
@@ -398,7 +398,6 @@ export class DBOS {
   static logRegisteredEndpoints(): void {
     if (!DBOSExecutor.globalInstance) return;
     DBOSExecutor.globalInstance.logRegisteredHTTPUrls();
-    DBOSExecutor.globalInstance.scheduler?.logRegisteredSchedulerEndpoints();
     wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
     for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
       evtRcvr.logRegisteredEndpoints();
@@ -1371,26 +1370,49 @@ export class DBOS {
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
   }
 
+  /**
+   * registers a workflow method or function with an invocation schedule
+   * @param func - The workflow method or function to register with an invocation schedule
+   * @param options - Configuration information for the scheduled workflow
+   */
+  static registerScheduled<This, Return>(
+    func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
+    options: {
+      ctorOrProto?: object;
+      className?: string;
+      name?: string;
+      crontab?: string;
+      mode?: SchedulerMode;
+      queueName?: string;
+    } = {},
+  ) {
+    ScheduledReceiver.registerScheduled(func, options);
+  }
   //////
   // Decorators
   //////
   /**
    * Decorator associating a class static method with an invocation schedule
-   * @param schedulerConfig - The schedule, consisting of a crontab and policy for "make-up work"
+   * @param config - The schedule, consisting of a crontab and policy for "make-up work"
    */
-  static scheduled(schedulerConfig: SchedulerConfig) {
-    function scheddec<This, Return>(
+  static scheduled(config: SchedulerConfig) {
+    function methodDecorator<This, Return>(
       target: object,
-      propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>,
+      propertyKey: PropertyKey,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      const schedRegistration = registration as unknown as SchedulerRegistrationBase;
-      schedRegistration.schedulerConfig = schedulerConfig;
-
+      if (descriptor.value) {
+        DBOS.registerScheduled(descriptor.value, {
+          ctorOrProto: target,
+          name: String(propertyKey),
+          crontab: config.crontab,
+          mode: config.mode,
+          queueName: config.queueName,
+        });
+      }
       return descriptor;
     }
-    return scheddec;
+    return methodDecorator;
   }
 
   /**
