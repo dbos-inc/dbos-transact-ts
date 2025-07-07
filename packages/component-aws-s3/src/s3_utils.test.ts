@@ -1,8 +1,9 @@
 import { FileRecord, DBOS_S3, S3WorkflowCallbacks, registerS3PresignedUploadWorkflow } from './s3_utils';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
-import { S3Client, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
 import { createPresignedPost, PresignedPost } from '@aws-sdk/s3-presigned-post';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import FormData from 'form-data';
 import axios, { AxiosResponse } from 'axios';
@@ -252,7 +253,7 @@ describe('ses-tests', () => {
     await s3Cfg!.saveStringToFile(myFileRec, 'This is my file');
 
     // Get the file contents out of DBOS (using the table index)
-    const mytxt = await s3Cfg!.readStringFromFile(myFileRec);
+    const mytxt = await getS3KeyContents(myFileRec.key);
     expect(mytxt).toBe('This is my file');
 
     // Delete the file contents out of DBOS (using the table index)
@@ -293,7 +294,7 @@ describe('ses-tests', () => {
     const _myFileRecord = await wfhandle.getResult();
 
     // Get the file out of DBOS (using a signed URL)
-    const myurl = await s3Cfg!.getFileReadURL(myFileRec);
+    const myurl = await getS3KeyUrl(myFileRec.key, 60);
     expect(myurl).not.toBeNull();
     // Get the file contents out of S3
     await downloadFromS3(myurl, './deleteme.xxx');
@@ -305,6 +306,27 @@ describe('ses-tests', () => {
     const dfhandle = await s3Cfg!.deleteFile(myFileRec);
     expect(dfhandle).toBeDefined();
   }, 10000);
+
+  async function getS3KeyContents(key: string) {
+    return (
+      await s3client!.send(
+        new GetObjectCommand({
+          Bucket: s3bucket!,
+          Key: key,
+        }),
+      )
+    ).Body?.transformToString();
+  }
+
+  async function getS3KeyUrl(key: string, expirationSecs: number) {
+    const getObjectCommand = new GetObjectCommand({
+      Bucket: s3bucket!,
+      Key: key,
+    });
+
+    const presignedUrl = await getSignedUrl(s3client!, getObjectCommand, { expiresIn: expirationSecs });
+    return presignedUrl;
+  }
 
   async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
     const formData = new FormData();

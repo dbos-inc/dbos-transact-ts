@@ -1,5 +1,4 @@
-import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
-import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
+import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { type PresignedPost } from '@aws-sdk/s3-presigned-post';
 
 import { DBOS, ArgOptional, ConfiguredInstance, WorkflowConfig } from '@dbos-inc/dbos-sdk';
@@ -21,32 +20,6 @@ export interface DBOSS3Config {
   awscfg?: AWSServiceConfig;
   bucket: string;
   s3Callbacks?: S3Callbacks;
-}
-
-interface S3GetResponseOptions {
-  PartNumber?: number;
-  Range?: string;
-
-  RequestPayer?: 'requester' | undefined;
-
-  IfMatch?: string;
-  IfModifiedSince?: Date;
-  IfNoneMatch?: string;
-  IfUnmodifiedSince?: Date;
-
-  ExpectedBucketOwner?: string;
-  SSECustomerAlgorithm?: string;
-  SSECustomerKey?: string;
-  SSECustomerKeyMD5?: string;
-
-  VersionId?: string;
-
-  ResponseCacheControl?: string;
-  ResponseContentDisposition?: string;
-  ResponseContentEncoding?: string;
-  ResponseContentLanguage?: string;
-  ResponseContentType?: string;
-  ResponseExpires?: Date;
 }
 
 export class DBOS_S3 extends ConfiguredInstance {
@@ -122,48 +95,6 @@ export class DBOS_S3 extends ConfiguredInstance {
     return await DBOS_S3.putS3Cmd(this.s3client!, this.config.bucket, key, content, contentType);
   }
 
-  // Get string
-  static async getS3Cmd(s3: S3Client, bucket: string, key: string) {
-    return await s3.send(
-      new GetObjectCommand({
-        Bucket: bucket,
-        Key: key,
-      }),
-    );
-  }
-
-  @DBOS.step()
-  async get(key: string) {
-    return (await DBOS_S3.getS3Cmd(this.s3client!, this.config.bucket, key)).Body?.transformToString();
-  }
-
-  // Presigned GET key
-  static async getS3KeyCmd(
-    s3: S3Client,
-    bucket: string,
-    key: string,
-    expirationSecs: number,
-    options: S3GetResponseOptions = {},
-  ) {
-    const getObjectCommand = new GetObjectCommand({
-      Bucket: bucket,
-      Key: key,
-      ...options,
-    });
-
-    const presignedUrl = await getSignedUrl(s3, getObjectCommand, { expiresIn: expirationSecs });
-    return presignedUrl;
-  }
-
-  @DBOS.step()
-  async presignedGetURL(
-    key: string,
-    @ArgOptional expirationSecs: number = 3600,
-    @ArgOptional options: S3GetResponseOptions = {},
-  ) {
-    return await DBOS_S3.getS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs, options);
-  }
-
   /////////
   // Simple Workflows
   /////////
@@ -190,13 +121,6 @@ export class DBOS_S3 extends ConfiguredInstance {
     return fileDetails;
   }
 
-  //  App code reads a file out of S3
-  @DBOS.workflow()
-  async readStringFromFile(fileDetails: FileRecord) {
-    const txt = await this.get(fileDetails.key);
-    return txt;
-  }
-
   //  App code deletes a file out of S3
   //     Do the table write
   //     Do the S3 op
@@ -204,23 +128,6 @@ export class DBOS_S3 extends ConfiguredInstance {
   async deleteFile(fileDetails: FileRecord) {
     await this.config.s3Callbacks?.fileDeleted(fileDetails);
     return await this.delete(fileDetails.key);
-  }
-
-  ////////////
-  // Workflows where client goes direct to S3 (slightly more complicated)
-  ////////////
-
-  // There are cases where we don't want to store the data in the DB
-  //   Especially end-user uploads, or cases where the file is accessed by outside systems
-
-  //  Presigned D/L for end user
-  @DBOS.workflow()
-  async getFileReadURL(
-    fileDetails: FileRecord,
-    @ArgOptional expirationSec = 3600,
-    @ArgOptional options: S3GetResponseOptions = {},
-  ): Promise<string> {
-    return await this.presignedGetURL(fileDetails.key, expirationSec, options);
   }
 }
 
