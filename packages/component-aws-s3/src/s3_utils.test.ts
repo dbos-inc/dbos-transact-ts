@@ -1,4 +1,10 @@
-import { FileRecord, DBOS_S3, S3WorkflowCallbacks, registerS3PresignedUploadWorkflow } from './s3_utils';
+import {
+  FileRecord,
+  DBOS_S3,
+  S3WorkflowCallbacks,
+  registerS3PresignedUploadWorkflow,
+  registerS3DeleteWorkflow,
+} from './s3_utils';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 import { S3Client, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
@@ -171,7 +177,7 @@ const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
 
   validateS3Upload: undefined,
   deleteS3Object: async (rec: UserFile) => {
-    await s3client?.send(
+    return await s3client?.send(
       new DeleteObjectCommand({
         Bucket: s3bucket,
         Key: rec.key,
@@ -180,7 +186,8 @@ const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
   },
 };
 
-export const uploadWF = registerS3PresignedUploadWorkflow({ name: 'uploadWF' }, s3callback);
+export const uploadWF = registerS3PresignedUploadWorkflow({ className: 'UserFile', name: 'uploadWF' }, s3callback);
+export const deleteWF = registerS3DeleteWorkflow({ className: 'UserFile', name: 'deleteWF' }, s3callback);
 
 describe('ses-tests', () => {
   let s3IsAvailable = true;
@@ -257,7 +264,7 @@ describe('ses-tests', () => {
     expect(mytxt).toBe('This is my file');
 
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await s3Cfg!.deleteFile(myFileRec);
+    const dfhandle = await deleteWF(myFileRec);
     expect(dfhandle).toBeDefined();
   }, 10000);
 
@@ -301,9 +308,8 @@ describe('ses-tests', () => {
     expect(fs.existsSync('./deleteme.xxx')).toBeTruthy();
     fs.rmSync('./deleteme.xxx');
 
-    // Delete the file contents out of DBOS (No different than above)
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await s3Cfg!.deleteFile(myFileRec);
+    const dfhandle = await deleteWF(myFileRec);
     expect(dfhandle).toBeDefined();
   }, 10000);
 

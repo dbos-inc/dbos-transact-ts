@@ -1,4 +1,4 @@
-import { S3Client, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { type PresignedPost } from '@aws-sdk/s3-presigned-post';
 
 import { DBOS, ArgOptional, ConfiguredInstance, WorkflowConfig } from '@dbos-inc/dbos-sdk';
@@ -63,21 +63,6 @@ export class DBOS_S3 extends ConfiguredInstance {
   //  Basic functions + step wrappers
   ///////
 
-  // Delete object
-  static async deleteS3Cmd(s3: S3Client, bucket: string, key: string) {
-    return await s3.send(
-      new DeleteObjectCommand({
-        Bucket: bucket,
-        Key: key,
-      }),
-    );
-  }
-
-  @DBOS.step()
-  async delete(key: string) {
-    return await DBOS_S3.deleteS3Cmd(this.s3client!, this.config.bucket, key);
-  }
-
   // Put small string
   static async putS3Cmd(s3: S3Client, bucket: string, key: string, content: string, contentType: string) {
     return await s3.send(
@@ -113,21 +98,12 @@ export class DBOS_S3 extends ConfiguredInstance {
     try {
       await this.put(fileDetails.key, content, contentType);
     } catch (e) {
-      await this.delete(fileDetails.key);
+      //await this.delete(fileDetails.key);
       throw e;
     }
 
     await this.config.s3Callbacks?.newActiveFile(fileDetails);
     return fileDetails;
-  }
-
-  //  App code deletes a file out of S3
-  //     Do the table write
-  //     Do the S3 op
-  @DBOS.workflow()
-  async deleteFile(fileDetails: FileRecord) {
-    await this.config.s3Callbacks?.fileDeleted(fileDetails);
-    return await this.delete(fileDetails.key);
   }
 }
 
@@ -141,7 +117,27 @@ export interface S3WorkflowCallbacks<R extends FileRecord, Options = unknown> {
   // S3 interaction options, these will be run as steps
   createPresignedPost: (rec: R, timeout?: number, options?: Options) => Promise<PresignedPost>;
   validateS3Upload?: (rec: R) => Promise<void>;
-  deleteS3Object: (rec: R) => Promise<void>;
+  deleteS3Object: (rec: R) => Promise<unknown>;
+}
+
+export function registerS3DeleteWorkflow<R extends FileRecord, Options = unknown>(
+  options: {
+    name?: string;
+    ctorOrProto?: object;
+    className?: string;
+    config?: WorkflowConfig;
+  },
+  callbacks: S3WorkflowCallbacks<R, Options>,
+) {
+  return DBOS.registerWorkflow(async (fileDetails: R) => {
+    await callbacks.fileDeleted(fileDetails);
+    return await DBOS.runStep(
+      async () => {
+        return callbacks.deleteS3Object(fileDetails);
+      },
+      { name: 'deleteS3Object' },
+    );
+  }, options);
 }
 
 export function registerS3PresignedUploadWorkflow<R extends FileRecord, Options = unknown>(
