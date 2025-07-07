@@ -1,13 +1,13 @@
 import {
   FileRecord,
-  DBOS_S3,
   S3WorkflowCallbacks,
+  registerS3UploadWorkflow,
   registerS3PresignedUploadWorkflow,
   registerS3DeleteWorkflow,
 } from './s3_utils';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
-import { S3Client, DeleteObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import { S3Client, DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
 import { createPresignedPost, PresignedPost } from '@aws-sdk/s3-presigned-post';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
@@ -159,6 +159,16 @@ const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
     return await TestUserFileTable.deleteFileRecordById(rec.file_id);
   },
 
+  putS3Contents: async (rec: UserFile, content: string, options?: Opts) => {
+    return await s3client?.send(
+      new PutObjectCommand({
+        Bucket: s3bucket,
+        Key: rec.key,
+        ContentType: options?.contentType ?? 'text/plain',
+        Body: content,
+      }),
+    );
+  },
   // S3 interaction options, these will be run as steps
   createPresignedPost: async (rec: UserFile, timeout?: number, opts?: Opts) => {
     const postPresigned = await createPresignedPost(s3client!, {
@@ -186,12 +196,12 @@ const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
   },
 };
 
-export const uploadWF = registerS3PresignedUploadWorkflow({ className: 'UserFile', name: 'uploadWF' }, s3callback);
+export const uploadWF = registerS3UploadWorkflow({ className: 'UserFile', name: 'uploadWF' }, s3callback);
+export const uploadPWF = registerS3PresignedUploadWorkflow({ className: 'UserFile', name: 'uploadPWF' }, s3callback);
 export const deleteWF = registerS3DeleteWorkflow({ className: 'UserFile', name: 'deleteWF' }, s3callback);
 
 describe('ses-tests', () => {
   let s3IsAvailable = true;
-  let s3Cfg: DBOS_S3 | undefined = undefined;
 
   beforeAll(async () => {
     // Check if S3 is available and update app config, skip the test if it's not
@@ -209,33 +219,7 @@ describe('ses-tests', () => {
         },
       });
 
-      s3Cfg = new DBOS_S3('default', {
-        awscfgname: 'aws_config',
-        bucket: '',
-        s3Callbacks: {
-          newActiveFile: async (frec: unknown) => {
-            const rec = frec as UserFile;
-            rec.file_status = FileStatus.ACTIVE;
-            return await TestUserFileTable.insertFileRecord(rec);
-          },
-          newPendingFile: async (frec: unknown) => {
-            const rec = frec as UserFile;
-            rec.file_status = FileStatus.PENDING;
-            return await TestUserFileTable.insertFileRecord(rec);
-          },
-          fileActivated: async (frec: unknown) => {
-            const rec = frec as UserFile;
-            rec.file_status = FileStatus.ACTIVE;
-            return await TestUserFileTable.updateFileRecord(rec);
-          },
-          fileDeleted: async (frec: unknown) => {
-            const rec = frec as UserFile;
-            return await TestUserFileTable.deleteFileRecordById(rec.file_id);
-          },
-        },
-      });
       await DBOS.launch();
-      s3Cfg.config.bucket = DBOS.getConfig<string>('s3_bucket', 's3bucket');
     }
   });
 
@@ -257,7 +241,7 @@ describe('ses-tests', () => {
     //   Put file contents into DBOS (w/ table index)
     const myFile: FileDetails = { user_id: userid, file_type: 'text', file_name: 'mytextfile.txt' };
     const myFileRec = await TestUserFileTable.chooseFileRecord(myFile);
-    await s3Cfg!.saveStringToFile(myFileRec, 'This is my file');
+    await uploadWF(myFileRec, 'This is my file');
 
     // Get the file contents out of DBOS (using the table index)
     const mytxt = await getS3KeyContents(myFileRec.key);
@@ -282,7 +266,7 @@ describe('ses-tests', () => {
     //   Put file contents into DBOS (w/ table index)
     const myFile: FileDetails = { user_id: userid, file_type: 'text', file_name: 'mytextfile.txt' };
     const myFileRec = await TestUserFileTable.chooseFileRecord(myFile);
-    const wfhandle = await DBOS.startWorkflow(uploadWF)(myFileRec, 60, { contentType: 'text/plain' });
+    const wfhandle = await DBOS.startWorkflow(uploadPWF)(myFileRec, 60, { contentType: 'text/plain' });
     //    Get the presigned post
     const ppost = await DBOS.getEvent<PresignedPost>(wfhandle.workflowID, 'uploadkey');
     //    Upload to the URL

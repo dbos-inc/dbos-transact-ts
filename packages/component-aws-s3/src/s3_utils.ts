@@ -1,110 +1,9 @@
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { type PresignedPost } from '@aws-sdk/s3-presigned-post';
 
-import { DBOS, ArgOptional, ConfiguredInstance, WorkflowConfig } from '@dbos-inc/dbos-sdk';
-import { AWSServiceConfig, getAWSConfigByName, getConfigForAWSService } from '@dbos-inc/aws-config';
+import { DBOS, WorkflowConfig } from '@dbos-inc/dbos-sdk';
 
 export interface FileRecord {
   key: string;
-}
-
-export interface S3Callbacks {
-  newActiveFile: (rec: FileRecord) => Promise<unknown>;
-  newPendingFile: (rec: FileRecord) => Promise<unknown>;
-  fileActivated: (rec: FileRecord) => Promise<unknown>;
-  fileDeleted: (rec: FileRecord) => Promise<unknown>;
-}
-
-export interface DBOSS3Config {
-  awscfgname?: string;
-  awscfg?: AWSServiceConfig;
-  bucket: string;
-  s3Callbacks?: S3Callbacks;
-}
-
-export class DBOS_S3 extends ConfiguredInstance {
-  //////////
-  // S3 Configuration
-  //////////
-
-  static AWS_S3_CONFIGURATION = 'aws_s3_configuration';
-  s3client?: S3Client = undefined;
-
-  constructor(
-    name: string,
-    readonly config: DBOSS3Config,
-  ) {
-    super(name);
-  }
-
-  async initialize() {
-    // Get the config and call the validation
-    if (!this.config.awscfg) {
-      if (this.config.awscfgname) {
-        this.config.awscfg = getAWSConfigByName(this.config.awscfgname);
-      } else {
-        this.config.awscfg = getConfigForAWSService(DBOS_S3.AWS_S3_CONFIGURATION);
-      }
-    }
-    this.s3client = DBOS_S3.createS3Client(this.config.awscfg);
-    return Promise.resolve();
-  }
-
-  static createS3Client(cfg: AWSServiceConfig) {
-    return new S3Client({
-      endpoint: cfg.endpoint,
-      region: cfg.region,
-      credentials: cfg.credentials,
-      maxAttempts: cfg.maxRetries,
-    });
-  }
-
-  ///////
-  //  Basic functions + step wrappers
-  ///////
-
-  // Put small string
-  static async putS3Cmd(s3: S3Client, bucket: string, key: string, content: string, contentType: string) {
-    return await s3.send(
-      new PutObjectCommand({
-        Bucket: bucket,
-        Key: key,
-        ContentType: contentType,
-        Body: content,
-      }),
-    );
-  }
-
-  @DBOS.step()
-  async put(key: string, content: string, @ArgOptional contentType: string = 'text/plain') {
-    return await DBOS_S3.putS3Cmd(this.s3client!, this.config.bucket, key, content, contentType);
-  }
-
-  /////////
-  // Simple Workflows
-  /////////
-
-  // Send a data string item directly to S3
-  // Use cases for this:
-  //  App code produces (or received from the user) _small_ data to store in S3
-  //   One-shot workflow
-  //     Do the S3 op
-  //     If it succeeds, write in table
-  //     If it fails drop the partial file (if any) from S3
-  // Note this will ALL get logged in the DB as a workflow parameter (and a communicator parameter) so better not be big!
-  @DBOS.workflow()
-  async saveStringToFile(fileDetails: FileRecord, content: string, @ArgOptional contentType = 'text/plain') {
-    // Running this as a communicator could possibly be skipped... but only for efficiency
-    try {
-      await this.put(fileDetails.key, content, contentType);
-    } catch (e) {
-      //await this.delete(fileDetails.key);
-      throw e;
-    }
-
-    await this.config.s3Callbacks?.newActiveFile(fileDetails);
-    return fileDetails;
-  }
 }
 
 export interface S3WorkflowCallbacks<R extends FileRecord, Options = unknown> {
@@ -115,6 +14,7 @@ export interface S3WorkflowCallbacks<R extends FileRecord, Options = unknown> {
   fileDeleted: (rec: R) => Promise<unknown>;
 
   // S3 interaction options, these will be run as steps
+  putS3Contents: (rec: R, content: string, options?: Options) => Promise<unknown>;
   createPresignedPost: (rec: R, timeout?: number, options?: Options) => Promise<PresignedPost>;
   validateS3Upload?: (rec: R) => Promise<void>;
   deleteS3Object: (rec: R) => Promise<unknown>;
@@ -137,6 +37,42 @@ export function registerS3DeleteWorkflow<R extends FileRecord, Options = unknown
       },
       { name: 'deleteS3Object' },
     );
+  }, options);
+}
+
+export function registerS3UploadWorkflow<R extends FileRecord, Options = unknown>(
+  options: {
+    name?: string;
+    ctorOrProto?: object;
+    className?: string;
+    config?: WorkflowConfig;
+  },
+  callbacks: S3WorkflowCallbacks<R, Options>,
+) {
+  return DBOS.registerWorkflow(async (fileDetails: R, content: string, objOptions?: Options) => {
+    try {
+      await DBOS.runStep(
+        async () => {
+          await callbacks.putS3Contents(fileDetails, content, objOptions);
+        },
+        { name: 'putS3Contents' },
+      );
+    } catch (e) {
+      try {
+        await DBOS.runStep(
+          async () => {
+            return callbacks.deleteS3Object(fileDetails);
+          },
+          { name: 'deleteS3Object' },
+        );
+      } catch (e2) {
+        DBOS.logger.debug(e2);
+      }
+      throw e;
+    }
+
+    await callbacks.newActiveFile(fileDetails);
+    return fileDetails;
   }, options);
 }
 
