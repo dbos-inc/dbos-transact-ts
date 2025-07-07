@@ -3,8 +3,14 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
-import { getTransactionalDataSource, registerTransactionalDataSource } from './decorators';
+import {
+  getTransactionalDataSource,
+  registerAndWrapDBOSFunctionByName,
+  registerFunctionWrapper,
+  registerTransactionalDataSource,
+} from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
+import type { Notification } from 'pg';
 
 /**
  * This interface is to be used for implementers of transactional data sources
@@ -59,13 +65,14 @@ export interface DBOSDataSource<Config extends { name?: string }> {
    * Providing a static version of this functionality is optional.
    *
    * @param func - Function to wrap
-   * @param name - Name of function
-   * @param config - Transaction settings
+   * @param config - Transaction settings, including function `name`
+   * @param target - Class name, or class ctor/prototype
    * @returns Wrapped function, to be called instead of `func`
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: Config,
+    target?: { ctorOrProto?: object; className?: string },
   ): (this: This, ...args: Args) => Promise<Return>;
 
   /**
@@ -175,6 +182,8 @@ export function registerTransaction<This, Args extends unknown[], Return>(
   dsName: string,
   func: (this: This, ...args: Args) => Promise<Return>,
   options: {
+    ctorOrProto?: object;
+    className?: string;
     name: string;
   },
   config?: unknown,
@@ -182,9 +191,12 @@ export function registerTransaction<This, Args extends unknown[], Return>(
   const dsn = dsName ?? '<default>';
 
   const funcName = options.name ?? func.name;
+  const reg = registerAndWrapDBOSFunctionByName(options?.ctorOrProto, options.className, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     const ds = getTransactionalDataSource(dsn);
+    const callFunc = reg.registration.registeredFunction ?? reg.registration.origFunction;
+
     if (!DBOS.isWithinWorkflow()) {
       if (getNextWFID(undefined)) {
         throw new DBOSInvalidWorkflowTransitionError(
@@ -193,7 +205,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
       }
 
       return await runWithDataSourceContext(undefined, 0, async () => {
-        return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
+        return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
       });
     }
 
@@ -222,7 +234,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
       const res = await DBOSExecutor.globalInstance!.runInternalStep<Return>(
         async () => {
           return await runWithDataSourceContext(span, callnum, async () => {
-            return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
+            return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
           });
         },
         funcName,
@@ -240,9 +252,12 @@ export function registerTransaction<This, Args extends unknown[], Return>(
     }
   };
 
+  registerFunctionWrapper(invokeWrapper, reg.registration);
+
   Object.defineProperty(invokeWrapper, 'name', {
     value: options.name,
   });
+
   return invokeWrapper;
 }
 
@@ -306,4 +321,10 @@ export function isPGKeyConflictError(error: unknown): boolean {
 
 export function isPGFailedSqlTransactionError(error: unknown): boolean {
   return getPGErrorCode(error) === '25P02';
+}
+
+export type PGDBNotification = Notification;
+export type PGDBNotificationCallback = (n: PGDBNotification) => void;
+export interface PGDBNotificationListener {
+  close(): Promise<void>;
 }

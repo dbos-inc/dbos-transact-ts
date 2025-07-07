@@ -4,22 +4,7 @@ export { DBOSClient } from './client';
 
 export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler';
 
-export {
-  // Extensions for others to register event receivers/pollers
-  associateMethodWithEventReceiver,
-  associateClassWithEventReceiver,
-} from './decorators';
-
-export {
-  DBOSEventReceiver,
-  DBOSEventReceiverRegistration,
-  DBOSExecutorContext,
-  DBNotification,
-  DBNotificationListener,
-  DBOSEventReceiverState,
-} from './eventreceiver';
-
-export { DBOSLifecycleCallback } from './decorators';
+export { DBOSLifecycleCallback, ExternalRegistration } from './decorators';
 
 export { WorkflowQueue } from './wfqueue';
 
@@ -76,7 +61,7 @@ export { ParseOptions, parseConfigFile } from './dbos-runtime/config';
 
 export { DBOSRuntimeConfig } from './dbos-runtime/runtime';
 
-export { DBOSConfig } from './dbos-executor';
+export { DBOSConfig, DBOSExternalState, DBOSExternalState as DBOSEventReceiverState } from './dbos-executor';
 
 export {
   DBOSHttpAuthMiddleware,
