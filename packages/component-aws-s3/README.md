@@ -1,6 +1,12 @@
 # DBOS AWS Simple Storage Service (S3) Component
 
-This is a [DBOS](https://docs.dbos.dev/) library for working with [Amazon Web Services Simple Storage Service (S3)](https://aws.amazon.com/s3/).
+This is a [DBOS](https://docs.dbos.dev/) library for working with [Amazon Web Services Simple Storage Service (S3)](https://aws.amazon.com/s3/). The primary feature of this library is workflows that keep a database table in sync with the S3 contents, regardless of failures.
+
+## Use of Presigned URLs
+
+DBOS provides a convenient and powerful way to use a database table to track and manage S3 objects. However, it is often not convenient to send or retrieve large S3 object contents through DBOS; the client should exchange data directly with S3. S3 accomodates this use case very well, using a feature called ["presigned URLs"](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html).
+
+In these cases, the client can place a request to DBOS that produces a presigned GET / POST URL, which the client can use for a limited time and purpose for S3 access. DBOS takes care of making sure that table entries are cleaned up if the client does not finish writing files.
 
 ## Getting Started
 
@@ -14,78 +20,14 @@ In order to store and retrieve objects in S3, it is necessary to:
 First, ensure that the DBOS S3 component is installed into the application:
 
 ```
-npm install --save @dbos-inc/component-aws-s3
+npm install --save @dbos-inc/aws-s3-workflows
 ```
 
 Second, ensure that the library class is imported and exported from an application entrypoint source file:
 
 ```typescript
-import { DBOS_S3 } from '@dbos-inc/component-aws-s3';
-export { DBOS_S3 };
+import { ... } from '@dbos-inc/aws-s3-workflows';
 ```
-
-Third, place appropriate configuration into the [`dbos-config.yaml`](https://docs.dbos.dev/typescript/reference/configuration) file; the following example will pull the AWS information from the environment:
-
-```yaml
-application:
-  aws_s3_configuration: aws_config # Optional if the section is called `aws_config`
-  aws_config:
-    aws_region: ${AWS_REGION}
-    aws_access_key_id: ${AWS_ACCESS_KEY_ID}
-    aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}
-```
-
-If a different configuration file section should be used for S3, the `aws_s3_configuration` can be changed to indicate a configuration section for use with S3. If multiple configurations are to be used, the application code will have to name and configure them.
-
-The application will need at least one s3 bucket. This can be placed in the `application` section of `dbos-config.yaml` also, but the naming key is to be established by the application.
-
-## Selecting A Configuration
-
-`DBOS_S3` is a configured class. The AWS configuration (or config file key name) and bucket name must be provided when a class instance is created, for example:
-
-```typescript
-const defaultS3 = new DBOS_S3('myS3Bucket', {awscfgname: 'aws_config', bucket: 'my-s3-bucket', ...});
-```
-
-## Simple Operation Wrappers
-
-The `DBOS_S3` class provides several DBOS [step](https://docs.dbos.dev/typescript/tutorials/step-tutorial) wrappers for S3 functions.
-
-### Reading and Writing S3 From DBOS Handlers and Workflows
-
-#### Writing S3 Objects
-
-A string can be written to an S3 key with the following:
-
-```typescript
-const putres = await defaultS3.put('/my/test/key', 'Test string from DBOS');
-```
-
-Note that the arguments to `put` will be logged to the database. Consider [having the client upload to S3 with a presigned post](#client-access-to-s3-objects) if the data is generated outside of DBOS or if the data is larger than a few megabytes.
-
-### Reading S3 Objects
-
-A string can be read from an S3 key with the following:
-
-```typescript
-const getres = await defaultS3.get('/my/test/key');
-```
-
-Note that the return value from `get` will be logged to the database. Consider [reading directly from S3 with a signed URL](#presigned-get-urls) if the data is large.
-
-### Deleting Objects
-
-An S3 key can be removed/deleted with the following:
-
-```typescript
-const delres = await defaultS3.delete('/my/test/key');
-```
-
-### Client Access To S3 Objects
-
-As shown below, DBOS provides a convenient and powerful way to track and manage S3 objects. However, it is often not convenient to send or retrieve large S3 object contents through DBOS; it would be preferable to have the client talk directly to S3. S3 accomodates this use case very well, using a feature called ["presigned URLs"](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html).
-
-In these cases, the client can place a request to DBOS that produces a presigned GET / POST URL, which the client can use for a limited time and purpose for S3 access.
 
 #### Presigned GET URLs
 

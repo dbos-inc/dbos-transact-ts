@@ -2,7 +2,7 @@ import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } fro
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { createPresignedPost, PresignedPost } from '@aws-sdk/s3-presigned-post';
 
-import { DBOS, ArgOptional, ConfiguredInstance } from '@dbos-inc/dbos-sdk';
+import { DBOS, ArgOptional, ConfiguredInstance, WorkflowConfig } from '@dbos-inc/dbos-sdk';
 import { AWSServiceConfig, getAWSConfigByName, getConfigForAWSService } from '@dbos-inc/aws-config';
 import { Error as DBOSError } from '@dbos-inc/dbos-sdk';
 
@@ -10,16 +10,18 @@ export interface FileRecord {
   key: string;
 }
 
+export interface S3Callbacks {
+  newActiveFile: (rec: FileRecord) => Promise<unknown>;
+  newPendingFile: (rec: FileRecord) => Promise<unknown>;
+  fileActivated: (rec: FileRecord) => Promise<unknown>;
+  fileDeleted: (rec: FileRecord) => Promise<unknown>;
+}
+
 export interface DBOSS3Config {
   awscfgname?: string;
   awscfg?: AWSServiceConfig;
   bucket: string;
-  s3Callbacks?: {
-    newActiveFile: (rec: FileRecord) => Promise<unknown>;
-    newPendingFile: (rec: FileRecord) => Promise<unknown>;
-    fileActivated: (rec: FileRecord) => Promise<unknown>;
-    fileDeleted: (rec: FileRecord) => Promise<unknown>;
-  };
+  s3Callbacks?: S3Callbacks;
 }
 
 interface S3GetResponseOptions {
@@ -267,44 +269,68 @@ export class DBOS_S3 extends ConfiguredInstance {
   ): Promise<string> {
     return await this.presignedGetURL(fileDetails.key, expirationSec, options);
   }
+}
 
-  //  Presigned U/L for end user
-  //    A workflow that creates a presigned post
-  //    Sets that back for the caller
-  //    Waits for a completion notification
-  //    If it gets it, adds the DB entry
-  //      The poll will end significantly after the S3 post URL expires
-  //    This supports an OAOO key on the workflow.
-  //      (Won't start that completion checker more than once)
-  //      A repeat request will get the same presigned post URL
-  @DBOS.workflow()
-  async writeFileViaURL(
-    fileDetails: FileRecord,
-    @ArgOptional expirationSec = 3600,
-    @ArgOptional
-    contentOptions?: {
-      contentType?: string;
-      contentLengthMin?: number;
-      contentLengthMax?: number;
-    },
-  ) {
-    await this.config.s3Callbacks?.newPendingFile(fileDetails);
+export interface S3WorkflowCallbacks<R extends FileRecord, Options = unknown> {
+  // Database operations (these should be transactions)
+  newActiveFile: (rec: R) => Promise<unknown>;
+  newPendingFile: (rec: R) => Promise<unknown>;
+  fileActivated: (rec: R) => Promise<unknown>;
+  fileDeleted: (rec: R) => Promise<unknown>;
 
-    const upkey = await this.createPresignedPost(fileDetails.key, expirationSec, contentOptions);
+  // S3 interaction options, these will be run as steps
+  createPresignedPost: (rec: R, timeout?: number, options?: Options) => Promise<PresignedPost>;
+  validateS3Upload?: (rec: R) => Promise<void>;
+  deleteS3Object: (rec: R) => Promise<void>;
+}
+
+export function registerS3PresignedUploadWorkflow<R extends FileRecord, Options = unknown>(
+  options: {
+    name?: string;
+    ctorOrProto?: object;
+    className?: string;
+    config?: WorkflowConfig;
+  },
+  callbacks: S3WorkflowCallbacks<R, Options>,
+) {
+  return DBOS.registerWorkflow(async (fileDetails: R, timeoutSeconds: number, objOptions?: Options) => {
+    await callbacks.newPendingFile(fileDetails);
+
+    const upkey = await DBOS.runStep(
+      async () => {
+        return await callbacks.createPresignedPost(fileDetails, timeoutSeconds, objOptions);
+      },
+      { name: 'createPresignedPost' },
+    );
     await DBOS.setEvent<PresignedPost>('uploadkey', upkey);
 
     try {
-      const res = await DBOS.recv<boolean>('uploadfinish', expirationSec + 60); // 1 minute extra?
+      const res = await DBOS.recv<boolean>('uploadfinish', timeoutSeconds + 60);
 
       if (!res) {
         throw new Error('S3 operation timed out or canceled');
       }
-      // TODO: Validate the file
-      await this.config.s3Callbacks?.fileActivated(fileDetails);
+
+      // Validate the file, if we have code for that
+      if (callbacks.validateS3Upload) {
+        await DBOS.runStep(
+          async () => {
+            await callbacks.validateS3Upload!(fileDetails);
+          },
+          { name: 'validateFileUpload' },
+        );
+      }
+
+      await callbacks?.fileActivated(fileDetails);
     } catch (e) {
       try {
-        const _cwfh = await DBOS.startWorkflow(this).deleteFile(fileDetails);
-        // No reason to await result
+        await callbacks.fileDeleted(fileDetails);
+        await DBOS.runStep(
+          async () => {
+            await callbacks.deleteS3Object(fileDetails);
+          },
+          { name: 'deleteS3Object' },
+        );
       } catch (e2) {
         DBOS.logger.debug(e2);
       }
@@ -312,5 +338,5 @@ export class DBOS_S3 extends ConfiguredInstance {
     }
 
     return fileDetails;
-  }
+  }, options);
 }
