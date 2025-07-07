@@ -31,6 +31,7 @@ interface FileDetails {
   file_status?: string;
   file_time?: number;
 }
+
 interface UserFile extends FileDetails, FileRecord {
   user_id: string;
   file_type: string;
@@ -159,6 +160,7 @@ const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
     return await TestUserFileTable.deleteFileRecordById(rec.file_id);
   },
 
+  // S3 interaction options, these will be run as steps
   putS3Contents: async (rec: UserFile, content: string, options?: Opts) => {
     return await s3client?.send(
       new PutObjectCommand({
@@ -169,7 +171,6 @@ const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
       }),
     );
   },
-  // S3 interaction options, these will be run as steps
   createPresignedPost: async (rec: UserFile, timeout?: number, opts?: Opts) => {
     const postPresigned = await createPresignedPost(s3client!, {
       Conditions: [
@@ -184,7 +185,6 @@ const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
     });
     return { url: postPresigned.url, fields: postPresigned.fields };
   },
-
   validateS3Upload: undefined,
   deleteS3Object: async (rec: UserFile) => {
     return await s3client?.send(

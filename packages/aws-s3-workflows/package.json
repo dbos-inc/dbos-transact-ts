@@ -1,12 +1,12 @@
 {
-  "name": "@dbos-inc/component-aws-s3",
+  "name": "@dbos-inc/aws-s3-workflows",
   "version": "0.0.0-placeholder",
   "description": "Component library - DBOS S3 steps and workflows",
   "license": "MIT",
   "repository": {
     "type": "git",
     "url": "https://github.com/dbos-inc/dbos-transact-ts",
-    "directory": "packages/component-aws-s3"
+    "directory": "packages/aws-s3-workflows"
   },
   "homepage": "https://docs.dbos.dev/",
   "main": "dist/index.js",
