@@ -27,12 +27,11 @@
     "typescript": "^5.3.3"
   },
   "peerDependencies": {
-    "@dbos-inc/dbos-sdk": "*",
-    "@dbos-inc/aws-config": "*"
+    "@dbos-inc/dbos-sdk": "*"
   },
   "dependencies": {
-    "@aws-sdk/s3-presigned-post": "^3.552.0",
-    "@aws-sdk/s3-request-presigner": "^3.552.0",
+    "@aws-sdk/s3-presigned-post": "^3.842.0",
+    "@aws-sdk/s3-request-presigner": "^3.842.0",
     "uuid": "^9.0.1"
   }
 }

@@ -13,7 +13,6 @@ jobs:
         package:
           [
             .,
-            packages/aws-config,
             packages/component-aws-s3,
             packages/confluent-kafka-receive,
             packages/create,
