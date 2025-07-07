@@ -1,10 +1,9 @@
 import { S3Client, GetObjectCommand, PutObjectCommand, DeleteObjectCommand } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
-import { createPresignedPost, PresignedPost } from '@aws-sdk/s3-presigned-post';
+import { type PresignedPost } from '@aws-sdk/s3-presigned-post';
 
 import { DBOS, ArgOptional, ConfiguredInstance, WorkflowConfig } from '@dbos-inc/dbos-sdk';
 import { AWSServiceConfig, getAWSConfigByName, getConfigForAWSService } from '@dbos-inc/aws-config';
-import { Error as DBOSError } from '@dbos-inc/dbos-sdk';
 
 export interface FileRecord {
   key: string;
@@ -163,52 +162,6 @@ export class DBOS_S3 extends ConfiguredInstance {
     @ArgOptional options: S3GetResponseOptions = {},
   ) {
     return await DBOS_S3.getS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs, options);
-  }
-
-  // Presigned post key
-  static async postS3KeyCmd(
-    s3: S3Client,
-    bucket: string,
-    key: string,
-    expirationSecs: number,
-    @ArgOptional
-    contentOptions?: {
-      contentType?: string;
-      contentLengthMin?: number;
-      contentLengthMax?: number;
-    },
-  ): Promise<PresignedPost> {
-    const postPresigned = await createPresignedPost(s3, {
-      Conditions: [
-        ['content-length-range', contentOptions?.contentLengthMin ?? 1, contentOptions?.contentLengthMax ?? 10000000], // 10MB
-      ],
-      Bucket: bucket,
-      Key: key,
-      Expires: expirationSecs,
-      Fields: {
-        'Content-Type': contentOptions?.contentType ?? '*',
-      },
-    });
-    return { url: postPresigned.url, fields: postPresigned.fields };
-  }
-
-  @DBOS.step()
-  async createPresignedPost(
-    key: string,
-    expirationSecs: number = 1200,
-    @ArgOptional
-    contentOptions?: {
-      contentType?: string;
-      contentLengthMin?: number;
-      contentLengthMax?: number;
-    },
-  ) {
-    try {
-      return await DBOS_S3.postS3KeyCmd(this.s3client!, this.config.bucket, key, expirationSecs, contentOptions);
-    } catch (e) {
-      DBOS.logger.error(e);
-      throw new DBOSError.DBOSError(`Unable to presign post: ${(e as Error).message}`, 500);
-    }
   }
 
   /////////
