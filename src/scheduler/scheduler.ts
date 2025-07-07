@@ -1,4 +1,4 @@
-import { DBOS, DBOSEventReceiverState } from '..';
+import { DBOS, DBOSExternalState } from '..';
 import { DBOSExecutor } from '../dbos-executor';
 import { getAllRegisteredFunctions, MethodRegistrationBase, TypedAsyncFunction } from '../decorators';
 import { TimeMatcher } from './crontab';
@@ -201,7 +201,7 @@ class DetachableLoop {
       }
 
       // Record the time of the wf kicked off
-      const ers: DBOSEventReceiverState = {
+      const ers: DBOSExternalState = {
         service: SCHEDULER_EVENT_SERVICE_NAME,
         workflowFnName: this.scheduledMethodName,
         key: 'lastState',

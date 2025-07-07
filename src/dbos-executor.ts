@@ -185,7 +185,7 @@ type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
 /**
  * State item to be kept in the DBOS system database on behalf of clients
  */
-export interface DBOSEventReceiverState {
+export interface DBOSExternalState {
   /** Name of event receiver service */
   service: string;
   /** Fully qualified function name for which state is kept */
@@ -1954,10 +1954,10 @@ export class DBOSExecutor {
     }
   }
 
-  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {
+  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
     return await this.systemDatabase.getEventDispatchState(svc, wfn, key);
   }
-  async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+  async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
     return await this.systemDatabase.upsertEventDispatchState(state);
   }
 

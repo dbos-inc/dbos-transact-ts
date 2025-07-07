@@ -61,7 +61,7 @@ export { ParseOptions, parseConfigFile } from './dbos-runtime/config';
 
 export { DBOSRuntimeConfig } from './dbos-runtime/runtime';
 
-export { DBOSConfig, DBOSEventReceiverState } from './dbos-executor';
+export { DBOSConfig, DBOSExternalState, DBOSExternalState as DBOSEventReceiverState } from './dbos-executor';
 
 export {
   DBOSHttpAuthMiddleware,

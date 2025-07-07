@@ -13,7 +13,7 @@ import {
   DBOSConfigInternal,
   isDeprecatedDBOSConfig,
   DBOSExecutor,
-  DBOSEventReceiverState,
+  DBOSExternalState,
   InternalWorkflowParams,
 } from './dbos-executor';
 import { Tracer } from './telemetry/traces';
@@ -788,11 +788,7 @@ export class DBOS {
    * @param key - The subitem kept by event receiver service for the function, allowing multiple values to be stored per function
    * @returns The latest system database state for the specified service+workflow+item
    */
-  static async getEventDispatchState(
-    svc: string,
-    wfn: string,
-    key: string,
-  ): Promise<DBOSEventReceiverState | undefined> {
+  static async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
     return await DBOS.#executor.getEventDispatchState(svc, wfn, key);
   }
   /**
@@ -804,7 +800,7 @@ export class DBOS {
    * @param state - the service, workflow, item, version, and value to write to the database
    * @returns The upsert returns the current record, which may be useful if it is more recent than the `state` provided.
    */
-  static async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+  static async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
     return await DBOS.#executor.upsertEventDispatchState(state);
   }
 
