@@ -137,16 +137,14 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
           const onAbort = () => {
             clearTimeout(timeoutID);
-            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-            reject();
+            reject(new Error('Abort signal received'));
           };
 
           signal.addEventListener('abort', onAbort, { once: true });
 
           if (signal.aborted) {
             signal.removeEventListener('abort', onAbort);
-            // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
-            return reject();
+            reject(new Error('Abort signal received'));
           }
 
           timeoutID = setTimeout(() => {
