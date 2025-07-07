@@ -1,6 +1,6 @@
-import { DBOS, DBOSEventReceiverState } from '..';
+import { DBOS, DBOSExternalState } from '..';
 import { DBOSExecutor } from '../dbos-executor';
-import { MethodRegistrationBase, TypedAsyncFunction } from '../decorators';
+import { getAllRegisteredFunctions, MethodRegistrationBase, TypedAsyncFunction } from '../decorators';
 import { TimeMatcher } from './crontab';
 
 ////
@@ -63,7 +63,7 @@ export class DBOSScheduler {
   schedTasks: Promise<void>[] = [];
 
   initScheduler() {
-    for (const registeredOperation of this.dbosExec.registeredOperations) {
+    for (const registeredOperation of getAllRegisteredFunctions()) {
       const ro = registeredOperation as SchedulerRegistrationBase;
       if (ro.schedulerConfig) {
         const loop = new DetachableLoop(
@@ -94,7 +94,7 @@ export class DBOSScheduler {
 
   logRegisteredSchedulerEndpoints() {
     DBOS.logger.info('Scheduled endpoints:');
-    this.dbosExec.registeredOperations.forEach((registeredOperation) => {
+    getAllRegisteredFunctions().forEach((registeredOperation) => {
       const ro = registeredOperation as SchedulerRegistrationBase;
       if (ro.schedulerConfig) {
         DBOS.logger.info(
@@ -201,7 +201,7 @@ class DetachableLoop {
       }
 
       // Record the time of the wf kicked off
-      const ers: DBOSEventReceiverState = {
+      const ers: DBOSExternalState = {
         service: SCHEDULER_EVENT_SERVICE_NAME,
         workflowFnName: this.scheduledMethodName,
         key: 'lastState',

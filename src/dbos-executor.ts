@@ -17,7 +17,6 @@ import {
 } from './error';
 import {
   InvokedHandle,
-  type WorkflowConfig,
   type WorkflowHandle,
   type WorkflowParams,
   RetrievedHandle,
@@ -25,6 +24,7 @@ import {
   type WorkflowStatus,
   type GetQueuedWorkflowsInput,
   type StepInfo,
+  WorkflowConfig,
 } from './workflow';
 
 import { IsolationLevel, type TransactionConfig } from './transaction';
@@ -55,19 +55,22 @@ import {
   createDBIfDoesNotExist,
 } from './user_database';
 import {
-  MethodRegistrationBase,
   MethodRegistration,
-  getRegisteredMethodClassName,
-  getRegisteredMethodName,
+  getRegisteredFunctionFullName,
+  getRegisteredFunctionClassName,
+  getRegisteredFunctionName,
   getConfiguredInstance,
   ConfiguredInstance,
   getNameForClass,
   getClassRegistrationByName,
   getAllRegisteredClassNames,
-  getRegisteredOperationsByClassname,
   getLifecycleListeners,
   UntypedAsyncFunction,
   TypedAsyncFunction,
+  getFunctionRegistrationByName,
+  getAllRegisteredFunctions,
+  getFunctionRegistration,
+  MethodRegistrationBase,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import { SpanStatusCode } from '@opentelemetry/api';
@@ -88,13 +91,12 @@ import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
 import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { DBOSEventReceiver, DBOSExecutorContext, GetWorkflowsInput, InitContext } from '.';
+import { GetWorkflowsInput, InitContext } from '.';
 
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { DBOSScheduler } from './scheduler/scheduler';
-import { DBOSEventReceiverState, DBNotificationCallback, DBNotificationListener } from './eventreceiver';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
 import {
@@ -157,31 +159,6 @@ export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
   return isDeprecated;
 }
 
-interface WorkflowRegInfo {
-  workflow: UntypedAsyncFunction;
-  workflowOrigFunction: UntypedAsyncFunction;
-  config: WorkflowConfig;
-  registration?: MethodRegistrationBase; // Always set except for temp WF...
-}
-
-interface TransactionRegInfo {
-  transaction: UntypedAsyncFunction;
-  config: TransactionConfig;
-  registration: MethodRegistrationBase;
-}
-
-interface StepRegInfo {
-  step: UntypedAsyncFunction;
-  config: StepConfig;
-  registration: MethodRegistrationBase;
-}
-
-interface ProcedureRegInfo {
-  procedure: UntypedAsyncFunction;
-  config: StoredProcedureConfig;
-  registration: MethodRegistrationBase;
-}
-
 export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
@@ -205,12 +182,30 @@ export const TempWorkflowType = {
 
 type QueryFunction = <T>(sql: string, args: unknown[]) => Promise<T[]>;
 
+/**
+ * State item to be kept in the DBOS system database on behalf of clients
+ */
+export interface DBOSExternalState {
+  /** Name of event receiver service */
+  service: string;
+  /** Fully qualified function name for which state is kept */
+  workflowFnName: string;
+  /** subkey within the service+workflowFnName */
+  key: string;
+  /** Value kept for the service+workflowFnName+key combination */
+  value?: string;
+  /** Updated time (used to version the value) */
+  updateTime?: number;
+  /** Updated sequence number (used to version the value) */
+  updateSeq?: bigint;
+}
+
 export interface DBOSExecutorOptions {
   systemDatabase?: SystemDatabase;
   debugMode?: boolean;
 }
 
-export class DBOSExecutor implements DBOSExecutorContext {
+export class DBOSExecutor {
   initialized: boolean;
   // User Database
   userDatabase: UserDatabase = null as unknown as UserDatabase;
@@ -220,28 +215,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   // Temporary workflows are created by calling transaction/send/recv directly from the executor class
   static readonly tempWorkflowName = 'temp_workflow';
-
-  readonly workflowInfoMap: Map<string, WorkflowRegInfo> = new Map([
-    // We initialize the map with an entry for temporary workflows.
-    [
-      DBOSExecutor.tempWorkflowName,
-      {
-        workflow: async () => {
-          this.logger.error('UNREACHABLE: Indirect invoke of temp workflow');
-          return Promise.resolve();
-        },
-        workflowOrigFunction: async () => {
-          this.logger.error('UNREACHABLE: Indirect invoke of temp workflow');
-          return Promise.resolve();
-        },
-        config: {},
-      },
-    ],
-  ]);
-  readonly transactionInfoMap: Map<string, TransactionRegInfo> = new Map();
-  readonly stepInfoMap: Map<string, StepRegInfo> = new Map();
-  readonly procedureInfoMap: Map<string, ProcedureRegInfo> = new Map();
-  readonly registeredOperations: Array<MethodRegistrationBase> = [];
 
   readonly telemetryCollector: TelemetryCollector;
 
@@ -257,8 +230,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   typeormEntities: Function[] = [];
   drizzleEntities: { [key: string]: object } = {};
-
-  eventReceivers: DBOSEventReceiver[] = [];
 
   scheduler?: DBOSScheduler = undefined;
   wfqEnded?: Promise<void> = undefined;
@@ -385,36 +356,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  #registerClass(clsname: string) {
-    const registeredClassOperations = getRegisteredOperationsByClassname(clsname);
-    this.registeredOperations.push(...registeredClassOperations);
-    for (const ro of registeredClassOperations) {
-      if (ro.workflowConfig) {
-        this.#registerWorkflow(ro);
-      } else if (ro.txnConfig) {
-        this.#registerTransaction(ro);
-      } else if (ro.stepConfig) {
-        this.#registerStep(ro);
-      } else if (ro.procConfig) {
-        this.#registerProcedure(ro);
-      }
-      for (const [evtRcvr, _cfg] of ro.eventReceiverInfo) {
-        if (!this.eventReceivers.includes(evtRcvr)) this.eventReceivers.push(evtRcvr);
-      }
-    }
-  }
-
-  getRegistrationsFor(obj: DBOSEventReceiver) {
-    const res: { methodConfig: unknown; classConfig: unknown; methodReg: MethodRegistrationBase }[] = [];
-    for (const r of this.registeredOperations) {
-      if (!r.eventReceiverInfo.has(obj)) continue;
-      const methodConfig = r.eventReceiverInfo.get(obj)!;
-      const classConfig = r.defaults?.eventReceiverInfo.get(obj) ?? {};
-      res.push({ methodReg: r, methodConfig, classConfig });
-    }
-    return res;
-  }
-
   async init(classes?: object[]): Promise<void> {
     if (this.initialized) {
       this.logger.error('Workflow executor already initialized!');
@@ -459,10 +400,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
         throw new DBOSInitializationError('No user database configured!');
       }
 
-      for (const cls of classnames) {
-        this.#registerClass(cls);
-      }
-
       // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
       await this.userDatabase.init(this.debugMode);
       if (!this.debugMode) {
@@ -495,7 +432,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         }
       }
 
-      for (const v of this.registeredOperations) {
+      for (const v of getAllRegisteredFunctions()) {
         const m = v as MethodRegistration<unknown, unknown[], unknown>;
         if (m.init === true) {
           this.logger.debug('Executing init method: ' + m.name);
@@ -561,128 +498,11 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  /* WORKFLOW OPERATIONS */
-
-  #registerWorkflow(ro: MethodRegistrationBase) {
-    const wf = ro.registeredFunction as UntypedAsyncFunction;
-    if (wf.name === DBOSExecutor.tempWorkflowName) {
-      throw new DBOSError(`Unexpected use of reserved workflow name: ${wf.name}`);
-    }
-    const wfn = ro.className + '.' + ro.name;
-    if (this.workflowInfoMap.has(wfn)) {
-      throw new DBOSError(`Repeated workflow name: ${wfn}`);
-    }
-    const workflowInfo: WorkflowRegInfo = {
-      workflow: wf,
-      workflowOrigFunction: ro.origFunction as UntypedAsyncFunction,
-      config: { ...ro.workflowConfig },
-      registration: ro,
-    };
-    this.workflowInfoMap.set(wfn, workflowInfo);
-    this.logger.debug(`Registered workflow ${wfn}`);
+  // This could return WF, or the function underlying a temp wf
+  #getFunctionInfoFromWFStatus(wf: WorkflowStatusInternal) {
+    const methReg = getFunctionRegistrationByName(wf.workflowClassName, wf.workflowName);
+    return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
-
-  #registerTransaction(ro: MethodRegistrationBase) {
-    const txf = ro.registeredFunction as UntypedAsyncFunction;
-    const tfn = ro.className + '.' + ro.name;
-
-    if (this.transactionInfoMap.has(tfn)) {
-      throw new DBOSError(`Repeated Transaction name: ${tfn}`);
-    }
-    const txnInfo: TransactionRegInfo = {
-      transaction: txf,
-      config: { ...ro.txnConfig },
-      registration: ro,
-    };
-    this.transactionInfoMap.set(tfn, txnInfo);
-    this.logger.debug(`Registered transaction ${tfn}`);
-  }
-
-  #registerStep(ro: MethodRegistrationBase) {
-    const comm = ro.registeredFunction as UntypedAsyncFunction;
-    const cfn = ro.className + '.' + ro.name;
-    if (this.stepInfoMap.has(cfn)) {
-      throw new DBOSError(`Repeated Commmunicator name: ${cfn}`);
-    }
-    const stepInfo: StepRegInfo = {
-      step: comm,
-      config: { ...ro.stepConfig },
-      registration: ro,
-    };
-    this.stepInfoMap.set(cfn, stepInfo);
-    this.logger.debug(`Registered step ${cfn}`);
-  }
-
-  #registerProcedure(ro: MethodRegistrationBase) {
-    const proc = ro.registeredFunction as UntypedAsyncFunction;
-    const cfn = ro.className + '.' + ro.name;
-
-    if (this.procedureInfoMap.has(cfn)) {
-      throw new DBOSError(`Repeated Procedure name: ${cfn}`);
-    }
-    const procInfo: ProcedureRegInfo = {
-      procedure: proc,
-      config: { ...ro.procConfig },
-      registration: ro,
-    };
-    this.procedureInfoMap.set(cfn, procInfo);
-    this.logger.debug(`Registered stored proc ${cfn}`);
-  }
-
-  getWorkflowInfo(wf: UntypedAsyncFunction) {
-    const wfname =
-      wf.name === DBOSExecutor.tempWorkflowName ? wf.name : getRegisteredMethodClassName(wf) + '.' + wf.name;
-    return this.workflowInfoMap.get(wfname);
-  }
-
-  getWorkflowInfoByStatus(wf: WorkflowStatusInternal) {
-    const wfname = wf.workflowClassName + '.' + wf.workflowName;
-    const wfInfo = this.workflowInfoMap.get(wfname);
-
-    // wfInfo may be undefined here, if this is a temp workflow
-
-    return { wfInfo, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
-  }
-
-  getTransactionInfo<T extends unknown[], R>(tf: (...args: T) => Promise<R>) {
-    const tfname = getRegisteredMethodClassName(tf) + '.' + tf.name;
-    return this.transactionInfoMap.get(tfname);
-  }
-  getTransactionInfoByNames(className: string, functionName: string, cfgName: string) {
-    const tfname = className + '.' + functionName;
-    const txnInfo: TransactionRegInfo | undefined = this.transactionInfoMap.get(tfname);
-
-    if (!txnInfo) {
-      throw new DBOSNotRegisteredError(tfname, `Transaction function name '${tfname}' is not registered.`);
-    }
-
-    return { txnInfo, clsInst: getConfiguredInstance(className, cfgName) };
-  }
-
-  getStepInfo(cf: UntypedAsyncFunction) {
-    const cfname = getRegisteredMethodClassName(cf) + '.' + cf.name;
-    return this.stepInfoMap.get(cfname);
-  }
-  getStepInfoByNames(className: string, functionName: string, cfgName: string) {
-    const cfname = className + '.' + functionName;
-    const stepInfo: StepRegInfo | undefined = this.stepInfoMap.get(cfname);
-
-    if (!stepInfo) {
-      throw new DBOSNotRegisteredError(cfname, `Step function name '${cfname}' is not registered.`);
-    }
-
-    return { commInfo: stepInfo, clsInst: getConfiguredInstance(className, cfgName) };
-  }
-
-  getProcedureClassName<T extends unknown[], R>(pf: (...args: T) => Promise<R>) {
-    return getRegisteredMethodClassName(pf);
-  }
-
-  getProcedureInfo<T extends unknown[], R>(pf: (...args: T) => Promise<R>) {
-    const pfName = getRegisteredMethodClassName(pf) + '.' + pf.name;
-    return this.procedureInfoMap.get(pfName);
-  }
-  // TODO: getProcedureInfoByNames??
 
   static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, success?: boolean) {
     if (success === true || !r.error) {
@@ -737,11 +557,16 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     const pctx = getCurrentContextStore();
 
-    const wInfo = this.getWorkflowInfo(wf as UntypedAsyncFunction);
-    if (wInfo === undefined) {
-      throw new DBOSNotRegisteredError(wf.name);
+    let wConfig: WorkflowConfig = {};
+    const wInfo = getFunctionRegistration(wf);
+
+    if (wf.name !== DBOSExecutor.tempWorkflowName) {
+      if (!wInfo || !wInfo.workflowConfig) {
+        throw new DBOSNotRegisteredError(wf.name);
+      }
+      wConfig = wInfo.workflowConfig;
     }
-    const wConfig = wInfo.config;
+
     const maxRecoveryAttempts = wConfig.maxRecoveryAttempts ? wConfig.maxRecoveryAttempts : 50;
 
     const wfname = wf.name; // TODO: Should be what was registered in wfInfo...
@@ -752,7 +577,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         status: StatusString.PENDING,
         operationUUID: workflowID,
         operationType: OperationType.WORKFLOW,
-        operationName: wInfo.registration?.name ?? wf.name,
+        operationName: wInfo?.name ?? wf.name,
         authenticatedUser: pctx?.authenticatedUser ?? '',
         authenticatedRoles: pctx?.authenticatedRoles ?? [],
         assumedRole: pctx?.assumedRole ?? '',
@@ -765,8 +590,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
       status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
-      workflowName: wfname,
-      workflowClassName: isTempWorkflow ? '' : getRegisteredMethodClassName(wf),
+      workflowName: getRegisteredFunctionName(wf),
+      workflowClassName: isTempWorkflow ? '' : getRegisteredFunctionClassName(wf),
       workflowConfigName: params.configuredInstance?.name || '',
       queueName: params.queueName,
       output: null,
@@ -1105,7 +930,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     return rows;
   }
 
-  async transaction<T extends unknown[], R>(
+  async runTransactionTempWF<T extends unknown[], R>(
     txn: (...args: T) => Promise<R>,
     params: WorkflowParams,
     ...args: T
@@ -1129,8 +954,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       {
         ...params,
         tempWfType: TempWorkflowType.transaction,
-        tempWfName: getRegisteredMethodName(txn),
-        tempWfClass: getRegisteredMethodClassName(txn),
+        tempWfName: getRegisteredFunctionName(txn),
+        tempWfClass: getRegisteredFunctionClassName(txn),
       },
       callerWFID,
       callerFunctionID,
@@ -1143,8 +968,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     clsinst: ConfiguredInstance | null,
     ...args: T
   ): Promise<R> {
-    const txnInfo = this.getTransactionInfo(txn);
-    if (txnInfo === undefined) {
+    const txnReg = getFunctionRegistration(txn);
+    if (!txnReg || !txnReg.txnConfig) {
       throw new DBOSNotRegisteredError(txn.name);
     }
 
@@ -1166,7 +991,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         authenticatedUser: pctx.authenticatedUser ?? '',
         assumedRole: pctx.assumedRole ?? '',
         authenticatedRoles: pctx.authenticatedRoles ?? [],
-        isolationLevel: txnInfo.config.isolationLevel,
+        isolationLevel: txnReg.txnConfig.isolationLevel,
       },
       pctx.span,
     );
@@ -1282,7 +1107,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
       };
 
       try {
-        const result = await this.userDatabase.transaction(wrappedTransaction, txnInfo.config);
+        const result = await this.userDatabase.transaction(wrappedTransaction, txnReg.txnConfig);
         span.setStatus({ code: SpanStatusCode.OK });
         this.tracer.endSpan(span);
         return result;
@@ -1325,7 +1150,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async procedure<T extends unknown[], R>(
+  async runProcedureTempWF<T extends unknown[], R>(
     proc: (...args: T) => Promise<R>,
     params: WorkflowParams,
     ...args: T
@@ -1340,8 +1165,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
         {
           ...params,
           tempWfType: TempWorkflowType.procedure,
-          tempWfName: getRegisteredMethodName(proc),
-          tempWfClass: getRegisteredMethodClassName(proc),
+          tempWfName: getRegisteredFunctionName(proc),
+          tempWfClass: getRegisteredFunctionClassName(proc),
         },
         ...args,
       )
@@ -1349,17 +1174,18 @@ export class DBOSExecutor implements DBOSExecutorContext {
   }
 
   async callProcedureFunction<T extends unknown[], R>(proc: (...args: T) => Promise<R>, ...args: T): Promise<R> {
-    const procInfo = this.getProcedureInfo(proc);
-    if (procInfo === undefined) {
+    const procInfo = getFunctionRegistration(proc);
+    if (!procInfo || !procInfo.procConfig) {
       throw new DBOSNotRegisteredError(proc.name);
     }
+    const procConfig = procInfo.procConfig as StoredProcedureConfig;
 
     const pctx = getCurrentContextStore()!;
     const wfid = pctx.workflowId!;
 
     await this.systemDatabase.checkIfCanceled(wfid);
 
-    const executeLocally = this.debugMode || (procInfo.config.executeLocally ?? false);
+    const executeLocally = this.debugMode || (procConfig.executeLocally ?? false);
     const funcId = functionIDGetIncrement();
     const span: Span = this.tracer.startSpan(
       proc.name,
@@ -1370,7 +1196,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
         authenticatedUser: pctx.authenticatedUser ?? '',
         assumedRole: pctx.assumedRole ?? '',
         authenticatedRoles: pctx.authenticatedRoles ?? [],
-        isolationLevel: procInfo.config.isolationLevel,
+        isolationLevel: procInfo.procConfig.isolationLevel,
         executeLocally,
       },
       pctx.span,
@@ -1379,7 +1205,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     try {
       const result = executeLocally
         ? await this.#callProcedureFunctionLocal(proc, args, span, procInfo, funcId)
-        : await this.#callProcedureFunctionRemote(proc, args, span, procInfo.config, funcId);
+        : await this.#callProcedureFunctionRemote(proc, args, span, procConfig, funcId);
       span.setStatus({ code: SpanStatusCode.OK });
       return result;
     } catch (e) {
@@ -1395,7 +1221,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     proc: (...args: T) => Promise<R>,
     args: T,
     span: Span,
-    procInfo: ProcedureRegInfo,
+    procInfo: MethodRegistrationBase,
     funcId: number,
   ): Promise<R> {
     let retryWaitMillis = 1;
@@ -1504,7 +1330,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
       try {
         const result = await this.invokeStoredProcFunction(wrappedProcedure, {
-          isolationLevel: procInfo.config.isolationLevel,
+          isolationLevel: procInfo.procConfig!.isolationLevel,
         });
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
@@ -1609,8 +1435,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const client = await this.procedurePool.connect();
     const log = (msg: NoticeMessage) => this.#logNotice(msg);
 
-    const procClassName = this.getProcedureClassName(proc);
-    const plainProcName = `${procClassName}_${proc.name}_p`;
+    const procname = getRegisteredFunctionFullName(proc);
+    const plainProcName = `${procname.className}_${procname.name}_p`;
     const procName = globalParams.wasComputed ? plainProcName : `v${globalParams.appVersion}_${plainProcName}`;
 
     const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
@@ -1643,7 +1469,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async external<T extends unknown[], R>(
+  async runStepTempWF<T extends unknown[], R>(
     stepFn: TypedAsyncFunction<T, R>,
     params: WorkflowParams,
     ...args: T
@@ -1668,8 +1494,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
       {
         ...params,
         tempWfType: TempWorkflowType.step,
-        tempWfName: getRegisteredMethodName(stepFn),
-        tempWfClass: getRegisteredMethodClassName(stepFn),
+        tempWfName: getRegisteredFunctionName(stepFn),
+        tempWfClass: getRegisteredFunctionClassName(stepFn),
       },
       callerWFID,
       callerFunctionID,
@@ -1691,8 +1517,8 @@ export class DBOSExecutor implements DBOSExecutorContext {
   ): Promise<R> {
     stepFnName = stepFnName ?? stepFn.name ?? '<unnamed>';
     if (!stepConfig) {
-      const stepReg = this.getStepInfo(stepFn as (...args: unknown[]) => Promise<unknown>);
-      stepConfig = stepReg?.config;
+      const stepReg = getFunctionRegistration(stepFn);
+      stepConfig = stepReg?.stepConfig;
     }
     if (stepConfig === undefined) {
       throw new DBOSNotRegisteredError(stepFnName);
@@ -1821,7 +1647,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async send<T>(destinationId: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  async runSendTempWF<T>(destinationId: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
     // Create a workflow and call send.
     const temp_workflow = async (destinationId: string, message: T, topic?: string) => {
       const ctx = getCurrentContextStore();
@@ -1859,7 +1685,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
    * Fork a workflow.
    * The forked workflow will be assigned a new ID.
    */
-
   forkWorkflow(
     workflowID: string,
     startStep: number,
@@ -1933,28 +1758,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async userDBListen(channels: string[], callback: DBNotificationCallback): Promise<DBNotificationListener> {
-    const notificationsClient = await this.procedurePool.connect();
-    for (const nname of channels) {
-      await notificationsClient.query(`LISTEN ${nname};`);
-    }
-
-    notificationsClient.on('notification', callback);
-
-    return {
-      close: async () => {
-        for (const nname of channels) {
-          try {
-            await notificationsClient.query(`UNLISTEN ${nname};`);
-          } catch (e) {
-            this.logger.warn(e);
-          }
-          notificationsClient.release();
-        }
-      },
-    };
-  }
-
   /* INTERNAL HELPERS */
   /**
    * A recovery process that by default runs during executor init time.
@@ -2007,9 +1810,6 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
     this.wfqEnded = wfQueueRunner.dispatchLoop(this);
 
-    for (const evtRcvr of this.eventReceivers) {
-      await evtRcvr.initialize(this);
-    }
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();
     }
@@ -2025,21 +1825,14 @@ export class DBOSExecutor implements DBOSExecutorContext {
         this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
       }
     }
-    this.logger.debug('Deactivating event receivers');
-    for (const evtRcvr of this.eventReceivers || []) {
-      try {
-        await evtRcvr.destroy();
-      } catch (err) {
-        const e = err as Error;
-        this.logger.warn(`Error destroying event receiver: ${e.message}`);
-      }
-    }
+    this.logger.debug('Deactivating scheduler');
     try {
       await this.scheduler?.destroyScheduler();
     } catch (err) {
       const e = err as Error;
       this.logger.warn(`Error destroying scheduler: ${e.message}`);
     }
+    this.logger.debug('Deactivating queue runner');
     if (stopQueueThread) {
       try {
         wfQueueRunner.stop();
@@ -2065,15 +1858,15 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const inputs = DBOSJSON.parse(wfStatus.input) as unknown[];
     const recoverCtx = this.#getRecoveryContext(workflowID, wfStatus);
 
-    const { wfInfo, configuredInst } = this.getWorkflowInfoByStatus(wfStatus);
+    const { methReg, configuredInst } = this.#getFunctionInfoFromWFStatus(wfStatus);
 
     // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
     const workflowStartID = startNewWorkflow ? undefined : workflowID;
 
-    if (wfInfo) {
+    if (methReg?.workflowConfig) {
       return await runWithTopContext(recoverCtx, async () => {
         return await this.workflow(
-          wfInfo.workflow,
+          methReg.registeredFunction as UntypedAsyncFunction,
           {
             workflowUUID: workflowStartID,
             configuredInstance: configuredInst,
@@ -2090,29 +1883,24 @@ export class DBOSExecutor implements DBOSExecutorContext {
     const wfName = wfStatus.workflowName;
     const nameArr = wfName.split('-');
     if (!nameArr[0].startsWith(DBOSExecutor.tempWorkflowName)) {
-      // CB - Doesn't this happen if the user changed the function name in their code?
       throw new DBOSError(
-        `This should never happen! Cannot find workflow info for a non-temporary workflow! UUID ${workflowID}, name ${wfName}`,
+        `Cannot find workflow function for a non-temporary workflow, ID ${workflowID}, class '${wfStatus.workflowClassName}', function '${wfName}'; did you change your code?`,
       );
     }
 
     if (nameArr[1] === TempWorkflowType.transaction) {
-      const { txnInfo, clsInst } = this.getTransactionInfoByNames(
-        wfStatus.workflowClassName,
-        nameArr[2],
-        wfStatus.workflowConfigName,
-      );
-      if (!txnInfo) {
-        this.logger.error(`Cannot find transaction info for UUID ${workflowID}, name ${nameArr[2]}`);
+      const txnReg = getFunctionRegistrationByName(wfStatus.workflowClassName, nameArr[2]);
+      if (!txnReg?.txnConfig) {
+        this.logger.error(`Cannot find transaction info for ID ${workflowID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
 
       return await runWithTopContext(recoverCtx, async () => {
         return await this.startTransactionTempWF(
-          txnInfo.transaction,
+          txnReg.registeredFunction as UntypedAsyncFunction,
           {
             workflowUUID: workflowStartID,
-            configuredInstance: clsInst,
+            configuredInstance: configuredInst,
             queueName: wfStatus.queueName,
             executeWorkflow: true,
           },
@@ -2122,21 +1910,17 @@ export class DBOSExecutor implements DBOSExecutorContext {
         );
       });
     } else if (nameArr[1] === TempWorkflowType.step) {
-      const { commInfo, clsInst } = this.getStepInfoByNames(
-        wfStatus.workflowClassName,
-        nameArr[2],
-        wfStatus.workflowConfigName,
-      );
-      if (!commInfo) {
-        this.logger.error(`Cannot find step info for UUID ${workflowID}, name ${nameArr[2]}`);
+      const stepReg = getFunctionRegistrationByName(wfStatus.workflowClassName, nameArr[2]);
+      if (!stepReg?.stepConfig) {
+        this.logger.error(`Cannot find step info for ID ${workflowID}, name ${nameArr[2]}`);
         throw new DBOSNotRegisteredError(nameArr[2]);
       }
       return await runWithTopContext(recoverCtx, async () => {
         return await this.startStepTempWF(
-          commInfo.step,
+          stepReg.registeredFunction as UntypedAsyncFunction,
           {
             workflowUUID: workflowStartID,
-            configuredInstance: clsInst,
+            configuredInstance: configuredInst,
             queueName: wfStatus.queueName, // Probably null
             executeWorkflow: true,
           },
@@ -2170,10 +1954,10 @@ export class DBOSExecutor implements DBOSExecutorContext {
     }
   }
 
-  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSEventReceiverState | undefined> {
+  async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
     return await this.systemDatabase.getEventDispatchState(svc, wfn, key);
   }
-  async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+  async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
     return await this.systemDatabase.upsertEventDispatchState(state);
   }
 
@@ -2211,7 +1995,7 @@ export class DBOSExecutor implements DBOSExecutorContext {
 
   logRegisteredHTTPUrls() {
     this.logger.info('HTTP endpoints supported:');
-    this.registeredOperations.forEach((registeredOperation) => {
+    getAllRegisteredFunctions().forEach((registeredOperation) => {
       const ro = registeredOperation as HandlerRegistrationBase;
       if (ro.apiURL) {
         this.logger.info('    ' + ro.apiType.padEnd(6) + '  :  ' + ro.apiURL);
@@ -2241,8 +2025,9 @@ export class DBOSExecutor implements DBOSExecutorContext {
    */
   computeAppVersion(): string {
     const hasher = crypto.createHash('md5');
-    const sortedWorkflowSource = Array.from(this.workflowInfoMap.values())
-      .map((i) => i.workflowOrigFunction.toString())
+    const sortedWorkflowSource = Array.from(getAllRegisteredFunctions())
+      .filter((e) => e.workflowConfig)
+      .map((i) => i.origFunction.toString())
       .sort();
     // Different DBOS versions should produce different hashes.
     sortedWorkflowSource.push(globalParams.dbosVersion);

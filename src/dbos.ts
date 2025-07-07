@@ -13,6 +13,7 @@ import {
   DBOSConfigInternal,
   isDeprecatedDBOSConfig,
   DBOSExecutor,
+  DBOSExternalState,
   InternalWorkflowParams,
 } from './dbos-executor';
 import { Tracer } from './telemetry/traces';
@@ -26,7 +27,6 @@ import {
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
-import { DBOSEventReceiverState, DBOSExecutorContext } from './eventreceiver';
 import { DLogger, GlobalLogger } from './telemetry/logs';
 import {
   DBOSConfigKeyTypeError,
@@ -44,11 +44,11 @@ import {
   associateMethodWithExternal,
   associateParameterWithExternal,
   ClassAuthDefaults,
-  configureInstance,
   DBOS_AUTH,
+  ExternalRegistration,
   getLifecycleListeners,
   getRegisteredOperations,
-  getRegistrationForFunction,
+  getFunctionRegistration,
   getRegistrationsForExternal,
   insertAllMiddleware,
   MethodAuth,
@@ -163,7 +163,7 @@ export function getExecutor() {
   if (!DBOSExecutor.globalInstance) {
     throw new DBOSExecutorNotInitializedError();
   }
-  return DBOSExecutor.globalInstance as DBOSExecutorContext;
+  return DBOSExecutor.globalInstance;
 }
 
 export function runInternalStep<T>(callback: () => Promise<T>, funcName: string, childWFID?: string): Promise<T> {
@@ -400,9 +400,6 @@ export class DBOS {
     DBOSExecutor.globalInstance.logRegisteredHTTPUrls();
     DBOSExecutor.globalInstance.scheduler?.logRegisteredSchedulerEndpoints();
     wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
-    for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
-      evtRcvr.logRegisteredEndpoints();
-    }
     for (const lcl of getLifecycleListeners()) {
       lcl.logRegisteredEndpoints?.();
     }
@@ -791,11 +788,7 @@ export class DBOS {
    * @param key - The subitem kept by event receiver service for the function, allowing multiple values to be stored per function
    * @returns The latest system database state for the specified service+workflow+item
    */
-  static async getEventDispatchState(
-    svc: string,
-    wfn: string,
-    key: string,
-  ): Promise<DBOSEventReceiverState | undefined> {
+  static async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
     return await DBOS.#executor.getEventDispatchState(svc, wfn, key);
   }
   /**
@@ -807,7 +800,7 @@ export class DBOS {
    * @param state - the service, workflow, item, version, and value to write to the database
    * @returns The upsert returns the current record, which may be useful if it is more recent than the `state` provided.
    */
-  static async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+  static async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
     return await DBOS.#executor.upsertEventDispatchState(state);
   }
 
@@ -1221,7 +1214,7 @@ export class DBOS {
 
     const handler: ProxyHandler<object> = {
       apply(target, _thisArg, args) {
-        const regOp = getRegistrationForFunction(target);
+        const regOp = getFunctionRegistration(target);
         if (!regOp) {
           // eslint-disable-next-line @typescript-eslint/no-base-to-string
           const name = typeof target === 'function' ? target.name : target.toString();
@@ -1232,7 +1225,7 @@ export class DBOS {
       get(target, p, receiver) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const func = Reflect.get(target, p, receiver);
-        const regOp = getRegistrationForFunction(func) ?? regOps.find((op) => op.name === p);
+        const regOp = getFunctionRegistration(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
           return (...args: unknown[]) => DBOS.#invokeWorkflow(instance, regOp, args, params);
         }
@@ -1275,7 +1268,7 @@ export class DBOS {
         topic,
       );
     }
-    return DBOS.#executor.send(destinationID, message, topic, idempotencyKey); // Temp WF variant
+    return DBOS.#executor.runSendTempWF(destinationID, message, topic, idempotencyKey); // Temp WF variant
   }
 
   /**
@@ -1624,7 +1617,7 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.#executor.transaction(
+        return await DBOS.#executor.runTransactionTempWF(
           registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
           wfParams,
           ...rawArgs,
@@ -1688,7 +1681,7 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.#executor.procedure(
+        return await DBOS.#executor.runProcedureTempWF(
           registration.registeredFunction as (...args: Args) => Promise<Return>,
           wfParams,
           ...rawArgs,
@@ -1776,8 +1769,8 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.#executor.external(
-          registration.registeredFunction as unknown as TypedAsyncFunction<Args, Return>,
+        return await DBOS.#executor.runStepTempWF(
+          registration.registeredFunction as TypedAsyncFunction<Args, Return>,
           wfParams,
           ...rawArgs,
         );
@@ -1943,18 +1936,6 @@ export class DBOS {
   /////
   // Registration, etc
   /////
-  /**
-   * Construct and register an object.
-   * Calling this is not necessary; calling the constructor of any `ConfiguredInstance` subclass is sufficient
-   * @deprecated Use `new` directly
-   */
-  static configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
-    cls: new (name: string, ...args: T) => R,
-    name: string,
-    ...args: T
-  ): R {
-    return configureInstance(cls, name, ...args);
-  }
 
   /**
    * Register a lifecycle listener
@@ -2016,7 +1997,11 @@ export class DBOS {
   }
 
   /** Get registrations */
-  static getAssociatedInfo(external: AnyConstructor | object | string, cls?: object | string, funcName?: string) {
+  static getAssociatedInfo(
+    external: AnyConstructor | object | string,
+    cls?: object | string,
+    funcName?: string,
+  ): readonly ExternalRegistration[] {
     return getRegistrationsForExternal(external, cls, funcName);
   }
 }
