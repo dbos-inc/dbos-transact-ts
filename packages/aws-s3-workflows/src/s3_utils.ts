@@ -8,18 +8,31 @@ export interface FileRecord {
 
 export interface S3WorkflowCallbacks<R extends FileRecord, Options = unknown> {
   // Database operations (these should be transactions)
+  /** Called back when a new, active file is created; should write the file to the database as active */
   newActiveFile: (rec: R) => Promise<unknown>;
+  /** Called back when a file might get uploaded; this function may write the file to the database as 'pending' */
   newPendingFile: (rec: R) => Promise<unknown>;
+  /** Called back when a pending file becomes active; should write the file to the database as active */
   fileActivated: (rec: R) => Promise<unknown>;
+  /** Called back when a file is in the process of getting deleted; should remove the file from the database */
   fileDeleted: (rec: R) => Promise<unknown>;
 
-  // S3 interaction options, these will be run as steps
+  // S3 interaction options
+  /** Should execute the S3 operation to write contents to rec.key; this will be run as a step */
   putS3Contents: (rec: R, content: string, options?: Options) => Promise<unknown>;
+  /** Should execute the S3 operation to create a presigned post for external upload, this will be run as a step */
   createPresignedPost: (rec: R, timeout?: number, options?: Options) => Promise<PresignedPost>;
+  /** Optional validation to check if a client S3 upload is valid, before activating in the datbase.  Will run as a step */
   validateS3Upload?: (rec: R) => Promise<void>;
+  /** Should execute the S3 operation to delete rec.key; this will be run as a step */
   deleteS3Object: (rec: R) => Promise<unknown>;
 }
 
+/**
+ * Create a workflow function for deleting S3 objects and removing the DB entry
+ * @param options - Registration options for the workflow
+ * @param callbacks - S3 operation implementation and database recordkeeping transactions
+ */
 export function registerS3DeleteWorkflow<R extends FileRecord, Options = unknown>(
   options: {
     name?: string;
@@ -40,6 +53,11 @@ export function registerS3DeleteWorkflow<R extends FileRecord, Options = unknown
   }, options);
 }
 
+/**
+ * Create a workflow function for uploading S3 contents from DBOS
+ * @param options - Registration options for the workflow
+ * @param callbacks - S3 operation implementation and database recordkeeping transactions
+ */
 export function registerS3UploadWorkflow<R extends FileRecord, Options = unknown>(
   options: {
     name?: string;
@@ -76,6 +94,11 @@ export function registerS3UploadWorkflow<R extends FileRecord, Options = unknown
   }, options);
 }
 
+/**
+ * Create a workflow function for uploading S3 contents externally, via a presigned URL
+ * @param options - Registration options for the workflow
+ * @param callbacks - S3 operation implementation and database recordkeeping transactions
+ */
 export function registerS3PresignedUploadWorkflow<R extends FileRecord, Options = unknown>(
   options: {
     name?: string;

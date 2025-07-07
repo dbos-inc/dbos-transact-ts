@@ -23,7 +23,7 @@ To use AWS S3:
 - Register with AWS, create an S3 bucket, and create access credentials. (See [Getting started with Amazon S3](https://aws.amazon.com/s3/getting-started/) in AWS documentation.)
 - If browser-based clients will read from S3 directly, set up S3 CORS. (See [Using cross-origin resource sharing (CORS)](https://docs.aws.amazon.com/AmazonS3/latest/userguide/cors.html) in AWS documentation.)
 
-## Configuring a DBOS Application with AWS S3
+## Using AWS S3 From a DBOS Application
 
 First, ensure that the AWS S3 SDK and DBOS S3 workflows are installed into the application:
 
@@ -167,7 +167,7 @@ This workflow performs the following actions:
 
 It is often not convenient to send or retrieve large S3 object contents through DBOS; the client should exchange data directly with S3. S3 accomodates this use case very well, using a feature called ["presigned URLs"](https://docs.aws.amazon.com/AmazonS3/latest/userguide/PresignedUrlUploadObject.html).
 
-In these cases, the client can place a request to DBOS that produces a presigned GET / POST URL, which the client can use for a limited time and purpose for S3 access. A DBOS workflow takes care of making sure that table entries are cleaned up if the client does not finish writing files.
+In these cases, the client can place a request to DBOS that produces a presigned POST URL, which the client can use for a limited time and purpose for S3 access. The DBOS workflow takes care of making sure that table entries are cleaned up if the client does not finish writing files.
 
 The workflow interaction generally proceeds as follows:
 
@@ -216,7 +216,9 @@ await wfHandle.getResult();
 
 ## Notes
 
-Do not reuse S3 keys. Assigning unique identifiers to files is a much better idea, if a "name" is to be reused, it can be reused in the lookup database. Reasons why S3 keys should not be reused:
+_Do not reuse S3 keys._ Assigning unique identifiers to files is a much better idea, if a "name" is to be reused, it can be reused in the lookup database.
+
+Reasons why S3 keys should not be reused:
 
 - S3 caches the key contents. Even a response of "this key doesn't exist" can be cached. If you reuse keys, you may get a stale value.
 - Workflow operations against an old use of a key may still be in process... for example a delete workflow may still be attempting to delete the old object at the same time a new file is being placed under the same key.
