@@ -30,7 +30,6 @@ interface KnexDataSourceContext {
 
 export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'> & {
   name?: string;
-  className?: string;
 };
 
 const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
