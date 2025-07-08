@@ -4,7 +4,7 @@ class BundlerTestApp {
   @DBOS.step()
   static async testStep(input: string): Promise<string> {
     console.log(`Processing step with input: ${input}`);
-    return `Step processed: ${input}`;
+    return Promise.resolve(`Step processed: ${input}`);
   }
 
   @DBOS.workflow()
@@ -30,6 +30,7 @@ async function main() {
         },
       },
     };
+    DBOS.setConfig(config);
 
     // Initialize DBOS
     await DBOS.launch();
@@ -52,7 +53,7 @@ async function main() {
 
 // Only run main if this is the entry point
 if (require.main === module) {
-  main();
+  main().catch(console.log);
 }
 
 export { BundlerTestApp, main };
