@@ -19,7 +19,7 @@ describe('DBOS Bundler Tests', () => {
     await DBOS.shutdown();
   }, 30000);
 
-  test('should bundle DBOS app and show migration warning', async () => {
+  test('test app with bundler', async () => {
     const dbPassword = process.env.PGPASSWORD || 'dbos';
     const testDbName = 'bundler_test';
     const sysDbName = 'bundler_test_dbos_sys';
@@ -36,6 +36,7 @@ describe('DBOS Bundler Tests', () => {
     await client.query(`DROP DATABASE IF EXISTS "${sysDbName}" WITH (FORCE)`);
     await client.end();
 
+    // Install dependencies and build the app with the bundler
     execSync('npm install', {
       cwd: bundlerTestDir,
       stdio: 'inherit',
@@ -48,14 +49,15 @@ describe('DBOS Bundler Tests', () => {
       timeout: 60000,
     });
 
+    // Validate the bundled app
     expect(existsSync(bundleFile)).toBe(true);
     const bundleContent = readFileSync(bundleFile, 'utf8');
     expect(bundleContent).toContain('DBOS');
     expect(bundleContent).toContain('testWorkflow');
-
     const bundleSize = statSync(bundleFile).size / (1024 * 1024);
     expect(bundleSize).toBeLessThan(50);
 
+    // Run the bundled app, validate it fails because the system database does not exist
     let stdout = '';
     let stderr = '';
 
@@ -100,6 +102,7 @@ describe('DBOS Bundler Tests', () => {
     expect(output).toContain('npx dbos migrate');
     expect(exitCode1).not.toBe(0);
 
+    // Create the system database externally
     try {
       execSync('npx dbos migrate', {
         cwd: bundlerTestDir,
@@ -115,6 +118,7 @@ describe('DBOS Bundler Tests', () => {
       throw new Error(`Migration failed`);
     }
 
+    // Run the bundled app again, verify it works
     stdout = '';
     stderr = '';
 

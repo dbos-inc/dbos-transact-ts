@@ -1,3 +1,2 @@
-name: dbos-bundler-test
+name: bundler-test
 language: node
-database_url: postgresql://postgres:dbos@localhost:5432/bundler_test
