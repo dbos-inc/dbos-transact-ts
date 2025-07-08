@@ -38,7 +38,7 @@ import {
 } from './error';
 import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
 import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
-import { ScheduledArgs, ScheduledReceiver, SchedulerConfig, SchedulerMode } from './scheduler/scheduler';
+import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
   associateClassWithExternal,
   associateMethodWithExternal,
