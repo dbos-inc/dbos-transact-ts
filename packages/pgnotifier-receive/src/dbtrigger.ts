@@ -1,7 +1,4 @@
-import {
-  DBOS,
-  //  DBOSLifecycleCallback,
-} from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSLifecycleCallback, ExternalRegistration } from '@dbos-inc/dbos-sdk';
 
 import { ClientBase, Notification } from 'pg';
 
@@ -57,6 +54,7 @@ export class DBTriggerConfig {
 export interface DBConfig {
   connect: () => Promise<ClientBase>;
   disconnect: (c: ClientBase) => Promise<void>;
+  query: <R>(sql: string, ...params: unknown[]) => Promise<R[]>;
 }
 
 export async function dbListen(
@@ -85,7 +83,6 @@ export async function dbListen(
   };
 }
 
-/*
 interface DBTriggerRegistration {
   triggerConfig?: DBTriggerConfig;
   triggerIsWorkflow?: boolean;
@@ -187,12 +184,10 @@ function createCatchupSql(
 
   return { query, params };
 }
-*/
 
 ///////////////////////////
 // DB Trigger Management
 ///////////////////////////
-/*
 interface TriggerPayload {
   operation: TriggerOperation;
   tname: string;
@@ -268,25 +263,22 @@ class TriggerPayloadQueue {
 }
 
 export class DBOSDBTrigger implements DBOSLifecycleCallback {
-  executor?: DBOSExecutorContext;
   listeners: DBNotificationListener[] = [];
-  tableToReg: Map<string, DBOSEventReceiverRegistration[]> = new Map();
+  tableToReg: Map<string, ExternalRegistration[]> = new Map();
   shutdown: boolean = false;
   payloadQ: TriggerPayloadQueue = new TriggerPayloadQueue();
   dispatchLoops: Promise<void>[] = [];
   pollers: DBTPollingLoop[] = [];
   pollLoops: Promise<void>[] = [];
 
-  constructor() {}
+  constructor(readonly db: DBConfig) {}
 
   async createPoll(tc: DBTriggerConfig, fullname: string, tname: string, tstr: string) {
-    if (!this.executor) throw new Error('No executor to run');
-
     // Initiate catchup work
     let recseqnum: bigint | null = null;
     let rectmstmp: number | null = null;
     if (tc.sequenceNumColumn || tc.timestampColumn) {
-      const lasts = await this.executor.getEventDispatchState('trigger', fullname, 'last');
+      const lasts = await DBOS.getEventDispatchState('trigger', fullname, 'last');
       recseqnum = lasts?.updateSeq ? BigInt(lasts.updateSeq) : null;
       rectmstmp = lasts?.updateTime ?? null;
       if (recseqnum && tc.sequenceNumJitter) {
@@ -301,8 +293,7 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
     return createCatchupSql(tc, tname, tstr, recseqnum, rectmstmp);
   }
 
-  async initialize(executor: DBOSExecutorContext) {
-    this.executor = executor;
+  async initialize() {
     this.shutdown = false;
     this.payloadQ.restart();
     this.tableToReg.clear();
@@ -314,7 +305,7 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
 
     const catchups: { query: string; params: unknown[] }[] = [];
 
-    const regops = this.executor.getRegistrationsFor(this);
+    const regops = DBOS.getAssociatedInfo(this);
     for (const registeredOperation of regops) {
       const mo = registeredOperation.methodConfig as DBTriggerRegistration;
 
@@ -343,11 +334,9 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
           if (!hasTrigger.has(tname)) {
             const trigSQL = createTriggerSQL(tfname, trigname, tname, tstr, nname);
             if (mo.triggerConfig.installDBTrigger) {
-              await this.executor.queryUserDB(trigSQL);
+              await this.db.query(trigSQL);
             } else {
-              this.executor.logger.info(
-                ` DBOS DB Trigger: For DB notifications, install the following SQL: \n${trigSQL}`,
-              );
+              DBOS.logger.info(` DBOS DB Trigger: For DB notifications, install the following SQL: \n${trigSQL}`);
             }
             hasTrigger.add(tname);
             hasAnyTrigger = true;
@@ -365,7 +354,7 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
 
           // Launch poller if needed
           if (!(mo.triggerConfig.useDBNotifications || mo.triggerConfig.installDBTrigger) && tc.dbPollingInterval) {
-            const poller = new DBTPollingLoop(this, tc, mr, tname, tstr);
+            const poller = new DBTPollingLoop(this, tc, registeredOperation, tname, tstr);
             this.pollers.push(poller);
             this.pollLoops.push(poller.startLoop());
             hasAnyPoller = true;
@@ -374,7 +363,7 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
         }
 
         if (!registeredThis) {
-          this.executor.logger.warn(
+          DBOS.logger.warn(
             `The DB trigger configuration for ${fullname} does not specify to use DB notifications, nor does it provide a polling interval, and will therefore never run.`,
           );
         }
@@ -389,19 +378,19 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
           this.payloadQ.enqueueNotify(payload);
         };
 
-        this.listeners.push(await this.executor.userDBListen([nname], handler));
-        this.executor.logger.info(`DB Triggers now listening for '${nname}'`);
+        this.listeners.push(await dbListen(this.db, [nname], handler));
+        DBOS.logger.info(`DB Triggers now listening for '${nname}'`);
 
         for (const q of catchups) {
           const catchupFunc = async () => {
             try {
-              const rows = (await this.executor!.queryUserDB(q.query, q.params)) as { payload: string }[];
+              const rows = await this.db.query<{ payload: string }>(q.query, q.params);
               for (const r of rows) {
                 const payload = JSON.parse(r.payload) as TriggerPayload;
                 this.payloadQ.enqueueCatchup(payload);
               }
             } catch (e) {
-              this.executor?.logger.error(e);
+              DBOS.logger.error(e);
             }
           };
 
@@ -434,7 +423,7 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
               let rectmstmp: number | null = null;
               if (tc.sequenceNumColumn) {
                 if (!Object.hasOwn(payload.record, tc.sequenceNumColumn)) {
-                  this.executor?.logger.warn(
+                  DBOS.logger.warn(
                     `DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but is not in database record.'`,
                   );
                   continue;
@@ -447,7 +436,7 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
                 } else if (typeof sn === 'bigint') {
                   recseqnum = sn;
                 } else {
-                  this.executor?.logger.warn(
+                  DBOS.logger.warn(
                     `DB Trigger on '${fullname}' specifies sequence number column '${tc.sequenceNumColumn}, but received "${JSON.stringify(sn)}" instead of number'`,
                   );
                   continue;
@@ -456,7 +445,7 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
               }
               if (tc.timestampColumn) {
                 if (!Object.hasOwn(payload.record, tc.timestampColumn)) {
-                  this.executor?.logger.warn(
+                  DBOS.logger.warn(
                     `DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but is not in database record.'`,
                   );
                   continue;
@@ -469,7 +458,7 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
                 } else if (typeof ts === 'string') {
                   rectmstmp = new Date(ts).getTime();
                 } else {
-                  this.executor?.logger.warn(
+                  DBOS.logger.warn(
                     `DB Trigger on '${fullname}' specifies timestamp column '${tc.timestampColumn}, but received "${JSON.stringify(ts)}" instead of date/number'`,
                   );
                   continue;
@@ -483,13 +472,13 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
                 queueName: tc.queueName,
               };
               if (payload.operation === TriggerOperation.RecordDeleted) {
-                this.executor?.logger.warn(
+                DBOS.logger.warn(
                   `DB Trigger ${fullname} on '${payload.tname}' witnessed a record deletion.   Record deletion workflow triggers are not supported.`,
                 );
                 continue;
               }
               if (payload.operation === TriggerOperation.RecordUpdated && recseqnum === null && rectmstmp === null) {
-                this.executor?.logger.warn(
+                DBOS.logger.warn(
                   `DB Trigger ${fullname} on '${payload.tname}' witnessed a record update, but no sequence number / timestamp is defined.   Record update workflow triggers will not work in this case.`,
                 );
                 continue;
@@ -497,18 +486,14 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
               if (rectmstmp !== null) wfParams.workflowUUID += `_${rectmstmp}`;
               if (recseqnum !== null) wfParams.workflowUUID += `_${recseqnum}`;
               payload.operation = TriggerOperation.RecordUpserted;
-              this.executor?.logger.debug(
-                `Executing ${fullname} on ID ${wfParams.workflowUUID} queue ${wfParams.queueName}`,
-              );
-              await this.executor?.workflow(
-                regOp.methodReg.registeredFunction as WorkflowFunction<unknown[], void>,
-                wfParams,
+              DBOS.logger.debug(`Executing ${fullname} on ID ${wfParams.workflowUUID} queue ${wfParams.queueName}`);
+              await DBOS.startWorkflow(regOp.methodReg.registeredFunction as TriggerFunctionWF<unknown[]>, wfParams)(
                 payload.operation,
                 key,
                 payload.record,
               );
 
-              await this.executor?.upsertEventDispatchState({
+              await DBOS.upsertEventDispatchState({
                 service: 'trigger',
                 workflowFnName: fullname,
                 key: 'last',
@@ -518,12 +503,13 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
               });
             } else {
               // Use original func, this may not be wrapped
-              const tfunc = mr.origFunction as TriggerFunction<unknown[]>;
-              await tfunc.call(undefined, payload.operation, key, payload.record);
+              (await regOp.methodReg.invoke(undefined, [payload.operation, key, payload.record])) as TriggerFunction<
+                unknown[]
+              >;
             }
           } catch (e) {
-            this.executor?.logger.warn(`Caught an exception in trigger handling for "${mr.className}.${mr.name}"`);
-            this.executor?.logger.warn(e);
+            DBOS.logger.warn(`Caught an exception in trigger handling for "${mr.className}.${mr.name}"`);
+            DBOS.logger.warn(e);
           }
         }
       };
@@ -547,7 +533,7 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
       try {
         await l.close();
       } catch (e) {
-        this.executor?.logger.warn(e);
+        DBOS.logger.warn(e);
       }
     }
     this.listeners = [];
@@ -575,21 +561,70 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
   }
 
   logRegisteredEndpoints() {
-    if (!this.executor) return;
-    const logger = this.executor.logger;
-    logger.info('Database trigger endpoints registered:');
-    const regops = this.executor.getRegistrationsFor(this);
-    regops.forEach((registeredOperation) => {
-      const mo = registeredOperation.methodConfig as DBTriggerRegistration;
+    DBOS.logger.info('Database trigger endpoints registered:');
+    const eps = DBOS.getAssociatedInfo(this);
+
+    for (const e of eps) {
+      const { methodConfig, methodReg } = e;
+      const mo = methodConfig as DBTriggerRegistration;
       if (mo.triggerConfig) {
-        const cname = registeredOperation.methodReg.className;
-        const mname = registeredOperation.methodReg.name;
+        const cname = methodReg.className;
+        const mname = methodReg.name;
         const tname = mo.triggerConfig.schemaName
           ? `${mo.triggerConfig.schemaName}.${mo.triggerConfig.tableName}`
           : mo.triggerConfig.tableName;
-        logger.info(`    ${tname} -> ${cname}.${mname}`);
+        DBOS.logger.info(`    ${tname} -> ${cname}.${mname}`);
       }
-    });
+    }
+  }
+
+  trigger(triggerConfig: DBTriggerConfig) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const dbt = this;
+    function trigdec<This, Return, Key extends unknown[]>(
+      target: object,
+      propertyKey: string,
+      descriptor: TypedPropertyDescriptor<
+        (this: This, operation: TriggerOperation, key: Key, record: unknown) => Promise<Return>
+      >,
+    ) {
+      const { regInfo } = DBOS.associateFunctionWithInfo(dbt, descriptor.value!, {
+        ctorOrProto: target,
+        name: propertyKey,
+      });
+
+      const triggerRegistration = regInfo as DBTriggerRegistration;
+
+      triggerRegistration.triggerConfig = triggerConfig;
+      triggerRegistration.triggerIsWorkflow = false;
+
+      return descriptor;
+    }
+    return trigdec;
+  }
+
+  triggerWorkflow(wfTriggerConfig: DBTriggerConfig) {
+    // eslint-disable-next-line @typescript-eslint/no-this-alias
+    const dbt = this;
+    function trigdec<This, Return, Key extends unknown[]>(
+      target: object,
+      propertyKey: string,
+      descriptor: TypedPropertyDescriptor<
+        (this: This, operation: TriggerOperation, key: Key, record: unknown) => Promise<Return>
+      >,
+    ) {
+      const { regInfo } = DBOS.associateFunctionWithInfo(dbt, descriptor.value!, {
+        ctorOrProto: target,
+        name: propertyKey,
+      });
+
+      const triggerRegistration = regInfo as DBTriggerRegistration;
+      triggerRegistration.triggerConfig = wfTriggerConfig;
+      triggerRegistration.triggerIsWorkflow = true;
+
+      return descriptor;
+    }
+    return trigdec;
   }
 }
 
@@ -601,11 +636,11 @@ class DBTPollingLoop {
   constructor(
     readonly trigER: DBOSDBTrigger,
     readonly trigReg: DBTriggerConfig,
-    readonly methodReg: MethodRegistrationBase,
+    readonly reg: ExternalRegistration,
     readonly tname: string,
     readonly tstr: string,
   ) {
-    this.trigMethodName = `${methodReg.className}.${methodReg.name}`;
+    this.trigMethodName = `${reg.methodReg.className}.${reg.methodReg.name}`;
   }
 
   async startLoop(): Promise<void> {
@@ -628,7 +663,7 @@ class DBTPollingLoop {
         });
         await Promise.race([timeoutPromise, new Promise<void>((_, reject) => (this.interruptResolve = reject))]).catch(
           () => {
-            this.trigER.executor?.logger.debug('Trigger polling loop interrupted!');
+            DBOS.logger.debug('Trigger polling loop interrupted!');
           },
         ); // Interrupt sleep throws
         clearTimeout(timer!);
@@ -641,14 +676,14 @@ class DBTPollingLoop {
       // To catch-up poll
       const catchup = await this.trigER.createPoll(this.trigReg, this.trigMethodName, this.tname, this.tstr);
       try {
-        const rows = (await this.trigER.executor!.queryUserDB(catchup.query, catchup.params)) as { payload: string }[];
+        const rows = await this.trigER.db.query<{ payload: string }>(catchup.query, catchup.params);
         for (const r of rows) {
           const payload = JSON.parse(r.payload) as TriggerPayload;
           // Post workflows back to dispatch loop; queue processor will do the updates
           this.trigER.payloadQ.enqueueCatchup(payload);
         }
       } catch (e) {
-        this.trigER.executor?.logger.error(e);
+        DBOS.logger.error(e);
       }
     }
   }
@@ -661,46 +696,3 @@ class DBTPollingLoop {
     }
   }
 }
-
-let dbTrig: DBOSDBTrigger | undefined = undefined;
-
-export function DBTrigger(triggerConfig: DBTriggerConfig) {
-  function trigdec<This, Return, Key extends unknown[]>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<
-      (this: This, operation: TriggerOperation, key: Key, record: unknown) => Promise<Return>
-    >,
-  ) {
-    if (!dbTrig) dbTrig = new DBOSDBTrigger();
-    const { descriptor, receiverInfo } = associateMethodWithEventReceiver(dbTrig, target, propertyKey, inDescriptor);
-
-    const triggerRegistration = receiverInfo as unknown as DBTriggerRegistration;
-    triggerRegistration.triggerConfig = triggerConfig;
-    triggerRegistration.triggerIsWorkflow = false;
-
-    return descriptor;
-  }
-  return trigdec;
-}
-
-export function DBTriggerWorkflow(wfTriggerConfig: DBTriggerConfig) {
-  function trigdec<This, Return, Key extends unknown[]>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<
-      (this: This, operation: TriggerOperation, key: Key, record: unknown) => Promise<Return>
-    >,
-  ) {
-    if (!dbTrig) dbTrig = new DBOSDBTrigger();
-    const { descriptor, receiverInfo } = associateMethodWithEventReceiver(dbTrig, target, propertyKey, inDescriptor);
-
-    const triggerRegistration = receiverInfo as unknown as DBTriggerRegistration;
-    triggerRegistration.triggerConfig = wfTriggerConfig;
-    triggerRegistration.triggerIsWorkflow = true;
-
-    return descriptor;
-  }
-  return trigdec;
-}
-*/
