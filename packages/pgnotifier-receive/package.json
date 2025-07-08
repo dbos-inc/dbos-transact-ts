@@ -15,6 +15,9 @@
     "build": "tsc --project tsconfig.json",
     "test": "npm run build && NODE_OPTIONS='--trace-warnings' jest --detectOpenHandles"
   },
+  "dependencies": {
+    "pg": "^8.11.3"
+  },
   "devDependencies": {
     "@types/jest": "^29.5.14",
     "@types/supertest": "^6.0.2",

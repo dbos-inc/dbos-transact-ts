@@ -1,12 +1,15 @@
 import {
-  DBOSEventReceiver,
-  DBOSEventReceiverRegistration,
-  DBOSExecutorContext,
-  DBNotification,
-  DBNotificationListener,
-  WorkflowFunction,
-  associateMethodWithEventReceiver,
+  DBOS,
+  //  DBOSLifecycleCallback,
 } from '@dbos-inc/dbos-sdk';
+
+import { ClientBase, Notification } from 'pg';
+
+export type DBNotification = Notification;
+export type DBNotificationCallback = (n: DBNotification) => void;
+export interface DBNotificationListener {
+  close(): Promise<void>;
+}
 
 ////
 // Configuration
@@ -51,6 +54,38 @@ export class DBTriggerConfig {
   dbPollingInterval?: number = 5000;
 }
 
+export interface DBConfig {
+  connect: () => Promise<ClientBase>;
+  disconnect: (c: ClientBase) => Promise<void>;
+}
+
+export async function dbListen(
+  cfg: DBConfig,
+  channels: string[],
+  callback: DBNotificationCallback,
+): Promise<DBNotificationListener> {
+  const notificationsClient = await cfg.connect();
+  for (const nname of channels) {
+    await notificationsClient.query(`LISTEN ${nname};`);
+  }
+
+  notificationsClient.on('notification', callback);
+
+  return {
+    close: async () => {
+      for (const nname of channels) {
+        try {
+          await notificationsClient.query(`UNLISTEN ${nname};`);
+        } catch (e) {
+          DBOS.logger.warn(e);
+        }
+        await cfg.disconnect(notificationsClient);
+      }
+    },
+  };
+}
+
+/*
 interface DBTriggerRegistration {
   triggerConfig?: DBTriggerConfig;
   triggerIsWorkflow?: boolean;
@@ -152,11 +187,12 @@ function createCatchupSql(
 
   return { query, params };
 }
+*/
 
 ///////////////////////////
 // DB Trigger Management
 ///////////////////////////
-
+/*
 interface TriggerPayload {
   operation: TriggerOperation;
   tname: string;
@@ -231,7 +267,7 @@ class TriggerPayloadQueue {
   }
 }
 
-export class DBOSDBTrigger implements DBOSEventReceiver {
+export class DBOSDBTrigger implements DBOSLifecycleCallback {
   executor?: DBOSExecutorContext;
   listeners: DBNotificationListener[] = [];
   tableToReg: Map<string, DBOSEventReceiverRegistration[]> = new Map();
@@ -667,3 +703,4 @@ export function DBTriggerWorkflow(wfTriggerConfig: DBTriggerConfig) {
   }
   return trigdec;
 }
+*/

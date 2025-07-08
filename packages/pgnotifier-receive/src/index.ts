@@ -1,1 +1,6 @@
-export { DBTriggerConfig, TriggerOperation, DBTrigger, DBTriggerWorkflow } from './dbtrigger';
+export {
+  DBTriggerConfig,
+  TriggerOperation,
+  //    DBTrigger,
+  //    DBTriggerWorkflow
+} from './dbtrigger';
