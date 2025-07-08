@@ -3,6 +3,7 @@ import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { DBOS } from '../src';
+import { Client } from 'pg';
 
 describe('DBOS Bundler Tests', () => {
   const bundlerTestDir = path.join(__dirname, 'bundler-test');
@@ -23,18 +24,17 @@ describe('DBOS Bundler Tests', () => {
     const testDbName = 'bundler_test';
     const sysDbName = 'bundler_test_dbos_sys';
 
-    try {
-      execSync(`dropdb ${sysDbName}`, {
-        stdio: 'inherit',
-        timeout: 30000,
-        env: {
-          ...process.env,
-          PGPASSWORD: dbPassword,
-        },
-      });
-    } catch (error) {
-      // Database might not exist, ignore error
-    }
+    const client = new Client({
+      host: 'localhost',
+      port: 5432,
+      user: 'postgres',
+      password: dbPassword,
+      database: 'postgres',
+    });
+
+    await client.connect();
+    await client.query(`DROP DATABASE IF EXISTS "${sysDbName}" WITH (FORCE)`);
+    await client.end();
 
     execSync('npm install', {
       cwd: bundlerTestDir,
