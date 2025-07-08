@@ -1,14 +1,36 @@
-import { DBOS, createTestingRuntime, TestingRuntime, WorkflowQueue } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSConfig, WorkflowQueue } from '@dbos-inc/dbos-sdk';
 
-import { DBTriggerWorkflow, TriggerOperation } from '../dbtrigger/dbtrigger';
+import { DBTrigger, TriggerOperation } from '../src';
+import { ClientBase, Pool, PoolClient } from 'pg';
+import { KnexDataSource } from '@dbos-inc/knex-datasource';
+
+const config = { user: 'postgres', database: 'postgres' };
+
+const pool = new Pool(config);
+
+const kconfig = { client: 'pg', connection: config };
+
+const knexds = new KnexDataSource('app', kconfig);
+
+const trig = new DBTrigger({
+  connect: async () => {
+    const conn = pool.connect();
+    return conn;
+  },
+  disconnect: async (c: ClientBase) => {
+    (c as PoolClient).release();
+    return Promise.resolve();
+  },
+  query: async <R>(sql: string, params?: unknown[]) => {
+    return (await pool.query(sql, params)).rows as R[];
+  },
+});
 
 function sleepms(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
 
 const testTableName = 'dbos_test_trig_seq';
-
-class DBOSTestNoClass {}
 
 const q = new WorkflowQueue('schedQ');
 
@@ -27,7 +49,7 @@ class DBOSTriggerTestClassSN {
     DBOSTriggerTestClassSN.snRecordMap = new Map();
   }
 
-  @DBTriggerWorkflow({
+  @trig.triggerWorkflow({
     tableName: testTableName,
     recordIDColumns: ['order_id'],
     sequenceNumColumn: 'seqnum',
@@ -50,7 +72,7 @@ class DBOSTriggerTestClassSN {
     return Promise.resolve();
   }
 
-  @DBTriggerWorkflow({
+  @trig.triggerWorkflow({
     tableName: testTableName,
     recordIDColumns: ['order_id'],
     timestampColumn: 'update_date',
@@ -86,19 +108,19 @@ class DBOSTriggerTestClassSN {
     return Promise.resolve();
   }
 
-  @DBOS.transaction()
+  @knexds.transaction()
   static async insertRecord(rec: TestTable) {
-    await DBOS.knexClient<TestTable>(testTableName).insert(rec);
+    await knexds.client<TestTable>(testTableName).insert(rec);
   }
 
-  @DBOS.transaction()
+  @knexds.transaction()
   static async deleteRecord(order_id: number) {
-    await DBOS.knexClient<TestTable>(testTableName).where({ order_id }).delete();
+    await knexds.client<TestTable>(testTableName).where({ order_id }).delete();
   }
 
-  @DBOS.transaction()
+  @knexds.transaction()
   static async updateRecordStatus(order_id: number, status: string, seqnum: number, update_date: Date) {
-    await DBOS.knexClient<TestTable>(testTableName).where({ order_id }).update({ status, seqnum, update_date });
+    await knexds.client<TestTable>(testTableName).where({ order_id }).update({ status, seqnum, update_date });
   }
 }
 
@@ -112,14 +134,16 @@ interface TestTable {
 }
 
 describe('test-db-trigger-polling', () => {
-  let testRuntime: TestingRuntime;
-
   beforeAll(async () => {});
 
   beforeEach(async () => {
-    testRuntime = await createTestingRuntime([DBOSTestNoClass], 'dbtriggers-test-dbos-config.yaml');
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`
+    await KnexDataSource.initializeDBOSSchema(kconfig);
+    const config: DBOSConfig = {
+      name: 'dbtrig_poll',
+    };
+    DBOS.setConfig(config);
+    await trig.db.query(`DROP TABLE IF EXISTS ${testTableName};`);
+    await trig.db.query(`
             CREATE TABLE IF NOT EXISTS ${testTableName}(
               order_id SERIAL PRIMARY KEY,
               seqnum INTEGER,
@@ -128,15 +152,13 @@ describe('test-db-trigger-polling', () => {
               item TEXT,
               status VARCHAR(10)
             );`);
-    await testRuntime.destroy();
-    testRuntime = await createTestingRuntime(undefined, 'dbtriggers-test-dbos-config.yaml');
     DBOSTriggerTestClassSN.reset();
+    await DBOS.launch();
   });
 
   afterEach(async () => {
-    await testRuntime.deactivateEventReceivers();
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.destroy();
+    await DBOS.shutdown();
+    await trig.db.query(`DROP TABLE IF EXISTS ${testTableName};`);
   });
 
   test('dbpoll-seqnum', async () => {
@@ -181,7 +203,7 @@ describe('test-db-trigger-polling', () => {
     expect(DBOSTriggerTestClassSN.tsRecordMap.get(2)?.status).toBe('Ordered');
 
     // Take down
-    await testRuntime.deactivateEventReceivers();
+    await DBOS.deactivateEventReceivers();
 
     // Do more stuff
     // Invalid record, won't show up because it is well out of sequence
@@ -219,7 +241,7 @@ describe('test-db-trigger-polling', () => {
     );
     DBOSTriggerTestClassSN.reset();
 
-    await testRuntime.initEventReceivers();
+    await DBOS.initEventReceivers();
 
     console.log(
       '************************************************** Restarted *****************************************************',
@@ -244,13 +266,13 @@ describe('test-db-trigger-polling', () => {
     expect(DBOSTriggerTestClassSN.snRecordMap.get(999)?.status).toBeUndefined();
     expect(DBOSTriggerTestClassSN.tsRecordMap.get(999)?.status).toBeUndefined();
 
-    const wfs = await testRuntime.getWorkflows({
+    const wfs = await DBOS.getWorkflows({
       workflowName: 'pollWFBySeq',
     });
 
     let foundQ = false;
     for (const wfid of wfs.workflowUUIDs) {
-      const stat = await testRuntime.retrieveWorkflow(wfid).getStatus();
+      const stat = await DBOS.retrieveWorkflow(wfid).getStatus();
       if (stat?.queueName === q.name) foundQ = true;
     }
     expect(foundQ).toBeTruthy();

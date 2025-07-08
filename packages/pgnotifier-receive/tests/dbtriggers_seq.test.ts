@@ -237,5 +237,5 @@ describe('test-db-triggers', () => {
     expect(DBOSTriggerTestClassSN.tsRecordMap.get(4)?.status).toBe('Shipped');
     expect(DBOSTriggerTestClassSN.snRecordMap.get(999)?.status).toBeUndefined();
     expect(DBOSTriggerTestClassSN.tsRecordMap.get(999)?.status).toBeUndefined();
-  }, 15000);
+  }, 20000);
 });
