@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
-import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from './config';
+import { ConfigFile, dbosConfigFilePath, getDatbaseConfig, readConfigFile, writeConfigFile } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
@@ -8,13 +8,12 @@ import { migrate, rollbackMigration } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
-import { configure } from './configure';
-import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
+import { DBOSClient, StatusString } from '..';
 import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
-import { GetQueuedWorkflowsInput } from '../workflow';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
+import { input, confirm } from '@inquirer/prompts';
 
 const program = new Command();
 
@@ -115,8 +114,44 @@ program
   .option('-h, --host <string>', 'Specify your Postgres server hostname')
   .option('-p, --port <number>', 'Specify your Postgres server port')
   .option('-U, --username <number>', 'Specify your Postgres username')
-  .action(async (options: DBOSConfigureOptions) => {
-    await configure(options.host, options.port, options.username);
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+
+  .action(async (options: { host?: string; port?: number; username?: string; appDir?: string }) => {
+    const config = await readConfigFile(options.appDir);
+    if (config.database_url) {
+      console.log(`Database is already configured as ${config.database_url}`);
+      const proceed = await confirm({
+        message: 'Do you want to re-configure the database connection?',
+        default: false,
+      });
+      if (!proceed) {
+        console.log('Aborting configuration.');
+        return;
+      }
+    }
+
+    const host =
+      options.host ??
+      (await input({
+        message: 'What is the hostname of your Postgres server?',
+        default: 'localhost',
+      }));
+    const port =
+      options.port ??
+      (await input({
+        message: 'What is the port of your Postgres server?',
+        default: '5432',
+      }));
+    const username =
+      options.username ??
+      (await input({
+        message: 'What is your Postgres username?',
+        default: 'postgres',
+      }));
+
+    config.database_url = `postgresql://${username}@${host}:${port}/${config.name}`;
+
+    await writeConfigFile(config, options.appDir);
   });
 
 program
@@ -177,7 +212,6 @@ workflowCommands
     'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)',
   )
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
-  .option('--request', 'Retrieve workflow request information (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
     async (options: {
@@ -189,14 +223,7 @@ workflowCommands
       endTime?: string;
       status?: string;
       applicationVersion?: string;
-      request: boolean;
-      silent: boolean;
     }) => {
-      if (options.request) {
-        console.warn('\x1b[33m%s\x1b[0m', 'The --request option has been deprecated.');
-      }
-      options.silent = true;
-      const [dbosConfig, _] = parseConfigFile(options);
       if (
         options.status &&
         !Object.values(StatusString).includes(options.status as (typeof StatusString)[keyof typeof StatusString])
@@ -204,21 +231,20 @@ workflowCommands
         console.error('Invalid status: ', options.status);
         exit(1);
       }
-      const input: GetWorkflowsInput = {
-        workflowName: options.name,
-        limit: Number(options.limit),
-        authenticatedUser: options.user,
-        startTime: options.startTime,
-        endTime: options.endTime,
-        status: options.status as (typeof StatusString)[keyof typeof StatusString],
-        applicationVersion: options.applicationVersion,
-      };
-      if (dbosConfig.databaseUrl === undefined) {
-        throw new Error('Database URL is not defined');
-      }
-      const client = await DBOSClient.create(dbosConfig.databaseUrl);
+
+      const configFile = await readConfigFile(options.appDir);
+      const { databaseUrl, sysDbName } = getDatbaseConfig(configFile);
+      const client = await DBOSClient.create(databaseUrl, sysDbName);
       try {
-        const output = await client.listWorkflows(input);
+        const output = await client.listWorkflows({
+          workflowName: options.name,
+          limit: Number(options.limit),
+          authenticatedUser: options.user,
+          startTime: options.startTime,
+          endTime: options.endTime,
+          status: options.status as (typeof StatusString)[keyof typeof StatusString],
+          applicationVersion: options.applicationVersion,
+        });
         console.log(JSON.stringify(output));
       } finally {
         await client.destroy();
@@ -231,17 +257,10 @@ workflowCommands
   .description('Retrieve the status of a workflow')
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .option('--request', 'Retrieve workflow request information (DEPRECATED)')
-  .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
-    if (options.request) {
-      console.warn('\x1b[33m%s\x1b[0m', 'The --request option has been deprecated.');
-    }
-    options.silent = true;
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+  .action(async (uuid: string, options: { appDir?: string }) => {
+    const configFile = await readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatbaseConfig(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       const output = await client.getWorkflow(uuid);
       console.log(JSON.stringify(output));
@@ -255,13 +274,10 @@ workflowCommands
   .description('List the steps of a workflow')
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
-    options.silent = true;
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+  .action(async (uuid: string, options: { appDir?: string }) => {
+    const configFile = await readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatbaseConfig(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       const output = await client.listWorkflowSteps(uuid);
       console.log(JSON.stringify(output));
@@ -274,14 +290,11 @@ workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+  .action(async (uuid: string, options: { appDir?: string }) => {
+    const configFile = await readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatbaseConfig(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       await client.cancelWorkflow(uuid);
     } finally {
@@ -293,14 +306,11 @@ workflowCommands
   .command('resume')
   .description('Resume a workflow from the last step it executed, keeping its workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+  .action(async (uuid: string, options: { appDir?: string }) => {
+    const configFile = await readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatbaseConfig(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       await client.resumeWorkflow(uuid);
     } finally {
@@ -312,14 +322,11 @@ workflowCommands
   .command('restart')
   .description('Restart a workflow from the beginning with a new workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+  .action(async (uuid: string, options: { appDir?: string }) => {
+    const configFile = await readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatbaseConfig(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       await client.forkWorkflow(uuid, 0);
     } finally {
@@ -340,7 +347,6 @@ queueCommands
   )
   .option('-l, --limit <number>', 'Limit the results returned')
   .option('-q, --queue <string>', 'Retrieve functions run on this queue')
-  .option('--request', 'Retrieve workflow request information (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
     async (options: {
@@ -350,15 +356,8 @@ queueCommands
       status?: string;
       limit?: string;
       queue?: string;
-      request: boolean;
       appDir?: string;
-      silent: boolean;
     }) => {
-      if (options.request) {
-        console.warn('\x1b[33m%s\x1b[0m', 'The --request option has been deprecated.');
-      }
-      options.silent = true;
-      const [dbosConfig, _] = parseConfigFile(options);
       if (
         options.status &&
         !Object.values(StatusString).includes(options.status as (typeof StatusString)[keyof typeof StatusString])
@@ -366,21 +365,20 @@ queueCommands
         console.error('Invalid status: ', options.status);
         exit(1);
       }
-      const input: GetQueuedWorkflowsInput = {
-        limit: Number(options.limit),
-        startTime: options.startTime,
-        endTime: options.endTime,
-        status: options.status as (typeof StatusString)[keyof typeof StatusString],
-        workflowName: options.name,
-        queueName: options.queue,
-      };
-      if (dbosConfig.databaseUrl === undefined) {
-        throw new Error('Database URL is not defined');
-      }
-      const client = await DBOSClient.create(dbosConfig.databaseUrl);
+
+      const configFile = await readConfigFile(options.appDir);
+      const { databaseUrl, sysDbName } = getDatbaseConfig(configFile);
+      const client = await DBOSClient.create(databaseUrl, sysDbName);
       try {
         // TOD: Review!
-        const output = await client.listQueuedWorkflows(input);
+        const output = await client.listQueuedWorkflows({
+          limit: Number(options.limit),
+          startTime: options.startTime,
+          endTime: options.endTime,
+          status: options.status as (typeof StatusString)[keyof typeof StatusString],
+          workflowName: options.name,
+          queueName: options.queue,
+        });
         console.log(JSON.stringify(output));
       } finally {
         await client.destroy();
