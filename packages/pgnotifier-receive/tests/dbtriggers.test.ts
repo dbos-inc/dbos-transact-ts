@@ -1,13 +1,36 @@
-import { createTestingRuntime, TestingRuntime, DBOS } from '@dbos-inc/dbos-sdk';
-import { DBTrigger, DBTriggerWorkflow, TriggerOperation } from '../dbtrigger/dbtrigger';
+import { DBOS, DBOSConfig } from '@dbos-inc/dbos-sdk';
+import { DBTrigger, TriggerOperation } from '../src';
+import { ClientBase, Pool, PoolClient } from 'pg';
+
+import { KnexDataSource } from '@dbos-inc/knex-datasource';
 
 const testTableName = 'dbos_test_orders';
+
+const config = { user: 'postgres', database: 'postgres' };
+
+const pool = new Pool(config);
+
+const kconfig = { client: 'pg', connection: config };
+
+const knexds = new KnexDataSource('app', kconfig);
+
+const trig = new DBTrigger({
+  connect: async () => {
+    const conn = pool.connect();
+    return conn;
+  },
+  disconnect: async (c: ClientBase) => {
+    (c as PoolClient).release();
+    return Promise.resolve();
+  },
+  query: async <R>(sql: string, params?: unknown[]) => {
+    return (await pool.query(sql, params)).rows as R[];
+  },
+});
 
 function sleepms(ms: number) {
   return new Promise((r) => setTimeout(r, ms));
 }
-
-class DBOSTestNoClass {}
 
 class DBOSTriggerTestClass {
   static nInserts = 0;
@@ -28,7 +51,7 @@ class DBOSTriggerTestClass {
     DBOSTriggerTestClass.wfRecordMap = new Map();
   }
 
-  @DBTrigger({ tableName: testTableName, recordIDColumns: ['order_id'], installDBTrigger: true })
+  @trig.trigger({ tableName: testTableName, recordIDColumns: ['order_id'], installDBTrigger: true })
   static async triggerNonWF(op: TriggerOperation, key: number[], rec: unknown) {
     if (op === TriggerOperation.RecordDeleted) {
       ++DBOSTriggerTestClass.nDeletes;
@@ -45,7 +68,7 @@ class DBOSTriggerTestClass {
     return Promise.resolve();
   }
 
-  @DBTriggerWorkflow({ tableName: testTableName, recordIDColumns: ['order_id'], installDBTrigger: true })
+  @trig.triggerWorkflow({ tableName: testTableName, recordIDColumns: ['order_id'], installDBTrigger: true })
   @DBOS.workflow()
   static async triggerWF(op: TriggerOperation, key: number[], rec: unknown) {
     DBOS.logger.debug(`WF ${op} - ${JSON.stringify(key)} / ${JSON.stringify(rec)}`);
@@ -57,19 +80,19 @@ class DBOSTriggerTestClass {
     return Promise.resolve();
   }
 
-  @DBOS.transaction()
+  @knexds.transaction()
   static async insertRecord(rec: TestTable) {
-    await DBOS.knexClient<TestTable>(testTableName).insert(rec);
+    await knexds.client<TestTable>(testTableName).insert(rec);
   }
 
-  @DBOS.transaction()
+  @knexds.transaction()
   static async deleteRecord(order_id: number) {
-    await DBOS.knexClient<TestTable>(testTableName).where({ order_id }).delete();
+    await knexds.client<TestTable>(testTableName).where({ order_id }).delete();
   }
 
-  @DBOS.transaction()
+  @knexds.transaction()
   static async updateRecordStatus(order_id: number, status: string) {
-    await DBOS.knexClient<TestTable>(testTableName).where({ order_id }).update({ status });
+    await knexds.client<TestTable>(testTableName).where({ order_id }).update({ status });
   }
 }
 
@@ -82,14 +105,16 @@ interface TestTable {
 }
 
 describe('test-db-triggers', () => {
-  let testRuntime: TestingRuntime;
-
   beforeAll(async () => {});
 
   beforeEach(async () => {
-    testRuntime = await createTestingRuntime([DBOSTestNoClass], 'dbtriggers-test-dbos-config.yaml');
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.queryUserDB(`
+    await KnexDataSource.initializeDBOSSchema(kconfig);
+    const config: DBOSConfig = {
+      name: 'dbtrigg',
+    };
+    DBOS.setConfig(config);
+    await trig.db.query(`DROP TABLE IF EXISTS ${testTableName};`);
+    await trig.db.query(`
             CREATE TABLE IF NOT EXISTS ${testTableName}(
               order_id SERIAL PRIMARY KEY,
               order_date TIMESTAMP,
@@ -97,15 +122,13 @@ describe('test-db-triggers', () => {
               item TEXT,
               status VARCHAR(10)
             );`);
-    await testRuntime.destroy();
-    testRuntime = await createTestingRuntime(undefined, 'dbtriggers-test-dbos-config.yaml');
     DBOSTriggerTestClass.reset();
+    await DBOS.launch();
   });
 
   afterEach(async () => {
-    await testRuntime.deactivateEventReceivers();
-    await testRuntime.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await testRuntime.destroy();
+    await DBOS.shutdown();
+    await trig.db.query(`DROP TABLE IF EXISTS ${testTableName};`);
   });
 
   test('trigger-nonwf', async () => {

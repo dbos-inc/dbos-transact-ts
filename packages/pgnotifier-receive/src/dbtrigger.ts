@@ -54,7 +54,7 @@ export class DBTriggerConfig {
 export interface DBConfig {
   connect: () => Promise<ClientBase>;
   disconnect: (c: ClientBase) => Promise<void>;
-  query: <R>(sql: string, ...params: unknown[]) => Promise<R[]>;
+  query: <R>(sql: string, params?: unknown[]) => Promise<R[]>;
 }
 
 export async function dbListen(
@@ -262,7 +262,7 @@ class TriggerPayloadQueue {
   }
 }
 
-export class DBOSDBTrigger implements DBOSLifecycleCallback {
+export class DBTrigger implements DBOSLifecycleCallback {
   listeners: DBNotificationListener[] = [];
   tableToReg: Map<string, ExternalRegistration[]> = new Map();
   shutdown: boolean = false;
@@ -271,7 +271,9 @@ export class DBOSDBTrigger implements DBOSLifecycleCallback {
   pollers: DBTPollingLoop[] = [];
   pollLoops: Promise<void>[] = [];
 
-  constructor(readonly db: DBConfig) {}
+  constructor(readonly db: DBConfig) {
+    DBOS.registerLifecycleCallback(this);
+  }
 
   async createPoll(tc: DBTriggerConfig, fullname: string, tname: string, tstr: string) {
     // Initiate catchup work
@@ -634,7 +636,7 @@ class DBTPollingLoop {
   private trigMethodName: string;
 
   constructor(
-    readonly trigER: DBOSDBTrigger,
+    readonly trigER: DBTrigger,
     readonly trigReg: DBTriggerConfig,
     readonly reg: ExternalRegistration,
     readonly tname: string,
