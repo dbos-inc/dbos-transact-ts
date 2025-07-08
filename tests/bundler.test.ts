@@ -9,7 +9,7 @@ describe('DBOS Bundler Tests', () => {
   const bundleFile = path.join(bundlerTestDir, 'dist', 'bundle.js');
 
   beforeAll(async () => {
-    execSync('npm run build', { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
+    execSync('npm run build', { cwd: path.join(__dirname, '..'), stdio: 'inherit' });
     const config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
   }, 120000);
@@ -21,16 +21,30 @@ describe('DBOS Bundler Tests', () => {
   test('should bundle DBOS app and show migration warning', async () => {
     const dbPassword = process.env.PGPASSWORD || 'dbos';
     const testDbName = 'bundler_test';
+    const sysDbName = 'bundler_test_dbos_sys';
+
+    try {
+      execSync(`dropdb ${sysDbName}`, {
+        stdio: 'inherit',
+        timeout: 30000,
+        env: {
+          ...process.env,
+          PGPASSWORD: dbPassword,
+        },
+      });
+    } catch (error) {
+      // Database might not exist, ignore error
+    }
 
     execSync('npm install', {
       cwd: bundlerTestDir,
-      stdio: 'pipe',
+      stdio: 'inherit',
       timeout: 120000,
     });
 
     execSync('npm run build', {
       cwd: bundlerTestDir,
-      stdio: 'pipe',
+      stdio: 'inherit',
       timeout: 60000,
     });
 
@@ -79,10 +93,67 @@ describe('DBOS Bundler Tests', () => {
       }, 15000);
     });
 
-    await runPromise;
-
+    const exitCode1 = await runPromise;
     const output = stdout + stderr;
+    console.log(output);
     expect(output).toContain('migration files not found');
     expect(output).toContain('npx dbos migrate');
+    expect(exitCode1).not.toBe(0);
+
+    try {
+      execSync('npx dbos migrate', {
+        cwd: bundlerTestDir,
+        stdio: 'inherit',
+        timeout: 60000,
+        env: {
+          ...process.env,
+          PGPASSWORD: dbPassword,
+          DBOS_DATABASE_URL: `postgresql://postgres:${dbPassword}@localhost:5432/${testDbName}`,
+        },
+      });
+    } catch (error) {
+      throw new Error(`Migration failed`);
+    }
+
+    stdout = '';
+    stderr = '';
+
+    const runPromise2 = new Promise<number>((resolve, reject) => {
+      const child = spawn('node', [bundleFile], {
+        cwd: bundlerTestDir,
+        stdio: 'pipe',
+        env: {
+          ...process.env,
+          PGPASSWORD: dbPassword,
+          DBOS_DATABASE_URL: `postgresql://postgres:${dbPassword}@localhost:5432/${testDbName}`,
+        },
+      });
+
+      child.stdout.on('data', (data: Buffer) => {
+        stdout += data.toString();
+      });
+
+      child.stderr.on('data', (data: Buffer) => {
+        stderr += data.toString();
+      });
+
+      child.on('close', (code) => {
+        resolve(code || 0);
+      });
+
+      child.on('error', (error) => {
+        reject(error);
+      });
+
+      setTimeout(() => {
+        if (!child.killed) {
+          child.kill('SIGTERM');
+        }
+      }, 15000);
+    });
+
+    const exitCode2 = await runPromise2;
+    console.log(stdout + stderr);
+    expect(exitCode2).toBe(0);
   }, 300000);
 });
