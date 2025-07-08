@@ -18,9 +18,3 @@ database:
   rollback: ['npx knex migrate:rollback']
 runtimeConfig:
   port: 3300 # Optional, defaults to 3000
-application:
-  s3_bucket: ${S3_BUCKET}
-  aws_config:
-    aws_region: ${AWS_REGION}
-    aws_access_key_id: ${AWS_ACCESS_KEY_ID}
-    aws_secret_access_key: ${AWS_SECRET_ACCESS_KEY}

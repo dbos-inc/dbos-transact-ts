@@ -1,4 +1,4 @@
-import { DBOS, DBOSEventReceiverState } from '..';
+import { DBOS, DBOSExternalState } from '..';
 import { DBOSLifecycleCallback, MethodRegistrationBase } from '../decorators';
 import { TimeMatcher } from './crontab';
 
@@ -179,7 +179,7 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
   static async #setLastExecTime(name: string, time: number) {
     // Record the time of the wf kicked off
-    const state: DBOSEventReceiverState = {
+    const state: DBOSExternalState = {
       service: SCHEDULER_EVENT_SERVICE_NAME,
       workflowFnName: name,
       key: 'lastState',

@@ -1,9 +1,18 @@
-import { FileRecord, DBOS_S3 } from './s3_utils';
+import {
+  FileRecord,
+  S3WorkflowCallbacks,
+  registerS3UploadWorkflow,
+  registerS3PresignedUploadWorkflow,
+  registerS3DeleteWorkflow,
+} from './s3_utils';
 import { DBOS } from '@dbos-inc/dbos-sdk';
+
+import { S3Client, DeleteObjectCommand, GetObjectCommand, PutObjectCommand } from '@aws-sdk/client-s3';
+import { createPresignedPost, PresignedPost } from '@aws-sdk/s3-presigned-post';
+import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 
 import FormData from 'form-data';
 import axios, { AxiosResponse } from 'axios';
-import { PresignedPost } from '@aws-sdk/s3-presigned-post';
 import { Readable } from 'stream';
 import * as fs from 'fs';
 import { randomUUID } from 'node:crypto';
@@ -22,6 +31,7 @@ interface FileDetails {
   file_status?: string;
   file_time?: number;
 }
+
 interface UserFile extends FileDetails, FileRecord {
   user_id: string;
   file_type: string;
@@ -121,45 +131,95 @@ class TestUserFileTable {
   }
 }
 
+const s3bucket = process.env['S3_BUCKET'];
+const s3region = process.env['AWS_REGION'];
+const s3accessKey = process.env['AWS_ACCESS_KEY_ID'];
+const s3accessSecret = process.env['AWS_SECRET_ACCESS_KEY'];
+
+let s3client: S3Client | undefined = undefined;
+
+interface Opts {
+  contentType?: string;
+}
+
+const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
+  // Database operations (these should be transactions)
+  newActiveFile: async (rec: UserFile) => {
+    rec.file_status = FileStatus.ACTIVE;
+    return await TestUserFileTable.insertFileRecord(rec);
+  },
+  newPendingFile: async (rec: UserFile) => {
+    rec.file_status = FileStatus.PENDING;
+    return await TestUserFileTable.insertFileRecord(rec);
+  },
+  fileActivated: async (rec: UserFile) => {
+    rec.file_status = FileStatus.ACTIVE;
+    return await TestUserFileTable.updateFileRecord(rec);
+  },
+  fileDeleted: async (rec: UserFile) => {
+    return await TestUserFileTable.deleteFileRecordById(rec.file_id);
+  },
+
+  // S3 interaction options, these will be run as steps
+  putS3Contents: async (rec: UserFile, content: string, options?: Opts) => {
+    return await s3client?.send(
+      new PutObjectCommand({
+        Bucket: s3bucket,
+        Key: rec.key,
+        ContentType: options?.contentType ?? 'text/plain',
+        Body: content,
+      }),
+    );
+  },
+  createPresignedPost: async (rec: UserFile, timeout?: number, opts?: Opts) => {
+    const postPresigned = await createPresignedPost(s3client!, {
+      Conditions: [
+        ['content-length-range', 1, 10000000], // 10MB
+      ],
+      Bucket: s3bucket!,
+      Key: rec.key,
+      Expires: timeout || 60,
+      Fields: {
+        'Content-Type': opts?.contentType || '*',
+      },
+    });
+    return { url: postPresigned.url, fields: postPresigned.fields };
+  },
+  validateS3Upload: undefined,
+  deleteS3Object: async (rec: UserFile) => {
+    return await s3client?.send(
+      new DeleteObjectCommand({
+        Bucket: s3bucket,
+        Key: rec.key,
+      }),
+    );
+  },
+};
+
+export const uploadWF = registerS3UploadWorkflow({ className: 'UserFile', name: 'uploadWF' }, s3callback);
+export const uploadPWF = registerS3PresignedUploadWorkflow({ className: 'UserFile', name: 'uploadPWF' }, s3callback);
+export const deleteWF = registerS3DeleteWorkflow({ className: 'UserFile', name: 'deleteWF' }, s3callback);
+
 describe('ses-tests', () => {
   let s3IsAvailable = true;
-  let s3Cfg: DBOS_S3 | undefined = undefined;
 
   beforeAll(async () => {
     // Check if S3 is available and update app config, skip the test if it's not
-    if (!process.env['AWS_REGION'] || !process.env['S3_BUCKET']) {
+    if (!s3region || !s3bucket || !s3accessKey || !s3accessSecret) {
       s3IsAvailable = false;
       console.log(
         'S3 Test is not configured.  To run, set AWS_REGION, AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY, and S3_BUCKET',
       );
     } else {
-      s3Cfg = new DBOS_S3('default', {
-        awscfgname: 'aws_config',
-        bucket: '',
-        s3Callbacks: {
-          newActiveFile: async (frec: unknown) => {
-            const rec = frec as UserFile;
-            rec.file_status = FileStatus.ACTIVE;
-            return await TestUserFileTable.insertFileRecord(rec);
-          },
-          newPendingFile: async (frec: unknown) => {
-            const rec = frec as UserFile;
-            rec.file_status = FileStatus.PENDING;
-            return await TestUserFileTable.insertFileRecord(rec);
-          },
-          fileActivated: async (frec: unknown) => {
-            const rec = frec as UserFile;
-            rec.file_status = FileStatus.ACTIVE;
-            return await TestUserFileTable.updateFileRecord(rec);
-          },
-          fileDeleted: async (frec: unknown) => {
-            const rec = frec as UserFile;
-            return await TestUserFileTable.deleteFileRecordById(rec.file_id);
-          },
+      s3client = new S3Client({
+        region: s3region,
+        credentials: {
+          accessKeyId: s3accessKey,
+          secretAccessKey: s3accessSecret,
         },
       });
+
       await DBOS.launch();
-      s3Cfg.config.bucket = DBOS.getConfig<string>('s3_bucket', 's3bucket');
     }
   });
 
@@ -168,54 +228,6 @@ describe('ses-tests', () => {
       await DBOS.shutdown();
     }
   }, 10000);
-
-  test('s3-basic-ops', async () => {
-    if (!s3IsAvailable) {
-      console.log('S3 unavailable, skipping S3 tests');
-      return;
-    }
-
-    const fn = `filepath/FN_${new Date().toISOString()}`;
-    const putres = await s3Cfg!.put(fn, 'Test string from DBOS');
-    expect(putres).toBeDefined();
-
-    const getres = await s3Cfg!.get(fn);
-    expect(getres).toBeDefined();
-    expect(getres).toBe('Test string from DBOS');
-
-    const delres = await s3Cfg!.delete(fn);
-    expect(delres).toBeDefined();
-  });
-
-  test('s3-presgined-ops', async () => {
-    if (!s3IsAvailable) {
-      console.log('S3 unavailable, skipping S3 tests');
-      return;
-    }
-
-    const fn = `presigned_filepath/FN_${new Date().toISOString()}`;
-
-    const postres = await s3Cfg!.createPresignedPost(fn, 30, { contentType: 'text/plain' });
-    expect(postres).toBeDefined();
-    try {
-      const res = await uploadToS3(postres, './src/s3_utils.test.ts');
-      expect(res.status.toString()[0]).toBe('2');
-    } catch (e) {
-      // You do NOT want to accidentally serialize an AxiosError - they don't!
-      console.log('Caught something awful!', e);
-      expect(e).toBeUndefined();
-    }
-
-    // Make a fetch request to test it...
-    const geturl = await s3Cfg!.presignedGetURL(fn, 30);
-    await downloadFromS3(geturl, './deleteme.xxx');
-    expect(fs.existsSync('./deleteme.xxx')).toBeTruthy();
-    fs.rmSync('./deleteme.xxx');
-
-    // Delete it
-    const delres = await s3Cfg!.delete(fn);
-    expect(delres).toBeDefined();
-  });
 
   test('s3-simple-wfs', async () => {
     if (!s3IsAvailable) {
@@ -229,16 +241,16 @@ describe('ses-tests', () => {
     //   Put file contents into DBOS (w/ table index)
     const myFile: FileDetails = { user_id: userid, file_type: 'text', file_name: 'mytextfile.txt' };
     const myFileRec = await TestUserFileTable.chooseFileRecord(myFile);
-    await s3Cfg!.saveStringToFile(myFileRec, 'This is my file');
+    await uploadWF(myFileRec, 'This is my file');
 
     // Get the file contents out of DBOS (using the table index)
-    const mytxt = await s3Cfg!.readStringFromFile(myFileRec);
+    const mytxt = await getS3KeyContents(myFileRec.key);
     expect(mytxt).toBe('This is my file');
 
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await s3Cfg!.deleteFile(myFileRec);
+    const dfhandle = await deleteWF(myFileRec);
     expect(dfhandle).toBeDefined();
-  });
+  }, 10000);
 
   test('s3-complex-wfs', async () => {
     if (!s3IsAvailable) {
@@ -254,7 +266,7 @@ describe('ses-tests', () => {
     //   Put file contents into DBOS (w/ table index)
     const myFile: FileDetails = { user_id: userid, file_type: 'text', file_name: 'mytextfile.txt' };
     const myFileRec = await TestUserFileTable.chooseFileRecord(myFile);
-    const wfhandle = await DBOS.startWorkflow(s3Cfg!).writeFileViaURL(myFileRec, 60, { contentType: 'text/plain' });
+    const wfhandle = await DBOS.startWorkflow(uploadPWF)(myFileRec, 60, { contentType: 'text/plain' });
     //    Get the presigned post
     const ppost = await DBOS.getEvent<PresignedPost>(wfhandle.workflowID, 'uploadkey');
     //    Upload to the URL
@@ -273,18 +285,38 @@ describe('ses-tests', () => {
     const _myFileRecord = await wfhandle.getResult();
 
     // Get the file out of DBOS (using a signed URL)
-    const myurl = await s3Cfg!.getFileReadURL(myFileRec);
+    const myurl = await getS3KeyUrl(myFileRec.key, 60);
     expect(myurl).not.toBeNull();
     // Get the file contents out of S3
     await downloadFromS3(myurl, './deleteme.xxx');
     expect(fs.existsSync('./deleteme.xxx')).toBeTruthy();
     fs.rmSync('./deleteme.xxx');
 
-    // Delete the file contents out of DBOS (No different than above)
     // Delete the file contents out of DBOS (using the table index)
-    const dfhandle = await s3Cfg!.deleteFile(myFileRec);
+    const dfhandle = await deleteWF(myFileRec);
     expect(dfhandle).toBeDefined();
-  });
+  }, 10000);
+
+  async function getS3KeyContents(key: string) {
+    return (
+      await s3client!.send(
+        new GetObjectCommand({
+          Bucket: s3bucket!,
+          Key: key,
+        }),
+      )
+    ).Body?.transformToString();
+  }
+
+  async function getS3KeyUrl(key: string, expirationSecs: number) {
+    const getObjectCommand = new GetObjectCommand({
+      Bucket: s3bucket!,
+      Key: key,
+    });
+
+    const presignedUrl = await getSignedUrl(s3client!, getObjectCommand, { expiresIn: expirationSecs });
+    return presignedUrl;
+  }
 
   async function uploadToS3(presignedPostData: PresignedPost, filePath: string) {
     const formData = new FormData();
