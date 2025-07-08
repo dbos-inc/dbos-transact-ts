@@ -23,6 +23,7 @@ jobs:
             packages/knex-datasource,
             packages/koa-serve,
             packages/nodepg-datasource,
+            packages/pgnotifier-receive,
             packages/postgres-datasource,
             packages/sqs-receive,
             packages/typeorm-datasource,
