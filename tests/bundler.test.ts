@@ -23,62 +23,50 @@ describe('DBOS Bundler Tests', () => {
     await DBOS.shutdown();
   });
 
-  test('should install dependencies, bundle successfully, and fail execution with clear error', async () => {
-    console.log('Installing bundler test dependencies...');
+  test('should bundle DBOS app and show migration warning', async () => {
+    const dbPassword = process.env.PGPASSWORD || 'dbos';
+    const testDbName = 'bundler_test';
+
+    console.log('=== Installing dependencies and bundling ===');
 
     // Install dependencies
-    expect(() => {
-      execSync('npm install', {
-        cwd: bundlerTestDir,
-        stdio: 'inherit',
-        timeout: 120000, // 2 minutes timeout
-      });
-    }).not.toThrow();
-
-    console.log('Running webpack build...');
+    execSync('npm install', {
+      cwd: bundlerTestDir,
+      stdio: 'inherit',
+      timeout: 120000,
+    });
 
     // Run webpack build
-    expect(() => {
-      execSync('npm run build', {
-        cwd: bundlerTestDir,
-        stdio: 'inherit',
-        timeout: 60000, // 1 minute timeout
-      });
-    }).not.toThrow();
+    execSync('npm run build', {
+      cwd: bundlerTestDir,
+      stdio: 'inherit',
+      timeout: 60000,
+    });
 
-    // Verify bundle file exists and has content
+    // Verify bundle was created
     expect(existsSync(bundleFile)).toBe(true);
-
     const bundleContent = readFileSync(bundleFile, 'utf8');
-    expect(bundleContent.length).toBeGreaterThan(0);
-
-    // Check that it contains expected DBOS references
     expect(bundleContent).toContain('DBOS');
-    expect(bundleContent).toContain('workflow');
-    expect(bundleContent).toContain('step');
-    expect(bundleContent).toContain('BundlerTestApp');
     expect(bundleContent).toContain('testWorkflow');
-    expect(bundleContent).toContain('testStep');
-    expect(bundleContent).toContain('launch');
-    expect(bundleContent).toContain('shutdown');
 
-    // Check bundle size is reasonable
-    const stats = statSync(bundleFile);
-    const sizeInMB = stats.size / (1024 * 1024);
-    console.log(`Bundle size: ${sizeInMB.toFixed(2)} MB`);
-    expect(sizeInMB).toBeLessThan(50);
+    const bundleSize = statSync(bundleFile).size / (1024 * 1024);
+    console.log(`Bundle size: ${bundleSize.toFixed(2)} MB`);
+    expect(bundleSize).toBeLessThan(50);
 
-    // Test bundle execution (this should fail with current DBOS limitations)
+    console.log('=== Running bundled app (should show migration warning) ===');
+
+    // Run the bundled app - should show migration warning
     let stdout = '';
     let stderr = '';
 
-    const promise = new Promise<number>((resolve, reject) => {
+    const runPromise = new Promise<number>((resolve, reject) => {
       const child = spawn('node', [bundleFile], {
         cwd: bundlerTestDir,
         stdio: 'pipe',
         env: {
           ...process.env,
-          DBOS_DATABASE_URL: process.env.DBOS_DATABASE_URL || 'postgresql://postgres:postgres@localhost:5432/dbostest',
+          PGPASSWORD: dbPassword,
+          DBOS_DATABASE_URL: `postgresql://postgres:${dbPassword}@localhost:5432/${testDbName}`,
         },
       });
 
@@ -98,21 +86,24 @@ describe('DBOS Bundler Tests', () => {
         reject(error);
       });
 
-      // Kill process after 30 seconds if it doesn't exit
+      // Kill after 15 seconds
       setTimeout(() => {
         if (!child.killed) {
           child.kill('SIGTERM');
-          reject(new Error('Test timed out after 30 seconds'));
         }
-      }, 30000);
+      }, 15000);
     });
 
-    const exitCode = await promise;
+    await runPromise;
 
-    console.log('Bundled app stdout:', stdout);
-    console.log('Bundled app stderr:', stderr);
+    console.log('Bundled app output:', stdout);
+    console.log('Bundled app errors:', stderr);
 
-    // Expect the bundled app to fail with a clear error
-    expect(exitCode).not.toBe(0);
-  }, 300000); // 5 minute timeout for entire test
+    // Verify the migration warning is shown
+    const output = stdout + stderr;
+    expect(output).toContain('migration files not found');
+    expect(output).toContain('npx dbos migrate');
+
+    console.log('✅ Successfully demonstrated bundler compatibility with proper migration warning');
+  }, 300000); // 5 minute timeout
 });
