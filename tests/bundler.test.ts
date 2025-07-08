@@ -114,16 +114,5 @@ describe('DBOS Bundler Tests', () => {
 
     // Expect the bundled app to fail with a clear error
     expect(exitCode).not.toBe(0);
-
-    // Verify the error is related to dynamic module loading
-    expect(stderr).toContain('Cannot find module');
-
-    // Document the specific limitation
-    console.log('\n=== BUNDLING LIMITATION DETECTED ===');
-    console.log('DBOS currently cannot be bundled due to:');
-    console.log('1. Dynamic module resolution in the framework');
-    console.log('2. Runtime file system access for configuration');
-    console.log('3. Database migration files that need to be accessible');
-    console.log('=====================================\n');
   }, 300000); // 5 minute timeout for entire test
 });

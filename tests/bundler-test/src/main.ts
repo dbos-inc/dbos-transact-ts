@@ -23,12 +23,7 @@ async function main() {
     // Configure DBOS with minimal configuration
     const config = {
       name: 'bundler-test',
-      database_url: process.env.DBOS_DATABASE_URL || 'postgresql://postgres:dbos@localhost:5432/dbostest',
-      telemetry: {
-        logs: {
-          silent: true,
-        },
-      },
+      database_url: process.env.DBOS_DATABASE_URL,
     };
     DBOS.setConfig(config);
 

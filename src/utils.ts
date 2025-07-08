@@ -8,9 +8,18 @@ export function readFileSync(path: string, encoding: BufferEncoding = 'utf8'): s
   return fs.readFileSync(path, { encoding });
 }
 
-const packageJsonPath = path.join(findPackageRoot(__dirname), 'package.json');
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const packageJson = require(packageJsonPath) as { version: string };
+function loadDbosVersion(): string {
+  try {
+    const packageJsonPath = path.join(findPackageRoot(__dirname), 'package.json');
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const packageJson = require(packageJsonPath) as { version: string };
+    return packageJson.version;
+  } catch (error) {
+    // Return "unknown" if package.json cannot be found or loaded
+    // This can happen in bundled environments where the file system structure is different
+    return 'unknown';
+  }
+}
 
 export const globalParams = {
   appVersion: process.env.DBOS__APPVERSION || '', // The one true source of appVersion
@@ -18,7 +27,7 @@ export const globalParams = {
   executorID: process.env.DBOS__VMID || 'local', // The one true source of executorID
   appID: process.env.DBOS__APPID || '', // The one true source of appID
   appName: '', // The one true source of appName
-  dbosVersion: packageJson.version, // The version of the DBOS library
+  dbosVersion: loadDbosVersion(), // The version of the DBOS library
 };
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
