@@ -213,7 +213,7 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger
   // Check if migrations directory exists
   if (!fs.existsSync(migrationsDirectory)) {
     logger.warn(
-      'DBOS migration files not found. If you are using a bundler, DBOS cannot automatically run migrations. ' +
+      'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
         'Please run "npx dbos migrate" to create your system database before running your bundled application.',
     );
     return;

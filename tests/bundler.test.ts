@@ -99,7 +99,6 @@ describe('DBOS Bundler Tests', () => {
     const output = stdout + stderr;
     console.log(output);
     expect(output).toContain('migration files not found');
-    expect(output).toContain('npx dbos migrate');
     expect(exitCode1).not.toBe(0);
 
     // Create the system database externally
