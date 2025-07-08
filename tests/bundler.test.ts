@@ -9,53 +9,39 @@ describe('DBOS Bundler Tests', () => {
   const bundleFile = path.join(bundlerTestDir, 'dist', 'bundle.js');
 
   beforeAll(async () => {
-    // Ensure the main project is built
-    console.log('Building main DBOS project...');
-    execSync('npm run build', { cwd: path.join(__dirname, '..'), stdio: 'inherit' });
-
-    // Set up test database
+    execSync('npm run build', { cwd: path.join(__dirname, '..'), stdio: 'pipe' });
     const config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
-  });
+  }, 120000);
 
   afterAll(async () => {
-    // Clean up any test processes
     await DBOS.shutdown();
-  });
+  }, 30000);
 
   test('should bundle DBOS app and show migration warning', async () => {
     const dbPassword = process.env.PGPASSWORD || 'dbos';
     const testDbName = 'bundler_test';
 
-    console.log('=== Installing dependencies and bundling ===');
-
-    // Install dependencies
     execSync('npm install', {
       cwd: bundlerTestDir,
-      stdio: 'inherit',
+      stdio: 'pipe',
       timeout: 120000,
     });
 
-    // Run webpack build
     execSync('npm run build', {
       cwd: bundlerTestDir,
-      stdio: 'inherit',
+      stdio: 'pipe',
       timeout: 60000,
     });
 
-    // Verify bundle was created
     expect(existsSync(bundleFile)).toBe(true);
     const bundleContent = readFileSync(bundleFile, 'utf8');
     expect(bundleContent).toContain('DBOS');
     expect(bundleContent).toContain('testWorkflow');
 
     const bundleSize = statSync(bundleFile).size / (1024 * 1024);
-    console.log(`Bundle size: ${bundleSize.toFixed(2)} MB`);
     expect(bundleSize).toBeLessThan(50);
 
-    console.log('=== Running bundled app (should show migration warning) ===');
-
-    // Run the bundled app - should show migration warning
     let stdout = '';
     let stderr = '';
 
@@ -86,7 +72,6 @@ describe('DBOS Bundler Tests', () => {
         reject(error);
       });
 
-      // Kill after 15 seconds
       setTimeout(() => {
         if (!child.killed) {
           child.kill('SIGTERM');
@@ -96,14 +81,8 @@ describe('DBOS Bundler Tests', () => {
 
     await runPromise;
 
-    console.log('Bundled app output:', stdout);
-    console.log('Bundled app errors:', stderr);
-
-    // Verify the migration warning is shown
     const output = stdout + stderr;
     expect(output).toContain('migration files not found');
     expect(output).toContain('npx dbos migrate');
-
-    console.log('✅ Successfully demonstrated bundler compatibility with proper migration warning');
-  }, 300000); // 5 minute timeout
+  }, 300000);
 });
