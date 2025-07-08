@@ -25,8 +25,7 @@ module.exports = {
     ],
   },
   externals: {
-    // Keep these as external dependencies to avoid bundling issues
-    'pg-native': 'commonjs pg-native',
+    // Keep these optional dependencies of Knex as external dependencies to avoid bundling issues
     sqlite3: 'commonjs sqlite3',
     mysql: 'commonjs mysql',
     mysql2: 'commonjs mysql2',
@@ -35,8 +34,6 @@ module.exports = {
     'better-sqlite3': 'commonjs better-sqlite3',
     tedious: 'commonjs tedious',
     'pg-query-stream': 'commonjs pg-query-stream',
-    bufferutil: 'commonjs bufferutil',
-    'utf-8-validate': 'commonjs utf-8-validate',
   },
   optimization: {
     minimize: false, // Disable minification for easier debugging
