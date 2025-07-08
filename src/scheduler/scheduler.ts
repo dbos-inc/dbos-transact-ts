@@ -201,24 +201,22 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
   static registerScheduled<This, Return>(
     func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
-    crontab: string,
-    options: {
+    config: SchedulerConfig,
+    target: {
       ctorOrProto?: object;
       className?: string;
       name?: string;
-      mode?: SchedulerMode;
-      queueName?: string;
     } = {},
   ) {
     const { regInfo } = DBOS.associateFunctionWithInfo(SCHEDULER_EVENT_SERVICE_NAME, func, {
-      ctorOrProto: options.ctorOrProto,
-      className: options.className,
-      name: options.name ?? func.name,
+      ctorOrProto: target.ctorOrProto,
+      className: target.className,
+      name: target.name ?? func.name,
     });
 
     const schedRegInfo = regInfo as SchedulerConfig;
-    schedRegInfo.crontab = crontab;
-    schedRegInfo.mode = options.mode;
-    schedRegInfo.queueName = options.queueName;
+    schedRegInfo.crontab = config.crontab;
+    schedRegInfo.mode = config.mode;
+    schedRegInfo.queueName = config.queueName;
   }
 }

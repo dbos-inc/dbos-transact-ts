@@ -237,7 +237,7 @@ async function scheduledFunc(schedTime: Date, startTime: Date) {
 }
 
 const regScheduledFunc = DBOS.registerWorkflow(scheduledFunc);
-DBOS.registerScheduled(regScheduledFunc, "* * * * * *'");
+DBOS.registerScheduled(regScheduledFunc, { crontab: '* * * * * *' });
 
 export async function withTimeout<T>(promise: Promise<T>, ms: number, message = 'Timeout'): Promise<T> {
   let timeoutId: ReturnType<typeof setTimeout>;
