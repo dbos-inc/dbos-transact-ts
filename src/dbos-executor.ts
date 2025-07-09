@@ -96,7 +96,7 @@ import { GetWorkflowsInput, InitContext } from '.';
 import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
-import { DBOSScheduler } from './scheduler/scheduler';
+import { ScheduledReceiver } from './scheduler/scheduler';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import * as crypto from 'crypto';
 import {
@@ -231,7 +231,7 @@ export class DBOSExecutor {
   typeormEntities: Function[] = [];
   drizzleEntities: { [key: string]: object } = {};
 
-  scheduler?: DBOSScheduler = undefined;
+  scheduler = new ScheduledReceiver();
   wfqEnded?: Promise<void> = undefined;
 
   readonly executorID: string = globalParams.executorID;
@@ -1804,10 +1804,6 @@ export class DBOSExecutor {
   }
 
   async initEventReceivers() {
-    this.scheduler = new DBOSScheduler(this);
-
-    this.scheduler.initScheduler();
-
     this.wfqEnded = wfQueueRunner.dispatchLoop(this);
 
     for (const lcl of getLifecycleListeners()) {
@@ -1825,13 +1821,7 @@ export class DBOSExecutor {
         this.logger.warn(`Error destroying lifecycle listener: ${e.message}`);
       }
     }
-    this.logger.debug('Deactivating scheduler');
-    try {
-      await this.scheduler?.destroyScheduler();
-    } catch (err) {
-      const e = err as Error;
-      this.logger.warn(`Error destroying scheduler: ${e.message}`);
-    }
+
     this.logger.debug('Deactivating queue runner');
     if (stopQueueThread) {
       try {
