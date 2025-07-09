@@ -117,9 +117,9 @@ export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
   // Public fields
-  name?: string;
+  readonly name?: string;
   readonly databaseUrl?: string;
-  readonly userDbclient?: UserDatabaseName;
+  readonly userDbClient?: UserDatabaseName;
   readonly userDbPoolSize?: number;
   readonly sysDbName?: string;
   readonly sysDbPoolSize?: number;
@@ -128,11 +128,12 @@ export interface DBOSConfig {
   readonly otlpLogsEndpoints?: string[];
   readonly adminPort?: number;
   readonly runAdminServer?: boolean;
+}
 
-  // Internal fields
-  poolConfig?: PoolConfig;
-  readonly telemetry?: TelemetryConfig;
-  readonly system_database?: string;
+export interface DBOSConfigInternal extends DBOSConfig {
+  readonly poolConfig: PoolConfig;
+  readonly telemetry: TelemetryConfig;
+  readonly systemDatabase: string;
   readonly env?: Record<string, string>;
   readonly application?: object;
   readonly http?: {
@@ -140,23 +141,6 @@ export interface DBOSConfig {
     readonly credentials?: boolean;
     readonly allowed_origins?: string[];
   };
-}
-
-export type DBOSConfigInternal = Omit<DBOSConfig, 'poolConfig' | 'system_database' | 'telemetry'> & {
-  poolConfig: PoolConfig;
-  system_database: string;
-  telemetry: TelemetryConfig;
-};
-
-export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
-  const isDeprecated =
-    config.poolConfig !== undefined ||
-    config.telemetry !== undefined ||
-    config.system_database !== undefined ||
-    config.env !== undefined ||
-    config.application !== undefined ||
-    config.http !== undefined;
-  return isDeprecated;
 }
 
 export interface InternalWorkflowParams extends WorkflowParams {
@@ -280,7 +264,7 @@ export class DBOSExecutor {
       this.logger.debug('Using Postgres system database');
       this.systemDatabase = new PostgresSystemDatabase(
         this.config.poolConfig,
-        this.config.system_database,
+        this.config.systemDatabase,
         this.logger,
         this.config.sysDbPoolSize,
       );
@@ -291,7 +275,7 @@ export class DBOSExecutor {
   }
 
   configureDbClient() {
-    const userDbClient = this.config.userDbclient;
+    const userDbClient = this.config.userDbClient;
     const userDBConfig = this.config.poolConfig;
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.

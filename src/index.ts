@@ -56,7 +56,7 @@ export {
   SkipLogging,
   requestArgValidation,
 } from './paramdecorators';
-
+export { getDatabaseUrl } from './dbos-runtime/config';
 export { DBOSRuntimeConfig } from './dbos-runtime/runtime';
 
 export { DBOSConfig, DBOSExternalState, DBOSExternalState as DBOSEventReceiverState } from './dbos-executor';

@@ -1,13 +1,6 @@
 #!/usr/bin/env node
-import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
-import {
-  ConfigFile,
-  dbosConfigFilePath,
-  getDatabaseInfo,
-  getDbosConfig,
-  getRuntimeConfig,
-  readConfigFile,
-} from './config';
+import { DBOSRuntime } from './runtime';
+import { getDatabaseInfo, getDbosConfig, getRuntimeConfig, readConfigFile } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';

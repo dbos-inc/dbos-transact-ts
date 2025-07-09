@@ -1,4 +1,4 @@
-import { DBOSConfigInternal, DBOSExecutor, DBOSExternalState } from './dbos-executor';
+import { DBOSExecutor, DBOSExternalState } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
   DBOSWorkflowConflictError,

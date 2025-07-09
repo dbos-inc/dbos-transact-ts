@@ -1,7 +1,5 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
-import { ConfigFile } from './config';
-import { DBOSConfigInternal } from '../dbos-executor';
 import { PoolConfig, Client } from 'pg';
 import {
   createUserDBSchema,
