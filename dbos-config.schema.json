@@ -39,7 +39,6 @@
     "telemetry": {
       "type": "object",
       "additionalProperties": false,
-      "deprecated": true,
       "properties": {
         "logs": {
           "type": "object",

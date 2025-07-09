@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
-import { ConfigFile, dbosConfigFilePath, getDatabaseInfo, readConfigFile } from './config';
+import {
+  ConfigFile,
+  dbosConfigFilePath,
+  getDatabaseInfo,
+  getDbosConfig,
+  getRuntimeConfig,
+  readConfigFile,
+} from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
@@ -15,29 +22,13 @@ import { reset } from './reset';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
 import { readFileSync } from '../utils';
 import { configure } from './configure';
+import assert from 'node:assert';
 
 const program = new Command();
 
 ////////////////////////
 /* LOCAL DEVELOPMENT  */
 ////////////////////////
-
-interface DBOSCLIStartOptions {
-  port?: number;
-  loglevel?: string;
-  configfile?: string;
-  appDir?: string;
-  appVersion?: string | boolean;
-  silent?: boolean;
-}
-
-interface DBOSDebugOptions {
-  uuid: string; // Workflow UUID
-  proxy?: string; // deprecated
-  loglevel?: string;
-  configfile?: string;
-  appVersion?: string | boolean;
-}
 
 program.version(getDbosVersion());
 
@@ -59,8 +50,11 @@ program
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
-  .action(async (options: DBOSCLIStartOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(options);
+  .action(async (options: { port?: number; loglevel?: string; appDir?: string; appVersion?: string | boolean }) => {
+    const configFile = await readConfigFile(options.appDir);
+    const dbosConfig = getDbosConfig(configFile, { logLevel: options.loglevel });
+    const runtimeConfig = getRuntimeConfig(configFile, { port: options.port });
+
     // If no start commands are provided, start the DBOS runtime
     if (runtimeConfig.start.length === 0) {
       const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
@@ -99,11 +93,12 @@ program
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
-  .action(async (options: DBOSDebugOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile({
-      ...options,
-      forceConsole: true,
-    });
+  .action(async (options: { uuid?: string; loglevel?: string; appDir?: string; appVersion?: string | boolean }) => {
+    assert(options.uuid, 'Workflow UUID is required');
+
+    const configFile = await readConfigFile(options.appDir);
+    const dbosConfig = getDbosConfig(configFile, { logLevel: options.loglevel, forceConsole: true });
+    const runtimeConfig = getRuntimeConfig(configFile);
     await debugWorkflow(dbosConfig, runtimeConfig, options.uuid);
   });
 

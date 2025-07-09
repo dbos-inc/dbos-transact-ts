@@ -1,20 +1,15 @@
-import { DBOSInitializationError } from '../error';
-import { DBOSJSON, globalParams, readFileSync } from '../utils';
-import { DBOSConfig, DBOSConfigInternal } from '../dbos-executor';
-import { PoolConfig } from 'pg';
 import YAML from 'yaml';
 import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
-import { UserDatabaseName } from '../user_database';
 import { TelemetryConfig } from '../telemetry';
-import { writeFileSync } from 'fs';
-import Ajv, { ValidateFunction } from 'ajv';
+import Ajv from 'ajv';
 import path from 'path';
-import validator from 'validator';
-import { GlobalLogger } from '../telemetry/logs';
 import dbosConfigSchema from '../../dbos-config.schema.json';
-import { ConnectionOptions } from 'tls';
 import * as fs from 'node:fs/promises';
 import assert from 'node:assert/strict';
+import { DBOSConfigInternal } from '../dbos-executor';
+import { ppid } from 'node:process';
+import { LoggerConfig } from '../telemetry/logs';
+import { UserDatabaseName } from '../user_database';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
@@ -28,7 +23,8 @@ export interface ConfigFile {
     app_db_client?: string;
     migrate?: string[];
   };
-  runtimeConfig?: DBOSRuntimeConfig; // TODO: this should be runtime_config
+  runtimeConfig?: Partial<DBOSRuntimeConfig>; // TODO: this should be runtime_config
+  telemetry?: TelemetryConfig; // Peter said this should be deprecated, but Max said DBOS Cloud still uses this
 
   // the following properties are deprecated and will be removed in future PRs
   http?: {
@@ -36,7 +32,6 @@ export interface ConfigFile {
     credentials?: boolean;
     allowed_origins?: string[];
   };
-  telemetry?: TelemetryConfig;
   application: object;
   env: Record<string, string>;
 }
@@ -131,6 +126,57 @@ export function getDatabaseInfo(config: ConfigFile) {
     const dbName = appName?.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
     return dbName?.match(/^\d/) ? '_' + dbName : dbName;
   }
+}
+
+export function getRuntimeConfig(config: ConfigFile, options: { port?: number } = {}): DBOSRuntimeConfig {
+  const entrypoints = new Set<string>();
+  config.runtimeConfig?.entrypoints?.forEach((entry) => entrypoints.add(entry));
+  if (entrypoints.size === 0) {
+    entrypoints.add(defaultEntryPoint);
+  }
+  const port = options.port ?? config.runtimeConfig?.port ?? 3000;
+  return {
+    entrypoints: [...entrypoints],
+    port,
+    runAdminServer: true,
+    admin_port: config.runtimeConfig?.admin_port ?? port + 1,
+    start: config.runtimeConfig?.start ?? [],
+    setup: config.runtimeConfig?.setup ?? [],
+  };
+}
+
+function isUserDatabaseName(name: string): name is UserDatabaseName {
+  return Object.values(UserDatabaseName).includes(name as UserDatabaseName);
+}
+
+export function getDbosConfig(
+  config: ConfigFile,
+  options: {
+    logLevel?: string;
+    forceConsole?: boolean;
+  } = {},
+): DBOSConfigInternal {
+  assert(config.language && config.language !== 'node', `Config file specifies invalid language ${config.language}`);
+
+  const { databaseUrl, sysDbName } = getDatabaseInfo(config);
+  const userDbclient = config.database?.app_db_client ?? UserDatabaseName.KNEX;
+  assert(isUserDatabaseName(userDbclient), `Invalid app_db_client ${userDbclient} in config file`);
+
+  return {
+    databaseUrl,
+    poolConfig: {
+      connectionString: databaseUrl,
+    },
+    userDbclient,
+    telemetry: {
+      logs: { ...config.telemetry?.logs, logLevel: options.logLevel ?? 'info', forceConsole: options.forceConsole },
+      OTLPExporter: config.telemetry?.OTLPExporter,
+    },
+    system_database: sysDbName,
+    application: config.application,
+    env: config.env ?? {},
+    http: config.http,
+  };
 }
 
 // /**
