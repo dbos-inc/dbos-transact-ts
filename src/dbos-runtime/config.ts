@@ -90,14 +90,14 @@ export async function writeConfigFile(config: ConfigFile, dirPath: string | unde
   await fs.writeFile(dbosConfigPath, content, { encoding: 'utf8' });
 }
 
-export function getDatbaseConfig(config: ConfigFile) {
+export function getDatabaseConfig(config: ConfigFile) {
   const sysDbName = config.database?.sys_db_name ?? (config.name ? `${config.name}_dbos_sys` : undefined);
   const databaseUrl = config.database_url ?? process.env['DBOS_DATABASE_URL'] ?? defaultDatabaseUrl(config.name);
   return { databaseUrl, sysDbName };
 
   function defaultDatabaseUrl(appName: string | undefined) {
     // use standard PG environment variables from https://www.postgresql.org/docs/17/libpq-envars.html
-    const host = process.env['PGHOST '] ?? 'localhost';
+    const host = process.env['PGHOST'] ?? 'localhost';
     const port = process.env['PGPORT'] ?? '5432';
     const user = process.env['PGUSER'] ?? 'postgres';
     const password = process.env['PGPASSWORD'];
