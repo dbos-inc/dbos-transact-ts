@@ -18,12 +18,15 @@ import {
   createDBIfDoesNotExist,
 } from '../user_database';
 
-export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) {
-  const poolConfig = config.poolConfig;
+export async function migrate(
+  logger: GlobalLogger,
+  databaseUrl: string,
+  sysDbName: string,
+  migrationCommands?: string[],
+) {
+  const poolConfig: PoolConfig = { connectionString: databaseUrl };
   logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
   await createDBIfDoesNotExist(poolConfig, logger);
-
-  const migrationCommands = configFile.database?.migrate;
 
   try {
     migrationCommands?.forEach((cmd) => {
@@ -38,7 +41,7 @@ export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile
 
   logger.info('Creating DBOS tables and system database.');
   try {
-    await createDBOSTables(config.system_database, poolConfig);
+    await createDBOSTables(sysDbName, poolConfig);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);

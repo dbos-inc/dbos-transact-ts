@@ -1,6 +1,6 @@
 import { confirm } from '@inquirer/prompts';
 import { PostgresSystemDatabase } from '../system_database';
-import { getDatabaseConfig, readConfigFile } from './config';
+import { getDatabaseInfo, readConfigFile } from './config';
 
 export async function reset(cnf: boolean, appDir?: string) {
   if (cnf) {
@@ -16,7 +16,7 @@ export async function reset(cnf: boolean, appDir?: string) {
     }
   }
   const configFile = await readConfigFile(appDir);
-  const { databaseUrl, sysDbName } = getDatabaseConfig(configFile);
+  const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
   if (!sysDbName) {
     console.error('System database name is not defined in the configuration.');
     return 1;

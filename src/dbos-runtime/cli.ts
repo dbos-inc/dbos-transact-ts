@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
-import { ConfigFile, dbosConfigFilePath, getDatabaseConfig, readConfigFile, writeConfigFile } from './config';
+import { ConfigFile, dbosConfigFilePath, getDatabaseInfo, readConfigFile } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
@@ -13,7 +13,6 @@ import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
-import { input, confirm } from '@inquirer/prompts';
 import { readFileSync } from '../utils';
 import { configure } from './configure';
 
@@ -80,6 +79,16 @@ program
         }
       }
     }
+
+    function getGlobalLogger(configFile: DBOSConfigInternal): GlobalLogger {
+      if (configFile.telemetry?.OTLPExporter) {
+        return new GlobalLogger(
+          new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
+          configFile.telemetry?.logs,
+        );
+      }
+      return new GlobalLogger();
+    }
   });
 
 program
@@ -99,14 +108,6 @@ program
   });
 
 program
-  .command('init')
-  .description('Init a DBOS application')
-  .option('-n, --appName <application-name>', 'Application name', 'dbos-hello-app')
-  .action((_options: { appName: string }) => {
-    console.log('NOTE: This command has been removed in favor of `npx @dbos-inc/create` or `npm create @dbos-inc`');
-  });
-
-program
   .command('configure')
   .alias('config')
   .option('-h, --host <string>', 'Specify your Postgres server hostname')
@@ -120,8 +121,34 @@ program
 program
   .command('migrate')
   .description('Perform a database migration')
-  .action(async () => {
-    await runAndLog(migrate);
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+  .action(async (options: { appDir?: string }) => {
+    const configFile = await readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+    const logger = configFile.telemetry?.OTLPExporter
+      ? new GlobalLogger(
+          new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
+          configFile.telemetry?.logs,
+        )
+      : new GlobalLogger();
+    const terminate = configFile.telemetry?.OTLPExporter
+      ? (code: number) => {
+          void logger.destroy().finally(() => {
+            process.exit(code);
+          });
+        }
+      : (code: number) => {
+          process.exit(code);
+        };
+
+    let returnCode = 1;
+    try {
+      returnCode = await migrate(logger, databaseUrl, sysDbName, configFile.database?.migrate);
+    } catch (e) {
+      logger.error(e);
+    } finally {
+      terminate(returnCode);
+    }
   });
 
 program
@@ -191,7 +218,7 @@ workflowCommands
       }
 
       const configFile = await readConfigFile(options.appDir);
-      const { databaseUrl, sysDbName } = getDatabaseConfig(configFile);
+      const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
       const client = await DBOSClient.create(databaseUrl, sysDbName);
       try {
         const output = await client.listWorkflows({
@@ -217,7 +244,7 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const configFile = await readConfigFile(options.appDir);
-    const { databaseUrl, sysDbName } = getDatabaseConfig(configFile);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
     const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       const output = await client.getWorkflow(uuid);
@@ -234,7 +261,7 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const configFile = await readConfigFile(options.appDir);
-    const { databaseUrl, sysDbName } = getDatabaseConfig(configFile);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
     const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       const output = await client.listWorkflowSteps(uuid);
@@ -251,7 +278,7 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const configFile = await readConfigFile(options.appDir);
-    const { databaseUrl, sysDbName } = getDatabaseConfig(configFile);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
     const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       await client.cancelWorkflow(uuid);
@@ -267,7 +294,7 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const configFile = await readConfigFile(options.appDir);
-    const { databaseUrl, sysDbName } = getDatabaseConfig(configFile);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
     const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       await client.resumeWorkflow(uuid);
@@ -283,7 +310,7 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const configFile = await readConfigFile(options.appDir);
-    const { databaseUrl, sysDbName } = getDatabaseConfig(configFile);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
     const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       await client.forkWorkflow(uuid, 0);
@@ -325,7 +352,7 @@ queueCommands
       }
 
       const configFile = await readConfigFile(options.appDir);
-      const { databaseUrl, sysDbName } = getDatabaseConfig(configFile);
+      const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
       const client = await DBOSClient.create(databaseUrl, sysDbName);
       try {
         // TOD: Review!
@@ -359,43 +386,3 @@ if (!process.argv.slice(2).length) {
 //If otel exporter is specified in configFile, adds it to the logger and flushes it after.
 //If action throws, logs the exception and sets the exit code to 1.
 //Finally, terminates the program with the exit code.
-export async function runAndLog(
-  action: (config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number,
-) {
-  let logger = new GlobalLogger();
-  const [config] = parseConfigFile();
-  const configFile = loadConfigFile(dbosConfigFilePath); // pass the raw config file for CLI arguments
-  let terminate = undefined;
-  if (configFile.telemetry?.OTLPExporter) {
-    logger = new GlobalLogger(
-      new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
-      configFile.telemetry?.logs,
-    );
-    terminate = (code: number) => {
-      void logger.destroy().finally(() => {
-        process.exit(code);
-      });
-    };
-  } else {
-    terminate = (code: number) => {
-      process.exit(code);
-    };
-  }
-  let returnCode = 1;
-  try {
-    returnCode = await action(config, configFile, logger);
-  } catch (e) {
-    logger.error(e);
-  }
-  terminate(returnCode);
-}
-
-function getGlobalLogger(configFile: DBOSConfigInternal): GlobalLogger {
-  if (configFile.telemetry?.OTLPExporter) {
-    return new GlobalLogger(
-      new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
-      configFile.telemetry?.logs,
-    );
-  }
-  return new GlobalLogger();
-}

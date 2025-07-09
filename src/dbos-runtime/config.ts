@@ -14,6 +14,7 @@ import { GlobalLogger } from '../telemetry/logs';
 import dbosConfigSchema from '../../dbos-config.schema.json';
 import { ConnectionOptions } from 'tls';
 import * as fs from 'node:fs/promises';
+import assert from 'node:assert/strict';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
@@ -90,29 +91,45 @@ export async function writeConfigFile(config: ConfigFile, dirPath: string | unde
   await fs.writeFile(dbosConfigPath, content, { encoding: 'utf8' });
 }
 
-export function getDatabaseConfig(config: ConfigFile) {
+export function getDatabaseInfo(config: ConfigFile) {
   const sysDbName = config.database?.sys_db_name ?? (config.name ? `${config.name}_dbos_sys` : undefined);
+  assert(
+    sysDbName,
+    'System database name could not be determined. Please provide a name in the config file or set the package name.',
+  );
+
   const databaseUrl = config.database_url ?? process.env['DBOS_DATABASE_URL'] ?? defaultDatabaseUrl(config.name);
+
+  const missingFields: string[] = [];
+  const url = new URL(databaseUrl);
+  if (!url.username) missingFields.push('username');
+  if (!url.hostname) missingFields.push('hostname');
+  if (!url.pathname.substring(1)) missingFields.push('database name');
+  assert(missingFields.length === 0, `Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
+
   return { databaseUrl, sysDbName };
 
   function defaultDatabaseUrl(appName: string | undefined) {
+    const database = appNameToDbName(appName) ?? process.env['PGDATABASE'];
+    assert(
+      database,
+      'Database name could not be determined. Please provide a name in the config file or set the package name or PGDATABASE environment variable.',
+    );
+
     // use standard PG environment variables from https://www.postgresql.org/docs/17/libpq-envars.html
     const host = process.env['PGHOST'] ?? 'localhost';
     const port = process.env['PGPORT'] ?? '5432';
     const user = process.env['PGUSER'] ?? 'postgres';
-    const password = process.env['PGPASSWORD'];
-    const database = appNameToDbName(appName) ?? process.env['PGDATABASE'];
+    const password = process.env['PGPASSWORD'] ?? 'dbos';
     const timeout = process.env['PGCONNECT_TIMEOUT'] ?? '10';
     const sslmode = process.env['PGSSLMODE'] ?? 'prefer';
-    return `postgresql://${user}${password ? `:${password}` : ''}@${host}:${port}/${database}?connect_timeout=${timeout}&sslmode=${sslmode}`;
+
+    return `postgresql://${user}:${password}@${host}:${port}/${database}?connect_timeout=${timeout}&sslmode=${sslmode}`;
   }
 
   function appNameToDbName(appName: string | undefined) {
-    if (appName) {
-      let dbName = appName.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
-      return dbName.match(/^\d/) ? '_' + dbName : dbName;
-    }
-    return undefined;
+    const dbName = appName?.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
+    return dbName?.match(/^\d/) ? '_' + dbName : dbName;
   }
 }
 
