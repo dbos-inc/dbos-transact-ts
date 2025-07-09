@@ -1,9 +1,8 @@
-import { GlobalLogger } from '../telemetry/logs';
 import { confirm } from '@inquirer/prompts';
-import { DBOSConfigInternal } from '../dbos-executor';
 import { PostgresSystemDatabase } from '../system_database';
+import { getDatbaseConfig, readConfigFile } from './config';
 
-export async function reset(config: DBOSConfigInternal, logger: GlobalLogger, cnf: boolean) {
+export async function reset(cnf: boolean, appDir?: string) {
   if (cnf) {
     const userConfirmed = await confirm({
       message:
@@ -16,8 +15,14 @@ export async function reset(config: DBOSConfigInternal, logger: GlobalLogger, cn
       process.exit(0); // Exit the process if the user cancels
     }
   }
-  const sysDbName = config.system_database;
-  logger.info(`Resetting ${sysDbName} if it exists`);
-  await PostgresSystemDatabase.dropSystemDB(config);
+  const configFile = await readConfigFile(appDir);
+  const { databaseUrl, sysDbName } = getDatbaseConfig(configFile);
+  if (!sysDbName) {
+    console.error('System database name is not defined in the configuration.');
+    return 1;
+  }
+
+  console.log(`Resetting ${sysDbName} if it exists`);
+  await PostgresSystemDatabase.dropSystemDB(databaseUrl, sysDbName);
   return 0;
 }

@@ -698,17 +698,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.pool.end();
   }
 
-  static async dropSystemDB(dbosConfig: DBOSConfigInternal) {
+  static async dropSystemDB(databaseUrl: string, sysDbName: string) {
+    const systemDbConnectionString = new URL(databaseUrl);
+    if (sysDbName) {
+      systemDbConnectionString.pathname = `/postgres`;
+    }
+
     // Drop system database, for testing.
     const pgSystemClient = new Client({
-      user: dbosConfig.poolConfig.user,
-      port: dbosConfig.poolConfig.port,
-      host: dbosConfig.poolConfig.host,
-      password: dbosConfig.poolConfig.password,
-      database: dbosConfig.poolConfig.database,
+      connectionString: systemDbConnectionString.toString(),
     });
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${sysDbName};`);
     await pgSystemClient.end();
   }
 

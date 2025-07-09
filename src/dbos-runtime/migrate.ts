@@ -23,7 +23,7 @@ export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile
   logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
   await createDBIfDoesNotExist(poolConfig, logger);
 
-  const migrationCommands = configFile.database.migrate;
+  const migrationCommands = configFile.database?.migrate;
 
   try {
     migrationCommands?.forEach((cmd) => {
@@ -49,29 +49,6 @@ export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile
   }
 
   logger.info('Migration successful!');
-  return 0;
-}
-
-export function rollbackMigration(_config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) {
-  logger.info('Starting Migration Rollback');
-
-  let dbType = configFile.database.app_db_client;
-  if (dbType === undefined) {
-    dbType = 'knex';
-  }
-
-  const rollbackcommands = configFile.database.rollback;
-
-  try {
-    rollbackcommands?.forEach((cmd) => {
-      logger.info('Executing ' + cmd);
-      const migrateCommandOutput = execSync(cmd, { encoding: 'utf-8' });
-      logger.info(migrateCommandOutput.trimEnd());
-    });
-  } catch (e) {
-    logMigrationError(e, logger, 'Error rolling back migration.');
-    return 1;
-  }
   return 0;
 }
 

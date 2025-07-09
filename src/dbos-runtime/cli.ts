@@ -4,7 +4,7 @@ import { ConfigFile, dbosConfigFilePath, getDatbaseConfig, readConfigFile, write
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
-import { migrate, rollbackMigration } from './migrate';
+import { migrate } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
@@ -14,6 +14,8 @@ import { runCommand } from './commands';
 import { reset } from './reset';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
 import { input, confirm } from '@inquirer/prompts';
+import { readFileSync } from '../utils';
+import { configure } from './configure';
 
 const program = new Command();
 
@@ -21,19 +23,13 @@ const program = new Command();
 /* LOCAL DEVELOPMENT  */
 ////////////////////////
 
-export interface DBOSCLIStartOptions {
+interface DBOSCLIStartOptions {
   port?: number;
   loglevel?: string;
   configfile?: string;
   appDir?: string;
   appVersion?: string | boolean;
   silent?: boolean;
-}
-
-export interface DBOSConfigureOptions {
-  host?: string;
-  port?: number;
-  username?: string;
 }
 
 interface DBOSDebugOptions {
@@ -44,24 +40,27 @@ interface DBOSDebugOptions {
   appVersion?: string | boolean;
 }
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const packageJson = require('../../../package.json') as { version: string };
-program.version(packageJson.version);
+program.version(getDbosVersion());
+
+function getDbosVersion(): string {
+  try {
+    const contents = readFileSync('../../../package.json');
+    const pkg = JSON.parse(contents) as { version: string };
+    return pkg.version;
+  } catch {
+    return 'unknown';
+  }
+}
 
 program
   .command('start')
   .description('Start the server')
   .option('-p, --port <number>', 'Specify the port number')
   .option('-l, --loglevel <string>', 'Specify log level')
-  .option('-c, --configfile <string>', 'Specify the config file path (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (options: DBOSCLIStartOptions) => {
-    if (options?.configfile) {
-      console.warn('\x1b[33m%s\x1b[0m', 'The --configfile option is deprecated. Please use --appDir instead.');
-    }
-    options.silent = true;
     const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(options);
     // If no start commands are provided, start the DBOS runtime
     if (runtimeConfig.start.length === 0) {
@@ -88,7 +87,6 @@ program
   .description('Debug a workflow')
   .requiredOption('-u, --uuid <string>', 'Specify the workflow UUID to replay')
   .option('-l, --loglevel <string>', 'Specify log level')
-  .option('-c, --configfile <string>', 'Specify the config file path (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
@@ -115,43 +113,8 @@ program
   .option('-p, --port <number>', 'Specify your Postgres server port')
   .option('-U, --username <number>', 'Specify your Postgres username')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-
   .action(async (options: { host?: string; port?: number; username?: string; appDir?: string }) => {
-    const config = await readConfigFile(options.appDir);
-    if (config.database_url) {
-      console.log(`Database is already configured as ${config.database_url}`);
-      const proceed = await confirm({
-        message: 'Do you want to re-configure the database connection?',
-        default: false,
-      });
-      if (!proceed) {
-        console.log('Aborting configuration.');
-        return;
-      }
-    }
-
-    const host =
-      options.host ??
-      (await input({
-        message: 'What is the hostname of your Postgres server?',
-        default: 'localhost',
-      }));
-    const port =
-      options.port ??
-      (await input({
-        message: 'What is the port of your Postgres server?',
-        default: '5432',
-      }));
-    const username =
-      options.username ??
-      (await input({
-        message: 'What is your Postgres username?',
-        default: 'postgres',
-      }));
-
-    config.database_url = `postgresql://${username}@${host}:${port}/${config.name}`;
-
-    await writeConfigFile(config, options.appDir);
+    await configure(options);
   });
 
 program
@@ -179,15 +142,10 @@ program
   .command('reset')
   .description('reset the system database')
   .option('-y, --yes', 'Skip confirmation prompt', false)
-  .action(async (options: { yes: boolean }) => {
-    const logger = new GlobalLogger();
-    const [config] = parseConfigFile();
-    await reset(config, logger, options.yes);
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+  .action(async (options: { appDir?: string; yes: boolean }) => {
+    await reset(options.yes, options.appDir);
   });
-
-program.command('rollback').action(async () => {
-  await runAndLog(rollbackMigration);
-});
 
 /////////////////////////
 /* WORKFLOW MANAGEMENT */

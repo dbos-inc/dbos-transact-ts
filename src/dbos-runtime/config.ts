@@ -90,24 +90,6 @@ export async function writeConfigFile(config: ConfigFile, dirPath: string | unde
   await fs.writeFile(dbosConfigPath, content, { encoding: 'utf8' });
 }
 
-// /**
-//  * Writes a YAML.Document object to configFilePath.
-//  * @param {YAML.Document} configFile - The config file to be written.
-//  * @param {string} configFilePath - The path to the config file to be written to.
-//  */
-// export async function writeConfigFile(configFile: YAML.Document, configFilePath: string) {
-//   try {
-//     const configFileContent = configFile.toString();
-//     fs.writeFile(configFilePath, configFileContent);
-//   } catch (e) {
-//     if (e instanceof Error) {
-//       throw new DBOSInitializationError(`Failed to write config to ${configFilePath}: ${e.message}`);
-//     } else {
-//       throw e;
-//     }
-//   }
-// }
-
 export function getDatbaseConfig(config: ConfigFile) {
   const sysDbName = config.database?.sys_db_name ?? (config.name ? `${config.name}_dbos_sys` : undefined);
   const databaseUrl = config.database_url ?? process.env['DBOS_DATABASE_URL'] ?? defaultDatabaseUrl(config.name);
