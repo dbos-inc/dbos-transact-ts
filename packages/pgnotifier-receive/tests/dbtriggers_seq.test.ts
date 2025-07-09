@@ -4,8 +4,13 @@ import { DBTrigger, TriggerOperation } from '../src';
 import { ClientBase, Pool, PoolClient } from 'pg';
 import { KnexDataSource } from '@dbos-inc/knex-datasource';
 
-const config = { user: 'postgres', database: 'postgres' };
-
+const config = {
+  host: process.env.PGHOST || 'localhost',
+  port: parseInt(process.env.PGPORT || '5432'),
+  database: process.env.PGDATABASE || 'postgres',
+  user: process.env.PGUSER || 'postgres',
+  password: process.env.PGPASSWORD || 'dbos',
+};
 const pool = new Pool(config);
 
 const kconfig = { client: 'pg', connection: config };

@@ -14,13 +14,12 @@ Of course, if the process that is performing the database insert / update is run
 
 ## Is This a Library?
 
-Yes, in many circumstances this package can be used directly as a library to listen for database record updates, and initiate workflows. However, situations vary widely, so it is just as likely that the code in this package would be used as a reference for a custom database listener implementation.
+Yes, in circumstances where the database is Postgres, this package can be used directly as a library to listen for database record updates, and initiate workflows. However, situations vary widely, so it is just as likely that the code in this package would be used as a reference for a custom database listener implementation.
 
 There are many considerations that factor in to the design of database triggers, including:
 
-- Which database holds the table to be watched? This library is specifically designed to read from tables in the application user database. If the table is elsewhere, it would be necessary to extend the code.
 - What database product is in use? This library uses drivers and SQL code specific to Postgres. Some adjustments may be necessary to support other databases and clients.
-- Are database triggers and notifications possible? While some databases will run a trigger function upon record insert/update, and provide a mechanism to notify database clients, some databases do not support this. In some environments, the database administrator or policies may not permit the installation of triggers or the use of the notifications feature.
+- Are database triggers and notifications possible? While some databases will run a trigger function upon record insert/update, and provide a mechanism to notify database clients, some databases do not support this. In some environments, the database administrator or policies may not permit the installation of triggers or the use of the notifications feature, and polling should be used.
 - How is new data identified? This library supports sequence number and timestamp fields within the records as a mechanism for identifying recent records. If these techniques are not sufficient, customization will be required.
 
 ## General Techniques For Detecting Database Updates
@@ -35,15 +34,59 @@ This library supports polling via queries, and also supports triggers and notifi
 
 ## Using This Package
 
-This package provides method decorators that, when applied to DBOS functions, will listen for database changes and invoke the decorated function as changes occur.
+This package provides method decorators that, when applied to DBOS functions, will listen or poll for database changes and invoke the decorated function as changes occur.
+
+### Creating and Configuring a Listener
+
+First, create an instance of `DBTrigger`. As the `DBTrigger` instance needs connections to a Postgres database and run queries, functions should be provided. For example:
+
+```typescript
+// Get database configuration from environment (your approach may vary)
+const config = {
+  host: process.env.PGHOST || 'localhost',
+  port: parseInt(process.env.PGPORT || '5432'),
+  database: process.env.PGDATABASE || 'postgres',
+  user: process.env.PGUSER || 'postgres',
+  password: process.env.PGPASSWORD || 'dbos',
+};
+
+const pool = new Pool(config);
+
+// Creation of DBTrigger listener, used for decorations below
+const trig = new DBTrigger({
+  // Called to get a long-lived connection for notification listener
+  connect: async () => {
+    const conn = pool.connect();
+    return conn;
+  },
+  // Return listener connection (for example, shutdown)
+  disconnect: async (c: ClientBase) => {
+    (c as PoolClient).release();
+    return Promise.resolve();
+  },
+  // Execute a query (polling; optionally, trigger installation)
+  query: async <R>(sql: string, params?: unknown[]) => {
+    return (await pool.query(sql, params)).rows as R[];
+  },
+});
+
+// Use the trigger object to decorate static async class methods
+class TriggeredFunctions {
+  @trig.triggerWorkflow({ tableName: testTableName, recordIDColumns: ['order_id'], installDBTrigger: true })
+  @DBOS.workflow()
+  static async triggerWF(op: TriggerOperation, key: number[], rec: unknown) {
+    ...
+  }
+}
+```
 
 ### Decorating Functions
 
-This database trigger package supports workflow and non-workflow functions. Workflow functions are to be used in cases where records are to be processed once. With workflow functions, a query is required, and database notifications are optional. With non-workflow functions, triggers are the only supported method for detecting database changes.
+This database trigger package supports workflow and non-workflow functions. Workflow functions are to be used in cases where records should be processed once. With workflow functions, a query is required, and database notifications are optional. With non-workflow functions, triggers are the only supported method for detecting database changes.
 
 #### Decorating Workflow Methods
 
-Workflow methods marked with `@DBTriggerWorkflow` will run in response to database records. Workflows are guaranteed to run exactly once per record in the source database, provided that new records can be identified by querying the source table using simple predicates. The workflow method must:
+Workflow methods marked with `<trigger>.@triggerWorkflow` will run in response to database records. Workflows are guaranteed to run exactly once per record in the source database, provided that new records can be identified by querying the source table using simple predicates. The workflow method must:
 
 - Be `async`, `static`, and decorated with `@DBOS.workflow`
 - Have the arguments `op: TriggerOperation, key: unknown[], rec: unknown`
@@ -71,12 +114,12 @@ If you need full historical details, an append-only table should be used. This t
 
 #### Decorating Plain Methods
 
-Non-workflow methods decorated with `@DBTrigger` will also be run in response to database events. Note that, in contrast to workflows, this approach does not provide the guarantee of exactly-once execution of the method. The class method decorated must:
+Non-workflow methods decorated with `@<trigger>.trigger` will also be run in response to database events. Note that, in contrast to workflows, this approach does not provide the guarantee of exactly-once method execution. The class method decorated must:
 
 - Be `async` and `static`
 - Have the arguments `op: TriggerOperation, key: unknown[], rec: unknown`, which will be provided when the trigger invokes the method.
 
-The decorator is `DBTrigger(triggerConfig: DBTriggerConfig)`. The parameters provided to each method invocation are:
+The decorator is `trigger(triggerConfig: DBTriggerConfig)`. The parameters provided to each method invocation are:
 
 - `op`: The operation (insert/update/delete) that occurred. See [Decorating Workflow Methods](#decorating-workflow-methods) above for more details.
 - `key`: An array of record fields that have been extracted as the record key. The list of fields extracted is controlled by the `DBTriggerConfig`.
@@ -136,11 +179,11 @@ If source records are inserted or updated in a roughly chronological order, `tim
 
 Alternatively, if source records are inserted or updated with a sequence number, `sequenceNumColumn` should be set to the name of the column containing the sequence. If a `sequenceNumColumn` is provided, the value will be used as part of the workflow key, and checkpointed to the system database when records are processed. If records may be out of order slightly, `sequenceNumJitter` can be provided. The predicate used to query the source table for new records will be adjusted by this amount. Note that while this may cause some records to be reprocessed, workflow idempotency properties eliminate any correctness consequences.
 
-The information above is always used by methods decorated with `@DBTriggerWorkflow`, for the formulation of catch-up queries. If `useDBNotifications` and `installDBTrigger` are both false, the configuration will also be used to generate queries for polling the source table. A query will be scheduled every `dbPollingInterval` milliseconds.
+The information above is always used by methods decorated with `@<trigger>.triggerWorkflow`, for the formulation of catch-up queries. If `useDBNotifications` and `installDBTrigger` are both false, the configuration will also be used to generate queries for polling the source table. A query will be scheduled every `dbPollingInterval` milliseconds.
 
 #### Using Workflow Queues for Concurrency and Rate Limiting
 
-By default, `@DBTriggerWorkflow` workflows are started immediately upon receiving database updates. If `queueName` is provided to the `DBTriggerConfig`, then the workflows will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues) and subject to rate limits.
+By default, `@<trigger>.triggerWorkflow` workflows are started immediately upon receiving database updates. If `queueName` is provided to the `DBTriggerConfig`, then the workflows will be enqueued in a [workflow queue](https://docs.dbos.dev/typescript/reference/transactapi/workflow-queues) and subject to rate limits.
 
 ## Using This Code As A Starting Point
 
