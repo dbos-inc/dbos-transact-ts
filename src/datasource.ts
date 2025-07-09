@@ -4,6 +4,7 @@ import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from '.
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
+  FunctionName,
   getTransactionalDataSource,
   registerAndWrapDBOSFunctionByName,
   registerFunctionWrapper,
@@ -181,11 +182,7 @@ export async function runTransaction<T>(
 export function registerTransaction<This, Args extends unknown[], Return>(
   dsName: string,
   func: (this: This, ...args: Args) => Promise<Return>,
-  options: {
-    ctorOrProto?: object;
-    className?: string;
-    name: string;
-  },
+  options: FunctionName,
   config?: unknown,
 ): (this: This, ...args: Args) => Promise<Return> {
   const dsn = dsName ?? '<default>';

@@ -64,6 +64,7 @@ import {
   MethodRegistrationBase,
   TypedAsyncFunction,
   UntypedAsyncFunction,
+  FunctionName,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
@@ -1375,11 +1376,7 @@ export class DBOS {
   static registerScheduled<This, Return>(
     func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
     config: SchedulerConfig,
-    target: {
-      ctorOrProto?: object;
-      className?: string;
-      name?: string;
-    } = {},
+    target: FunctionName = {},
   ) {
     ScheduledReceiver.registerScheduled(func, config, target);
   }
@@ -1442,17 +1439,15 @@ export class DBOS {
    */
   static registerWorkflow<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    options: {
-      name?: string;
-      ctorOrProto?: object;
-      className?: string;
+    options: FunctionName & {
       config?: WorkflowConfig;
     } = {},
+    target?: FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
     const { registration } = registerAndWrapDBOSFunctionByName(
-      options.ctorOrProto,
-      options.className,
-      options.name ?? func.name,
+      target?.ctorOrProto ?? options.ctorOrProto,
+      target?.className ?? options.className,
+      target?.name ?? options.name ?? func.name,
       func,
     );
     return DBOS.#getWorkflowInvoker(registration, options.config);
@@ -1982,13 +1977,9 @@ export class DBOS {
   static associateFunctionWithInfo<This, Args extends unknown[], Return>(
     external: AnyConstructor | object | string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      ctorOrProto?: object;
-      className?: string;
-      name: string;
-    },
+    target: FunctionName,
   ) {
-    return associateMethodWithExternal(external, target.ctorOrProto, target.className, target.name, func);
+    return associateMethodWithExternal(external, target.ctorOrProto, target.className, target.name ?? func.name, func);
   }
 
   /**
@@ -1997,10 +1988,7 @@ export class DBOS {
   static associateParamWithInfo<This, Args extends unknown[], Return>(
     external: AnyConstructor | object | string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      ctorOrProto?: object;
-      className?: string;
-      name: string;
+    target: FunctionName & {
       param: number | string;
     },
   ) {
@@ -2008,7 +1996,7 @@ export class DBOS {
       external,
       target.ctorOrProto,
       target.className,
-      target.name,
+      target.name ?? func.name,
       func,
       target.param,
     );

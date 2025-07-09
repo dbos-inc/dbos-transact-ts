@@ -1,6 +1,6 @@
 import { type PresignedPost } from '@aws-sdk/s3-presigned-post';
 
-import { DBOS, WorkflowConfig } from '@dbos-inc/dbos-sdk';
+import { DBOS, FunctionName, WorkflowConfig } from '@dbos-inc/dbos-sdk';
 
 export interface FileRecord {
   key: string;
@@ -30,128 +30,131 @@ export interface S3WorkflowCallbacks<R extends FileRecord, Options = unknown> {
 
 /**
  * Create a workflow function for deleting S3 objects and removing the DB entry
- * @param options - Registration options for the workflow
  * @param callbacks - S3 operation implementation and database recordkeeping transactions
+ * @param config - Workflow configuration
+ * @param target - Target function name for registration
  */
 export function registerS3DeleteWorkflow<R extends FileRecord, Options = unknown>(
-  options: {
-    name?: string;
-    ctorOrProto?: object;
-    className?: string;
-    config?: WorkflowConfig;
-  },
   callbacks: S3WorkflowCallbacks<R, Options>,
+  config?: WorkflowConfig,
+  target?: FunctionName,
 ) {
-  return DBOS.registerWorkflow(async (fileDetails: R) => {
-    await callbacks.fileDeleted(fileDetails);
-    return await DBOS.runStep(
-      async () => {
-        return callbacks.deleteS3Object(fileDetails);
-      },
-      { name: 'deleteS3Object' },
-    );
-  }, options);
+  return DBOS.registerWorkflow(
+    async (fileDetails: R) => {
+      await callbacks.fileDeleted(fileDetails);
+      return await DBOS.runStep(
+        async () => {
+          return callbacks.deleteS3Object(fileDetails);
+        },
+        { name: 'deleteS3Object' },
+      );
+    },
+    { config },
+    target,
+  );
 }
 
 /**
  * Create a workflow function for uploading S3 contents from DBOS
- * @param options - Registration options for the workflow
  * @param callbacks - S3 operation implementation and database recordkeeping transactions
+ * @param config - Workflow configuration
+ * @param target - Target function name for registration
  */
 export function registerS3UploadWorkflow<R extends FileRecord, Options = unknown>(
-  options: {
-    name?: string;
-    ctorOrProto?: object;
-    className?: string;
-    config?: WorkflowConfig;
-  },
   callbacks: S3WorkflowCallbacks<R, Options>,
+  config?: WorkflowConfig,
+  target?: FunctionName,
 ) {
-  return DBOS.registerWorkflow(async (fileDetails: R, content: string, objOptions?: Options) => {
-    try {
-      await DBOS.runStep(
-        async () => {
-          await callbacks.putS3Contents(fileDetails, content, objOptions);
-        },
-        { name: 'putS3Contents' },
-      );
-    } catch (e) {
+  return DBOS.registerWorkflow(
+    async (fileDetails: R, content: string, objOptions?: Options) => {
       try {
         await DBOS.runStep(
           async () => {
-            return callbacks.deleteS3Object(fileDetails);
+            await callbacks.putS3Contents(fileDetails, content, objOptions);
           },
-          { name: 'deleteS3Object' },
+          { name: 'putS3Contents' },
         );
-      } catch (e2) {
-        DBOS.logger.debug(e2);
+      } catch (e) {
+        try {
+          await DBOS.runStep(
+            async () => {
+              return callbacks.deleteS3Object(fileDetails);
+            },
+            { name: 'deleteS3Object' },
+          );
+        } catch (e2) {
+          DBOS.logger.debug(e2);
+        }
+        throw e;
       }
-      throw e;
-    }
 
-    await callbacks.newActiveFile(fileDetails);
-    return fileDetails;
-  }, options);
+      await callbacks.newActiveFile(fileDetails);
+      return fileDetails;
+    },
+    { config },
+    target,
+  );
 }
 
 /**
  * Create a workflow function for uploading S3 contents externally, via a presigned URL
- * @param options - Registration options for the workflow
  * @param callbacks - S3 operation implementation and database recordkeeping transactions
+ * @param config - Workflow configuration
+ * @param target - Target function name for registration
  */
 export function registerS3PresignedUploadWorkflow<R extends FileRecord, Options = unknown>(
-  options: {
-    name?: string;
-    ctorOrProto?: object;
-    className?: string;
-    config?: WorkflowConfig;
-  },
   callbacks: S3WorkflowCallbacks<R, Options>,
+  config?: WorkflowConfig,
+  target?: FunctionName,
 ) {
-  return DBOS.registerWorkflow(async (fileDetails: R, timeoutSeconds: number, objOptions?: Options) => {
-    await callbacks.newPendingFile(fileDetails);
+  return DBOS.registerWorkflow(
+    async (fileDetails: R, timeoutSeconds: number, objOptions?: Options) => {
+      await callbacks.newPendingFile(fileDetails);
 
-    const upkey = await DBOS.runStep(
-      async () => {
-        return await callbacks.createPresignedPost(fileDetails, timeoutSeconds, objOptions);
-      },
-      { name: 'createPresignedPost' },
-    );
-    await DBOS.setEvent<PresignedPost>('uploadkey', upkey);
+      const upkey = await DBOS.runStep(
+        async () => {
+          return await callbacks.createPresignedPost(fileDetails, timeoutSeconds, objOptions);
+        },
+        { name: 'createPresignedPost' },
+      );
+      await DBOS.setEvent<PresignedPost>('uploadkey', upkey);
 
-    try {
-      const res = await DBOS.recv<boolean>('uploadfinish', timeoutSeconds + 60);
-
-      if (!res) {
-        throw new Error('S3 operation timed out or canceled');
-      }
-
-      // Validate the file, if we have code for that
-      if (callbacks.validateS3Upload) {
-        await DBOS.runStep(
-          async () => {
-            await callbacks.validateS3Upload!(fileDetails);
-          },
-          { name: 'validateFileUpload' },
-        );
-      }
-
-      await callbacks?.fileActivated(fileDetails);
-    } catch (e) {
       try {
-        await callbacks.fileDeleted(fileDetails);
-        await DBOS.runStep(
-          async () => {
-            await callbacks.deleteS3Object(fileDetails);
-          },
-          { name: 'deleteS3Object' },
-        );
-      } catch (e2) {
-        DBOS.logger.debug(e2);
-      }
-      throw e;
-    }
+        const res = await DBOS.recv<boolean>('uploadfinish', timeoutSeconds + 60);
 
-    return fileDetails;
-  }, options);
+        if (!res) {
+          throw new Error('S3 operation timed out or canceled');
+        }
+
+        // Validate the file, if we have code for that
+        if (callbacks.validateS3Upload) {
+          await DBOS.runStep(
+            async () => {
+              await callbacks.validateS3Upload!(fileDetails);
+            },
+            { name: 'validateFileUpload' },
+          );
+        }
+
+        await callbacks?.fileActivated(fileDetails);
+      } catch (e) {
+        try {
+          await callbacks.fileDeleted(fileDetails);
+          await DBOS.runStep(
+            async () => {
+              await callbacks.deleteS3Object(fileDetails);
+            },
+            { name: 'deleteS3Object' },
+          );
+        } catch (e2) {
+          DBOS.logger.debug(e2);
+        }
+        throw e;
+      }
+
+      return fileDetails;
+    },
+    { config },
+    target,
+  );
 }

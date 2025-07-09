@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { PoolConfig } from 'pg';
 import knex, { Knex } from 'knex';
-import { DBOS } from '../src';
+import { DBOS, FunctionName } from '../src';
 import {
   type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
@@ -305,13 +305,13 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: KnexTransactionConfig,
-    target?: { ctorOrProto?: object; className?: string },
+    target?: FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
     return registerTransaction(
       this.name,
       func,
       {
-        name: config?.name ?? func.name,
+        name: target?.name ?? config?.name ?? func.name,
         className: target?.className,
         ctorOrProto: target?.ctorOrProto,
       },

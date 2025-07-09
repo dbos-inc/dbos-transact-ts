@@ -13,6 +13,23 @@ export type TypedAsyncFunction<T extends unknown[], R> = (...args: T) => Promise
 export type UntypedAsyncFunction = TypedAsyncFunction<unknown[], unknown>;
 
 /**
+ * Interface for naming DBOS-registered functions.
+ *   These names are used for log and database entries.
+ *   They are used for lookup in some cases (like workflow recovery)
+ */
+export interface FunctionName {
+  /** Function name; if not provided, this will be taken from the function's `name` */
+  name?: string;
+  /** Class name; if not provided, the class constructor or prototype's `name` will be used, or blank otherwise */
+  className?: string;
+  /**
+   * For member functions, class constructor (for `static` methods) or prototype (for instance methods)
+   *   This will be used to get the class name if `className` is not provided.
+   */
+  ctorOrProto?: object;
+}
+
+/**
  * Interface for integrating into the DBOS startup/shutdown lifecycle
  */
 export interface DBOSLifecycleCallback {
@@ -603,7 +620,7 @@ const methodArgsByFunction: Map<unknown, MethodParameter[]> = new Map();
 
 export function getOrCreateMethodArgsRegistration(
   target: object | undefined,
-  funcName: string | symbol,
+  funcName: PropertyKey,
   origFunc?: (...args: unknown[]) => unknown,
 ): MethodParameter[] {
   let regtarget = target;
@@ -622,7 +639,9 @@ export function getOrCreateMethodArgsRegistration(
     let designParamTypes: Function[] | undefined = undefined;
     if (target) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      designParamTypes = Reflect.getMetadata('design:paramtypes', target, funcName) as Function[] | undefined;
+      designParamTypes = Reflect.getMetadata('design:paramtypes', target, funcName as string | symbol) as
+        | Function[]
+        | undefined;
     }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
@@ -647,7 +666,7 @@ export function getOrCreateMethodArgsRegistration(
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   target: object | undefined,
   className: string | undefined,
-  propertyKey: string | symbol,
+  propertyKey: PropertyKey,
   func: (this: This, ...args: Args) => Promise<Return>,
 ) {
   let regtarget: AnyConstructor | undefined = undefined;
@@ -987,7 +1006,7 @@ export function getRegistrationsForExternal(
 // #region Parameter decorators
 
 export function ArgName(name: string) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+  return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
     const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex];
