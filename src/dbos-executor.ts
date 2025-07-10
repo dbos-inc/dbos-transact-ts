@@ -149,7 +149,6 @@ export type DBOSConfigInternal = {
   databaseUrl?: string; // used in cli commands, never set!
   userDbclient?: UserDatabaseName; // used in configureDbClient, set in translatePublicDBOSconfig and parseConfigFile
   sysDbPoolSize?: number; // used in executor ctor, set in translatePublicDBOSconfig
-  env?: Record<string, string>; // used in executor ctor, set in parseConfigFile
 
   http?: {
     // set in parseConfigFile, used in http server registerDecoratedEndpoints
@@ -255,17 +254,6 @@ export class DBOSExecutor {
     { systemDatabase, debugMode }: DBOSExecutorOptions = {},
   ) {
     this.debugMode = debugMode ?? false;
-
-    // Set configured environment variables
-    if (config.env) {
-      for (const [key, value] of Object.entries(config.env)) {
-        if (typeof value === 'string') {
-          process.env[key] = value;
-        } else {
-          console.warn(`Invalid value type for environment variable ${key}: ${typeof value}`);
-        }
-      }
-    }
 
     if (config.telemetry.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);

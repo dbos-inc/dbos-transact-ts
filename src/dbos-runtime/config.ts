@@ -456,7 +456,6 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfigInternal,
     userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || { logs: { logLevel: 'info' } },
     system_database: configFile.database.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
-    env: configFile.env || {},
     http: configFile.http,
   };
 
