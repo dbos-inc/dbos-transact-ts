@@ -1428,6 +1428,7 @@ export class DBOS {
 
       descriptor.value = invoker;
       registration.wrappedFunction = invoker;
+      registerFunctionWrapper(invoker, registration);
 
       return descriptor;
     }
@@ -1646,6 +1647,7 @@ export class DBOS {
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
+      registerFunctionWrapper(invokeWrapper, registration);
 
       Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
@@ -1714,6 +1716,7 @@ export class DBOS {
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
+      registerFunctionWrapper(invokeWrapper, registration);
 
       Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
@@ -1806,6 +1809,7 @@ export class DBOS {
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
+      registerFunctionWrapper(invokeWrapper, registration);
 
       Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
