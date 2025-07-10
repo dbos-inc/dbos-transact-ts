@@ -38,7 +38,6 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigI
   const dbosTestConfig: DBOSConfigInternal = {
     databaseUrl,
     poolConfig,
-    application: configFile.application,
     telemetry: configFile.telemetry!,
     system_database: 'dbostest_dbos_sys',
     userDbclient: dbClient || UserDatabaseName.PGNODE,
