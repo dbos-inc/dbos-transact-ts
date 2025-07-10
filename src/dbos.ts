@@ -1845,6 +1845,8 @@ export class DBOS {
       return callFunc.call(this, ...rawArgs);
     };
 
+    registerFunctionWrapper(invokeWrapper, reg.registration);
+
     Object.defineProperty(invokeWrapper, 'name', { value: name });
     return invokeWrapper;
   }
