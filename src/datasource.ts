@@ -47,7 +47,7 @@ export interface DataSourceTransactionHandler {
  * This is the suggested interface guideline for presenting to the end user, but not
  *   strictly required.
  */
-export interface DBOSDataSource<Config extends { name?: string }> {
+export interface DBOSDataSource<Config> {
   readonly name: string;
 
   /**
@@ -72,8 +72,7 @@ export interface DBOSDataSource<Config extends { name?: string }> {
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: Config,
-    target?: { ctorOrProto?: object; className?: string },
+    config?: Config & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return>;
 
   /**
@@ -179,16 +178,15 @@ export async function runTransaction<T>(
 }
 
 // Transaction wrapper
-export function registerTransaction<This, Args extends unknown[], Return>(
+export function registerTransaction<This, Args extends unknown[], Return, Config extends FunctionName>(
   dsName: string,
   func: (this: This, ...args: Args) => Promise<Return>,
-  options: FunctionName,
-  config?: unknown,
+  options?: Config,
 ): (this: This, ...args: Args) => Promise<Return> {
   const dsn = dsName ?? '<default>';
 
-  const funcName = options.name ?? func.name;
-  const reg = registerAndWrapDBOSFunctionByName(options?.ctorOrProto, options.className, funcName, func);
+  const funcName = options?.name ?? func.name;
+  const reg = registerAndWrapDBOSFunctionByName(options?.ctorOrProto, options?.className, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     const ds = getTransactionalDataSource(dsn);
@@ -197,12 +195,12 @@ export function registerTransaction<This, Args extends unknown[], Return>(
     if (!DBOS.isWithinWorkflow()) {
       if (getNextWFID(undefined)) {
         throw new DBOSInvalidWorkflowTransitionError(
-          `Call to transaction '${options.name}' made without starting workflow`,
+          `Call to transaction '${funcName}' made without starting workflow`,
         );
       }
 
       return await runWithDataSourceContext(undefined, 0, async () => {
-        return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
+        return await ds.invokeTransactionFunction(options, this, callFunc, ...rawArgs);
       });
     }
 
@@ -231,7 +229,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
       const res = await DBOSExecutor.globalInstance!.runInternalStep<Return>(
         async () => {
           return await runWithDataSourceContext(span, callnum, async () => {
-            return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
+            return await ds.invokeTransactionFunction(options, this, callFunc, ...rawArgs);
           });
         },
         funcName,
@@ -252,7 +250,7 @@ export function registerTransaction<This, Args extends unknown[], Return>(
   registerFunctionWrapper(invokeWrapper, reg.registration);
 
   Object.defineProperty(invokeWrapper, 'name', {
-    value: options.name,
+    value: funcName,
   });
 
   return invokeWrapper;

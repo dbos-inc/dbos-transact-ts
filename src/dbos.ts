@@ -1375,10 +1375,9 @@ export class DBOS {
    */
   static registerScheduled<This, Return>(
     func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
-    config: SchedulerConfig,
-    target: FunctionName = {},
+    config: SchedulerConfig & FunctionName,
   ) {
-    ScheduledReceiver.registerScheduled(func, config, target);
+    ScheduledReceiver.registerScheduled(func, config);
   }
 
   //////
@@ -1395,7 +1394,8 @@ export class DBOS {
       descriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>,
     ) {
       if (descriptor.value) {
-        DBOS.registerScheduled(descriptor.value, config, {
+        DBOS.registerScheduled(descriptor.value, {
+          ...config,
           ctorOrProto: target,
           name: String(propertyKey),
         });
@@ -1439,18 +1439,15 @@ export class DBOS {
    */
   static registerWorkflow<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    options: FunctionName & {
-      config?: WorkflowConfig;
-    } = {},
-    target?: FunctionName,
+    config?: FunctionName & WorkflowConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
     const { registration } = registerAndWrapDBOSFunctionByName(
-      target?.ctorOrProto ?? options.ctorOrProto,
-      target?.className ?? options.className,
-      target?.name ?? options.name ?? func.name,
+      config?.ctorOrProto,
+      config?.className,
+      config?.name ?? func.name,
       func,
     );
-    return DBOS.#getWorkflowInvoker(registration, options.config);
+    return DBOS.#getWorkflowInvoker(registration, config);
   }
 
   static async #invokeWorkflow<This, Args extends unknown[], Return>(

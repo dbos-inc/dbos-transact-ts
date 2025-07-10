@@ -127,7 +127,7 @@ const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
 Finally, register and use the S3 workflows:
 
 ```typescript
-export const uploadWF = registerS3UploadWorkflow(s3callback, {}, { className: 'UserFile', name: 'uploadWF' });
+export const uploadWF = registerS3UploadWorkflow(s3callback, { className: 'UserFile', name: 'uploadWF' });
 ...
 await uploadWF(myFileRec, 'This is my file');
 ```
@@ -137,7 +137,7 @@ await uploadWF(myFileRec, 'This is my file');
 The `registerS3UploadWorkflow` function registers a workflow that stores a string to an S3 key, and runs the callback function to update the database. If anything goes wrong during the workflow, S3 will be cleaned up and the database will be unchanged by the workflow.
 
 ```typescript
-export const uploadWF = registerS3UploadWorkflow({ className: 'UserFile', name: 'uploadWF' }, s3callback);
+export const uploadWF = registerS3UploadWorkflow(s3callback, { className: 'UserFile', name: 'uploadWF' });
 ...
 await uploadWF(myFileRec, 'These contents should be saved to S3');
 ```
@@ -153,7 +153,7 @@ This workflow performs the following actions:
 The `registerS3DeleteWorkflow` function creates a workflow that removes a file from both S3 and the database.
 
 ```typescript
-export const deleteWF = registerS3DeleteWorkflow(s3callback, {}, { className: 'UserFile', name: 'deleteWF' });
+export const deleteWF = registerS3DeleteWorkflow(s3callback, { className: 'UserFile', name: 'deleteWF' });
 
 await deleteWF(fileDBRecord);
 ```
@@ -180,11 +180,7 @@ The workflow interaction generally proceeds as follows:
 The workflow can be initiated in the following way:
 
 ```typescript
-export const uploadPWF = registerS3PresignedUploadWorkflow(
-  s3callback,
-  {},
-  { className: 'UserFile', name: 'uploadPWF' },
-);
+export const uploadPWF = registerS3PresignedUploadWorkflow(s3callback, { className: 'UserFile', name: 'uploadPWF' });
 
 // Start the workflow
 const wfHandle = await DBOS.startWorkflow(uploadPWF)(

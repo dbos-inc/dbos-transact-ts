@@ -196,13 +196,9 @@ const s3callback: S3WorkflowCallbacks<UserFile, Opts> = {
   },
 };
 
-export const uploadWF = registerS3UploadWorkflow(s3callback, {}, { className: 'UserFile', name: 'uploadWF' });
-export const uploadPWF = registerS3PresignedUploadWorkflow(
-  s3callback,
-  {},
-  { className: 'UserFile', name: 'uploadPWF' },
-);
-export const deleteWF = registerS3DeleteWorkflow(s3callback, {}, { className: 'UserFile', name: 'deleteWF' });
+export const uploadWF = registerS3UploadWorkflow(s3callback, { className: 'UserFile', name: 'uploadWF' });
+export const uploadPWF = registerS3PresignedUploadWorkflow(s3callback, { className: 'UserFile', name: 'uploadPWF' });
+export const deleteWF = registerS3DeleteWorkflow(s3callback, { className: 'UserFile', name: 'deleteWF' });
 
 describe('ses-tests', () => {
   let s3IsAvailable = true;
