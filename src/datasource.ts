@@ -6,9 +6,9 @@ import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
   FunctionName,
   getTransactionalDataSource,
-  registerAndWrapDBOSFunctionByName,
   registerFunctionWrapper,
   registerTransactionalDataSource,
+  wrapDBOSFunctionAndRegister,
 } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import type { Notification } from 'pg';
@@ -186,11 +186,11 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
   const dsn = dsName ?? '<default>';
 
   const funcName = config?.name ?? func.name;
-  const reg = registerAndWrapDBOSFunctionByName(config?.ctorOrProto, config?.className, funcName, func);
+  const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     const ds = getTransactionalDataSource(dsn);
-    const callFunc = reg.registration.registeredFunction ?? reg.registration.origFunction;
+    const callFunc = reg.registeredFunction ?? reg.origFunction;
 
     if (!DBOS.isWithinWorkflow()) {
       if (getNextWFID(undefined)) {
@@ -247,7 +247,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
     }
   };
 
-  registerFunctionWrapper(invokeWrapper, reg.registration);
+  registerFunctionWrapper(invokeWrapper, reg);
 
   Object.defineProperty(invokeWrapper, 'name', {
     value: funcName,

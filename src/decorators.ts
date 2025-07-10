@@ -454,6 +454,19 @@ export class ClassRegistration implements RegistrationDefaults {
 
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
+  registerOperationByName(name: string, reg: MethodRegistrationBase) {
+    const er = this.registeredOperationsByName.get(name) as MethodRegistration<unknown, unknown[], unknown>;
+    if (er && er !== reg) {
+      let error = `Operation (Name: ${this.name}.${name}) is already registered.`;
+      if (er.regLocation) {
+        error = error + `\nPrior registration occurred at:\n${er.regLocation.join('\n')}`;
+      }
+      throw new DBOSConflictingRegistrationError(`${error}`);
+    }
+    this.registeredOperationsByName.set(name, reg);
+    (reg as MethodRegistration<unknown, unknown[], unknown>).regLocation = new StackGrabber().getCleanStack(3);
+  }
+
   getRegisteredInfo(reg: AnyConstructor | object | string) {
     if (!this.externalRegInfo.has(reg)) {
       this.externalRegInfo.set(reg, {});
@@ -669,27 +682,9 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   propertyKey: PropertyKey,
   func: (this: This, ...args: Args) => Promise<Return>,
 ) {
-  let regtarget: AnyConstructor | undefined = undefined;
-  let isInstance = false;
-
-  if (target) {
-    if (typeof target === 'function') {
-      // Static method case
-      regtarget = target as AnyConstructor;
-    } else {
-      // Instance method case
-      regtarget = target.constructor as AnyConstructor;
-      isInstance = true;
-    }
-  }
-  if (!className) {
-    if (regtarget) className = regtarget.name;
-  }
-  if (!className) {
-    className = '';
-  }
-
-  const classReg = getClassRegistrationByName(className, true);
+  let classReg;
+  let isInstance;
+  ({ classReg, isInstance, className } = getOrCreateClassRegistrationByName(target, className));
 
   const fname = propertyKey.toString();
   if (!classReg.registeredOperationsByName.has(fname)) {
@@ -739,34 +734,77 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   return methReg;
 }
 
-export function registerAndWrapDBOSFunction<This, Args extends unknown[], Return>(
+export function wrapDBOSFunctionAndRegisterByUniqueNameDec<This, Args extends unknown[], Return>(
   target: object,
-  propertyKey: string,
+  propertyKey: PropertyKey,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
 ) {
-  ensureDBOSIsNotLaunched();
   if (!descriptor.value) {
     throw Error('Use of decorator when original method is undefined');
   }
 
-  const registration = getOrCreateMethodRegistration(target, undefined, propertyKey, descriptor.value);
+  const registration = wrapDBOSFunctionAndRegisterByUniqueName(target, undefined, propertyKey, descriptor.value);
+
   descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
 
   return { descriptor, registration };
 }
 
-export function registerAndWrapDBOSFunctionByName<This, Args extends unknown[], Return>(
-  target: object | undefined,
+export function wrapDBOSFunctionAndRegisterByUniqueName<This, Args extends unknown[], Return>(
+  ctorOrProto: object | undefined,
   className: string | undefined,
-  funcName: string,
+  propertyKey: PropertyKey,
+  func: (this: This, ...args: Args) => Promise<Return>,
+) {
+  ensureDBOSIsNotLaunched();
+
+  const name = typeof propertyKey === 'string' ? propertyKey : propertyKey.toString();
+  const freg = getFunctionRegistration(func) as MethodRegistration<This, Args, Return>;
+  if (freg) {
+    const r = getOrCreateClassRegistrationByName(ctorOrProto, className);
+    r.classReg.registerOperationByName(name, freg);
+    return freg;
+  }
+
+  const registration = getOrCreateMethodRegistration(ctorOrProto, className, propertyKey, func);
+  const r = getOrCreateClassRegistrationByName(ctorOrProto, className);
+  r.classReg.registerOperationByName(name, registration);
+
+  return registration;
+}
+
+export function wrapDBOSFunctionAndRegisterDec<This, Args extends unknown[], Return>(
+  target: object,
+  propertyKey: PropertyKey,
+  descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
+) {
+  if (!descriptor.value) {
+    throw Error('Use of decorator when original method is undefined');
+  }
+
+  const registration = wrapDBOSFunctionAndRegister(target, undefined, propertyKey, descriptor.value);
+
+  descriptor.value = registration.wrappedFunction ?? registration.registeredFunction;
+
+  return { descriptor, registration };
+}
+
+export function wrapDBOSFunctionAndRegister<This, Args extends unknown[], Return>(
+  ctorOrProto: object | undefined,
+  className: string | undefined,
+  propertyKey: PropertyKey,
   func: (this: This, ...args: Args) => Promise<Return>,
 ) {
   ensureDBOSIsNotLaunched();
 
   const freg = getFunctionRegistration(func) as MethodRegistration<This, Args, Return>;
-  const registration = freg ?? getOrCreateMethodRegistration(target, className, funcName, func);
+  if (freg) {
+    return freg;
+  }
 
-  return { registration };
+  const registration = getOrCreateMethodRegistration(ctorOrProto, className, propertyKey, func);
+
+  return registration;
 }
 
 // Data structure notes:
@@ -844,6 +882,31 @@ export function getOrCreateClassRegistration<CT extends { new (...args: unknown[
   return clsReg;
 }
 
+function getOrCreateClassRegistrationByName(target: object | undefined, className: string | undefined) {
+  let regtarget: AnyConstructor | undefined = undefined;
+  let isInstance = false;
+
+  if (target) {
+    if (typeof target === 'function') {
+      // Static method case
+      regtarget = target as AnyConstructor;
+    } else {
+      // Instance method case
+      regtarget = target.constructor as AnyConstructor;
+      isInstance = true;
+    }
+  }
+  if (!className) {
+    if (regtarget) className = regtarget.name;
+  }
+  if (!className) {
+    className = '';
+  }
+
+  const classReg = getClassRegistrationByName(className, true);
+  return { classReg, isInstance, className };
+}
+
 export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
   const classReg = classesByName.get(clsname)?.reg;
   if (!classReg) return null;
@@ -900,7 +963,7 @@ export function associateMethodWithExternal<This, Args extends unknown[], Return
   registration: MethodRegistration<This, Args, Return>;
   regInfo: object;
 } {
-  const { registration } = registerAndWrapDBOSFunctionByName(target, className, funcName, func);
+  const registration = wrapDBOSFunctionAndRegister(target, className, funcName, func);
   if (!registration.externalRegInfo.has(external)) {
     registration.externalRegInfo.set(external, {});
   }
@@ -922,7 +985,7 @@ export function associateParameterWithExternal<This, Args extends unknown[], Ret
   if (!func) {
     func = Object.getOwnPropertyDescriptor(target, funcName)!.value as (this: This, ...args: Args) => Promise<Return>;
   }
-  const { registration } = registerAndWrapDBOSFunctionByName(target, className, funcName, func);
+  const registration = wrapDBOSFunctionAndRegister(target, className, funcName, func);
   let param: MethodParameter | undefined;
   if (typeof paramId === 'number') {
     param = registration.args[paramId];
@@ -1039,7 +1102,7 @@ export function DBOSInitializer() {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   ) {
-    const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(target, propertyKey, inDescriptor);
     registration.init = true;
     return descriptor;
   }

@@ -55,8 +55,6 @@ import {
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
-  registerAndWrapDBOSFunction,
-  registerAndWrapDBOSFunctionByName,
   registerFunctionWrapper,
   registerLifecycleCallback,
   transactionalDataSources,
@@ -65,6 +63,10 @@ import {
   TypedAsyncFunction,
   UntypedAsyncFunction,
   FunctionName,
+  wrapDBOSFunctionAndRegisterByUniqueName,
+  wrapDBOSFunctionAndRegisterByUniqueNameDec,
+  wrapDBOSFunctionAndRegister,
+  wrapDBOSFunctionAndRegisterDec,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
@@ -143,7 +145,7 @@ function httpApiDec(verb: APITypes, url: string) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   ) {
-    const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = wrapDBOSFunctionAndRegisterDec(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
@@ -1417,7 +1419,11 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+        target,
+        propertyKey,
+        inDescriptor,
+      );
       const invoker = DBOS.#getWorkflowInvoker(registration, config);
 
       descriptor.value = invoker;
@@ -1441,7 +1447,7 @@ export class DBOS {
     func: (this: This, ...args: Args) => Promise<Return>,
     config?: FunctionName & WorkflowConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    const { registration } = registerAndWrapDBOSFunctionByName(
+    const registration = wrapDBOSFunctionAndRegisterByUniqueName(
       config?.ctorOrProto,
       config?.className,
       config?.name ?? func.name,
@@ -1573,7 +1579,11 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+        target,
+        propertyKey,
+        inDescriptor,
+      );
       registration.setTxnConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -1658,7 +1668,11 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+        target,
+        propertyKey,
+        inDescriptor,
+      );
       registration.setProcConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -1725,7 +1739,11 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+        target,
+        propertyKey,
+        inDescriptor,
+      );
       registration.setStepConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -1813,12 +1831,12 @@ export class DBOS {
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;
 
-    const reg = registerAndWrapDBOSFunctionByName(config?.ctorOrProto, config?.className, name, func);
+    const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, func);
 
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const inst = this;
-      const callFunc = reg.registration.registeredFunction ?? reg.registration.origFunction;
+      const callFunc = reg.registeredFunction ?? reg.origFunction;
 
       if (DBOS.isWithinWorkflow()) {
         if (DBOS.isInTransaction()) {
@@ -1845,7 +1863,7 @@ export class DBOS {
       return callFunc.call(this, ...rawArgs);
     };
 
-    registerFunctionWrapper(invokeWrapper, reg.registration);
+    registerFunctionWrapper(invokeWrapper, reg);
 
     Object.defineProperty(invokeWrapper, 'name', { value: name });
     return invokeWrapper;
