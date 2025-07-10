@@ -6,7 +6,6 @@ import {
   DBOSWorkflowConflictError,
   DBOSNotRegisteredError,
   DBOSDebuggerError,
-  DBOSConfigKeyTypeError,
   DBOSFailedSqlTransactionError,
   DBOSMaxStepRetriesError,
   DBOSWorkflowCancelledError,
@@ -93,7 +92,6 @@ import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
 import { GetWorkflowsInput, InitContext } from '.';
 
-import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { ScheduledReceiver } from './scheduler/scheduler';
@@ -152,7 +150,6 @@ export type DBOSConfigInternal = {
   userDbclient?: UserDatabaseName; // used in configureDbClient, set in translatePublicDBOSconfig and parseConfigFile
   sysDbPoolSize?: number; // used in executor ctor, set in translatePublicDBOSconfig
   env?: Record<string, string>; // used in executor ctor, set in parseConfigFile
-  application?: object; // used in executor.getConfig, set in parseConfigFile
 
   http?: {
     // set in parseConfigFile, used in http server registerDecoratedEndpoints
@@ -2009,15 +2006,6 @@ export class DBOSExecutor {
         }
       }
     });
-  }
-
-  getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    const value = get(this.config.application, key, defaultValue);
-    // If the key is found and the default value is provided, check whether the value is of the same type.
-    if (value && defaultValue && typeof value !== typeof defaultValue) {
-      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
-    }
-    return value;
   }
 
   /**

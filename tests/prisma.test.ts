@@ -157,7 +157,6 @@ class PUserManager {
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
-    const cfg = ctx.getConfig<string>('shouldExist', 'does not exist');
     if (cfg !== 'exists') {
       throw Error('Auth is misconfigured.');
     }

@@ -72,7 +72,6 @@ describe('oaoo-tests', () => {
   class WorkflowOAOO {
     @DBOS.transaction()
     static async testInsertTx(name: string) {
-      expect(DBOS.getConfig<number>('counter')).toBe(3);
       const { rows } = await DBOS.pgClient.query<TestKvTable>(
         `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
         [name],
@@ -93,7 +92,6 @@ describe('oaoo-tests', () => {
 
     @DBOS.workflow()
     static async testTxWorkflow(name: string) {
-      expect(DBOS.getConfig<number>('counter')).toBe(3);
       const funcResult: number = await WorkflowOAOO.testInsertTx(name);
       const checkResult: number = await WorkflowOAOO.testReadTx(funcResult);
       return checkResult;

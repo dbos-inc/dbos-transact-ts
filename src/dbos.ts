@@ -29,7 +29,6 @@ import {
 } from './workflow';
 import { DLogger, GlobalLogger } from './telemetry/logs';
 import {
-  DBOSConfigKeyTypeError,
   DBOSError,
   DBOSExecutorNotInitializedError,
   DBOSInvalidWorkflowTransitionError,
@@ -737,19 +736,6 @@ export class DBOS {
     }
     const client = DBOS.sqlClient;
     return client as DrizzleClient;
-  }
-
-  static getConfig<T>(key: string): T | undefined;
-  static getConfig<T>(key: string, defaultValue: T): T;
-  /**
-   * Gets configuration information from the `application` section
-   *  of `DBOSConfig`
-   * @param key - name of configuration item
-   * @param defaultValue - value to return if `key` does not exist in the configuration
-   */
-  static getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    if (DBOS.#executor) return DBOS.#executor.getConfig(key, defaultValue);
-    return defaultValue;
   }
 
   /**
@@ -2042,16 +2028,5 @@ export class InitContext {
 
   queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
     return DBOS.queryUserDB(sql, params);
-  }
-
-  getConfig<T>(key: string): T | undefined;
-  getConfig<T>(key: string, defaultValue: T): T;
-  getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    const value = DBOS.getConfig(key, defaultValue);
-    // If the key is found and the default value is provided, check whether the value is of the same type.
-    if (value && defaultValue && typeof value !== typeof defaultValue) {
-      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
-    }
-    return value;
   }
 }

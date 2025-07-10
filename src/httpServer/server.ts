@@ -652,9 +652,6 @@ export class DBOSHttpServer {
                 koaContext: koaCtxt,
                 logger: dbosExec.ctxLogger,
                 span,
-                getConfig: (key: string, def) => {
-                  return DBOS.getConfig(key, def);
-                },
                 query: (query, ...args) => {
                   return dbosExec.userDatabase.queryFunction(query, ...args);
                 },

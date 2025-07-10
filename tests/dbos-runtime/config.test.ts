@@ -418,37 +418,6 @@ describe('dbos-config', () => {
       jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockDBOSConfigYamlString);
     });
 
-    test('getConfig returns the expected values', async () => {
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
-      // Config key exists
-      expect(DBOS.getConfig('payments_url')).toBe('http://somedomain.com/payment');
-      // Config key does not exist, no default value
-      expect(DBOS.getConfig('no_key')).toBeUndefined();
-      // Config key does not exist, default value
-      expect(DBOS.getConfig('no_key', 'default')).toBe('default');
-      await dbosExec.telemetryCollector.destroy();
-    });
-
-    test('getConfig returns the default value when no application config is provided', async () => {
-      const localMockDBOSConfigYamlString = `
-        name: some-app
-        database:
-          hostname: 'somehost'
-          port: 1234
-          username: 'someuser'
-          password: \${PGPASSWORD}
-          connectionTimeoutMillis: 10000
-          app_db_name: 'some_db'
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
-      expect(DBOS.getConfig<string>('payments_url', 'default')).toBe('default');
-      await dbosExec.telemetryCollector.destroy();
-    });
-
     test('environment variables are set correctly', async () => {
       const localMockDBOSConfigYamlString = `
         name: some-app
@@ -469,13 +438,6 @@ describe('dbos-config', () => {
       const dbosExec = new DBOSExecutor(dbosConfig);
       expect(process.env.FOOFOO).toBe('barbar');
       expect(process.env.RANDENV).toBe(''); // Empty string
-      await dbosExec.telemetryCollector.destroy();
-    });
-
-    test('getConfig throws when it finds a value of different type than the default', async () => {
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
-      expect(() => DBOS.getConfig<number>('payments_url', 1234)).toThrow(DBOSConfigKeyTypeError);
       await dbosExec.telemetryCollector.destroy();
     });
 
