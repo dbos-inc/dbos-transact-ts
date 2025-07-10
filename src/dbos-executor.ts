@@ -143,18 +143,19 @@ export interface DBOSConfig {
 }
 
 export type DBOSConfigInternal = {
-  poolConfig: PoolConfig;
-  system_database: string;
-  telemetry: TelemetryConfig;
+  poolConfig: PoolConfig; // used in exec ctor, init, configureDbClient, debugWF, runtime initandstart, migrate cli, dropSystemDB set in set in parseConfigFile and translatePublicDBOSconfig
+  system_database: string; // used in executor ctor, migrate and reset cli, sysdb.dropSystemDB, set in set in parseConfigFile and translatePublicDBOSconfig
+  telemetry: TelemetryConfig; // used in executor ctor, dbos start cli, and overwrote_config, set in parseConfigFile and translatePublicDBOSconfig
 
-  name?: string;
-  databaseUrl?: string;
-  userDbclient?: UserDatabaseName;
-  sysDbPoolSize?: number;
-  env?: Record<string, string>;
-  application?: object;
+  name?: string; // used in overwrite_config, set in  translatePublicDBOSconfig
+  databaseUrl?: string; // used in cli commands, never set!
+  userDbclient?: UserDatabaseName; // used in configureDbClient, set in translatePublicDBOSconfig and parseConfigFile
+  sysDbPoolSize?: number; // used in executor ctor, set in translatePublicDBOSconfig
+  env?: Record<string, string>; // used in executor ctor, set in parseConfigFile
+  application?: object; // used in executor.getConfig, set in parseConfigFile
 
   http?: {
+    // set in parseConfigFile, used in http server registerDecoratedEndpoints
     cors_middleware?: boolean;
     credentials?: boolean;
     allowed_origins?: string[];
