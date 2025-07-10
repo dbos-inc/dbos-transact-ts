@@ -1812,9 +1812,13 @@ export class DBOS {
     config: StepConfig & FunctionName = {},
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;
+
+    const reg = registerAndWrapDBOSFunctionByName(config?.ctorOrProto, config?.className, name, func);
+
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const inst = this;
+      const callFunc = reg.registration.registeredFunction ?? reg.registration.origFunction;
 
       if (DBOS.isWithinWorkflow()) {
         if (DBOS.isInTransaction()) {
@@ -1822,10 +1826,10 @@ export class DBOS {
         }
         if (DBOS.isInStep()) {
           // There should probably be checks here about the compatibility of the StepConfig...
-          return func.call(this, ...rawArgs);
+          return callFunc.call(this, ...rawArgs);
         }
         return await DBOSExecutor.globalInstance!.callStepFunction(
-          func as unknown as TypedAsyncFunction<Args, Return>,
+          callFunc as TypedAsyncFunction<Args, Return>,
           name,
           config,
           inst ?? null,
@@ -1838,7 +1842,7 @@ export class DBOS {
           `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
         );
       }
-      return func.call(this, ...rawArgs);
+      return callFunc.call(this, ...rawArgs);
     };
 
     Object.defineProperty(invokeWrapper, 'name', { value: name });

@@ -181,12 +181,12 @@ export async function runTransaction<T>(
 export function registerTransaction<This, Args extends unknown[], Return, Config extends FunctionName>(
   dsName: string,
   func: (this: This, ...args: Args) => Promise<Return>,
-  options?: Config,
+  config?: Config,
 ): (this: This, ...args: Args) => Promise<Return> {
   const dsn = dsName ?? '<default>';
 
-  const funcName = options?.name ?? func.name;
-  const reg = registerAndWrapDBOSFunctionByName(options?.ctorOrProto, options?.className, funcName, func);
+  const funcName = config?.name ?? func.name;
+  const reg = registerAndWrapDBOSFunctionByName(config?.ctorOrProto, config?.className, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     const ds = getTransactionalDataSource(dsn);
@@ -200,7 +200,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
       }
 
       return await runWithDataSourceContext(undefined, 0, async () => {
-        return await ds.invokeTransactionFunction(options, this, callFunc, ...rawArgs);
+        return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
       });
     }
 
@@ -229,7 +229,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
       const res = await DBOSExecutor.globalInstance!.runInternalStep<Return>(
         async () => {
           return await runWithDataSourceContext(span, callnum, async () => {
-            return await ds.invokeTransactionFunction(options, this, callFunc, ...rawArgs);
+            return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
           });
         },
         funcName,
