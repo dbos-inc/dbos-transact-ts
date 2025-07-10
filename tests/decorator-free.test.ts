@@ -109,10 +109,9 @@ TestClass.wfRunStepStatic = DBOS.registerWorkflow(TestClass.wfRunStepStatic, { n
 TestClass.wfRegRetryStatic = DBOS.registerWorkflow(TestClass.wfRegRetryStatic, { name: 'TestClass.wfRegRetryStatic' });
 
 /* eslint-disable @typescript-eslint/unbound-method */
-TestClass.prototype.stepTest = DBOS.registerStep(TestClass.prototype.stepTest, { ctorOrProto: TestClass.prototype });
+TestClass.prototype.stepTest = DBOS.registerStep(TestClass.prototype.stepTest);
 TestClass.prototype.retryTest = DBOS.registerStep(TestClass.prototype.retryTest, {
   retriesAllowed: true,
-  ctorOrProto: TestClass.prototype,
 });
 TestClass.prototype.wfRegStep = DBOS.registerWorkflow(TestClass.prototype.wfRegStep, {
   name: 'TestClass.prototype.wfRegStep',

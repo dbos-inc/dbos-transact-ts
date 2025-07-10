@@ -447,7 +447,7 @@ export class ClassRegistration implements RegistrationDefaults {
   ormEntities: Function[] | { [key: string]: object } = [];
 
   registeredOperationsByName: Map<string, MethodRegistrationBase> = new Map();
-  allRegisteredOperations: MethodRegistrationBase[] = [];
+  allRegisteredOperations: Map<unknown, MethodRegistrationBase> = new Map();
 
   configuredInstances: Map<string, ConfiguredInstance> = new Map();
   configuredInstanceRegLocs: Map<string, string[]> = new Map();
@@ -535,7 +535,7 @@ export function insertAllMiddleware() {
   installedMiddleware = true;
 
   for (const [_cn, c] of classesByName) {
-    for (const f of c.reg.allRegisteredOperations) {
+    for (const f of c.reg.allRegisteredOperations.values()) {
       for (const i of middlewareInstallers) {
         i.installMiddleware(f);
       }
@@ -687,12 +687,15 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   ({ classReg, isInstance, className } = getOrCreateClassRegistrationByName(target, className));
 
   const fname = propertyKey.toString();
-  if (!classReg.registeredOperationsByName.has(fname)) {
-    classReg.registeredOperationsByName.set(fname, new MethodRegistration<This, Args, Return>(func, isInstance));
-    classReg.allRegisteredOperations.push(classReg.registeredOperationsByName.get(fname)!); // TODO MOVE
+
+  const origFunc = functionToRegistration.get(func)?.origFunction ?? func;
+
+  if (!classReg.allRegisteredOperations.has(origFunc)) {
+    const reg = new MethodRegistration<This, Args, Return>(func, isInstance);
+    classReg.allRegisteredOperations.set(func, reg);
   }
-  const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperationsByName.get(
-    fname,
+  const methReg: MethodRegistration<This, Args, Return> = classReg.allRegisteredOperations.get(
+    func,
   )! as MethodRegistration<This, Args, Return>;
 
   if (methReg.needInitialized) {
@@ -1041,7 +1044,7 @@ export function getRegistrationsForExternal(
   return res;
 
   function collectRegForClass(c: { reg: ClassRegistration; ctor?: AnyConstructor }) {
-    for (const f of c.reg.allRegisteredOperations) {
+    for (const f of c.reg.allRegisteredOperations.values()) {
       collectRegForFunction(f);
     }
   }
