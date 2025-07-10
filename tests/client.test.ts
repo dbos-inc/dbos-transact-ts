@@ -1,11 +1,12 @@
 import { workflow_status } from '../schemas/system_db_schema';
-import { DBOS, DBOSConfig, DBOSClient, WorkflowQueue, StatusString } from '../src';
+import { DBOS, DBOSClient, WorkflowQueue, StatusString } from '../src';
 import { globalParams, sleepms } from '../src/utils';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import { randomUUID } from 'crypto';
+import { DBOSConfigInternal } from '../src/dbos-executor';
 
 const _queue = new WorkflowQueue('testQueue', { priorityEnabled: true });
 
@@ -72,13 +73,13 @@ function runClientSendWorker(workflowID: string, topic: string, appVersion: stri
 }
 
 describe('DBOSClient', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
   let database_url: string;
   let poolConfig: PoolConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    const $poolConfig = structuredClone(config.poolConfig!);
+    const $poolConfig = structuredClone(config.poolConfig);
     $poolConfig.connectionString = undefined;
     database_url = `postgres://${$poolConfig.user}:${$poolConfig.password as string}@${$poolConfig.host}:${$poolConfig.port}/${$poolConfig.database}`;
     poolConfig = { ...$poolConfig, database: config.system_database };

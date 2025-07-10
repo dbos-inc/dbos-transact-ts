@@ -114,7 +114,6 @@ export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
-  // Public fields
   name?: string;
   readonly databaseUrl?: string;
   readonly userDbclient?: UserDatabaseName;
@@ -126,18 +125,6 @@ export interface DBOSConfig {
   readonly otlpLogsEndpoints?: string[];
   readonly adminPort?: number;
   readonly runAdminServer?: boolean;
-
-  // Internal fields
-  poolConfig?: PoolConfig;
-  readonly telemetry?: TelemetryConfig;
-  readonly system_database?: string;
-  readonly env?: Record<string, string>;
-  readonly application?: object;
-  readonly http?: {
-    readonly cors_middleware?: boolean;
-    readonly credentials?: boolean;
-    readonly allowed_origins?: string[];
-  };
 }
 
 export type DBOSConfigInternal = {
@@ -157,17 +144,6 @@ export type DBOSConfigInternal = {
     allowed_origins?: string[];
   };
 };
-
-export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
-  const isDeprecated =
-    config.poolConfig !== undefined ||
-    config.telemetry !== undefined ||
-    config.system_database !== undefined ||
-    config.env !== undefined ||
-    config.application !== undefined ||
-    config.http !== undefined;
-  return isDeprecated;
-}
 
 export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;

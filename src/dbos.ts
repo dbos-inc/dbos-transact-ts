@@ -11,7 +11,6 @@ import {
 import {
   DBOSConfig,
   DBOSConfigInternal,
-  isDeprecatedDBOSConfig,
   DBOSExecutor,
   DBOSExternalState,
   InternalWorkflowParams,
@@ -84,7 +83,7 @@ import { FastifyInstance } from 'fastify';
 import _fastifyExpress from '@fastify/express'; // This is for fastify.use()
 import { randomUUID } from 'node:crypto';
 
-import { PoolClient } from 'pg';
+import { PoolClient, PoolConfig } from 'pg';
 import { Knex } from 'knex';
 import { StepConfig } from './step';
 import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
@@ -92,7 +91,6 @@ import { ConfiguredInstance } from '.';
 import { StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
-import { set } from 'lodash';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
@@ -212,7 +210,7 @@ export class DBOS {
   }
 
   private static translateConfig() {
-    if (DBOS.#dbosConfig && !isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
+    if (DBOS.#dbosConfig) {
       const debugMode = DBOS.getDebugModeFromEnv();
       [DBOS.#dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.#dbosConfig, debugMode);
       if (process.env.DBOS__CLOUD === 'true') {
@@ -222,16 +220,6 @@ export class DBOS {
         );
       }
     }
-  }
-
-  /**
-   * @deprecated For unit testing purposes only
-   *   Use `setConfig`
-   */
-  static setAppConfig<T>(key: string, newValue: T): void {
-    const conf = DBOS.#dbosConfig?.application;
-    if (!conf) throw new DBOSExecutorNotInitializedError();
-    set(conf, key, newValue);
   }
 
   /**
@@ -297,7 +285,7 @@ export class DBOS {
     // Initialize the DBOS executor
     if (!DBOS.#dbosConfig) {
       [DBOS.#dbosConfig, DBOS.#runtimeConfig] = parseConfigFile({ forceConsole: debugMode });
-    } else if (!isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
+    } else {
       DBOS.translateConfig(); // This is a defensive measure for users who'd do DBOS.config = X instead of using DBOS.setConfig()
     }
 
@@ -522,7 +510,8 @@ export class DBOS {
   static #dbosConfig?: DBOSConfig;
   static #runtimeConfig?: DBOSRuntimeConfig = undefined;
 
-  static get dbosConfig(): DBOSConfig | undefined {
+  // TODO: remove pool config from here (used in some internal tests)
+  static get dbosConfig(): (DBOSConfig & { poolConfig?: PoolConfig }) | undefined {
     return DBOS.#dbosConfig;
   }
 

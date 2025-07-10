@@ -1,4 +1,4 @@
-import { DBOSConfig, DBOSConfigInternal, DBOSExecutor, isDeprecatedDBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
@@ -55,15 +55,10 @@ export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
 }
 
 export async function setUpDBOSTestDb(cfg: DBOSConfig) {
-  let config: DBOSConfigInternal;
-  if (!isDeprecatedDBOSConfig(cfg)) {
-    if (!cfg.name) {
-      cfg.name = 'dbostest';
-    }
-    [config] = translatePublicDBOSconfig(cfg);
-  } else {
-    config = cfg as DBOSConfigInternal;
+  if (!cfg.name) {
+    cfg.name = 'dbostest';
   }
+  const [config] = translatePublicDBOSconfig(cfg);
   const pgSystemClient = new Client({
     user: config.poolConfig.user,
     port: config.poolConfig.port,
