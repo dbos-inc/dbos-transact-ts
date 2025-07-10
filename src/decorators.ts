@@ -446,7 +446,8 @@ export class ClassRegistration implements RegistrationDefaults {
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
   ormEntities: Function[] | { [key: string]: object } = [];
 
-  registeredOperations: Map<string, MethodRegistrationBase> = new Map();
+  registeredOperationsByName: Map<string, MethodRegistrationBase> = new Map();
+  allRegisteredOperations: MethodRegistrationBase[] = [];
 
   configuredInstances: Map<string, ConfiguredInstance> = new Map();
   configuredInstanceRegLocs: Map<string, string[]> = new Map();
@@ -521,7 +522,7 @@ export function insertAllMiddleware() {
   installedMiddleware = true;
 
   for (const [_cn, c] of classesByName) {
-    for (const [_fn, f] of c.reg.registeredOperations) {
+    for (const f of c.reg.allRegisteredOperations) {
       for (const i of middlewareInstallers) {
         i.installMiddleware(f);
       }
@@ -583,7 +584,7 @@ export function getFunctionRegistration(func: unknown): MethodRegistration<unkno
 export function getFunctionRegistrationByName(className: string, name: string) {
   const clsreg = getClassRegistrationByName(className, false);
   if (!clsreg) return undefined;
-  const methReg = clsreg.registeredOperations.get(name);
+  const methReg = clsreg.registeredOperationsByName.get(name);
   if (!methReg) return undefined;
   return methReg;
 }
@@ -594,7 +595,7 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
   if (typeof target === 'function') {
     // Constructor case
     const classReg = classesByName.get(target.name);
-    classReg?.reg?.registeredOperations?.forEach((m) => registeredOperations.push(m));
+    classReg?.reg?.allRegisteredOperations?.forEach((m) => registeredOperations.push(m));
   } else {
     let current: object | undefined = target;
     while (current) {
@@ -612,7 +613,7 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
 export function getRegisteredFunctionsByClassname(target: string): ReadonlyArray<MethodRegistrationBase> {
   const registeredOperations: MethodRegistrationBase[] = [];
   const cls = getClassRegistrationByName(target);
-  cls?.registeredOperations?.forEach((m) => registeredOperations.push(m));
+  cls?.allRegisteredOperations?.forEach((m) => registeredOperations.push(m));
   return registeredOperations;
 }
 
@@ -638,12 +639,9 @@ export function getOrCreateMethodArgsRegistration(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     let designParamTypes: Function[] | undefined = undefined;
     if (target) {
-      designParamTypes = Reflect.getMetadata(
-        'design:paramtypes',
-        target,
-        funcName as string | symbol,
-      ) as // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      Function[] | undefined;
+      designParamTypes = Reflect.getMetadata('design:paramtypes', target, funcName as string | symbol) as  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+        | Function[]
+        | undefined;
     }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
@@ -694,10 +692,11 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   const classReg = getClassRegistrationByName(className, true);
 
   const fname = propertyKey.toString();
-  if (!classReg.registeredOperations.has(fname)) {
-    classReg.registeredOperations.set(fname, new MethodRegistration<This, Args, Return>(func, isInstance));
+  if (!classReg.registeredOperationsByName.has(fname)) {
+    classReg.registeredOperationsByName.set(fname, new MethodRegistration<This, Args, Return>(func, isInstance));
+    classReg.allRegisteredOperations.push(classReg.registeredOperationsByName.get(fname)!); // TODO MOVE
   }
-  const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperations.get(
+  const methReg: MethodRegistration<This, Args, Return> = classReg.registeredOperationsByName.get(
     fname,
   )! as MethodRegistration<This, Args, Return>;
 
@@ -963,7 +962,7 @@ export function getRegistrationsForExternal(
     const c = classesByName.get(clsname);
     if (c) {
       if (funcName) {
-        const f = c.reg.registeredOperations.get(funcName);
+        const f = c.reg.registeredOperationsByName.get(funcName);
         if (f) {
           collectRegForFunction(f);
         }
@@ -979,7 +978,7 @@ export function getRegistrationsForExternal(
   return res;
 
   function collectRegForClass(c: { reg: ClassRegistration; ctor?: AnyConstructor }) {
-    for (const [_fn, f] of c.reg.registeredOperations) {
+    for (const f of c.reg.allRegisteredOperations) {
       collectRegForFunction(f);
     }
   }
