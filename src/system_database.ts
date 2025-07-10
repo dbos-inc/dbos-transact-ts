@@ -21,6 +21,7 @@ import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, s
 import { GlobalLogger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
 import path from 'path';
+import fs from 'fs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 
@@ -201,7 +202,23 @@ export interface ExistenceCheck {
 }
 
 export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: GlobalLogger) {
-  const migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+  let migrationsDirectory: string;
+
+  try {
+    migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+  } catch (packageError) {
+    migrationsDirectory = path.join(__dirname, 'migrations');
+  }
+
+  // Check if migrations directory exists
+  if (!fs.existsSync(migrationsDirectory)) {
+    logger.warn(
+      'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
+        'Please run "npx dbos migrate" to create your system database before running your bundled application.',
+    );
+    return;
+  }
+
   const knexConfig = {
     client: 'pg',
     connection: systemPoolConfig,

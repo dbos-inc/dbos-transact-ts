@@ -6,6 +6,7 @@ tests/**/package-lock.json
 packages/**/package-lock.json
 .DS_Store
 .env
+CLAUDE.md
 
 # Logs
 logs

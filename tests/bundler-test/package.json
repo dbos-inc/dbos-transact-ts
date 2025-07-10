@@ -1,0 +1,21 @@
+{
+  "name": "dbos-bundler-test",
+  "version": "1.0.0",
+  "description": "Test DBOS bundling with webpack",
+  "main": "dist/bundle.js",
+  "scripts": {
+    "build": "webpack --config webpack.config.js",
+    "start": "node dist/bundle.js"
+  },
+  "dependencies": {
+    "@dbos-inc/dbos-sdk": "file:../../"
+  },
+  "devDependencies": {
+    "webpack": "^5.88.0",
+    "webpack-cli": "^5.1.0",
+    "ts-loader": "^9.4.0",
+    "typescript": "^5.4.5",
+    "@types/node": "^20.19.1",
+    "pg-query-stream": "^4.2.3"
+  }
+}
