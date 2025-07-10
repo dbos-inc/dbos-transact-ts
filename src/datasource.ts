@@ -47,7 +47,7 @@ export interface DataSourceTransactionHandler {
  * This is the suggested interface guideline for presenting to the end user, but not
  *   strictly required.
  */
-export interface DBOSDataSource<Config> {
+export interface DBOSDataSource<Config extends { name?: string }> {
   readonly name: string;
 
   /**

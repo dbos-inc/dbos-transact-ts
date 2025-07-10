@@ -638,10 +638,12 @@ export function getOrCreateMethodArgsRegistration(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     let designParamTypes: Function[] | undefined = undefined;
     if (target) {
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      designParamTypes = Reflect.getMetadata('design:paramtypes', target, funcName as string | symbol) as
-        | Function[]
-        | undefined;
+      designParamTypes = Reflect.getMetadata(
+        'design:paramtypes',
+        target,
+        funcName as string | symbol,
+      ) as // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      Function[] | undefined;
     }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));

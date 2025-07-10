@@ -31,7 +31,7 @@ export interface S3WorkflowCallbacks<R extends FileRecord, Options = unknown> {
 /**
  * Create a workflow function for deleting S3 objects and removing the DB entry
  * @param callbacks - S3 operation implementation and database recordkeeping transactions
- * @param config - Workflow configuration and arget function name for registration
+ * @param config - Workflow configuration and target function name for registration
  */
 export function registerS3DeleteWorkflow<R extends FileRecord, Options = unknown>(
   callbacks: S3WorkflowCallbacks<R, Options>,

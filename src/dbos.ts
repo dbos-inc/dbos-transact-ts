@@ -1805,12 +1805,11 @@ export class DBOS {
    *   This ensures "at least once" execution of the step, and that the step will not
    *    be executed again once the checkpoint is recorded
    * @param func - The function to register as a step
-   * @param config - Configuration information for the step, particularly the retry policy
-   * @param config.name - The name of the step; if not provided, the function name will be used
+   * @param config - Configuration information for the step, particularly the retry policy and name
    */
   static registerStep<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config: StepConfig & { name?: string } = {},
+    config: StepConfig & FunctionName = {},
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
