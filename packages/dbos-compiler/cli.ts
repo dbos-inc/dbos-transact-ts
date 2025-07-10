@@ -6,8 +6,8 @@ import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { generateCreate, generateDrop } from './generator';
-import { parseConfigFile } from '@dbos-inc/dbos-sdk';
-import { Client, ClientConfig } from 'pg';
+import { getDatabaseUrl } from '@dbos-inc/dbos-sdk';
+import { Client } from 'pg';
 import { CompileMethodInfo, compile, hasError } from './compiler';
 
 async function emitScriptFiles(outDir: string, project: tsm.Project) {
@@ -71,12 +71,12 @@ async function emitSqlFiles(
 }
 
 async function deployToDatabase(
-  config: ClientConfig,
+  databaseUrl: string,
   project: tsm.Project,
   methods: readonly CompileMethodInfo[],
   appVersion?: string | boolean,
 ) {
-  const client = new Client(config);
+  const client = new Client({ connectionString: databaseUrl });
   try {
     await client.connect();
     console.log(`Deploying to database: ${client.host}:${client.port ?? 5432}/${client.database}`);
@@ -90,12 +90,12 @@ async function deployToDatabase(
 }
 
 async function dropFromDatabase(
-  config: ClientConfig,
+  databaseUrl: string,
   project: tsm.Project,
   methods: readonly CompileMethodInfo[],
   appVersion?: string | boolean,
 ) {
-  const client = new Client(config);
+  const client = new Client({ connectionString: databaseUrl });
   try {
     await client.connect();
     console.log(`Dropping from database: ${client.host}:${client.port ?? 5432}/${client.database}`);
@@ -192,8 +192,8 @@ program
       const { project, methods, diagnostics } = compile(tsconfigPath);
       const hasErrors = printDiagnostics(diagnostics, options.suppressWarnings);
       if (!hasErrors) {
-        const [dbosConfig] = parseConfigFile(options);
-        await deployToDatabase(dbosConfig.poolConfig, project, methods, options.appVersion);
+        const databaseUrl = getDatabaseUrl(options.appDir);
+        await deployToDatabase(databaseUrl, project, methods, options.appVersion);
       }
     }
   });
@@ -212,8 +212,8 @@ program
       const { project, methods, diagnostics } = compile(tsconfigPath);
       const hasErrors = printDiagnostics(diagnostics, options.suppressWarnings);
       if (!hasErrors) {
-        const [dbosConfig] = parseConfigFile(options);
-        await dropFromDatabase(dbosConfig.poolConfig, project, methods, options.appVersion);
+        const databaseUrl = getDatabaseUrl(options.appDir);
+        await dropFromDatabase(databaseUrl, project, methods, options.appVersion);
       }
     }
   });

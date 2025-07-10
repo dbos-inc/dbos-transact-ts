@@ -6,6 +6,7 @@ import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import { randomUUID } from 'crypto';
+import assert from 'assert';
 
 const _queue = new WorkflowQueue('testQueue', { priorityEnabled: true });
 
@@ -78,10 +79,14 @@ describe('DBOSClient', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    const $poolConfig = structuredClone(config.poolConfig!);
-    $poolConfig.connectionString = undefined;
-    database_url = `postgres://${$poolConfig.user}:${$poolConfig.password as string}@${$poolConfig.host}:${$poolConfig.port}/${$poolConfig.database}`;
-    poolConfig = { ...$poolConfig, database: config.system_database };
+    assert(config.databaseUrl);
+    assert(config.sysDbName);
+
+    database_url = config.databaseUrl;
+    const url = new URL(config.databaseUrl);
+    url.pathname = `/${config.sysDbName}`;
+
+    poolConfig = { connectionString: `${url}` };
     await setUpDBOSTestDb(config);
   });
 

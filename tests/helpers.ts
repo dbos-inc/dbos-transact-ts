@@ -1,50 +1,22 @@
-import { DBOSConfig, DBOSConfigInternal, DBOSExecutor, isDeprecatedDBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { translatePublicDBOSconfig, constructPoolConfig, ConfigFile } from '../src/dbos-runtime/config';
+import assert from 'node:assert';
 
 /* DB management helpers */
-export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigInternal {
-  const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
-  if (!dbPassword) {
-    throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
-  }
-  const silenceLogs = process.env.SILENCE_LOGS === 'true';
+export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
+  const password: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
+  assert(password, 'DB_PASSWORD or PGPASSWORD environment variable not set');
 
-  const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
-
-  const configFile: ConfigFile = {
+  return {
     name: 'dbostest',
-    database: {
-      app_db_client: dbClient || UserDatabaseName.PGNODE,
-    },
-    database_url: databaseUrl,
-    application: {
-      counter: 3,
-      shouldExist: 'exists',
-    },
-    env: {},
-    telemetry: {
-      logs: {
-        silent: silenceLogs,
-      },
-    },
+    sysDbName: 'dbostest_dbos_sys',
+    databaseUrl: `postgres://postgres:${password}@localhost:5432/dbostest?sslmode=disable`,
+    userDbClient: dbClient || UserDatabaseName.PGNODE,
+    logLevel: 'error',
   };
-
-  const poolConfig = constructPoolConfig(configFile, { silent: true });
-
-  const dbosTestConfig: DBOSConfigInternal = {
-    databaseUrl,
-    poolConfig,
-    application: configFile.application,
-    telemetry: configFile.telemetry!,
-    system_database: 'dbostest_dbos_sys',
-    userDbclient: dbClient || UserDatabaseName.PGNODE,
-  };
-
-  return dbosTestConfig;
 }
 
 export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
@@ -56,27 +28,19 @@ export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
 }
 
 export async function setUpDBOSTestDb(cfg: DBOSConfig) {
-  let config: DBOSConfigInternal;
-  if (!isDeprecatedDBOSConfig(cfg)) {
-    if (!cfg.name) {
-      cfg.name = 'dbostest';
-    }
-    [config] = translatePublicDBOSconfig(cfg);
-  } else {
-    config = cfg as DBOSConfigInternal;
-  }
-  const pgSystemClient = new Client({
-    user: config.poolConfig.user,
-    port: config.poolConfig.port,
-    host: config.poolConfig.host,
-    password: config.poolConfig.password,
-    database: 'postgres',
-  });
+  assert(cfg.databaseUrl, 'No databaseUrl provided in config');
+  assert(cfg.sysDbName, 'No sysDbName provided in config');
+
+  const url = new URL(cfg.databaseUrl);
+  const database = url.pathname.slice(1);
+  url.pathname = '/postgres';
+
+  const pgSystemClient = new Client({ connectionString: `${url}` });
   try {
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database} WITH (FORCE);`);
-    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database} WITH (FORCE);`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE);`);
+    await pgSystemClient.query(`CREATE DATABASE ${database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${cfg.sysDbName} WITH (FORCE);`);
     await pgSystemClient.end();
   } catch (e) {
     if (e instanceof AggregateError) {

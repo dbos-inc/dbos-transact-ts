@@ -130,17 +130,21 @@ export interface DBOSConfig {
   readonly runAdminServer?: boolean;
 }
 
-export interface DBOSConfigInternal extends DBOSConfig {
+export interface DBOSConfigInternal {
+  readonly name?: string;
+  readonly databaseUrl: string;
   readonly poolConfig: PoolConfig;
+  readonly userDbClient: UserDatabaseName;
+  readonly sysDbPoolSize?: number;
   readonly telemetry: TelemetryConfig;
   readonly systemDatabase: string;
   readonly env?: Record<string, string>;
   readonly application?: object;
-  readonly http?: {
-    readonly cors_middleware?: boolean;
-    readonly credentials?: boolean;
-    readonly allowed_origins?: string[];
-  };
+  // readonly http?: {
+  //   readonly cors_middleware?: boolean;
+  //   readonly credentials?: boolean;
+  //   readonly allowed_origins?: string[];
+  // };
 }
 
 export interface InternalWorkflowParams extends WorkflowParams {

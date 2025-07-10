@@ -7,7 +7,7 @@ import dbosConfigSchema from '../../dbos-config.schema.json';
 import * as fs from 'node:fs/promises';
 import { readFileSync as utilReadFileSync } from '../utils';
 import assert from 'node:assert/strict';
-import { DBOSConfigInternal } from '../dbos-executor';
+import { DBOSConfig, DBOSConfigInternal } from '../dbos-executor';
 import { UserDatabaseName } from '../user_database';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
@@ -96,14 +96,14 @@ export async function writeConfigFile(config: ConfigFile, dirPath: string | unde
   await fs.writeFile(dbosConfigPath, content, { encoding: 'utf8' });
 }
 
-export function getDatabaseInfo(config: ConfigFile) {
-  const sysDbName = config.database?.sys_db_name ?? (config.name ? `${config.name}_dbos_sys` : undefined);
+export function getDatabaseInfo(appName?: string, databaseUrl?: string, sysDbName?: string) {
+  sysDbName ??= appName ? `${appName}_dbos_sys` : undefined;
   assert(
     sysDbName,
     'System database name could not be determined. Please provide a name in the config file or set the package name.',
   );
 
-  const databaseUrl = config.database_url ?? process.env['DBOS_DATABASE_URL'] ?? defaultDatabaseUrl(config.name);
+  databaseUrl ??= process.env['DBOS_DATABASE_URL'] ?? defaultDatabaseUrl(appName);
 
   const missingFields: string[] = [];
   const url = new URL(databaseUrl);
@@ -139,24 +139,28 @@ export function getDatabaseInfo(config: ConfigFile) {
 }
 
 export function getRuntimeConfig(config: ConfigFile, options: { port?: number } = {}): DBOSRuntimeConfig {
-  const entrypoints = new Set<string>();
-  config.runtimeConfig?.entrypoints?.forEach((entry) => entrypoints.add(entry));
-  if (entrypoints.size === 0) {
-    entrypoints.add(defaultEntryPoint);
-  }
-  const port = options.port ?? config.runtimeConfig?.port ?? 3000;
-  return {
-    entrypoints: [...entrypoints],
-    port,
-    runAdminServer: true,
-    admin_port: config.runtimeConfig?.admin_port ?? port + 1,
-    start: config.runtimeConfig?.start ?? [],
-    setup: config.runtimeConfig?.setup ?? [],
-  };
+  return translateRuntimeConfig(config.runtimeConfig, options.port);
 }
 
 function isUserDatabaseName(name: string): name is UserDatabaseName {
   return Object.values(UserDatabaseName).includes(name as UserDatabaseName);
+}
+
+export function translateRuntimeConfig(config: Partial<DBOSRuntimeConfig> = {}, port?: number): DBOSRuntimeConfig {
+  const entrypoints = new Set<string>();
+  config.entrypoints?.forEach((entry) => entrypoints.add(entry));
+  if (entrypoints.size === 0) {
+    entrypoints.add(defaultEntryPoint);
+  }
+  const $port = port ?? config.port ?? 3000;
+  return {
+    entrypoints: [...entrypoints],
+    port: $port,
+    runAdminServer: true,
+    admin_port: config.admin_port ?? $port + 1,
+    start: config.start ?? [],
+    setup: config.setup ?? [],
+  };
 }
 
 export function getDbosConfig(
@@ -167,25 +171,55 @@ export function getDbosConfig(
   } = {},
 ): DBOSConfigInternal {
   assert(config.language && config.language !== 'node', `Config file specifies invalid language ${config.language}`);
-
-  const { databaseUrl, sysDbName } = getDatabaseInfo(config);
   const userDbClient = config.database?.app_db_client ?? UserDatabaseName.KNEX;
   assert(isUserDatabaseName(userDbClient), `Invalid app_db_client ${userDbClient} in config file`);
 
+  return translateDbosConfig({
+    name: config.name,
+    databaseUrl: config.database_url,
+    sysDbName: config.database?.sys_db_name,
+    userDbClient,
+    logLevel: options.logLevel,
+    isDebugging: options.forceConsole,
+    otlpTracesEndpoints: config.telemetry?.OTLPExporter?.tracesEndpoint,
+    otlpLogsEndpoints: config.telemetry?.OTLPExporter?.logsEndpoint,
+    application: config.application,
+    env: config.env,
+  });
+}
+
+export function translateDbosConfig(options: {
+  name?: string;
+  databaseUrl?: string;
+  sysDbName?: string;
+  userDbClient?: UserDatabaseName;
+  logLevel?: string;
+  isDebugging?: boolean;
+  otlpTracesEndpoints?: string[];
+  otlpLogsEndpoints?: string[];
+  application?: object;
+  env?: Record<string, string>;
+}): DBOSConfigInternal {
+  const { databaseUrl, sysDbName } = getDatabaseInfo(options.name, options.databaseUrl, options.sysDbName);
   return {
     databaseUrl,
     poolConfig: {
       connectionString: databaseUrl,
     },
-    userDbClient,
-    telemetry: {
-      logs: { ...config.telemetry?.logs, logLevel: options.logLevel ?? 'info', forceConsole: options.forceConsole },
-      OTLPExporter: config.telemetry?.OTLPExporter,
-    },
+    userDbClient: options.userDbClient ?? UserDatabaseName.KNEX,
     systemDatabase: sysDbName,
-    application: config.application,
-    env: config.env ?? {},
-    http: config.http,
+    telemetry: {
+      logs: {
+        logLevel: options.logLevel || 'info',
+        forceConsole: options.isDebugging ?? false,
+      },
+      OTLPExporter: {
+        tracesEndpoint: options.otlpTracesEndpoints,
+        logsEndpoint: options.otlpLogsEndpoints,
+      },
+    },
+    application: options.application,
+    env: options.env ?? {},
   };
 }
 
@@ -218,6 +252,6 @@ function readConfigFileSync(dirPath?: string): ConfigFile {
 
 export function getDatabaseUrl(dirPath?: string): string {
   const config = readConfigFileSync(dirPath);
-  const { databaseUrl } = getDatabaseInfo(config);
+  const { databaseUrl } = getDatabaseInfo(config.name, config.database_url, config.database?.sys_db_name);
   return databaseUrl;
 }

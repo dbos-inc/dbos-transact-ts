@@ -96,7 +96,13 @@ import { Conductor } from './conductor/conductor';
 import { EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
-import { getDbosConfig, getRuntimeConfig, readConfigFile } from './dbos-runtime/config';
+import {
+  getDbosConfig,
+  getRuntimeConfig,
+  readConfigFile,
+  translateDbosConfig,
+  translateRuntimeConfig,
+} from './dbos-runtime/config';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -204,9 +210,9 @@ export class DBOS {
    * @param config - configuration of services needed by DBOS
    * @param runtimeConfig - configuration of runtime access to DBOS
    */
-  static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
-    DBOS.#dbosConfig = config;
-    DBOS.#runtimeConfig = runtimeConfig;
+  static setConfig(config: DBOSConfig, runtimeConfig?: Partial<DBOSRuntimeConfig>) {
+    DBOS.#dbosConfig = translateDbosConfig(config);
+    DBOS.#runtimeConfig = translateRuntimeConfig(runtimeConfig);
   }
 
   /**
@@ -268,7 +274,7 @@ export class DBOS {
     }
 
     DBOSExecutor.createInternalQueue();
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.#dbosConfig as DBOSConfigInternal, {
+    DBOSExecutor.globalInstance = new DBOSExecutor(translateDbosConfig(DBOS.#dbosConfig), {
       debugMode,
     });
 
