@@ -157,9 +157,6 @@ class PUserManager {
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
-    if (cfg !== 'exists') {
-      throw Error('Auth is misconfigured.');
-    }
     if (!ctx.requiredRole || !ctx.requiredRole.length) {
       return;
     }

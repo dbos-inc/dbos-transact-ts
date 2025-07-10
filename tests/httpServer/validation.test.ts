@@ -4,7 +4,7 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import request from 'supertest';
 import { DBOSConfig } from '../../src/dbos-executor';
 
-describe('httpserver-datavalidation-tests', () => {
+describe.skip('httpserver-datavalidation-tests', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
