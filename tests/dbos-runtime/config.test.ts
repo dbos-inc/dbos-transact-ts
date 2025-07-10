@@ -699,7 +699,7 @@ describe('dbos-config', () => {
       expect(() => overwrite_config(providedDBOSConfig, providedRuntimeConfig)).toThrow();
     });
 
-    test.skip('should overwrite/merge parameters with config file content', () => {
+    test('should overwrite/merge parameters with config file content', () => {
       // Mock the config file content with database settings
       const mockDBOSConfigYamlString = `
           name: app-from-file
@@ -757,24 +757,29 @@ describe('dbos-config', () => {
       expect(resultDBOSConfig.name).toEqual('app-from-file');
 
       // Database settings should reflect what's in the file
-      expect(resultDBOSConfig.databaseUrl).toEqual(
+      expect(resultDBOSConfig.poolConfig?.host).toEqual('db-host-from-file');
+      expect(resultDBOSConfig.poolConfig?.port).toEqual(1234);
+      expect(resultDBOSConfig.poolConfig?.user).toEqual('user-from-file');
+      expect(resultDBOSConfig.poolConfig?.password).toEqual('password-from-file');
+      expect(resultDBOSConfig.poolConfig?.database).toEqual('db_from_file');
+      expect(resultDBOSConfig.poolConfig?.connectionString).toEqual(
         'postgresql://user-from-file:password-from-file@db-host-from-file:1234/db_from_file?connect_timeout=10&sslmode=no-verify',
       );
 
       // System database name should be from file
-      // expect(resultDBOSConfig.system_database).toEqual('sys_db_from_file');
+      expect(resultDBOSConfig.system_database).toEqual('sys_db_from_file');
 
-      // // Base telemetry config should be preserved from provided config
-      // expect(resultDBOSConfig.telemetry?.logs).toEqual(providedDBOSConfig.telemetry?.logs);
-      // // OTLP endpoints should be overwritten from the file
-      // expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual([
-      //   'http://otel-collector:4317/original',
-      //   'http://otel-collector:4317/from-file',
-      // ]);
-      // expect(resultDBOSConfig.telemetry?.OTLPExporter?.logsEndpoint).toEqual([
-      //   'http://otel-collector:4317/yadiyada',
-      //   'http://otel-collector:4317/logs',
-      // ]);
+      // Base telemetry config should be preserved from provided config
+      expect(resultDBOSConfig.telemetry?.logs).toEqual(providedDBOSConfig.telemetry?.logs);
+      // OTLP endpoints should be overwritten from the file
+      expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual([
+        'http://otel-collector:4317/original',
+        'http://otel-collector:4317/from-file',
+      ]);
+      expect(resultDBOSConfig.telemetry?.OTLPExporter?.logsEndpoint).toEqual([
+        'http://otel-collector:4317/yadiyada',
+        'http://otel-collector:4317/logs',
+      ]);
 
       // Other provided fields should be preserved
       expect(resultDBOSConfig.userDbclient).toEqual(providedDBOSConfig.userDbclient);
@@ -790,7 +795,7 @@ describe('dbos-config', () => {
       expect(resultRuntimeConfig.setup).toEqual(providedRuntimeConfig.setup);
     });
 
-    test.skip('should craft a verify-full address with an ssl_ca provided', () => {
+    test('should craft a verify-full address with an ssl_ca provided', () => {
       // Mock the config file content with database settings
       const mockDBOSConfigYamlString = `
             name: app-from-file
@@ -830,7 +835,7 @@ describe('dbos-config', () => {
       const [resultDBOSConfig] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
 
       // Database settings should reflect what's in the file
-      expect(resultDBOSConfig.databaseUrl).toEqual(
+      expect(resultDBOSConfig.poolConfig?.connectionString).toEqual(
         'postgresql://user-from-file:password-from-file@db-host-from-file:1234/db_from_file?connect_timeout=10&sslmode=verify-full&sslrootcert=my_cert',
       );
     });
@@ -884,11 +889,11 @@ describe('dbos-config', () => {
       const [resultDBOSConfig] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
 
       // Base telemetry config should be preserved from provided config
-      // expect(resultDBOSConfig.telemetry?.logs).toEqual(providedDBOSConfig.telemetry?.logs);
-      // // OTLP traces endpoint are overwritten from the file
-      // expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual([
-      //   'http://otel-collector:4317/from-file',
-      // ]);
+      expect(resultDBOSConfig.telemetry?.logs).toEqual(providedDBOSConfig.telemetry?.logs);
+      // OTLP traces endpoint are overwritten from the file
+      expect(resultDBOSConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual([
+        'http://otel-collector:4317/from-file',
+      ]);
     });
 
     test('should use provided config when parameters are missing from config file', () => {
@@ -938,9 +943,9 @@ describe('dbos-config', () => {
       };
 
       const [resultDBOSConfig] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
-      // expect(resultDBOSConfig.telemetry).toEqual(providedDBOSConfig.telemetry);
+      expect(resultDBOSConfig.telemetry).toEqual(providedDBOSConfig.telemetry);
       expect(resultDBOSConfig.name).toEqual('test-app');
-      // expect(resultDBOSConfig.telemetry?.OTLPExporter).toEqual(providedDBOSConfig.telemetry?.OTLPExporter);
+      expect(resultDBOSConfig.telemetry?.OTLPExporter).toEqual(providedDBOSConfig.telemetry?.OTLPExporter);
     });
 
     test('use constructPoolConfig default sys db name when missing from config file', () => {
@@ -980,7 +985,7 @@ describe('dbos-config', () => {
       };
 
       const [resultDBOSConfig, _] = overwrite_config(providedDBOSConfig, providedRuntimeConfig);
-      // expect(resultDBOSConfig.system_database).toEqual(`${resultDBOSConfig.poolConfig?.database}_dbos_sys`);
+      expect(resultDBOSConfig.system_database).toEqual(`${resultDBOSConfig.poolConfig?.database}_dbos_sys`);
     });
   });
 

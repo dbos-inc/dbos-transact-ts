@@ -573,7 +573,7 @@ export function translatePublicDBOSconfig(
 export function overwrite_config(
   providedDBOSConfig: DBOSConfigInternal,
   providedRuntimeConfig: DBOSRuntimeConfig,
-): [DBOSConfig, DBOSRuntimeConfig] {
+): [DBOSConfigInternal, DBOSRuntimeConfig] {
   // Load the DBOS configuration file and force the use of:
   // 1. Use the application name from the file. This is a defensive measure to ensure the application name is whatever it was registered with in the cloud
   // 2. The database connection parameters (sub the file data to the provided config)
