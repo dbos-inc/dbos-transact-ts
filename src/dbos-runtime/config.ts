@@ -62,7 +62,7 @@ export function substituteEnvVars(content: string): string {
 
 export function readConfigFile(dirPath?: string): ConfigFile {
   dirPath ??= process.cwd();
-  const dbosConfigPath = path.join(dirPath, 'dbos-config.yaml');
+  const dbosConfigPath = path.join(dirPath, dbosConfigFilePath);
   const configContent = readFile(dbosConfigPath);
 
   const config = configContent ? (YAML.parse(substituteEnvVars(configContent)) as ConfigFile) : {};
