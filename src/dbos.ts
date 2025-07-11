@@ -267,7 +267,7 @@ export class DBOS {
       : processConfigFile(configFile, { forceConsole: debugMode });
 
     if (process.env.DBOS__CLOUD === 'true') {
-      [internalConfig, runtimeConfig] = overwrite_config(configFile, internalConfig, runtimeConfig);
+      [internalConfig, runtimeConfig] = overwrite_config(internalConfig, runtimeConfig, configFile);
     }
 
     DBOS.#dbosConfig = {

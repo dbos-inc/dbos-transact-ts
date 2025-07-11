@@ -118,6 +118,7 @@ describe('dbos-config', () => {
       jest.spyOn(fs, 'readFileSync').mockReturnValueOnce(mockPackageJsoString);
       const config = baseConfig();
       config.name = undefined;
+      config.database ??= {};
       config.database.app_db_name = undefined;
 
       const pool = constructPoolConfig(config);
@@ -150,6 +151,7 @@ describe('dbos-config', () => {
       process.env.DBOS_DBPASSWORD = 'envpass';
 
       const config = baseConfig();
+      config.database ??= {};
       config.database.app_db_name = 'appdb';
       config.database.ssl = false;
       config.database.hostname = 'something else';
@@ -269,6 +271,7 @@ describe('dbos-config', () => {
     test('constructPoolConfig correctly handles app names with spaces', () => {
       const config = baseConfig();
       config.name = 'app name with spaces';
+      config.database ??= {};
       config.database.ssl = true;
       const pool = constructPoolConfig(config);
       assertPoolConfig(pool, {

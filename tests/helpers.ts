@@ -1,5 +1,5 @@
 import { DBOSConfig, DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
-import { Client, PoolConfig } from 'pg';
+import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
