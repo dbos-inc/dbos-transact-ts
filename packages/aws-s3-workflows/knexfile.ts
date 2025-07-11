@@ -1,7 +1,7 @@
 import { Knex } from 'knex';
-import { parseConfigFile } from '@dbos-inc/dbos-sdk';
+import { getConfiguredDatabaseUrl } from '@dbos-inc/dbos-sdk';
 
-const { databaseUrl } = parseConfigFile();
+const { databaseUrl } = getConfiguredDatabaseUrl();
 
 const config: Knex.Config = {
   client: 'pg',
