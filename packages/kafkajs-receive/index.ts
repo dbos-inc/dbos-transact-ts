@@ -1,4 +1,4 @@
-import { DBOS, DBOSLifecycleCallback } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSLifecycleCallback, FunctionName } from '@dbos-inc/dbos-sdk';
 import { Kafka as KafkaJS, Consumer, ConsumerConfig, KafkaConfig, KafkaMessage, KafkaJSProtocolError } from 'kafkajs';
 
 export type KafkaArgs = [string, number, KafkaMessage];
@@ -117,19 +117,12 @@ export class KafkaReceiver implements DBOSLifecycleCallback {
   registerConsumer<This, Return>(
     func: (this: This, ...args: KafkaArgs) => Promise<Return>,
     topics: ConsumerTopics,
-    options: {
-      ctorOrProto?: object;
-      className?: string;
-      name?: string;
+    options: FunctionName & {
       queueName?: string;
       config?: ConsumerConfig;
     } = {},
   ) {
-    const { regInfo } = DBOS.associateFunctionWithInfo(this, func, {
-      ctorOrProto: options.ctorOrProto,
-      className: options.className,
-      name: options.name ?? func.name,
-    });
+    const { regInfo } = DBOS.associateFunctionWithInfo(this, func, options);
 
     const kafkaRegInfo = regInfo as KafkaMethodConfig;
     kafkaRegInfo.topics = Array.isArray(topics) ? topics : [topics];
