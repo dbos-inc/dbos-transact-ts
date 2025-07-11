@@ -16,11 +16,16 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
 
 type PrismaLike = {
-  $transaction: (tf: (tx: PrismaLike) => Promise<unknown>, config?: unknown) => Promise<unknown>;
   $connect: () => Promise<void>;
   $disconnect: () => Promise<void>;
-  $queryRaw<T = unknown>(query: TemplateStringsArray | string, ...values: unknown[]): Promise<T>;
-  $executeRaw(query: TemplateStringsArray | string, ...values: unknown[]): Promise<number>;
+  $queryRawUnsafe<T = unknown>(query: unknown, ...values: unknown[]): Promise<T>;
+  $executeRawUnsafe(query: unknown, ...values: unknown[]): Promise<number>;
+};
+
+type PrismaLikeTx = {
+  $queryRawUnsafe<T = unknown>(query: TemplateStringsArray | string, ...values: unknown[]): Promise<T>;
+  $executeRawUnsafe(query: TemplateStringsArray | string, ...values: unknown[]): Promise<number>;
+  $transaction: (tf: (tx: PrismaLike) => Promise<unknown>, config?: unknown) => Promise<unknown>;
 };
 
 interface PrismaDataSourceContext {
@@ -74,7 +79,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
-    const result = await client.$queryRaw<Result>(
+    const result = await client.$queryRawUnsafe<Result>(
       `SELECT output, error FROM dbos.transaction_completion
       WHERE workflow_id = $1 AND function_num = $2`,
       workflowID,
@@ -89,7 +94,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
-      await this.#prismaDB.$executeRaw(
+      await this.#prismaDB.$executeRawUnsafe(
         `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
         VALUES ($1, $2, $3)`,
         workflowID,
@@ -112,7 +117,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     output: string | null,
   ): Promise<void> {
     try {
-      await client.$executeRaw(
+      await client.$executeRawUnsafe(
         `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
          VALUES ($1, $2, $3)`,
         workflowID,
@@ -161,7 +166,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
       }
 
       try {
-        const result = (await this.#prismaDB.$transaction(
+        const result = (await (this.#prismaDB as unknown as PrismaLikeTx).$transaction(
           async (client) => {
             // execute user's transaction function
             const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
@@ -216,12 +221,13 @@ export class PrismaDataSource<PrismaClient> implements DBOSDataSource<Transactio
   }
 
   static async initializeDBOSSchema(prisma: PrismaLike) {
-    await prisma.$queryRaw(createTransactionCompletionSchemaPG);
-    await prisma.$queryRaw(createTransactionCompletionTablePG);
+    await prisma.$queryRawUnsafe(createTransactionCompletionSchemaPG);
+    await prisma.$queryRawUnsafe(createTransactionCompletionTablePG);
   }
 
   static async uninitializeDBOSSchema(prisma: PrismaLike) {
-    await prisma.$executeRaw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos;');
+    await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS dbos.transaction_completion;');
+    await prisma.$executeRawUnsafe('DROP SCHEMA IF EXISTS dbos;');
   }
 
   #provider: PrismaTransactionHandler;

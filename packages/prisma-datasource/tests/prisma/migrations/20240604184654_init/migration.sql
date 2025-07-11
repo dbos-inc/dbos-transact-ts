@@ -1,7 +1,7 @@
 -- CreateTable
-CREATE TABLE "dbos_hello" (
-    "greeting_id" SERIAL NOT NULL,
-    "greeting" TEXT NOT NULL,
+CREATE TABLE "greetings" (
+    "name" TEXT NOT NULL,
+    "greet_count" INTEGER NOT NULL,
 
-    CONSTRAINT "dbos_hello_pkey" PRIMARY KEY ("greeting_id")
+    CONSTRAINT "name_key" PRIMARY KEY ("name")
 );

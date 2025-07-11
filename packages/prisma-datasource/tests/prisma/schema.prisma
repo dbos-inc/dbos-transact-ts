@@ -11,7 +11,7 @@ datasource db {
 }
 
 model DbosHello {
-  @@map("dbos_hello")
-  greeting_id Int @id @default(autoincrement())
-  greeting String
+  @@map("greetings")
+  name String @id
+  greet_count Int
 }

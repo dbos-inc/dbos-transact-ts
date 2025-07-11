@@ -5,7 +5,7 @@ import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import SuperJSON from 'superjson';
 
-const config = { client: 'pg', connection: { user: 'postgres', database: 'knex_ds_test_userdb' } };
+const config = { client: 'pg', connection: { user: 'postgres', database: 'prisma_ds_test' } };
 const dataSource = new KnexDataSource('app-db', config);
 
 interface transaction_completion {

@@ -12,8 +12,8 @@
     "directory": "packages/prisma-datasource"
   },
   "scripts": {
-    "build": "tsc --project tsconfig.json",
-    "test": "jest --detectOpenHandles"
+    "build": "npx prisma generate --schema=./tests/prisma/schema.prisma && tsc --project tsconfig.json",
+    "test": "npx prisma generate --schema=./tests/prisma/schema.prisma && tsc --project tsconfig.json && jest --detectOpenHandles"
   },
   "dependencies": {
     "pg": "^8.11.3",
