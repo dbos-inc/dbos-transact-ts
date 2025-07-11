@@ -200,21 +200,7 @@ export class DBOS {
    */
   static setConfig(config: DBOSConfig) {
     assert(!DBOS.isInitialized(), 'Cannot call DBOS.setConfig after DBOS.launch');
-
-    DBOS.#dbosConfig = {
-      adminPort: config.adminPort,
-      name: config.name,
-      databaseUrl: config.databaseUrl,
-      userDbclient: config.userDbclient,
-      userDbPoolSize: config.userDbPoolSize,
-      sysDbName: config.sysDbName,
-      sysDbPoolSize: config.sysDbPoolSize,
-      logLevel: config.logLevel,
-      addContextMetadata: config.addContextMetadata,
-      runAdminServer: config.runAdminServer,
-      otlpTracesEndpoints: [...(config.otlpTracesEndpoints ?? [])],
-      otlpLogsEndpoints: [...(config.otlpLogsEndpoints ?? [])],
-    };
+    DBOS.#dbosConfig = config;
   }
 
   /**
@@ -266,8 +252,26 @@ export class DBOS {
     const debugMode = options?.debugMode ?? process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
     const configFile = readConfigFile();
 
-    let [internalConfig, runtimeConfig] = DBOS.#dbosConfig
-      ? translatePublicDBOSconfig(DBOS.#dbosConfig, debugMode)
+    const $dbosConfig = DBOS.#dbosConfig;
+    let [internalConfig, runtimeConfig] = $dbosConfig
+      ? translatePublicDBOSconfig(
+          // copy config settings to ensure no unexpected fields are passed thru
+          {
+            adminPort: $dbosConfig.adminPort,
+            name: $dbosConfig.name,
+            databaseUrl: $dbosConfig.databaseUrl,
+            userDbclient: $dbosConfig.userDbclient,
+            userDbPoolSize: $dbosConfig.userDbPoolSize,
+            sysDbName: $dbosConfig.sysDbName,
+            sysDbPoolSize: $dbosConfig.sysDbPoolSize,
+            logLevel: $dbosConfig.logLevel,
+            addContextMetadata: $dbosConfig.addContextMetadata,
+            runAdminServer: $dbosConfig.runAdminServer,
+            otlpTracesEndpoints: [...($dbosConfig.otlpTracesEndpoints ?? [])],
+            otlpLogsEndpoints: [...($dbosConfig.otlpLogsEndpoints ?? [])],
+          },
+          debugMode,
+        )
       : processConfigFile(configFile, { forceConsole: debugMode });
 
     if (process.env.DBOS__CLOUD === 'true') {
