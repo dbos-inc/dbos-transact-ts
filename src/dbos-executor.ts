@@ -121,6 +121,7 @@ export interface DBOSConfig {
   sysDbName?: string;
   sysDbPoolSize?: number;
   logLevel?: string;
+  addContextMetadata?: boolean;
   otlpTracesEndpoints?: string[];
   otlpLogsEndpoints?: string[];
   adminPort?: number;

@@ -1,7 +1,7 @@
 import { spawnSync } from 'child_process';
 
 describe('dbos-logger', () => {
-  test.skip('logFromWf', async () => {
+  test('logFromWf', async () => {
     // Run the TypeScript test script under ts-node
     const result = spawnSync('npx', ['ts-node', './tests/logtodboslogger.ts'], {
       encoding: 'utf-8',

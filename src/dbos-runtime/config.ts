@@ -581,6 +581,7 @@ export function translatePublicDBOSconfig(
     telemetry: {
       logs: {
         logLevel: config.logLevel || 'info',
+        addContextMetadata: config.addContextMetadata,
         forceConsole: isDebugging === undefined ? false : isDebugging,
       },
       OTLPExporter: {
