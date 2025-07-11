@@ -1,4 +1,4 @@
-import { DBOS, DBOSRuntimeConfig, StatusString } from '../../src';
+import { DBOS, StatusString } from '../../src';
 import { DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { WorkflowQueue } from '../../src';
 import {
@@ -65,15 +65,7 @@ describe('running-admin-server-tests', () => {
     process.env.DBOS__VMID = 'test-executor';
     await DBOS.shutdown();
     config = generateDBOSTestConfig();
-    const runtimeConfig: DBOSRuntimeConfig = {
-      entrypoints: [],
-      port: 3000,
-      admin_port: 3001,
-      runAdminServer: true,
-      start: [],
-      setup: [],
-    };
-    DBOS.setConfig(config, runtimeConfig);
+    DBOS.setConfig({ ...config, runAdminServer: true, adminPort: 3001 });
     await setUpDBOSTestDb(config);
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();

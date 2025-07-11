@@ -1,18 +1,18 @@
 import EventEmitter from 'node:events';
 import { DBOS, SchedulerMode, WorkflowQueue } from '../../src';
-import { DBOSConfig } from '../../src/dbos-executor';
+import { DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { sleepms } from '../../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 
 describe('cf-scheduled-wf-tests-simple', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
 
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    await DBOS.dropSystemDB();
+    await dropDatabase(config.databaseUrl!, config.system_database);
   });
 
   beforeEach(async () => {
@@ -126,13 +126,13 @@ class DBOSSchedTestClassOAOO {
 }
 
 describe('cf-scheduled-wf-tests-oaoo', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    await DBOS.dropSystemDB();
+    await dropDatabase(config.databaseUrl!, config.system_database);
   });
 
   beforeEach(async () => {});
@@ -250,14 +250,14 @@ export async function withTimeout<T>(promise: Promise<T>, ms: number, message = 
 }
 
 describe('decorator-free-scheduled', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
 
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    await DBOS.dropSystemDB();
+    await dropDatabase(config.databaseUrl!, config.system_database);
   });
 
   beforeEach(async () => {

@@ -6,7 +6,6 @@ import {
   DBOSWorkflowConflictError,
   DBOSNotRegisteredError,
   DBOSDebuggerError,
-  DBOSConfigKeyTypeError,
   DBOSFailedSqlTransactionError,
   DBOSMaxStepRetriesError,
   DBOSWorkflowCancelledError,
@@ -93,7 +92,6 @@ import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
 import { GetWorkflowsInput, InitContext } from '.';
 
-import { get } from 'lodash';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { ScheduledReceiver } from './scheduler/scheduler';
@@ -116,48 +114,37 @@ export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
-  // Public fields
   name?: string;
-  readonly databaseUrl?: string;
-  readonly userDbclient?: UserDatabaseName;
-  readonly userDbPoolSize?: number;
-  readonly sysDbName?: string;
-  readonly sysDbPoolSize?: number;
-  readonly logLevel?: string;
-  readonly otlpTracesEndpoints?: string[];
-  readonly otlpLogsEndpoints?: string[];
-  readonly adminPort?: number;
-  readonly runAdminServer?: boolean;
+  databaseUrl?: string;
+  userDbclient?: UserDatabaseName;
+  userDbPoolSize?: number;
+  sysDbName?: string;
+  sysDbPoolSize?: number;
+  logLevel?: string;
+  addContextMetadata?: boolean;
+  otlpTracesEndpoints?: string[];
+  otlpLogsEndpoints?: string[];
+  adminPort?: number;
+  runAdminServer?: boolean;
+}
 
-  // Internal fields
-  poolConfig?: PoolConfig;
-  readonly telemetry?: TelemetryConfig;
-  readonly system_database?: string;
-  readonly env?: Record<string, string>;
-  readonly application?: object;
-  readonly http?: {
-    readonly cors_middleware?: boolean;
-    readonly credentials?: boolean;
-    readonly allowed_origins?: string[];
+export type DBOSConfigInternal = {
+  poolConfig: PoolConfig; // used in exec ctor, init, configureDbClient, debugWF, runtime initandstart, migrate cli, dropSystemDB set in set in parseConfigFile and translatePublicDBOSconfig
+  system_database: string; // used in executor ctor, migrate and reset cli, sysdb.dropSystemDB, set in set in parseConfigFile and translatePublicDBOSconfig
+  telemetry: TelemetryConfig; // used in executor ctor, dbos start cli, and overwrote_config, set in parseConfigFile and translatePublicDBOSconfig
+
+  name?: string; // used in overwrite_config, set in  translatePublicDBOSconfig
+  databaseUrl?: string; // used in cli commands, never set!
+  userDbclient?: UserDatabaseName; // used in configureDbClient, set in translatePublicDBOSconfig and parseConfigFile
+  sysDbPoolSize?: number; // used in executor ctor, set in translatePublicDBOSconfig
+
+  http?: {
+    // set in parseConfigFile, used in http server registerDecoratedEndpoints
+    cors_middleware?: boolean;
+    credentials?: boolean;
+    allowed_origins?: string[];
   };
-}
-
-export type DBOSConfigInternal = Omit<DBOSConfig, 'poolConfig' | 'system_database' | 'telemetry'> & {
-  poolConfig: PoolConfig;
-  system_database: string;
-  telemetry: TelemetryConfig;
 };
-
-export function isDeprecatedDBOSConfig(config: DBOSConfig): boolean {
-  const isDeprecated =
-    config.poolConfig !== undefined ||
-    config.telemetry !== undefined ||
-    config.system_database !== undefined ||
-    config.env !== undefined ||
-    config.application !== undefined ||
-    config.http !== undefined;
-  return isDeprecated;
-}
 
 export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
@@ -244,17 +231,6 @@ export class DBOSExecutor {
     { systemDatabase, debugMode }: DBOSExecutorOptions = {},
   ) {
     this.debugMode = debugMode ?? false;
-
-    // Set configured environment variables
-    if (config.env) {
-      for (const [key, value] of Object.entries(config.env)) {
-        if (typeof value === 'string') {
-          process.env[key] = value;
-        } else {
-          console.warn(`Invalid value type for environment variable ${key}: ${typeof value}`);
-        }
-      }
-    }
 
     if (config.telemetry.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
@@ -1995,15 +1971,6 @@ export class DBOSExecutor {
         }
       }
     });
-  }
-
-  getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    const value = get(this.config.application, key, defaultValue);
-    // If the key is found and the default value is provided, check whether the value is of the same type.
-    if (value && defaultValue && typeof value !== typeof defaultValue) {
-      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
-    }
-    return value;
   }
 
   /**

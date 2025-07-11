@@ -30,9 +30,9 @@ async function main() {
   config.telemetry.logs.forceConsole = true;
   config.telemetry.logs.logLevel = 'debug';
   config.telemetry.logs.silent = false;
-  await setUpDBOSTestDb(config);
+  await setUpDBOSTestDb({ ...config, logLevel: 'debug' });
 
-  DBOS.setConfig(config);
+  DBOS.setConfig({ ...config, addContextMetadata: true });
   await DBOS.launch();
   await DBOS.withNextWorkflowID('loggerWorkflowId', async () => {
     DBOS.logger.info(`The computed answer is ${await WF.loggingWorkflow()}`);

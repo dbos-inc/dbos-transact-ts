@@ -118,6 +118,7 @@ describe('dbos-config', () => {
       jest.spyOn(fs, 'readFileSync').mockReturnValueOnce(mockPackageJsoString);
       const config = baseConfig();
       config.name = undefined;
+      config.database ??= {};
       config.database.app_db_name = undefined;
 
       const pool = constructPoolConfig(config);
@@ -150,6 +151,7 @@ describe('dbos-config', () => {
       process.env.DBOS_DBPASSWORD = 'envpass';
 
       const config = baseConfig();
+      config.database ??= {};
       config.database.app_db_name = 'appdb';
       config.database.ssl = false;
       config.database.hostname = 'something else';
@@ -269,6 +271,7 @@ describe('dbos-config', () => {
     test('constructPoolConfig correctly handles app names with spaces', () => {
       const config = baseConfig();
       config.name = 'app name with spaces';
+      config.database ??= {};
       config.database.ssl = true;
       const pool = constructPoolConfig(config);
       assertPoolConfig(pool, {
@@ -328,20 +331,10 @@ describe('dbos-config', () => {
     test('Config is valid and is parsed as expected', () => {
       jest.spyOn(utils, 'readFileSync').mockReturnValue(mockDBOSConfigYamlString);
 
-      const [dbosConfig, runtimeConfig]: [DBOSConfig, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
+      const [dbosConfig, runtimeConfig] = parseConfigFile(mockCLIOptions);
 
       // Test pool config options
       expect(dbosConfig.poolConfig).toBeDefined();
-
-      // Application config
-      const applicationConfig: object = dbosConfig.application || {};
-      expect(get(applicationConfig, 'payments_url')).toBe('http://somedomain.com/payment');
-      expect(get(applicationConfig, 'foo')).toBe(process.env.FOO);
-      expect(get(applicationConfig, 'bar')).toBe(process.env.BAR);
-      expect(get(applicationConfig, 'nested.baz')).toBe(process.env.BAZ);
-      expect(get(applicationConfig, 'nested.a')).toBeInstanceOf(Array);
-      expect(get(applicationConfig, 'nested.a')).toHaveLength(3);
-      expect(get(applicationConfig, 'nested.a[2].b.c')).toBe(process.env.C);
 
       // local runtime config
       expect(runtimeConfig).toBeDefined();
@@ -416,67 +409,6 @@ describe('dbos-config', () => {
   describe('context getConfig()', () => {
     beforeEach(() => {
       jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockDBOSConfigYamlString);
-    });
-
-    test('getConfig returns the expected values', async () => {
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
-      // Config key exists
-      expect(DBOS.getConfig('payments_url')).toBe('http://somedomain.com/payment');
-      // Config key does not exist, no default value
-      expect(DBOS.getConfig('no_key')).toBeUndefined();
-      // Config key does not exist, default value
-      expect(DBOS.getConfig('no_key', 'default')).toBe('default');
-      await dbosExec.telemetryCollector.destroy();
-    });
-
-    test('getConfig returns the default value when no application config is provided', async () => {
-      const localMockDBOSConfigYamlString = `
-        name: some-app
-        database:
-          hostname: 'somehost'
-          port: 1234
-          username: 'someuser'
-          password: \${PGPASSWORD}
-          connectionTimeoutMillis: 10000
-          app_db_name: 'some_db'
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
-      expect(DBOS.getConfig<string>('payments_url', 'default')).toBe('default');
-      await dbosExec.telemetryCollector.destroy();
-    });
-
-    test('environment variables are set correctly', async () => {
-      const localMockDBOSConfigYamlString = `
-        name: some-app
-        database:
-          hostname: 'somehost'
-          port: 1234
-          username: 'someuser'
-          password: \${PGPASSWORD}
-          connectionTimeoutMillis: 10000
-          app_db_name: 'some_db'
-        env:
-          FOOFOO: barbar
-          RANDENV: \${SOMERANDOMENV}
-      `;
-      jest.restoreAllMocks();
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(localMockDBOSConfigYamlString);
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
-      expect(process.env.FOOFOO).toBe('barbar');
-      expect(process.env.RANDENV).toBe(''); // Empty string
-      await dbosExec.telemetryCollector.destroy();
-    });
-
-    test('getConfig throws when it finds a value of different type than the default', async () => {
-      const [dbosConfig, _dbosRuntimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(mockCLIOptions);
-      const dbosExec = new DBOSExecutor(dbosConfig);
-      expect(() => DBOS.getConfig<number>('payments_url', 1234)).toThrow(DBOSConfigKeyTypeError);
-      await dbosExec.telemetryCollector.destroy();
     });
 
     test('parseConfigFile throws on an invalid config', async () => {
@@ -639,80 +571,6 @@ describe('dbos-config', () => {
       const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig);
       expect(translatedDBOSConfig).toEqual({
         name: 'appname', // Found from config file
-        poolConfig: {
-          host: 'localhost',
-          port: 5432,
-          user: 'postgres',
-          password: process.env.PGPASSWORD || 'dbos',
-          database: 'appname',
-          max: 20,
-          connectionTimeoutMillis: 10000,
-          connectionString: `postgresql://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/appname?connect_timeout=10&sslmode=disable`,
-          ssl: false,
-        },
-        userDbclient: UserDatabaseName.KNEX,
-        telemetry: {
-          logs: {
-            logLevel: 'info',
-            forceConsole: false,
-          },
-          OTLPExporter: {
-            tracesEndpoint: [],
-            logsEndpoint: [],
-          },
-        },
-        system_database: 'appname_dbos_sys',
-        sysDbPoolSize: 20,
-      });
-      expect(translatedRuntimeConfig).toEqual({
-        port: 3000,
-        admin_port: 3001,
-        runAdminServer: true,
-        entrypoints: [],
-        start: [],
-        setup: [],
-      });
-      jest.restoreAllMocks();
-    });
-
-    test('translate with only deprecated, internal fields', () => {
-      const mockPackageJsoString = `{name: 'appname'}`;
-      jest.spyOn(fs, 'readFileSync').mockReturnValue(mockPackageJsoString);
-      const dbosConfig = {
-        poolConfig: {
-          host: 'h',
-          port: 123,
-          user: 'u',
-          password: 'p',
-          database: 'd',
-          connectionTimeoutMillis: 456,
-        },
-        telemetry: {
-          logs: {
-            logLevel: 'WARN',
-          },
-          OTLPLogExporter: {
-            logsEndPoint: 'youhou',
-            tracesEndpoint: 'yadiyada',
-          },
-        },
-        system_database: 'unused',
-        env: {
-          KEY: 'VALUE',
-        },
-        application: {
-          counter: 3,
-          shouldExist: 'exists',
-        },
-        http: {
-          cors_middleware: true,
-          credentials: false,
-          allowed_origin: ['origin'],
-        },
-      };
-      const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig);
-      expect(translatedDBOSConfig).toEqual({
-        name: 'appname',
         poolConfig: {
           host: 'localhost',
           port: 5432,

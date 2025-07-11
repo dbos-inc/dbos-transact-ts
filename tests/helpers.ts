@@ -1,4 +1,4 @@
-import { DBOSConfig, DBOSConfigInternal, DBOSExecutor, isDeprecatedDBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
@@ -36,9 +36,9 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigI
   const poolConfig = constructPoolConfig(configFile, { silent: true });
 
   const dbosTestConfig: DBOSConfigInternal = {
+    name: configFile.name,
     databaseUrl,
     poolConfig,
-    application: configFile.application,
     telemetry: configFile.telemetry!,
     system_database: 'dbostest_dbos_sys',
     userDbclient: dbClient || UserDatabaseName.PGNODE,
@@ -56,15 +56,10 @@ export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
 }
 
 export async function setUpDBOSTestDb(cfg: DBOSConfig) {
-  let config: DBOSConfigInternal;
-  if (!isDeprecatedDBOSConfig(cfg)) {
-    if (!cfg.name) {
-      cfg.name = 'dbostest';
-    }
-    [config] = translatePublicDBOSconfig(cfg);
-  } else {
-    config = cfg as DBOSConfigInternal;
+  if (!cfg.name) {
+    cfg.name = 'dbostest';
   }
+  const [config] = translatePublicDBOSconfig(cfg);
   const pgSystemClient = new Client({
     user: config.poolConfig.user,
     port: config.poolConfig.port,
@@ -159,4 +154,20 @@ export function recoverPendingWorkflows(executorIDs: string[] = ['local']) {
 export function executeWorkflowById(workflowId: string) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   return DBOSExecutor.globalInstance!.executeWorkflowUUID(workflowId);
+}
+
+export async function dropDatabase(connectionString: string, database: string) {
+  const url = new URL(connectionString);
+  url.pathname = '/postgres';
+
+  // Drop system database, for testing.
+  const pgSystemClient = new Client({
+    connectionString: url.toString(),
+  });
+  try {
+    await pgSystemClient.connect();
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${database};`);
+  } finally {
+    await pgSystemClient.end();
+  }
 }
