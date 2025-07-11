@@ -4,10 +4,11 @@ import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from '.
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
+  FunctionName,
   getTransactionalDataSource,
-  registerAndWrapDBOSFunctionByName,
   registerFunctionWrapper,
   registerTransactionalDataSource,
+  wrapDBOSFunctionAndRegister,
 } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import type { Notification } from 'pg';
@@ -71,8 +72,7 @@ export interface DBOSDataSource<Config extends { name?: string }> {
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: Config,
-    target?: { ctorOrProto?: object; className?: string },
+    config?: Config & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return>;
 
   /**
@@ -178,29 +178,24 @@ export async function runTransaction<T>(
 }
 
 // Transaction wrapper
-export function registerTransaction<This, Args extends unknown[], Return>(
+export function registerTransaction<This, Args extends unknown[], Return, Config extends FunctionName>(
   dsName: string,
   func: (this: This, ...args: Args) => Promise<Return>,
-  options: {
-    ctorOrProto?: object;
-    className?: string;
-    name: string;
-  },
-  config?: unknown,
+  config?: Config,
 ): (this: This, ...args: Args) => Promise<Return> {
   const dsn = dsName ?? '<default>';
 
-  const funcName = options.name ?? func.name;
-  const reg = registerAndWrapDBOSFunctionByName(options?.ctorOrProto, options.className, funcName, func);
+  const funcName = config?.name ?? func.name;
+  const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     const ds = getTransactionalDataSource(dsn);
-    const callFunc = reg.registration.registeredFunction ?? reg.registration.origFunction;
+    const callFunc = reg.registeredFunction ?? reg.origFunction;
 
     if (!DBOS.isWithinWorkflow()) {
       if (getNextWFID(undefined)) {
         throw new DBOSInvalidWorkflowTransitionError(
-          `Call to transaction '${options.name}' made without starting workflow`,
+          `Call to transaction '${funcName}' made without starting workflow`,
         );
       }
 
@@ -252,10 +247,10 @@ export function registerTransaction<This, Args extends unknown[], Return>(
     }
   };
 
-  registerFunctionWrapper(invokeWrapper, reg.registration);
+  registerFunctionWrapper(invokeWrapper, reg);
 
   Object.defineProperty(invokeWrapper, 'name', {
-    value: options.name,
+    value: funcName,
   });
 
   return invokeWrapper;

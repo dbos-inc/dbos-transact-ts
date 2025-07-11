@@ -1,5 +1,5 @@
 import { DBOS, DBOSExternalState } from '..';
-import { DBOSLifecycleCallback, MethodRegistrationBase } from '../decorators';
+import { DBOSLifecycleCallback, FunctionName, MethodRegistrationBase } from '../decorators';
 import { TimeMatcher } from './crontab';
 
 ////
@@ -201,17 +201,12 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
   static registerScheduled<This, Return>(
     func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
-    config: SchedulerConfig,
-    target: {
-      ctorOrProto?: object;
-      className?: string;
-      name?: string;
-    } = {},
+    config: SchedulerConfig & FunctionName,
   ) {
     const { regInfo } = DBOS.associateFunctionWithInfo(SCHEDULER_EVENT_SERVICE_NAME, func, {
-      ctorOrProto: target.ctorOrProto,
-      className: target.className,
-      name: target.name ?? func.name,
+      ctorOrProto: config.ctorOrProto,
+      className: config.className,
+      name: config.name ?? func.name,
     });
 
     const schedRegInfo = regInfo as SchedulerConfig;

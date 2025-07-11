@@ -23,7 +23,6 @@ describe('httpserver-argsource-tests', () => {
   });
 
   beforeEach(async () => {
-    DBOS.registerLifecycleCallback(dhttp);
     const _classes = [ArgTestEndpoints];
     await DBOS.launch();
     app = new Koa();

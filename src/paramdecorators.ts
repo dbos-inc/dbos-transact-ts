@@ -87,7 +87,7 @@ class ValidationMiddleware implements DBOSMethodMiddlewareInstaller {
 
 const validationMiddleware = new ValidationMiddleware();
 
-export function ArgRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
+export function ArgRequired(target: object, propertyKey: PropertyKey, parameterIndex: number) {
   const curParam = associateParameterWithExternal(
     VALIDATOR,
     target,
@@ -102,7 +102,7 @@ export function ArgRequired(target: object, propertyKey: string | symbol, parame
   registerMiddlewareInstaller(validationMiddleware);
 }
 
-export function ArgOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
+export function ArgOptional(target: object, propertyKey: PropertyKey, parameterIndex: number) {
   const curParam = associateParameterWithExternal(
     VALIDATOR,
     target,
@@ -119,7 +119,7 @@ export function ArgOptional(target: object, propertyKey: string | symbol, parame
 
 export function ArgDate() {
   // TODO a little more info about it - is it a date or timestamp precision?
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+  return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
     const curParam = associateParameterWithExternal(
       'type',
       target,
@@ -137,7 +137,7 @@ export function ArgDate() {
 }
 
 export function ArgVarchar(length: number) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+  return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
     const curParam = associateParameterWithExternal(
       'type',
       target,
@@ -186,7 +186,7 @@ interface LoggerArgInfo {
 
 export const LOGGER = 'log';
 
-export function SkipLogging(target: object, propertyKey: string | symbol, parameterIndex: number) {
+export function SkipLogging(target: object, propertyKey: PropertyKey, parameterIndex: number) {
   const curParam = associateParameterWithExternal(
     LOGGER,
     target,
@@ -200,7 +200,7 @@ export function SkipLogging(target: object, propertyKey: string | symbol, parame
 }
 
 export function LogMask(mask: LogMasks) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+  return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
     const curParam = associateParameterWithExternal(
       LOGGER,
       target,

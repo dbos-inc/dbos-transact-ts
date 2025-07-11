@@ -1,6 +1,6 @@
 // using https://github.com/brianc/node-postgres
 
-import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
@@ -260,19 +260,9 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: NodePostgresTransactionOptions,
-    target?: { ctorOrProto?: object; className?: string },
+    config?: NodePostgresTransactionOptions & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(
-      this.name,
-      func,
-      {
-        name: config?.name ?? func.name,
-        className: target?.className,
-        ctorOrProto: target?.ctorOrProto,
-      },
-      config,
-    );
+    return registerTransaction(this.name, func, config);
   }
 
   transaction(config?: NodePostgresTransactionOptions) {
@@ -287,14 +277,11 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(
-        descriptor.value,
-        {
-          ...config,
-          name: config?.name ?? String(propertyKey),
-        },
-        { ctorOrProto: target },
-      );
+      descriptor.value = ds.registerTransaction(descriptor.value, {
+        ...config,
+        name: config?.name ?? String(propertyKey),
+        ctorOrProto: target,
+      });
 
       return descriptor;
     };

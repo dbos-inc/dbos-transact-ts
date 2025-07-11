@@ -1,6 +1,6 @@
 // using https://github.com/knex/knex
 
-import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
@@ -264,19 +264,9 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: TransactionConfig,
-    target?: { ctorOrProto?: object; className?: string },
+    config?: TransactionConfig & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(
-      this.name,
-      func,
-      {
-        name: config?.name ?? func.name,
-        className: target?.className,
-        ctorOrProto: target?.ctorOrProto,
-      },
-      config,
-    );
+    return registerTransaction(this.name, func, config);
   }
 
   transaction(config?: TransactionConfig) {
@@ -291,14 +281,11 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(
-        descriptor.value,
-        {
-          ...config,
-          name: config?.name ?? String(propertyKey),
-        },
-        { ctorOrProto: target },
-      );
+      descriptor.value = ds.registerTransaction(descriptor.value, {
+        ...config,
+        name: config?.name ?? String(propertyKey),
+        ctorOrProto: target,
+      });
 
       return descriptor;
     };

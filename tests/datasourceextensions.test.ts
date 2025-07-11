@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { PoolConfig } from 'pg';
 import knex, { Knex } from 'knex';
-import { DBOS } from '../src';
+import { DBOS, FunctionName } from '../src';
 import {
   type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
@@ -28,9 +28,7 @@ import { DBOSJSON, sleepms } from '../src/utils';
 /*
  * Knex user data access interface
  */
-interface KnexTransactionConfig extends PGTransactionConfig {
-  name?: string;
-}
+type KnexTransactionConfig = PGTransactionConfig & { name?: string };
 
 // This stuff is all specific to PG DBs...
 //  We are also agnostic about whether there are admin credentials to do this, or not...
@@ -304,27 +302,17 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: KnexTransactionConfig,
-    target?: { ctorOrProto?: object; className?: string },
+    config?: KnexTransactionConfig & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(
-      this.name,
-      func,
-      {
-        name: config?.name ?? func.name,
-        className: target?.className,
-        ctorOrProto: target?.ctorOrProto,
-      },
-      config,
-    );
+    return registerTransaction(this.name, func, config);
   }
 
   static registerTransaction<This, Args extends unknown[], Return>(
     dsname: string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: KnexTransactionConfig,
+    config?: KnexTransactionConfig & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(dsname, func, { name: config?.name ?? func.name }, config);
+    return registerTransaction(dsname, func, config);
   }
 
   // Custom TX decorator
@@ -340,14 +328,7 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(
-        descriptor.value,
-        {
-          ...config,
-          name: config?.name ?? String(propertyKey),
-        },
-        { ctorOrProto: target },
-      );
+      descriptor.value = ds.registerTransaction(descriptor.value, config);
 
       return descriptor;
     };

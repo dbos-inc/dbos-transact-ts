@@ -28,6 +28,8 @@ export {
 export { StepConfig } from './step';
 
 export {
+  FunctionName,
+
   // Method Decorators
   DBOSInitializer,
   DBOSMethodMiddlewareInstaller,

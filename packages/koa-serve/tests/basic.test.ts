@@ -50,7 +50,6 @@ describe('decoratorless-api-tests', () => {
 
   beforeEach(async () => {
     middlewareCounter = middlewareCounter2 = middlewareCounterG = 0;
-    DBOS.registerLifecycleCallback(dhttp);
     await DBOS.launch();
     DBOS.logRegisteredEndpoints();
     app = new Koa();
