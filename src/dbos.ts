@@ -8,13 +8,7 @@ import {
   DBOSContextOptions,
   functionIDGetIncrement,
 } from './context';
-import {
-  DBOSConfig,
-  DBOSConfigInternal,
-  DBOSExecutor,
-  DBOSExternalState,
-  InternalWorkflowParams,
-} from './dbos-executor';
+import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
 import { Tracer } from './telemetry/traces';
 import {
   GetQueuedWorkflowsInput,
@@ -34,8 +28,8 @@ import {
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
 } from './error';
-import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
-import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
+import { translatePublicDBOSconfig, overwrite_config, readConfigFile, processConfigFile } from './dbos-runtime/config';
+import { DBOSRuntime } from './dbos-runtime/runtime';
 import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
   associateClassWithExternal,
@@ -93,11 +87,15 @@ import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
-import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
+import { EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
+import assert from 'node:assert';
 
 type AnyConstructor = new (...args: unknown[]) => object;
+type ReadonlyArray<T> = {
+  readonly [K in keyof T]: T[K] extends Array<infer U> ? ReadonlyArray<U> : T[K];
+};
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -193,46 +191,26 @@ export class DBOS {
   static appServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
 
-  private static getDebugModeFromEnv(): boolean {
-    const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
-    return debugWorkflowId !== undefined;
-  }
-
   /**
    * Set configuration of `DBOS` prior to `launch`
    * @param config - configuration of services needed by DBOS
-   * @param runtimeConfig - configuration of runtime access to DBOS
    */
-  static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
-    DBOS.#dbosConfig = config;
-    DBOS.#runtimeConfig = runtimeConfig;
-    DBOS.translateConfig();
-  }
+  static setConfig(config: DBOSConfig) {
+    assert(!DBOS.isInitialized(), 'Cannot call DBOS.setConfig after DBOS.launch');
 
-  private static translateConfig() {
-    if (DBOS.#dbosConfig) {
-      const debugMode = DBOS.getDebugModeFromEnv();
-      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.#dbosConfig, debugMode);
-      if (process.env.DBOS__CLOUD === 'true') {
-        [DBOS.#dbosConfig, DBOS.#runtimeConfig] = overwrite_config(
-          DBOS.#dbosConfig as DBOSConfigInternal,
-          DBOS.#runtimeConfig,
-        );
-      }
-    }
-  }
-
-  /**
-   * Drop DBOS system database.
-   * USE IN TESTS ONLY - ALL WORKFLOWS, QUEUES, ETC. WILL BE LOST.
-   */
-  static async dropSystemDB(): Promise<void> {
-    if (!DBOS.#dbosConfig) {
-      DBOS.#dbosConfig = parseConfigFile()[0];
-    }
-
-    DBOS.translateConfig();
-    return PostgresSystemDatabase.dropSystemDB(DBOS.#dbosConfig as DBOSConfigInternal);
+    DBOS.#dbosConfig = {
+      adminPort: config.adminPort,
+      name: config.name,
+      databaseUrl: config.databaseUrl,
+      userDbclient: config.userDbclient,
+      userDbPoolSize: config.userDbPoolSize,
+      sysDbName: config.sysDbName,
+      sysDbPoolSize: config.sysDbPoolSize,
+      logLevel: config.logLevel,
+      runAdminServer: config.runAdminServer,
+      otlpTracesEndpoints: [...(config.otlpTracesEndpoints ?? [])],
+      otlpLogsEndpoints: [...(config.otlpLogsEndpoints ?? [])],
+    };
   }
 
   /**
@@ -275,28 +253,43 @@ export class DBOS {
     if (DBOS.isInitialized()) {
       return;
     }
-    const debugMode = options?.debugMode ?? DBOS.getDebugModeFromEnv();
 
     if (options?.conductorKey) {
       // Use a generated executor ID.
       globalParams.executorID = randomUUID();
     }
 
-    // Initialize the DBOS executor
-    if (!DBOS.#dbosConfig) {
-      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = parseConfigFile({ forceConsole: debugMode });
-    } else {
-      DBOS.translateConfig(); // This is a defensive measure for users who'd do DBOS.config = X instead of using DBOS.setConfig()
+    const debugMode = options?.debugMode ?? process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
+    const configFile = readConfigFile();
+
+    let [internalConfig, runtimeConfig] = DBOS.#dbosConfig
+      ? translatePublicDBOSconfig(DBOS.#dbosConfig, debugMode)
+      : processConfigFile(configFile, { forceConsole: debugMode });
+
+    if (process.env.DBOS__CLOUD === 'true') {
+      [internalConfig, runtimeConfig] = overwrite_config(configFile, internalConfig, runtimeConfig);
     }
 
-    if (!DBOS.#dbosConfig) {
-      throw new DBOSError('DBOS configuration not set');
+    DBOS.#dbosConfig = {
+      name: internalConfig.name,
+      databaseUrl: internalConfig.databaseUrl,
+      userDbclient: internalConfig.userDbclient,
+      userDbPoolSize: DBOS.#dbosConfig?.userDbPoolSize,
+      sysDbName: internalConfig.system_database,
+      sysDbPoolSize: internalConfig.sysDbPoolSize,
+      logLevel: internalConfig.telemetry.logs?.logLevel,
+      otlpTracesEndpoints: [...(internalConfig.telemetry.OTLPExporter?.tracesEndpoint ?? [])],
+      otlpLogsEndpoints: [...(internalConfig.telemetry.OTLPExporter?.logsEndpoint ?? [])],
+      adminPort: runtimeConfig.admin_port,
+      runAdminServer: runtimeConfig.runAdminServer,
+    };
+
+    if (globalParams.appName === '' && DBOS.#dbosConfig.name) {
+      globalParams.appName = DBOS.#dbosConfig.name;
     }
 
     DBOSExecutor.createInternalQueue();
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.#dbosConfig as DBOSConfigInternal, {
-      debugMode,
-    });
+    DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig, { debugMode });
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
@@ -328,14 +321,14 @@ export class DBOS {
 
     // Start the DBOS admin server
     const logger = DBOS.logger;
-    if (DBOS.#runtimeConfig && DBOS.#runtimeConfig.runAdminServer) {
+    if (runtimeConfig.runAdminServer) {
       const adminApp = DBOSHttpServer.setupAdminApp(executor);
       try {
-        await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.#runtimeConfig.admin_port, logger as GlobalLogger);
+        await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
         // Wrap the listen call in a promise to properly catch errors
         DBOS.adminServer = await new Promise((resolve, reject) => {
-          const server = adminApp.listen(DBOS.#runtimeConfig?.admin_port, () => {
-            DBOS.logger.debug(`DBOS Admin Server is running at http://localhost:${DBOS.#runtimeConfig?.admin_port}`);
+          const server = adminApp.listen(runtimeConfig?.admin_port, () => {
+            DBOS.logger.debug(`DBOS Admin Server is running at http://localhost:${runtimeConfig?.admin_port}`);
             resolve(server);
           });
           server.on('error', (err) => {
@@ -343,7 +336,7 @@ export class DBOS {
           });
         });
       } catch (e) {
-        logger.warn(`Unable to start DBOS admin server on port ${DBOS.#runtimeConfig.admin_port}`);
+        logger.warn(`Unable to start DBOS admin server on port ${runtimeConfig.admin_port}`);
       }
     }
 
@@ -477,9 +470,9 @@ export class DBOS {
    */
   static async launchAppHTTPServer() {
     const server = DBOS.setUpHandlerCallback();
-    if (DBOS.#runtimeConfig) {
+    if (DBOS.#port) {
       // This will not listen if there's no decorated endpoint
-      DBOS.appServer = await server.appListen(DBOS.#runtimeConfig.port);
+      DBOS.appServer = await server.appListen(DBOS.#port);
     }
   }
 
@@ -508,11 +501,11 @@ export class DBOS {
   // Globals
   //////
   static #dbosConfig?: DBOSConfig;
-  static #runtimeConfig?: DBOSRuntimeConfig = undefined;
+  static #poolConfig?: PoolConfig;
+  static #port?: number;
 
-  // TODO: remove pool config from here (used in some internal tests)
-  static get dbosConfig(): (DBOSConfig & { poolConfig?: PoolConfig }) | undefined {
-    return DBOS.#dbosConfig;
+  static get dbosConfig(): ReadonlyArray<DBOSConfig & { poolConfig?: PoolConfig }> {
+    return { ...DBOS.#dbosConfig, poolConfig: DBOS.#poolConfig };
   }
 
   //////

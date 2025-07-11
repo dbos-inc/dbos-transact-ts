@@ -1,6 +1,6 @@
 import { DBOS } from '../src';
 import { DBOSConfigInternal } from '../src/dbos-executor';
-import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { TestKvTable, dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
 const testTableName = 'dbos_test_kv';
@@ -17,7 +17,7 @@ describe('oaoo-tests', () => {
   });
 
   beforeEach(async () => {
-    await DBOS.dropSystemDB();
+    await dropDatabase(config.databaseUrl!, config.system_database);
     await DBOS.launch();
 
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);

@@ -115,16 +115,16 @@ export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
   name?: string;
-  readonly databaseUrl?: string;
-  readonly userDbclient?: UserDatabaseName;
-  readonly userDbPoolSize?: number;
-  readonly sysDbName?: string;
-  readonly sysDbPoolSize?: number;
-  readonly logLevel?: string;
-  readonly otlpTracesEndpoints?: string[];
-  readonly otlpLogsEndpoints?: string[];
-  readonly adminPort?: number;
-  readonly runAdminServer?: boolean;
+  databaseUrl?: string;
+  userDbclient?: UserDatabaseName;
+  userDbPoolSize?: number;
+  sysDbName?: string;
+  sysDbPoolSize?: number;
+  logLevel?: string;
+  otlpTracesEndpoints?: string[];
+  otlpLogsEndpoints?: string[];
+  adminPort?: number;
+  runAdminServer?: boolean;
 }
 
 export type DBOSConfigInternal = {

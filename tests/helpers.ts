@@ -1,5 +1,5 @@
 import { DBOSConfig, DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
-import { Client } from 'pg';
+import { Client, PoolConfig } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
@@ -154,4 +154,20 @@ export function recoverPendingWorkflows(executorIDs: string[] = ['local']) {
 export function executeWorkflowById(workflowId: string) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   return DBOSExecutor.globalInstance!.executeWorkflowUUID(workflowId);
+}
+
+export async function dropDatabase(connectionString: string, database: string) {
+  const url = new URL(connectionString);
+  url.pathname = '/postgres';
+
+  // Drop system database, for testing.
+  const pgSystemClient = new Client({
+    connectionString: url.toString(),
+  });
+  try {
+    await pgSystemClient.connect();
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${database};`);
+  } finally {
+    await pgSystemClient.end();
+  }
 }
