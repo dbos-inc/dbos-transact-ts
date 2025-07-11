@@ -1,6 +1,6 @@
 import { type PresignedPost } from '@aws-sdk/s3-presigned-post';
 
-import { DBOS, WorkflowConfig } from '@dbos-inc/dbos-sdk';
+import { DBOS, FunctionName, WorkflowConfig } from '@dbos-inc/dbos-sdk';
 
 export interface FileRecord {
   key: string;
@@ -30,17 +30,12 @@ export interface S3WorkflowCallbacks<R extends FileRecord, Options = unknown> {
 
 /**
  * Create a workflow function for deleting S3 objects and removing the DB entry
- * @param options - Registration options for the workflow
  * @param callbacks - S3 operation implementation and database recordkeeping transactions
+ * @param config - Workflow configuration and target function name for registration
  */
 export function registerS3DeleteWorkflow<R extends FileRecord, Options = unknown>(
-  options: {
-    name?: string;
-    ctorOrProto?: object;
-    className?: string;
-    config?: WorkflowConfig;
-  },
   callbacks: S3WorkflowCallbacks<R, Options>,
+  config?: WorkflowConfig & FunctionName,
 ) {
   return DBOS.registerWorkflow(async (fileDetails: R) => {
     await callbacks.fileDeleted(fileDetails);
@@ -50,22 +45,17 @@ export function registerS3DeleteWorkflow<R extends FileRecord, Options = unknown
       },
       { name: 'deleteS3Object' },
     );
-  }, options);
+  }, config);
 }
 
 /**
  * Create a workflow function for uploading S3 contents from DBOS
- * @param options - Registration options for the workflow
  * @param callbacks - S3 operation implementation and database recordkeeping transactions
+ * @param config - Workflow configuration and target function name for registration
  */
 export function registerS3UploadWorkflow<R extends FileRecord, Options = unknown>(
-  options: {
-    name?: string;
-    ctorOrProto?: object;
-    className?: string;
-    config?: WorkflowConfig;
-  },
   callbacks: S3WorkflowCallbacks<R, Options>,
+  config?: WorkflowConfig & FunctionName,
 ) {
   return DBOS.registerWorkflow(async (fileDetails: R, content: string, objOptions?: Options) => {
     try {
@@ -91,22 +81,17 @@ export function registerS3UploadWorkflow<R extends FileRecord, Options = unknown
 
     await callbacks.newActiveFile(fileDetails);
     return fileDetails;
-  }, options);
+  }, config);
 }
 
 /**
  * Create a workflow function for uploading S3 contents externally, via a presigned URL
- * @param options - Registration options for the workflow
  * @param callbacks - S3 operation implementation and database recordkeeping transactions
+ * @param config - Workflow configuration and target function name for registration
  */
 export function registerS3PresignedUploadWorkflow<R extends FileRecord, Options = unknown>(
-  options: {
-    name?: string;
-    ctorOrProto?: object;
-    className?: string;
-    config?: WorkflowConfig;
-  },
   callbacks: S3WorkflowCallbacks<R, Options>,
+  config?: WorkflowConfig & FunctionName,
 ) {
   return DBOS.registerWorkflow(async (fileDetails: R, timeoutSeconds: number, objOptions?: Options) => {
     await callbacks.newPendingFile(fileDetails);
@@ -153,5 +138,5 @@ export function registerS3PresignedUploadWorkflow<R extends FileRecord, Options 
     }
 
     return fileDetails;
-  }, options);
+  }, config);
 }

@@ -1,4 +1,3 @@
-// using https://github.com/knex/knex
 
 import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
@@ -13,81 +12,94 @@ import {
   createTransactionCompletionTablePG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
-import knex, { type Knex } from 'knex';
 import { SuperJSON } from 'superjson';
 
-interface transaction_completion {
-  workflow_id: string;
-  function_num: number;
-  output: string | null;
-  error: string | null;
+type PrismaLike = {
+  $connect: () => Promise<void>;
+  $disconnect: () => Promise<void>;
+  $queryRawUnsafe<T = unknown>(query: unknown, ...values: unknown[]): Promise<T>;
+  $executeRawUnsafe(query: unknown, ...values: unknown[]): Promise<number>;
+};
+
+type PrismaLikeTx = {
+  $queryRawUnsafe<T = unknown>(query: TemplateStringsArray | string, ...values: unknown[]): Promise<T>;
+  $executeRawUnsafe(query: TemplateStringsArray | string, ...values: unknown[]): Promise<number>;
+  $transaction: (tf: (tx: PrismaLike) => Promise<unknown>, config?: unknown) => Promise<unknown>;
+};
+
+interface PrismaDataSourceContext {
+  client: PrismaLike;
+  owner: PrismaTransactionHandler;
 }
 
-interface KnexDataSourceContext {
-  client: Knex.Transaction;
-  owner: KnexTransactionHandler;
-}
+type TransactionIsolationLevel = 'ReadUncommitted' | 'ReadCommitted' | 'RepeatableRead' | 'Serializable';
 
-export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'> & {
+export type TransactionConfig = {
+  isolationLevel?: TransactionIsolationLevel;
+  readOnly?: boolean;
   name?: string;
 };
 
-const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
+const asyncLocalCtx = new AsyncLocalStorage<PrismaDataSourceContext>();
 
-class KnexTransactionHandler implements DataSourceTransactionHandler {
-  readonly dsType = 'KnexDataSource';
-  #knexDBField: Knex | undefined;
+class PrismaTransactionHandler implements DataSourceTransactionHandler {
+  readonly dsType = 'PrismaDataSource';
 
   constructor(
     readonly name: string,
-    private readonly config: Knex.Config,
+    private readonly prismaAccess: PrismaLike | (() => PrismaLike),
   ) {}
 
-  async initialize(): Promise<void> {
-    const knexDB = this.#knexDBField;
-    this.#knexDBField = knex(this.config);
-    await knexDB?.destroy();
-  }
-
-  async destroy(): Promise<void> {
-    const knexDB = this.#knexDBField;
-    this.#knexDBField = undefined;
-    await knexDB?.destroy();
-  }
-
-  get #knexDB() {
-    if (!this.#knexDBField) {
+  get #prismaDB() {
+    if (!this.prismaAccess) {
       throw new Error(`DataSource ${this.name} is not initialized.`);
     }
-    return this.#knexDBField;
+    if (typeof this.prismaAccess === 'function') {
+      const p = this.prismaAccess();
+      if (!p) {
+        throw new Error(`DataSource ${this.name} is not initialized.`);
+      }
+      return p;
+    }
+    return this.prismaAccess;
+  }
+
+  initialize(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  destroy(): Promise<void> {
+    return Promise.resolve();
   }
 
   async #checkExecution(
+    client: PrismaLike,
     workflowID: string,
     stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
-    const result = await this.#knexDB<transaction_completion>('transaction_completion')
-      .withSchema('dbos')
-      .select('output', 'error')
-      .where({
-        workflow_id: workflowID,
-        function_num: stepID,
-      })
-      .first();
-    if (result === undefined) {
+    type Result = { output: string | null; error: string | null };
+    const result = await client.$queryRawUnsafe<Result[]>(
+      `SELECT output, error FROM dbos.transaction_completion
+      WHERE workflow_id = $1 AND function_num = $2`,
+      workflowID,
+      stepID,
+    );
+    if (result?.[0] === undefined) {
       return undefined;
     }
-    const { output, error } = result;
+    const { output, error } = result[0];
     return error !== null ? { error } : { output };
   }
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
-      await this.#knexDB<transaction_completion>('transaction_completion').withSchema('dbos').insert({
-        workflow_id: workflowID,
-        function_num: stepID,
+      await this.#prismaDB.$executeRawUnsafe(
+        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
+        VALUES ($1, $2, $3)`,
+        workflowID,
+        stepID,
         error,
-      });
+      );
     } catch (error) {
       if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
@@ -98,17 +110,19 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
   }
 
   static async #recordOutput(
-    client: Knex.Transaction,
+    client: PrismaLike,
     workflowID: string,
     stepID: number,
     output: string | null,
   ): Promise<void> {
     try {
-      await client<transaction_completion>('transaction_completion').withSchema('dbos').insert({
-        workflow_id: workflowID,
-        function_num: stepID,
+      await client.$executeRawUnsafe(
+        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
+         VALUES ($1, $2, $3)`,
+        workflowID,
+        stepID,
         output,
-      });
+      );
     } catch (error) {
       if (isPGKeyConflictError(error)) {
         throw new DBOSWorkflowConflictError(workflowID);
@@ -140,7 +154,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
 
     while (true) {
       // Check to see if this tx has already been executed
-      const previousResult = saveResults ? await this.#checkExecution(workflowID, stepID!) : undefined;
+      const previousResult = saveResults ? await this.#checkExecution(this.#prismaDB, workflowID, stepID!) : undefined;
       if (previousResult) {
         DBOS.span?.setAttribute('cached', true);
 
@@ -151,7 +165,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
       }
 
       try {
-        const result = await this.#knexDB.transaction<Return>(
+        const result = (await (this.#prismaDB as unknown as PrismaLikeTx).$transaction(
           async (client) => {
             // execute user's transaction function
             const result = await asyncLocalCtx.run({ client, owner: this }, async () => {
@@ -160,13 +174,13 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
 
             // save the output of read/write transactions
             if (saveResults) {
-              await KnexTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
+              await PrismaTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
             }
 
             return result;
           },
-          { isolationLevel: config?.isolationLevel, readOnly: config?.readOnly },
-        );
+          { isolationLevel: config?.isolationLevel },
+        )) as Return;
 
         return result;
       } catch (error) {
@@ -188,73 +202,40 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
   }
 }
 
-function isKnex(value: Knex | Knex.Config): value is Knex {
-  return 'raw' in value;
-}
-
-export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
-  static #getClient(p?: KnexTransactionHandler) {
+export class PrismaDataSource<PrismaClient> implements DBOSDataSource<TransactionConfig> {
+  static #getClient(p?: PrismaTransactionHandler) {
     if (!DBOS.isInTransaction()) {
-      throw new Error('invalid use of KnexDataSource.client outside of a DBOS transaction.');
+      throw new Error('invalid use of PrismaDataSource.client outside of a DBOS transaction.');
     }
     const ctx = asyncLocalCtx.getStore();
     if (!ctx) {
-      throw new Error('invalid use of KnexDataSource.client outside of a DBOS transaction.');
+      throw new Error('invalid use of PrismaDataSource.client outside of a DBOS transaction.');
     }
-    if (p && p !== ctx.owner) throw new Error('Request of `KnexDataSource.client` from the wrong object.');
+    if (p && p !== ctx.owner) throw new Error('Request of `PrismaDataSource.client` from the wrong object.');
     return ctx.client;
   }
 
-  static get client(): Knex.Transaction {
-    return KnexDataSource.#getClient(undefined);
+  get client(): PrismaClient {
+    return PrismaDataSource.#getClient(this.#provider) as PrismaClient;
   }
 
-  get client(): Knex.Transaction {
-    return KnexDataSource.#getClient(this.#provider);
+  static async initializeDBOSSchema(prisma: PrismaLike) {
+    await prisma.$queryRawUnsafe(createTransactionCompletionSchemaPG);
+    await prisma.$queryRawUnsafe(createTransactionCompletionTablePG);
   }
 
-  static async initializeDBOSSchema(knexOrConfig: Knex.Config) {
-    if (isKnex(knexOrConfig)) {
-      await $initSchema(knexOrConfig);
-    } else {
-      const knexDB = knex(knexOrConfig);
-      try {
-        await $initSchema(knexDB);
-      } finally {
-        await knexDB.destroy();
-      }
-    }
-
-    async function $initSchema(knexDB: Knex) {
-      await knexDB.raw(createTransactionCompletionSchemaPG);
-      await knexDB.raw(createTransactionCompletionTablePG);
-    }
+  static async uninitializeDBOSSchema(prisma: PrismaLike) {
+    await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS dbos.transaction_completion;');
+    await prisma.$executeRawUnsafe('DROP SCHEMA IF EXISTS dbos;');
   }
 
-  static async uninitializeDBOSSchema(knexOrConfig: Knex.Config) {
-    if (isKnex(knexOrConfig)) {
-      await $uninitSchema(knexOrConfig);
-    } else {
-      const knexDB = knex(knexOrConfig);
-      try {
-        await $uninitSchema(knexDB);
-      } finally {
-        await knexDB.destroy();
-      }
-    }
-
-    async function $uninitSchema(knexDB: Knex) {
-      await knexDB.raw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos;');
-    }
-  }
-
-  #provider: KnexTransactionHandler;
+  #provider: PrismaTransactionHandler;
 
   constructor(
     readonly name: string,
-    config: Knex.Config,
+    prismaAccess: PrismaLike | (() => PrismaLike),
   ) {
-    this.#provider = new KnexTransactionHandler(name, config);
+    this.#provider = new PrismaTransactionHandler(name, prismaAccess);
     registerDataSource(this.#provider);
   }
 

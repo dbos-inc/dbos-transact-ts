@@ -29,7 +29,6 @@ describe('httpserver-defsec-tests', () => {
   });
 
   beforeEach(async () => {
-    DBOS.registerLifecycleCallback(dhttp);
     const _classes = [TestEndpointDefSec, SecondClass];
     await DBOS.launch();
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);

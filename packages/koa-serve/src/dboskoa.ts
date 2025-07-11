@@ -72,6 +72,11 @@ function assertCurrentKoaContextStore(): DBOSKoaLocalCtx {
 }
 
 export class DBOSKoa extends DBOSHTTPBase {
+  constructor() {
+    super();
+    DBOS.registerLifecycleCallback(this);
+  }
+
   static get koaContext(): Koa.Context {
     return assertCurrentKoaContextStore().koaCtxt;
   }

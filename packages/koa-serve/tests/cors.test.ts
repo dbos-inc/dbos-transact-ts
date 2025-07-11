@@ -20,7 +20,6 @@ describe('http-cors-tests', () => {
   });
 
   beforeEach(async () => {
-    DBOS.registerLifecycleCallback(dhttp);
     await DBOS.launch();
     app = new Koa();
     appRouter = new Router();

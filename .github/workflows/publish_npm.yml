@@ -24,6 +24,7 @@ jobs:
             packages/koa-serve,
             packages/nodepg-datasource,
             packages/postgres-datasource,
+            packages/prisma-datasource,
             packages/sqs-receive,
             packages/typeorm-datasource,
           ]
