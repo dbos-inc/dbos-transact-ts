@@ -79,16 +79,16 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
-    const result = await client.$queryRawUnsafe<Result>(
+    const result = await client.$queryRawUnsafe<Result[]>(
       `SELECT output, error FROM dbos.transaction_completion
       WHERE workflow_id = $1 AND function_num = $2`,
       workflowID,
       stepID,
     );
-    if (result === undefined) {
+    if (result?.[0] === undefined) {
       return undefined;
     }
-    const { output, error } = result;
+    const { output, error } = result[0];
     return error !== null ? { error } : { output };
   }
 

@@ -4,7 +4,7 @@ import { PrismaDataSource } from '..';
 import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import SuperJSON from 'superjson';
-import { Prisma, PrismaClient } from '@prisma/client';
+import { PrismaClient } from '@prisma/client';
 
 const config = { user: 'postgres', database: 'prisma_ds_test' };
 
@@ -333,43 +333,33 @@ export interface greetings {
 }
 
 async function insertFunction(user: string) {
-  try {
+  const existing = await dataSource.client.dbosHello.findUnique({
+    where: { name: user },
+    select: { greet_count: true },
+  });
+
+  let greet_count: number;
+
+  if (!existing) {
     const created = await dataSource.client.dbosHello.create({
-      data: {
-        name: user,
-        greet_count: 1,
-      },
+      data: { name: user, greet_count: 1 },
       select: { greet_count: true },
     });
-
-    return {
-      user,
-      greet_count: created.greet_count,
-      now: Date.now(),
-    };
-  } catch (err) {
-    // Check for unique constraint violation
-    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
-      const updated = await dataSource.client.dbosHello.update({
-        where: { name: user },
-        data: {
-          greet_count: {
-            increment: 1,
-          },
-        },
-        select: { greet_count: true },
-      });
-
-      return {
-        user,
-        greet_count: updated.greet_count,
-        now: Date.now(),
-      };
-    } else {
-      // Unexpected error, rethrow
-      throw err;
-    }
+    greet_count = created.greet_count;
+  } else {
+    const updated = await dataSource.client.dbosHello.update({
+      where: { name: user },
+      data: { greet_count: { increment: 1 } },
+      select: { greet_count: true },
+    });
+    greet_count = updated.greet_count;
   }
+
+  return {
+    user,
+    greet_count,
+    now: Date.now(),
+  };
 }
 
 async function errorFunction(user: string) {
