@@ -1,6 +1,6 @@
 import { DBOS } from '../src';
 import { DBOSConfigInternal } from '../src/dbos-executor';
-import { TestKvTable, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { TestKvTable, dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
 const testTableName = 'dbos_test_kv';
@@ -17,7 +17,7 @@ describe('oaoo-tests', () => {
   });
 
   beforeEach(async () => {
-    await DBOS.dropSystemDB();
+    await dropDatabase(config.databaseUrl!, config.system_database);
     await DBOS.launch();
 
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
@@ -72,7 +72,6 @@ describe('oaoo-tests', () => {
   class WorkflowOAOO {
     @DBOS.transaction()
     static async testInsertTx(name: string) {
-      expect(DBOS.getConfig<number>('counter')).toBe(3);
       const { rows } = await DBOS.pgClient.query<TestKvTable>(
         `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
         [name],
@@ -93,7 +92,6 @@ describe('oaoo-tests', () => {
 
     @DBOS.workflow()
     static async testTxWorkflow(name: string) {
-      expect(DBOS.getConfig<number>('counter')).toBe(3);
       const funcResult: number = await WorkflowOAOO.testInsertTx(name);
       const checkResult: number = await WorkflowOAOO.testReadTx(funcResult);
       return checkResult;

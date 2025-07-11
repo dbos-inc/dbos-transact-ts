@@ -25,8 +25,6 @@ export interface MiddlewareContext {
   readonly logger: DBOSContextualLogger; // Logger, for logging from middleware
   readonly span: Span; // Existing span
 
-  getConfig<T>(key: string, deflt: T | undefined): T | undefined; // Access to configuration information
-
   query<C extends UserDatabaseClient, R, T extends unknown[]>(
     qry: (dbclient: C, ...args: T) => Promise<R>,
     ...args: T

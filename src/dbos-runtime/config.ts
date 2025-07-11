@@ -35,7 +35,7 @@ export interface DBConfig {
 export interface ConfigFile {
   name?: string;
   language?: string;
-  database: DBConfig;
+  database?: DBConfig;
   database_url?: string;
   http?: {
     cors_middleware?: boolean;
@@ -43,8 +43,8 @@ export interface ConfigFile {
     allowed_origins?: string[];
   };
   telemetry?: TelemetryConfig;
-  application: object;
-  env: Record<string, string>;
+  application?: object;
+  env?: Record<string, string>;
   runtimeConfig?: DBOSRuntimeConfig;
 }
 
@@ -58,6 +58,37 @@ export function substituteEnvVars(content: string): string {
   return content.replace(regex, (_, g1: string) => {
     return process.env[g1] || '""'; // If the env variable is not set, return an empty string.
   });
+}
+
+export function readConfigFile(dirPath?: string): ConfigFile {
+  dirPath ??= process.cwd();
+  const dbosConfigPath = path.join(dirPath, dbosConfigFilePath);
+  const configContent = readFile(dbosConfigPath);
+
+  const config = configContent ? (YAML.parse(substituteEnvVars(configContent)) as ConfigFile) : {};
+  if (!config.name) {
+    const packageJsonPath = path.join(dirPath, 'package.json');
+    const packageContent = readFile(packageJsonPath);
+    const $package = packageContent ? (JSON.parse(packageContent) as { name?: string }) : {};
+    config.name = $package.name;
+  }
+
+  const schemaValidator = ajv.compile(dbosConfigSchema);
+  if (!schemaValidator(config)) {
+    throw new Error(`Config file validation failed: ${JSON.stringify(schemaValidator.errors, null, 2)}`);
+  }
+  return config;
+
+  function readFile(filePath: string): string | undefined {
+    try {
+      return readFileSync(filePath);
+    } catch (error) {
+      if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
+        return undefined; // File does not exist
+      }
+      throw error; // Rethrow other errors
+    }
+  }
 }
 
 /**
@@ -166,9 +197,6 @@ function retrieveApplicationName(configFile: ConfigFile): string {
 export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOptions): PoolConfig {
   // FIXME: this is not a good place to set the app name
   const appName = retrieveApplicationName(configFile);
-  if (globalParams.appName === '') {
-    globalParams.appName = appName;
-  }
 
   const isDebugMode = process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
 
@@ -178,7 +206,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
       logger.info('Loading database connection parameters from debug environment variables');
     } else if (configFile.database_url) {
       logger.info('Loading database connection parameters from database_url');
-    } else if (configFile.database.hostname) {
+    } else if (configFile.database?.hostname) {
       logger.info('Loading database connection parameters from dbos-config.yaml');
     } else {
       logger.info('Using default database connection parameters');
@@ -251,6 +279,7 @@ export function constructPoolConfig(configFile: ConfigFile, cliOptions?: ParseOp
     }
   } else {
     // Else, build the config from configFile.database and apply overrides
+    configFile.database ??= {};
     configFile.database.hostname = process.env.DBOS_DBHOST || configFile.database.hostname || 'localhost';
     const dbos_dbport = process.env.DBOS_DBPORT ? parseInt(process.env.DBOS_DBPORT) : undefined;
     configFile.database.port = dbos_dbport || configFile.database.port || 5432;
@@ -413,26 +442,31 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfigInternal,
     throw new DBOSInitializationError(`DBOS configuration file ${configFilePath} is empty`);
   }
 
+  return processConfigFile(configFile, cliOptions);
+}
+
+export function processConfigFile(
+  configFile: ConfigFile,
+  cliOptions: ParseOptions | undefined,
+): [DBOSConfigInternal, DBOSRuntimeConfig] {
   if (configFile.language && configFile.language !== 'node') {
-    throw new DBOSInitializationError(`${configFilePath} specifies invalid language ${configFile.language}`);
+    throw new DBOSInitializationError(`Config file specifies invalid language ${configFile.language}`);
   }
 
   /*******************************/
   /* Handle user database config */
   /*******************************/
-
   const poolConfig = constructPoolConfig(configFile, cliOptions);
 
   if (!isValidDBname(poolConfig.database!)) {
     throw new DBOSInitializationError(
-      `${configFilePath} specifies invalid app_db_name ${poolConfig.database}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`,
+      `Config file specifies invalid app_db_name ${poolConfig.database}. Must be between 3 and 31 characters long and contain only lowercase letters, underscores, and digits (cannot begin with a digit).`,
     );
   }
 
   /***************************/
   /* Handle telemetry config */
   /***************************/
-
   // Consider CLI --loglevel and forceConsole flags
   if (cliOptions?.loglevel) {
     configFile.telemetry = {
@@ -453,11 +487,9 @@ export function parseConfigFile(cliOptions?: ParseOptions): [DBOSConfigInternal,
   globalParams.appVersion = getAppVersion(cliOptions?.appVersion);
   const dbosConfig: DBOSConfigInternal = {
     poolConfig: poolConfig,
-    userDbclient: configFile.database.app_db_client || UserDatabaseName.KNEX,
+    userDbclient: configFile.database?.app_db_client || UserDatabaseName.KNEX,
     telemetry: configFile.telemetry || { logs: { logLevel: 'info' } },
-    system_database: configFile.database.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
-    application: configFile.application || undefined,
-    env: configFile.env || {},
+    system_database: configFile.database?.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
     http: configFile.http,
   };
 
@@ -549,6 +581,7 @@ export function translatePublicDBOSconfig(
     telemetry: {
       logs: {
         logLevel: config.logLevel || 'info',
+        addContextMetadata: config.addContextMetadata,
         forceConsole: isDebugging === undefined ? false : isDebugging,
       },
       OTLPExporter: {
@@ -575,32 +608,34 @@ export function translatePublicDBOSconfig(
 export function overwrite_config(
   providedDBOSConfig: DBOSConfigInternal,
   providedRuntimeConfig: DBOSRuntimeConfig,
-): [DBOSConfig, DBOSRuntimeConfig] {
+  configFile?: ConfigFile,
+): [DBOSConfigInternal, DBOSRuntimeConfig] {
+  if (configFile === undefined) {
+    try {
+      configFile = loadConfigFile(dbosConfigFilePath);
+    } catch (e) {
+      if ((e as Error).message.includes('ENOENT: no such file or directory')) {
+        return [providedDBOSConfig, providedRuntimeConfig];
+      } else {
+        throw e;
+      }
+    }
+  }
+
   // Load the DBOS configuration file and force the use of:
   // 1. Use the application name from the file. This is a defensive measure to ensure the application name is whatever it was registered with in the cloud
   // 2. The database connection parameters (sub the file data to the provided config)
   // 3. OTLP traces endpoints (add the config data to the provided config)
   // 4. Force admin_port and runAdminServer
 
-  let configFile: ConfigFile;
-  try {
-    configFile = loadConfigFile(dbosConfigFilePath);
-  } catch (e) {
-    if ((e as Error).message.includes('ENOENT: no such file or directory')) {
-      return [providedDBOSConfig, providedRuntimeConfig];
-    } else {
-      throw e;
-    }
-  }
+  const appName = configFile.name || providedDBOSConfig.name;
 
-  const appName = configFile!.name || providedDBOSConfig.name;
-
-  if (configFile.database.ssl_ca) {
+  if (configFile.database?.ssl_ca) {
     configFile.database_url = `postgresql://${configFile.database.username}:${configFile.database.password}@${configFile.database.hostname}:${configFile.database.port}/${configFile.database.app_db_name}?connect_timeout=10&sslmode=verify-full&sslrootcert=${configFile.database.ssl_ca}`;
   } else {
-    configFile.database_url = `postgresql://${configFile.database.username}:${configFile.database.password}@${configFile.database.hostname}:${configFile.database.port}/${configFile.database.app_db_name}?connect_timeout=10&sslmode=no-verify`;
+    configFile.database_url = `postgresql://${configFile.database?.username}:${configFile.database?.password}@${configFile.database?.hostname}:${configFile.database?.port}/${configFile.database?.app_db_name}?connect_timeout=10&sslmode=no-verify`;
   }
-  const poolConfig = constructPoolConfig(configFile!);
+  const poolConfig = constructPoolConfig(configFile);
 
   if (!providedDBOSConfig.telemetry.OTLPExporter) {
     providedDBOSConfig.telemetry.OTLPExporter = {
@@ -608,15 +643,15 @@ export function overwrite_config(
       logsEndpoint: [],
     };
   }
-  if (configFile!.telemetry?.OTLPExporter?.tracesEndpoint) {
+  if (configFile.telemetry?.OTLPExporter?.tracesEndpoint) {
     providedDBOSConfig.telemetry.OTLPExporter.tracesEndpoint =
       providedDBOSConfig.telemetry.OTLPExporter.tracesEndpoint?.concat(
-        configFile!.telemetry.OTLPExporter.tracesEndpoint,
+        configFile.telemetry.OTLPExporter.tracesEndpoint,
       );
   }
-  if (configFile!.telemetry?.OTLPExporter?.logsEndpoint) {
+  if (configFile.telemetry?.OTLPExporter?.logsEndpoint) {
     providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint =
-      providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint?.concat(configFile!.telemetry.OTLPExporter.logsEndpoint);
+      providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint?.concat(configFile.telemetry.OTLPExporter.logsEndpoint);
   }
 
   const overwritenDBOSConfig = {
@@ -624,7 +659,7 @@ export function overwrite_config(
     name: appName,
     poolConfig: poolConfig,
     telemetry: providedDBOSConfig.telemetry,
-    system_database: configFile!.database.sys_db_name || poolConfig.database + '_dbos_sys', // Unexpected, but possible
+    system_database: configFile.database?.sys_db_name || poolConfig.database + '_dbos_sys', // Unexpected, but possible
   };
 
   const overwriteDBOSRuntimeConfig = {
