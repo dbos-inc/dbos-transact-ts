@@ -15,7 +15,7 @@
     "schema": "./tests/prisma/schema.prisma"
   },
   "scripts": {
-    "build": "npx prisma generate && tsc --project tsconfig.json",
+    "build": "tsc --project tsconfig.json",
     "test": "npx prisma generate && tsc --project tsconfig.json && jest --detectOpenHandles"
   },
   "dependencies": {
