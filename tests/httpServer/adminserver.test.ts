@@ -27,7 +27,7 @@ describe('not-running-admin-server', () => {
     await DBOS.shutdown();
   });
 
-  test.skip('test-admin-server-not-running', async () => {
+  test('test-admin-server-not-running', async () => {
     config = generatePublicDBOSTestConfig({ runAdminServer: false });
     DBOS.setConfig(config);
     await setUpDBOSTestDb(config);
