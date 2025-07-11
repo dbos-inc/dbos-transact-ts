@@ -10,7 +10,7 @@ class TestEngine {
     const pc = DBOS.dbosConfig?.poolConfig;
     const ds = DBOS.pgClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    // expect((ds as any)._connectionTimeoutMillis).toEqual(pc?.connectionTimeoutMillis);
+    expect((ds as any)._connectionTimeoutMillis).toEqual(pc?.connectionTimeoutMillis);
     // PG doesn't expose the pool directly
     await Promise.resolve();
   }

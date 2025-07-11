@@ -267,7 +267,7 @@ class TestEngine {
     const pc = DBOS.dbosConfig?.poolConfig;
     const ds = DBOS.drizzleClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    // expect((ds as any).session.client._connectionTimeoutMillis).toEqual(pc?.connectionTimeoutMillis);
+    expect((ds as any).session.client._connectionTimeoutMillis).toEqual(pc?.connectionTimeoutMillis);
     // Drizzle doesn't expose the pool directly
     await Promise.resolve();
   }

@@ -273,6 +273,8 @@ export class DBOS {
       [internalConfig, runtimeConfig] = overwrite_config(internalConfig, runtimeConfig, configFile);
     }
 
+    DBOS.#port = runtimeConfig.port;
+    DBOS.#poolConfig = internalConfig.poolConfig;
     DBOS.#dbosConfig = {
       name: internalConfig.name,
       databaseUrl: internalConfig.databaseUrl,
