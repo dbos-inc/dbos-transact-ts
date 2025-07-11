@@ -8,6 +8,10 @@ import { PrismaClient } from '@prisma/client';
 
 const config = { user: 'postgres', database: 'prisma_ds_test' };
 
+process.env['DATABASE_URL'] =
+  process.env['DATABSE_URL'] ||
+  `postgresql://${config.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/${config.database}`;
+
 const prisma = new PrismaClient();
 
 const dataSource = new PrismaDataSource<PrismaClient>('app-db', prisma);
