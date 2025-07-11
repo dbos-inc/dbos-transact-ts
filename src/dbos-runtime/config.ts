@@ -206,7 +206,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole?: boolean)
   };
 }
 
-export function parseConfigFile(options?: { appDir?: string }): { databaseUrl: string; sysDbName: string } {
+export function getConfiguredDatabaseUrl(options?: { appDir?: string }): { databaseUrl: string; sysDbName: string } {
   const configFile: ConfigFile = readConfigFile(options?.appDir);
   return getDatabaseInfo(configFile);
 }

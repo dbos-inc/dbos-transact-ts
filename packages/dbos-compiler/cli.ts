@@ -6,7 +6,7 @@ import path from 'node:path';
 import fs from 'node:fs';
 import fsp from 'node:fs/promises';
 import { generateCreate, generateDrop } from './generator';
-import { parseConfigFile } from '@dbos-inc/dbos-sdk';
+import { getConfiguredDatabaseUrl } from '@dbos-inc/dbos-sdk';
 import { Client, ClientConfig } from 'pg';
 import { CompileMethodInfo, compile, hasError } from './compiler';
 
@@ -192,7 +192,7 @@ program
       const { project, methods, diagnostics } = compile(tsconfigPath);
       const hasErrors = printDiagnostics(diagnostics, options.suppressWarnings);
       if (!hasErrors) {
-        const { databaseUrl } = parseConfigFile(options);
+        const { databaseUrl } = getConfiguredDatabaseUrl(options);
         await deployToDatabase({ connectionString: databaseUrl }, project, methods, options.appVersion);
       }
     }
@@ -212,7 +212,7 @@ program
       const { project, methods, diagnostics } = compile(tsconfigPath);
       const hasErrors = printDiagnostics(diagnostics, options.suppressWarnings);
       if (!hasErrors) {
-        const { databaseUrl } = parseConfigFile(options);
+        const { databaseUrl } = getConfiguredDatabaseUrl(options);
         await dropFromDatabase({ connectionString: databaseUrl }, project, methods, options.appVersion);
       }
     }
