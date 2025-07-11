@@ -1,4 +1,3 @@
-// using https://github.com/knex/knex
 
 import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
