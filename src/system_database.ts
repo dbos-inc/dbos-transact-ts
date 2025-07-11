@@ -1,4 +1,4 @@
-import { DBOSConfigInternal, DBOSExecutor, DBOSExternalState } from './dbos-executor';
+import { DBOSExecutor, DBOSExternalState } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
   DBOSWorkflowConflictError,
@@ -713,20 +713,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     }
     await this.pool.end();
-  }
-
-  static async dropSystemDB(dbosConfig: DBOSConfigInternal) {
-    // Drop system database, for testing.
-    const pgSystemClient = new Client({
-      user: dbosConfig.poolConfig.user,
-      port: dbosConfig.poolConfig.port,
-      host: dbosConfig.poolConfig.host,
-      password: dbosConfig.poolConfig.password,
-      database: dbosConfig.poolConfig.database,
-    });
-    await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
-    await pgSystemClient.end();
   }
 
   @dbRetry()

@@ -192,8 +192,8 @@ program
       const { project, methods, diagnostics } = compile(tsconfigPath);
       const hasErrors = printDiagnostics(diagnostics, options.suppressWarnings);
       if (!hasErrors) {
-        const [dbosConfig] = parseConfigFile(options);
-        await deployToDatabase(dbosConfig.poolConfig, project, methods, options.appVersion);
+        const { databaseUrl } = parseConfigFile(options);
+        await deployToDatabase({ connectionString: databaseUrl }, project, methods, options.appVersion);
       }
     }
   });
@@ -212,8 +212,8 @@ program
       const { project, methods, diagnostics } = compile(tsconfigPath);
       const hasErrors = printDiagnostics(diagnostics, options.suppressWarnings);
       if (!hasErrors) {
-        const [dbosConfig] = parseConfigFile(options);
-        await dropFromDatabase(dbosConfig.poolConfig, project, methods, options.appVersion);
+        const { databaseUrl } = parseConfigFile(options);
+        await dropFromDatabase({ connectionString: databaseUrl }, project, methods, options.appVersion);
       }
     }
   });

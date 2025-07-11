@@ -1,10 +1,10 @@
 #!/usr/bin/env node
-import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
-import { ConfigFile, dbosConfigFilePath, loadConfigFile, parseConfigFile } from './config';
+import { DBOSRuntime } from './runtime';
+import { getDatabaseInfo, getDbosConfig, getRuntimeConfig, readConfigFile } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
-import { migrate, rollbackMigration } from './migrate';
+import { migrate } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
@@ -15,6 +15,8 @@ import { runCommand } from './commands';
 import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
+import { readFileSync } from '../utils';
+import assert from 'node:assert';
 
 const program = new Command();
 
@@ -22,48 +24,30 @@ const program = new Command();
 /* LOCAL DEVELOPMENT  */
 ////////////////////////
 
-export interface DBOSCLIStartOptions {
-  port?: number;
-  loglevel?: string;
-  configfile?: string;
-  appDir?: string;
-  appVersion?: string | boolean;
-  silent?: boolean;
+program.version(getDbosVersion());
+function getDbosVersion(): string {
+  try {
+    const contents = readFileSync('../../../package.json');
+    const pkg = JSON.parse(contents) as { version: string };
+    return pkg.version;
+  } catch {
+    return 'unknown';
+  }
 }
-
-export interface DBOSConfigureOptions {
-  host?: string;
-  port?: number;
-  username?: string;
-}
-
-interface DBOSDebugOptions {
-  uuid: string; // Workflow UUID
-  proxy?: string; // deprecated
-  loglevel?: string;
-  configfile?: string;
-  appVersion?: string | boolean;
-}
-
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const packageJson = require('../../../package.json') as { version: string };
-program.version(packageJson.version);
 
 program
   .command('start')
   .description('Start the server')
   .option('-p, --port <number>', 'Specify the port number')
   .option('-l, --loglevel <string>', 'Specify log level')
-  .option('-c, --configfile <string>', 'Specify the config file path (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
-  .action(async (options: DBOSCLIStartOptions) => {
-    if (options?.configfile) {
-      console.warn('\x1b[33m%s\x1b[0m', 'The --configfile option is deprecated. Please use --appDir instead.');
-    }
-    options.silent = true;
-    const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(options);
+  .action(async (options: { port?: number; loglevel?: string; appDir?: string; appVersion?: string | boolean }) => {
+    const configFile = readConfigFile(options.appDir);
+    const dbosConfig = getDbosConfig(configFile, { logLevel: options.loglevel });
+    const runtimeConfig = getRuntimeConfig(configFile, { port: options.port });
+
     // If no start commands are provided, start the DBOS runtime
     if (runtimeConfig.start.length === 0) {
       const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
@@ -82,6 +66,16 @@ program
         }
       }
     }
+
+    function getGlobalLogger(configFile: DBOSConfigInternal): GlobalLogger {
+      if (configFile.telemetry?.OTLPExporter) {
+        return new GlobalLogger(
+          new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
+          configFile.telemetry?.logs,
+        );
+      }
+      return new GlobalLogger();
+    }
   });
 
 program
@@ -93,11 +87,12 @@ program
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
-  .action(async (options: DBOSDebugOptions) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile({
-      ...options,
-      forceConsole: true,
-    });
+  .action(async (options: { uuid?: string; loglevel?: string; appDir?: string; appVersion?: string | boolean }) => {
+    assert(options.uuid, 'Workflow UUID is required');
+
+    const configFile = readConfigFile(options.appDir);
+    const dbosConfig = getDbosConfig(configFile, { logLevel: options.loglevel, forceConsole: true });
+    const runtimeConfig = getRuntimeConfig(configFile);
     await debugWorkflow(dbosConfig, runtimeConfig, options.uuid);
   });
 
@@ -115,15 +110,43 @@ program
   .option('-h, --host <string>', 'Specify your Postgres server hostname')
   .option('-p, --port <number>', 'Specify your Postgres server port')
   .option('-U, --username <number>', 'Specify your Postgres username')
-  .action(async (options: DBOSConfigureOptions) => {
-    await configure(options.host, options.port, options.username);
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+
+  .action(async (options: { host?: string; port?: number; username?: string; appDir?: string }) => {
+    await configure(options);
   });
 
 program
   .command('migrate')
   .description('Perform a database migration')
-  .action(async () => {
-    await runAndLog(migrate);
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+  .action(async (options: { appDir?: string }) => {
+    const configFile = readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+    const logger = configFile.telemetry?.OTLPExporter
+      ? new GlobalLogger(
+          new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
+          configFile.telemetry?.logs,
+        )
+      : new GlobalLogger();
+    const terminate = configFile.telemetry?.OTLPExporter
+      ? (code: number) => {
+          void logger.destroy().finally(() => {
+            process.exit(code);
+          });
+        }
+      : (code: number) => {
+          process.exit(code);
+        };
+
+    let returnCode = 1;
+    try {
+      returnCode = await migrate(logger, databaseUrl, sysDbName, configFile.database?.migrate);
+    } catch (e) {
+      logger.error(e);
+    } finally {
+      terminate(returnCode);
+    }
   });
 
 program
@@ -143,16 +166,11 @@ program
 program
   .command('reset')
   .description('reset the system database')
+  .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('-y, --yes', 'Skip confirmation prompt', false)
-  .action(async (options: { yes: boolean }) => {
-    const logger = new GlobalLogger();
-    const [config] = parseConfigFile();
-    await reset(config, logger, options.yes);
+  .action(async (options: { appDir?: string; yes: boolean }) => {
+    await reset(options.yes, options.appDir);
   });
-
-program.command('rollback').action(async () => {
-  await runAndLog(rollbackMigration);
-});
 
 /////////////////////////
 /* WORKFLOW MANAGEMENT */
@@ -177,7 +195,6 @@ workflowCommands
     'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, RETRIES_EXCEEDED, ENQUEUED, or CANCELLED)',
   )
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
-  .option('--request', 'Retrieve workflow request information (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
     async (options: {
@@ -189,14 +206,7 @@ workflowCommands
       endTime?: string;
       status?: string;
       applicationVersion?: string;
-      request: boolean;
-      silent: boolean;
     }) => {
-      if (options.request) {
-        console.warn('\x1b[33m%s\x1b[0m', 'The --request option has been deprecated.');
-      }
-      options.silent = true;
-      const [dbosConfig, _] = parseConfigFile(options);
       if (
         options.status &&
         !Object.values(StatusString).includes(options.status as (typeof StatusString)[keyof typeof StatusString])
@@ -204,6 +214,7 @@ workflowCommands
         console.error('Invalid status: ', options.status);
         exit(1);
       }
+
       const input: GetWorkflowsInput = {
         workflowName: options.name,
         limit: Number(options.limit),
@@ -213,10 +224,9 @@ workflowCommands
         status: options.status as (typeof StatusString)[keyof typeof StatusString],
         applicationVersion: options.applicationVersion,
       };
-      if (dbosConfig.databaseUrl === undefined) {
-        throw new Error('Database URL is not defined');
-      }
-      const client = await DBOSClient.create(dbosConfig.databaseUrl);
+      const configFile = readConfigFile(options.appDir);
+      const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+      const client = await DBOSClient.create(databaseUrl, sysDbName);
       try {
         const output = await client.listWorkflows(input);
         console.log(JSON.stringify(output));
@@ -231,17 +241,10 @@ workflowCommands
   .description('Retrieve the status of a workflow')
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .option('--request', 'Retrieve workflow request information (DEPRECATED)')
   .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
-    if (options.request) {
-      console.warn('\x1b[33m%s\x1b[0m', 'The --request option has been deprecated.');
-    }
-    options.silent = true;
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    const configFile = readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       const output = await client.getWorkflow(uuid);
       console.log(JSON.stringify(output));
@@ -256,12 +259,9 @@ workflowCommands
   .argument('<uuid>', 'Target workflow ID')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
-    options.silent = true;
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    const configFile = readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       const output = await client.listWorkflowSteps(uuid);
       console.log(JSON.stringify(output));
@@ -274,14 +274,11 @@ workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    const configFile = readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       await client.cancelWorkflow(uuid);
     } finally {
@@ -293,14 +290,11 @@ workflowCommands
   .command('resume')
   .description('Resume a workflow from the last step it executed, keeping its workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    const configFile = readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       await client.resumeWorkflow(uuid);
     } finally {
@@ -312,14 +306,11 @@ workflowCommands
   .command('restart')
   .description('Restart a workflow from the beginning with a new workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-H, --host <string>', 'Specify the host where the application is running', 'localhost')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
-    const [dbosConfig, _] = parseConfigFile(options);
-    if (dbosConfig.databaseUrl === undefined) {
-      throw new Error('Database URL is not defined');
-    }
-    const client = await DBOSClient.create(dbosConfig.databaseUrl);
+    const configFile = readConfigFile(options.appDir);
+    const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+    const client = await DBOSClient.create(databaseUrl, sysDbName);
     try {
       await client.forkWorkflow(uuid, 0);
     } finally {
@@ -340,7 +331,6 @@ queueCommands
   )
   .option('-l, --limit <number>', 'Limit the results returned')
   .option('-q, --queue <string>', 'Retrieve functions run on this queue')
-  .option('--request', 'Retrieve workflow request information (DEPRECATED)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
     async (options: {
@@ -350,15 +340,8 @@ queueCommands
       status?: string;
       limit?: string;
       queue?: string;
-      request: boolean;
       appDir?: string;
-      silent: boolean;
     }) => {
-      if (options.request) {
-        console.warn('\x1b[33m%s\x1b[0m', 'The --request option has been deprecated.');
-      }
-      options.silent = true;
-      const [dbosConfig, _] = parseConfigFile(options);
       if (
         options.status &&
         !Object.values(StatusString).includes(options.status as (typeof StatusString)[keyof typeof StatusString])
@@ -374,10 +357,9 @@ queueCommands
         workflowName: options.name,
         queueName: options.queue,
       };
-      if (dbosConfig.databaseUrl === undefined) {
-        throw new Error('Database URL is not defined');
-      }
-      const client = await DBOSClient.create(dbosConfig.databaseUrl);
+      const configFile = readConfigFile(options.appDir);
+      const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+      const client = await DBOSClient.create(databaseUrl, sysDbName);
       try {
         // TOD: Review!
         const output = await client.listQueuedWorkflows(input);
@@ -397,49 +379,4 @@ program.parse(process.argv);
 // If no arguments provided, display help by default
 if (!process.argv.slice(2).length) {
   program.outputHelp();
-}
-
-//Takes an action function(configFile, logger) that returns a numeric exit code.
-//If otel exporter is specified in configFile, adds it to the logger and flushes it after.
-//If action throws, logs the exception and sets the exit code to 1.
-//Finally, terminates the program with the exit code.
-export async function runAndLog(
-  action: (config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number,
-) {
-  let logger = new GlobalLogger();
-  const [config] = parseConfigFile();
-  const configFile = loadConfigFile(dbosConfigFilePath); // pass the raw config file for CLI arguments
-  let terminate = undefined;
-  if (configFile.telemetry?.OTLPExporter) {
-    logger = new GlobalLogger(
-      new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
-      configFile.telemetry?.logs,
-    );
-    terminate = (code: number) => {
-      void logger.destroy().finally(() => {
-        process.exit(code);
-      });
-    };
-  } else {
-    terminate = (code: number) => {
-      process.exit(code);
-    };
-  }
-  let returnCode = 1;
-  try {
-    returnCode = await action(config, configFile, logger);
-  } catch (e) {
-    logger.error(e);
-  }
-  terminate(returnCode);
-}
-
-function getGlobalLogger(configFile: DBOSConfigInternal): GlobalLogger {
-  if (configFile.telemetry?.OTLPExporter) {
-    return new GlobalLogger(
-      new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
-      configFile.telemetry?.logs,
-    );
-  }
-  return new GlobalLogger();
 }

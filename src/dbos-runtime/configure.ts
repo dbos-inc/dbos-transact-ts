@@ -1,40 +1,40 @@
-import { input } from '@inquirer/prompts';
-import YAML from 'yaml';
-import { readFileSync } from '../utils';
-import { dbosConfigFilePath, writeConfigFile } from './config';
+import { input, confirm } from '@inquirer/prompts';
+import { readConfigFile, writeConfigFile } from './config';
 
-export async function configure(host: string | undefined, port: number | undefined, username: string | undefined) {
-  const configFileContent = readFileSync(dbosConfigFilePath);
-  const config = YAML.parseDocument(configFileContent);
+export async function configure(options: { host?: string; port?: number; username?: string; appDir?: string }) {
+  const config = readConfigFile(options.appDir);
+  if (config.database_url) {
+    console.log(`Database is already configured as ${config.database_url}`);
+    const proceed = await confirm({
+      message: 'Do you want to re-configure the database connection?',
+      default: false,
+    });
+    if (!proceed) {
+      console.log('Aborting configuration.');
+      return;
+    }
+  }
 
-  if (!host) {
-    host = await input({
+  const host =
+    options.host ??
+    (await input({
       message: 'What is the hostname of your Postgres server?',
-      // Providing a default value
       default: 'localhost',
-    });
-  }
-
-  if (!port) {
-    const output = await input({
+    }));
+  const port =
+    options.port ??
+    (await input({
       message: 'What is the port of your Postgres server?',
-      // Providing a default value
       default: '5432',
-    });
-    port = Number(output);
-  }
-
-  if (!username) {
-    username = await input({
+    }));
+  const username =
+    options.username ??
+    (await input({
       message: 'What is your Postgres username?',
-      // Providing a default value
       default: 'postgres',
-    });
-  }
+    }));
 
-  config.setIn(['database', 'hostname'], host);
-  config.setIn(['database', 'port'], port);
-  config.setIn(['database', 'username'], username);
+  config.database_url = `postgresql://${username}@${host}:${port}/${config.name}`;
 
-  writeConfigFile(config, dbosConfigFilePath);
+  writeConfigFile(config, options.appDir);
 }
