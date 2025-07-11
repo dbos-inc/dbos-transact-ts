@@ -12,7 +12,12 @@ const compat = new FlatCompat({
 
 module.exports = typescriptEslint.config(
   {
-    ignores: ['**/dist/', '**/migrations/*', 'packages/create/templates/'],
+    ignores: [
+	    '**/dist/',
+	    '**/migrations/*',
+	    'packages/create/templates/',
+	    'packages/prisma-datasource/tests/',
+            'tests/prisma.test.ts'],
   },
 
   {

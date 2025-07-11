@@ -1,0 +1,36 @@
+{
+  "name": "@dbos-inc/prisma-datasource",
+  "version": "0.0.0-placeholder",
+  "description": "DBOS Data Source library for Prisma ORM with PostgreSQL support",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "homepage": "https://docs.dbos.dev/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-transact-ts",
+    "directory": "packages/prisma-datasource"
+  },
+  "prisma": {
+    "schema": "./tests/prisma/schema.prisma"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "npx prisma generate && tsc --project tsconfig.json && jest --detectOpenHandles"
+  },
+  "dependencies": {
+    "pg": "^8.11.3",
+    "superjson": "^1.13"
+  },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "*"
+  },
+  "devDependencies": {
+    "@prisma/client": "^5.15.0",
+    "@types/jest": "^29.5.14",
+    "@types/pg": "^8.15.2",
+    "jest": "^29.7.0",
+    "prisma": "^5.15.0",
+    "typescript": "^5.4.5"
+  }
+}
