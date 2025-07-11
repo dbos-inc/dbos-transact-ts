@@ -1,9 +1,8 @@
-import { GlobalLogger } from '../telemetry/logs';
 import { confirm } from '@inquirer/prompts';
-import { DBOSConfigInternal } from '../dbos-executor';
-import { PostgresSystemDatabase } from '../system_database';
+import { getDatabaseInfo, readConfigFile } from './config';
+import { Client } from 'pg';
 
-export async function reset(config: DBOSConfigInternal, logger: GlobalLogger, cnf: boolean) {
+export async function reset(cnf: boolean, appDir?: string) {
   if (cnf) {
     const userConfirmed = await confirm({
       message:
@@ -16,8 +15,26 @@ export async function reset(config: DBOSConfigInternal, logger: GlobalLogger, cn
       process.exit(0); // Exit the process if the user cancels
     }
   }
-  const sysDbName = config.system_database;
-  logger.info(`Resetting ${sysDbName} if it exists`);
-  await PostgresSystemDatabase.dropSystemDB(config);
+  const configFile = readConfigFile(appDir);
+  const { databaseUrl, sysDbName } = getDatabaseInfo(configFile);
+  if (!sysDbName) {
+    console.error('System database name is not defined in the configuration.');
+    return 1;
+  }
+
+  console.log(`Resetting ${sysDbName} if it exists`);
+
+  const url = new URL(databaseUrl);
+  url.pathname = `/postgres`;
+  const client = new Client({
+    connectionString: url.toString(),
+  });
+  try {
+    await client.connect();
+    await client.query(`DROP DATABASE IF EXISTS ${sysDbName};`);
+  } finally {
+    await client.end();
+  }
+
   return 0;
 }

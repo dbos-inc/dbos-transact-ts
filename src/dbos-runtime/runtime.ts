@@ -46,9 +46,6 @@ export class DBOSRuntime {
    */
   async initAndStart() {
     try {
-      if (!this.dbosConfig.poolConfig) {
-        throw new Error('DBOS pool configuration is not initialized');
-      }
       this.dbosExec = new DBOSExecutor(this.dbosConfig);
       this.dbosExec.logger.debug(`Loading classes from entrypoints ${JSON.stringify(this.runtimeConfig.entrypoints)}`);
       await DBOSRuntime.loadClasses(this.runtimeConfig.entrypoints);

@@ -28,7 +28,14 @@ import {
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
 } from './error';
-import { translatePublicDBOSconfig, overwrite_config, readConfigFile, processConfigFile } from './dbos-runtime/config';
+import {
+  getDbosConfig,
+  getRuntimeConfig,
+  overwrite_config,
+  readConfigFile,
+  translateDbosConfig,
+  translateRuntimeConfig,
+} from './dbos-runtime/config';
 import { DBOSRuntime } from './dbos-runtime/runtime';
 import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
@@ -253,33 +260,15 @@ export class DBOS {
     const configFile = readConfigFile();
 
     const $dbosConfig = DBOS.#dbosConfig;
-    let [internalConfig, runtimeConfig] = $dbosConfig
-      ? translatePublicDBOSconfig(
-          // copy config settings to ensure no unexpected fields are passed thru
-          {
-            adminPort: $dbosConfig.adminPort,
-            name: $dbosConfig.name,
-            databaseUrl: $dbosConfig.databaseUrl,
-            userDbclient: $dbosConfig.userDbclient,
-            userDbPoolSize: $dbosConfig.userDbPoolSize,
-            sysDbName: $dbosConfig.sysDbName,
-            sysDbPoolSize: $dbosConfig.sysDbPoolSize,
-            logLevel: $dbosConfig.logLevel,
-            addContextMetadata: $dbosConfig.addContextMetadata,
-            runAdminServer: $dbosConfig.runAdminServer,
-            otlpTracesEndpoints: [...($dbosConfig.otlpTracesEndpoints ?? [])],
-            otlpLogsEndpoints: [...($dbosConfig.otlpLogsEndpoints ?? [])],
-          },
-          debugMode,
-        )
-      : processConfigFile(configFile, { forceConsole: debugMode });
+    let internalConfig = $dbosConfig ? translateDbosConfig($dbosConfig, debugMode) : getDbosConfig(configFile);
+    let runtimeConfig = $dbosConfig ? translateRuntimeConfig($dbosConfig) : getRuntimeConfig(configFile);
 
     if (process.env.DBOS__CLOUD === 'true') {
       [internalConfig, runtimeConfig] = overwrite_config(internalConfig, runtimeConfig, configFile);
     }
 
     DBOS.#port = runtimeConfig.port;
-    DBOS.#poolConfig = internalConfig.poolConfig;
+    DBOS.#poolConfig = { connectionString: internalConfig.databaseUrl };
     DBOS.#dbosConfig = {
       name: internalConfig.name,
       databaseUrl: internalConfig.databaseUrl,

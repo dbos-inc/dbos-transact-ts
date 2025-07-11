@@ -129,13 +129,12 @@ export interface DBOSConfig {
 }
 
 export type DBOSConfigInternal = {
-  poolConfig: PoolConfig; // used in exec ctor, init, configureDbClient, debugWF, runtime initandstart, migrate cli, dropSystemDB set in set in parseConfigFile and translatePublicDBOSconfig
   system_database: string; // used in executor ctor, migrate and reset cli, sysdb.dropSystemDB, set in set in parseConfigFile and translatePublicDBOSconfig
   telemetry: TelemetryConfig; // used in executor ctor, dbos start cli, and overwrote_config, set in parseConfigFile and translatePublicDBOSconfig
 
   name?: string; // used in overwrite_config, set in  translatePublicDBOSconfig
-  databaseUrl?: string; // used in cli commands, never set!
-  userDbclient?: UserDatabaseName; // used in configureDbClient, set in translatePublicDBOSconfig and parseConfigFile
+  databaseUrl: string; // used in cli commands, never set!
+  userDbclient: UserDatabaseName; // used in configureDbClient, set in translatePublicDBOSconfig and parseConfigFile
   sysDbPoolSize?: number; // used in executor ctor, set in translatePublicDBOSconfig
 
   http?: {
@@ -247,7 +246,8 @@ export class DBOSExecutor {
       this.logger.info('Running in debug mode!');
     }
 
-    this.procedurePool = new Pool(this.config.poolConfig);
+    const poolConfig: PoolConfig = { connectionString: this.config.databaseUrl };
+    this.procedurePool = new Pool(poolConfig);
 
     if (systemDatabase) {
       this.logger.debug('Using provided system database'); // XXX print the name or something
@@ -255,7 +255,7 @@ export class DBOSExecutor {
     } else {
       this.logger.debug('Using Postgres system database');
       this.systemDatabase = new PostgresSystemDatabase(
-        this.config.poolConfig,
+        poolConfig,
         this.config.system_database,
         this.logger,
         this.config.sysDbPoolSize,
@@ -268,7 +268,8 @@ export class DBOSExecutor {
 
   configureDbClient() {
     const userDbClient = this.config.userDbclient;
-    const userDBConfig = this.config.poolConfig;
+    const userDBConfig: PoolConfig = { connectionString: this.config.databaseUrl };
+
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
@@ -367,7 +368,8 @@ export class DBOSExecutor {
       }
 
       if (!this.debugMode) {
-        await createDBIfDoesNotExist(this.config.poolConfig, this.logger);
+        const poolConfig: PoolConfig = { connectionString: this.config.databaseUrl };
+        await createDBIfDoesNotExist(poolConfig, this.logger);
       }
       this.configureDbClient();
 
