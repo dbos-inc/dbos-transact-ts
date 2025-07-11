@@ -1,12 +1,16 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
-import { KnexDataSource } from '..';
+import { PrismaDataSource } from '..';
 import { dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import SuperJSON from 'superjson';
+import { Prisma, PrismaClient } from '@prisma/client';
 
-const config = { client: 'pg', connection: { user: 'postgres', database: 'prisma_ds_test' } };
-const dataSource = new KnexDataSource('app-db', config);
+const config = { user: 'postgres', database: 'prisma_ds_test' };
+
+const prisma = new PrismaClient();
+
+const dataSource = new PrismaDataSource<PrismaClient>('app-db', prisma);
 
 interface transaction_completion {
   workflow_id: string;
@@ -15,18 +19,18 @@ interface transaction_completion {
   error: string | null;
 }
 
-describe('KnexDataSource', () => {
-  const userDB = new Pool(config.connection);
+describe('PrismaDataSource', () => {
+  const userDB = new Pool(config);
 
   beforeAll(async () => {
     {
-      const client = new Client({ ...config.connection, database: 'postgres' });
+      const client = new Client({ ...config, database: 'postgres' });
       try {
         await client.connect();
-        await dropDB(client, 'knex_ds_test', true);
-        await dropDB(client, 'knex_ds_test_dbos_sys', true);
-        await dropDB(client, config.connection.database, true);
-        await ensureDB(client, config.connection.database);
+        await dropDB(client, 'prisma_ds_test', true);
+        await dropDB(client, 'prisma_ds_test_dbos_sys', true);
+        await dropDB(client, config.database, true);
+        await ensureDB(client, config.database);
       } finally {
         await client.end();
       }
@@ -43,7 +47,7 @@ describe('KnexDataSource', () => {
       }
     }
 
-    await KnexDataSource.initializeDBOSSchema(config);
+    await PrismaDataSource.initializeDBOSSchema(prisma);
   });
 
   afterAll(async () => {
@@ -51,7 +55,7 @@ describe('KnexDataSource', () => {
   });
 
   beforeEach(async () => {
-    DBOS.setConfig({ name: 'knex-ds-test' });
+    DBOS.setConfig({ name: 'prisma-ds-test' });
     await DBOS.launch();
   });
 
@@ -329,15 +333,43 @@ export interface greetings {
 }
 
 async function insertFunction(user: string) {
-  const rows = await dataSource
-    .client<greetings>('greetings')
-    .insert({ name: user, greet_count: 1 })
-    .onConflict('name')
-    .merge({ greet_count: dataSource.client.raw('greetings.greet_count + 1') })
-    .returning('greet_count');
-  const row = rows.length > 0 ? rows[0] : undefined;
+  try {
+    const created = await dataSource.client.dbosHello.create({
+      data: {
+        name: user,
+        greet_count: 1,
+      },
+      select: { greet_count: true },
+    });
 
-  return { user, greet_count: row?.greet_count, now: Date.now() };
+    return {
+      user,
+      greet_count: created.greet_count,
+      now: Date.now(),
+    };
+  } catch (err) {
+    // Check for unique constraint violation
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') {
+      const updated = await dataSource.client.dbosHello.update({
+        where: { name: user },
+        data: {
+          greet_count: {
+            increment: 1,
+          },
+        },
+        select: { greet_count: true },
+      });
+
+      return {
+        user,
+        greet_count: updated.greet_count,
+        now: Date.now(),
+      };
+    } else {
+      // Unexpected error, rethrow
+      throw err;
+    }
+  }
 }
 
 async function errorFunction(user: string) {
@@ -346,7 +378,11 @@ async function errorFunction(user: string) {
 }
 
 async function readFunction(user: string) {
-  const row = await KnexDataSource.client<greetings>('greetings').select('greet_count').where('name', user).first();
+  const row = await dataSource.client.dbosHello.findUnique({
+    where: { name: user },
+    select: { greet_count: true },
+  });
+
   return { user, greet_count: row?.greet_count, now: Date.now() };
 }
 

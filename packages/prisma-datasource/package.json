@@ -11,6 +11,9 @@
     "url": "https://github.com/dbos-inc/dbos-transact-ts",
     "directory": "packages/prisma-datasource"
   },
+  "prisma": {
+    "schema": "./tests/prisma/schema.prisma"
+  },
   "scripts": {
     "build": "npx prisma generate --schema=./tests/prisma/schema.prisma && tsc --project tsconfig.json",
     "test": "npx prisma generate --schema=./tests/prisma/schema.prisma && tsc --project tsconfig.json && jest --detectOpenHandles"
