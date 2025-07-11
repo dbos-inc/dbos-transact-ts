@@ -26,7 +26,6 @@ The example above registers an HTTP `GET` endpoint. `postApi`, `deleteApi`, `put
 The Koa server can be started by your main startup function. Note the order of operations below:
 
 ```typescript
-DBOS.registerLifecycleCallback(dhttp); // Registers the HTTP function provider with DBOS
 await DBOS.launch(); // Starts DBOS components and begins any necessary recovery
 DBOS.logRegisteredEndpoints(); // Optional - list out all of the registered DBOS event receivers and URLs
 

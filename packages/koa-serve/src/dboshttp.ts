@@ -150,7 +150,7 @@ export class DBOSHTTPBase implements DBOSLifecycleCallback {
 
   /** Parameter decorator indicating which source to use (URL, BODY, etc) for arg data */
   static argSource(source: ArgSources) {
-    return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
+    return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
       const curParam = DBOS.associateParamWithInfo(
         DBOSHTTP,
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
@@ -190,11 +190,11 @@ export class DBOSHTTPBase implements DBOSLifecycleCallback {
     }
   }
 
-  static argRequired(target: object, propertyKey: string | symbol, parameterIndex: number) {
+  static argRequired(target: object, propertyKey: PropertyKey, parameterIndex: number) {
     ArgRequired(target, propertyKey, parameterIndex);
   }
 
-  static argOptional(target: object, propertyKey: string | symbol, parameterIndex: number) {
+  static argOptional(target: object, propertyKey: PropertyKey, parameterIndex: number) {
     ArgOptional(target, propertyKey, parameterIndex);
   }
 
