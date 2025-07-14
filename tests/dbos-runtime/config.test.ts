@@ -50,17 +50,9 @@ describe('dbos-config', () => {
   });
 
   describe('Configuration loading', () => {
-    test('translates otlp endpoints from string to list', () => {
+    test('translates otlp endpoints from string to list', async () => {
       const mockConfigFile = `
-        database:
-            hostname: \${DOESNOTEXISTS}
-            port: \${DOESNOTEXISTS}
-            username: \${DOESNOTEXISTS}
-            password: \${NO}
-            app_db_name: \${DOESNOTEXISTS}
-            ssl: \${DOESNOTEXISTS}
-            ssl_ca: \${DOESNOTEXISTS}
-            connectionTimeoutMillis: \${DOESNOTEXISTS}
+        name: 'test-app' 
         telemetry:
             OTLPExporter:
                 tracesEndpoint: http://otel-collector:4317/from-file
@@ -71,6 +63,8 @@ describe('dbos-config', () => {
       const cfg: ConfigFile = loadConfigFile(dbosConfigFilePath);
       expect(cfg.telemetry?.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
       expect(cfg.telemetry?.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
+      await DBOS.launch();
+      expect(DBOS.dbosConfig.otlpTracesEndpoints).toEqual(['http://otel-collector:4317/from-file']);
     });
   });
 
