@@ -13,12 +13,14 @@ import {
   constructPoolConfig,
   dbosConfigFilePath,
   parseSSLConfig,
+  processConfigFile,
+  readConfigFile,
 } from '../../src/dbos-runtime/config';
 import { DBOSRuntimeConfig, defaultEntryPoint } from '../../src/dbos-runtime/runtime';
-import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error';
-import { DBOSExecutor, DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
-import { get } from 'lodash';
-import { DBOS, DBOSClient } from '../../src';
+import { DBOSInitializationError } from '../../src/error';
+import { DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
+import { DBOSClient } from '../../src';
+import { setUpDBOSTestDb } from '../helpers';
 
 describe('dbos-config', () => {
   const mockCLIOptions = { port: NaN, loglevel: 'info' };
@@ -50,7 +52,7 @@ describe('dbos-config', () => {
   });
 
   describe('Configuration loading', () => {
-    test('translates otlp endpoints from string to list', () => {
+    test('loadConfigFile translates otlp endpoints from string to list', () => {
       const mockConfigFile = `
         database:
             hostname: \${DOESNOTEXISTS}
@@ -71,6 +73,21 @@ describe('dbos-config', () => {
       const cfg: ConfigFile = loadConfigFile(dbosConfigFilePath);
       expect(cfg.telemetry?.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
       expect(cfg.telemetry?.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
+    });
+
+    test('processConfigFile translates otlp endpoints from string to list', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        telemetry:
+            OTLPExporter:
+                tracesEndpoint: http://otel-collector:4317/from-file
+                logsEndpoint: http://otel-collector:4317/logs
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, {});
+      expect(config.telemetry.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
     });
   });
 
@@ -1058,6 +1075,10 @@ describe('dbos-config', () => {
   });
 
   describe('databaseUrl-no-password', () => {
+    beforeAll(async () => {
+      await setUpDBOSTestDb({});
+    });
+
     test('No error when database_url is provided without password', async () => {
       const expected_url = 'postgresql://postgres@localhost:5432/dbostest?sslmode=disable';
       const config: DBOSConfig = {
