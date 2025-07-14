@@ -9,6 +9,7 @@ import Ajv from 'ajv';
 import path from 'path';
 import dbosConfigSchema from '../../dbos-config.schema.json';
 import assert from 'node:assert';
+import validator from 'validator';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
@@ -88,24 +89,26 @@ export function getDatabaseInfo(options: {
   database_url?: string;
   database?: { sys_db_name?: string };
 }): { databaseUrl: string; sysDbName: string } {
-  const appName = options.name;
-  let databaseUrl = options.database_url;
-  let sysDbName = options.database?.sys_db_name;
-
-  sysDbName ??= appName ? `${appName}_dbos_sys` : undefined;
-  assert(
-    sysDbName,
-    'System database name could not be determined. Please provide a name in the config file or set the package name.',
-  );
-
-  databaseUrl ??= process.env['DBOS_DATABASE_URL'] ?? defaultDatabaseUrl(appName);
+  const databaseUrl = options.database_url ?? process.env['DBOS_DATABASE_URL'] ?? defaultDatabaseUrl(options.name);
+  const url = new URL(databaseUrl);
+  const dbName = url.pathname.substring(1);
+  const sysDbName = options.database?.sys_db_name ?? (dbName ? `${dbName}_dbos_sys` : undefined);
 
   const missingFields: string[] = [];
-  const url = new URL(databaseUrl);
   if (!url.username) missingFields.push('username');
   if (!url.hostname) missingFields.push('hostname');
-  if (!url.pathname.substring(1)) missingFields.push('database name');
+  if (!dbName) missingFields.push('database name');
   assert(missingFields.length === 0, `Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
+
+  assert(
+    isValidDBname(dbName),
+    `Invalid database name "${dbName}". Must be 1-63 characters, only lowercase letters, numbers, and underscores, and cannot start with a number.`,
+  );
+
+  assert(
+    sysDbName && isValidDBname(sysDbName),
+    `Invalid system database name "${sysDbName}". Must be 1-63 characters, only lowercase letters, numbers, and underscores, and cannot start with a number.`,
+  );
 
   return { databaseUrl, sysDbName };
 
@@ -122,14 +125,25 @@ export function getDatabaseInfo(options: {
     const user = process.env['PGUSER'] ?? 'postgres';
     const password = process.env['PGPASSWORD'] ?? 'dbos';
     const timeout = process.env['PGCONNECT_TIMEOUT'] ?? '10';
-    const sslmode = process.env['PGSSLMODE'] ?? 'prefer';
+    const sslmode = process.env['PGSSLMODE'] ?? (host === 'localhost' ? undefined : 'prefer');
 
-    return `postgresql://${user}:${password}@${host}:${port}/${database}?connect_timeout=${timeout}&sslmode=${sslmode}`;
+    return `postgresql://${user}:${password}@${host}:${port}/${database}?connect_timeout=${timeout}${sslmode ? `&sslmode=${sslmode}` : ''}`;
   }
 
   function appNameToDbName(appName: string | undefined) {
     const dbName = appName?.toLowerCase().replaceAll('-', '_').replaceAll(' ', '_');
     return dbName?.match(/^\d/) ? '_' + dbName : dbName;
+  }
+
+  function isValidDBname(dbName: string): boolean {
+    if (dbName.length < 1 || dbName.length > 63) {
+      return false;
+    }
+    if (dbName.match(/^\d/)) {
+      // Cannot start with a digit
+      return false;
+    }
+    return validator.matches(dbName, '^[a-z0-9_]+$');
   }
 }
 
