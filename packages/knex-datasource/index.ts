@@ -1,6 +1,6 @@
 // using https://github.com/knex/knex
 
-import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   isPGRetriableTransactionError,
@@ -28,7 +28,9 @@ interface KnexDataSourceContext {
   owner: KnexTransactionHandler;
 }
 
-export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'> & { name?: string };
+export type TransactionConfig = Pick<Knex.TransactionConfig, 'isolationLevel' | 'readOnly'> & {
+  name?: string;
+};
 
 const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 
@@ -262,16 +264,16 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: TransactionConfig,
+    config?: TransactionConfig & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
+    return registerTransaction(this.name, func, config);
   }
 
   transaction(config?: TransactionConfig) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
-      _target: object,
+      target: object,
       propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
@@ -282,6 +284,7 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
       descriptor.value = ds.registerTransaction(descriptor.value, {
         ...config,
         name: config?.name ?? String(propertyKey),
+        ctorOrProto: target,
       });
 
       return descriptor;

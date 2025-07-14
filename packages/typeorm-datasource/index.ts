@@ -1,5 +1,5 @@
 import { PoolConfig } from 'pg';
-import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
@@ -293,9 +293,9 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: TypeORMTransactionConfig,
+    config?: TypeORMTransactionConfig & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
+    return registerTransaction(this.name, func, config);
   }
 
   /**
@@ -305,7 +305,7 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
-      _target: object,
+      target: object,
       propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
@@ -316,6 +316,7 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
       descriptor.value = ds.registerTransaction(descriptor.value, {
         ...config,
         name: config?.name ?? String(propertyKey),
+        ctorOrProto: target,
       });
 
       return descriptor;

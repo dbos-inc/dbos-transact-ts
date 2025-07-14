@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto';
 import { PoolConfig } from 'pg';
 import knex, { Knex } from 'knex';
-import { DBOS } from '../src';
+import { DBOS, FunctionName } from '../src';
 import {
   type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
@@ -28,9 +28,7 @@ import { DBOSJSON, sleepms } from '../src/utils';
 /*
  * Knex user data access interface
  */
-interface KnexTransactionConfig extends PGTransactionConfig {
-  name?: string;
-}
+type KnexTransactionConfig = PGTransactionConfig & { name?: string };
 
 // This stuff is all specific to PG DBs...
 //  We are also agnostic about whether there are admin credentials to do this, or not...
@@ -304,18 +302,17 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: KnexTransactionConfig,
-    name?: string,
+    config?: KnexTransactionConfig & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: name ?? func.name }, config);
+    return registerTransaction(this.name, func, config);
   }
 
   static registerTransaction<This, Args extends unknown[], Return>(
     dsname: string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: KnexTransactionConfig,
+    config?: KnexTransactionConfig & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(dsname, func, { name: config?.name ?? func.name }, config);
+    return registerTransaction(dsname, func, config);
   }
 
   // Custom TX decorator
@@ -323,7 +320,7 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
-      _target: object,
+      target: object,
       propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
@@ -331,7 +328,7 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
         throw Error('Use of decorator when original method is undefined');
       }
 
-      descriptor.value = ds.registerTransaction(descriptor.value, config, config?.name ?? String(propertyKey));
+      descriptor.value = ds.registerTransaction(descriptor.value, config);
 
       return descriptor;
     };

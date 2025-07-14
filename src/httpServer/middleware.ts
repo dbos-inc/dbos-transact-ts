@@ -3,7 +3,7 @@ import { Request, Response, NextFunction } from 'express';
 import { IncomingHttpHeaders } from 'http';
 
 import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from '../decorators';
-import { Logger as DBOSLogger } from '../telemetry/logs';
+import { DBOSContextualLogger } from '../telemetry/logs';
 import { UserDatabaseClient } from '../user_database';
 import { OperationType } from '../dbos-executor';
 import { DBOS, getExecutor } from '../dbos';
@@ -22,10 +22,8 @@ export interface MiddlewareContext {
   readonly name: string; // Method (handler, transaction, workflow) name
   readonly requiredRole: string[]; // Roles required for the invoked operation, if empty perhaps auth is not required
 
-  readonly logger: DBOSLogger; // Logger, for logging from middleware
+  readonly logger: DBOSContextualLogger; // Logger, for logging from middleware
   readonly span: Span; // Existing span
-
-  getConfig<T>(key: string, deflt: T | undefined): T | undefined; // Access to configuration information
 
   query<C extends UserDatabaseClient, R, T extends unknown[]>(
     qry: (dbclient: C, ...args: T) => Promise<R>,

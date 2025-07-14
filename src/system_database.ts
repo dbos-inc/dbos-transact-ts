@@ -1,4 +1,4 @@
-import { DBOSConfigInternal, DBOSExecutor } from './dbos-executor';
+import { DBOSConfigInternal, DBOSExecutor, DBOSExternalState } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
   DBOSWorkflowConflictError,
@@ -18,11 +18,11 @@ import {
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
 import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
-import { GlobalLogger as Logger } from './telemetry/logs';
+import { GlobalLogger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
 import path from 'path';
+import fs from 'fs';
 import { WorkflowQueue } from './wfqueue';
-import { DBOSEventReceiverState } from './eventreceiver';
 import { randomUUID } from 'crypto';
 
 /* Result from Sys DB */
@@ -154,12 +154,8 @@ export interface SystemDatabase {
   //     A version, either as a sequence number (long integer), or as a time (high precision floating point).
   //       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
   //       The upsert returns the current record, which is useful if it is more recent.
-  getEventDispatchState(
-    service: string,
-    workflowFnName: string,
-    key: string,
-  ): Promise<DBOSEventReceiverState | undefined>;
-  upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState>;
+  getEventDispatchState(service: string, workflowFnName: string, key: string): Promise<DBOSExternalState | undefined>;
+  upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState>;
 
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
@@ -205,8 +201,24 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
-export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: Logger) {
-  const migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: GlobalLogger) {
+  let migrationsDirectory: string;
+
+  try {
+    migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+  } catch (packageError) {
+    migrationsDirectory = path.join(__dirname, 'migrations');
+  }
+
+  // Check if migrations directory exists
+  if (!fs.existsSync(migrationsDirectory)) {
+    logger.warn(
+      'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
+        'Please run "npx dbos migrate" to create your system database before running your bundled application.',
+    );
+    return;
+  }
+
   const knexConfig = {
     client: 'pg',
     connection: systemPoolConfig,
@@ -620,7 +632,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   constructor(
     readonly pgPoolConfig: PoolConfig,
     readonly systemDatabaseName: string,
-    readonly logger: Logger,
+    readonly logger: GlobalLogger,
     readonly sysDbPoolSize?: number,
   ) {
     // Craft a db string from the app db string, replacing the database name:
@@ -1643,7 +1655,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     service: string,
     workflowName: string,
     key: string,
-  ): Promise<DBOSEventReceiverState | undefined> {
+  ): Promise<DBOSExternalState | undefined> {
     const res = await this.pool.query<event_dispatch_kv>(
       `SELECT * FROM ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv
        WHERE workflow_fn_name = $1 AND service_name = $2 AND key = $3;`,
@@ -1666,7 +1678,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   @dbRetry()
-  async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+  async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
     const res = await this.pool.query<event_dispatch_kv>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.event_dispatch_kv (
         service_name, workflow_fn_name, key, value, update_time, update_seq)

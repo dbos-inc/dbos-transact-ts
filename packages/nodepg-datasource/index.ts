@@ -1,6 +1,6 @@
 // using https://github.com/brianc/node-postgres
 
-import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
   createTransactionCompletionSchemaPG,
@@ -260,16 +260,16 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: NodePostgresTransactionOptions,
+    config?: NodePostgresTransactionOptions & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
+    return registerTransaction(this.name, func, config);
   }
 
   transaction(config?: NodePostgresTransactionOptions) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
-      _target: object,
+      target: object,
       propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
@@ -280,6 +280,7 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
       descriptor.value = ds.registerTransaction(descriptor.value, {
         ...config,
         name: config?.name ?? String(propertyKey),
+        ctorOrProto: target,
       });
 
       return descriptor;

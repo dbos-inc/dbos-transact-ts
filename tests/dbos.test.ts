@@ -522,8 +522,6 @@ class DBOSTestClass {
   static async init(ctx: InitContext) {
     DBOSTestClass.initialized = true;
     // ctx and DBOS should be interchangeable
-    expect(ctx.getConfig('counter')).toBe(3);
-    expect(DBOS.getConfig('counter')).toBe(3);
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     await ctx.queryUserDB(`CREATE OR REPLACE FUNCTION test_proc_raise() returns void as $$
@@ -535,7 +533,6 @@ class DBOSTestClass {
 
   @DBOS.transaction()
   static async testFunction(name: string) {
-    expect(DBOS.getConfig<number>('counter')).toBe(3);
     const { rows } = await DBOS.pgClient.query(`select current_user from current_user where current_user=$1;`, [name]);
     return JSON.stringify(rows[0]);
   }
@@ -543,7 +540,6 @@ class DBOSTestClass {
   @DBOS.workflow()
   static async testWorkflow(name: string) {
     expect(DBOSTestClass.initialized).toBe(true);
-    expect(DBOS.getConfig<number>('counter')).toBe(3);
     const funcResult = await DBOSTestClass.testFunction(name);
     return funcResult;
   }
@@ -605,7 +601,6 @@ class DBOSTestClass {
 
   @DBOS.step()
   static async testStep() {
-    expect(DBOS.getConfig<number>('counter')).toBe(3);
     return Promise.resolve(DBOSTestClass.cnt++);
   }
 

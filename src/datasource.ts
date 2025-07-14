@@ -3,8 +3,15 @@ import { Span } from '@opentelemetry/sdk-trace-base';
 import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
-import { getTransactionalDataSource, registerTransactionalDataSource } from './decorators';
+import {
+  FunctionName,
+  getTransactionalDataSource,
+  registerFunctionWrapper,
+  registerTransactionalDataSource,
+  wrapDBOSFunctionAndRegister,
+} from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
+import type { Notification } from 'pg';
 
 /**
  * This interface is to be used for implementers of transactional data sources
@@ -59,13 +66,13 @@ export interface DBOSDataSource<Config extends { name?: string }> {
    * Providing a static version of this functionality is optional.
    *
    * @param func - Function to wrap
-   * @param name - Name of function
-   * @param config - Transaction settings
+   * @param config - Transaction settings, including function `name`
+   * @param target - Class name, or class ctor/prototype
    * @returns Wrapped function, to be called instead of `func`
    */
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: Config,
+    config?: Config & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return>;
 
   /**
@@ -120,7 +127,7 @@ export async function runTransaction<T>(
         `Invalid call to transaction '${funcName}' outside of a workflow; with directive to start a workflow.`,
       );
     }
-    return await runWithDataSourceContext(0, async () => {
+    return await runWithDataSourceContext(undefined, 0, async () => {
       return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
     });
   }
@@ -137,9 +144,10 @@ export async function runTransaction<T>(
     {
       operationUUID: DBOS.workflowID,
       operationType: OperationType.TRANSACTION,
-      authenticatedUser: DBOS.authenticatedUser,
-      assumedRole: DBOS.assumedRole,
-      authenticatedRoles: DBOS.authenticatedRoles,
+      operationName: funcName,
+      authenticatedUser: DBOS.authenticatedUser ?? '',
+      assumedRole: DBOS.assumedRole ?? '',
+      authenticatedRoles: DBOS.authenticatedRoles ?? [],
       // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
     },
     DBOS.span,
@@ -148,7 +156,7 @@ export async function runTransaction<T>(
   try {
     const res = await DBOSExecutor.globalInstance!.runInternalStep<T>(
       async () => {
-        return await runWithDataSourceContext(callnum, async () => {
+        return await runWithDataSourceContext(span, callnum, async () => {
           return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
         });
       },
@@ -170,27 +178,29 @@ export async function runTransaction<T>(
 }
 
 // Transaction wrapper
-export function registerTransaction<This, Args extends unknown[], Return>(
+export function registerTransaction<This, Args extends unknown[], Return, Config extends FunctionName>(
   dsName: string,
   func: (this: This, ...args: Args) => Promise<Return>,
-  options: {
-    name: string;
-  },
-  config?: unknown,
+  config?: Config,
 ): (this: This, ...args: Args) => Promise<Return> {
   const dsn = dsName ?? '<default>';
 
+  const funcName = config?.name ?? func.name;
+  const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, funcName, func);
+
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     const ds = getTransactionalDataSource(dsn);
+    const callFunc = reg.registeredFunction ?? reg.origFunction;
+
     if (!DBOS.isWithinWorkflow()) {
       if (getNextWFID(undefined)) {
         throw new DBOSInvalidWorkflowTransitionError(
-          `Call to transaction '${options.name}' made without starting workflow`,
+          `Call to transaction '${funcName}' made without starting workflow`,
         );
       }
 
-      return await runWithDataSourceContext(0, async () => {
-        return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
+      return await runWithDataSourceContext(undefined, 0, async () => {
+        return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
       });
     }
 
@@ -200,22 +210,49 @@ export function registerTransaction<This, Args extends unknown[], Return>(
       );
     }
 
-    const callnum = functionIDGetIncrement();
-    return DBOSExecutor.globalInstance!.runInternalStep<Return>(
-      async () => {
-        return await runWithDataSourceContext(callnum, async () => {
-          return await ds.invokeTransactionFunction(config, this, func, ...rawArgs);
-        });
+    const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
+      funcName,
+      {
+        operationUUID: DBOS.workflowID,
+        operationType: OperationType.TRANSACTION,
+        operationName: funcName,
+        authenticatedUser: DBOS.authenticatedUser ?? '',
+        assumedRole: DBOS.assumedRole ?? '',
+        authenticatedRoles: DBOS.authenticatedRoles ?? [],
+        // isolationLevel: txnInfo.config.isolationLevel, // TODO: Pluggable
       },
-      options.name,
-      DBOS.workflowID!,
-      callnum,
+      DBOS.span,
     );
+
+    const callnum = functionIDGetIncrement();
+    try {
+      const res = await DBOSExecutor.globalInstance!.runInternalStep<Return>(
+        async () => {
+          return await runWithDataSourceContext(span, callnum, async () => {
+            return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
+          });
+        },
+        funcName,
+        DBOS.workflowID!,
+        callnum,
+      );
+      span.setStatus({ code: SpanStatusCode.OK });
+      DBOSExecutor.globalInstance!.tracer.endSpan(span);
+      return res;
+    } catch (err) {
+      const e = err as Error;
+      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+      DBOSExecutor.globalInstance!.tracer.endSpan(span);
+      throw err;
+    }
   };
 
+  registerFunctionWrapper(invokeWrapper, reg);
+
   Object.defineProperty(invokeWrapper, 'name', {
-    value: options.name,
+    value: funcName,
   });
+
   return invokeWrapper;
 }
 
@@ -279,4 +316,10 @@ export function isPGKeyConflictError(error: unknown): boolean {
 
 export function isPGFailedSqlTransactionError(error: unknown): boolean {
   return getPGErrorCode(error) === '25P02';
+}
+
+export type PGDBNotification = Notification;
+export type PGDBNotificationCallback = (n: PGDBNotification) => void;
+export interface PGDBNotificationListener {
+  close(): Promise<void>;
 }

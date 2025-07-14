@@ -147,10 +147,6 @@ class UserManager {
   }
 
   static async authMiddlware(ctx: MiddlewareContext) {
-    const cfg = ctx.getConfig<string>('shouldExist', 'does not exist');
-    if (cfg !== 'exists') {
-      throw Error('Auth is misconfigured.');
-    }
     if (!ctx.requiredRole || !ctx.requiredRole.length) {
       return;
     }

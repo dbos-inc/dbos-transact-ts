@@ -8,13 +8,7 @@ import {
   DBOSContextOptions,
   functionIDGetIncrement,
 } from './context';
-import {
-  DBOSConfig,
-  DBOSConfigInternal,
-  isDeprecatedDBOSConfig,
-  DBOSExecutor,
-  InternalWorkflowParams,
-} from './dbos-executor';
+import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
 import { Tracer } from './telemetry/traces';
 import {
   GetQueuedWorkflowsInput,
@@ -26,37 +20,33 @@ import {
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
-import { DBOSEventReceiverState, DBOSExecutorContext } from './eventreceiver';
 import { DLogger, GlobalLogger } from './telemetry/logs';
 import {
-  DBOSConfigKeyTypeError,
   DBOSError,
   DBOSExecutorNotInitializedError,
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
 } from './error';
-import { parseConfigFile, translatePublicDBOSconfig, overwrite_config } from './dbos-runtime/config';
-import { DBOSRuntime, DBOSRuntimeConfig } from './dbos-runtime/runtime';
-import { ScheduledArgs, SchedulerConfig, SchedulerRegistrationBase } from './scheduler/scheduler';
+import { translatePublicDBOSconfig, overwrite_config, readConfigFile, processConfigFile } from './dbos-runtime/config';
+import { DBOSRuntime } from './dbos-runtime/runtime';
+import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
   associateClassWithExternal,
   associateMethodWithExternal,
   associateParameterWithExternal,
   ClassAuthDefaults,
-  configureInstance,
   DBOS_AUTH,
+  ExternalRegistration,
   getLifecycleListeners,
   getRegisteredOperations,
-  getRegistrationForFunction,
+  getFunctionRegistration,
   getRegistrationsForExternal,
   insertAllMiddleware,
   MethodAuth,
   MethodRegistration,
   recordDBOSLaunch,
   recordDBOSShutdown,
-  registerAndWrapDBOSFunction,
-  registerAndWrapDBOSFunctionByName,
   registerFunctionWrapper,
   registerLifecycleCallback,
   transactionalDataSources,
@@ -64,6 +54,11 @@ import {
   MethodRegistrationBase,
   TypedAsyncFunction,
   UntypedAsyncFunction,
+  FunctionName,
+  wrapDBOSFunctionAndRegisterByUniqueName,
+  wrapDBOSFunctionAndRegisterByUniqueNameDec,
+  wrapDBOSFunctionAndRegister,
+  wrapDBOSFunctionAndRegisterDec,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
@@ -85,7 +80,7 @@ import { FastifyInstance } from 'fastify';
 import _fastifyExpress from '@fastify/express'; // This is for fastify.use()
 import { randomUUID } from 'node:crypto';
 
-import { PoolClient } from 'pg';
+import { PoolClient, PoolConfig } from 'pg';
 import { Knex } from 'knex';
 import { StepConfig } from './step';
 import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
@@ -93,14 +88,17 @@ import { ConfiguredInstance } from '.';
 import { StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
-import { set } from 'lodash';
 import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
-import { PostgresSystemDatabase, EnqueueOptions } from './system_database';
+import { EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
+import assert from 'node:assert';
 
 type AnyConstructor = new (...args: unknown[]) => object;
+type ReadonlyArray<T> = {
+  readonly [K in keyof T]: T[K] extends Array<infer U> ? ReadonlyArray<U> : T[K];
+};
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -142,7 +140,7 @@ function httpApiDec(verb: APITypes, url: string) {
     propertyKey: string,
     inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
   ) {
-    const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+    const { descriptor, registration } = wrapDBOSFunctionAndRegisterDec(target, propertyKey, inDescriptor);
     const handlerRegistration = registration as unknown as HandlerRegistrationBase;
     handlerRegistration.apiURL = url;
     handlerRegistration.apiType = verb;
@@ -163,7 +161,7 @@ export function getExecutor() {
   if (!DBOSExecutor.globalInstance) {
     throw new DBOSExecutorNotInitializedError();
   }
-  return DBOSExecutor.globalInstance as DBOSExecutorContext;
+  return DBOSExecutor.globalInstance;
 }
 
 export function runInternalStep<T>(callback: () => Promise<T>, funcName: string, childWFID?: string): Promise<T> {
@@ -196,56 +194,13 @@ export class DBOS {
   static appServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
 
-  private static getDebugModeFromEnv(): boolean {
-    const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
-    return debugWorkflowId !== undefined;
-  }
-
   /**
    * Set configuration of `DBOS` prior to `launch`
    * @param config - configuration of services needed by DBOS
-   * @param runtimeConfig - configuration of runtime access to DBOS
    */
-  static setConfig(config: DBOSConfig, runtimeConfig?: DBOSRuntimeConfig) {
+  static setConfig(config: DBOSConfig) {
+    assert(!DBOS.isInitialized(), 'Cannot call DBOS.setConfig after DBOS.launch');
     DBOS.#dbosConfig = config;
-    DBOS.#runtimeConfig = runtimeConfig;
-    DBOS.translateConfig();
-  }
-
-  private static translateConfig() {
-    if (DBOS.#dbosConfig && !isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
-      const debugMode = DBOS.getDebugModeFromEnv();
-      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = translatePublicDBOSconfig(DBOS.#dbosConfig, debugMode);
-      if (process.env.DBOS__CLOUD === 'true') {
-        [DBOS.#dbosConfig, DBOS.#runtimeConfig] = overwrite_config(
-          DBOS.#dbosConfig as DBOSConfigInternal,
-          DBOS.#runtimeConfig,
-        );
-      }
-    }
-  }
-
-  /**
-   * @deprecated For unit testing purposes only
-   *   Use `setConfig`
-   */
-  static setAppConfig<T>(key: string, newValue: T): void {
-    const conf = DBOS.#dbosConfig?.application;
-    if (!conf) throw new DBOSExecutorNotInitializedError();
-    set(conf, key, newValue);
-  }
-
-  /**
-   * Drop DBOS system database.
-   * USE IN TESTS ONLY - ALL WORKFLOWS, QUEUES, ETC. WILL BE LOST.
-   */
-  static async dropSystemDB(): Promise<void> {
-    if (!DBOS.#dbosConfig) {
-      DBOS.#dbosConfig = parseConfigFile()[0];
-    }
-
-    DBOS.translateConfig();
-    return PostgresSystemDatabase.dropSystemDB(DBOS.#dbosConfig as DBOSConfigInternal);
   }
 
   /**
@@ -288,28 +243,64 @@ export class DBOS {
     if (DBOS.isInitialized()) {
       return;
     }
-    const debugMode = options?.debugMode ?? DBOS.getDebugModeFromEnv();
 
     if (options?.conductorKey) {
       // Use a generated executor ID.
       globalParams.executorID = randomUUID();
     }
 
-    // Initialize the DBOS executor
-    if (!DBOS.#dbosConfig) {
-      [DBOS.#dbosConfig, DBOS.#runtimeConfig] = parseConfigFile({ forceConsole: debugMode });
-    } else if (!isDeprecatedDBOSConfig(DBOS.#dbosConfig)) {
-      DBOS.translateConfig(); // This is a defensive measure for users who'd do DBOS.config = X instead of using DBOS.setConfig()
+    const debugMode = options?.debugMode ?? process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
+    const configFile = readConfigFile();
+
+    const $dbosConfig = DBOS.#dbosConfig;
+    let [internalConfig, runtimeConfig] = $dbosConfig
+      ? translatePublicDBOSconfig(
+          // copy config settings to ensure no unexpected fields are passed thru
+          {
+            adminPort: $dbosConfig.adminPort,
+            name: $dbosConfig.name,
+            databaseUrl: $dbosConfig.databaseUrl,
+            userDbclient: $dbosConfig.userDbclient,
+            userDbPoolSize: $dbosConfig.userDbPoolSize,
+            sysDbName: $dbosConfig.sysDbName,
+            sysDbPoolSize: $dbosConfig.sysDbPoolSize,
+            logLevel: $dbosConfig.logLevel,
+            addContextMetadata: $dbosConfig.addContextMetadata,
+            runAdminServer: $dbosConfig.runAdminServer,
+            otlpTracesEndpoints: [...($dbosConfig.otlpTracesEndpoints ?? [])],
+            otlpLogsEndpoints: [...($dbosConfig.otlpLogsEndpoints ?? [])],
+          },
+          debugMode,
+        )
+      : processConfigFile(configFile, { forceConsole: debugMode });
+
+    if (process.env.DBOS__CLOUD === 'true') {
+      [internalConfig, runtimeConfig] = overwrite_config(internalConfig, runtimeConfig, configFile);
     }
 
-    if (!DBOS.#dbosConfig) {
-      throw new DBOSError('DBOS configuration not set');
+    DBOS.#port = runtimeConfig.port;
+    DBOS.#poolConfig = internalConfig.poolConfig;
+    DBOS.#dbosConfig = {
+      name: internalConfig.name,
+      databaseUrl: internalConfig.databaseUrl,
+      userDbclient: internalConfig.userDbclient,
+      userDbPoolSize: DBOS.#dbosConfig?.userDbPoolSize,
+      sysDbName: internalConfig.system_database,
+      sysDbPoolSize: internalConfig.sysDbPoolSize,
+      logLevel: internalConfig.telemetry.logs?.logLevel,
+      addContextMetadata: internalConfig.telemetry.logs?.addContextMetadata,
+      otlpTracesEndpoints: [...(internalConfig.telemetry.OTLPExporter?.tracesEndpoint ?? [])],
+      otlpLogsEndpoints: [...(internalConfig.telemetry.OTLPExporter?.logsEndpoint ?? [])],
+      adminPort: runtimeConfig.admin_port,
+      runAdminServer: runtimeConfig.runAdminServer,
+    };
+
+    if (globalParams.appName === '' && DBOS.#dbosConfig.name) {
+      globalParams.appName = DBOS.#dbosConfig.name;
     }
 
     DBOSExecutor.createInternalQueue();
-    DBOSExecutor.globalInstance = new DBOSExecutor(DBOS.#dbosConfig as DBOSConfigInternal, {
-      debugMode,
-    });
+    DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig, { debugMode });
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
@@ -341,14 +332,14 @@ export class DBOS {
 
     // Start the DBOS admin server
     const logger = DBOS.logger;
-    if (DBOS.#runtimeConfig && DBOS.#runtimeConfig.runAdminServer) {
+    if (runtimeConfig.runAdminServer) {
       const adminApp = DBOSHttpServer.setupAdminApp(executor);
       try {
-        await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(DBOS.#runtimeConfig.admin_port, logger as GlobalLogger);
+        await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
         // Wrap the listen call in a promise to properly catch errors
         DBOS.adminServer = await new Promise((resolve, reject) => {
-          const server = adminApp.listen(DBOS.#runtimeConfig?.admin_port, () => {
-            DBOS.logger.debug(`DBOS Admin Server is running at http://localhost:${DBOS.#runtimeConfig?.admin_port}`);
+          const server = adminApp.listen(runtimeConfig?.admin_port, () => {
+            DBOS.logger.debug(`DBOS Admin Server is running at http://localhost:${runtimeConfig?.admin_port}`);
             resolve(server);
           });
           server.on('error', (err) => {
@@ -356,7 +347,7 @@ export class DBOS {
           });
         });
       } catch (e) {
-        logger.warn(`Unable to start DBOS admin server on port ${DBOS.#runtimeConfig.admin_port}`);
+        logger.warn(`Unable to start DBOS admin server on port ${runtimeConfig.admin_port}`);
       }
     }
 
@@ -398,11 +389,7 @@ export class DBOS {
   static logRegisteredEndpoints(): void {
     if (!DBOSExecutor.globalInstance) return;
     DBOSExecutor.globalInstance.logRegisteredHTTPUrls();
-    DBOSExecutor.globalInstance.scheduler?.logRegisteredSchedulerEndpoints();
     wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
-    for (const evtRcvr of DBOSExecutor.globalInstance.eventReceivers) {
-      evtRcvr.logRegisteredEndpoints();
-    }
     for (const lcl of getLifecycleListeners()) {
       lcl.logRegisteredEndpoints?.();
     }
@@ -494,9 +481,9 @@ export class DBOS {
    */
   static async launchAppHTTPServer() {
     const server = DBOS.setUpHandlerCallback();
-    if (DBOS.#runtimeConfig) {
+    if (DBOS.#port) {
       // This will not listen if there's no decorated endpoint
-      DBOS.appServer = await server.appListen(DBOS.#runtimeConfig.port);
+      DBOS.appServer = await server.appListen(DBOS.#port);
     }
   }
 
@@ -525,10 +512,11 @@ export class DBOS {
   // Globals
   //////
   static #dbosConfig?: DBOSConfig;
-  static #runtimeConfig?: DBOSRuntimeConfig = undefined;
+  static #poolConfig?: PoolConfig;
+  static #port?: number;
 
-  static get dbosConfig(): DBOSConfig | undefined {
-    return DBOS.#dbosConfig;
+  static get dbosConfig(): ReadonlyArray<DBOSConfig & { poolConfig?: PoolConfig }> {
+    return { ...DBOS.#dbosConfig, poolConfig: DBOS.#poolConfig };
   }
 
   //////
@@ -743,19 +731,6 @@ export class DBOS {
     return client as DrizzleClient;
   }
 
-  static getConfig<T>(key: string): T | undefined;
-  static getConfig<T>(key: string, defaultValue: T): T;
-  /**
-   * Gets configuration information from the `application` section
-   *  of `DBOSConfig`
-   * @param key - name of configuration item
-   * @param defaultValue - value to return if `key` does not exist in the configuration
-   */
-  static getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    if (DBOS.#executor) return DBOS.#executor.getConfig(key, defaultValue);
-    return defaultValue;
-  }
-
   /**
    * Query the current application database
    * @param sql - parameterized SQL statement (string) to execute
@@ -791,11 +766,7 @@ export class DBOS {
    * @param key - The subitem kept by event receiver service for the function, allowing multiple values to be stored per function
    * @returns The latest system database state for the specified service+workflow+item
    */
-  static async getEventDispatchState(
-    svc: string,
-    wfn: string,
-    key: string,
-  ): Promise<DBOSEventReceiverState | undefined> {
+  static async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
     return await DBOS.#executor.getEventDispatchState(svc, wfn, key);
   }
   /**
@@ -807,7 +778,7 @@ export class DBOS {
    * @param state - the service, workflow, item, version, and value to write to the database
    * @returns The upsert returns the current record, which may be useful if it is more recent than the `state` provided.
    */
-  static async upsertEventDispatchState(state: DBOSEventReceiverState): Promise<DBOSEventReceiverState> {
+  static async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
     return await DBOS.#executor.upsertEventDispatchState(state);
   }
 
@@ -1151,9 +1122,9 @@ export class DBOS {
         }
       }
     } else {
-      let span = options.span;
-      if (!span) {
-        span = DBOS.#executor.tracer.startSpan('topContext', {
+      const span = options.span;
+      if (!options.span) {
+        options.span = DBOS.#executor.tracer.startSpan('topContext', {
           operationUUID: options.idAssignedForNextWorkflow,
           operationType: options.operationType,
           authenticatedUser: options.authenticatedUser,
@@ -1162,7 +1133,11 @@ export class DBOS {
         });
       }
 
-      return runWithTopContext(options, callback);
+      try {
+        return await runWithTopContext(options, callback);
+      } finally {
+        options.span = span;
+      }
     }
   }
 
@@ -1217,7 +1192,7 @@ export class DBOS {
 
     const handler: ProxyHandler<object> = {
       apply(target, _thisArg, args) {
-        const regOp = getRegistrationForFunction(target);
+        const regOp = getFunctionRegistration(target);
         if (!regOp) {
           // eslint-disable-next-line @typescript-eslint/no-base-to-string
           const name = typeof target === 'function' ? target.name : target.toString();
@@ -1228,7 +1203,7 @@ export class DBOS {
       get(target, p, receiver) {
         // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         const func = Reflect.get(target, p, receiver);
-        const regOp = getRegistrationForFunction(func) ?? regOps.find((op) => op.name === p);
+        const regOp = getFunctionRegistration(func) ?? regOps.find((op) => op.name === p);
         if (regOp) {
           return (...args: unknown[]) => DBOS.#invokeWorkflow(instance, regOp, args, params);
         }
@@ -1271,7 +1246,7 @@ export class DBOS {
         topic,
       );
     }
-    return DBOS.#executor.send(destinationID, message, topic, idempotencyKey); // Temp WF variant
+    return DBOS.#executor.runSendTempWF(destinationID, message, topic, idempotencyKey); // Temp WF variant
   }
 
   /**
@@ -1371,26 +1346,41 @@ export class DBOS {
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
   }
 
+  /**
+   * registers a workflow method or function with an invocation schedule
+   * @param func - The workflow method or function to register with an invocation schedule
+   * @param options - Configuration information for the scheduled workflow
+   */
+  static registerScheduled<This, Return>(
+    func: (this: This, ...args: ScheduledArgs) => Promise<Return>,
+    config: SchedulerConfig & FunctionName,
+  ) {
+    ScheduledReceiver.registerScheduled(func, config);
+  }
+
   //////
   // Decorators
   //////
   /**
    * Decorator associating a class static method with an invocation schedule
-   * @param schedulerConfig - The schedule, consisting of a crontab and policy for "make-up work"
+   * @param config - The schedule, consisting of a crontab and policy for "make-up work"
    */
-  static scheduled(schedulerConfig: SchedulerConfig) {
-    function scheddec<This, Return>(
+  static scheduled(config: SchedulerConfig) {
+    function methodDecorator<This, Return>(
       target: object,
-      propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>,
+      propertyKey: PropertyKey,
+      descriptor: TypedPropertyDescriptor<(this: This, ...args: ScheduledArgs) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
-      const schedRegistration = registration as unknown as SchedulerRegistrationBase;
-      schedRegistration.schedulerConfig = schedulerConfig;
-
+      if (descriptor.value) {
+        DBOS.registerScheduled(descriptor.value, {
+          ...config,
+          ctorOrProto: target,
+          name: String(propertyKey),
+        });
+      }
       return descriptor;
     }
-    return scheddec;
+    return methodDecorator;
   }
 
   /**
@@ -1405,11 +1395,16 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+        target,
+        propertyKey,
+        inDescriptor,
+      );
       const invoker = DBOS.#getWorkflowInvoker(registration, config);
 
       descriptor.value = invoker;
       registration.wrappedFunction = invoker;
+      registerFunctionWrapper(invoker, registration);
 
       return descriptor;
     }
@@ -1427,20 +1422,15 @@ export class DBOS {
    */
   static registerWorkflow<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    options: {
-      name?: string;
-      ctorOrProto?: object;
-      className?: string;
-      config?: WorkflowConfig;
-    } = {},
+    config?: FunctionName & WorkflowConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
-    const { registration } = registerAndWrapDBOSFunctionByName(
-      options.ctorOrProto,
-      options.className,
-      options.name ?? func.name,
+    const registration = wrapDBOSFunctionAndRegisterByUniqueName(
+      config?.ctorOrProto,
+      config?.className,
+      config?.name ?? func.name,
       func,
     );
-    return DBOS.#getWorkflowInvoker(registration, options.config);
+    return DBOS.#getWorkflowInvoker(registration, config);
   }
 
   static async #invokeWorkflow<This, Args extends unknown[], Return>(
@@ -1566,7 +1556,11 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+        target,
+        propertyKey,
+        inDescriptor,
+      );
       registration.setTxnConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -1620,7 +1614,7 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.#executor.transaction(
+        return await DBOS.#executor.runTransactionTempWF(
           registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
           wfParams,
           ...rawArgs,
@@ -1629,6 +1623,7 @@ export class DBOS {
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
+      registerFunctionWrapper(invokeWrapper, registration);
 
       Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
@@ -1651,7 +1646,11 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+        target,
+        propertyKey,
+        inDescriptor,
+      );
       registration.setProcConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -1684,7 +1683,7 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.#executor.procedure(
+        return await DBOS.#executor.runProcedureTempWF(
           registration.registeredFunction as (...args: Args) => Promise<Return>,
           wfParams,
           ...rawArgs,
@@ -1693,6 +1692,7 @@ export class DBOS {
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
+      registerFunctionWrapper(invokeWrapper, registration);
 
       Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
@@ -1718,7 +1718,11 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = registerAndWrapDBOSFunction(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+        target,
+        propertyKey,
+        inDescriptor,
+      );
       registration.setStepConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -1772,8 +1776,8 @@ export class DBOS {
           workflowUUID: wfId,
         };
 
-        return await DBOS.#executor.external(
-          registration.registeredFunction as unknown as TypedAsyncFunction<Args, Return>,
+        return await DBOS.#executor.runStepTempWF(
+          registration.registeredFunction as TypedAsyncFunction<Args, Return>,
           wfParams,
           ...rawArgs,
         );
@@ -1781,6 +1785,7 @@ export class DBOS {
 
       descriptor.value = invokeWrapper;
       registration.wrappedFunction = invokeWrapper;
+      registerFunctionWrapper(invokeWrapper, registration);
 
       Object.defineProperty(invokeWrapper, 'name', {
         value: registration.name,
@@ -1798,17 +1803,20 @@ export class DBOS {
    *   This ensures "at least once" execution of the step, and that the step will not
    *    be executed again once the checkpoint is recorded
    * @param func - The function to register as a step
-   * @param config - Configuration information for the step, particularly the retry policy
-   * @param config.name - The name of the step; if not provided, the function name will be used
+   * @param config - Configuration information for the step, particularly the retry policy and name
    */
   static registerStep<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config: StepConfig & { name?: string } = {},
+    config: StepConfig & FunctionName = {},
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;
+
+    const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, func);
+
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const inst = this;
+      const callFunc = reg.registeredFunction ?? reg.origFunction;
 
       if (DBOS.isWithinWorkflow()) {
         if (DBOS.isInTransaction()) {
@@ -1816,10 +1824,10 @@ export class DBOS {
         }
         if (DBOS.isInStep()) {
           // There should probably be checks here about the compatibility of the StepConfig...
-          return func.call(this, ...rawArgs);
+          return callFunc.call(this, ...rawArgs);
         }
         return await DBOSExecutor.globalInstance!.callStepFunction(
-          func as unknown as TypedAsyncFunction<Args, Return>,
+          callFunc as TypedAsyncFunction<Args, Return>,
           name,
           config,
           inst ?? null,
@@ -1832,8 +1840,10 @@ export class DBOS {
           `Invalid call to step '${name}' outside of a workflow; with directive to start a workflow.`,
         );
       }
-      return func.call(this, ...rawArgs);
+      return callFunc.call(this, ...rawArgs);
     };
+
+    registerFunctionWrapper(invokeWrapper, reg);
 
     Object.defineProperty(invokeWrapper, 'name', { value: name });
     return invokeWrapper;
@@ -1939,18 +1949,6 @@ export class DBOS {
   /////
   // Registration, etc
   /////
-  /**
-   * Construct and register an object.
-   * Calling this is not necessary; calling the constructor of any `ConfiguredInstance` subclass is sufficient
-   * @deprecated Use `new` directly
-   */
-  static configureInstance<R extends ConfiguredInstance, T extends unknown[]>(
-    cls: new (name: string, ...args: T) => R,
-    name: string,
-    ...args: T
-  ): R {
-    return configureInstance(cls, name, ...args);
-  }
 
   /**
    * Register a lifecycle listener
@@ -1979,13 +1977,9 @@ export class DBOS {
   static associateFunctionWithInfo<This, Args extends unknown[], Return>(
     external: AnyConstructor | object | string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      ctorOrProto?: object;
-      className?: string;
-      name: string;
-    },
+    target: FunctionName,
   ) {
-    return associateMethodWithExternal(external, target.ctorOrProto, target.className, target.name, func);
+    return associateMethodWithExternal(external, target.ctorOrProto, target.className, target.name ?? func.name, func);
   }
 
   /**
@@ -1994,10 +1988,7 @@ export class DBOS {
   static associateParamWithInfo<This, Args extends unknown[], Return>(
     external: AnyConstructor | object | string,
     func: (this: This, ...args: Args) => Promise<Return>,
-    target: {
-      ctorOrProto?: object;
-      className?: string;
-      name: string;
+    target: FunctionName & {
       param: number | string;
     },
   ) {
@@ -2005,14 +1996,18 @@ export class DBOS {
       external,
       target.ctorOrProto,
       target.className,
-      target.name,
+      target.name ?? func.name,
       func,
       target.param,
     );
   }
 
   /** Get registrations */
-  static getAssociatedInfo(external: AnyConstructor | object | string, cls?: object | string, funcName?: string) {
+  static getAssociatedInfo(
+    external: AnyConstructor | object | string,
+    cls?: object | string,
+    funcName?: string,
+  ): readonly ExternalRegistration[] {
     return getRegistrationsForExternal(external, cls, funcName);
   }
 }
@@ -2035,16 +2030,5 @@ export class InitContext {
 
   queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
     return DBOS.queryUserDB(sql, params);
-  }
-
-  getConfig<T>(key: string): T | undefined;
-  getConfig<T>(key: string, defaultValue: T): T;
-  getConfig<T>(key: string, defaultValue?: T): T | undefined {
-    const value = DBOS.getConfig(key, defaultValue);
-    // If the key is found and the default value is provided, check whether the value is of the same type.
-    if (value && defaultValue && typeof value !== typeof defaultValue) {
-      throw new DBOSConfigKeyTypeError(key, typeof defaultValue, typeof value);
-    }
-    return value;
   }
 }

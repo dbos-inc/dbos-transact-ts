@@ -1,17 +1,18 @@
+import EventEmitter from 'node:events';
 import { DBOS, SchedulerMode, WorkflowQueue } from '../../src';
-import { DBOSConfig } from '../../src/dbos-executor';
+import { DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
 import { sleepms } from '../../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 
 describe('cf-scheduled-wf-tests-simple', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
 
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    await DBOS.dropSystemDB();
+    await dropDatabase(config.databaseUrl!, config.system_database);
   });
 
   beforeEach(async () => {
@@ -125,13 +126,13 @@ class DBOSSchedTestClassOAOO {
 }
 
 describe('cf-scheduled-wf-tests-oaoo', () => {
-  let config: DBOSConfig;
+  let config: DBOSConfigInternal;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    await DBOS.dropSystemDB();
+    await dropDatabase(config.databaseUrl!, config.system_database);
   });
 
   beforeEach(async () => {});
@@ -211,4 +212,73 @@ describe('cf-scheduled-wf-tests-when-active', () => {
       await DBOS.shutdown();
     }
   }, 15000);
+});
+
+interface SchedulerEvents {
+  scheduled: (functionName: string, schedTime: Date, startTime: Date, workflowID?: string) => void;
+}
+
+class SchedulerEmitter extends EventEmitter {
+  override on<K extends keyof SchedulerEvents>(event: K, listener: SchedulerEvents[K]): this {
+    return super.on(event, listener);
+  }
+
+  override emit<K extends keyof SchedulerEvents>(event: K, ...args: Parameters<SchedulerEvents[K]>): boolean {
+    // DBOS.logger.info(`SchedulerEmitter topic ${args[1]} partition ${args[2]}`);
+    return super.emit(event, ...args);
+  }
+}
+
+const schedulerEmitter = new SchedulerEmitter();
+
+async function scheduledFunc(schedTime: Date, startTime: Date) {
+  schedulerEmitter.emit('scheduled', 'scheduledFunc', schedTime, startTime, DBOS.workflowID);
+  await Promise.resolve();
+}
+
+const regScheduledFunc = DBOS.registerWorkflow(scheduledFunc);
+DBOS.registerScheduled(regScheduledFunc, { crontab: '* * * * * *' });
+
+export async function withTimeout<T>(promise: Promise<T>, ms: number, message = 'Timeout'): Promise<T> {
+  let timeoutId: ReturnType<typeof setTimeout>;
+
+  const timeout = new Promise<never>((_, reject) => {
+    timeoutId = setTimeout(() => reject(new Error(message)), ms);
+  });
+
+  return await Promise.race([promise, timeout]).finally(() => clearTimeout(timeoutId));
+}
+
+describe('decorator-free-scheduled', () => {
+  let config: DBOSConfigInternal;
+
+  beforeAll(async () => {
+    DBOSSchedTestClass.reset(true);
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+    await dropDatabase(config.databaseUrl!, config.system_database);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  }, 10000);
+
+  test('free-func-scheduled', async () => {
+    const events: { functionName: string; schedTime: Date; startTime: Date; workflowID: string | undefined }[] = [];
+    function onScheduled(functionName: string, schedTime: Date, startTime: Date, workflowID: string | undefined) {
+      events.push({ functionName, schedTime, startTime, workflowID });
+    }
+    try {
+      schedulerEmitter.on('scheduled', onScheduled);
+      await sleepms(2500);
+      expect(events.length).toBeGreaterThanOrEqual(2);
+    } finally {
+      schedulerEmitter.off('scheduled', onScheduled);
+    }
+  });
 });

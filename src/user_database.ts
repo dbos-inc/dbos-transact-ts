@@ -10,9 +10,9 @@ import {
 import { IsolationLevel, TransactionConfig } from './transaction';
 import { ValuesOf } from './utils';
 import { Knex } from 'knex';
-import { GlobalLogger as Logger } from './telemetry/logs';
+import { GlobalLogger } from './telemetry/logs';
 
-export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: Logger) {
+export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: GlobalLogger) {
   const pgUserClient = new Client(poolConfig);
   try {
     await pgUserClient.connect(); // Try to establish a connection

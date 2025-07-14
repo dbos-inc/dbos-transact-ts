@@ -1,7 +1,7 @@
 // using https://github.com/porsager/postgres
 
 import postgres, { type Sql } from 'postgres';
-import { DBOS, DBOSWorkflowConflictError } from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
@@ -228,16 +228,16 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
 
   registerTransaction<This, Args extends unknown[], Return>(
     func: (this: This, ...args: Args) => Promise<Return>,
-    config?: PostgresTransactionOptions,
+    config?: PostgresTransactionOptions & FunctionName,
   ): (this: This, ...args: Args) => Promise<Return> {
-    return registerTransaction(this.name, func, { name: config?.name ?? func.name }, config);
+    return registerTransaction(this.name, func, config);
   }
 
   transaction(config?: PostgresTransactionOptions) {
     // eslint-disable-next-line @typescript-eslint/no-this-alias
     const ds = this;
     return function decorator<This, Args extends unknown[], Return>(
-      _target: object,
+      target: object,
       propertyKey: PropertyKey,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
@@ -248,6 +248,7 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
       descriptor.value = ds.registerTransaction(descriptor.value, {
         ...config,
         name: config?.name ?? String(propertyKey),
+        ctorOrProto: target,
       });
 
       return descriptor;

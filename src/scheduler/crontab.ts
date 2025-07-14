@@ -274,17 +274,17 @@ function matchPattern(pattern: string, nvalue: number) {
 }
 
 export class TimeMatcher {
-  pattern: string;
-  expressions: string[];
-  dtf: Intl.DateTimeFormat | null;
-  timezone?: string;
+  #pattern: string;
+  #expressions: string[];
+  #dtf: Intl.DateTimeFormat | null;
+  #timezone?: string;
 
   constructor(pattern: string, timezone?: string) {
     validateCrontab(pattern);
-    this.pattern = convertExpression(pattern);
-    this.timezone = timezone;
-    this.expressions = this.pattern.split(' ');
-    this.dtf = this.timezone
+    this.#pattern = convertExpression(pattern);
+    this.#timezone = timezone;
+    this.#expressions = this.#pattern.split(' ');
+    this.#dtf = this.#timezone
       ? new Intl.DateTimeFormat('en-US', {
           year: 'numeric',
           month: '2-digit',
@@ -294,33 +294,34 @@ export class TimeMatcher {
           second: '2-digit',
           hourCycle: 'h23',
           fractionalSecondDigits: 3,
-          timeZone: this.timezone,
+          timeZone: this.#timezone,
         })
       : null;
   }
 
-  match(date: Date) {
-    date = this.apply(date);
+  match(date: Date | number) {
+    date = this.#apply(date);
 
-    const runOnSecond = matchPattern(this.expressions[0], date.getSeconds());
-    const runOnMinute = matchPattern(this.expressions[1], date.getMinutes());
-    const runOnHour = matchPattern(this.expressions[2], date.getHours());
-    const runOnDay = this.runsThisDay(date);
+    const runOnSecond = matchPattern(this.#expressions[0], date.getSeconds());
+    const runOnMinute = matchPattern(this.#expressions[1], date.getMinutes());
+    const runOnHour = matchPattern(this.#expressions[2], date.getHours());
+    const runOnDay = this.#runsThisDay(date);
 
     return runOnSecond && runOnMinute && runOnHour && runOnDay;
   }
 
-  private runsThisDay(date: Date) {
-    const runOnDay = matchPattern(this.expressions[3], date.getDate());
-    const runOnMonth = matchPattern(this.expressions[4], date.getMonth() + 1);
-    const runOnWeekDay = matchPattern(this.expressions[5], date.getDay());
+  #runsThisDay(date: Date) {
+    const runOnDay = matchPattern(this.#expressions[3], date.getDate());
+    const runOnMonth = matchPattern(this.#expressions[4], date.getMonth() + 1);
+    const runOnWeekDay = matchPattern(this.#expressions[5], date.getDay());
 
     return runOnDay && runOnMonth && runOnWeekDay;
   }
 
-  nextWakeupTime(date: Date) {
+  nextWakeupTime(date: Date | number) {
     // This is conservative.  Some schedules never occur, such as the 30th of February, but you can ask for them
-    let msec = Math.round(date.getTime());
+    const time = typeof date === 'number' ? date : date.getTime();
+    let msec = Math.round(time);
     // This can be optimized by skipping ahead, but unit test first
     for (let maxIters = 3600; --maxIters; maxIters > 0) {
       msec += 1000;
@@ -330,11 +331,11 @@ export class TimeMatcher {
     return new Date(msec);
   }
 
-  apply(date: Date) {
-    if (this.dtf) {
-      return new Date(this.dtf.format(date));
+  #apply(date: Date | number): Date {
+    if (this.#dtf) {
+      return new Date(this.#dtf.format(date));
     }
 
-    return date;
+    return typeof date === 'number' ? new Date(date) : date;
   }
 }

@@ -40,7 +40,6 @@ describe('httpserver-tests', () => {
   });
 
   beforeEach(async () => {
-    DBOS.registerLifecycleCallback(dhttp);
     const _classes = [TestEndpoints];
     await DBOS.launch();
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);

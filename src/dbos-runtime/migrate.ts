@@ -23,7 +23,7 @@ export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile
   logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
   await createDBIfDoesNotExist(poolConfig, logger);
 
-  const migrationCommands = configFile.database.migrate;
+  const migrationCommands = configFile.database?.migrate;
 
   try {
     migrationCommands?.forEach((cmd) => {
@@ -55,12 +55,12 @@ export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile
 export function rollbackMigration(_config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) {
   logger.info('Starting Migration Rollback');
 
-  let dbType = configFile.database.app_db_client;
+  let dbType = configFile.database?.app_db_client;
   if (dbType === undefined) {
     dbType = 'knex';
   }
 
-  const rollbackcommands = configFile.database.rollback;
+  const rollbackcommands = configFile.database?.rollback;
 
   try {
     rollbackcommands?.forEach((cmd) => {

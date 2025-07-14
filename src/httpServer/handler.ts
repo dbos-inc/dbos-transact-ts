@@ -21,8 +21,8 @@ export class HandlerParameter extends MethodParameter {
 ///////////////////////////////////
 
 export function ArgSource(source: ArgSources) {
-  return function (target: object, propertyKey: string | symbol, parameterIndex: number) {
-    const existingParameters = getOrCreateMethodArgsRegistration(target, undefined, propertyKey);
+  return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
+    const existingParameters = getOrCreateMethodArgsRegistration(target, propertyKey);
 
     const curParam = existingParameters[parameterIndex] as HandlerParameter;
     curParam.argSource = source;

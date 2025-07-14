@@ -1,7 +1,7 @@
 import type { PoolConfig } from 'pg';
 import { PostgresSystemDatabase, type SystemDatabase, type WorkflowStatusInternal } from './system_database';
 
-import { GlobalLogger as Logger } from './telemetry/logs';
+import { GlobalLogger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
 import {
   type GetQueuedWorkflowsInput,
@@ -79,7 +79,7 @@ interface ClientEnqueueOptions {
  * DBOSClient is the main entry point for interacting with the DBOS system.
  */
 export class DBOSClient {
-  private readonly logger: Logger;
+  private readonly logger: GlobalLogger;
   private readonly systemDatabase: SystemDatabase;
   private readonly userDatabase: UserDatabase;
 
@@ -93,7 +93,7 @@ export class DBOSClient {
 
     systemDatabase ??= `${poolConfig.database}_dbos_sys`;
 
-    this.logger = new Logger();
+    this.logger = new GlobalLogger();
     this.systemDatabase = new PostgresSystemDatabase(poolConfig, systemDatabase, this.logger);
     this.userDatabase = new PGNodeUserDatabase(poolConfig);
   }
