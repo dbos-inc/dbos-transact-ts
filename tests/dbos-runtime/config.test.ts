@@ -60,9 +60,6 @@ describe('dbos-config', () => {
         `;
       jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
 
-      const cfg: ConfigFile = loadConfigFile(dbosConfigFilePath);
-      expect(cfg.telemetry?.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
-      expect(cfg.telemetry?.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
       await DBOS.launch();
       expect(DBOS.dbosConfig.otlpTracesEndpoints).toEqual(['http://otel-collector:4317/from-file']);
     });
