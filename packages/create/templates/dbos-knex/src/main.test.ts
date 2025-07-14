@@ -15,12 +15,14 @@ describe('operations-test', () => {
    * Test the transaction.
    */
   test('test-transaction', async () => {
+    await Hello.deleteUser('dbos');
+
     const res = await Hello.helloTransaction('dbos');
     expect(res).toMatch('Hello, dbos! You have been greeted');
 
     // Check the greet count.
-    const rows = (await DBOS.queryUserDB('SELECT * FROM dbos_hello WHERE name=$1', ['dbos'])) as dbos_hello[];
-    expect(rows[0].greet_count).toBe(1);
+    const rows = await Hello.getCount('dbos');
+    expect(rows.rows[0].greet_count).toBe(1);
   });
 
   /**

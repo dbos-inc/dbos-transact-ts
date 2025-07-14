@@ -5,6 +5,20 @@
 
 import express, { Request, Response } from 'express';
 import { DBOS } from '@dbos-inc/dbos-sdk';
+import { KnexDataSource } from '@dbos-inc/knex-datasource';
+
+const config = {
+  client: 'pg',
+  connection: {
+    host: process.env.PGHOST || 'localhost',
+    port: parseInt(process.env.PGPORT || '5432'),
+    database: process.env.PGDATABASE || 'dbos_knex',
+    user: process.env.PGUSER || 'postgres',
+    password: process.env.PGPASSWORD || 'dbos',
+  },
+};
+
+const knexds = new KnexDataSource('app-db', config);
 
 export interface dbos_hello {
   name: string;
@@ -14,14 +28,24 @@ export interface dbos_hello {
 export class Hello {
   // This transaction uses DBOS and Knex to perform database operations.
   // It retrieves and increments the number of times a user has been greeted.
-  @DBOS.transaction()
+  @knexds.transaction()
   static async helloTransaction(user: string) {
     const query =
       'INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;';
-    const { rows } = (await DBOS.knexClient.raw(query, [user])) as { rows: dbos_hello[] };
+    const { rows } = (await knexds.client.raw(query, [user])) as { rows: dbos_hello[] };
     const greet_count = rows[0].greet_count;
     const greeting = `Hello, ${user}! You have been greeted ${greet_count} times.`;
     return makeHTML(greeting);
+  }
+
+  @knexds.transaction({ readOnly: true })
+  static async getCount(user: string) {
+    return (await knexds.client.raw('SELECT * FROM dbos_hello WHERE name=?', [user])) as { rows: dbos_hello[] };
+  }
+
+  @knexds.transaction()
+  static async deleteUser(user: string) {
+    await knexds.client.raw('DELETE FROM dbos_hello WHERE name=?', [user]);
   }
 }
 
