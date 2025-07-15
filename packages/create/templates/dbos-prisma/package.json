@@ -25,6 +25,8 @@
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "file:../../../..",
-    "@prisma/client": "^5.15.0"
+    "@dbos-inc/prisma-datasource": "file:../../../prisma-datasource",
+    "@prisma/client": "^5.15.0",
+    "express": "^4.21.2"
   }
 }
