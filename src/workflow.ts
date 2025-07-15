@@ -15,6 +15,8 @@ export interface WorkflowParams {
   enqueueOptions?: EnqueueOptions; // Options for the workflow queue
 }
 
+export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;
+
 /**
  * Configuration for `DBOS.workflow` functions
  */
