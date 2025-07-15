@@ -5,10 +5,11 @@ import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import { ExportResult, ExportResultCode } from '@opentelemetry/core';
+import { toStringSet } from '../utils';
 
 export interface OTLPExporterConfig {
-  logsEndpoint?: string[];
-  tracesEndpoint?: string[];
+  logsEndpoint?: string | string[];
+  tracesEndpoint?: string | string[];
 }
 
 export interface ITelemetryExporter {
@@ -19,9 +20,10 @@ export interface ITelemetryExporter {
 export class TelemetryExporter implements ITelemetryExporter {
   private readonly tracesExporters: OTLPTraceExporter[] = [];
   private readonly logsExporters: OTLPLogExporter[] = [];
+
   constructor(config: OTLPExporterConfig) {
     if (config.tracesEndpoint) {
-      for (const endpoint of config.tracesEndpoint) {
+      for (const endpoint of toStringSet(config.tracesEndpoint)) {
         this.tracesExporters.push(
           new OTLPTraceExporter({
             url: endpoint,
@@ -30,8 +32,9 @@ export class TelemetryExporter implements ITelemetryExporter {
         console.log(`Traces will be exported to ${endpoint}`);
       }
     }
+
     if (config.logsEndpoint) {
-      for (const endpoint of config.logsEndpoint) {
+      for (const endpoint of toStringSet(config.logsEndpoint)) {
         this.logsExporters.push(
           new OTLPLogExporter({
             url: endpoint,
