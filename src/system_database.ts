@@ -3,7 +3,7 @@ import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } fro
 import {
   DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
-  DBOSDeadLetterQueueError,
+  DBOSMaxRecoveryAttemptsExceededError,
   DBOSConflictingWorkflowError,
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
@@ -757,14 +757,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       // recovery_attempt means "attempts" (we kept the name for backward compatibility). It's default value is 1.
       // Every time we init the status, we increment `recovery_attempts` by 1.
-      // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
+      // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `MAX_RECOVERY_ATTEMPTS_EXCEEDED`.
       const attempts = resRow.recovery_attempts;
       if (maxRetries && attempts > maxRetries + 1) {
-        await updateWorkflowStatus(client, initStatus.workflowUUID, StatusString.RETRIES_EXCEEDED, {
+        await updateWorkflowStatus(client, initStatus.workflowUUID, StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED, {
           where: { status: StatusString.PENDING },
           throwOnFailure: false,
         });
-        throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, maxRetries);
+        throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       const status = resRow.status;

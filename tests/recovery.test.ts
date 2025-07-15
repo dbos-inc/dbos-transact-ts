@@ -3,7 +3,7 @@ import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows
 import { DBOSConfigInternal } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
-import { DBOSDeadLetterQueueError } from '../src/error';
+import { DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
 import { sleepms } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 
@@ -144,12 +144,12 @@ describe('recovery-tests', () => {
     );
     // recovery_attempts is set before checking the number of attempts/retry
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
-    expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
+    expect(result.rows[0].status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
 
     // Verify a direct invocation errors
     await expect(
       DBOS.startWorkflow(LocalRecovery, { workflowID: handle.workflowID }).deadLetterWorkflow(),
-    ).rejects.toThrow(DBOSDeadLetterQueueError);
+    ).rejects.toThrow(DBOSMaxRecoveryAttemptsExceededError);
 
     // Resume the workflow. Verify it returns to PENDING status without error and attempts are reset.
     const resumedHandle = await DBOS.resumeWorkflow(handle.workflowID);
@@ -202,7 +202,7 @@ describe('recovery-tests', () => {
     );
     // recovery_attempts is set before checking the number of attempts/retry
     expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
-    expect(result.rows[0].status).toBe(StatusString.RETRIES_EXCEEDED);
+    expect(result.rows[0].status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
 
     LocalRecovery.endEvent.set();
     await handle.getResult();
