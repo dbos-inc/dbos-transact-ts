@@ -28,7 +28,7 @@ import {
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
 } from './error';
-import { translatePublicDBOSconfig, overwrite_config, readConfigFile, processConfigFile } from './dbos-runtime/config';
+import { readConfigFile } from './dbos-runtime/config';
 import { DBOSRuntime } from './dbos-runtime/runtime';
 import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {

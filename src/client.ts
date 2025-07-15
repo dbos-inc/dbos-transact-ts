@@ -12,7 +12,6 @@ import {
   type WorkflowHandle,
   type WorkflowStatus,
 } from './workflow';
-import { constructPoolConfig } from './dbos-runtime/config';
 import { DBOSJSON } from './utils';
 import {
   forkWorkflow,
@@ -84,14 +83,13 @@ export class DBOSClient {
   private readonly userDatabase: UserDatabase;
 
   private constructor(databaseUrl: string, systemDatabase?: string) {
-    const poolConfig: PoolConfig = constructPoolConfig({
-      database: {},
-      database_url: databaseUrl,
-      application: {},
-      env: {},
-    });
+    const poolConfig: PoolConfig = { connectionString: databaseUrl };
 
-    systemDatabase ??= `${poolConfig.database}_dbos_sys`;
+    if (!systemDatabase) {
+      // If no system database is provided, use the application database name with a `_dbos_sys` suffix.
+      const url = new URL(databaseUrl);
+      systemDatabase = `${url.pathname.slice(1)}_dbos_sys`;
+    }
 
     this.logger = new GlobalLogger();
     this.systemDatabase = new PostgresSystemDatabase(poolConfig, systemDatabase, this.logger);

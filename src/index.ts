@@ -59,8 +59,6 @@ export {
   requestArgValidation,
 } from './paramdecorators';
 
-export { ParseOptions, parseConfigFile } from './dbos-runtime/config';
-
 export { DBOSRuntimeConfig } from './dbos-runtime/runtime';
 
 export { DBOSConfig, DBOSExternalState, DBOSExternalState as DBOSEventReceiverState } from './dbos-executor';
