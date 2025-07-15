@@ -12,7 +12,7 @@ import { DrizzleDataSource } from '@dbos-inc/drizzle-datasource';
 const config = {
   host: process.env.PGHOST || 'localhost',
   port: parseInt(process.env.PGPORT || '5432'),
-  database: process.env.PGDATABASE || 'dbos_knex',
+  database: process.env.PGDATABASE || 'dbos_drizzle',
   user: process.env.PGUSER || 'postgres',
   password: process.env.PGPASSWORD || 'dbos',
 };
