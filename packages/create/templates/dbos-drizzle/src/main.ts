@@ -8,6 +8,7 @@ import { DBOS } from '@dbos-inc/dbos-sdk';
 import { dbosHello } from './schema';
 
 import { DrizzleDataSource } from '@dbos-inc/drizzle-datasource';
+import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 const config = {
   host: process.env.PGHOST || 'localhost',
@@ -17,7 +18,7 @@ const config = {
   password: process.env.PGPASSWORD || 'dbos',
 };
 
-const drizzleds = new DrizzleDataSource('app-db', config);
+const drizzleds = new DrizzleDataSource<NodePgDatabase>('app-db', config);
 
 export class Hello {
   // This transaction uses DBOS and drizzle to perform database operations.
