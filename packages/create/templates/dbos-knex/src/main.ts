@@ -40,12 +40,12 @@ export class Hello {
 
   @knexds.transaction({ readOnly: true })
   static async getCount(user: string) {
-    return (await knexds.client.raw('SELECT * FROM dbos_hello WHERE name=?', [user])) as { rows: dbos_hello[] };
+    return await knexds.client<dbos_hello>('dbos_hello').where({ name: user }).select('*');
   }
 
   @knexds.transaction()
   static async deleteUser(user: string) {
-    await knexds.client.raw('DELETE FROM dbos_hello WHERE name=?', [user]);
+    await knexds.client<dbos_hello>('dbos_hello').where({ name: user }).delete();
   }
 }
 
@@ -111,7 +111,7 @@ async function main() {
     databaseUrl: process.env.DBOS_DATABASE_URL,
   });
   await DBOS.launch({ expressApp: app });
-  const PORT = 3000;
+  const PORT = parseInt(process.env.NODE_PORT || '3000');
   const ENV = process.env.NODE_ENV || 'development';
 
   app.listen(PORT, () => {

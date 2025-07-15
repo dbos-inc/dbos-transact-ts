@@ -1,5 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { app, dbos_hello, Hello } from './main';
+import { app, Hello } from './main';
 import request from 'supertest';
 
 describe('operations-test', () => {
@@ -22,7 +22,7 @@ describe('operations-test', () => {
 
     // Check the greet count.
     const rows = await Hello.getCount('dbos');
-    expect(rows.rows[0].greet_count).toBe(1);
+    expect(rows[0].greet_count).toBe(1);
   });
 
   /**
