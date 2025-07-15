@@ -319,7 +319,7 @@ async function insertWorkflowStatus(
           END,
           updated_at = EXCLUDED.updated_at,
           executor_id = CASE 
-            WHEN workflow_status.status != '${StatusString.ENQUEUED}' 
+            WHEN EXCLUDED.status != '${StatusString.ENQUEUED}' 
             THEN EXCLUDED.executor_id 
             ELSE workflow_status.executor_id 
           END
