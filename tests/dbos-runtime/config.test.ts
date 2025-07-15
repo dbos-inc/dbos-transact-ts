@@ -74,6 +74,39 @@ describe('dbos-config', () => {
       expect(cfg.telemetry?.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
       expect(cfg.telemetry?.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
     });
+
+    test('loadConfigFile supports array otlp endpoints', () => {
+      const mockConfigFile = `
+        database:
+            hostname: \${DOESNOTEXISTS}
+            port: \${DOESNOTEXISTS}
+            username: \${DOESNOTEXISTS}
+            password: \${NO}
+            app_db_name: \${DOESNOTEXISTS}
+            ssl: \${DOESNOTEXISTS}
+            ssl_ca: \${DOESNOTEXISTS}
+            connectionTimeoutMillis: \${DOESNOTEXISTS}
+        telemetry:
+            OTLPExporter:
+                tracesEndpoint: 
+                  - http://otel-collector:4317/from-file
+                  - http://otel-collector:4317/from-file2
+                logsEndpoint: 
+                  - http://otel-collector:4317/logs
+                  - http://otel-collector:4317/logs2
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const cfg: ConfigFile = loadConfigFile(dbosConfigFilePath);
+      expect(cfg.telemetry?.OTLPExporter?.tracesEndpoint).toEqual([
+        'http://otel-collector:4317/from-file',
+        'http://otel-collector:4317/from-file2',
+      ]);
+      expect(cfg.telemetry?.OTLPExporter?.logsEndpoint).toEqual([
+        'http://otel-collector:4317/logs',
+        'http://otel-collector:4317/logs2',
+      ]);
+    });
   });
 
   describe('processConfigFile', () => {
@@ -91,6 +124,32 @@ describe('dbos-config', () => {
       const [config] = processConfigFile(configFile, {});
       expect(config.telemetry.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
       expect(config.telemetry.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
+    });
+
+    test('processConfigFile support array oltp endpoints', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        telemetry:
+            OTLPExporter:
+                tracesEndpoint: 
+                  - http://otel-collector:4317/from-file
+                  - http://otel-collector:4317/from-file2
+                logsEndpoint: 
+                  - http://otel-collector:4317/logs
+                  - http://otel-collector:4317/logs2
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, {});
+      expect(config.telemetry?.OTLPExporter?.tracesEndpoint).toEqual([
+        'http://otel-collector:4317/from-file',
+        'http://otel-collector:4317/from-file2',
+      ]);
+      expect(config.telemetry?.OTLPExporter?.logsEndpoint).toEqual([
+        'http://otel-collector:4317/logs',
+        'http://otel-collector:4317/logs2',
+      ]);
     });
 
     test('processConfigFile logLevel default', () => {

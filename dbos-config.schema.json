@@ -14,7 +14,7 @@
       "enum": ["node", "python"]
     },
     "database_url": {
-      "type": ["string", "null"],
+      "type": "string",
       "description": "The URL of the application database"
     },
     "database": {
@@ -22,17 +22,17 @@
       "additionalProperties": false,
       "properties": {
         "hostname": {
-          "type": ["string", "null"],
+          "type": "string",
           "description": "The hostname or IP address of the application database. DEPRECATED: Use database_url instead",
           "deprecated": true
         },
         "port": {
-          "type": ["number", "null", "string"],
+          "type": ["number", "string"],
           "description": "The port number of the application database. DEPRECATED: Use database_url instead",
           "deprecated": true
         },
         "username": {
-          "type": ["string", "null"],
+          "type": "string",
           "description": "The username to use when connecting to the application database. DEPRECATED: Use database_url instead",
           "not": {
             "enum": ["dbos"]
@@ -40,17 +40,17 @@
           "deprecated": true
         },
         "password": {
-          "type": ["string", "null"],
+          "type": "string",
           "description": "The password to use when connecting to the application database. Developers are strongly encouraged to use environment variable substitution to avoid storing secrets in source. DEPRECATED: Use database_url instead",
           "deprecated": true
         },
         "connectionTimeoutMillis": {
-          "type": ["number", "null", "string"],
+          "type": ["number", "string"],
           "description": "The number of milliseconds the system waits before timing out when connecting to the application database. DEPRECATED: Use database_url instead",
           "deprecated": true
         },
         "app_db_name": {
-          "type": ["string", "null"],
+          "type": "string",
           "description": "The name of the application database. DEPRECATED: Use database_url instead",
           "deprecated": true
         },
@@ -59,12 +59,12 @@
           "description": "The name of the system database"
         },
         "ssl": {
-          "type": ["boolean", "null", "string"],
+          "type": ["boolean", "string"],
           "description": "Use SSL/TLS to securely connect to the database (default: true). DEPRECATED: Use database_url instead",
           "deprecated": true
         },
         "ssl_ca": {
-          "type": ["string", "null"],
+          "type": "string",
           "description": "If using SSL/TLS to securely connect to a database, path to an SSL root certificate file. DEPRECATED: Use database_url instead",
           "deprecated": true
         },
@@ -75,10 +75,16 @@
         },
         "migrate": {
           "type": "array",
+          "items": {
+            "type": "string"
+          },
           "description": "Specify a list of user DB migration commands to run"
         },
         "rollback": {
-          "type": ["array", "null"],
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
           "description": "Specify a list of user DB rollback commands to run. DEPRECATED: use your migration tool directly",
           "deprecated": true
         }
@@ -111,11 +117,31 @@
           "additionalProperties": false,
           "properties": {
             "logsEndpoint": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
               "description": "The URL of an OTLP collector to which to export logs"
             },
             "tracesEndpoint": {
-              "type": "string",
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              ],
               "description": "The URL of an OTLP collector to which to export traces"
             }
           }
@@ -174,8 +200,12 @@
         }
       }
     },
-    "application": {},
-    "env": {},
+    "application": {
+      "deprecated": true
+    },
+    "env": {
+      "deprecated": true
+    },
     "version": {
       "type": "string",
       "deprecated": true
