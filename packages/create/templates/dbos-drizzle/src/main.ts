@@ -1,34 +1,35 @@
 // Welcome to DBOS!
 
-// This is the Quickstart TypeORM template app. It greets visitors, counting how many total greetings were made.
-// To learn how to run this app, visit the TypeORM tutorial: https://docs.dbos.dev/tutorials/using-typeorm
+// This is the Quickstart Drizzle template app. It greets visitors, counting how many total greetings were made.
+// To learn how to run this app, visit the Drizzle tutorial: https://docs.dbos.dev/tutorials/using-drizzle
 
 import express, { Request, Response } from 'express';
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { DBOSHello } from '../entities/DBOSHello';
+import { dbosHello } from './schema';
 
-import { TypeOrmDataSource } from '@dbos-inc/typeorm-datasource';
+import { DrizzleDataSource } from '@dbos-inc/drizzle-datasource';
 
 const config = {
   host: process.env.PGHOST || 'localhost',
   port: parseInt(process.env.PGPORT || '5432'),
-  database: process.env.PGDATABASE || 'dbos_typeorm',
+  database: process.env.PGDATABASE || 'dbos_knex',
   user: process.env.PGUSER || 'postgres',
   password: process.env.PGPASSWORD || 'dbos',
 };
 
-const dataSource = new TypeOrmDataSource('app-db', config, [DBOSHello]);
+const drizzleds = new DrizzleDataSource('app-db', config);
 
 export class Hello {
-  // This transaction uses DBOS and TypeORM to perform database operations.
-  @dataSource.transaction()
-  static async helloTransaction(name: string) {
-    const greeting = `Hello, ${name}!`;
-    let entity = new DBOSHello();
-    entity.greeting = greeting;
-    entity = await dataSource.entityManager.save(entity);
-    const greeting_note = `Greeting ${entity.greeting_id}: ${greeting}`;
-    return makeHTML(greeting_note);
+  // This transaction uses DBOS and drizzle to perform database operations.
+  @drizzleds.transaction()
+  static async helloTransaction(user: string) {
+    const greeting = `Hello, ${user}!`;
+    const greetings_output = await drizzleds.client
+      .insert(dbosHello)
+      .values({ greeting })
+      .returning({ greet_count: dbosHello.greet_count });
+    const greeting_message = `${greeting} We have made ${greetings_output[0].greet_count} greetings.`;
+    return makeHTML(greeting_message);
   }
 }
 
@@ -90,7 +91,7 @@ app.get('/greeting/:name', (req: Request, res: Response) => {
 // Finally, launch DBOS and start the server
 async function main() {
   DBOS.setConfig({
-    name: 'dbos-typeorm',
+    name: 'dbos-drizzle',
     databaseUrl: process.env.DBOS_DATABASE_URL,
   });
   await DBOS.launch({ expressApp: app });
