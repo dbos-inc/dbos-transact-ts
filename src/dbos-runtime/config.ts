@@ -1,5 +1,5 @@
 import { DBOSInitializationError } from '../error';
-import { DBOSJSON, globalParams, readFileSync } from '../utils';
+import { DBOSJSON, globalParams, readFileSync, toStringSet } from '../utils';
 import { DBOSConfig, DBOSConfigInternal } from '../dbos-executor';
 import { PoolConfig } from 'pg';
 import YAML from 'yaml';
@@ -468,18 +468,13 @@ export function processConfigFile(
   /* Handle telemetry config */
   /***************************/
   // Consider CLI --loglevel and forceConsole flags
-  if (cliOptions?.loglevel) {
-    configFile.telemetry = {
-      ...configFile.telemetry,
-      logs: { ...configFile.telemetry?.logs, logLevel: cliOptions.loglevel },
-    };
-  }
-  if (cliOptions?.forceConsole) {
-    configFile.telemetry = {
-      ...configFile.telemetry,
-      logs: { ...configFile.telemetry?.logs, forceConsole: cliOptions.forceConsole },
-    };
-  }
+  const logs: TelemetryConfig['logs'] = {
+    ...configFile.telemetry?.logs,
+    logLevel: cliOptions?.loglevel ?? configFile.telemetry?.logs?.logLevel ?? 'info',
+    forceConsole: cliOptions?.forceConsole ?? configFile.telemetry?.logs?.forceConsole,
+  };
+  const traceEndpointSet = toStringSet(configFile.telemetry?.OTLPExporter?.tracesEndpoint);
+  const logEndpointSet = toStringSet(configFile.telemetry?.OTLPExporter?.logsEndpoint);
 
   /************************************/
   /* Build final DBOS configuration */
@@ -488,7 +483,14 @@ export function processConfigFile(
   const dbosConfig: DBOSConfigInternal = {
     poolConfig: poolConfig,
     userDbclient: configFile.database?.app_db_client || UserDatabaseName.KNEX,
-    telemetry: configFile.telemetry || { logs: { logLevel: 'info' } },
+    databaseUrl: configFile.database_url,
+    telemetry: {
+      logs,
+      OTLPExporter: {
+        tracesEndpoint: Array.from(traceEndpointSet),
+        logsEndpoint: Array.from(logEndpointSet),
+      },
+    },
     system_database: configFile.database?.sys_db_name ?? `${poolConfig.database}_dbos_sys`,
     http: configFile.http,
   };
@@ -578,6 +580,7 @@ export function translatePublicDBOSconfig(
     name: appName,
     poolConfig: poolConfig,
     userDbclient: config.userDbclient || UserDatabaseName.KNEX,
+    databaseUrl: config.databaseUrl,
     telemetry: {
       logs: {
         logLevel: config.logLevel || 'info',
@@ -637,32 +640,33 @@ export function overwrite_config(
   }
   const poolConfig = constructPoolConfig(configFile);
 
-  if (!providedDBOSConfig.telemetry.OTLPExporter) {
-    providedDBOSConfig.telemetry.OTLPExporter = {
-      tracesEndpoint: [],
-      logsEndpoint: [],
-    };
-  }
-  if (configFile.telemetry?.OTLPExporter?.tracesEndpoint) {
-    providedDBOSConfig.telemetry.OTLPExporter.tracesEndpoint =
-      providedDBOSConfig.telemetry.OTLPExporter.tracesEndpoint?.concat(
-        configFile.telemetry.OTLPExporter.tracesEndpoint,
-      );
-  }
-  if (configFile.telemetry?.OTLPExporter?.logsEndpoint) {
-    providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint =
-      providedDBOSConfig.telemetry.OTLPExporter.logsEndpoint?.concat(configFile.telemetry.OTLPExporter.logsEndpoint);
+  const providedTraceEndpointSet = toStringSet(providedDBOSConfig.telemetry.OTLPExporter?.tracesEndpoint);
+  const configTraceEndpointSet = toStringSet(configFile.telemetry?.OTLPExporter?.tracesEndpoint);
+  for (const endpoint of configTraceEndpointSet) {
+    providedTraceEndpointSet.add(endpoint);
   }
 
-  const overwritenDBOSConfig = {
+  const providedLogEndpointSet = toStringSet(providedDBOSConfig.telemetry?.OTLPExporter?.logsEndpoint);
+  const configLogEndpointSet = toStringSet(configFile.telemetry?.OTLPExporter?.logsEndpoint);
+  for (const endpoint of configLogEndpointSet) {
+    providedLogEndpointSet.add(endpoint);
+  }
+
+  const overwritenDBOSConfig: DBOSConfigInternal = {
     ...providedDBOSConfig,
     name: appName,
     poolConfig: poolConfig,
-    telemetry: providedDBOSConfig.telemetry,
+    telemetry: {
+      logs: providedDBOSConfig.telemetry.logs,
+      OTLPExporter: {
+        tracesEndpoint: Array.from(providedTraceEndpointSet),
+        logsEndpoint: Array.from(providedLogEndpointSet),
+      },
+    },
     system_database: configFile.database?.sys_db_name || poolConfig.database + '_dbos_sys', // Unexpected, but possible
   };
 
-  const overwriteDBOSRuntimeConfig = {
+  const overwriteDBOSRuntimeConfig: DBOSRuntimeConfig = {
     admin_port: 3001,
     runAdminServer: true,
     entrypoints: providedRuntimeConfig.entrypoints,

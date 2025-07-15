@@ -211,3 +211,7 @@ export function interceptStreams(onMessage: (msg: string, stream: 'stdout' | 'st
   process.stdout.write = intercept('stdout', originalStdoutWrite);
   process.stderr.write = intercept('stderr', originalStderrWrite);
 }
+
+export function toStringSet(endpoint: string | string[] | undefined): Set<string> {
+  return endpoint ? new Set(Array.isArray(endpoint) ? endpoint : [endpoint]) : new Set();
+}

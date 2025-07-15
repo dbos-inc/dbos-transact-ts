@@ -13,12 +13,14 @@ import {
   constructPoolConfig,
   dbosConfigFilePath,
   parseSSLConfig,
+  processConfigFile,
+  readConfigFile,
 } from '../../src/dbos-runtime/config';
 import { DBOSRuntimeConfig, defaultEntryPoint } from '../../src/dbos-runtime/runtime';
-import { DBOSConfigKeyTypeError, DBOSInitializationError } from '../../src/error';
-import { DBOSExecutor, DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
-import { get } from 'lodash';
-import { DBOS, DBOSClient } from '../../src';
+import { DBOSInitializationError } from '../../src/error';
+import { DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
+import { DBOSClient } from '../../src';
+import { setUpDBOSTestDb } from '../helpers';
 
 describe('dbos-config', () => {
   const mockCLIOptions = { port: NaN, loglevel: 'info' };
@@ -50,7 +52,7 @@ describe('dbos-config', () => {
   });
 
   describe('Configuration loading', () => {
-    test('translates otlp endpoints from string to list', () => {
+    test('loadConfigFile translates otlp endpoints from string to list', () => {
       const mockConfigFile = `
         database:
             hostname: \${DOESNOTEXISTS}
@@ -71,6 +73,98 @@ describe('dbos-config', () => {
       const cfg: ConfigFile = loadConfigFile(dbosConfigFilePath);
       expect(cfg.telemetry?.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
       expect(cfg.telemetry?.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
+    });
+  });
+
+  describe('processConfigFile', () => {
+    test('processConfigFile translates otlp endpoints from string to list', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        telemetry:
+            OTLPExporter:
+                tracesEndpoint: http://otel-collector:4317/from-file
+                logsEndpoint: http://otel-collector:4317/logs
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, {});
+      expect(config.telemetry.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
+      expect(config.telemetry.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
+    });
+
+    test('processConfigFile logLevel default', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, {});
+      expect(config.telemetry.logs?.logLevel).toEqual('info');
+    });
+
+    test('processConfigFile logLevel specified', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        telemetry:
+            logs:
+                logLevel: debug
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, {});
+      expect(config.telemetry.logs?.logLevel).toEqual('debug');
+    });
+
+    test('processConfigFile logLevel override', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        telemetry:
+            logs:
+                logLevel: debug
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, { loglevel: 'error' });
+      expect(config.telemetry.logs?.logLevel).toEqual('error');
+    });
+
+    test('processConfigFile forceConsole override', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, { forceConsole: true });
+      expect(config.telemetry.logs?.forceConsole).toBeTruthy();
+    });
+
+    test("readConfigFile can't specify forceConsole", () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        telemetry:
+            logs:
+                forceOverride: true
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      expect(() => readConfigFile()).toThrow();
+    });
+
+    test('processConfigFile returns correct database url', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        database_url: postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, { forceConsole: true });
+      expect(config.databaseUrl).toBe('postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable');
     });
   });
 
@@ -525,6 +619,7 @@ describe('dbos-config', () => {
       const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig, true);
       expect(translatedDBOSConfig).toEqual({
         name: dbosConfig.name, // provided name -- no config file was found
+        databaseUrl: 'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
         poolConfig: {
           host: 'mother',
           port: 2345,
@@ -540,6 +635,7 @@ describe('dbos-config', () => {
         userDbclient: UserDatabaseName.PRISMA,
         telemetry: {
           logs: {
+            addContextMetadata: undefined,
             logLevel: dbosConfig.logLevel,
             forceConsole: true,
           },
@@ -1058,6 +1154,10 @@ describe('dbos-config', () => {
   });
 
   describe('databaseUrl-no-password', () => {
+    beforeAll(async () => {
+      await setUpDBOSTestDb({});
+    });
+
     test('No error when database_url is provided without password', async () => {
       const expected_url = 'postgresql://postgres@localhost:5432/dbostest?sslmode=disable';
       const config: DBOSConfig = {

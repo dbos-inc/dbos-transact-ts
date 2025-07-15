@@ -1,9 +1,23 @@
 import { Pool, PoolConfig } from 'pg';
-import { Logger } from 'winston';
+import { createLogger, Logger, transports } from 'winston';
 import { sleepms } from '../utils';
-import { getLogger } from './cloudutils/cloudutils';
 import { promisify } from 'util';
 import { exec } from 'child_process';
+import { consoleFormat } from '../telemetry/logs';
+
+export type CLILogger = ReturnType<typeof createLogger>;
+let curLogger: Logger | undefined = undefined;
+export function getLogger(verbose?: boolean): CLILogger {
+  if (curLogger) return curLogger;
+  const winstonTransports = [];
+  winstonTransports.push(
+    new transports.Console({
+      format: consoleFormat,
+      level: verbose ? 'debug' : 'info',
+    }),
+  );
+  return (curLogger = createLogger({ transports: winstonTransports }));
+}
 
 /**
  * Starts a PostgreSQL database in a Docker container.
