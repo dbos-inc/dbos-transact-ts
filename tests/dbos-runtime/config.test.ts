@@ -619,6 +619,7 @@ describe('dbos-config', () => {
       const [translatedDBOSConfig, translatedRuntimeConfig] = translatePublicDBOSconfig(dbosConfig, true);
       expect(translatedDBOSConfig).toEqual({
         name: dbosConfig.name, // provided name -- no config file was found
+        databaseUrl: 'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
         poolConfig: {
           host: 'mother',
           port: 2345,
@@ -634,6 +635,7 @@ describe('dbos-config', () => {
         userDbclient: UserDatabaseName.PRISMA,
         telemetry: {
           logs: {
+            addContextMetadata: undefined,
             logLevel: dbosConfig.logLevel,
             forceConsole: true,
           },
