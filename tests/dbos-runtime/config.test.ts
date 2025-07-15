@@ -74,7 +74,9 @@ describe('dbos-config', () => {
       expect(cfg.telemetry?.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
       expect(cfg.telemetry?.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
     });
+  });
 
+  describe('processConfigFile', () => {
     test('processConfigFile translates otlp endpoints from string to list', () => {
       const mockConfigFile = `
         name: 'test-app'
@@ -88,6 +90,81 @@ describe('dbos-config', () => {
       const configFile = readConfigFile();
       const [config] = processConfigFile(configFile, {});
       expect(config.telemetry.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/from-file']);
+      expect(config.telemetry.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
+    });
+
+    test('processConfigFile logLevel default', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, {});
+      expect(config.telemetry.logs?.logLevel).toEqual('info');
+    });
+
+    test('processConfigFile logLevel specified', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        telemetry:
+            logs:
+                logLevel: debug
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, {});
+      expect(config.telemetry.logs?.logLevel).toEqual('debug');
+    });
+
+    test('processConfigFile logLevel override', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        telemetry:
+            logs:
+                logLevel: debug
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, { loglevel: 'error' });
+      expect(config.telemetry.logs?.logLevel).toEqual('error');
+    });
+
+    test('processConfigFile forceConsole override', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, { forceConsole: true });
+      expect(config.telemetry.logs?.forceConsole).toBeTruthy();
+    });
+
+    test("readConfigFile can't specify forceConsole", () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        telemetry:
+            logs:
+                forceOverride: true
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      expect(() => readConfigFile()).toThrow();
+    });
+
+    test('processConfigFile returns correct database url', () => {
+      const mockConfigFile = `
+        name: 'test-app'
+        database_url: postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable
+        `;
+      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+
+      const configFile = readConfigFile();
+      const [config] = processConfigFile(configFile, { forceConsole: true });
+      expect(config.databaseUrl).toBe('postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable');
     });
   });
 
