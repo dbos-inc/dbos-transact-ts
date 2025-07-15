@@ -260,7 +260,7 @@ export class DBOS {
             adminPort: $dbosConfig.adminPort,
             name: $dbosConfig.name,
             databaseUrl: $dbosConfig.databaseUrl,
-            userDbclient: $dbosConfig.userDbclient,
+            userDbClient: $dbosConfig.userDbClient,
             userDbPoolSize: $dbosConfig.userDbPoolSize,
             sysDbName: $dbosConfig.sysDbName,
             sysDbPoolSize: $dbosConfig.sysDbPoolSize,
@@ -283,7 +283,7 @@ export class DBOS {
     DBOS.#dbosConfig = {
       name: internalConfig.name,
       databaseUrl: internalConfig.databaseUrl,
-      userDbclient: internalConfig.userDbclient,
+      userDbClient: internalConfig.userDbclient,
       userDbPoolSize: DBOS.#dbosConfig?.userDbPoolSize,
       sysDbName: internalConfig.system_database,
       sysDbPoolSize: internalConfig.sysDbPoolSize,
@@ -655,9 +655,9 @@ export class DBOS {
    */
   static get pgClient(): PoolClient {
     const client = DBOS.sqlClient;
-    if (!DBOS.isInStoredProc() && DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.PGNODE) {
+    if (!DBOS.isInStoredProc() && DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.PGNODE) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
       );
     }
     return client as PoolClient;
@@ -671,9 +671,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.knexClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.KNEX) {
+    if (DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.KNEX) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -688,9 +688,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.prismaClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.PRISMA) {
+    if (DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.PRISMA) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -705,9 +705,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.typeORMClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.TYPEORM) {
+    if (DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.TYPEORM) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -722,9 +722,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.drizzleClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.DRIZZLE) {
+    if (DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.DRIZZLE) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
       );
     }
     const client = DBOS.sqlClient;

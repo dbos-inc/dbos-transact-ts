@@ -17,35 +17,40 @@ import { ConnectionOptions } from 'tls';
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
 
-export interface DBConfig {
-  hostname?: string;
-  port?: number;
-  username?: string;
-  password?: string;
-  connectionTimeoutMillis?: number;
-  app_db_name?: string;
-  sys_db_name?: string;
-  ssl?: boolean;
-  ssl_ca?: string;
-  app_db_client?: UserDatabaseName;
-  migrate?: string[];
-  rollback?: string[];
-}
-
 export interface ConfigFile {
   name?: string;
   language?: string;
-  database?: DBConfig;
   database_url?: string;
+  database?: {
+    sys_db_name?: string;
+    app_db_client?: UserDatabaseName;
+    migrate?: string[];
+  };
+  telemetry?: {
+    logs?: {
+      addContextMetadata?: boolean;
+      logLevel?: string;
+      silent?: boolean;
+    };
+    OTLPExporter?: {
+      // naming nit: oltp_exporter
+      logsEndpoint?: string | string[];
+      tracesEndpoint?: string | string[];
+    };
+  };
+  runtimeConfig?: {
+    // naming nit: runtime_config
+    entrypoints?: string[];
+    port?: number;
+    admin_port?: number;
+    start?: string[];
+    setup?: string[];
+  };
   http?: {
     cors_middleware?: boolean;
     credentials?: boolean;
     allowed_origins?: string[];
   };
-  telemetry?: TelemetryConfig;
-  application?: object;
-  env?: Record<string, string>;
-  runtimeConfig?: DBOSRuntimeConfig;
 }
 
 /*
@@ -579,7 +584,7 @@ export function translatePublicDBOSconfig(
   const translatedConfig: DBOSConfigInternal = {
     name: appName,
     poolConfig: poolConfig,
-    userDbclient: config.userDbclient || UserDatabaseName.KNEX,
+    userDbclient: config.userDbClient || UserDatabaseName.KNEX,
     databaseUrl: config.databaseUrl,
     telemetry: {
       logs: {

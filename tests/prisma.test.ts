@@ -239,7 +239,7 @@ describe('prisma-engine-config-tests', () => {
   test('prisma-engine-config', async () => {
     config = {
       name: 'dbostest',
-      userDbclient: UserDatabaseName.PRISMA,
+      userDbClient: UserDatabaseName.PRISMA,
       userDbPoolSize: 2, // This is ignored with Prisma
       databaseUrl: `postgresql://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connection_limit=2&connect_timeout=3`,
     };
