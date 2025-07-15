@@ -172,9 +172,22 @@ describe('recovery-tests', () => {
     const queue = new WorkflowQueue('DLQQ', { concurrency: 1 });
 
     const handle = await DBOS.startWorkflow(LocalRecovery, { queueName: queue.name }).fencedDeadLetterWorkflow();
+
+    // Enqueue the workflow repeatedly, verify recovery attempts is not increased
+    for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
+      await DBOS.startWorkflow(LocalRecovery, {
+        queueName: queue.name,
+        workflowID: handle.workflowID,
+      }).fencedDeadLetterWorkflow();
+    }
+    let status = await handle.getStatus();
+    expect(status?.recoveryAttempts).toBeLessThanOrEqual(1);
+
+    // Wait for the workflow to start
     await LocalRecovery.startEvent.wait();
     expect(LocalRecovery.recoveryCount).toBe(1);
 
+    // Attempt to recover the workflow the maximum number of times
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
       LocalRecovery.startEvent.clear();
       await recoverPendingWorkflows();
@@ -185,23 +198,16 @@ describe('recovery-tests', () => {
     // One more recovery attempt should move the workflow to the dead-letter queue.
     await recoverPendingWorkflows();
     await sleepms(2000); // Can't wait() because the workflow will land in the DLQ
-    let result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
-      `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.workflowID],
-    );
-    // recovery_attempts is set before checking the number of attempts/retry
-    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
-    expect(result.rows[0].status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
+    status = await handle.getStatus();
+    expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
+    expect(status?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
 
     LocalRecovery.endEvent.set();
     await handle.getResult();
 
-    result = await systemDBClient.query<{ status: string; recovery_attempts: number }>(
-      `SELECT status, recovery_attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
-      [handle.workflowID],
-    );
-    expect(result.rows[0].recovery_attempts).toBe(String(LocalRecovery.maxRecoveryAttempts + 2));
-    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
+    status = await handle.getStatus();
+    expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
+    expect(status?.status).toBe(StatusString.SUCCESS);
   }, 20000);
 
   test('local-recovery', async () => {
