@@ -31,6 +31,7 @@ import {
 import {
   getDbosConfig,
   getRuntimeConfig,
+  overwriteConfigForDBOSCloud,
   readConfigFile,
   translateDbosConfig,
   translateRuntimeConfig,
@@ -262,30 +263,10 @@ export class DBOS {
 
     let internalConfig = $dbosConfig ? translateDbosConfig($dbosConfig, debugMode) : getDbosConfig(configFile);
     let runtimeConfig = $dbosConfig ? translateRuntimeConfig($dbosConfig) : getRuntimeConfig(configFile);
-    // let [internalConfig, runtimeConfig] = $dbosConfig
-    //   ? translatePublicDBOSconfig(
-    //       // copy config settings to ensure no unexpected fields are passed thru
-    //       {
-    //         adminPort: $dbosConfig.adminPort,
-    //         name: $dbosConfig.name,
-    //         databaseUrl: $dbosConfig.databaseUrl,
-    //         userDbClient: $dbosConfig.userDbClient,
-    //         userDbPoolSize: $dbosConfig.userDbPoolSize,
-    //         sysDbName: $dbosConfig.sysDbName,
-    //         sysDbPoolSize: $dbosConfig.sysDbPoolSize,
-    //         logLevel: $dbosConfig.logLevel,
-    //         addContextMetadata: $dbosConfig.addContextMetadata,
-    //         runAdminServer: $dbosConfig.runAdminServer,
-    //         otlpTracesEndpoints: [...($dbosConfig.otlpTracesEndpoints ?? [])],
-    //         otlpLogsEndpoints: [...($dbosConfig.otlpLogsEndpoints ?? [])],
-    //       },
-    //       debugMode,
-    //     )
-    //   : processConfigFile(configFile, { forceConsole: debugMode });
 
-    // if (process.env.DBOS__CLOUD === 'true') {
-    //   [internalConfig, runtimeConfig] = overwrite_config(internalConfig, runtimeConfig, configFile);
-    // }
+    if (process.env.DBOS__CLOUD === 'true') {
+      [internalConfig, runtimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, configFile);
+    }
 
     DBOS.#port = runtimeConfig.port;
     DBOS.#dbosConfig = {
