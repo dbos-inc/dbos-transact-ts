@@ -39,14 +39,7 @@ export interface ConfigFile {
       tracesEndpoint?: string | string[];
     };
   };
-  runtimeConfig?: {
-    // naming nit: runtime_config
-    entrypoints?: string[];
-    port?: number;
-    admin_port?: number;
-    start?: string[];
-    setup?: string[];
-  };
+  runtimeConfig?: Partial<DBOSRuntimeConfig>; // naming nit: runtime_config
   http?: {
     cors_middleware?: boolean;
     credentials?: boolean;
@@ -152,6 +145,82 @@ export function getSystemDatabaseName(databaseUrl: string, sysDbName?: string): 
   const url = new URL(databaseUrl);
   const dbName = url.pathname.substring(1); // Remove leading slash
   return `${dbName}_dbos_sys`;
+}
+
+export function getDbosConfig(
+  config: ConfigFile,
+  options: {
+    logLevel?: string;
+    forceConsole?: boolean;
+  } = {},
+): DBOSConfigInternal {
+  assert(config.language && config.language !== 'node', `Config file specifies invalid language ${config.language}`);
+  const userDbClient = config.database?.app_db_client ?? UserDatabaseName.KNEX;
+  assert(isValidUserDbClient(userDbClient), `Invalid app_db_client ${userDbClient} in config file`);
+
+  return translateDbosConfig(
+    {
+      name: config.name,
+      databaseUrl: config.database_url,
+      sysDbName: config.database?.sys_db_name,
+      userDbClient,
+      logLevel: options.logLevel,
+      otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
+      otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
+      addContextMetadata: config.telemetry?.logs?.addContextMetadata,
+      runAdminServer: config.runtimeConfig?.runAdminServer,
+    },
+    options.forceConsole,
+  );
+}
+
+function toArray(endpoint: string | string[] | undefined): Array<string> {
+  return endpoint ? (Array.isArray(endpoint) ? endpoint : [endpoint]) : [];
+}
+
+function isValidUserDbClient(name: string): name is UserDatabaseName {
+  return Object.values(UserDatabaseName).includes(name as UserDatabaseName);
+}
+
+export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
+  const databaseUrl = getDatabaseUrl(options.databaseUrl, options.name);
+  const sysDbName = getSystemDatabaseName(databaseUrl, options.sysDbName);
+  return {
+    databaseUrl,
+    userDbClient: options.userDbClient,
+    sysDbName,
+    telemetry: {
+      logs: {
+        logLevel: options.logLevel || 'info',
+        forceConsole,
+      },
+      OTLPExporter: {
+        tracesEndpoint: options.otlpTracesEndpoints,
+        logsEndpoint: options.otlpLogsEndpoints,
+      },
+    },
+  };
+}
+
+export function getRuntimeConfig(config: ConfigFile, options: { port?: number } = {}): DBOSRuntimeConfig {
+  return translateRuntimeConfig(config.runtimeConfig, options.port);
+}
+
+export function translateRuntimeConfig(config: Partial<DBOSRuntimeConfig> = {}, port?: number): DBOSRuntimeConfig {
+  const entrypoints = new Set<string>();
+  config.entrypoints?.forEach((entry) => entrypoints.add(entry));
+  if (entrypoints.size === 0) {
+    entrypoints.add(defaultEntryPoint);
+  }
+  port ??= config.port ?? 3000;
+  return {
+    entrypoints: [...entrypoints],
+    port: port,
+    runAdminServer: config.runAdminServer ?? true,
+    admin_port: config.admin_port ?? port + 1,
+    start: config.start ?? [],
+    setup: config.setup ?? [],
+  };
 }
 
 // /**

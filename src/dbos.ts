@@ -28,7 +28,13 @@ import {
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
 } from './error';
-import { readConfigFile } from './dbos-runtime/config';
+import {
+  getDbosConfig,
+  getRuntimeConfig,
+  readConfigFile,
+  translateDbosConfig,
+  translateRuntimeConfig,
+} from './dbos-runtime/config';
 import { DBOSRuntime } from './dbos-runtime/runtime';
 import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
@@ -253,30 +259,33 @@ export class DBOS {
     const configFile = readConfigFile();
 
     const $dbosConfig = DBOS.#dbosConfig;
-    let [internalConfig, runtimeConfig] = $dbosConfig
-      ? translatePublicDBOSconfig(
-          // copy config settings to ensure no unexpected fields are passed thru
-          {
-            adminPort: $dbosConfig.adminPort,
-            name: $dbosConfig.name,
-            databaseUrl: $dbosConfig.databaseUrl,
-            userDbClient: $dbosConfig.userDbClient,
-            userDbPoolSize: $dbosConfig.userDbPoolSize,
-            sysDbName: $dbosConfig.sysDbName,
-            sysDbPoolSize: $dbosConfig.sysDbPoolSize,
-            logLevel: $dbosConfig.logLevel,
-            addContextMetadata: $dbosConfig.addContextMetadata,
-            runAdminServer: $dbosConfig.runAdminServer,
-            otlpTracesEndpoints: [...($dbosConfig.otlpTracesEndpoints ?? [])],
-            otlpLogsEndpoints: [...($dbosConfig.otlpLogsEndpoints ?? [])],
-          },
-          debugMode,
-        )
-      : processConfigFile(configFile, { forceConsole: debugMode });
 
-    if (process.env.DBOS__CLOUD === 'true') {
-      [internalConfig, runtimeConfig] = overwrite_config(internalConfig, runtimeConfig, configFile);
-    }
+    let internalConfig = $dbosConfig ? translateDbosConfig($dbosConfig, debugMode) : getDbosConfig(configFile);
+    let runtimeConfig = $dbosConfig ? translateRuntimeConfig($dbosConfig) : getRuntimeConfig(configFile);
+    // let [internalConfig, runtimeConfig] = $dbosConfig
+    //   ? translatePublicDBOSconfig(
+    //       // copy config settings to ensure no unexpected fields are passed thru
+    //       {
+    //         adminPort: $dbosConfig.adminPort,
+    //         name: $dbosConfig.name,
+    //         databaseUrl: $dbosConfig.databaseUrl,
+    //         userDbClient: $dbosConfig.userDbClient,
+    //         userDbPoolSize: $dbosConfig.userDbPoolSize,
+    //         sysDbName: $dbosConfig.sysDbName,
+    //         sysDbPoolSize: $dbosConfig.sysDbPoolSize,
+    //         logLevel: $dbosConfig.logLevel,
+    //         addContextMetadata: $dbosConfig.addContextMetadata,
+    //         runAdminServer: $dbosConfig.runAdminServer,
+    //         otlpTracesEndpoints: [...($dbosConfig.otlpTracesEndpoints ?? [])],
+    //         otlpLogsEndpoints: [...($dbosConfig.otlpLogsEndpoints ?? [])],
+    //       },
+    //       debugMode,
+    //     )
+    //   : processConfigFile(configFile, { forceConsole: debugMode });
+
+    // if (process.env.DBOS__CLOUD === 'true') {
+    //   [internalConfig, runtimeConfig] = overwrite_config(internalConfig, runtimeConfig, configFile);
+    // }
 
     DBOS.#port = runtimeConfig.port;
     DBOS.#poolConfig = internalConfig.poolConfig;

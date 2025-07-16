@@ -1,6 +1,6 @@
 #!/usr/bin/env node
-import { DBOSRuntime, DBOSRuntimeConfig } from './runtime';
-import { ConfigFile, dbosConfigFilePath, getDatabaseUrl, readConfigFile } from './config';
+import { DBOSRuntime } from './runtime';
+import { ConfigFile, getDatabaseUrl, getDbosConfig, getRuntimeConfig, readConfigFile } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
@@ -14,6 +14,7 @@ import { runCommand } from './commands';
 import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
+import { readFileSync } from '../utils';
 
 const program = new Command();
 
@@ -21,9 +22,17 @@ const program = new Command();
 /* LOCAL DEVELOPMENT  */
 ////////////////////////
 
-// eslint-disable-next-line @typescript-eslint/no-require-imports
-const packageJson = require('../../../package.json') as { version: string };
-program.version(packageJson.version);
+program.version(getDbosVersion());
+
+function getDbosVersion(): string {
+  try {
+    const contents = readFileSync('../../../package.json');
+    const pkg = JSON.parse(contents) as { version: string };
+    return pkg.version;
+  } catch {
+    return 'unknown';
+  }
+}
 
 program
   .command('start')
@@ -34,7 +43,10 @@ program
   .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (options: { port?: number; loglevel?: string; appDir?: string; appVersion?: string | boolean }) => {
-    const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile(options);
+    const config = readConfigFile(options.appDir);
+    const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel });
+    const runtimeConfig = getRuntimeConfig(config, options);
+
     // If no start commands are provided, start the DBOS runtime
     if (runtimeConfig.start.length === 0) {
       const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
@@ -53,6 +65,16 @@ program
         }
       }
     }
+
+    function getGlobalLogger(configFile: DBOSConfigInternal): GlobalLogger {
+      if (configFile.telemetry?.OTLPExporter) {
+        return new GlobalLogger(
+          new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
+          configFile.telemetry?.logs,
+        );
+      }
+      return new GlobalLogger();
+    }
   });
 
 program
@@ -66,25 +88,16 @@ program
   .action(
     async (options: {
       uuid: string; // Workflow UUID
-      configfile?: string;
+      loglevel?: string;
+      appDir?: string;
       appVersion?: string | boolean;
     }) => {
-      const [dbosConfig, runtimeConfig]: [DBOSConfigInternal, DBOSRuntimeConfig] = parseConfigFile({
-        ...options,
-        forceConsole: true,
-      });
+      const config = readConfigFile(options.appDir);
+      const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel, forceConsole: true });
+      const runtimeConfig = getRuntimeConfig(config);
       await debugWorkflow(dbosConfig, runtimeConfig, options.uuid);
     },
   );
-
-program
-  .command('init')
-  .description('Init a DBOS application')
-  .option('-n, --appName <application-name>', 'Application name', 'dbos-hello-app')
-  .action((_options: { appName: string }) => {
-    console.log('NOTE: This command has been removed in favor of `npx @dbos-inc/create` or `npm create @dbos-inc`');
-  });
-
 program
   .command('migrate')
   .description('Perform a database migration')
@@ -367,14 +380,4 @@ export async function runAndLog(
   function toArray(endpoint: string | string[] | undefined): Array<string> {
     return endpoint ? (Array.isArray(endpoint) ? endpoint : [endpoint]) : [];
   }
-}
-
-function getGlobalLogger(configFile: DBOSConfigInternal): GlobalLogger {
-  if (configFile.telemetry?.OTLPExporter) {
-    return new GlobalLogger(
-      new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
-      configFile.telemetry?.logs,
-    );
-  }
-  return new GlobalLogger();
 }
