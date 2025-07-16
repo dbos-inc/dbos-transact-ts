@@ -137,7 +137,7 @@ export function getDatabaseUrl(param1?: string | ConfigFile, appName?: string): 
     const password = process.env.PGPASSWORD ?? 'dbos';
     const database = toDbName(appName);
     const timeout = process.env.PGCONNECT_TIMEOUT ?? '10';
-    const sslmode = process.env.PGSSLMODE ?? 'no-verify';
+    const sslmode = process.env.PGSSLMODE ?? (host === 'localhost' ? 'disable' : 'allow');
 
     return `postgresql://${username}:${password}@${host}:${port}/${database}?connect_timeout=${timeout}&sslmode=${sslmode}`;
   }
