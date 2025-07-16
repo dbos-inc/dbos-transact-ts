@@ -61,14 +61,14 @@ async function waitForMessageTest(
 
 async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
-  config.poolConfig.database = 'hello';
+  const url = new URL(config.databaseUrl!);
+  url.pathname = '/hello';
+  config.databaseUrl = url.toString();
+
+  url.pathname = `/${config.sysDbName}`;
   await setUpDBOSTestDb(config);
   const pgSystemClient = new Client({
-    user: config.poolConfig.user,
-    port: config.poolConfig.port,
-    host: config.poolConfig.host,
-    password: config.poolConfig.password,
-    database: 'postgres',
+    connectionString: url.toString(),
   });
   await pgSystemClient.connect();
   await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_typeorm_dbos_sys;`);

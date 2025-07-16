@@ -3,7 +3,7 @@ import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { translatePublicDBOSconfig, constructPoolConfig, ConfigFile } from '../src/dbos-runtime/config';
+import { ConfigFile, translateDbosConfig } from '../src/dbos-runtime/config';
 
 /* DB management helpers */
 export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigInternal {
@@ -15,33 +15,16 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigI
 
   const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
 
-  const configFile: ConfigFile = {
+  const dbosTestConfig: DBOSConfigInternal = {
     name: 'dbostest',
-    database: {
-      app_db_client: dbClient || UserDatabaseName.PGNODE,
-    },
-    database_url: databaseUrl,
-    application: {
-      counter: 3,
-      shouldExist: 'exists',
-    },
-    env: {},
+    databaseUrl,
     telemetry: {
       logs: {
         silent: silenceLogs,
       },
     },
-  };
-
-  const poolConfig = constructPoolConfig(configFile, { silent: true });
-
-  const dbosTestConfig: DBOSConfigInternal = {
-    name: configFile.name,
-    databaseUrl,
-    poolConfig,
-    telemetry: configFile.telemetry!,
-    system_database: 'dbostest_dbos_sys',
-    userDbclient: dbClient || UserDatabaseName.PGNODE,
+    sysDbName: 'dbostest_dbos_sys',
+    userDbClient: dbClient || UserDatabaseName.PGNODE,
   };
 
   return dbosTestConfig;
@@ -59,19 +42,18 @@ export async function setUpDBOSTestDb(cfg: DBOSConfig) {
   if (!cfg.name) {
     cfg.name = 'dbostest';
   }
-  const [config] = translatePublicDBOSconfig(cfg);
+  const config = translateDbosConfig(cfg);
+  const url = new URL(config.databaseUrl);
+  const database = url.pathname.slice(1);
+  url.pathname = '/postgres';
   const pgSystemClient = new Client({
-    user: config.poolConfig.user,
-    port: config.poolConfig.port,
-    host: config.poolConfig.host,
-    password: config.poolConfig.password,
-    database: 'postgres',
+    connectionString: url.toString(),
   });
   try {
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database} WITH (FORCE);`);
-    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database} WITH (FORCE);`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE);`);
+    await pgSystemClient.query(`CREATE DATABASE ${database};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.sysDbName} WITH (FORCE);`);
     await pgSystemClient.end();
   } catch (e) {
     if (e instanceof AggregateError) {

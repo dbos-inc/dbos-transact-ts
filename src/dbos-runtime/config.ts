@@ -202,6 +202,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     telemetry: {
       logs: {
         logLevel: options.logLevel || 'info',
+        addContextMetadata: options.addContextMetadata,
         forceConsole,
       },
       OTLPExporter: {

@@ -105,7 +105,6 @@ import {
   listWorkflowSteps,
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
-import { connect } from 'node:http2';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
