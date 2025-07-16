@@ -11,13 +11,14 @@ describe('oaoo-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    username = config.poolConfig?.user || 'postgres';
+    const url = new URL(config.databaseUrl);
+    username = url.username;
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    await dropDatabase(config.databaseUrl!, config.system_database);
+    await dropDatabase(config.databaseUrl, config.sysDbName);
     await DBOS.launch();
 
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);

@@ -469,7 +469,7 @@ describe('queued-wf-tests-simple', () => {
     expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
     // Manually update the database to pretend wf3 is PENDING and comes from a different executor
-    const url = new URL(config.databaseUrl!);
+    const url = new URL(config.databaseUrl);
     url.pathname = `/${config.sysDbName}`;
     const systemDBClient = new Client({
       connectionString: url.toString(),
@@ -640,7 +640,7 @@ describe('queued-wf-tests-simple', () => {
   }
 
   test('test-concurrency-across-versions', async () => {
-    const client = await DBOSClient.create(config.databaseUrl!);
+    const client = await DBOSClient.create(config.databaseUrl);
 
     const other_version = 'other_version';
     const other_version_handle = await client.enqueue({
@@ -758,7 +758,7 @@ class InterProcessWorkflow {
       expect(executors).toContain('local');
 
       // Now check the global concurrency is met
-      const url = new URL(config.databaseUrl!);
+      const url = new URL(config.databaseUrl);
       url.pathname = `/${config.sysDbName}`;
       const systemDBClient = new Client({
         connectionString: url.toString(),

@@ -3,7 +3,7 @@ import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { ConfigFile, translateDbosConfig } from '../src/dbos-runtime/config';
+import { translateDbosConfig } from '../src/dbos-runtime/config';
 
 /* DB management helpers */
 export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigInternal {

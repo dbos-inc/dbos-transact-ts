@@ -61,7 +61,7 @@ async function waitForMessageTest(
 
 async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
-  const url = new URL(config.databaseUrl!);
+  const url = new URL(config.databaseUrl);
   url.pathname = '/hello';
   config.databaseUrl = url.toString();
 

@@ -35,7 +35,7 @@ describe('workflow-management-tests', () => {
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
 
-    const url = new URL(config.databaseUrl!);
+    const url = new URL(config.databaseUrl);
     url.pathname = `/${config.sysDbName}`;
 
     systemDBClient = new Client({

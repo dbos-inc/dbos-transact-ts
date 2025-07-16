@@ -20,12 +20,10 @@ describe('recovery-tests', () => {
   beforeEach(async () => {
     await DBOS.launch();
     process.env.DBOS__VMID = '';
+    const url = new URL(config.databaseUrl);
+    url.pathname = `/${config.sysDbName}`;
     systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
-      database: config.system_database,
+      connectionString: url.toString(),
     });
     await systemDBClient.connect();
   });

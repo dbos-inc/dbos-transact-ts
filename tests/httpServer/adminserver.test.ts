@@ -69,7 +69,7 @@ describe('running-admin-server-tests', () => {
     await setUpDBOSTestDb(config);
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
-    const url = new URL(config.databaseUrl!);
+    const url = new URL(config.databaseUrl);
     url.pathname = `/${config.sysDbName}`;
     systemDBClient = new Client({
       connectionString: url.toString(),

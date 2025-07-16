@@ -3,7 +3,6 @@ import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb, TestKvTab
 import { randomUUID } from 'node:crypto';
 import { DBOSConfigInternal } from '../../src/dbos-executor';
 import { Client } from 'pg';
-import { url } from '@koa/router';
 
 const testTableName = 'debugger_test_kv';
 

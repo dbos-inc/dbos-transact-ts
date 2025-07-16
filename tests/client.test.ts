@@ -79,10 +79,11 @@ describe('DBOSClient', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    const $poolConfig = structuredClone(config.poolConfig);
-    $poolConfig.connectionString = undefined;
-    database_url = `postgres://${$poolConfig.user}:${$poolConfig.password as string}@${$poolConfig.host}:${$poolConfig.port}/${$poolConfig.database}`;
-    poolConfig = { ...$poolConfig, database: config.system_database };
+    database_url = config.databaseUrl;
+    const url = new URL(database_url);
+    url.pathname = `/${config.sysDbName}`;
+
+    poolConfig = { connectionString: url.toString() };
     await setUpDBOSTestDb(config);
   });
 
