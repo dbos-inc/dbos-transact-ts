@@ -3,7 +3,7 @@ import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } fro
 import {
   DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
-  DBOSDeadLetterQueueError,
+  DBOSMaxRecoveryAttemptsExceededError,
   DBOSConflictingWorkflowError,
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
@@ -312,9 +312,17 @@ async function insertWorkflowStatus(
       ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
       ON CONFLICT (workflow_uuid)
         DO UPDATE SET
-          recovery_attempts = workflow_status.recovery_attempts + 1,
+          recovery_attempts = CASE 
+            WHEN workflow_status.status != '${StatusString.ENQUEUED}' 
+            THEN workflow_status.recovery_attempts + 1 
+            ELSE workflow_status.recovery_attempts 
+          END,
           updated_at = EXCLUDED.updated_at,
-          executor_id = EXCLUDED.executor_id 
+          executor_id = CASE 
+            WHEN EXCLUDED.status != '${StatusString.ENQUEUED}' 
+            THEN EXCLUDED.executor_id 
+            ELSE workflow_status.executor_id 
+          END
         RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms`,
       [
         initStatus.workflowUUID,
@@ -340,11 +348,9 @@ async function insertWorkflowStatus(
         initStatus.priority,
       ],
     );
-
     if (rows.length === 0) {
       throw new Error(`Attempt to insert workflow ${initStatus.workflowUUID} failed`);
     }
-
     return rows[0];
   } catch (error) {
     const err: DatabaseError = error as DatabaseError;
@@ -753,14 +759,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       // recovery_attempt means "attempts" (we kept the name for backward compatibility). It's default value is 1.
       // Every time we init the status, we increment `recovery_attempts` by 1.
-      // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `RETRIES_EXCEEDED`.
+      // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `MAX_RECOVERY_ATTEMPTS_EXCEEDED`.
       const attempts = resRow.recovery_attempts;
       if (maxRetries && attempts > maxRetries + 1) {
-        await updateWorkflowStatus(client, initStatus.workflowUUID, StatusString.RETRIES_EXCEEDED, {
+        await updateWorkflowStatus(client, initStatus.workflowUUID, StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED, {
           where: { status: StatusString.PENDING },
           throwOnFailure: false,
         });
-        throw new DBOSDeadLetterQueueError(initStatus.workflowUUID, maxRetries);
+        throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       const status = resRow.status;
