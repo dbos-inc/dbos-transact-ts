@@ -288,13 +288,12 @@ export class DBOS {
     // }
 
     DBOS.#port = runtimeConfig.port;
-    DBOS.#poolConfig = internalConfig.poolConfig;
     DBOS.#dbosConfig = {
       name: internalConfig.name,
       databaseUrl: internalConfig.databaseUrl,
-      userDbClient: internalConfig.userDbclient,
+      userDbClient: internalConfig.userDbClient,
       userDbPoolSize: DBOS.#dbosConfig?.userDbPoolSize,
-      sysDbName: internalConfig.system_database,
+      sysDbName: internalConfig.sysDbName,
       sysDbPoolSize: internalConfig.sysDbPoolSize,
       logLevel: internalConfig.telemetry.logs?.logLevel,
       addContextMetadata: internalConfig.telemetry.logs?.addContextMetadata,

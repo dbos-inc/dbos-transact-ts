@@ -103,7 +103,17 @@ export function writeConfigFile(configFile: ConfigFile, configFilePath: string) 
   }
 }
 
-export function getDatabaseUrl(databaseUrl?: string, appName?: string): string {
+export function getDatabaseUrl(configFile: ConfigFile): string;
+export function getDatabaseUrl(databaseUrl?: string, appName?: string): string;
+export function getDatabaseUrl(param1?: string | ConfigFile, appName?: string): string {
+  let databaseUrl: string | undefined;
+  if (typeof param1 === 'object' && param1 !== null) {
+    databaseUrl = param1.database_url;
+    appName = param1.name;
+  } else {
+    databaseUrl = param1;
+  }
+
   databaseUrl ??= process.env.DBOS_DATABASE_URL ?? defaultDatabaseUrl(appName);
 
   if (process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined) {
