@@ -24,6 +24,7 @@ import {
   type GetQueuedWorkflowsInput,
   type StepInfo,
   WorkflowConfig,
+  DEFAULT_MAX_RECOVERY_ATTEMPTS,
 } from './workflow';
 
 import { IsolationLevel, type TransactionConfig } from './transaction';
@@ -543,7 +544,9 @@ export class DBOSExecutor {
       wConfig = wInfo.workflowConfig;
     }
 
-    const maxRecoveryAttempts = wConfig.maxRecoveryAttempts ? wConfig.maxRecoveryAttempts : 50;
+    const maxRecoveryAttempts = wConfig.maxRecoveryAttempts
+      ? wConfig.maxRecoveryAttempts
+      : DEFAULT_MAX_RECOVERY_ATTEMPTS;
 
     const wfname = wf.name; // TODO: Should be what was registered in wfInfo...
 

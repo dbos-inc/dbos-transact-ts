@@ -98,12 +98,12 @@ export class DBOSFailLoadOperationsError extends DBOSError {
   }
 }
 
-const DeadLetterQueueError = 18;
-export class DBOSDeadLetterQueueError extends DBOSError {
+const MaxRecoveryAttemptsExceededError = 18;
+export class DBOSMaxRecoveryAttemptsExceededError extends DBOSError {
   constructor(workflowID: string, maxRetries: number) {
     super(
-      `Workflow ${workflowID} has been moved to the dead-letter queue after exceeding the maximum of ${maxRetries} retries`,
-      DeadLetterQueueError,
+      `Workflow ${workflowID} has exceeded its maximum of ${maxRetries} execution or recovery attempts. Further attempts to execute or recover it will fail.`,
+      MaxRecoveryAttemptsExceededError,
     );
   }
 }
