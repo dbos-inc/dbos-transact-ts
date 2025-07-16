@@ -1,18 +1,12 @@
-import { DBOSInitializationError } from '../error';
-import { DBOSJSON, globalParams, readFileSync, toStringSet } from '../utils';
+import { readFileSync } from '../utils';
 import { DBOSConfig, DBOSConfigInternal } from '../dbos-executor';
-import { PoolConfig } from 'pg';
 import YAML from 'yaml';
 import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
 import { UserDatabaseName } from '../user_database';
-import { TelemetryConfig } from '../telemetry';
 import { writeFileSync } from 'fs';
-import Ajv, { ValidateFunction } from 'ajv';
+import Ajv from 'ajv';
 import path from 'path';
-import validator from 'validator';
-import { GlobalLogger } from '../telemetry/logs';
 import dbosConfigSchema from '../../dbos-config.schema.json';
-import { ConnectionOptions } from 'tls';
 import assert from 'assert';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';

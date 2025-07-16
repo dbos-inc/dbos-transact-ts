@@ -1,7 +1,6 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
 import { ConfigFile, getDatabaseUrl, getSystemDatabaseName } from './config';
-import { DBOSConfigInternal } from '../dbos-executor';
 import { PoolConfig, Client } from 'pg';
 import {
   createUserDBSchema,
@@ -61,7 +60,6 @@ async function createDBOSTables(databaseUrl: string, systemDbName: string | unde
   systemDbName ??= getSystemDatabaseName(databaseUrl, systemDbName);
 
   const url = new URL(databaseUrl);
-  const userDBName = url.pathname.slice(1);
   url.pathname = `/${systemDbName}`;
   const systemPoolConfig: PoolConfig = {
     connectionString: url.toString(),

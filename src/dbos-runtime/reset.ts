@@ -1,6 +1,5 @@
 import { GlobalLogger } from '../telemetry/logs';
 import { confirm } from '@inquirer/prompts';
-import { DBOSConfigInternal } from '../dbos-executor';
 import { PostgresSystemDatabase } from '../system_database';
 import { ConfigFile, getDatabaseUrl, getSystemDatabaseName } from './config';
 
