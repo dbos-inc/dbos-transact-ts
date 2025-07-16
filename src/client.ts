@@ -21,6 +21,7 @@ import {
   listWorkflowSteps,
 } from './dbos-runtime/workflow_management';
 import { PGNodeUserDatabase, type UserDatabase } from './user_database';
+import { getSystemDatabaseName } from './dbos-runtime/config';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -82,17 +83,12 @@ export class DBOSClient {
   private readonly systemDatabase: SystemDatabase;
   private readonly userDatabase: UserDatabase;
 
-  private constructor(databaseUrl: string, systemDatabase?: string) {
+  private constructor(databaseUrl: string, systemDBName?: string) {
     const poolConfig: PoolConfig = { connectionString: databaseUrl };
-
-    if (!systemDatabase) {
-      // If no system database is provided, use the application database name with a `_dbos_sys` suffix.
-      const url = new URL(databaseUrl);
-      systemDatabase = `${url.pathname.slice(1)}_dbos_sys`;
-    }
+    systemDBName ??= getSystemDatabaseName(databaseUrl, systemDBName);
 
     this.logger = new GlobalLogger();
-    this.systemDatabase = new PostgresSystemDatabase(poolConfig, systemDatabase, this.logger);
+    this.systemDatabase = new PostgresSystemDatabase(poolConfig, systemDBName, this.logger);
     this.userDatabase = new PGNodeUserDatabase(poolConfig);
   }
 

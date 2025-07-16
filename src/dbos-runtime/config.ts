@@ -145,7 +145,7 @@ export function getDatabaseUrl(databaseUrl?: string, appName?: string): string {
   }
 }
 
-function getSystemDatabaseName(sysDbName: string | undefined, databaseUrl: string): string {
+export function getSystemDatabaseName(databaseUrl: string, sysDbName?: string): string {
   if (sysDbName) {
     return sysDbName;
   }

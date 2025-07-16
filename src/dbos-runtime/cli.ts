@@ -88,8 +88,10 @@ program
 program
   .command('migrate')
   .description('Perform a database migration')
-  .action(async () => {
-    await runAndLog(migrate);
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+  .action(async (options: { appDir?: string }) => {
+    const config = readConfigFile(options.appDir);
+    await runAndLog(config, migrate);
   });
 
 program
@@ -110,9 +112,10 @@ program
   .command('reset')
   .description('reset the system database')
   .option('-y, --yes', 'Skip confirmation prompt', false)
-  .action(async (options: { yes: boolean }) => {
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+  .action(async (options: { yes: boolean; appDir?: string }) => {
     const logger = new GlobalLogger();
-    const [config] = parseConfigFile();
+    const config = readConfigFile(options.appDir);
     await reset(config, logger, options.yes);
   });
 
@@ -328,15 +331,19 @@ if (!process.argv.slice(2).length) {
 //If action throws, logs the exception and sets the exit code to 1.
 //Finally, terminates the program with the exit code.
 export async function runAndLog(
-  action: (config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number,
+  configFile: ConfigFile,
+  action: (configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number,
 ) {
   let logger = new GlobalLogger();
-  const [config] = parseConfigFile();
-  const configFile = loadConfigFile(dbosConfigFilePath); // pass the raw config file for CLI arguments
   let terminate = undefined;
   if (configFile.telemetry?.OTLPExporter) {
     logger = new GlobalLogger(
-      new TelemetryCollector(new TelemetryExporter(configFile.telemetry.OTLPExporter)),
+      new TelemetryCollector(
+        new TelemetryExporter({
+          logsEndpoint: toArray(configFile.telemetry?.OTLPExporter?.logsEndpoint),
+          tracesEndpoint: toArray(configFile.telemetry?.OTLPExporter?.tracesEndpoint),
+        }),
+      ),
       configFile.telemetry?.logs,
     );
     terminate = (code: number) => {
@@ -351,11 +358,15 @@ export async function runAndLog(
   }
   let returnCode = 1;
   try {
-    returnCode = await action(config, configFile, logger);
+    returnCode = await action(configFile, logger);
   } catch (e) {
     logger.error(e);
   }
   terminate(returnCode);
+
+  function toArray(endpoint: string | string[] | undefined): Array<string> {
+    return endpoint ? (Array.isArray(endpoint) ? endpoint : [endpoint]) : [];
+  }
 }
 
 function getGlobalLogger(configFile: DBOSConfigInternal): GlobalLogger {
