@@ -62,11 +62,7 @@ async function waitForMessageTest(
 async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
   const url = new URL(config.databaseUrl);
-  url.pathname = '/hello';
-  config.databaseUrl = url.toString();
-
-  url.pathname = `/${config.sysDbName}`;
-  await setUpDBOSTestDb(config);
+  url.pathname = `/postgres`;
   const pgSystemClient = new Client({
     connectionString: url.toString(),
   });
@@ -91,7 +87,7 @@ function configureTemplate() {
   execSync('npx dbos migrate', { env: process.env, stdio: 'inherit' });
 }
 
-describe.skip('runtime-tests-knex', () => {
+describe('runtime-tests-knex', () => {
   beforeAll(async () => {
     await dropTemplateDatabases();
     process.chdir('packages/create/templates/dbos-knex');
@@ -124,7 +120,7 @@ describe.skip('runtime-tests-knex', () => {
   });
 });
 
-describe.skip('runtime-tests-typeorm', () => {
+describe('runtime-tests-typeorm', () => {
   beforeAll(async () => {
     await dropTemplateDatabases();
     process.chdir('packages/create/templates/dbos-typeorm');
@@ -148,7 +144,7 @@ describe.skip('runtime-tests-typeorm', () => {
   });
 });
 
-describe.skip('runtime-tests-prisma', () => {
+describe('runtime-tests-prisma', () => {
   beforeAll(async () => {
     await dropTemplateDatabases();
     process.chdir('packages/create/templates/dbos-prisma');
@@ -172,7 +168,7 @@ describe.skip('runtime-tests-prisma', () => {
   });
 });
 
-describe.skip('runtime-tests-drizzle', () => {
+describe('runtime-tests-drizzle', () => {
   beforeAll(async () => {
     await dropTemplateDatabases();
     process.chdir('packages/create/templates/dbos-drizzle');
