@@ -244,7 +244,7 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
 
     async function $uninitSchema(knexDB: Knex) {
-      await knexDB.raw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos;');
+      await knexDB.raw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos CASCADE;');
     }
   }
 

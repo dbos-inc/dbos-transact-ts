@@ -24,7 +24,7 @@
   "dependencies": {
     "commander": "^12.1.0",
     "liquidjs": "^10.13.1",
-    "pg": "^8.12.0",
+    "pg": "^8.11.3",
     "ts-morph": "^22.0.0"
   },
   "peerDependencies": {

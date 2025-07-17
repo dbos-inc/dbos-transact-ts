@@ -7,9 +7,8 @@ name: dbos-drizzle
 language: node
 database_url: ${DBOS_DATABASE_URL}
 database:
-  app_db_client: drizzle
   migrate:
     - npx drizzle-kit migrate
 runtimeConfig:
-  entrypoints:
-    - dist/operations.js
+  start:
+    - node dist/main.js
