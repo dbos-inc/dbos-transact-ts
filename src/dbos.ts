@@ -87,7 +87,7 @@ import { FastifyInstance } from 'fastify';
 import _fastifyExpress from '@fastify/express'; // This is for fastify.use()
 import { randomUUID } from 'node:crypto';
 
-import { PoolClient, PoolConfig } from 'pg';
+import { PoolClient } from 'pg';
 import { Knex } from 'knex';
 import { StepConfig } from './step';
 import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
@@ -103,9 +103,6 @@ import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
 
 type AnyConstructor = new (...args: unknown[]) => object;
-type ReadonlyArray<T> = {
-  readonly [K in keyof T]: T[K] extends Array<infer U> ? ReadonlyArray<U> : T[K];
-};
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -501,12 +498,7 @@ export class DBOS {
   // Globals
   //////
   static #dbosConfig?: DBOSConfig;
-  static #poolConfig?: PoolConfig;
   static #port?: number;
-
-  static get dbosConfig(): ReadonlyArray<DBOSConfig & { poolConfig?: PoolConfig }> {
-    return { ...DBOS.#dbosConfig, poolConfig: DBOS.#poolConfig };
-  }
 
   //////
   // Context

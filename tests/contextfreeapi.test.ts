@@ -618,7 +618,7 @@ async function main11() {
 }
 
 describe('dbos-v2api-tests-main', () => {
-  test.skip('simple-functions', async () => {
+  test('simple-functions', async () => {
     await main();
   }, 15000);
 

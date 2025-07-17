@@ -189,13 +189,13 @@ describe('knex-auth-tests', () => {
 });
 
 class TestEngine {
+  static connectionString?: string;
+
   @DBOS.transaction()
   static async testEngine() {
-    const _pc = DBOS.dbosConfig?.poolConfig;
-    const _ds = DBOS.knexClient;
-    // expect((ds as any).context.client.connectionSettings.connectionString).toEqual(pc?.connectionString);
-    // expect((ds as any).context.client.config.pool.max).toEqual(pc?.max);
-    // expect((ds as any).context.client.connectionSettings.connectionTimeoutMillis).toBe(pc?.connectionTimeoutMillis);
+    const ds = DBOS.knexClient;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    expect((ds as any).context.client.connectionSettings.connectionString).toEqual(TestEngine.connectionString);
     await Promise.resolve();
   }
 }
@@ -212,6 +212,7 @@ describe('knex-engine-config-tests', () => {
     DBOS.setConfig(config);
     await DBOS.launch();
     try {
+      TestEngine.connectionString = config.databaseUrl;
       await TestEngine.testEngine();
     } finally {
       await DBOS.shutdown();

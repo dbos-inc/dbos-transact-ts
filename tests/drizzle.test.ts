@@ -265,10 +265,19 @@ describe('drizzle-auth-tests', () => {
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const _pc = DBOS.dbosConfig?.poolConfig;
-    const _ds = DBOS.drizzleClient;
-    // expect((ds as any).session.client._connectionTimeoutMillis).toEqual(pc?.connectionTimeoutMillis);
+    const ds = DBOS.drizzleClient;
     // Drizzle doesn't expose the pool directly
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    const client = (ds as any).session.client.connectionParameters as {
+      host: string;
+      port: number;
+      database: string;
+      user: string;
+    };
+    expect(client.database).toBe('dbostest');
+    expect(client.user).toBe('postgres');
+    expect(client.host).toBe('localhost');
+    expect(client.port).toBe(5432);
     await Promise.resolve();
   }
 }

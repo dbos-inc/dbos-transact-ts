@@ -222,11 +222,12 @@ describe('prisma-auth-tests', () => {
 });
 
 class TestEngine {
+  static connectionString?: string;
+
   @DBOS.transaction()
   static async testEngine() {
-    const pc = DBOS.dbosConfig?.poolConfig;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((DBOS.prismaClient as any)._engineConfig.overrideDatasources.db.url).toBe(pc?.connectionString);
+    expect((DBOS.prismaClient as any)._engineConfig.overrideDatasources.db.url).toBe(TestEngine.connectionString);
     const r = await DBOS.prismaClient.$queryRawUnsafe('SELECT 1');
     expect(r.length).toBe(1);
     await Promise.resolve();
@@ -236,7 +237,7 @@ class TestEngine {
 describe('prisma-engine-config-tests', () => {
   let config: DBOSConfig;
 
-  test.skip('prisma-engine-config', async () => {
+  test('prisma-engine-config', async () => {
     config = {
       name: 'dbostest',
       userDbClient: UserDatabaseName.PRISMA,
@@ -247,6 +248,7 @@ describe('prisma-engine-config-tests', () => {
     DBOS.setConfig(config);
     await DBOS.launch();
     try {
+      TestEngine.connectionString = config.databaseUrl;
       await TestEngine.testEngine();
     } finally {
       await DBOS.shutdown();

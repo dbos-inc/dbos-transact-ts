@@ -208,13 +208,13 @@ describe('typeorm-auth-tests', () => {
 });
 
 class TestEngine {
+  static connectionString?: string;
+
   @DBOS.transaction()
   static async testEngine() {
-    const _pc = DBOS.dbosConfig?.poolConfig;
-    const _ds = DBOS.typeORMClient;
-    // expect((ds as any).connection.driver.master.options.connectionString).toBe(pc?.connectionString);
-    // expect((ds as any).connection.driver.master.options.max).toBe(pc?.max);
-    // expect((ds as any).queryRunner.databaseConnection._connectionTimeoutMillis).toBe(pc?.connectionTimeoutMillis);
+    const ds = DBOS.typeORMClient;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    expect((ds as any).connection.driver.master.options.connectionString).toBe(TestEngine.connectionString);
     await Promise.resolve();
   }
 }
@@ -227,10 +227,12 @@ describe('typeorm-engine-config-tests', () => {
       userDbPoolSize: 2,
       databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
     };
+
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     await DBOS.launch();
     try {
+      TestEngine.connectionString = config.databaseUrl;
       await TestEngine.testEngine();
     } finally {
       await DBOS.shutdown();
