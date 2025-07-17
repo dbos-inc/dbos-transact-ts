@@ -657,7 +657,7 @@ export class DBOS {
    * @deprecated - use data source packages such as:
    *  `@dbos-inc/drizzle-datasource`
    *  `@dbos-inc/knex-datasource`
-   *  `@dbos-inc/nodepg-datasource`
+   *  `@dbos-inc/node-pg-datasource`
    *  `@dbos-inc/postgres-datasource`
    *  `@dbos-inc/prisma-datasource`
    *  `@dbos-inc/typeorm-datasource`
@@ -672,6 +672,7 @@ export class DBOS {
   /**
    * @returns the current PG SQL client;
    *  only allowed within `@DBOS.transaction` functions when a `PGNODE` user database is in use
+   * @deprecated - use data source packages such as `@dbos-inc/node-pg-datasource`
    */
   static get pgClient(): PoolClient {
     const client = DBOS.sqlClient;
@@ -764,7 +765,7 @@ export class DBOS {
    * @deprecated - use data source packages such as:
    *  `@dbos-inc/drizzle-datasource`
    *  `@dbos-inc/knex-datasource`
-   *  `@dbos-inc/nodepg-datasource`
+   *  `@dbos-inc/node-pg-datasource`
    *  `@dbos-inc/postgres-datasource`
    *  `@dbos-inc/prisma-datasource`
    *  `@dbos-inc/typeorm-datasource`
@@ -1583,7 +1584,7 @@ export class DBOS {
    * @deprecated - use data source packages such as:
    *  `@dbos-inc/drizzle-datasource`
    *  `@dbos-inc/knex-datasource`
-   *  `@dbos-inc/nodepg-datasource`
+   *  `@dbos-inc/node-pg-datasource`
    *  `@dbos-inc/postgres-datasource`
    *  `@dbos-inc/prisma-datasource`
    *  `@dbos-inc/typeorm-datasource`
