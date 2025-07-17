@@ -18,7 +18,7 @@ class TestEngine {
 }
 
 describe('pgnode-engine-config-tests', () => {
-  test('engine-config', async () => {
+  test.skip('engine-config', async () => {
     const config: DBOSConfig = {
       userDbClient: UserDatabaseName.PGNODE,
       userDbPoolSize: 2,

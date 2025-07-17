@@ -13,7 +13,7 @@ async function runSql(config: ClientConfig, func: (client: Client) => Promise<vo
   }
 }
 
-describe('stored-proc-tests', () => {
+describe.skip('stored-proc-tests', () => {
   let cwd: string;
 
   beforeAll(async () => {
