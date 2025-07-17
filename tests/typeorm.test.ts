@@ -210,13 +210,10 @@ describe('typeorm-auth-tests', () => {
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = DBOS.dbosConfig?.poolConfig;
-    const ds = DBOS.typeORMClient;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    const _pc = DBOS.dbosConfig?.poolConfig;
+    const _ds = DBOS.typeORMClient;
     // expect((ds as any).connection.driver.master.options.connectionString).toBe(pc?.connectionString);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     // expect((ds as any).connection.driver.master.options.max).toBe(pc?.max);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
     // expect((ds as any).queryRunner.databaseConnection._connectionTimeoutMillis).toBe(pc?.connectionTimeoutMillis);
     await Promise.resolve();
   }

@@ -264,9 +264,8 @@ describe('drizzle-auth-tests', () => {
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = DBOS.dbosConfig?.poolConfig;
-    const ds = DBOS.drizzleClient;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    const _pc = DBOS.dbosConfig?.poolConfig;
+    const _ds = DBOS.drizzleClient;
     // expect((ds as any).session.client._connectionTimeoutMillis).toEqual(pc?.connectionTimeoutMillis);
     // Drizzle doesn't expose the pool directly
     await Promise.resolve();
