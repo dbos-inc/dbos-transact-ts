@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { readConfigFile } from '../src';
+import { getDatabaseUrl, readConfigFile } from '../src';
 import { Client, ClientConfig } from 'pg';
 import assert from 'assert';
 
@@ -13,7 +13,7 @@ async function runSql(config: ClientConfig, func: (client: Client) => Promise<vo
   }
 }
 
-describe.skip('stored-proc-tests', () => {
+describe('stored-proc-tests', () => {
   let cwd: string;
 
   beforeAll(async () => {
@@ -21,8 +21,9 @@ describe.skip('stored-proc-tests', () => {
     process.chdir('tests/proc-test');
 
     const config = readConfigFile();
-    assert(config.database_url);
-    const url = new URL(config.database_url);
+    const databaseUrl = getDatabaseUrl(config);
+    assert(databaseUrl);
+    const url = new URL(databaseUrl);
     const database = url.pathname.slice(1);
     const sysDbName = config.database?.sys_db_name ?? `${database}_dbos_sys`;
     url.pathname = '/postgres';
