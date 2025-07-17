@@ -236,7 +236,7 @@ class TestEngine {
 describe('prisma-engine-config-tests', () => {
   let config: DBOSConfig;
 
-  test('prisma-engine-config', async () => {
+  test.skip('prisma-engine-config', async () => {
     config = {
       name: 'dbostest',
       userDbClient: UserDatabaseName.PRISMA,

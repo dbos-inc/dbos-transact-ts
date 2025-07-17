@@ -66,17 +66,4 @@ describe('v2api-compile', () => {
     const result = await compileCodeWithImports(validCode);
     expect(result).toBe(true);
   }, 20000);
-
-  it('should NOT compile', async () => {
-    const invalidCode = `
-        import { DBOS, WorkflowContext } from "../../src";
-
-        class Example {
-            @DBOS.workflow()
-            static async myMethod(ctx: WorkflowContext, arg1: string) {}
-        }
-    `;
-    const _result = await compileCodeWithImports(invalidCode);
-    //expect(result).toBe(false);  // Can't get this to fail :-(
-  }, 20000);
 });

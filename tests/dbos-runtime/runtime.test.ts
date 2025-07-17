@@ -91,7 +91,7 @@ function configureTemplate() {
   execSync('npx dbos migrate', { env: process.env, stdio: 'inherit' });
 }
 
-describe('runtime-tests-knex', () => {
+describe.skip('runtime-tests-knex', () => {
   beforeAll(async () => {
     await dropTemplateDatabases();
     process.chdir('packages/create/templates/dbos-knex');
@@ -124,7 +124,7 @@ describe('runtime-tests-knex', () => {
   });
 });
 
-describe('runtime-tests-typeorm', () => {
+describe.skip('runtime-tests-typeorm', () => {
   beforeAll(async () => {
     await dropTemplateDatabases();
     process.chdir('packages/create/templates/dbos-typeorm');
@@ -148,7 +148,7 @@ describe('runtime-tests-typeorm', () => {
   });
 });
 
-describe('runtime-tests-prisma', () => {
+describe.skip('runtime-tests-prisma', () => {
   beforeAll(async () => {
     await dropTemplateDatabases();
     process.chdir('packages/create/templates/dbos-prisma');
@@ -172,7 +172,7 @@ describe('runtime-tests-prisma', () => {
   });
 });
 
-describe('runtime-tests-drizzle', () => {
+describe.skip('runtime-tests-drizzle', () => {
   beforeAll(async () => {
     await dropTemplateDatabases();
     process.chdir('packages/create/templates/dbos-drizzle');

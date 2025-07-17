@@ -1,3 +1,4 @@
+import { DBOSConfig } from '../dist/src';
 import { DBOS } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { PostgresSystemDatabase } from '../src/system_database';
@@ -18,8 +19,8 @@ class TestEngine {
 
 describe('pgnode-engine-config-tests', () => {
   test('engine-config', async () => {
-    const config = {
-      userDbclient: UserDatabaseName.PGNODE,
+    const config: DBOSConfig = {
+      userDbClient: UserDatabaseName.PGNODE,
       userDbPoolSize: 2,
       sysDbPoolSize: 42,
       databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
