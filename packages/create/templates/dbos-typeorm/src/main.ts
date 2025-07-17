@@ -1,51 +1,34 @@
 // Welcome to DBOS!
 
-// This is a sample "Hello" app built with DBOS and Knex.
-// It greets visitors and keeps track of how many times each visitor has been greeted.
+// This is the Quickstart TypeORM template app. It greets visitors, counting how many total greetings were made.
+// To learn how to run this app, visit the TypeORM tutorial: https://docs.dbos.dev/tutorials/using-typeorm
 
 import express, { Request, Response } from 'express';
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { KnexDataSource } from '@dbos-inc/knex-datasource';
+import { DBOSHello } from '../entities/DBOSHello';
+
+import { TypeOrmDataSource } from '@dbos-inc/typeorm-datasource';
 
 const config = {
-  client: 'pg',
-  connection: {
-    host: process.env.PGHOST || 'localhost',
-    port: parseInt(process.env.PGPORT || '5432'),
-    database: process.env.PGDATABASE || 'dbos_knex',
-    user: process.env.PGUSER || 'postgres',
-    password: process.env.PGPASSWORD || 'dbos',
-  },
+  host: process.env.PGHOST || 'localhost',
+  port: parseInt(process.env.PGPORT || '5432'),
+  database: process.env.PGDATABASE || 'dbos_typeorm',
+  user: process.env.PGUSER || 'postgres',
+  password: process.env.PGPASSWORD || 'dbos',
 };
 
-const knexds = new KnexDataSource('app-db', config);
-
-export interface dbos_hello {
-  name: string;
-  greet_count: number;
-}
+const dataSource = new TypeOrmDataSource('app-db', config, [DBOSHello]);
 
 export class Hello {
-  // This transaction uses DBOS and Knex to perform database operations.
-  // It retrieves and increments the number of times a user has been greeted.
-  @knexds.transaction()
-  static async helloTransaction(user: string) {
-    const query =
-      'INSERT INTO dbos_hello (name, greet_count) VALUES (?, 1) ON CONFLICT (name) DO UPDATE SET greet_count = dbos_hello.greet_count + 1 RETURNING greet_count;';
-    const { rows } = (await knexds.client.raw(query, [user])) as { rows: dbos_hello[] };
-    const greet_count = rows[0].greet_count;
-    const greeting = `Hello, ${user}! You have been greeted ${greet_count} times.`;
-    return makeHTML(greeting);
-  }
-
-  @knexds.transaction({ readOnly: true })
-  static async getCount(user: string) {
-    return await knexds.client<dbos_hello>('dbos_hello').where({ name: user }).select('*');
-  }
-
-  @knexds.transaction()
-  static async deleteUser(user: string) {
-    await knexds.client<dbos_hello>('dbos_hello').where({ name: user }).delete();
+  // This transaction uses DBOS and TypeORM to perform database operations.
+  @dataSource.transaction()
+  static async helloTransaction(name: string) {
+    const greeting = `Hello, ${name}!`;
+    let entity = new DBOSHello();
+    entity.greeting = greeting;
+    entity = await dataSource.entityManager.save(entity);
+    const greeting_note = `Greeting ${entity.greeting_id}: ${greeting}`;
+    return makeHTML(greeting_note);
   }
 }
 
@@ -107,7 +90,7 @@ app.get('/greeting/:name', (req: Request, res: Response) => {
 // Finally, launch DBOS and start the server
 async function main() {
   DBOS.setConfig({
-    name: 'dbos-knex',
+    name: 'dbos-typeorm',
     databaseUrl: process.env.DBOS_DATABASE_URL,
   });
   await DBOS.launch({ expressApp: app });

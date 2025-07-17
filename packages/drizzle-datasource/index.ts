@@ -199,7 +199,9 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   }
 }
 
-export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
+export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
+  implements DBOSDataSource<TransactionConfig>
+{
   // User calls this... DBOS not directly involved...
   static #getClient(p?: DrizzleTransactionHandler): NodePgDatabase<{ [key: string]: object }> {
     if (!DBOS.isInTransaction()) {
@@ -220,7 +222,7 @@ export class DrizzleDataSource implements DBOSDataSource<TransactionConfig> {
   }
 
   get client() {
-    return DrizzleDataSource.#getClient(this.#provider);
+    return DrizzleDataSource.#getClient(this.#provider) as CT;
   }
 
   static async initializeDBOSSchema(config: ClientConfig): Promise<void> {

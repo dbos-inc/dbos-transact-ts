@@ -6,12 +6,12 @@ import { UserDatabaseName } from '../src/user_database';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { pgTable, serial, text, integer, varchar } from 'drizzle-orm/pg-core';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
-import { eq } from 'drizzle-orm';
+import { eq, DrizzleError } from 'drizzle-orm';
 import { randomUUID } from 'node:crypto';
-import { DatabaseError } from 'pg';
 import { DBOSNotAuthorizedError } from '../src/error';
 import { sleepms } from '../src/utils';
 import { IsolationLevel } from '../src/transaction';
+import { DatabaseError } from 'pg';
 
 const testTableName = 'dbos_test_kv';
 
@@ -156,8 +156,9 @@ describe('drizzle-tests', () => {
       await TestClass.unsafeInsert(1, 'test-two');
       expect(true).toBe(false); // Fail if no error is thrown.
     } catch (e) {
-      const err: DatabaseError = e as DatabaseError;
-      expect(err.code).toBe('23505');
+      const err = e as DrizzleError;
+      const pge = (err.cause ?? e) as DatabaseError;
+      expect(pge.code).toBe('23505');
     }
   });
 

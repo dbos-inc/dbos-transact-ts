@@ -7,11 +7,10 @@ name: dbos-typeorm
 language: node
 database_url: ${DBOS_DATABASE_URL}
 database:
-  app_db_client: typeorm
   migrate:
     - npx typeorm migration:run -d dist/datasource.js
   rollback:
     - npx typeorm migration:revert -d dist/datasource.js
 runtimeConfig:
-  entrypoints:
-    - dist/src/operations.js
+  start:
+    - node dist/src/main.js
