@@ -25,7 +25,7 @@ describe('stored-proc-tests', () => {
     assert(databaseUrl);
     const url = new URL(databaseUrl);
     const database = url.pathname.slice(1);
-    const sysDbName = config.database?.sys_db_name ?? `${database}_dbos_sys`;
+    const sysDbName = new URL(databaseUrl).pathname.slice(1);
     url.pathname = '/postgres';
 
     await runSql({ connectionString: url.toString() }, async (client) => {

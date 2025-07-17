@@ -223,8 +223,8 @@ describe('typeorm-engine-config-tests', () => {
   test('engine-config', async () => {
     const config: DBOSConfig = {
       name: 'dbostest',
-      userDbClient: UserDatabaseName.TYPEORM,
-      userDbPoolSize: 2,
+      userDatabaseClient: UserDatabaseName.TYPEORM,
+      userDatabasePoolSize: 2,
       databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
     };
 

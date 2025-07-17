@@ -35,11 +35,8 @@ describe('workflow-management-tests', () => {
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
     await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
 
-    const url = new URL(config.databaseUrl);
-    url.pathname = `/${config.sysDbName}`;
-
     systemDBClient = new Client({
-      connectionString: url.toString(),
+      connectionString: config.systemDatabaseUrl,
     });
     await systemDBClient.connect();
   });
@@ -236,7 +233,7 @@ describe('workflow-management-tests', () => {
     expect(failResponse.statusCode).toBe(500);
 
     const logger = new GlobalLogger();
-    const sysdb = new PostgresSystemDatabase({ connectionString: config.databaseUrl }, config.sysDbName, logger);
+    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl, logger);
     try {
       const input: GetWorkflowsInput = {};
       const infos = await listWorkflows(sysdb, input);
@@ -542,7 +539,7 @@ describe('test-list-queues', () => {
     }
 
     const logger = new GlobalLogger();
-    const sysdb = new PostgresSystemDatabase({ connectionString: config.databaseUrl }, config.sysDbName, logger);
+    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl, logger);
     try {
       let input: GetQueuedWorkflowsInput = {};
       let output: WorkflowStatus[] = [];
@@ -1220,11 +1217,7 @@ describe('test-list-steps', () => {
     const result2 = await handle.getResult();
     expect(result1).toEqual(result2);
 
-    const sysdb = new PostgresSystemDatabase(
-      { connectionString: config.databaseUrl },
-      config.sysDbName,
-      new GlobalLogger(),
-    );
+    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl, new GlobalLogger());
     try {
       const wfs = await listWorkflows(sysdb, {});
       expect(wfs.length).toBe(2);

@@ -204,8 +204,8 @@ describe('knex-engine-config-tests', () => {
   test('engine-config', async () => {
     const config: DBOSConfig = {
       name: 'dbostest',
-      userDbClient: UserDatabaseName.KNEX,
-      userDbPoolSize: 2,
+      userDatabaseClient: UserDatabaseName.KNEX,
+      userDatabasePoolSize: 2,
       databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
     };
     await setUpDBOSTestDb(config);

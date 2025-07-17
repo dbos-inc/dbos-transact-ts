@@ -41,10 +41,8 @@ describe('dbos-tests', () => {
   });
 
   test('simple-workflow-attempts-counter', async () => {
-    const url = new URL(config.databaseUrl);
-    url.pathname = `/${config.sysDbName}`;
     const systemDBClient = new Client({
-      connectionString: url.toString(),
+      connectionString: config.systemDatabaseUrl,
     });
     try {
       await systemDBClient.connect();

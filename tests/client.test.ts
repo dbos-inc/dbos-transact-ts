@@ -80,10 +80,7 @@ describe('DBOSClient', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     database_url = config.databaseUrl;
-    const url = new URL(database_url);
-    url.pathname = `/${config.sysDbName}`;
-
-    poolConfig = { connectionString: url.toString() };
+    poolConfig = { connectionString: config.systemDatabaseUrl };
     await setUpDBOSTestDb(config);
   });
 

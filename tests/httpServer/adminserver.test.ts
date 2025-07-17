@@ -69,10 +69,8 @@ describe('running-admin-server-tests', () => {
     await setUpDBOSTestDb(config);
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
-    const url = new URL(config.databaseUrl);
-    url.pathname = `/${config.sysDbName}`;
     systemDBClient = new Client({
-      connectionString: url.toString(),
+      connectionString: config.systemDatabaseUrl,
     });
     await systemDBClient.connect();
     TestAdminWorkflow.counter = 0;

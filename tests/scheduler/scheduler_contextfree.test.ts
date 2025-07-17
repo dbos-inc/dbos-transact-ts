@@ -12,7 +12,7 @@ describe('cf-scheduled-wf-tests-simple', () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    await dropDatabase(config.databaseUrl, config.sysDbName);
+    await dropDatabase(config.systemDatabaseUrl);
   });
 
   beforeEach(async () => {
@@ -132,7 +132,7 @@ describe('cf-scheduled-wf-tests-oaoo', () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    await dropDatabase(config.databaseUrl, config.sysDbName);
+    await dropDatabase(config.systemDatabaseUrl);
   });
 
   beforeEach(async () => {});
@@ -257,7 +257,7 @@ describe('decorator-free-scheduled', () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    await dropDatabase(config.databaseUrl, config.sysDbName);
+    await dropDatabase(config.systemDatabaseUrl);
   });
 
   beforeEach(async () => {

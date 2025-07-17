@@ -286,8 +286,8 @@ describe('drizzle-engine-config-tests', () => {
   test('engine-config', async () => {
     const config: DBOSConfig = {
       name: 'dbostest',
-      userDbClient: UserDatabaseName.DRIZZLE,
-      userDbPoolSize: 2,
+      userDatabaseClient: UserDatabaseName.DRIZZLE,
+      userDatabasePoolSize: 2,
       databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
     };
     await setUpDBOSTestDb(config);

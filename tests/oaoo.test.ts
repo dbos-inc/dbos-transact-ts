@@ -18,7 +18,7 @@ describe('oaoo-tests', () => {
   });
 
   beforeEach(async () => {
-    await dropDatabase(config.databaseUrl, config.sysDbName);
+    await dropDatabase(config.systemDatabaseUrl);
     await DBOS.launch();
 
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);

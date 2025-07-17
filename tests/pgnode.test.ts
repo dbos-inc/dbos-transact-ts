@@ -25,9 +25,9 @@ class TestEngine {
 describe('pgnode-engine-config-tests', () => {
   test('engine-config', async () => {
     const config: DBOSConfig = {
-      userDbClient: UserDatabaseName.PGNODE,
-      userDbPoolSize: 2,
-      sysDbPoolSize: 42,
+      userDatabaseClient: UserDatabaseName.PGNODE,
+      userDatabasePoolSize: 2,
+      systemDatabasePoolSize: 42,
       databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
     };
     await setUpDBOSTestDb(config);

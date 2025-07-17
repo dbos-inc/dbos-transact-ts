@@ -20,10 +20,8 @@ describe('recovery-tests', () => {
   beforeEach(async () => {
     await DBOS.launch();
     process.env.DBOS__VMID = '';
-    const url = new URL(config.databaseUrl);
-    url.pathname = `/${config.sysDbName}`;
     systemDBClient = new Client({
-      connectionString: url.toString(),
+      connectionString: config.systemDatabaseUrl,
     });
     await systemDBClient.connect();
   });
