@@ -699,7 +699,12 @@ export class DrizzleUserDatabase implements UserDatabase {
     const accessMode = 'read write';
     const result = await this.db.transaction<R>(
       async (tx: DrizzleClient) => {
-        return await transactionFunction(tx, ...args);
+        try {
+          return await transactionFunction(tx, ...args);
+        } catch (e) {
+          const err = e as { cause?: Error };
+          throw err.cause ?? e;
+        }
       },
       { isolationLevel, accessMode },
     );
