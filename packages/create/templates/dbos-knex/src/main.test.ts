@@ -1,5 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { app, dbos_hello, Hello } from './main';
+import { app, Hello } from './main';
 import request from 'supertest';
 
 describe('operations-test', () => {
@@ -15,11 +15,13 @@ describe('operations-test', () => {
    * Test the transaction.
    */
   test('test-transaction', async () => {
+    await Hello.deleteUser('dbos');
+
     const res = await Hello.helloTransaction('dbos');
     expect(res).toMatch('Hello, dbos! You have been greeted');
 
     // Check the greet count.
-    const rows = (await DBOS.queryUserDB('SELECT * FROM dbos_hello WHERE name=$1', ['dbos'])) as dbos_hello[];
+    const rows = await Hello.getCount('dbos');
     expect(rows[0].greet_count).toBe(1);
   });
 

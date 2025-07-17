@@ -24,6 +24,8 @@
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "file:../../../..",
-    "typeorm": "^0.3.20"
+    "@dbos-inc/typeorm-datasource": "file:../../../typeorm-datasource",
+    "express": "^4.21.2",
+    "typeorm": "^0.3.25"
   }
 }

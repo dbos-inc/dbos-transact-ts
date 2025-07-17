@@ -1,4 +1,3 @@
-
 import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
@@ -226,7 +225,7 @@ export class PrismaDataSource<PrismaClient> implements DBOSDataSource<Transactio
 
   static async uninitializeDBOSSchema(prisma: PrismaLike) {
     await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS dbos.transaction_completion;');
-    await prisma.$executeRawUnsafe('DROP SCHEMA IF EXISTS dbos;');
+    await prisma.$executeRawUnsafe('DROP SCHEMA IF EXISTS dbos CASCADE;');
   }
 
   #provider: PrismaTransactionHandler;
