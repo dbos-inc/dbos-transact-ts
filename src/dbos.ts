@@ -269,12 +269,11 @@ export class DBOS {
     DBOS.#dbosConfig = {
       name: internalConfig.name,
       databaseUrl: internalConfig.databaseUrl,
-      userDbClient: internalConfig.userDbClient,
-      userDbPoolSize: DBOS.#dbosConfig?.userDbPoolSize,
-      sysDbName: internalConfig.sysDbName,
-      sysDbPoolSize: internalConfig.sysDbPoolSize,
+      userDatabaseClient: internalConfig.userDbClient,
+      userDatabasePoolSize: internalConfig.userDbPoolSize,
+      systemDatabaseUrl: internalConfig.systemDatabaseUrl,
+      systemDatabasePoolSize: internalConfig.sysDbPoolSize,
       logLevel: internalConfig.telemetry.logs?.logLevel,
-      addContextMetadata: internalConfig.telemetry.logs?.addContextMetadata,
       otlpTracesEndpoints: [...(internalConfig.telemetry.OTLPExporter?.tracesEndpoint ?? [])],
       otlpLogsEndpoints: [...(internalConfig.telemetry.OTLPExporter?.logsEndpoint ?? [])],
       adminPort: runtimeConfig.admin_port,
@@ -636,9 +635,9 @@ export class DBOS {
    */
   static get pgClient(): PoolClient {
     const client = DBOS.sqlClient;
-    if (!DBOS.isInStoredProc() && DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.PGNODE) {
+    if (!DBOS.isInStoredProc() && DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.PGNODE) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
+        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     return client as PoolClient;
@@ -652,9 +651,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.knexClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.KNEX) {
+    if (DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.KNEX) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
+        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -669,9 +668,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.prismaClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.PRISMA) {
+    if (DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.PRISMA) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
+        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -686,9 +685,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.typeORMClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.TYPEORM) {
+    if (DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.TYPEORM) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
+        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -703,9 +702,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.drizzleClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbClient !== UserDatabaseName.DRIZZLE) {
+    if (DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.DRIZZLE) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.#dbosConfig?.userDbClient}'`,
+        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     const client = DBOS.sqlClient;

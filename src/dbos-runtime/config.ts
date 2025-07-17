@@ -16,8 +16,8 @@ export interface ConfigFile {
   name?: string;
   language?: string;
   database_url?: string;
+  system_database_url?: string;
   database?: {
-    sys_db_name?: string;
     app_db_client?: UserDatabaseName;
     migrate?: string[];
   };
@@ -97,18 +97,31 @@ export function writeConfigFile(configFile: ConfigFile, configFilePath: string) 
   }
 }
 
-export function getDatabaseUrl(configFile: ConfigFile): string;
-export function getDatabaseUrl(databaseUrl?: string, appName?: string): string;
-export function getDatabaseUrl(param1?: string | ConfigFile, appName?: string): string {
-  let databaseUrl: string | undefined;
-  if (typeof param1 === 'object' && param1 !== null) {
-    databaseUrl = param1.database_url;
-    appName = param1.name;
-  } else {
-    databaseUrl = param1;
+export function getSystemDatabaseUrl(
+  configFileOrString: string | Pick<ConfigFile, 'name' | 'database_url' | 'system_database_url'>,
+  databaseUrl?: string,
+): string {
+  if (typeof configFileOrString === 'string') {
+    return convertUserDbUrl(configFileOrString);
   }
 
-  databaseUrl ||= process.env.DBOS_DATABASE_URL || defaultDatabaseUrl(appName);
+  if (configFileOrString.system_database_url) {
+    return configFileOrString.system_database_url;
+  }
+
+  databaseUrl ??= getDatabaseUrl(configFileOrString);
+  return convertUserDbUrl(databaseUrl);
+
+  function convertUserDbUrl(databaseUrl: string) {
+    const url = new URL(databaseUrl);
+    const database = url.pathname.slice(1);
+    url.pathname = `/${database}_dbos_sys`;
+    return url.toString();
+  }
+}
+
+export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
+  const databaseUrl = configFile.database_url || process.env.DBOS_DATABASE_URL || defaultDatabaseUrl(configFile.name);
 
   if (process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined) {
     // If in debug mode, apply the debug overrides
@@ -142,15 +155,6 @@ export function getDatabaseUrl(param1?: string | ConfigFile, appName?: string): 
   }
 }
 
-export function getSystemDatabaseName(databaseUrl: string, sysDbName?: string): string {
-  if (sysDbName) {
-    return sysDbName;
-  }
-  const url = new URL(databaseUrl);
-  const dbName = url.pathname.substring(1); // Remove leading slash
-  return `${dbName}_dbos_sys`;
-}
-
 export function getDbosConfig(
   config: ConfigFile,
   options: {
@@ -166,12 +170,12 @@ export function getDbosConfig(
     {
       name: config.name,
       databaseUrl: config.database_url,
-      sysDbName: config.database?.sys_db_name,
-      userDbClient,
+      systemDatabaseUrl: config.system_database_url,
+      userDatabaseClient: userDbClient,
       logLevel: options.logLevel,
+      addContextMetadata: config.telemetry?.logs?.addContextMetadata,
       otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
       otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
-      addContextMetadata: config.telemetry?.logs?.addContextMetadata,
       runAdminServer: config.runtimeConfig?.runAdminServer,
     },
     options.forceConsole,
@@ -187,12 +191,18 @@ function isValidUserDbClient(name: string): name is UserDatabaseName {
 }
 
 export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
-  const databaseUrl = getDatabaseUrl(options.databaseUrl, options.name);
-  const sysDbName = getSystemDatabaseName(databaseUrl, options.sysDbName);
+  const databaseUrl = getDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
+  const systemDatabaseUrl = getSystemDatabaseUrl({
+    database_url: options.databaseUrl,
+    system_database_url: options.systemDatabaseUrl,
+    name: options.name,
+  });
   return {
     databaseUrl,
-    userDbClient: options.userDbClient,
-    sysDbName,
+    userDbPoolSize: options.userDatabasePoolSize,
+    systemDatabaseUrl,
+    sysDbPoolSize: options.systemDatabasePoolSize,
+    userDbClient: options.userDatabaseClient,
     telemetry: {
       logs: {
         logLevel: options.logLevel || 'info',
@@ -273,7 +283,7 @@ export function overwriteConfigForDBOSCloud(
         logsEndpoint: Array.from(logsSet),
       },
     },
-    sysDbName: configFile.database?.sys_db_name || providedDBOSConfig.sysDbName,
+    // sysDbName: configFile.database?.sys_db_name || providedDBOSConfig.sysDbName,
   };
 
   const overwriteDBOSRuntimeConfig: DBOSRuntimeConfig = {

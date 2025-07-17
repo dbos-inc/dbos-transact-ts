@@ -1,6 +1,6 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
-import { ConfigFile, getDatabaseUrl, getSystemDatabaseName } from './config';
+import { ConfigFile, getDatabaseUrl, getSystemDatabaseUrl } from './config';
 import { PoolConfig, Client } from 'pg';
 import {
   createUserDBSchema,
@@ -18,7 +18,7 @@ import {
 } from '../user_database';
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  const databaseUrl = getDatabaseUrl(configFile.database_url, configFile.name);
+  const databaseUrl = getDatabaseUrl(configFile);
   const url = new URL(databaseUrl);
   const database = url.pathname.slice(1);
 
@@ -38,9 +38,10 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     return 1;
   }
 
+  const systemDatabaseUrl = getSystemDatabaseUrl(configFile);
   logger.info('Creating DBOS tables and system database.');
   try {
-    await createDBOSTables(databaseUrl, configFile.database?.sys_db_name);
+    await createDBOSTables(databaseUrl, systemDatabaseUrl, logger);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);
@@ -55,14 +56,12 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
 }
 
 // Create DBOS system DB and tables.
-async function createDBOSTables(databaseUrl: string, systemDbName: string | undefined) {
-  const logger = new GlobalLogger();
-  systemDbName ??= getSystemDatabaseName(databaseUrl, systemDbName);
+async function createDBOSTables(databaseUrl: string, systemDatabaseUrl: string, logger: GlobalLogger) {
+  const url = new URL(systemDatabaseUrl);
+  const systemDbName = url.pathname.slice(1);
 
-  const url = new URL(databaseUrl);
-  url.pathname = `/${systemDbName}`;
   const systemPoolConfig: PoolConfig = {
-    connectionString: url.toString(),
+    connectionString: systemDatabaseUrl,
   };
 
   const pgUserClient = new Client({ connectionString: databaseUrl });

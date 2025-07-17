@@ -1,6 +1,13 @@
 #!/usr/bin/env node
 import { DBOSRuntime } from './runtime';
-import { ConfigFile, getDatabaseUrl, getDbosConfig, getRuntimeConfig, readConfigFile } from './config';
+import {
+  ConfigFile,
+  getDatabaseUrl,
+  getDbosConfig,
+  getRuntimeConfig,
+  getSystemDatabaseUrl,
+  readConfigFile,
+} from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { debugWorkflow } from './debug';
@@ -168,7 +175,7 @@ workflowCommands
       appDir?: string;
     }) => {
       const config = readConfigFile(options.appDir);
-      const databaseUrl = getDatabaseUrl(config.database_url, config.name);
+      const databaseUrl = getDatabaseUrl(config);
       const validStatuses = Object.values(StatusString) as readonly string[];
 
       if (options.status && !validStatuses.includes(options.status)) {
@@ -185,7 +192,8 @@ workflowCommands
         status: options.status as GetWorkflowsInput['status'],
         applicationVersion: options.applicationVersion,
       };
-      const client = await DBOSClient.create(databaseUrl, config.database?.sys_db_name);
+      const sysDbUrl = getSystemDatabaseUrl(config);
+      const client = await DBOSClient.create(databaseUrl, sysDbUrl);
       try {
         const output = await client.listWorkflows(input);
         console.log(JSON.stringify(output));
@@ -202,8 +210,9 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const config = readConfigFile(options.appDir);
-    const databaseUrl = getDatabaseUrl(config.database_url, config.name);
-    const client = await DBOSClient.create(databaseUrl, config.database?.sys_db_name);
+    const databaseUrl = getDatabaseUrl(config);
+    const sysDbUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
     try {
       const output = await client.getWorkflow(uuid);
       console.log(JSON.stringify(output));
@@ -219,8 +228,9 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
     const config = readConfigFile(options.appDir);
-    const databaseUrl = getDatabaseUrl(config.database_url, config.name);
-    const client = await DBOSClient.create(databaseUrl, config.database?.sys_db_name);
+    const databaseUrl = getDatabaseUrl(config);
+    const sysDbUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
     try {
       const output = await client.listWorkflowSteps(uuid);
       console.log(JSON.stringify(output));
@@ -236,8 +246,9 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string }) => {
     const config = readConfigFile(options.appDir);
-    const databaseUrl = getDatabaseUrl(config.database_url, config.name);
-    const client = await DBOSClient.create(databaseUrl, config.database?.sys_db_name);
+    const databaseUrl = getDatabaseUrl(config);
+    const sysDbUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
     try {
       await client.cancelWorkflow(uuid);
     } finally {
@@ -252,8 +263,9 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const config = readConfigFile(options.appDir);
-    const databaseUrl = getDatabaseUrl(config.database_url, config.name);
-    const client = await DBOSClient.create(databaseUrl, config.database?.sys_db_name);
+    const databaseUrl = getDatabaseUrl(config);
+    const sysDbUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
     try {
       await client.resumeWorkflow(uuid);
     } finally {
@@ -268,8 +280,9 @@ workflowCommands
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const config = readConfigFile(options.appDir);
-    const databaseUrl = getDatabaseUrl(config.database_url, config.name);
-    const client = await DBOSClient.create(databaseUrl, config.database?.sys_db_name);
+    const databaseUrl = getDatabaseUrl(config);
+    const sysDbUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
     try {
       await client.forkWorkflow(uuid, 0);
     } finally {
@@ -316,8 +329,9 @@ queueCommands
         queueName: options.queue,
       };
       const config = readConfigFile(options.appDir);
-      const databaseUrl = getDatabaseUrl(config.database_url, config.name);
-      const client = await DBOSClient.create(databaseUrl, config.database?.sys_db_name);
+      const databaseUrl = getDatabaseUrl(config);
+      const sysDbUrl = getSystemDatabaseUrl(config);
+      const client = await DBOSClient.create(databaseUrl, sysDbUrl);
       try {
         // TOD: Review!
         const output = await client.listQueuedWorkflows(input);

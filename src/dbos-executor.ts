@@ -116,11 +116,14 @@ export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 /* Interface for DBOS configuration */
 export interface DBOSConfig {
   name?: string;
+
   databaseUrl?: string;
-  userDbClient?: UserDatabaseName;
-  userDbPoolSize?: number;
-  sysDbName?: string;
-  sysDbPoolSize?: number;
+  userDatabaseClient?: UserDatabaseName;
+  userDatabasePoolSize?: number;
+
+  systemDatabaseUrl?: string;
+  systemDatabasePoolSize?: number;
+
   logLevel?: string;
   addContextMetadata?: boolean;
   otlpTracesEndpoints?: string[];
@@ -130,16 +133,18 @@ export interface DBOSConfig {
 }
 
 export type DBOSConfigInternal = {
-  sysDbName: string; // used in executor ctor, migrate and reset cli, sysdb.dropSystemDB, set in set in parseConfigFile and translatePublicDBOSconfig
-  telemetry: TelemetryConfig; // used in executor ctor, dbos start cli, and overwrote_config, set in parseConfigFile and translatePublicDBOSconfig
+  name?: string;
 
-  name?: string; // used in overwrite_config, set in  translatePublicDBOSconfig
-  databaseUrl: string; // used in cli commands, never set!
-  userDbClient?: UserDatabaseName; // used in configureDbClient, set in translatePublicDBOSconfig and parseConfigFile
-  sysDbPoolSize?: number; // used in executor ctor, set in translatePublicDBOSconfig
+  databaseUrl: string;
+  userDbPoolSize?: number;
+  userDbClient?: UserDatabaseName;
+
+  systemDatabaseUrl: string;
+  sysDbPoolSize?: number;
+
+  telemetry: TelemetryConfig;
 
   http?: {
-    // set in parseConfigFile, used in http server registerDecoratedEndpoints
     cors_middleware?: boolean;
     credentials?: boolean;
     allowed_origins?: string[];
@@ -255,8 +260,7 @@ export class DBOSExecutor {
     } else {
       this.logger.debug('Using Postgres system database');
       this.systemDatabase = new PostgresSystemDatabase(
-        { connectionString: this.config.databaseUrl },
-        this.config.sysDbName,
+        this.config.systemDatabaseUrl,
         this.logger,
         this.config.sysDbPoolSize,
       );

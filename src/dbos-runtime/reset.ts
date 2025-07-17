@@ -1,7 +1,7 @@
 import { GlobalLogger } from '../telemetry/logs';
 import { confirm } from '@inquirer/prompts';
 import { PostgresSystemDatabase } from '../system_database';
-import { ConfigFile, getDatabaseUrl, getSystemDatabaseName } from './config';
+import { ConfigFile, getSystemDatabaseUrl } from './config';
 
 export async function reset(config: ConfigFile, logger: GlobalLogger, cnf: boolean) {
   if (cnf) {
@@ -17,9 +17,10 @@ export async function reset(config: ConfigFile, logger: GlobalLogger, cnf: boole
     }
   }
 
-  const databaseUrl = getDatabaseUrl(config.database_url, config.name);
-  const sysDbName = getSystemDatabaseName(databaseUrl, config.database?.sys_db_name);
+  const sysDbUrl = getSystemDatabaseUrl(config);
+  const url = new URL(sysDbUrl);
+  const sysDbName = url.pathname.slice(1);
   logger.info(`Resetting ${sysDbName} if it exists`);
-  await PostgresSystemDatabase.dropSystemDB(databaseUrl, sysDbName);
+  await PostgresSystemDatabase.dropSystemDB(sysDbUrl);
   return 0;
 }

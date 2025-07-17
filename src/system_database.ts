@@ -636,18 +636,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
   constructor(
-    readonly pgPoolConfig: PoolConfig,
-    readonly systemDatabaseName: string,
+    readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
     readonly sysDbPoolSize?: number,
   ) {
-    // Craft a db string from the app db string, replacing the database name:
-    const systemDbConnectionString = new URL(pgPoolConfig.connectionString!);
-    systemDbConnectionString.pathname = `/${systemDatabaseName}`;
-
     this.systemPoolConfig = {
-      connectionString: systemDbConnectionString.toString(),
-      connectionTimeoutMillis: pgPoolConfig.connectionTimeoutMillis,
+      connectionString: systemDatabaseUrl,
       // This sets the application_name column in pg_stat_activity
       application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
     };
@@ -673,15 +667,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async init() {
-    const pgSystemClient = new Client(this.pgPoolConfig);
+    const url = new URL(this.systemDatabaseUrl);
+    const sysDbName = url.pathname.slice(1);
+    url.pathname = '/postgres';
+
+    const pgSystemClient = new Client({ connectionString: url.toString() });
     await pgSystemClient.connect();
     // Create the system database and load tables.
     const dbExists = await pgSystemClient.query<ExistenceCheck>(
-      `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}')`,
+      `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${sysDbName}')`,
     );
     if (!dbExists.rows[0].exists) {
       // Create the DBOS system database.
-      await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
+      await pgSystemClient.query(`CREATE DATABASE "${sysDbName}"`);
     }
 
     try {
@@ -721,14 +719,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.pool.end();
   }
 
-  static async dropSystemDB(databaseUrl: string, systemDbName: string) {
+  static async dropSystemDB(systemDatabaseUrl: string) {
+    const url = new URL(systemDatabaseUrl);
+    const systemDbName = url.pathname.slice(1);
+    url.pathname = '/postgres';
+
     // Drop system database, for testing.
     const pgSystemClient = new Client({
-      connectionString: databaseUrl,
+      connectionString: url.toString(),
     });
-    await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${systemDbName};`);
-    await pgSystemClient.end();
+    try {
+      await pgSystemClient.connect();
+      await pgSystemClient.query(`DROP DATABASE IF EXISTS ${systemDbName};`);
+    } finally {
+      await pgSystemClient.end();
+    }
   }
 
   @dbRetry()

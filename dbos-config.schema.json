@@ -17,6 +17,10 @@
       "type": "string",
       "description": "The URL of the application database"
     },
+    "system_database_url": {
+      "type": "string",
+      "description": "The URL of the system database"
+    },
     "database": {
       "type": "object",
       "additionalProperties": false,
@@ -56,7 +60,8 @@
         },
         "sys_db_name": {
           "type": "string",
-          "description": "The name of the system database"
+          "description": "The name of the system database",
+          "deprecated": true
         },
         "ssl": {
           "type": ["boolean", "string"],

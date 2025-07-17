@@ -1,4 +1,3 @@
-import type { PoolConfig } from 'pg';
 import { PostgresSystemDatabase, type SystemDatabase, type WorkflowStatusInternal } from './system_database';
 
 import { GlobalLogger } from './telemetry/logs';
@@ -21,7 +20,7 @@ import {
   listWorkflowSteps,
 } from './dbos-runtime/workflow_management';
 import { PGNodeUserDatabase, type UserDatabase } from './user_database';
-import { getSystemDatabaseName } from './dbos-runtime/config';
+import { getSystemDatabaseUrl } from './dbos-runtime/config';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -83,13 +82,11 @@ export class DBOSClient {
   private readonly systemDatabase: SystemDatabase;
   private readonly userDatabase: UserDatabase;
 
-  private constructor(databaseUrl: string, systemDBName?: string) {
-    const poolConfig: PoolConfig = { connectionString: databaseUrl };
-    systemDBName ??= getSystemDatabaseName(databaseUrl, systemDBName);
-
+  private constructor(databaseUrl: string, systemDatabaseUrl?: string) {
+    systemDatabaseUrl ??= getSystemDatabaseUrl(databaseUrl);
     this.logger = new GlobalLogger();
-    this.systemDatabase = new PostgresSystemDatabase(poolConfig, systemDBName, this.logger);
-    this.userDatabase = new PGNodeUserDatabase(poolConfig);
+    this.systemDatabase = new PostgresSystemDatabase(systemDatabaseUrl, this.logger);
+    this.userDatabase = new PGNodeUserDatabase({ connectionString: databaseUrl });
   }
 
   /**
