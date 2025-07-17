@@ -108,15 +108,15 @@ export function getDatabaseUrl(param1?: string | ConfigFile, appName?: string): 
     databaseUrl = param1;
   }
 
-  databaseUrl ??= process.env.DBOS_DATABASE_URL ?? defaultDatabaseUrl(appName);
+  databaseUrl ||= process.env.DBOS_DATABASE_URL || defaultDatabaseUrl(appName);
 
   if (process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined) {
     // If in debug mode, apply the debug overrides
     const url = new URL(databaseUrl);
-    url.hostname = process.env.DBOS_DBHOST ?? url.hostname;
-    url.port = process.env.DBOS_DBPORT ?? url.port;
-    url.username = process.env.DBOS_DBUSER ?? url.username;
-    url.password = process.env.DBOS_DBPASSWORD ?? url.password;
+    url.hostname = process.env.DBOS_DBHOST || url.hostname;
+    url.port = process.env.DBOS_DBPORT || url.port;
+    url.username = process.env.DBOS_DBUSER || url.username;
+    url.password = process.env.DBOS_DBPASSWORD || url.password;
     return url.toString();
   } else {
     return databaseUrl;
@@ -125,13 +125,13 @@ export function getDatabaseUrl(param1?: string | ConfigFile, appName?: string): 
   function defaultDatabaseUrl(appName?: string): string {
     assert(appName, 'Application name must be defined to construct a valid database URL.');
 
-    const host = process.env.PGHOST ?? 'localhost';
-    const port = process.env.PGPORT ?? 5432;
-    const username = process.env.PGUSER ?? 'postgres';
-    const password = process.env.PGPASSWORD ?? 'dbos';
+    const host = process.env.PGHOST || 'localhost';
+    const port = process.env.PGPORT || '5432';
+    const username = process.env.PGUSER || 'postgres';
+    const password = process.env.PGPASSWORD || 'dbos';
     const database = toDbName(appName);
-    const timeout = process.env.PGCONNECT_TIMEOUT ?? '10';
-    const sslmode = process.env.PGSSLMODE ?? (host === 'localhost' ? 'disable' : 'allow');
+    const timeout = process.env.PGCONNECT_TIMEOUT || '10';
+    const sslmode = process.env.PGSSLMODE || (host === 'localhost' ? 'disable' : 'allow');
 
     return `postgresql://${username}:${password}@${host}:${port}/${database}?connect_timeout=${timeout}&sslmode=${sslmode}`;
   }
@@ -158,7 +158,7 @@ export function getDbosConfig(
     forceConsole?: boolean;
   } = {},
 ): DBOSConfigInternal {
-  assert(config.language && config.language !== 'node', `Config file specifies invalid language ${config.language}`);
+  assert(config.language && config.language === 'node', `Config file specifies invalid language ${config.language}`);
   const userDbClient = config.database?.app_db_client ?? UserDatabaseName.KNEX;
   assert(isValidUserDbClient(userDbClient), `Invalid app_db_client ${userDbClient} in config file`);
 
