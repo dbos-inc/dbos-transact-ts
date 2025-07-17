@@ -2,7 +2,7 @@ import axios, { AxiosError } from 'axios';
 import { spawn, execSync, ChildProcess } from 'child_process';
 import { Writable } from 'stream';
 import { Client } from 'pg';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { generateDBOSTestConfig } from '../helpers';
 import { HealthUrl } from '../../src/httpServer/server';
 import { sleepms } from '../../src/utils';
 
