@@ -30,7 +30,7 @@ async function main() {
   // config.telemetry.logs.forceConsole = true;
   // config.telemetry.logs.logLevel = 'debug';
   // config.telemetry.logs.silent = false;
-  await setUpDBOSTestDb({ ...config, logLevel: 'debug' });
+  await setUpDBOSTestDb({ ...config, logLevel: 'debug', addContextMetadata: true });
 
   DBOS.setConfig({ ...config, addContextMetadata: true });
   await DBOS.launch();
