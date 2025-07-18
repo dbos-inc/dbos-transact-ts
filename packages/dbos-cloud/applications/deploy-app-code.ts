@@ -168,6 +168,13 @@ export async function deployAppCode(
       );
       return 1;
     }
+  } else if (appLanguage === (AppLanguages.Go as string)) {
+    // TODO: check main is compiled against amd64
+    const mainExists = existsSync(path.join(process.cwd(), 'main'));
+    if (!mainExists) {
+      logger.error('No main binary found. Please compile your Go application against amd64 before deploying.');
+      return 1;
+    }
   } else {
     logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`);
     return 1;

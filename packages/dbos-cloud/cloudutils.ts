@@ -25,6 +25,7 @@ export interface UserProfile {
 export enum AppLanguages {
   Node = 'node',
   Python = 'python',
+  Go = 'go',
 }
 
 export const defaultConfigFilePath = 'dbos-config.yaml';
