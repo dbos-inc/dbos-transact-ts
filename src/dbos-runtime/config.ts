@@ -123,9 +123,19 @@ export function getSystemDatabaseUrl(
 export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
   const databaseUrl = configFile.database_url || process.env.DBOS_DATABASE_URL || defaultDatabaseUrl(configFile.name);
 
+  const url = new URL(databaseUrl);
+
+  const missingFields: string[] = [];
+  if (!url.username) missingFields.push('username');
+  if (!url.hostname) missingFields.push('hostname');
+  if (!url.pathname.slice(1)) missingFields.push('database name');
+
+  if (missingFields.length > 0) {
+    throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
+  }
+
   if (process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined) {
     // If in debug mode, apply the debug overrides
-    const url = new URL(databaseUrl);
     url.hostname = process.env.DBOS_DBHOST || url.hostname;
     url.port = process.env.DBOS_DBPORT || url.port;
     url.username = process.env.DBOS_DBUSER || url.username;
@@ -162,7 +172,10 @@ export function getDbosConfig(
     forceConsole?: boolean;
   } = {},
 ): DBOSConfigInternal {
-  assert(config.language && config.language === 'node', `Config file specifies invalid language ${config.language}`);
+  assert(
+    config.language === undefined || config.language === 'node',
+    `Config file specifies invalid language ${config.language}`,
+  );
   const userDbClient = config.database?.app_db_client ?? UserDatabaseName.KNEX;
   assert(isValidUserDbClient(userDbClient), `Invalid app_db_client ${userDbClient} in config file`);
 
@@ -172,7 +185,7 @@ export function getDbosConfig(
       databaseUrl: config.database_url,
       systemDatabaseUrl: config.system_database_url,
       userDatabaseClient: userDbClient,
-      logLevel: options.logLevel,
+      logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
       addContextMetadata: config.telemetry?.logs?.addContextMetadata,
       otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
       otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
