@@ -3,7 +3,6 @@ import { DBOSExecutor, DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import request from 'supertest';
 import { DBOS } from '../src';
-import { context, trace } from '@opentelemetry/api';
 
 export class TestClass {
   @DBOS.transaction({ readOnly: false })
@@ -17,8 +16,6 @@ export class TestClass {
   @DBOS.workflow()
   @DBOS.requiredRole(['dbosAppAdmin', 'dbosAppUser'])
   static async test_workflow(name: string): Promise<string> {
-    const _span = trace.getSpan(context.active());
-    //expect(_span).toBeDefined();
     const funcResult = await TestClass.test_function(name);
     return funcResult;
   }
