@@ -4,7 +4,7 @@ import request from 'supertest';
 
 describe('operations-test', () => {
   beforeAll(async () => {
-    await DBOS.launch({ expressApp: app });
+    await DBOS.launch();
   });
 
   afterAll(async () => {
