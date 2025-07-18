@@ -87,6 +87,7 @@ class ValidationMiddleware implements DBOSMethodMiddlewareInstaller {
 
 const validationMiddleware = new ValidationMiddleware();
 
+/** @deprecated */
 export function ArgRequired(target: object, propertyKey: PropertyKey, parameterIndex: number) {
   const curParam = associateParameterWithExternal(
     VALIDATOR,
@@ -102,6 +103,7 @@ export function ArgRequired(target: object, propertyKey: PropertyKey, parameterI
   registerMiddlewareInstaller(validationMiddleware);
 }
 
+/** @deprecated */
 export function ArgOptional(target: object, propertyKey: PropertyKey, parameterIndex: number) {
   const curParam = associateParameterWithExternal(
     VALIDATOR,
@@ -117,6 +119,7 @@ export function ArgOptional(target: object, propertyKey: PropertyKey, parameterI
   registerMiddlewareInstaller(validationMiddleware);
 }
 
+/** @deprecated */
 export function ArgDate() {
   // TODO a little more info about it - is it a date or timestamp precision?
   return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
@@ -136,6 +139,7 @@ export function ArgDate() {
   };
 }
 
+/** @deprecated */
 export function ArgVarchar(length: number) {
   return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
     const curParam = associateParameterWithExternal(
@@ -153,6 +157,7 @@ export function ArgVarchar(length: number) {
   };
 }
 
+/** @deprecated */
 export function DefaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = DBOS.associateClassWithInfo(VALIDATOR, ctor) as ValidatorClassInfo;
   clsreg.defaultArgRequired = ArgRequiredOptions.REQUIRED;
@@ -160,6 +165,7 @@ export function DefaultArgRequired<T extends { new (...args: unknown[]): object 
   registerMiddlewareInstaller(validationMiddleware);
 }
 
+/** @deprecated */
 export function DefaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = DBOS.associateClassWithInfo(VALIDATOR, ctor) as ValidatorClassInfo;
   clsreg.defaultArgValidate = true;
@@ -167,6 +173,7 @@ export function DefaultArgValidate<T extends { new (...args: unknown[]): object 
   registerMiddlewareInstaller(validationMiddleware);
 }
 
+/** @deprecated */
 export function DefaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
   const clsreg = DBOS.associateClassWithInfo(VALIDATOR, ctor) as ValidatorClassInfo;
   clsreg.defaultArgRequired = ArgRequiredOptions.OPTIONAL;
@@ -186,6 +193,7 @@ interface LoggerArgInfo {
 
 export const LOGGER = 'log';
 
+/** @deprecated */
 export function SkipLogging(target: object, propertyKey: PropertyKey, parameterIndex: number) {
   const curParam = associateParameterWithExternal(
     LOGGER,
@@ -199,6 +207,7 @@ export function SkipLogging(target: object, propertyKey: PropertyKey, parameterI
   curParam.logMask = LogMasks.SKIP;
 }
 
+/** @deprecated */
 export function LogMask(mask: LogMasks) {
   return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
     const curParam = associateParameterWithExternal(
