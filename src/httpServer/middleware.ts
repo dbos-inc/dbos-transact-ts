@@ -35,6 +35,7 @@ export interface MiddlewareContext {
  *   - Map the HTTP request to the user identity and roles defined in app.
  * If this succeeds, return the current authenticated user and a list of roles.
  * If any step fails, throw an error.
+ * @deprecated - use `@dbos-inc/koa-serve`
  */
 export type DBOSHttpAuthMiddleware = (ctx: MiddlewareContext) => Promise<DBOSHttpAuthReturn | void>;
 
@@ -70,6 +71,7 @@ export class MiddlewareClassRegistration extends ClassRegistration implements Mi
 
 /**
  * Define an authentication function for each endpoint in this class.
+ * @deprecated - use `@dbos-inc/koa-serve`
  */
 export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
   if (authMiddleware === undefined) {
@@ -84,6 +86,7 @@ export function Authentication(authMiddleware: DBOSHttpAuthMiddleware) {
 
 /**
  * Define a Koa body parser applied before any middleware. If not set, the default @koa/bodyparser is used.
+ * @deprecated - use `@dbos-inc/koa-serve`
  */
 export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
@@ -95,6 +98,7 @@ export function KoaBodyParser(koaBodyParser: Koa.Middleware) {
 
 /**
  * Define a Koa CORS policy applied before any middleware. If not set, the default @koa/cors (w/ .yaml config) is used.
+ * @deprecated - use `@dbos-inc/koa-serve`
  */
 export function KoaCors(koaCors: Koa.Middleware) {
   function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
@@ -106,6 +110,7 @@ export function KoaCors(koaCors: Koa.Middleware) {
 
 /**
  * Define Koa middleware that is applied in order to each endpoint in this class.
+ * @deprecated - use `@dbos-inc/koa-serve`
  */
 export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
@@ -123,6 +128,7 @@ export function KoaMiddleware(...koaMiddleware: Koa.Middleware[]) {
 /**
  * Define Koa middleware that is applied to all requests, including this class, other classes,
  *   or requests that do not end up in DBOS handlers at all.
+ * @deprecated - use `@dbos-inc/koa-serve`
  */
 export function KoaGlobalMiddleware(...koaMiddleware: Koa.Middleware[]) {
   koaMiddleware.forEach((i) => {
