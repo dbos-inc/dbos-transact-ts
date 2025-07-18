@@ -146,7 +146,7 @@ describe('runtime-tests-typeorm', () => {
   });
 });
 
-describe.skip('runtime-tests-prisma', () => {
+describe('runtime-tests-prisma', () => {
   beforeAll(async () => {
     await dropTemplateDatabases();
     process.chdir('packages/create/templates/dbos-prisma');

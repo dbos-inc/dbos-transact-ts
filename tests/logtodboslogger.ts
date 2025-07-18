@@ -23,13 +23,6 @@ class WF {
 
 async function main() {
   const config = generateDBOSTestConfig();
-  // if (!config.telemetry.logs) {
-  //   config.telemetry.logs = {};
-  // }
-  // config.telemetry.logs.addContextMetadata = true;
-  // config.telemetry.logs.forceConsole = true;
-  // config.telemetry.logs.logLevel = 'debug';
-  // config.telemetry.logs.silent = false;
   await setUpDBOSTestDb({ ...config, logLevel: 'debug', addContextMetadata: true });
 
   DBOS.setConfig({ ...config, addContextMetadata: true });
