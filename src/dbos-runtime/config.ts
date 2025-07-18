@@ -8,6 +8,7 @@ import Ajv from 'ajv';
 import path from 'path';
 import dbosConfigSchema from '../../dbos-config.schema.json';
 import assert from 'assert';
+import validator from 'validator';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
@@ -120,19 +121,33 @@ export function getSystemDatabaseUrl(
   }
 }
 
+function isValidDBname(dbName: string): boolean {
+  if (dbName.length < 1 || dbName.length > 63) {
+    return false;
+  }
+  if (dbName.match(/^\d/)) {
+    // Cannot start with a digit
+    return false;
+  }
+  return validator.matches(dbName, '^[a-z0-9_]+$');
+}
+
 export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
   const databaseUrl = configFile.database_url || process.env.DBOS_DATABASE_URL || defaultDatabaseUrl(configFile.name);
 
   const url = new URL(databaseUrl);
+  const dbName = url.pathname.slice(1);
 
   const missingFields: string[] = [];
   if (!url.username) missingFields.push('username');
   if (!url.hostname) missingFields.push('hostname');
-  if (!url.pathname.slice(1)) missingFields.push('database name');
+  if (!dbName) missingFields.push('database name');
 
   if (missingFields.length > 0) {
     throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
   }
+
+  assert(isValidDBname(dbName), `Database name "${dbName}" in database_url is invalid.`);
 
   if (process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined) {
     // If in debug mode, apply the debug overrides
@@ -263,7 +278,25 @@ export function overwriteConfigForDBOSCloud(
   // 4. Force admin_port and runAdminServer
 
   const appName = configFile.name ?? providedDBOSConfig.name;
-  const databaseUrl = process.env.DBOS_DATABASE_URL ?? configFile.database_url ?? providedDBOSConfig.databaseUrl;
+  let databaseUrl = process.env.DBOS_DATABASE_URL;
+  if (!databaseUrl) {
+    databaseUrl = configFile.database_url;
+  }
+  if (!databaseUrl) {
+    databaseUrl = providedDBOSConfig.databaseUrl;
+  }
+
+  let systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
+  if (!systemDatabaseUrl && process.env.DBOS_DATABASE_URL) {
+    systemDatabaseUrl = getSystemDatabaseUrl(process.env.DBOS_DATABASE_URL);
+  }
+
+  if (!systemDatabaseUrl) {
+    systemDatabaseUrl = configFile.system_database_url;
+  }
+  if (!systemDatabaseUrl) {
+    systemDatabaseUrl = providedDBOSConfig.systemDatabaseUrl;
+  }
 
   const logsSet = new Set(providedDBOSConfig.telemetry.OTLPExporter?.logsEndpoint);
   const logsEndpoint = configFile.telemetry?.OTLPExporter?.logsEndpoint;
@@ -288,7 +321,8 @@ export function overwriteConfigForDBOSCloud(
   const overwritenDBOSConfig: DBOSConfigInternal = {
     ...providedDBOSConfig,
     name: appName,
-    databaseUrl: databaseUrl,
+    databaseUrl,
+    systemDatabaseUrl,
     telemetry: {
       logs: providedDBOSConfig.telemetry.logs,
       OTLPExporter: {
