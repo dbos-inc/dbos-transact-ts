@@ -1085,7 +1085,7 @@ export function ArgName(name: string) {
 
 // #region Class decorators
 /**
- * @deprecated Use ORM DSs
+ * @deprecated Use ORM data source extension packages such as `@dbos-inc/typeorm-datasource`
  */
 // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
 export function OrmEntities(entities: Function[] | { [key: string]: object } = []) {
@@ -1099,6 +1099,7 @@ export function OrmEntities(entities: Function[] | { [key: string]: object } = [
 // #endregion
 
 // #region Method decorators
+/** @deprecated Do initialization prior to launch() */
 export function DBOSInitializer() {
   function decorator<This, Args extends unknown[], Return>(
     target: object,

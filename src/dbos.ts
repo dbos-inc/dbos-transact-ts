@@ -210,6 +210,7 @@ export class DBOS {
   /**
    * Use ORMEntities to set up database schema.
    * Only relevant for TypeORM, and for testing purposes only, not production
+   * @deprecated - use data source packages such as `@dbos-inc/typeorm-datasource`
    */
   static async createUserSchema() {
     return DBOSExecutor.globalInstance?.userDatabase.createSchema();
@@ -218,6 +219,7 @@ export class DBOS {
   /**
    * Use ORMEntities to drop database schema.
    * Only relevant for TypeORM, and for testing purposes only, not production
+   * @deprecated - use data source packages such as `@dbos-inc/typeorm-datasource`
    */
   static async dropUserSchema() {
     return DBOSExecutor.globalInstance?.userDatabase.dropSchema();
@@ -447,6 +449,7 @@ export class DBOS {
    * Creates a node.js HTTP handler for all entrypoints registered with `@DBOS.getApi`
    * and other decorators.  The handler can be retrieved with `DBOS.getHTTPHandlersCallback()`.
    * This method does not start listening for requests.  For that, call `DBOS.launchAppHTTPServer()`.
+   * @deprecated - use `@dbos-inc/koa-serve`
    */
   static setUpHandlerCallback() {
     if (!DBOSExecutor.globalInstance) {
@@ -463,6 +466,7 @@ export class DBOS {
    * Creates a node.js HTTP handler for all entrypoints registered with `@DBOS.getApi`
    * and other decorators.  This method also starts listening for requests, on the port
    * specified in the `DBOSRuntimeConfig`.
+   * @deprecated - use `@dbos-inc/koa-serve`
    */
   static async launchAppHTTPServer() {
     const server = DBOS.setUpHandlerCallback();
@@ -477,6 +481,7 @@ export class DBOS {
    *  (This is the one that handles the @DBOS.getApi, etc., methods.)
    *   Useful for testing purposes, or to combine the DBOS service with other
    *   node.js HTTP server frameworks.
+   * @deprecated - use `@dbos-inc/koa-serve`
    */
   static getHTTPHandlersCallback() {
     if (!DBOSHttpServer.instance) {
@@ -543,12 +548,18 @@ export class DBOS {
     return r;
   }
 
-  /** Get the current Koa context (within `@DBOS.getApi` et al) */
+  /**
+   * Get the current Koa context (within `@DBOS.getApi` et al)
+   * @deprecated - use `@dbos-inc/koa-serve`
+   */
   static getKoaContext(): Koa.Context | undefined {
     return getCurrentContextStore()?.koaContext;
   }
 
-  /** Get the current Koa context (within `@DBOS.getApi` et al) */
+  /**
+   * Get the current Koa context (within `@DBOS.getApi` et al)
+   * @deprecated - use `@dbos-inc/koa-serve`
+   */
   static get koaContext(): Koa.Context {
     const r = DBOS.getKoaContext();
     if (!r) throw new DBOSError('`DBOS.koaContext` accessed from outside koa request');
@@ -621,7 +632,16 @@ export class DBOS {
   }
 
   // sql session (various forms)
-  /** @returns the current SQL client; only allowed within `@DBOS.transaction` functions */
+  /**
+   * @returns the current SQL client; only allowed within `@DBOS.transaction` functions
+   * @deprecated - use data source packages such as:
+   *  `@dbos-inc/drizzle-datasource`
+   *  `@dbos-inc/knex-datasource`
+   *  `@dbos-inc/node-pg-datasource`
+   *  `@dbos-inc/postgres-datasource`
+   *  `@dbos-inc/prisma-datasource`
+   *  `@dbos-inc/typeorm-datasource`
+   */
   static get sqlClient(): UserDatabaseClient {
     const c = getCurrentContextStore()?.sqlClient;
     if (!DBOS.isInTransaction() || !c)
@@ -632,6 +652,7 @@ export class DBOS {
   /**
    * @returns the current PG SQL client;
    *  only allowed within `@DBOS.transaction` functions when a `PGNODE` user database is in use
+   * @deprecated - use data source packages such as `@dbos-inc/node-pg-datasource`
    */
   static get pgClient(): PoolClient {
     const client = DBOS.sqlClient;
@@ -646,6 +667,7 @@ export class DBOS {
   /**
    * @returns the current Knex SQL client;
    *  only allowed within `@DBOS.transaction` functions when a `KNEX` user database is in use
+   * @deprecated - use `@dbos-inc/knex-datasource` package
    */
   static get knexClient(): Knex {
     if (DBOS.isInStoredProc()) {
@@ -663,6 +685,7 @@ export class DBOS {
   /**
    * @returns the current Prisma SQL client;
    *  only allowed within `@DBOS.transaction` functions when a `PRISMA` user database is in use
+   * @deprecated - use `@dbos-inc/prisma-datasource` package
    */
   static get prismaClient(): PrismaClient {
     if (DBOS.isInStoredProc()) {
@@ -680,6 +703,7 @@ export class DBOS {
   /**
    * @returns the current  TypeORM SQL client;
    *  only allowed within `@DBOS.transaction` functions when the `TYPEORM` user database is in use
+   * @deprecated - use `@dbos-inc/typeorm-datasource` package
    */
   static get typeORMClient(): TypeORMEntityManager {
     if (DBOS.isInStoredProc()) {
@@ -697,6 +721,7 @@ export class DBOS {
   /**
    * @returns the current Drizzle SQL client;
    *  only allowed within `@DBOS.transaction` functions when the `DRIZZLE` user database is in use
+   * @deprecated - use `@dbos-inc/drizzle-datasource` package
    */
   static get drizzleClient(): DrizzleClient {
     if (DBOS.isInStoredProc()) {
@@ -717,6 +742,13 @@ export class DBOS {
    * @param params - parameter values for `sql`
    * @template T - Type for the returned records
    * @returns Array of records returned by the SQL statement
+   * @deprecated - use data source packages such as:
+   *  `@dbos-inc/drizzle-datasource`
+   *  `@dbos-inc/knex-datasource`
+   *  `@dbos-inc/node-pg-datasource`
+   *  `@dbos-inc/postgres-datasource`
+   *  `@dbos-inc/prisma-datasource`
+   *  `@dbos-inc/typeorm-datasource`
    */
   static async queryUserDB<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
@@ -1529,6 +1561,13 @@ export class DBOS {
    *   A durable execution checkpoint will be applied to to the underlying database transaction
    * @see `DBOS.sqlClient`
    * @param config - Configuration information for the transaction, particularly its isolation mode
+   * @deprecated - use data source packages such as:
+   *  `@dbos-inc/drizzle-datasource`
+   *  `@dbos-inc/knex-datasource`
+   *  `@dbos-inc/node-pg-datasource`
+   *  `@dbos-inc/postgres-datasource`
+   *  `@dbos-inc/prisma-datasource`
+   *  `@dbos-inc/typeorm-datasource`
    */
   static transaction(config: TransactionConfig = {}) {
     function decorator<This, Args extends unknown[], Return>(
@@ -1863,27 +1902,42 @@ export class DBOS {
     return func();
   }
 
-  /** Decorator indicating that the method is the target of HTTP GET operations for `url` */
+  /**
+   * Decorator indicating that the method is the target of HTTP GET operations for `url`
+   * @deprecated - use `@dbos-inc/koa-serve`
+   */
   static getApi(url: string) {
     return httpApiDec(APITypes.GET, url);
   }
 
-  /** Decorator indicating that the method is the target of HTTP POST operations for `url` */
+  /**
+   * Decorator indicating that the method is the target of HTTP POST operations for `url`
+   * @deprecated - use `@dbos-inc/koa-serve`
+   */
   static postApi(url: string) {
     return httpApiDec(APITypes.POST, url);
   }
 
-  /** Decorator indicating that the method is the target of HTTP PUT operations for `url` */
+  /**
+   * Decorator indicating that the method is the target of HTTP PUT operations for `url`
+   * @deprecated - use `@dbos-inc/koa-serve`
+   */
   static putApi(url: string) {
     return httpApiDec(APITypes.PUT, url);
   }
 
-  /** Decorator indicating that the method is the target of HTTP PATCH operations for `url` */
+  /**
+   * Decorator indicating that the method is the target of HTTP PATCH operations for `url`
+   * @deprecated - use `@dbos-inc/koa-serve`
+   */
   static patchApi(url: string) {
     return httpApiDec(APITypes.PATCH, url);
   }
 
-  /** Decorator indicating that the method is the target of HTTP DELETE operations for `url` */
+  /**
+   * Decorator indicating that the method is the target of HTTP DELETE operations for `url`
+   * @deprecated - use `@dbos-inc/koa-serve`
+   */
   static deleteApi(url: string) {
     return httpApiDec(APITypes.DELETE, url);
   }
