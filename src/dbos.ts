@@ -73,7 +73,6 @@ import {
 import { TransactionConfig } from './transaction';
 
 import Koa from 'koa';
-import _fastifyExpress from '@fastify/express'; // This is for fastify.use()
 import { randomUUID } from 'node:crypto';
 
 import { PoolClient, PoolConfig } from 'pg';

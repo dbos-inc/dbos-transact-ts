@@ -3,9 +3,25 @@
 // This is a sample "Hello" app built with DBOS and Knex.
 // It greets visitors and keeps track of how many times each visitor has been greeted.
 
+import { NodeTracerProvider } from '@opentelemetry/sdk-trace-node';
+import { registerInstrumentations } from '@opentelemetry/instrumentation';
+import { HttpInstrumentation } from '@opentelemetry/instrumentation-http';
+import { ExpressInstrumentation } from '@opentelemetry/instrumentation-express';
+
 import express, { Request, Response } from 'express';
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { KnexDataSource } from '@dbos-inc/knex-datasource';
+
+const provider = new NodeTracerProvider();
+provider.register();
+
+registerInstrumentations({
+  instrumentations: [
+    // Express instrumentation expects HTTP layer to be instrumented
+    new HttpInstrumentation(),
+    new ExpressInstrumentation(),
+  ],
+});
 
 const config = {
   client: 'pg',
