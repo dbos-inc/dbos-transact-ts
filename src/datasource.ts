@@ -1,4 +1,4 @@
-import { SpanStatusCode } from '@opentelemetry/api';
+import { context, SpanStatusCode, trace } from '@opentelemetry/api';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
@@ -154,17 +154,19 @@ export async function runTransaction<T>(
   );
 
   try {
-    const res = await DBOSExecutor.globalInstance!.runInternalStep<T>(
-      async () => {
-        return await runWithDataSourceContext(span, callnum, async () => {
-          return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
-        });
-      },
-      funcName,
-      // we can be sure workflowID is set because of previous call to assertCurrentWorkflowContext
-      DBOS.workflowID!,
-      callnum,
-    );
+    const res = await context.with(trace.setSpan(context.active(), span), async () => {
+      return await DBOSExecutor.globalInstance!.runInternalStep<T>(
+        async () => {
+          return await runWithDataSourceContext(span, callnum, async () => {
+            return await ds.invokeTransactionFunction(options.config ?? {}, undefined, callback);
+          });
+        },
+        funcName,
+        // we can be sure workflowID is set because of previous call to assertCurrentWorkflowContext
+        DBOS.workflowID!,
+        callnum,
+      );
+    });
 
     span.setStatus({ code: SpanStatusCode.OK });
     DBOSExecutor.globalInstance!.tracer.endSpan(span);
@@ -226,16 +228,18 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
 
     const callnum = functionIDGetIncrement();
     try {
-      const res = await DBOSExecutor.globalInstance!.runInternalStep<Return>(
-        async () => {
-          return await runWithDataSourceContext(span, callnum, async () => {
-            return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
-          });
-        },
-        funcName,
-        DBOS.workflowID!,
-        callnum,
-      );
+      const res = await context.with(trace.setSpan(context.active(), span), async () => {
+        return await DBOSExecutor.globalInstance!.runInternalStep<Return>(
+          async () => {
+            return await runWithDataSourceContext(span, callnum, async () => {
+              return await ds.invokeTransactionFunction(config, this, callFunc, ...rawArgs);
+            });
+          },
+          funcName,
+          DBOS.workflowID!,
+          callnum,
+        );
+      });
       span.setStatus({ code: SpanStatusCode.OK });
       DBOSExecutor.globalInstance!.tracer.endSpan(span);
       return res;

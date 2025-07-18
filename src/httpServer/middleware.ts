@@ -4,13 +4,8 @@ import { IncomingHttpHeaders } from 'http';
 import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from '../decorators';
 import { DBOSContextualLogger } from '../telemetry/logs';
 import { UserDatabaseClient } from '../user_database';
-import { OperationType } from '../dbos-executor';
-import { getExecutor } from '../dbos';
-import { HTTPRequest } from '../context';
 
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { W3CTraceContextPropagator } from '@opentelemetry/core';
-import { trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
 import { randomUUID } from 'node:crypto';
 
 // Middleware context does not extend base context because it runs before handler/workflow operations.
@@ -156,27 +151,4 @@ export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
   const newID = randomUUID();
   headers[RequestIDHeader.toLowerCase()] = newID; // This does not carry through the response
   return newID;
-}
-
-export function createHTTPSpan(request: HTTPRequest, httpTracer: W3CTraceContextPropagator): Span {
-  // If present, retrieve the trace context from the request
-  const extractedSpanContext = trace.getSpanContext(
-    httpTracer.extract(ROOT_CONTEXT, request.headers, defaultTextMapGetter),
-  );
-  let span: Span;
-  const spanAttributes = {
-    operationType: OperationType.HANDLER,
-    requestID: request.requestID,
-    requestIP: request.ip,
-    requestURL: request.url,
-    requestMethod: request.method,
-  };
-  if (extractedSpanContext === undefined) {
-    // request.url should be defined by now. Let's cast it to string
-    span = getExecutor().tracer.startSpan(request.url as string, spanAttributes);
-  } else {
-    extractedSpanContext.isRemote = true;
-    span = getExecutor().tracer.startSpanWithContext(extractedSpanContext, request.url as string, spanAttributes);
-  }
-  return span;
 }

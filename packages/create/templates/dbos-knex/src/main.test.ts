@@ -29,7 +29,8 @@ describe('operations-test', () => {
    * Test the HTTP endpoint.
    */
   test('test-endpoint', async () => {
-    const res = await request(app).get('/greeting/dbos');
+    const traceparent = '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01';
+    const res = await request(app).get('/greeting/dbos').set('traceparent', traceparent);
     expect(res.statusCode).toBe(200);
     expect(res.text).toMatch('Hello, dbos! You have been greeted');
   });

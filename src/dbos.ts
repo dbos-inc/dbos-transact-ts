@@ -88,6 +88,7 @@ import { EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
+import { context, trace } from '@opentelemetry/api';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 type ReadonlyArray<T> = {
@@ -1019,14 +1020,27 @@ export class DBOS {
     request: object,
     callback: () => Promise<R>,
   ): Promise<R> {
-    return DBOS.#withTopContext(
-      {
-        operationCaller: callerName,
-        span,
-        request,
-      },
-      callback,
-    );
+    const parentCtx = context.active();
+    return await context.with(trace.setSpan(parentCtx, span), async () => {
+      return DBOS.#withTopContext(
+        {
+          operationCaller: callerName,
+          span,
+          request,
+        },
+        async () => {
+          try {
+            return await callback();
+          } catch (err) {
+            span.recordException(err as Error);
+            span.setStatus({ code: 2 }); // ERROR
+            throw err;
+          } finally {
+            span.end();
+          }
+        },
+      );
+    });
   }
 
   /**

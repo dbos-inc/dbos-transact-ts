@@ -73,7 +73,7 @@ import {
   MethodRegistrationBase,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
-import { SpanStatusCode } from '@opentelemetry/api';
+import { context, SpanStatusCode, trace } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import {
   runInStepContext,
@@ -676,26 +676,28 @@ export class DBOSExecutor {
 
       // Execute the workflow.
       try {
-        const callResult = await runWithParentContext(
-          pctx,
-          {
-            presetID,
-            timeoutMS,
-            deadlineEpochMS,
-            workflowId: workflowID,
-            span,
-            logger: this.ctxLogger,
-          },
-          () => {
-            const callPromise = wf.call(params.configuredInstance, ...args);
+        const callResult = await context.with(trace.setSpan(context.active(), span), async () => {
+          return await runWithParentContext(
+            pctx,
+            {
+              presetID,
+              timeoutMS,
+              deadlineEpochMS,
+              workflowId: workflowID,
+              span,
+              logger: this.ctxLogger,
+            },
+            () => {
+              const callPromise = wf.call(params.configuredInstance, ...args);
 
-            if ($deadlineEpochMS === undefined) {
-              return callPromise;
-            } else {
-              return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
-            }
-          },
-        );
+              if ($deadlineEpochMS === undefined) {
+                return callPromise;
+              } else {
+                return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
+              }
+            },
+          );
+        });
 
         if (this.debugMode) {
           const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
@@ -1016,23 +1018,25 @@ export class DBOSExecutor {
         const ctxlog = this.ctxLogger;
         const result = await (async function () {
           try {
-            return await runWithParentContext(
-              pctx,
-              {
-                authenticatedRoles: pctx?.authenticatedRoles,
-                authenticatedUser: pctx?.authenticatedUser,
-                workflowId: wfid,
-                curTxFunctionId: funcId,
-                parentCtx: pctx,
-                sqlClient: client,
-                logger: ctxlog,
-                span,
-              },
-              async () => {
-                const tf = txn as unknown as (...args: T) => Promise<R>;
-                return await tf.call(clsinst, ...args);
-              },
-            );
+            return await context.with(trace.setSpan(context.active(), span), async () => {
+              return await runWithParentContext(
+                pctx,
+                {
+                  authenticatedRoles: pctx?.authenticatedRoles,
+                  authenticatedUser: pctx?.authenticatedUser,
+                  workflowId: wfid,
+                  curTxFunctionId: funcId,
+                  parentCtx: pctx,
+                  sqlClient: client,
+                  logger: ctxlog,
+                  span,
+                },
+                async () => {
+                  const tf = txn as unknown as (...args: T) => Promise<R>;
+                  return await tf.call(clsinst, ...args);
+                },
+              );
+            });
           } catch (e) {
             return e instanceof Error ? e : new Error(`${e as any}`);
           }
@@ -1251,21 +1255,23 @@ export class DBOSExecutor {
             const pctx = getCurrentContextStore();
             if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
             if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
-            return await runWithParentContext(
-              pctx,
-              {
-                curTxFunctionId: funcId,
-                parentCtx: pctx,
-                isInStoredProc: true,
-                sqlClient: client,
-                logger: ctxlog,
-                span,
-              },
-              async () => {
-                const pf = proc as unknown as TypedAsyncFunction<T, R>;
-                return await pf(...args);
-              },
-            );
+            return await context.with(trace.setSpan(context.active(), span), async () => {
+              return await runWithParentContext(
+                pctx,
+                {
+                  curTxFunctionId: funcId,
+                  parentCtx: pctx,
+                  isInStoredProc: true,
+                  sqlClient: client,
+                  logger: ctxlog,
+                  span,
+                },
+                async () => {
+                  const pf = proc as unknown as TypedAsyncFunction<T, R>;
+                  return await pf(...args);
+                },
+              );
+            });
           } catch (e) {
             return e instanceof Error ? e : new Error(`${e as any}`);
           }
@@ -1595,9 +1601,11 @@ export class DBOSExecutor {
     } else {
       try {
         let cresult: R | undefined;
-        await runInStepContext(lctx, funcID, span, maxAttempts, undefined, async () => {
-          const sf = stepFn as unknown as (...args: T) => Promise<R>;
-          cresult = await sf.call(clsInst, ...args);
+        await context.with(trace.setSpan(context.active(), span), async () => {
+          await runInStepContext(lctx, funcID, span, maxAttempts, undefined, async () => {
+            const sf = stepFn as unknown as (...args: T) => Promise<R>;
+            cresult = await sf.call(clsInst, ...args);
+          });
         });
         result = cresult!;
       } catch (error) {
