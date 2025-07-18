@@ -1,6 +1,6 @@
 import { GetWorkflowsInput, StatusString, Authentication, MiddlewareContext, DBOS, WorkflowQueue } from '../src';
 import request from 'supertest';
-import { DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows } from './helpers';
 import { Client } from 'pg';
 import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
@@ -15,11 +15,12 @@ import {
   listWorkflows,
 } from '../src/dbos-runtime/workflow_management';
 import { DBOSNonExistentWorkflowError, DBOSWorkflowCancelledError } from '../src/error';
+import assert from 'node:assert';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
 
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
   let systemDBClient: Client;
 
   beforeAll(() => {
@@ -233,6 +234,7 @@ describe('workflow-management-tests', () => {
     expect(failResponse.statusCode).toBe(500);
 
     const logger = new GlobalLogger();
+    assert(config.systemDatabaseUrl);
     const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl, logger);
     try {
       const input: GetWorkflowsInput = {};
@@ -489,7 +491,7 @@ describe('workflow-management-tests', () => {
 });
 
 describe('test-list-queues', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -539,6 +541,7 @@ describe('test-list-queues', () => {
     }
 
     const logger = new GlobalLogger();
+    assert(config.systemDatabaseUrl);
     const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl, logger);
     try {
       let input: GetQueuedWorkflowsInput = {};
@@ -756,7 +759,7 @@ describe('test-list-queues', () => {
 });
 
 describe('test-list-steps', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
   const queue = new WorkflowQueue('child_queue');
   beforeAll(() => {
     config = generateDBOSTestConfig();
@@ -1217,6 +1220,7 @@ describe('test-list-steps', () => {
     const result2 = await handle.getResult();
     expect(result1).toEqual(result2);
 
+    assert(config.systemDatabaseUrl);
     const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl, new GlobalLogger());
     try {
       const wfs = await listWorkflows(sysdb, {});
@@ -1296,7 +1300,7 @@ describe('test-list-steps', () => {
 });
 
 describe('test-fork', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
   beforeAll(() => {
     config = generateDBOSTestConfig();
     DBOS.setConfig(config);

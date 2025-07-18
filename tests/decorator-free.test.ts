@@ -1,3 +1,4 @@
+import assert from 'node:assert';
 import { ConfiguredInstance, DBOS, DBOSClient, WorkflowQueue } from '../src/';
 import { DBOSConflictingRegistrationError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
@@ -259,6 +260,7 @@ describe('decorator-free-tests', () => {
   });
 
   test('wf-free-step-reg-client', async () => {
+    assert(config.databaseUrl);
     const client = await DBOSClient.create(config.databaseUrl);
     try {
       const handle = await client.enqueue<typeof regWFRegStep>(
@@ -371,6 +373,7 @@ describe('decorator-free-tests', () => {
   });
 
   test('wf-static-step-reg-client', async () => {
+    assert(config.databaseUrl);
     const client = await DBOSClient.create(config.databaseUrl);
     try {
       const handle = await client.enqueue<typeof TestClass.wfRunStepStatic>(
@@ -482,6 +485,7 @@ describe('decorator-free-tests', () => {
   });
 
   test('wf-inst-step-reg-client', async () => {
+    assert(config.databaseUrl);
     const client = await DBOSClient.create(config.databaseUrl);
     try {
       const handle = await client.enqueue<typeof TestClass.prototype.wfRegStep>(

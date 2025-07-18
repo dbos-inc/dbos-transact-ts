@@ -1,5 +1,6 @@
+import assert from 'node:assert';
 import { DBOS } from '../src';
-import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { TestKvTable, dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
@@ -7,10 +8,11 @@ const testTableName = 'dbos_test_kv';
 
 describe('oaoo-tests', () => {
   let username: string;
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
+    assert(config.databaseUrl);
     const url = new URL(config.databaseUrl);
     username = url.username;
     await setUpDBOSTestDb(config);
@@ -18,6 +20,7 @@ describe('oaoo-tests', () => {
   });
 
   beforeEach(async () => {
+    assert(config.systemDatabaseUrl);
     await dropDatabase(config.systemDatabaseUrl);
     await DBOS.launch();
 

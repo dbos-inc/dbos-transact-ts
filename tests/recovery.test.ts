@@ -1,6 +1,6 @@
 import { WorkflowQueue, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows } from './helpers';
-import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
 import { DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
@@ -8,7 +8,7 @@ import { sleepms } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 
 describe('recovery-tests', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
   let systemDBClient: Client;
 
   beforeAll(async () => {

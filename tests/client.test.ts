@@ -6,7 +6,8 @@ import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import { randomUUID } from 'crypto';
-import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
+import assert from 'assert';
 
 const _queue = new WorkflowQueue('testQueue', { priorityEnabled: true });
 
@@ -73,12 +74,13 @@ function runClientSendWorker(workflowID: string, topic: string, appVersion: stri
 }
 
 describe('DBOSClient', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
   let database_url: string;
   let poolConfig: PoolConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
+    assert(config.databaseUrl);
     database_url = config.databaseUrl;
     poolConfig = { connectionString: config.systemDatabaseUrl };
     await setUpDBOSTestDb(config);

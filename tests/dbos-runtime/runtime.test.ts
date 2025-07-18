@@ -5,6 +5,7 @@ import { Client } from 'pg';
 import { generateDBOSTestConfig } from '../helpers';
 import { HealthUrl } from '../../src/httpServer/server';
 import { sleepms } from '../../src/utils';
+import assert from 'assert';
 
 async function waitForMessageTest(
   command: ChildProcess,
@@ -61,6 +62,7 @@ async function waitForMessageTest(
 
 async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
+  assert(config.databaseUrl);
   const url = new URL(config.databaseUrl);
   url.pathname = `/postgres`;
   const pgSystemClient = new Client({

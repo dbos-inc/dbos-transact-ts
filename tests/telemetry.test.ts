@@ -3,6 +3,7 @@ import { DBOSExecutor, DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import request from 'supertest';
 import { DBOS } from '../src';
+import { translateDbosConfig } from '../src/dbos-runtime/config';
 
 export class TestClass {
   @DBOS.transaction({ readOnly: false })
@@ -33,15 +34,16 @@ describe('dbos-telemetry', () => {
 
   test('DBOS init works with exporters', async () => {
     const dbosConfig = generateDBOSTestConfig();
-    expect(dbosConfig.telemetry).not.toBeUndefined();
-    if (dbosConfig.telemetry) {
-      dbosConfig.telemetry.OTLPExporter = {
-        tracesEndpoint: ['http://localhost:4317/v1/traces'],
-        logsEndpoint: ['http://localhost:4317/v1/logs'],
-      };
-    }
+    dbosConfig.otlpLogsEndpoints = ['http://localhost:4317/v1/logs'];
+    dbosConfig.otlpTracesEndpoints = ['http://localhost:4317/v1/traces'];
+
+    const internalConfig = translateDbosConfig(dbosConfig);
+    expect(internalConfig.telemetry).not.toBeUndefined();
+    expect(internalConfig.telemetry?.OTLPExporter?.logsEndpoint).toEqual(dbosConfig.otlpLogsEndpoints);
+    expect(internalConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual(dbosConfig.otlpTracesEndpoints);
+
     await setUpDBOSTestDb(dbosConfig);
-    const dbosExec = new DBOSExecutor(dbosConfig);
+    const dbosExec = new DBOSExecutor(internalConfig);
     expect(dbosExec.telemetryCollector).not.toBeUndefined();
     expect(dbosExec.telemetryCollector.exporter).not.toBeUndefined();
     await dbosExec.init();

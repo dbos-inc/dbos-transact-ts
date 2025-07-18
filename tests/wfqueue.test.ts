@@ -1,10 +1,5 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
-import {
-  DBOSConfigInternal,
-  DBOSExecutor,
-  DBOS_QUEUE_MAX_PRIORITY,
-  DBOS_QUEUE_MIN_PRIORITY,
-} from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestDb,
@@ -36,6 +31,7 @@ import {
   // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
+import assert from 'node:assert';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -51,7 +47,7 @@ const qperiod = 2;
 const rlqueue = new WorkflowQueue('limited_queue', undefined, { limitPerPeriod: qlimit, periodSec: qperiod });
 
 describe('queued-wf-tests-simple', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -638,6 +634,7 @@ describe('queued-wf-tests-simple', () => {
   }
 
   test('test-concurrency-across-versions', async () => {
+    assert(config.databaseUrl);
     const client = await DBOSClient.create(config.databaseUrl);
 
     const other_version = 'other_version';
@@ -676,7 +673,7 @@ class InterProcessWorkflow {
   static globalConcurrencyLimit = InterProcessWorkflow.localConcurrencyLimit * 2;
 
   @DBOS.workflow()
-  static async testGlobalConcurrency(config: DBOSConfigInternal) {
+  static async testGlobalConcurrency(systemDatabaseUrl: string) {
     // First, start local concurrency limit tasks
     let handles = [];
     for (let i = 0; i < InterProcessWorkflow.localConcurrencyLimit; ++i) {
@@ -757,7 +754,7 @@ class InterProcessWorkflow {
 
       // Now check the global concurrency is met
       const systemDBClient = new Client({
-        connectionString: config.systemDatabaseUrl,
+        connectionString: systemDatabaseUrl,
       });
       await systemDBClient.connect();
       try {
@@ -821,7 +818,7 @@ class InterProcessWorkflow {
 }
 
 describe('queued-wf-tests-concurrent-workers', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -838,7 +835,8 @@ describe('queued-wf-tests-concurrent-workers', () => {
   });
 
   test('test_global_and_local_concurrency', async () => {
-    const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency(config);
+    assert(config.systemDatabaseUrl);
+    const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency(config.systemDatabaseUrl);
     await wfh.getResult();
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 60000);
@@ -964,7 +962,7 @@ async function runOneAtATime(queue: WorkflowQueue) {
 }
 
 describe('enqueue-options', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -1156,7 +1154,7 @@ describe('enqueue-options', () => {
 });
 
 describe('queue-time-outs', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   const events_map = new Map<string, Event>();
   class DBOSTimeoutTestClass {

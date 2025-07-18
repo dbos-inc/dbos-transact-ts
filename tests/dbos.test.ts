@@ -2,7 +2,7 @@ import { WorkflowHandle, DBOSInitializer, InitContext, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
-import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import {
@@ -10,15 +10,17 @@ import {
   DBOSWorkflowCancelledError,
   DBOSAwaitedWorkflowCancelledError,
 } from '../src/error';
+import assert from 'node:assert';
 
 const testTableName = 'dbos_test_kv';
 
 describe('dbos-tests', () => {
   let username: string;
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
+    assert(config.databaseUrl);
     const url = new URL(config.databaseUrl);
     username = url.username;
     await setUpDBOSTestDb(config);
