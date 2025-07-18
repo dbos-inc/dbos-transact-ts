@@ -9,7 +9,7 @@ import { DBOSDataValidationError, DBOSError, DBOSResponseError, isDataValidation
 import { DBOSExecutor, OperationType } from '../dbos-executor';
 import { GlobalLogger } from '../telemetry/logs';
 import { getOrGenerateRequestID, MiddlewareDefaults, RequestIDHeader } from './middleware';
-import { SpanStatusCode, trace, ROOT_CONTEXT, defaultTextMapGetter } from '@opentelemetry/api';
+import { SpanStatusCode, trace, ROOT_CONTEXT, defaultTextMapGetter, context } from '@opentelemetry/api';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
@@ -645,21 +645,23 @@ export class DBOSHttpServer {
         try {
           // Check for auth first
           if (defaults?.authMiddleware) {
-            await runWithTopContext(dctx, async () => {
-              const res = await defaults.authMiddleware!({
-                name: ro.name,
-                requiredRole: ro.getRequiredRoles(),
-                koaContext: koaCtxt,
-                logger: dbosExec.ctxLogger,
-                span,
-                query: (query, ...args) => {
-                  return dbosExec.userDatabase.queryFunction(query, ...args);
-                },
+            await context.with(trace.setSpan(context.active(), span), async () => {
+              await runWithTopContext(dctx, async () => {
+                const res = await defaults.authMiddleware!({
+                  name: ro.name,
+                  requiredRole: ro.getRequiredRoles(),
+                  koaContext: koaCtxt,
+                  logger: dbosExec.ctxLogger,
+                  span,
+                  query: (query, ...args) => {
+                    return dbosExec.userDatabase.queryFunction(query, ...args);
+                  },
+                });
+                if (res) {
+                  dctx.authenticatedUser = res.authenticatedUser;
+                  dctx.authenticatedRoles = res.authenticatedRoles;
+                }
               });
-              if (res) {
-                dctx.authenticatedUser = res.authenticatedUser;
-                dctx.authenticatedRoles = res.authenticatedRoles;
-              }
             });
           }
 
@@ -726,33 +728,35 @@ export class DBOSHttpServer {
             workflowUUID: dctx.idAssignedForNextWorkflow,
             configuredInstance: null,
           };
-          await runWithTopContext(dctx, async () => {
-            if (ro.txnConfig) {
-              koaCtxt.body = await dbosExec.runTransactionTempWF(
-                ro.registeredFunction as UntypedAsyncFunction,
-                wfParams,
-                ...args,
-              );
-            } else if (ro.workflowConfig) {
-              koaCtxt.body = await (
-                await dbosExec.workflow(ro.registeredFunction as UntypedAsyncFunction, wfParams, ...args)
-              ).getResult();
-            } else if (ro.stepConfig) {
-              koaCtxt.body = await dbosExec.runStepTempWF(
-                ro.registeredFunction as UntypedAsyncFunction,
-                wfParams,
-                ...args,
-              );
-            } else {
-              // Directly invoke the handler code.
-              const cresult = await ro.invoke(undefined, [...args]);
-              const retValue = cresult!;
+          await context.with(trace.setSpan(context.active(), span), async () => {
+            await runWithTopContext(dctx, async () => {
+              if (ro.txnConfig) {
+                koaCtxt.body = await dbosExec.runTransactionTempWF(
+                  ro.registeredFunction as UntypedAsyncFunction,
+                  wfParams,
+                  ...args,
+                );
+              } else if (ro.workflowConfig) {
+                koaCtxt.body = await (
+                  await dbosExec.workflow(ro.registeredFunction as UntypedAsyncFunction, wfParams, ...args)
+                ).getResult();
+              } else if (ro.stepConfig) {
+                koaCtxt.body = await dbosExec.runStepTempWF(
+                  ro.registeredFunction as UntypedAsyncFunction,
+                  wfParams,
+                  ...args,
+                );
+              } else {
+                // Directly invoke the handler code.
+                const cresult = await ro.invoke(undefined, [...args]);
+                const retValue = cresult!;
 
-              // Set the body to the return value unless the body is already set by the handler.
-              if (koaCtxt.body === undefined) {
-                koaCtxt.body = retValue;
+                // Set the body to the return value unless the body is already set by the handler.
+                if (koaCtxt.body === undefined) {
+                  koaCtxt.body = retValue;
+                }
               }
-            }
+            });
           });
           dctx.span?.setStatus({ code: SpanStatusCode.OK });
         } catch (e) {

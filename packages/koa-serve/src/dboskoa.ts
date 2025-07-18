@@ -4,7 +4,7 @@ import bodyParser from '@koa/bodyparser';
 import cors from '@koa/cors';
 
 import { W3CTraceContextPropagator } from '@opentelemetry/core';
-import { SpanStatusCode, trace, defaultTextMapGetter, ROOT_CONTEXT } from '@opentelemetry/api';
+import { SpanStatusCode, trace, defaultTextMapGetter, ROOT_CONTEXT, context } from '@opentelemetry/api';
 import { Span } from '@opentelemetry/sdk-trace-base';
 
 import { DBOS, Error as DBOSErrors } from '@dbos-inc/dbos-sdk';
@@ -316,20 +316,25 @@ export class DBOSKoa extends DBOSHTTPBase {
             // - If a client-side error is thrown, we return 400.
             // - If an error contains a `status` field, we return the specified status code.
             // - Otherwise, we return 500.
-            const cresult = await asyncLocalCtx.run({ koaCtxt }, async () => {
-              return await DBOS.runWithContext(
-                {
-                  authenticatedUser,
-                  authenticatedRoles,
-                  idAssignedForNextWorkflow: headerWorkflowID,
-                  span,
-                  request: koaCtxt.request,
-                },
-                async () => {
-                  return await methodReg.invoke(undefined, args);
-                },
-              );
-            });
+            const cresult = await context.with(
+              span ? trace.setSpan(context.active(), span) : context.active(),
+              async () => {
+                return await asyncLocalCtx.run({ koaCtxt }, async () => {
+                  return await DBOS.runWithContext(
+                    {
+                      authenticatedUser,
+                      authenticatedRoles,
+                      idAssignedForNextWorkflow: headerWorkflowID,
+                      span,
+                      request: koaCtxt.request,
+                    },
+                    async () => {
+                      return await methodReg.invoke(undefined, args);
+                    },
+                  );
+                });
+              },
+            );
             const retValue = cresult!;
 
             // Set the body to the return value unless the body is already set by the handler.

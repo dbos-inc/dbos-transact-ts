@@ -93,7 +93,7 @@ async function main() {
     name: 'dbos-prisma',
     databaseUrl: process.env.DBOS_DATABASE_URL,
   });
-  await DBOS.launch({ expressApp: app });
+  await DBOS.launch();
   const PORT = parseInt(process.env.NODE_PORT || '3000');
   const ENV = process.env.NODE_ENV || 'development';
 
