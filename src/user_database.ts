@@ -12,38 +12,34 @@ import { ValuesOf } from './utils';
 import { Knex } from 'knex';
 import { GlobalLogger } from './telemetry/logs';
 
-export async function createDBIfDoesNotExist(poolConfig: PoolConfig, logger: GlobalLogger) {
-  const pgUserClient = new Client(poolConfig);
+export async function createDBIfDoesNotExist(databseUrl: string, logger: GlobalLogger) {
+  const url = new URL(databseUrl);
+  const database = url.pathname.slice(1);
+
+  const pgUserClient = new Client({ connectionString: databseUrl });
   try {
     await pgUserClient.connect(); // Try to establish a connection
     await pgUserClient.end();
     return; // If successful, return
   } catch (error) {
-    logger.info(`Database ${poolConfig.database} does not exist, creating...`);
+    logger.info(`Database ${database} does not exist, creating...`);
   }
-  // Craft a db string from the app db string, replacing the database name:
-  const pgDbConnectionString = new URL(poolConfig.connectionString!);
-  const app_database = pgDbConnectionString.pathname.substring(1);
-  pgDbConnectionString.pathname = '/postgres';
 
-  const postgresConfig = {
-    ...poolConfig,
-    connectionString: pgDbConnectionString.toString(),
-  };
-  const postgresClient = new Client(postgresConfig);
+  // Craft a db string from the app db string, replacing the database name:
+  url.pathname = '/postgres';
+
+  const postgresClient = new Client({ connectionString: url.toString() });
   let connection_failed = true;
   try {
     await postgresClient.connect();
     connection_failed = false;
-    await postgresClient.query(`CREATE DATABASE ${app_database}`);
+    await postgresClient.query(`CREATE DATABASE ${database}`);
   } catch (e) {
     if (e instanceof Error) {
       if (connection_failed) {
-        logger.error(
-          `Error connecting to database ${postgresConfig.host}:${postgresConfig.port} with user ${postgresConfig.user}: ${e.message}`,
-        );
+        logger.error(`Error connecting to database ${url.host}:${url.port} with user ${url.username}: ${e.message}`);
       } else {
-        logger.error(`Error creating database ${app_database}: ${e.message}`);
+        logger.error(`Error creating database ${database}: ${e.message}`);
       }
     } else {
       logger.error(e);

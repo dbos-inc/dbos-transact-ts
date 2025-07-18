@@ -1,12 +1,7 @@
 import { DBOS, StatusString } from '../../src';
-import { DBOSConfig, DBOSConfigInternal } from '../../src/dbos-executor';
+import { DBOSConfig } from '../../src/dbos-executor';
 import { WorkflowQueue } from '../../src';
-import {
-  generateDBOSTestConfig,
-  generatePublicDBOSTestConfig,
-  queueEntriesAreCleanedUp,
-  setUpDBOSTestDb,
-} from '../helpers';
+import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestDb } from '../helpers';
 import { QueueMetadataResponse } from '../../src/httpServer/server';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../../src/httpServer/server';
 import { globalParams, sleepms } from '../../src/utils';
@@ -28,8 +23,8 @@ describe('not-running-admin-server', () => {
   });
 
   test('test-admin-server-not-running', async () => {
-    config = generatePublicDBOSTestConfig({ runAdminServer: false });
-    DBOS.setConfig(config);
+    config = generateDBOSTestConfig();
+    DBOS.setConfig({ ...config, runAdminServer: false });
     await setUpDBOSTestDb(config);
     await DBOS.launch();
 
@@ -46,8 +41,8 @@ describe('not-running-admin-server', () => {
     // Start a dummy server on the admin port
     const server = http.createServer().listen(3001, '127.0.0.1');
     try {
-      config = generatePublicDBOSTestConfig({ runAdminServer: true });
-      DBOS.setConfig(config);
+      config = generateDBOSTestConfig();
+      DBOS.setConfig({ ...config, runAdminServer: true });
       await setUpDBOSTestDb(config);
       await DBOS.launch();
       await DBOS.shutdown();
@@ -58,7 +53,7 @@ describe('not-running-admin-server', () => {
 });
 
 describe('running-admin-server-tests', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
   let systemDBClient: Client;
 
   beforeEach(async () => {
@@ -70,11 +65,7 @@ describe('running-admin-server-tests', () => {
     await DBOS.launch();
     await DBOS.launchAppHTTPServer();
     systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
-      database: config.system_database,
+      connectionString: config.systemDatabaseUrl,
     });
     await systemDBClient.connect();
     TestAdminWorkflow.counter = 0;

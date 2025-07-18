@@ -23,7 +23,7 @@ describe('httpserver-defsec-tests', () => {
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'dbos-koa-test',
-      userDbclient: 'pg-node',
+      userDatabaseClient: 'pg-node',
     });
     return Promise.resolve();
   });

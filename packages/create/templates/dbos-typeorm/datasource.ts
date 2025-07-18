@@ -1,12 +1,12 @@
-import { parseConfigFile } from '@dbos-inc/dbos-sdk';
-import { TlsOptions } from 'tls';
+import { readConfigFile, getDatabaseUrl } from '@dbos-inc/dbos-sdk';
 import { DataSource } from 'typeorm';
 
-const [dbosConfig] = parseConfigFile();
+const dbosConfig = readConfigFile();
+const databaseUrl = getDatabaseUrl(dbosConfig);
 
 const AppDataSource = new DataSource({
   type: 'postgres',
-  url: dbosConfig.poolConfig.connectionString,
+  url: databaseUrl,
   entities: ['dist/entities/*.js'],
   migrations: ['dist/migrations/*.js'],
 });

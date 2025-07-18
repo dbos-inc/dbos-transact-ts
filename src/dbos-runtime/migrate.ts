@@ -1,7 +1,6 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
-import { ConfigFile } from './config';
-import { DBOSConfigInternal } from '../dbos-executor';
+import { ConfigFile, getDatabaseUrl, getSystemDatabaseUrl } from './config';
 import { PoolConfig, Client } from 'pg';
 import {
   createUserDBSchema,
@@ -18,10 +17,13 @@ import {
   createDBIfDoesNotExist,
 } from '../user_database';
 
-export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) {
-  const poolConfig = config.poolConfig;
-  logger.info(`Starting migration: creating database ${poolConfig.database} if it does not exist`);
-  await createDBIfDoesNotExist(poolConfig, logger);
+export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
+  const databaseUrl = getDatabaseUrl(configFile);
+  const url = new URL(databaseUrl);
+  const database = url.pathname.slice(1);
+
+  logger.info(`Starting migration: creating database ${database} if it does not exist`);
+  await createDBIfDoesNotExist(databaseUrl, logger);
 
   const migrationCommands = configFile.database?.migrate;
 
@@ -36,9 +38,10 @@ export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile
     return 1;
   }
 
+  const systemDatabaseUrl = getSystemDatabaseUrl(configFile);
   logger.info('Creating DBOS tables and system database.');
   try {
-    await createDBOSTables(config.system_database, poolConfig);
+    await createDBOSTables(databaseUrl, systemDatabaseUrl, logger);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);
@@ -52,40 +55,16 @@ export async function migrate(config: DBOSConfigInternal, configFile: ConfigFile
   return 0;
 }
 
-export function rollbackMigration(_config: DBOSConfigInternal, configFile: ConfigFile, logger: GlobalLogger) {
-  logger.info('Starting Migration Rollback');
-
-  let dbType = configFile.database?.app_db_client;
-  if (dbType === undefined) {
-    dbType = 'knex';
-  }
-
-  const rollbackcommands = configFile.database?.rollback;
-
-  try {
-    rollbackcommands?.forEach((cmd) => {
-      logger.info('Executing ' + cmd);
-      const migrateCommandOutput = execSync(cmd, { encoding: 'utf-8' });
-      logger.info(migrateCommandOutput.trimEnd());
-    });
-  } catch (e) {
-    logMigrationError(e, logger, 'Error rolling back migration.');
-    return 1;
-  }
-  return 0;
-}
-
 // Create DBOS system DB and tables.
-async function createDBOSTables(systemDbName: string, userPoolConfig: PoolConfig) {
-  const logger = new GlobalLogger();
+async function createDBOSTables(databaseUrl: string, systemDatabaseUrl: string, logger: GlobalLogger) {
+  const url = new URL(systemDatabaseUrl);
+  const systemDbName = url.pathname.slice(1);
 
-  const sysDbConnectionString = new URL(userPoolConfig.connectionString!);
-  sysDbConnectionString.pathname = `/${systemDbName}`;
   const systemPoolConfig: PoolConfig = {
-    connectionString: sysDbConnectionString.toString(),
+    connectionString: systemDatabaseUrl,
   };
 
-  const pgUserClient = new Client(userPoolConfig);
+  const pgUserClient = new Client({ connectionString: databaseUrl });
   await pgUserClient.connect();
 
   // Create DBOS table/schema in user DB.

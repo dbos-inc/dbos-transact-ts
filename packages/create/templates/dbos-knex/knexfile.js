@@ -1,10 +1,11 @@
-const { parseConfigFile } = require('@dbos-inc/dbos-sdk');
+const { readConfigFile, getDatabaseUrl } = require('@dbos-inc/dbos-sdk');
 
-const [dbosConfig] = parseConfigFile();
+const dbosConfig = readConfigFile();
+const databaseUrl = getDatabaseUrl(dbosConfig);
 
 const config = {
   client: 'pg',
-  connection: dbosConfig.poolConfig.connectionString,
+  connection: databaseUrl,
   migrations: {
     directory: './migrations',
   },

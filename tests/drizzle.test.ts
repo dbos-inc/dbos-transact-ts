@@ -265,21 +265,29 @@ describe('drizzle-auth-tests', () => {
 class TestEngine {
   @DBOS.transaction()
   static async testEngine() {
-    const pc = DBOS.dbosConfig?.poolConfig;
     const ds = DBOS.drizzleClient;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).session.client._connectionTimeoutMillis).toEqual(pc?.connectionTimeoutMillis);
     // Drizzle doesn't expose the pool directly
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+    const client = (ds as any).session.client.connectionParameters as {
+      host: string;
+      port: number;
+      database: string;
+      user: string;
+    };
+    expect(client.database).toBe('dbostest');
+    expect(client.user).toBe('postgres');
+    expect(client.host).toBe('localhost');
+    expect(client.port).toBe(5432);
     await Promise.resolve();
   }
 }
 
-describe('typeorm-engine-config-tests', () => {
+describe('drizzle-engine-config-tests', () => {
   test('engine-config', async () => {
-    const config = {
+    const config: DBOSConfig = {
       name: 'dbostest',
-      userDbclient: UserDatabaseName.DRIZZLE,
-      userDbPoolSize: 2,
+      userDatabaseClient: UserDatabaseName.DRIZZLE,
+      userDatabasePoolSize: 2,
       databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
     };
     await setUpDBOSTestDb(config);

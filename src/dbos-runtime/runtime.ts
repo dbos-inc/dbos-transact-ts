@@ -46,7 +46,7 @@ export class DBOSRuntime {
    */
   async initAndStart() {
     try {
-      if (!this.dbosConfig.poolConfig) {
+      if (!this.dbosConfig.databaseUrl) {
         throw new Error('DBOS pool configuration is not initialized');
       }
       this.dbosExec = new DBOSExecutor(this.dbosConfig);

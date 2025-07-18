@@ -1,16 +1,13 @@
 import { Knex } from 'knex';
-import { parseConfigFile } from '@dbos-inc/dbos-sdk';
+import { readConfigFile, getDatabaseUrl } from '@dbos-inc/dbos-sdk';
 
-const [dbosConfig] = parseConfigFile();
+const dbosConfig = readConfigFile(__dirname);
+const databaseUrl = getDatabaseUrl(dbosConfig);
 
 const config: Knex.Config = {
   client: 'pg',
   connection: {
-    host: dbosConfig.poolConfig.host,
-    user: dbosConfig.poolConfig.user,
-    password: dbosConfig.poolConfig.password,
-    database: dbosConfig.poolConfig.database,
-    ssl: dbosConfig.poolConfig.ssl,
+    connectionString: databaseUrl,
   },
   migrations: {
     directory: './migrations',

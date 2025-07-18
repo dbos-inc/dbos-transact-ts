@@ -59,7 +59,7 @@ export {
   requestArgValidation,
 } from './paramdecorators';
 
-export { ParseOptions, parseConfigFile } from './dbos-runtime/config';
+export { readConfigFile, getDatabaseUrl } from './dbos-runtime/config';
 
 export { DBOSRuntimeConfig } from './dbos-runtime/runtime';
 

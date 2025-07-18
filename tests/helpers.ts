@@ -1,78 +1,46 @@
-import { DBOSConfig, DBOSConfigInternal, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { translatePublicDBOSconfig, constructPoolConfig, ConfigFile } from '../src/dbos-runtime/config';
+import { getSystemDatabaseUrl, translateDbosConfig } from '../src/dbos-runtime/config';
 
 /* DB management helpers */
-export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfigInternal {
+export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
   }
-  const silenceLogs = process.env.SILENCE_LOGS === 'true';
+  const _silenceLogs = process.env.SILENCE_LOGS === 'true';
 
   const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
+  const systemDatabaseUrl = getSystemDatabaseUrl(databaseUrl);
 
-  const configFile: ConfigFile = {
-    name: 'dbostest',
-    database: {
-      app_db_client: dbClient || UserDatabaseName.PGNODE,
-    },
-    database_url: databaseUrl,
-    application: {
-      counter: 3,
-      shouldExist: 'exists',
-    },
-    env: {},
-    telemetry: {
-      logs: {
-        silent: silenceLogs,
-      },
-    },
-  };
-
-  const poolConfig = constructPoolConfig(configFile, { silent: true });
-
-  const dbosTestConfig: DBOSConfigInternal = {
-    name: configFile.name,
-    databaseUrl,
-    poolConfig,
-    telemetry: configFile.telemetry!,
-    system_database: 'dbostest_dbos_sys',
-    userDbclient: dbClient || UserDatabaseName.PGNODE,
-  };
-
-  return dbosTestConfig;
-}
-
-export function generatePublicDBOSTestConfig(kwargs?: object): DBOSConfig {
   return {
-    name: 'dbostest', // Passing a name is kind of required because otherwise, we'll take in the name of the framework package.json, which is not a valid DB name
-    databaseUrl: `postgres://postgres:${process.env.PGPASSWORD}@localhost:5432/dbostest`,
-    ...kwargs,
+    name: 'dbostest',
+    databaseUrl,
+    systemDatabaseUrl,
+    userDatabaseClient: dbClient || UserDatabaseName.PGNODE,
   };
 }
 
-export async function setUpDBOSTestDb(cfg: DBOSConfig) {
-  if (!cfg.name) {
-    cfg.name = 'dbostest';
-  }
-  const [config] = translatePublicDBOSconfig(cfg);
-  const pgSystemClient = new Client({
-    user: config.poolConfig.user,
-    port: config.poolConfig.port,
-    host: config.poolConfig.host,
-    password: config.poolConfig.password,
-    database: 'postgres',
-  });
+export async function setUpDBOSTestDb(config: DBOSConfig) {
+  config.name ??= 'dbostest';
+  const internalConfig = translateDbosConfig(config);
+
+  const url = new URL(internalConfig.databaseUrl);
+  const dbName = url.pathname.slice(1);
+  url.pathname = '/postgres';
+
+  const sysDbUrl = new URL(internalConfig.systemDatabaseUrl);
+  const sysDbName = sysDbUrl.pathname.slice(1);
+
+  const pgSystemClient = new Client({ connectionString: `${url}` });
   try {
     await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database} WITH (FORCE);`);
-    await pgSystemClient.query(`CREATE DATABASE ${config.poolConfig.database};`);
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${config.system_database} WITH (FORCE);`);
-    await pgSystemClient.end();
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
+    await pgSystemClient.query(`CREATE DATABASE ${dbName};`);
+    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${sysDbName} WITH (FORCE);`);
   } catch (e) {
     if (e instanceof AggregateError) {
       console.error(`Test database setup failed: AggregateError containing ${e.errors.length} errors:`);
@@ -83,6 +51,8 @@ export async function setUpDBOSTestDb(cfg: DBOSConfig) {
       console.error(`Test database setup failed:`, e);
     }
     throw e;
+  } finally {
+    await pgSystemClient.end();
   }
 }
 
@@ -156,8 +126,9 @@ export function executeWorkflowById(workflowId: string) {
   return DBOSExecutor.globalInstance!.executeWorkflowUUID(workflowId);
 }
 
-export async function dropDatabase(connectionString: string, database: string) {
+export async function dropDatabase(connectionString: string, database?: string) {
   const url = new URL(connectionString);
+  database ||= url.pathname.slice(1);
   url.pathname = '/postgres';
 
   // Drop system database, for testing.
