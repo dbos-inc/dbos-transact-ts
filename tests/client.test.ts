@@ -7,7 +7,6 @@ import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import { randomUUID } from 'crypto';
 import { DBOSConfig } from '../src/dbos-executor';
-import assert from 'assert';
 
 const _queue = new WorkflowQueue('testQueue', { priorityEnabled: true });
 
@@ -80,8 +79,8 @@ describe('DBOSClient', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    assert(config.databaseUrl);
-    database_url = config.databaseUrl;
+    expect(config.databaseUrl).toBeDefined();
+    database_url = config.databaseUrl!;
     poolConfig = { connectionString: config.systemDatabaseUrl };
     await setUpDBOSTestDb(config);
   });

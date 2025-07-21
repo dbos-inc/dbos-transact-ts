@@ -1,8 +1,4 @@
-/* eslint-disable */
-
-import fs from 'fs';
 import * as utils from '../../src/utils';
-import { UserDatabaseName } from '../../src/user_database';
 import {
   ConfigFile,
   getDatabaseUrl,
@@ -11,9 +7,7 @@ import {
   readConfigFile,
   translateDbosConfig,
 } from '../../src/dbos-runtime/config';
-import { setUpDBOSTestDb } from '../helpers';
 import { AssertionError } from 'assert';
-import { DBOSInitializationError } from '../../src/error';
 import { DBOSConfigInternal } from '../../src/dbos-executor';
 import { DBOSRuntimeConfig } from '../../src';
 
@@ -209,7 +203,7 @@ describe('dbos-config', () => {
       expect(() => readConfigFile()).toThrow(new Error('Some other error'));
     });
 
-    test('throws on an invalid config', async () => {
+    test('throws on an invalid config', () => {
       const mockConfigFile = `
       name: 'test-app'
       datafffbase_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable'`;
@@ -398,7 +392,7 @@ describe('dbos-config', () => {
       );
     });
 
-    test('correctly handles db url w/o password', async () => {
+    test('correctly handles db url w/o password', () => {
       const url = getDatabaseUrl({ database_url: 'postgresql://postgres@localhost:5432/dbostest?sslmode=disable' });
       expect(url).toBe('postgresql://postgres@localhost:5432/dbostest?sslmode=disable');
     });
@@ -582,13 +576,13 @@ describe('dbos-config', () => {
     });
 
     test('force admin server', () => {
-      const [newConfig, newRuntimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {});
+      const [, newRuntimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {});
       expect(newRuntimeConfig.admin_port).toBe(3001);
       expect(newRuntimeConfig.runAdminServer).toBe(true);
     });
 
     test('combine otel endpoints', () => {
-      const [newConfig, newRuntimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
+      const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
         telemetry: {
           OTLPExporter: {
             tracesEndpoint: ['http://otel-collector:4317/traces-from-cloud'],
@@ -607,7 +601,7 @@ describe('dbos-config', () => {
     });
 
     test('combine otel endpoints no duplicates', () => {
-      const [newConfig, newRuntimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
+      const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
         telemetry: {
           OTLPExporter: {
             tracesEndpoint: ['http://otel-collector:4317/traces'],

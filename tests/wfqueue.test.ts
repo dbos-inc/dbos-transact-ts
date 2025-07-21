@@ -31,7 +31,6 @@ import {
   // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
-import assert from 'node:assert';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -634,8 +633,8 @@ describe('queued-wf-tests-simple', () => {
   }
 
   test('test-concurrency-across-versions', async () => {
-    assert(config.databaseUrl);
-    const client = await DBOSClient.create(config.databaseUrl);
+    expect(config.databaseUrl).toBeDefined();
+    const client = await DBOSClient.create(config.databaseUrl!);
 
     const other_version = 'other_version';
     const other_version_handle = await client.enqueue({
@@ -835,8 +834,8 @@ describe('queued-wf-tests-concurrent-workers', () => {
   });
 
   test('test_global_and_local_concurrency', async () => {
-    assert(config.systemDatabaseUrl);
-    const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency(config.systemDatabaseUrl);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const wfh = await DBOS.startWorkflow(InterProcessWorkflow).testGlobalConcurrency(config.systemDatabaseUrl!);
     await wfh.getResult();
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 60000);

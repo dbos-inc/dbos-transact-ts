@@ -10,7 +10,6 @@ import {
   DBOSWorkflowCancelledError,
   DBOSAwaitedWorkflowCancelledError,
 } from '../src/error';
-import assert from 'node:assert';
 
 const testTableName = 'dbos_test_kv';
 
@@ -20,8 +19,8 @@ describe('dbos-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    assert(config.databaseUrl);
-    const url = new URL(config.databaseUrl);
+    expect(config.databaseUrl).toBeDefined();
+    const url = new URL(config.databaseUrl!);
     username = url.username;
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);

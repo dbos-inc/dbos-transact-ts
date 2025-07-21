@@ -15,7 +15,6 @@ import {
   listWorkflows,
 } from '../src/dbos-runtime/workflow_management';
 import { DBOSNonExistentWorkflowError, DBOSWorkflowCancelledError } from '../src/error';
-import assert from 'node:assert';
 
 describe('workflow-management-tests', () => {
   const testTableName = 'dbos_test_kv';
@@ -234,8 +233,8 @@ describe('workflow-management-tests', () => {
     expect(failResponse.statusCode).toBe(500);
 
     const logger = new GlobalLogger();
-    assert(config.systemDatabaseUrl);
-    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl, logger);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger);
     try {
       const input: GetWorkflowsInput = {};
       const infos = await listWorkflows(sysdb, input);
@@ -541,8 +540,8 @@ describe('test-list-queues', () => {
     }
 
     const logger = new GlobalLogger();
-    assert(config.systemDatabaseUrl);
-    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl, logger);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger);
     try {
       let input: GetQueuedWorkflowsInput = {};
       let output: WorkflowStatus[] = [];
@@ -1220,8 +1219,8 @@ describe('test-list-steps', () => {
     const result2 = await handle.getResult();
     expect(result1).toEqual(result2);
 
-    assert(config.systemDatabaseUrl);
-    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl, new GlobalLogger());
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, new GlobalLogger());
     try {
       const wfs = await listWorkflows(sysdb, {});
       expect(wfs.length).toBe(2);

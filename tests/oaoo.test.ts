@@ -1,4 +1,3 @@
-import assert from 'node:assert';
 import { DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { TestKvTable, dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
@@ -12,16 +11,16 @@ describe('oaoo-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    assert(config.databaseUrl);
-    const url = new URL(config.databaseUrl);
+    expect(config.databaseUrl).toBeDefined();
+    const url = new URL(config.databaseUrl!);
     username = url.username;
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    assert(config.systemDatabaseUrl);
-    await dropDatabase(config.systemDatabaseUrl);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    await dropDatabase(config.systemDatabaseUrl!);
     await DBOS.launch();
 
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);

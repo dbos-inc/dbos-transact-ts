@@ -3,7 +3,6 @@ import { DBOS, SchedulerMode, WorkflowQueue } from '../../src';
 import { DBOSConfig } from '../../src/dbos-executor';
 import { sleepms } from '../../src/utils';
 import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
-import assert from 'node:assert';
 
 describe('cf-scheduled-wf-tests-simple', () => {
   let config: DBOSConfig;
@@ -13,8 +12,8 @@ describe('cf-scheduled-wf-tests-simple', () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    assert(config.systemDatabaseUrl);
-    await dropDatabase(config.systemDatabaseUrl);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    await dropDatabase(config.systemDatabaseUrl!);
   });
 
   beforeEach(async () => {
@@ -134,8 +133,8 @@ describe('cf-scheduled-wf-tests-oaoo', () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    assert(config.systemDatabaseUrl);
-    await dropDatabase(config.systemDatabaseUrl);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    await dropDatabase(config.systemDatabaseUrl!);
   });
 
   beforeEach(async () => {});
@@ -260,8 +259,8 @@ describe('decorator-free-scheduled', () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    assert(config.systemDatabaseUrl);
-    await dropDatabase(config.systemDatabaseUrl);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    await dropDatabase(config.systemDatabaseUrl!);
   });
 
   beforeEach(async () => {

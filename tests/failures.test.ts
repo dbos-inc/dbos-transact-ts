@@ -5,7 +5,6 @@ import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError, DBOSUnexpectedStepError } from '../src/error';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import assert from 'assert';
 
 const testTableName = 'dbos_failure_test_kv';
 
@@ -163,10 +162,10 @@ describe('failures-tests', () => {
 
     @DBOS.step({ retriesAllowed: true, maxAttempts: TestStepStatus.max_attempts, intervalSeconds: 0 })
     static async stepOne() {
-      assert.equal(DBOS.stepID, 0);
-      assert.equal(DBOS.stepStatus?.stepID, 0);
-      assert.equal(DBOS.stepStatus?.currentAttempt, TestStepStatus.count + 1);
-      assert.equal(DBOS.stepStatus?.maxAttempts, TestStepStatus.max_attempts);
+      expect(DBOS.stepID).toBe(0);
+      expect(DBOS.stepStatus?.stepID).toBe(0);
+      expect(DBOS.stepStatus?.currentAttempt).toBe(TestStepStatus.count + 1);
+      expect(DBOS.stepStatus?.maxAttempts).toBe(TestStepStatus.max_attempts);
       TestStepStatus.count += 1;
       if (TestStepStatus.count < TestStepStatus.max_attempts) {
         throw new Error('fail');
@@ -176,16 +175,16 @@ describe('failures-tests', () => {
 
     @DBOS.step()
     static async stepTwo() {
-      assert.equal(DBOS.stepID, 1);
-      assert.equal(DBOS.stepStatus?.stepID, 1);
-      assert.equal(DBOS.stepStatus?.currentAttempt, undefined);
-      assert.equal(DBOS.stepStatus?.maxAttempts, undefined);
+      expect(DBOS.stepID).toBe(1);
+      expect(DBOS.stepStatus?.stepID).toBe(1);
+      expect(DBOS.stepStatus?.currentAttempt).toBeUndefined();
+      expect(DBOS.stepStatus?.maxAttempts).toBeUndefined();
       return Promise.resolve();
     }
 
     @DBOS.transaction()
     static async stepThreeTx() {
-      assert.equal(DBOS.stepID, 2);
+      expect(DBOS.stepID).toBe(2);
       return Promise.resolve();
     }
 

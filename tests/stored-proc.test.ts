@@ -1,7 +1,6 @@
 import { execSync } from 'child_process';
 import { getDatabaseUrl, readConfigFile } from '../src';
 import { Client, ClientConfig } from 'pg';
-import assert from 'assert';
 
 async function runSql(config: ClientConfig, func: (client: Client) => Promise<void>) {
   const client = new Client(config);
@@ -22,7 +21,7 @@ describe('stored-proc-tests', () => {
 
     const config = readConfigFile();
     const databaseUrl = getDatabaseUrl(config);
-    assert(databaseUrl);
+    expect(databaseUrl).toBeDefined();
     const url = new URL(databaseUrl);
     const database = url.pathname.slice(1);
     const sysDbName = new URL(databaseUrl).pathname.slice(1);

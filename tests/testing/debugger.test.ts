@@ -3,7 +3,6 @@ import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb, TestKvTab
 import { randomUUID } from 'node:crypto';
 import { DBOSConfig } from '../../src/dbos-executor';
 import { Client } from 'pg';
-import assert from 'node:assert';
 
 const testTableName = 'debugger_test_kv';
 
@@ -16,8 +15,8 @@ describe('debugger-test', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined);
-    assert(config.databaseUrl);
-    const url = new URL(config.databaseUrl);
+    expect(config.databaseUrl).toBeDefined();
+    const url = new URL(config.databaseUrl!);
     username = url.username ?? 'postgres';
     await setUpDBOSTestDb(config);
   });
@@ -27,7 +26,7 @@ describe('debugger-test', () => {
     DBOS.setConfig(config);
     await DBOS.launch();
     await DBOS.shutdown();
-    assert(config.systemDatabaseUrl);
+    expect(config.systemDatabaseUrl).toBeDefined();
     systemDBClient = new Client({
       connectionString: config.systemDatabaseUrl,
     });
