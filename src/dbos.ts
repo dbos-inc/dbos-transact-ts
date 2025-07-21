@@ -9,7 +9,7 @@ import {
   functionIDGetIncrement,
 } from './context';
 import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
-import { Tracer } from './telemetry/traces';
+import { installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
 import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
@@ -228,6 +228,8 @@ export class DBOS {
    * @param options - Launch options for connecting to DBOS Conductor
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
+    if (!isTraceContextWorking()) installTraceContextManager();
+
     // Do nothing is DBOS is already initialized
     insertAllMiddleware();
 
