@@ -333,7 +333,6 @@ export function overwriteConfigForDBOSCloud(
         logsEndpoint: Array.from(logsSet),
       },
     },
-    // sysDbName: configFile.database?.sys_db_name || providedDBOSConfig.sysDbName,
   };
 
   const overwriteDBOSRuntimeConfig: DBOSRuntimeConfig = {
