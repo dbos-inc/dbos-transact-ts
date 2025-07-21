@@ -38,6 +38,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^9.22.0",
+    "@opentelemetry/instrumentation-express": "^0.52.0",
+    "@opentelemetry/instrumentation-http": "^0.203.0",
     "@prisma/client": "^5.3.1",
     "@types/koa": "^2.15.0",
     "@types/koa__cors": "^5.0.0",
