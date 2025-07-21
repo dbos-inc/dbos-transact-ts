@@ -639,7 +639,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
-    readonly sysDbPoolSize?: number,
+    readonly sysDbPoolSize: number = 20,
   ) {
     this.systemPoolConfig = {
       ...getClientConfig(systemDatabaseUrl),
@@ -661,7 +661,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       connection: this.systemPoolConfig,
       pool: {
         min: 0,
-        max: this.sysDbPoolSize || 2,
+        max: this.sysDbPoolSize,
       },
     };
     this.knexDB = knex(knexConfig);
