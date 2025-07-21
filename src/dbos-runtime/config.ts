@@ -100,7 +100,6 @@ export function writeConfigFile(configFile: ConfigFile, configFilePath: string) 
 
 export function getSystemDatabaseUrl(
   configFileOrString: string | Pick<ConfigFile, 'name' | 'database_url' | 'system_database_url'>,
-  databaseUrl?: string,
 ): string {
   if (typeof configFileOrString === 'string') {
     return convertUserDbUrl(configFileOrString);
@@ -110,7 +109,11 @@ export function getSystemDatabaseUrl(
     return configFileOrString.system_database_url;
   }
 
-  databaseUrl ??= getDatabaseUrl(configFileOrString);
+  if (process.env.DBOS_SYSTEM_DATABASE_URL) {
+    return process.env.DBOS_SYSTEM_DATABASE_URL;
+  }
+
+  const databaseUrl = getDatabaseUrl(configFileOrString);
   return convertUserDbUrl(databaseUrl);
 
   function convertUserDbUrl(databaseUrl: string) {
