@@ -3,6 +3,7 @@ import {
   ConfigFile,
   getDatabaseUrl,
   getDbosConfig,
+  getSystemDatabaseUrl,
   overwriteConfigForDBOSCloud,
   readConfigFile,
   translateDbosConfig,
@@ -414,6 +415,29 @@ describe('dbos-config', () => {
         expect(() => getDatabaseUrl({ database_url: `postgres://host:5432/${name}` })).toThrow();
       },
     );
+  });
+
+  describe('translateDbosConfig', () => {
+    test('get from config', () => {
+      const url = getSystemDatabaseUrl({ system_database_url: 'postgres://a:b@c:1234/appdb_dbos_sys' });
+      expect(url).toBe('postgres://a:b@c:1234/appdb_dbos_sys');
+    });
+
+    test('get from env', () => {
+      process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:1234/appdb_dbos_sys';
+      const url = getSystemDatabaseUrl({});
+      expect(url).toBe('postgres://a:b@c:1234/appdb_dbos_sys');
+    });
+
+    test('get from user db url', () => {
+      const url = getSystemDatabaseUrl('postgres://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable');
+      expect(url).toBe('postgres://a:b@c:1234/appdb_dbos_sys?connect_timeout=22&sslmode=disable');
+    });
+
+    test('get from default url', () => {
+      const url = getSystemDatabaseUrl({ name: 'appdb' });
+      expect(url).toBe('postgresql://postgres:dbos@localhost:5432/appdb_dbos_sys?connect_timeout=10&sslmode=disable');
+    });
   });
 
   describe('translateDbosConfig', () => {
