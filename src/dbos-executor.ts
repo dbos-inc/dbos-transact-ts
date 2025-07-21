@@ -274,6 +274,7 @@ export class DBOSExecutor {
   configureDbClient() {
     const userDbClient = this.config.userDbClient;
     const userDBConfig: PoolConfig = getClientConfig(this.config.databaseUrl);
+    userDBConfig.max = this.config.userDbPoolSize ?? 20;
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
