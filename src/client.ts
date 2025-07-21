@@ -11,7 +11,7 @@ import {
   type WorkflowHandle,
   type WorkflowStatus,
 } from './workflow';
-import { DBOSJSON } from './utils';
+import { DBOSJSON, getClientConfig } from './utils';
 import {
   forkWorkflow,
   getWorkflow,
@@ -86,7 +86,7 @@ export class DBOSClient {
     systemDatabaseUrl ??= getSystemDatabaseUrl(databaseUrl);
     this.logger = new GlobalLogger();
     this.systemDatabase = new PostgresSystemDatabase(systemDatabaseUrl, this.logger);
-    this.userDatabase = new PGNodeUserDatabase({ connectionString: databaseUrl });
+    this.userDatabase = new PGNodeUserDatabase(getClientConfig(databaseUrl));
   }
 
   /**

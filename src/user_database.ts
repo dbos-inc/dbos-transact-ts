@@ -11,12 +11,13 @@ import { IsolationLevel, TransactionConfig } from './transaction';
 import { ValuesOf } from './utils';
 import { Knex } from 'knex';
 import { GlobalLogger } from './telemetry/logs';
+import { getClientConfig } from './utils';
 
 export async function createDBIfDoesNotExist(databseUrl: string, logger: GlobalLogger) {
   const url = new URL(databseUrl);
   const database = url.pathname.slice(1);
 
-  const pgUserClient = new Client({ connectionString: databseUrl });
+  const pgUserClient = new Client(getClientConfig(databseUrl));
   try {
     await pgUserClient.connect(); // Try to establish a connection
     await pgUserClient.end();
@@ -28,7 +29,7 @@ export async function createDBIfDoesNotExist(databseUrl: string, logger: GlobalL
   // Craft a db string from the app db string, replacing the database name:
   url.pathname = '/postgres';
 
-  const postgresClient = new Client({ connectionString: url.toString() });
+  const postgresClient = new Client(getClientConfig(url));
   let connection_failed = true;
   try {
     await postgresClient.connect();

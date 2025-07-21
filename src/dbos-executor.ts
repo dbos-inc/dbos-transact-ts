@@ -105,6 +105,7 @@ import {
   listWorkflowSteps,
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
+import { getClientConfig } from './utils';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -252,7 +253,7 @@ export class DBOSExecutor {
       this.logger.info('Running in debug mode!');
     }
 
-    this.procedurePool = new Pool({ connectionString: this.config.databaseUrl });
+    this.procedurePool = new Pool(getClientConfig(this.config.databaseUrl));
 
     if (systemDatabase) {
       this.logger.debug('Using provided system database'); // XXX print the name or something
@@ -272,7 +273,7 @@ export class DBOSExecutor {
 
   configureDbClient() {
     const userDbClient = this.config.userDbClient;
-    const userDBConfig: PoolConfig = { connectionString: this.config.databaseUrl };
+    const userDBConfig: PoolConfig = getClientConfig(this.config.databaseUrl);
     if (userDbClient === UserDatabaseName.PRISMA) {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
@@ -310,10 +311,7 @@ export class DBOSExecutor {
     } else if (userDbClient === UserDatabaseName.KNEX) {
       const knexConfig: Knex.Config = {
         client: 'postgres',
-        connection: {
-          connectionString: userDBConfig.connectionString,
-          connectionTimeoutMillis: userDBConfig.connectionTimeoutMillis,
-        },
+        connection: getClientConfig(this.config.databaseUrl),
         pool: {
           min: 0,
           max: userDBConfig.max,

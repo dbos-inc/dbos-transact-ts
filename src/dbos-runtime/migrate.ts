@@ -16,6 +16,7 @@ import {
   txnOutputTableExistsQuery,
   createDBIfDoesNotExist,
 } from '../user_database';
+import { getClientConfig } from '../utils';
 
 export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
   const databaseUrl = getDatabaseUrl(configFile);
@@ -60,11 +61,9 @@ async function createDBOSTables(databaseUrl: string, systemDatabaseUrl: string, 
   const url = new URL(systemDatabaseUrl);
   const systemDbName = url.pathname.slice(1);
 
-  const systemPoolConfig: PoolConfig = {
-    connectionString: systemDatabaseUrl,
-  };
+  const systemPoolConfig: PoolConfig = getClientConfig(systemDatabaseUrl);
 
-  const pgUserClient = new Client({ connectionString: databaseUrl });
+  const pgUserClient = new Client(getClientConfig(databaseUrl));
   await pgUserClient.connect();
 
   // Create DBOS table/schema in user DB.

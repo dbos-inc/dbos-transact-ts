@@ -24,6 +24,7 @@ import path from 'path';
 import fs from 'fs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
+import { getClientConfig } from './utils';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -641,7 +642,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     readonly sysDbPoolSize?: number,
   ) {
     this.systemPoolConfig = {
-      connectionString: systemDatabaseUrl,
+      ...getClientConfig(systemDatabaseUrl),
       // This sets the application_name column in pg_stat_activity
       application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
     };
@@ -671,7 +672,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const sysDbName = url.pathname.slice(1);
     url.pathname = '/postgres';
 
-    const pgSystemClient = new Client({ connectionString: url.toString() });
+    const pgSystemClient = new Client(getClientConfig(url));
     await pgSystemClient.connect();
     // Create the system database and load tables.
     const dbExists = await pgSystemClient.query<ExistenceCheck>(
@@ -725,9 +726,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     url.pathname = '/postgres';
 
     // Drop system database, for testing.
-    const pgSystemClient = new Client({
-      connectionString: url.toString(),
-    });
+    const pgSystemClient = new Client(getClientConfig(url));
     try {
       await pgSystemClient.connect();
       await pgSystemClient.query(`DROP DATABASE IF EXISTS ${systemDbName};`);
