@@ -1,18 +1,15 @@
 import { context, trace } from '@opentelemetry/api';
-import { BasicTracerProvider } from '@opentelemetry/sdk-trace-base';
-import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
+import { installTraceContextManager, isTraceContextWorking } from '../src/telemetry/traces';
 
-const contextManager = new AsyncLocalStorageContextManager();
-contextManager.enable();
-context.setGlobalContextManager(contextManager);
-
-const provider = new BasicTracerProvider();
-provider.register();
-
+// This tests the very basic functioning of the context manager
 describe('with-traced-context', () => {
   beforeAll(() => {});
 
   test('simple', async () => {
+    expect(isTraceContextWorking()).toBe(false);
+    installTraceContextManager();
+    expect(isTraceContextWorking()).toBe(true);
+
     const tracer = trace.getTracer('test');
 
     const span = tracer.startSpan('testspan');
