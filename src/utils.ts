@@ -219,7 +219,7 @@ export function getClientConfig(databaseUrl: string | URL): ClientConfig {
   const timeout = getTimeout(typeof databaseUrl === 'string' ? new URL(databaseUrl) : databaseUrl);
   return {
     connectionString,
-    connectionTimeoutMillis: timeout ? timeout * 1000 : undefined,
+    connectionTimeoutMillis: timeout ? timeout * 1000 : 10000,
   };
 
   function getTimeout(url: URL) {
