@@ -11,6 +11,7 @@ import {
 import { AssertionError } from 'assert';
 import { DBOSConfigInternal } from '../../src/dbos-executor';
 import { DBOSRuntimeConfig } from '../../src';
+import { UserDatabaseName } from '../../src/user_database';
 
 describe('dbos-config', () => {
   beforeEach(() => {
@@ -326,6 +327,29 @@ describe('dbos-config', () => {
       };
       expect(() => getDbosConfig(configFile)).toThrow();
     });
+
+    test.each(['pg-node', 'prisma', 'typeorm', 'knex', 'drizzle'])(
+      'handles app_db_client %s',
+      (app_db_client: string) => {
+        const configFile: ConfigFile = {
+          name: 'test-app',
+          language: 'node',
+          database: {
+            app_db_client: app_db_client as UserDatabaseName,
+            migrate: ['npx knex migrate:latest'],
+          },
+          telemetry: {
+            logs: {
+              logLevel: 'debug',
+              addContextMetadata: true,
+            },
+          },
+        };
+
+        const config = getDbosConfig(configFile);
+        expect(config.userDbClient).toBe(app_db_client);
+      },
+    );
   });
 
   describe('getDatabaseUrl', () => {
