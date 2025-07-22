@@ -1,5 +1,5 @@
 import { execSync } from 'child_process';
-import { parseConfigFile } from '../src';
+import { getDatabaseUrl, readConfigFile } from '../src';
 import { Client, ClientConfig } from 'pg';
 
 async function runSql(config: ClientConfig, func: (client: Client) => Promise<void>) {
@@ -19,11 +19,18 @@ describe('stored-proc-tests', () => {
     cwd = process.cwd();
     process.chdir('tests/proc-test');
 
-    const [config] = parseConfigFile();
-    await runSql({ ...config.poolConfig, database: 'postgres', connectionString: undefined }, async (client) => {
-      await client.query(`DROP DATABASE IF EXISTS ${config.poolConfig.database} WITH (FORCE);`);
-      await client.query(`DROP DATABASE IF EXISTS ${config.system_database} WITH (FORCE);`);
-      await client.query(`CREATE DATABASE ${config.poolConfig.database};`);
+    const config = readConfigFile();
+    const databaseUrl = getDatabaseUrl(config);
+    expect(databaseUrl).toBeDefined();
+    const url = new URL(databaseUrl);
+    const database = url.pathname.slice(1);
+    const sysDbName = new URL(databaseUrl).pathname.slice(1);
+    url.pathname = '/postgres';
+
+    await runSql({ connectionString: url.toString() }, async (client) => {
+      await client.query(`DROP DATABASE IF EXISTS ${database} WITH (FORCE);`);
+      await client.query(`DROP DATABASE IF EXISTS ${sysDbName} WITH (FORCE);`);
+      await client.query(`CREATE DATABASE ${database};`);
     });
 
     execSync('npm install');

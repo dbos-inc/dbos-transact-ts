@@ -10,7 +10,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        node-version: ['20', '22', '23', '24']
+        node-version: ['20', '22', '24']
 
     services:
       # Postgres service container

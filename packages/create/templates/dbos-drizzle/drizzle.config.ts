@@ -1,14 +1,15 @@
 import { defineConfig } from 'drizzle-kit';
 
-const { parseConfigFile } = require('@dbos-inc/dbos-sdk');
+const { readConfigFile, getDatabaseUrl } = require('@dbos-inc/dbos-sdk');
 
-const [dbosConfig] = parseConfigFile();
+const dbosConfig = readConfigFile();
+const databaseUrl = getDatabaseUrl(dbosConfig);
 
 export default defineConfig({
   schema: './src/schema.ts',
   out: './drizzle',
   dialect: 'postgresql',
   dbCredentials: {
-    url: dbosConfig.poolConfig.connectionString,
+    url: databaseUrl,
   },
 });

@@ -5,11 +5,10 @@ import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import { ExportResult, ExportResultCode } from '@opentelemetry/core';
-import { toStringSet } from '../utils';
 
 export interface OTLPExporterConfig {
-  logsEndpoint?: string | string[];
-  tracesEndpoint?: string | string[];
+  logsEndpoint?: string[];
+  tracesEndpoint?: string[];
 }
 
 export interface ITelemetryExporter {
@@ -22,26 +21,24 @@ export class TelemetryExporter implements ITelemetryExporter {
   private readonly logsExporters: OTLPLogExporter[] = [];
 
   constructor(config: OTLPExporterConfig) {
-    if (config.tracesEndpoint) {
-      for (const endpoint of toStringSet(config.tracesEndpoint)) {
-        this.tracesExporters.push(
-          new OTLPTraceExporter({
-            url: endpoint,
-          }),
-        );
-        console.log(`Traces will be exported to ${endpoint}`);
-      }
+    const tracesSet = new Set<string>(config.tracesEndpoint);
+    for (const endpoint of tracesSet) {
+      this.tracesExporters.push(
+        new OTLPTraceExporter({
+          url: endpoint,
+        }),
+      );
+      console.log(`Traces will be exported to ${endpoint}`);
     }
 
-    if (config.logsEndpoint) {
-      for (const endpoint of toStringSet(config.logsEndpoint)) {
-        this.logsExporters.push(
-          new OTLPLogExporter({
-            url: endpoint,
-          }),
-        );
-        console.log(`Logs will be exported to ${endpoint}`);
-      }
+    const logsSet = new Set<string>(config.logsEndpoint);
+    for (const endpoint of logsSet) {
+      this.logsExporters.push(
+        new OTLPLogExporter({
+          url: endpoint,
+        }),
+      );
+      console.log(`Logs will be exported to ${endpoint}`);
     }
   }
 

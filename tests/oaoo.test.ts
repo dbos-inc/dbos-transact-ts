@@ -1,5 +1,5 @@
 import { DBOS } from '../src';
-import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { TestKvTable, dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
@@ -7,17 +7,20 @@ const testTableName = 'dbos_test_kv';
 
 describe('oaoo-tests', () => {
   let username: string;
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    username = config.poolConfig?.user || 'postgres';
+    expect(config.databaseUrl).toBeDefined();
+    const url = new URL(config.databaseUrl!);
+    username = url.username;
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
-    await dropDatabase(config.databaseUrl!, config.system_database);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    await dropDatabase(config.systemDatabaseUrl!);
     await DBOS.launch();
 
     await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);

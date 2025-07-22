@@ -3,7 +3,7 @@
   "version": "0.0.1",
   "scripts": {
     "build": "tsc",
-    "test": "npx dbos rollback && npx dbos migrate && jest",
+    "test": "npx dbos migrate && jest",
     "lint": "eslint src",
     "lint-fix": "eslint --fix src",
     "dev": "nodemon",

@@ -28,7 +28,14 @@ import {
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
 } from './error';
-import { translatePublicDBOSconfig, overwrite_config, readConfigFile, processConfigFile } from './dbos-runtime/config';
+import {
+  getDbosConfig,
+  getRuntimeConfig,
+  overwriteConfigForDBOSCloud,
+  readConfigFile,
+  translateDbosConfig,
+  translateRuntimeConfig,
+} from './dbos-runtime/config';
 import { DBOSRuntime } from './dbos-runtime/runtime';
 import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
@@ -75,7 +82,7 @@ import { TransactionConfig } from './transaction';
 import Koa from 'koa';
 import { randomUUID } from 'node:crypto';
 
-import { PoolClient, PoolConfig } from 'pg';
+import { PoolClient } from 'pg';
 import { Knex } from 'knex';
 import { StepConfig } from './step';
 import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
@@ -91,9 +98,6 @@ import assert from 'node:assert';
 import { context, trace } from '@opentelemetry/api';
 
 type AnyConstructor = new (...args: unknown[]) => object;
-type ReadonlyArray<T> = {
-  readonly [K in keyof T]: T[K] extends Array<infer U> ? ReadonlyArray<U> : T[K];
-};
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -246,42 +250,23 @@ export class DBOS {
     const configFile = readConfigFile();
 
     const $dbosConfig = DBOS.#dbosConfig;
-    let [internalConfig, runtimeConfig] = $dbosConfig
-      ? translatePublicDBOSconfig(
-          // copy config settings to ensure no unexpected fields are passed thru
-          {
-            adminPort: $dbosConfig.adminPort,
-            name: $dbosConfig.name,
-            databaseUrl: $dbosConfig.databaseUrl,
-            userDbclient: $dbosConfig.userDbclient,
-            userDbPoolSize: $dbosConfig.userDbPoolSize,
-            sysDbName: $dbosConfig.sysDbName,
-            sysDbPoolSize: $dbosConfig.sysDbPoolSize,
-            logLevel: $dbosConfig.logLevel,
-            addContextMetadata: $dbosConfig.addContextMetadata,
-            runAdminServer: $dbosConfig.runAdminServer,
-            otlpTracesEndpoints: [...($dbosConfig.otlpTracesEndpoints ?? [])],
-            otlpLogsEndpoints: [...($dbosConfig.otlpLogsEndpoints ?? [])],
-          },
-          debugMode,
-        )
-      : processConfigFile(configFile, { forceConsole: debugMode });
+
+    let internalConfig = $dbosConfig ? translateDbosConfig($dbosConfig, debugMode) : getDbosConfig(configFile);
+    let runtimeConfig = $dbosConfig ? translateRuntimeConfig($dbosConfig) : getRuntimeConfig(configFile);
 
     if (process.env.DBOS__CLOUD === 'true') {
-      [internalConfig, runtimeConfig] = overwrite_config(internalConfig, runtimeConfig, configFile);
+      [internalConfig, runtimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, configFile);
     }
 
     DBOS.#port = runtimeConfig.port;
-    DBOS.#poolConfig = internalConfig.poolConfig;
     DBOS.#dbosConfig = {
       name: internalConfig.name,
       databaseUrl: internalConfig.databaseUrl,
-      userDbclient: internalConfig.userDbclient,
-      userDbPoolSize: DBOS.#dbosConfig?.userDbPoolSize,
-      sysDbName: internalConfig.system_database,
-      sysDbPoolSize: internalConfig.sysDbPoolSize,
+      userDatabaseClient: internalConfig.userDbClient,
+      userDatabasePoolSize: internalConfig.userDbPoolSize,
+      systemDatabaseUrl: internalConfig.systemDatabaseUrl,
+      systemDatabasePoolSize: internalConfig.sysDbPoolSize,
       logLevel: internalConfig.telemetry.logs?.logLevel,
-      addContextMetadata: internalConfig.telemetry.logs?.addContextMetadata,
       otlpTracesEndpoints: [...(internalConfig.telemetry.OTLPExporter?.tracesEndpoint ?? [])],
       otlpLogsEndpoints: [...(internalConfig.telemetry.OTLPExporter?.logsEndpoint ?? [])],
       adminPort: runtimeConfig.admin_port,
@@ -483,12 +468,7 @@ export class DBOS {
   // Globals
   //////
   static #dbosConfig?: DBOSConfig;
-  static #poolConfig?: PoolConfig;
   static #port?: number;
-
-  static get dbosConfig(): ReadonlyArray<DBOSConfig & { poolConfig?: PoolConfig }> {
-    return { ...DBOS.#dbosConfig, poolConfig: DBOS.#poolConfig };
-  }
 
   //////
   // Context
@@ -642,9 +622,9 @@ export class DBOS {
    */
   static get pgClient(): PoolClient {
     const client = DBOS.sqlClient;
-    if (!DBOS.isInStoredProc() && DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.PGNODE) {
+    if (!DBOS.isInStoredProc() && DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.PGNODE) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     return client as PoolClient;
@@ -659,9 +639,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.knexClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.KNEX) {
+    if (DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.KNEX) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -677,9 +657,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.prismaClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.PRISMA) {
+    if (DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.PRISMA) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -695,9 +675,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.typeORMClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.TYPEORM) {
+    if (DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.TYPEORM) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     const client = DBOS.sqlClient;
@@ -713,9 +693,9 @@ export class DBOS {
     if (DBOS.isInStoredProc()) {
       throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.drizzleClient' from within a stored procedure`);
     }
-    if (DBOS.#dbosConfig?.userDbclient !== UserDatabaseName.DRIZZLE) {
+    if (DBOS.#dbosConfig?.userDatabaseClient !== UserDatabaseName.DRIZZLE) {
       throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.#dbosConfig?.userDbclient}'`,
+        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.#dbosConfig?.userDatabaseClient}'`,
       );
     }
     const client = DBOS.sqlClient;

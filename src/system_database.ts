@@ -1,4 +1,4 @@
-import { DBOSConfigInternal, DBOSExecutor, DBOSExternalState } from './dbos-executor';
+import { DBOSExecutor, DBOSExternalState } from './dbos-executor';
 import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
 import {
   DBOSWorkflowConflictError,
@@ -24,6 +24,7 @@ import path from 'path';
 import fs from 'fs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
+import { getClientConfig } from './utils';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -636,18 +637,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
 
   constructor(
-    readonly pgPoolConfig: PoolConfig,
-    readonly systemDatabaseName: string,
+    readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
-    readonly sysDbPoolSize?: number,
+    readonly sysDbPoolSize: number = 20,
   ) {
-    // Craft a db string from the app db string, replacing the database name:
-    const systemDbConnectionString = new URL(pgPoolConfig.connectionString!);
-    systemDbConnectionString.pathname = `/${systemDatabaseName}`;
-
     this.systemPoolConfig = {
-      connectionString: systemDbConnectionString.toString(),
-      connectionTimeoutMillis: pgPoolConfig.connectionTimeoutMillis,
+      ...getClientConfig(systemDatabaseUrl),
       // This sets the application_name column in pg_stat_activity
       application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
     };
@@ -666,22 +661,26 @@ export class PostgresSystemDatabase implements SystemDatabase {
       connection: this.systemPoolConfig,
       pool: {
         min: 0,
-        max: this.sysDbPoolSize || 2,
+        max: this.sysDbPoolSize,
       },
     };
     this.knexDB = knex(knexConfig);
   }
 
   async init() {
-    const pgSystemClient = new Client(this.pgPoolConfig);
+    const url = new URL(this.systemDatabaseUrl);
+    const sysDbName = url.pathname.slice(1);
+    url.pathname = '/postgres';
+
+    const pgSystemClient = new Client(getClientConfig(url));
     await pgSystemClient.connect();
     // Create the system database and load tables.
     const dbExists = await pgSystemClient.query<ExistenceCheck>(
-      `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${this.systemDatabaseName}')`,
+      `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${sysDbName}')`,
     );
     if (!dbExists.rows[0].exists) {
       // Create the DBOS system database.
-      await pgSystemClient.query(`CREATE DATABASE "${this.systemDatabaseName}"`);
+      await pgSystemClient.query(`CREATE DATABASE "${sysDbName}"`);
     }
 
     try {
@@ -721,18 +720,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.pool.end();
   }
 
-  static async dropSystemDB(dbosConfig: DBOSConfigInternal) {
+  static async dropSystemDB(systemDatabaseUrl: string) {
+    const url = new URL(systemDatabaseUrl);
+    const systemDbName = url.pathname.slice(1);
+    url.pathname = '/postgres';
+
     // Drop system database, for testing.
-    const pgSystemClient = new Client({
-      user: dbosConfig.poolConfig.user,
-      port: dbosConfig.poolConfig.port,
-      host: dbosConfig.poolConfig.host,
-      password: dbosConfig.poolConfig.password,
-      database: dbosConfig.poolConfig.database,
-    });
-    await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbosConfig.system_database};`);
-    await pgSystemClient.end();
+    const pgSystemClient = new Client(getClientConfig(url));
+    try {
+      await pgSystemClient.connect();
+      await pgSystemClient.query(`DROP DATABASE IF EXISTS ${systemDbName};`);
+    } finally {
+      await pgSystemClient.end();
+    }
   }
 
   @dbRetry()
