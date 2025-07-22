@@ -260,7 +260,9 @@ export class DBOS {
 
     const $dbosConfig = DBOS.#dbosConfig;
 
-    let internalConfig = $dbosConfig ? translateDbosConfig($dbosConfig, debugMode) : getDbosConfig(configFile);
+    let internalConfig = $dbosConfig
+      ? translateDbosConfig($dbosConfig, { forceConsole: debugMode })
+      : getDbosConfig(configFile);
     let runtimeConfig = $dbosConfig ? translateRuntimeConfig($dbosConfig) : getRuntimeConfig(configFile);
 
     if (process.env.DBOS__CLOUD === 'true') {

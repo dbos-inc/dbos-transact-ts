@@ -51,7 +51,7 @@ program
   .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(async (options: { port?: number; loglevel?: string; appDir?: string; appVersion?: string | boolean }) => {
     const config = readConfigFile(options.appDir);
-    const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel });
+    const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel, appVersion: options.appVersion });
     const runtimeConfig = getRuntimeConfig(config, options);
 
     // If no start commands are provided, start the DBOS runtime
@@ -100,7 +100,11 @@ program
       appVersion?: string | boolean;
     }) => {
       const config = readConfigFile(options.appDir);
-      const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel, forceConsole: true });
+      const dbosConfig = getDbosConfig(config, {
+        logLevel: options.loglevel,
+        appVersion: options.appVersion,
+        forceConsole: true,
+      });
       const runtimeConfig = getRuntimeConfig(config);
       await debugWorkflow(dbosConfig, runtimeConfig, options.uuid);
     },

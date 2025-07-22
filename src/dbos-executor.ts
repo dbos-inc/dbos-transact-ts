@@ -144,6 +144,7 @@ export type DBOSConfigInternal = {
   sysDbPoolSize?: number;
 
   telemetry: TelemetryConfig;
+  appVersion?: string;
 
   http?: {
     cors_middleware?: boolean;
@@ -417,6 +418,10 @@ export class DBOSExecutor {
           this.logger.debug('Executing init method: ' + m.name);
           await m.origFunction(new InitContext());
         }
+      }
+
+      if (this.config.appVersion) {
+        globalParams.appVersion = this.config.appVersion;
       }
 
       // Compute the application version if not provided

@@ -188,6 +188,7 @@ export function getDbosConfig(
   options: {
     logLevel?: string;
     forceConsole?: boolean;
+    appVersion?: string | boolean;
   } = {},
 ): DBOSConfigInternal {
   assert(
@@ -209,7 +210,7 @@ export function getDbosConfig(
       otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
       runAdminServer: config.runtimeConfig?.runAdminServer,
     },
-    options.forceConsole,
+    options,
   );
 }
 
@@ -221,28 +222,39 @@ function isValidUserDbClient(name: string): name is UserDatabaseName {
   return Object.values(UserDatabaseName).includes(name as UserDatabaseName);
 }
 
-export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
-  const databaseUrl = getDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
+export function translateDbosConfig(
+  config: DBOSConfig,
+  options: { forceConsole?: boolean; appVersion?: string | boolean } = {},
+): DBOSConfigInternal {
+  const databaseUrl = getDatabaseUrl({ database_url: config.databaseUrl, name: config.name });
   const systemDatabaseUrl = getSystemDatabaseUrl({
-    database_url: options.databaseUrl,
-    system_database_url: options.systemDatabaseUrl,
-    name: options.name,
+    database_url: config.databaseUrl,
+    system_database_url: config.systemDatabaseUrl,
+    name: config.name,
   });
+  const appVersion =
+    typeof options.appVersion === 'string'
+      ? options.appVersion
+      : options.appVersion === false
+        ? undefined
+        : process.env.DBOS__APPVERSION || undefined; // convert empty string to undefined
+
   return {
     databaseUrl,
-    userDbPoolSize: options.userDatabasePoolSize,
+    userDbPoolSize: config.userDatabasePoolSize,
     systemDatabaseUrl,
-    sysDbPoolSize: options.systemDatabasePoolSize,
-    userDbClient: options.userDatabaseClient,
+    sysDbPoolSize: config.systemDatabasePoolSize,
+    userDbClient: config.userDatabaseClient,
+    appVersion,
     telemetry: {
       logs: {
-        logLevel: options.logLevel || 'info',
-        addContextMetadata: options.addContextMetadata,
-        forceConsole,
+        logLevel: config.logLevel || 'info',
+        addContextMetadata: config.addContextMetadata,
+        forceConsole: options.forceConsole ?? false,
       },
       OTLPExporter: {
-        tracesEndpoint: options.otlpTracesEndpoints,
-        logsEndpoint: options.otlpLogsEndpoints,
+        tracesEndpoint: config.otlpTracesEndpoints,
+        logsEndpoint: config.otlpLogsEndpoints,
       },
     },
   };
