@@ -98,12 +98,34 @@ function mergeGitIgnore(existingGISet: Set<string>, templateGISet: Set<string>):
   return joined.replaceAll('\n#', '\n\n#');
 }
 
+function updateLocalFileDependency(appName: string, deps?: Record<string, string>) {
+  if (!deps) {
+    return;
+  }
+
+  for (const [depName, depVersion] of Object.entries(deps)) {
+    if (depName.startsWith('@dbos-inc/') && depVersion.startsWith('file:')) {
+      // Install the latest version of DBOS dependency.
+      // TODO: change it to latest after we release.
+      execSync(`npm install --no-fund --save ${depName}@preview --loglevel=error`, {
+        cwd: appName,
+        stdio: 'inherit',
+      });
+    }
+  }
+}
+
 function mergeGitignoreFiles(existingFilePath: string, templateFilePath: string, outputFilePath: string): void {
   const existingSet = loadGitignoreFile(existingFilePath);
   const templateSet = loadGitignoreFile(templateFilePath);
   const resultContent = mergeGitIgnore(existingSet, templateSet);
   fs.writeFileSync(outputFilePath, resultContent);
   console.log(`Merged .gitignore files saved to ${outputFilePath}`);
+}
+
+interface PackageJson {
+  name: string;
+  dependencies?: Record<string, string>;
 }
 
 export async function init(appName: string, templateName: string) {
@@ -142,13 +164,10 @@ export async function init(appName: string, templateName: string) {
   }
 
   const packageJsonName = path.resolve(appName, 'package.json');
-  const packageJson: { name: string } = JSON.parse(fs.readFileSync(packageJsonName, 'utf-8')) as { name: string };
+  const packageJson: PackageJson = JSON.parse(fs.readFileSync(packageJsonName, 'utf-8')) as PackageJson;
   packageJson.name = appName;
   fs.writeFileSync(packageJsonName, JSON.stringify(packageJson, null, 2), 'utf-8');
-  execSync('npm install --no-fund --save @dbos-inc/dbos-sdk@latest --loglevel=error', {
-    cwd: appName,
-    stdio: 'inherit',
-  });
+  updateLocalFileDependency(appName, packageJson.dependencies);
   execSync('npm i --no-fund --loglevel=error', { cwd: appName, stdio: 'inherit' });
   execSync('npm install --no-fund --save-dev @dbos-inc/dbos-cloud@latest', { cwd: appName, stdio: 'inherit' });
   console.log('Application initialized successfully!');
