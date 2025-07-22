@@ -107,8 +107,6 @@ import {
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
 import { getClientConfig } from './utils';
-import { assert } from 'node:console';
-import { query } from 'winston';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -207,14 +205,15 @@ export class DBOSExecutor {
   initialized: boolean;
   // User Database
   #userDatabase: UserDatabase | undefined = undefined;
+  readonly #procedurePool: Pool | undefined = undefined;
+
   // System Database
   readonly systemDatabase: SystemDatabase;
-  readonly #procedurePool: Pool | undefined = undefined;
 
   // Temporary workflows are created by calling transaction/send/recv directly from the executor class
   static readonly #tempWorkflowName = 'temp_workflow';
 
-  readonly #telemetryCollector: TelemetryCollector;
+  readonly telemetryCollector: TelemetryCollector;
 
   static readonly defaultNotificationTimeoutSec = 60;
 
@@ -245,14 +244,14 @@ export class DBOSExecutor {
 
     if (config.telemetry.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
-      this.#telemetryCollector = new TelemetryCollector(OTLPExporter);
+      this.telemetryCollector = new TelemetryCollector(OTLPExporter);
     } else {
       // We always setup a collector to drain the signals queue, even if we don't have an exporter.
-      this.#telemetryCollector = new TelemetryCollector();
+      this.telemetryCollector = new TelemetryCollector();
     }
-    this.logger = new GlobalLogger(this.#telemetryCollector, this.config.telemetry.logs);
+    this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getCurrentContextStore()!.span!);
-    this.tracer = new Tracer(this.#telemetryCollector);
+    this.tracer = new Tracer(this.telemetryCollector);
 
     if (this.#debugMode) {
       this.logger.info('Running in debug mode!');
