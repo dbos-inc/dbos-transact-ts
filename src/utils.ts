@@ -1,5 +1,6 @@
 import fs from 'fs';
 import path from 'path';
+import { ClientConfig } from 'pg';
 
 /*
  * A wrapper of readFileSync used for mocking in tests
@@ -212,6 +213,22 @@ export function interceptStreams(onMessage: (msg: string, stream: 'stdout' | 'st
   process.stderr.write = intercept('stderr', originalStderrWrite);
 }
 
-export function toStringSet(endpoint: string | string[] | undefined): Set<string> {
-  return endpoint ? new Set(Array.isArray(endpoint) ? endpoint : [endpoint]) : new Set();
+// The `pg` package we use does not parse the connect_timeout parameter, so we need to handle it ourselves.
+export function getClientConfig(databaseUrl: string | URL): ClientConfig {
+  const connectionString = typeof databaseUrl === 'string' ? databaseUrl : databaseUrl.toString();
+  const timeout = getTimeout(typeof databaseUrl === 'string' ? new URL(databaseUrl) : databaseUrl);
+  return {
+    connectionString,
+    connectionTimeoutMillis: timeout ? timeout * 1000 : 10000,
+  };
+
+  function getTimeout(url: URL) {
+    try {
+      const $timeout = url.searchParams.get('connect_timeout');
+      return $timeout ? parseInt($timeout, 10) : undefined;
+    } catch {
+      // Ignore errors in parsing the connect_timeout parameter
+      return undefined;
+    }
+  }
 }

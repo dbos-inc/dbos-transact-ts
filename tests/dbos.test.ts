@@ -2,7 +2,7 @@ import { WorkflowHandle, DBOSInitializer, InitContext, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
-import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { transaction_outputs } from '../schemas/user_db_schema';
 import {
@@ -15,11 +15,13 @@ const testTableName = 'dbos_test_kv';
 
 describe('dbos-tests', () => {
   let username: string;
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    username = config.poolConfig.user || 'postgres';
+    expect(config.databaseUrl).toBeDefined();
+    const url = new URL(config.databaseUrl!);
+    username = url.username;
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
@@ -41,11 +43,7 @@ describe('dbos-tests', () => {
 
   test('simple-workflow-attempts-counter', async () => {
     const systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
-      database: config.system_database,
+      connectionString: config.systemDatabaseUrl,
     });
     try {
       await systemDBClient.connect();

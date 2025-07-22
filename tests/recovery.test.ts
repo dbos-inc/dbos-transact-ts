@@ -1,6 +1,6 @@
 import { WorkflowQueue, DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows } from './helpers';
-import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
 import { DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
@@ -8,7 +8,7 @@ import { sleepms } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 
 describe('recovery-tests', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
   let systemDBClient: Client;
 
   beforeAll(async () => {
@@ -21,11 +21,7 @@ describe('recovery-tests', () => {
     await DBOS.launch();
     process.env.DBOS__VMID = '';
     systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
-      database: config.system_database,
+      connectionString: config.systemDatabaseUrl,
     });
     await systemDBClient.connect();
   });

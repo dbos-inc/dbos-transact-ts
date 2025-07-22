@@ -2,7 +2,7 @@ import axios, { AxiosError } from 'axios';
 import { spawn, execSync, ChildProcess } from 'child_process';
 import { Writable } from 'stream';
 import { Client } from 'pg';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { generateDBOSTestConfig } from '../helpers';
 import { HealthUrl } from '../../src/httpServer/server';
 import { sleepms } from '../../src/utils';
 
@@ -61,14 +61,11 @@ async function waitForMessageTest(
 
 async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
-  config.poolConfig.database = 'hello';
-  await setUpDBOSTestDb(config);
+  expect(config.databaseUrl).toBeDefined();
+  const url = new URL(config.databaseUrl!);
+  url.pathname = `/postgres`;
   const pgSystemClient = new Client({
-    user: config.poolConfig.user,
-    port: config.poolConfig.port,
-    host: config.poolConfig.host,
-    password: config.poolConfig.password,
-    database: 'postgres',
+    connectionString: url.toString(),
   });
   await pgSystemClient.connect();
   await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_typeorm_dbos_sys WITH (FORCE);`);

@@ -1,21 +1,23 @@
 import { DBOSInitializer, DBOS } from '../../src/';
 import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
 import { randomUUID } from 'node:crypto';
-import { DBOSConfigInternal } from '../../src/dbos-executor';
+import { DBOSConfig } from '../../src/dbos-executor';
 import { Client } from 'pg';
 
 const testTableName = 'debugger_test_kv';
 
 describe('debugger-test', () => {
   let username: string;
-  let config: DBOSConfigInternal;
-  let debugConfig: DBOSConfigInternal;
+  let config: DBOSConfig;
+  let debugConfig: DBOSConfig;
   let systemDBClient: Client;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig(undefined);
-    username = config.poolConfig.user || 'postgres';
+    expect(config.databaseUrl).toBeDefined();
+    const url = new URL(config.databaseUrl!);
+    username = url.username ?? 'postgres';
     await setUpDBOSTestDb(config);
   });
 
@@ -24,12 +26,9 @@ describe('debugger-test', () => {
     DBOS.setConfig(config);
     await DBOS.launch();
     await DBOS.shutdown();
+    expect(config.systemDatabaseUrl).toBeDefined();
     systemDBClient = new Client({
-      user: config.poolConfig.user,
-      port: config.poolConfig.port,
-      host: config.poolConfig.host,
-      password: config.poolConfig.password,
-      database: config.system_database,
+      connectionString: config.systemDatabaseUrl,
     });
     await systemDBClient.connect();
   });

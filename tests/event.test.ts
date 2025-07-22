@@ -1,10 +1,10 @@
 import { DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
 
 describe('dbos-tests', () => {
-  let config: DBOSConfigInternal;
+  let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();

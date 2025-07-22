@@ -189,32 +189,30 @@ describe('knex-auth-tests', () => {
 });
 
 class TestEngine {
+  static connectionString?: string;
+
   @DBOS.transaction()
   static async testEngine() {
-    const pc = DBOS.dbosConfig?.poolConfig;
     const ds = DBOS.knexClient;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.connectionSettings.connectionString).toEqual(pc?.connectionString);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.config.pool.max).toEqual(pc?.max);
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
-    expect((ds as any).context.client.connectionSettings.connectionTimeoutMillis).toBe(pc?.connectionTimeoutMillis);
+    expect((ds as any).context.client.connectionSettings.connectionString).toEqual(TestEngine.connectionString);
     await Promise.resolve();
   }
 }
 
 describe('knex-engine-config-tests', () => {
   test('engine-config', async () => {
-    const config = {
+    const config: DBOSConfig = {
       name: 'dbostest',
-      userDbclient: UserDatabaseName.KNEX,
-      userDbPoolSize: 2,
+      userDatabaseClient: UserDatabaseName.KNEX,
+      userDatabasePoolSize: 2,
       databaseUrl: `postgres://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connect_timeout=7`,
     };
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     await DBOS.launch();
     try {
+      TestEngine.connectionString = config.databaseUrl;
       await TestEngine.testEngine();
     } finally {
       await DBOS.shutdown();

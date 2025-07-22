@@ -1,9 +1,9 @@
 import { GlobalLogger } from '../telemetry/logs';
 import { confirm } from '@inquirer/prompts';
-import { DBOSConfigInternal } from '../dbos-executor';
 import { PostgresSystemDatabase } from '../system_database';
+import { ConfigFile, getSystemDatabaseUrl } from './config';
 
-export async function reset(config: DBOSConfigInternal, logger: GlobalLogger, cnf: boolean) {
+export async function reset(config: ConfigFile, logger: GlobalLogger, cnf: boolean) {
   if (cnf) {
     const userConfirmed = await confirm({
       message:
@@ -16,8 +16,11 @@ export async function reset(config: DBOSConfigInternal, logger: GlobalLogger, cn
       process.exit(0); // Exit the process if the user cancels
     }
   }
-  const sysDbName = config.system_database;
+
+  const sysDbUrl = getSystemDatabaseUrl(config);
+  const url = new URL(sysDbUrl);
+  const sysDbName = url.pathname.slice(1);
   logger.info(`Resetting ${sysDbName} if it exists`);
-  await PostgresSystemDatabase.dropSystemDB(config);
+  await PostgresSystemDatabase.dropSystemDB(sysDbUrl);
   return 0;
 }
