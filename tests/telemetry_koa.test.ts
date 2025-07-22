@@ -111,6 +111,8 @@ describe('trace spans propagate ', () => {
     expect(libSpan).toBeDefined();
     expect(dbosSpan).toBeDefined();
     expect(dbosSpan).toBe(libSpan);
+    expect(httpSpan).not.toBe(libSpan);
     expect(dbosSpan?.parentSpanId).toBe(httpSpan?.spanContext().spanId);
+    expect(dbosSpan?.spanContext().traceId).toBe(httpSpan?.spanContext().traceId);
   });
 });
