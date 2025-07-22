@@ -90,7 +90,10 @@ export interface UserDatabase {
   dropSchema(): Promise<void>;
 }
 
-type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (ctxt: C, ...args: T) => Promise<R>;
+export type UserDatabaseQuery<C extends UserDatabaseClient, R, T extends unknown[]> = (
+  ctxt: C,
+  ...args: T
+) => Promise<R>;
 type UserDatabaseTransaction<R, T extends unknown[]> = (ctxt: UserDatabaseClient, ...args: T) => Promise<R>;
 
 export type UserDatabaseClient = PoolClient | PrismaClient | TypeORMEntityManager | Knex | DrizzleClient;

@@ -53,6 +53,7 @@ import {
   type UserDatabaseClient,
   pgNodeIsKeyConflictError,
   createDBIfDoesNotExist,
+  UserDatabaseQuery,
 } from './user_database';
 import {
   MethodRegistration,
@@ -106,6 +107,8 @@ import {
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
 import { getClientConfig } from './utils';
+import { assert } from 'node:console';
+import { query } from 'winston';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 export interface DBOSNull {}
@@ -121,6 +124,7 @@ export interface DBOSConfig {
   databaseUrl?: string;
   userDatabaseClient?: UserDatabaseName;
   userDatabasePoolSize?: number;
+  enableUserDatabase?: boolean;
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
@@ -137,6 +141,7 @@ export type DBOSConfigInternal = {
   name?: string;
 
   databaseUrl: string;
+  userDbEnabled: boolean;
   userDbPoolSize?: number;
   userDbClient?: UserDatabaseName;
 
@@ -201,19 +206,19 @@ export interface DBOSExecutorOptions {
 export class DBOSExecutor {
   initialized: boolean;
   // User Database
-  userDatabase: UserDatabase = null as unknown as UserDatabase;
+  #userDatabase: UserDatabase | undefined = undefined;
   // System Database
   readonly systemDatabase: SystemDatabase;
-  readonly procedurePool: Pool;
+  readonly #procedurePool: Pool | undefined = undefined;
 
   // Temporary workflows are created by calling transaction/send/recv directly from the executor class
-  static readonly tempWorkflowName = 'temp_workflow';
+  static readonly #tempWorkflowName = 'temp_workflow';
 
-  readonly telemetryCollector: TelemetryCollector;
+  readonly #telemetryCollector: TelemetryCollector;
 
   static readonly defaultNotificationTimeoutSec = 60;
 
-  readonly debugMode: boolean;
+  readonly #debugMode: boolean;
 
   static systemDBSchemaName = 'dbos';
 
@@ -221,11 +226,11 @@ export class DBOSExecutor {
   readonly ctxLogger: DBOSContextualLogger;
   readonly tracer: Tracer;
   // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  typeormEntities: Function[] = [];
-  drizzleEntities: { [key: string]: object } = {};
+  #typeormEntities: Function[] = [];
+  #drizzleEntities: { [key: string]: object } = {};
 
-  scheduler = new ScheduledReceiver();
-  wfqEnded?: Promise<void> = undefined;
+  #scheduler = new ScheduledReceiver();
+  #wfqEnded?: Promise<void> = undefined;
 
   readonly executorID: string = globalParams.executorID;
 
@@ -236,24 +241,24 @@ export class DBOSExecutor {
     readonly config: DBOSConfigInternal,
     { systemDatabase, debugMode }: DBOSExecutorOptions = {},
   ) {
-    this.debugMode = debugMode ?? false;
+    this.#debugMode = debugMode ?? false;
 
     if (config.telemetry.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
-      this.telemetryCollector = new TelemetryCollector(OTLPExporter);
+      this.#telemetryCollector = new TelemetryCollector(OTLPExporter);
     } else {
       // We always setup a collector to drain the signals queue, even if we don't have an exporter.
-      this.telemetryCollector = new TelemetryCollector();
+      this.#telemetryCollector = new TelemetryCollector();
     }
-    this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs);
+    this.logger = new GlobalLogger(this.#telemetryCollector, this.config.telemetry.logs);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getCurrentContextStore()!.span!);
-    this.tracer = new Tracer(this.telemetryCollector);
+    this.tracer = new Tracer(this.#telemetryCollector);
 
-    if (this.debugMode) {
+    if (this.#debugMode) {
       this.logger.info('Running in debug mode!');
     }
 
-    this.procedurePool = new Pool(getClientConfig(this.config.databaseUrl));
+    this.#procedurePool = this.config.userDbEnabled ? new Pool(getClientConfig(this.config.databaseUrl)) : undefined;
 
     if (systemDatabase) {
       this.logger.debug('Using provided system database'); // XXX print the name or something
@@ -271,7 +276,7 @@ export class DBOSExecutor {
     DBOSExecutor.globalInstance = this;
   }
 
-  configureDbClient() {
+  #configureDbClient() {
     const userDbClient = this.config.userDbClient;
     const userDBConfig: PoolConfig = getClientConfig(this.config.databaseUrl);
     userDBConfig.max = this.config.userDbPoolSize ?? 20;
@@ -279,7 +284,7 @@ export class DBOSExecutor {
       // TODO: make Prisma work with debugger proxy.
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
       const { PrismaClient } = require(path.join(process.cwd(), 'node_modules', '@prisma', 'client')); // Find the prisma client in the node_modules of the current project
-      this.userDatabase = new PrismaUserDatabase(
+      this.#userDatabase = new PrismaUserDatabase(
         // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call
         new PrismaClient({
           datasources: {
@@ -294,13 +299,13 @@ export class DBOSExecutor {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
       const DataSourceExports = require('typeorm');
       try {
-        this.userDatabase = new TypeORMDatabase(
+        this.#userDatabase = new TypeORMDatabase(
           // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
           new DataSourceExports.DataSource({
             type: 'postgres',
             url: userDBConfig.connectionString,
             connectTimeoutMS: userDBConfig.connectionTimeoutMillis,
-            entities: this.typeormEntities,
+            entities: this.#typeormEntities,
             poolSize: userDBConfig.max,
           }),
         );
@@ -318,19 +323,19 @@ export class DBOSExecutor {
           max: userDBConfig.max,
         },
       };
-      this.userDatabase = new KnexUserDatabase(knex(knexConfig));
+      this.#userDatabase = new KnexUserDatabase(knex(knexConfig));
       this.logger.debug('Loaded Knex user database');
     } else if (userDbClient === UserDatabaseName.DRIZZLE) {
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-require-imports
       const DrizzleExports = require('drizzle-orm/node-postgres');
       const drizzlePool = new Pool(userDBConfig);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access
-      const drizzle = DrizzleExports.drizzle(drizzlePool, { schema: this.drizzleEntities });
+      const drizzle = DrizzleExports.drizzle(drizzlePool, { schema: this.#drizzleEntities });
       // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-      this.userDatabase = new DrizzleUserDatabase(drizzlePool, drizzle);
+      this.#userDatabase = new DrizzleUserDatabase(drizzlePool, drizzle);
       this.logger.debug('Loaded Drizzle user database');
     } else {
-      this.userDatabase = new PGNodeUserDatabase(userDBConfig);
+      this.#userDatabase = new PGNodeUserDatabase(userDBConfig);
       this.logger.debug('Loaded Postgres user database');
     }
   }
@@ -357,31 +362,33 @@ export class DBOSExecutor {
          * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
          */
         if (Array.isArray(reg.ormEntities)) {
-          this.typeormEntities = this.typeormEntities.concat(reg.ormEntities as any[]);
+          this.#typeormEntities = this.#typeormEntities.concat(reg.ormEntities as any[]);
           length = reg.ormEntities.length;
         } else {
           /**
            * With Drizzle, we need to take an object of entities, since the object keys are used to access the entities from ctx.client.query:
            */
-          this.drizzleEntities = { ...this.drizzleEntities, ...reg.ormEntities };
+          this.#drizzleEntities = { ...this.#drizzleEntities, ...reg.ormEntities };
           length = Object.keys(reg.ormEntities).length;
         }
         this.logger.debug(`Loaded ${length} ORM entities`);
       }
 
-      if (!this.debugMode) {
-        await createDBIfDoesNotExist(this.config.databaseUrl, this.logger);
-      }
-      this.configureDbClient();
+      if (this.config.userDbEnabled) {
+        if (!this.#debugMode) {
+          await createDBIfDoesNotExist(this.config.databaseUrl, this.logger);
+        }
+        this.#configureDbClient();
 
-      if (!this.userDatabase) {
-        this.logger.error('No user database configured!');
-        throw new DBOSInitializationError('No user database configured!');
-      }
+        if (!this.#userDatabase) {
+          this.logger.error('No user database configured!');
+          throw new DBOSInitializationError('No user database configured!');
+        }
 
-      // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
-      await this.userDatabase.init(this.debugMode);
-      if (!this.debugMode) {
+        // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
+        await this.#userDatabase.init(this.#debugMode);
+      }
+      if (!this.#debugMode) {
         await this.systemDatabase.init();
       }
     } catch (err) {
@@ -402,7 +409,7 @@ export class DBOSExecutor {
     this.initialized = true;
 
     // Only execute init code if under non-debug mode
-    if (!this.debugMode) {
+    if (!this.#debugMode) {
       for (const cls of classnames) {
         // Init its configurations
         const creg = getClassRegistrationByName(cls);
@@ -461,10 +468,8 @@ export class DBOSExecutor {
     try {
       await this.systemDatabase.awaitRunningWorkflows();
       await this.systemDatabase.destroy();
-      if (this.userDatabase) {
-        await this.userDatabase.destroy();
-      }
-      await this.procedurePool.end();
+      await this.#userDatabase?.destroy();
+      await this.#procedurePool?.end();
       await this.logger.destroy();
 
       if (DBOSExecutor.globalInstance === this) {
@@ -475,6 +480,29 @@ export class DBOSExecutor {
       this.logger.error(e);
       throw err;
     }
+  }
+
+  async createUserSchema() {
+    if (!this.#userDatabase) {
+      throw new Error('User database not enabled.');
+    }
+    await this.#userDatabase.createSchema();
+  }
+
+  async dropUserSchema() {
+    if (!this.#userDatabase) {
+      throw new Error('User database not enabled.');
+    }
+    await this.#userDatabase.dropSchema();
+  }
+  async queryUserDbFunction<C extends UserDatabaseClient, R, T extends unknown[]>(
+    queryFunction: UserDatabaseQuery<C, R, T>,
+    ...params: T
+  ): Promise<R> {
+    if (!this.#userDatabase) {
+      throw new Error('User database not enabled.');
+    }
+    return await this.#userDatabase.queryFunction(queryFunction, ...params);
   }
 
   // This could return WF, or the function underlying a temp wf
@@ -539,7 +567,7 @@ export class DBOSExecutor {
     let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
 
-    if (wf.name !== DBOSExecutor.tempWorkflowName) {
+    if (wf.name !== DBOSExecutor.#tempWorkflowName) {
       if (!wInfo || !wInfo.workflowConfig) {
         throw new DBOSNotRegisteredError(wf.name);
       }
@@ -566,7 +594,7 @@ export class DBOSExecutor {
       pctx?.span,
     );
 
-    const isTempWorkflow = DBOSExecutor.tempWorkflowName === wfname;
+    const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname;
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
@@ -593,7 +621,7 @@ export class DBOSExecutor {
     };
 
     if (isTempWorkflow) {
-      internalStatus.workflowName = `${DBOSExecutor.tempWorkflowName}-${params.tempWfType}-${params.tempWfName}`;
+      internalStatus.workflowName = `${DBOSExecutor.#tempWorkflowName}-${params.tempWfType}-${params.tempWfName}`;
       internalStatus.workflowClassName = params.tempWfClass ?? '';
     }
 
@@ -602,7 +630,7 @@ export class DBOSExecutor {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
-    if (this.debugMode) {
+    if (this.#debugMode) {
       const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
       if (!wfStatus) {
         throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowID}`);
@@ -667,7 +695,7 @@ export class DBOSExecutor {
       e.dbos_already_logged = true;
       internalStatus.error = DBOSJSON.stringify(serializeError(e));
       internalStatus.status = StatusString.ERROR;
-      if (!exec.debugMode) {
+      if (!exec.#debugMode) {
         await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       }
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
@@ -699,7 +727,7 @@ export class DBOSExecutor {
           },
         );
 
-        if (this.debugMode) {
+        if (this.#debugMode) {
           const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
             (await this.systemDatabase.awaitWorkflowResult(workflowID))!,
           );
@@ -722,7 +750,7 @@ export class DBOSExecutor {
 
         internalStatus.output = DBOSJSON.stringify(result);
         internalStatus.status = StatusString.SUCCESS;
-        if (!this.debugMode) {
+        if (!this.#debugMode) {
           await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
         }
         span.setStatus({ code: SpanStatusCode.OK });
@@ -755,7 +783,7 @@ export class DBOSExecutor {
     };
 
     if (
-      this.debugMode ||
+      this.#debugMode ||
       (status !== 'SUCCESS' && status !== 'ERROR' && (params.queueName === undefined || params.executeWorkflow))
     ) {
       const workflowPromise: Promise<R> = runWorkflow();
@@ -846,7 +874,7 @@ export class DBOSExecutor {
     isKeyConflict: (error: unknown) => boolean,
     function_name: string,
   ): Promise<string> {
-    if (this.debugMode) {
+    if (this.#debugMode) {
       throw new DBOSDebuggerError('Cannot record output in debug mode.');
     }
     try {
@@ -878,7 +906,7 @@ export class DBOSExecutor {
     isKeyConflict: (error: unknown) => boolean,
     function_name: string,
   ): Promise<void> {
-    if (this.debugMode) {
+    if (this.#debugMode) {
       throw new DBOSDebuggerError('Cannot record error in debug mode.');
     }
     try {
@@ -898,17 +926,21 @@ export class DBOSExecutor {
   }
 
   async getTransactions(workflowUUID: string): Promise<step_info[]> {
-    const rows = await this.userDatabase.query<step_info, [string]>(
-      `SELECT function_id, function_name, output, error FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
-      workflowUUID,
-    );
+    if (this.#userDatabase) {
+      const rows = await this.#userDatabase.query<step_info, [string]>(
+        `SELECT function_id, function_name, output, error FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs WHERE workflow_uuid=$1`,
+        workflowUUID,
+      );
 
-    for (const row of rows) {
-      row.output = row.output !== null ? DBOSJSON.parse(row.output as string) : null;
-      row.error = row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null;
+      for (const row of rows) {
+        row.output = row.output !== null ? DBOSJSON.parse(row.output as string) : null;
+        row.error = row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null;
+      }
+
+      return rows;
+    } else {
+      return [];
     }
-
-    return rows;
   }
 
   async runTransactionTempWF<T extends unknown[], R>(
@@ -949,6 +981,11 @@ export class DBOSExecutor {
     clsinst: ConfiguredInstance | null,
     ...args: T
   ): Promise<R> {
+    const userDB = this.#userDatabase;
+    if (!userDB) {
+      throw new Error('No user database configured for transactions.');
+    }
+
     const txnReg = getFunctionRegistration(txn);
     if (!txnReg || !txnReg.txnConfig) {
       throw new DBOSNotRegisteredError(txn.name);
@@ -986,8 +1023,7 @@ export class DBOSExecutor {
         // If the UUID is preset, it is possible this execution previously happened. Check, and return its original result if it did.
         // Note: It is possible to retrieve a generated ID from a workflow handle, run a concurrent execution, and cause trouble for yourself. We recommend against this.
         let prevResult: R | Error | DBOSNull = dbosNull;
-        const queryFunc = <T>(sql: string, args: unknown[]) =>
-          this.userDatabase.queryWithClient<T>(client, sql, ...args);
+        const queryFunc = <T>(sql: string, args: unknown[]) => userDB.queryWithClient<T>(client, sql, ...args);
         if (pctx.presetID) {
           const executionResult = await this.#checkExecution<R>(queryFunc, wfid, funcId, txn.name);
           prevResult = executionResult.result;
@@ -1008,7 +1044,7 @@ export class DBOSExecutor {
           txn_snapshot = await DBOSExecutor.#retrieveSnapshot(queryFunc);
         }
 
-        if (this.debugMode && prevResult === dbosNull) {
+        if (this.#debugMode && prevResult === dbosNull) {
           throw new DBOSDebuggerError(
             `Failed to find the recorded output for the transaction: workflow UUID ${wfid}, step number ${funcId}`,
           );
@@ -1040,7 +1076,7 @@ export class DBOSExecutor {
           }
         })();
 
-        if (this.debugMode) {
+        if (this.#debugMode) {
           if (prevResult instanceof Error) {
             throw prevResult;
           }
@@ -1069,12 +1105,12 @@ export class DBOSExecutor {
             funcId,
             txn_snapshot,
             result,
-            (error) => this.userDatabase.isKeyConflictError(error),
+            (error) => userDB.isKeyConflictError(error),
             txn.name,
           );
           span.setAttribute('pg_txn_id', pg_txn_id);
         } catch (error) {
-          if (this.userDatabase.isFailedSqlTransactionError(error)) {
+          if (userDB.isFailedSqlTransactionError(error)) {
             this.logger.error(
               `Postgres aborted the ${txn.name} @DBOS.transaction of Workflow ${wfid}, but the function did not raise an exception.  Please ensure that the @DBOS.transaction method raises an exception if the database transaction is aborted.`,
             );
@@ -1088,14 +1124,14 @@ export class DBOSExecutor {
       };
 
       try {
-        const result = await this.userDatabase.transaction(wrappedTransaction, txnReg.txnConfig);
+        const result = await userDB.transaction(wrappedTransaction, txnReg.txnConfig);
         span.setStatus({ code: SpanStatusCode.OK });
         this.tracer.endSpan(span);
         return result;
       } catch (err) {
         const e: Error = err as Error;
-        if (!prevResultFound && !this.debugMode && !(e instanceof DBOSUnexpectedStepError)) {
-          if (this.userDatabase.isRetriableTransactionError(err)) {
+        if (!prevResultFound && !this.#debugMode && !(e instanceof DBOSUnexpectedStepError)) {
+          if (userDB.isRetriableTransactionError(err)) {
             // serialization_failure in PostgreSQL
             span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
             // Retry serialization failures.
@@ -1107,17 +1143,16 @@ export class DBOSExecutor {
 
           // Record and throw other errors.
           const e: Error = err as Error;
-          await this.userDatabase.transaction(
+          await userDB.transaction(
             async (client: UserDatabaseClient) => {
-              const func = <T>(sql: string, args: unknown[]) =>
-                this.userDatabase.queryWithClient<T>(client, sql, ...args);
+              const func = <T>(sql: string, args: unknown[]) => userDB.queryWithClient<T>(client, sql, ...args);
               await this.#recordError(
                 func,
                 wfid,
                 funcId,
                 txn_snapshot,
                 e,
-                (error) => this.userDatabase.isKeyConflictError(error),
+                (error) => userDB.isKeyConflictError(error),
                 txn.name,
               );
             },
@@ -1166,7 +1201,7 @@ export class DBOSExecutor {
 
     await this.systemDatabase.checkIfCanceled(wfid);
 
-    const executeLocally = this.debugMode || (procConfig.executeLocally ?? false);
+    const executeLocally = this.#debugMode || (procConfig.executeLocally ?? false);
     const funcId = functionIDGetIncrement();
     const span: Span = this.tracer.startSpan(
       proc.name,
@@ -1205,6 +1240,12 @@ export class DBOSExecutor {
     procInfo: MethodRegistrationBase,
     funcId: number,
   ): Promise<R> {
+    const procPool = this.#procedurePool;
+    const userDB = this.#userDatabase;
+    if (!procPool || !userDB) {
+      throw new Error('User database not enabled.');
+    }
+
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
@@ -1218,8 +1259,7 @@ export class DBOSExecutor {
       let txn_snapshot = 'invalid';
       const wrappedProcedure = async (client: PoolClient): Promise<R> => {
         let prevResult: R | Error | DBOSNull = dbosNull;
-        const queryFunc = <T>(sql: string, args: unknown[]) =>
-          this.procedurePool.query(sql, args).then((v) => v.rows as T[]);
+        const queryFunc = <T>(sql: string, args: unknown[]) => procPool.query(sql, args).then((v) => v.rows as T[]);
         if (pctx.presetID) {
           const executionResult = await this.#checkExecution<R>(queryFunc, wfid, funcId, proc.name);
           prevResult = executionResult.result;
@@ -1239,7 +1279,7 @@ export class DBOSExecutor {
           txn_snapshot = await DBOSExecutor.#retrieveSnapshot(queryFunc);
         }
 
-        if (this.debugMode && prevResult === dbosNull) {
+        if (this.#debugMode && prevResult === dbosNull) {
           throw new DBOSDebuggerError(
             `Failed to find the recorded output for the procedure: workflow UUID ${wfid}, step number ${funcId}`,
           );
@@ -1273,7 +1313,7 @@ export class DBOSExecutor {
           }
         })();
 
-        if (this.debugMode) {
+        if (this.#debugMode) {
           if (prevResult instanceof Error) {
             throw prevResult;
           }
@@ -1316,8 +1356,8 @@ export class DBOSExecutor {
         span.setStatus({ code: SpanStatusCode.OK });
         return result;
       } catch (err) {
-        if (!this.debugMode) {
-          if (this.userDatabase.isRetriableTransactionError(err)) {
+        if (!this.#debugMode) {
+          if (userDB.isRetriableTransactionError(err)) {
             // serialization_failure in PostgreSQL
             span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
             // Retry serialization failures.
@@ -1337,17 +1377,16 @@ export class DBOSExecutor {
             { isolationLevel: IsolationLevel.ReadCommitted },
           );
 
-          await this.userDatabase.transaction(
+          await userDB.transaction(
             async (client: UserDatabaseClient) => {
-              const func = <T>(sql: string, args: unknown[]) =>
-                this.userDatabase.queryWithClient<T>(client, sql, ...args);
+              const func = <T>(sql: string, args: unknown[]) => userDB.queryWithClient<T>(client, sql, ...args);
               await this.#recordError(
                 func,
                 wfid,
                 funcId,
                 txn_snapshot,
                 e,
-                (error) => this.userDatabase.isKeyConflictError(error),
+                (error) => userDB.isKeyConflictError(error),
                 proc.name,
               );
             },
@@ -1366,7 +1405,7 @@ export class DBOSExecutor {
     config: StoredProcedureConfig,
     funcId: number,
   ): Promise<R> {
-    if (this.debugMode) {
+    if (this.#debugMode) {
       throw new DBOSDebuggerError("Can't invoke stored procedure in debug mode.");
     }
 
@@ -1413,7 +1452,10 @@ export class DBOSExecutor {
   }
 
   async #invokeStoredProc<R extends QueryResultRow = any>(proc: UntypedAsyncFunction, args: unknown[]): Promise<R[]> {
-    const client = await this.procedurePool.connect();
+    if (!this.#procedurePool) {
+      throw new Error('User Database not enabled.');
+    }
+    const client = await this.#procedurePool.connect();
     const log = (msg: NoticeMessage) => this.#logNotice(msg);
 
     const procname = getRegisteredFunctionFullName(proc);
@@ -1431,7 +1473,10 @@ export class DBOSExecutor {
   }
 
   async invokeStoredProcFunction<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
-    const client = await this.procedurePool.connect();
+    if (!this.#procedurePool) {
+      throw new Error('User Database not enabled.');
+    }
+    const client = await this.#procedurePool.connect();
     try {
       const readOnly = config.readOnly ?? false;
       const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
@@ -1543,7 +1588,7 @@ export class DBOSExecutor {
       return check;
     }
 
-    if (this.debugMode) {
+    if (this.#debugMode) {
       throw new DBOSDebuggerError(
         `Failed to find the recorded output for the step: workflow UUID: ${wfid}, step number: ${funcID}`,
       );
@@ -1672,7 +1717,7 @@ export class DBOSExecutor {
     options: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number } = {},
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? getNextWFID(undefined);
-    return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, { ...options, newWorkflowID });
+    return forkWorkflow(this.systemDatabase, this.#userDatabase, workflowID, startStep, { ...options, newWorkflowID });
   }
 
   /**
@@ -1728,14 +1773,17 @@ export class DBOSExecutor {
   }
 
   async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
-    return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
+    return listWorkflowSteps(this.systemDatabase, this.#userDatabase, workflowID);
   }
 
   async queryUserDB(sql: string, params?: unknown[]) {
+    if (!this.#userDatabase) {
+      throw new Error('User database not enabled.');
+    }
     if (params !== undefined) {
-      return await this.userDatabase.query(sql, ...params);
+      return await this.#userDatabase.query(sql, ...params);
     } else {
-      return await this.userDatabase.query(sql);
+      return await this.#userDatabase.query(sql);
     }
   }
 
@@ -1745,7 +1793,7 @@ export class DBOSExecutor {
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
   async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
-    if (this.debugMode) {
+    if (this.#debugMode) {
       throw new DBOSDebuggerError('Cannot recover pending workflows in debug mode.');
     }
 
@@ -1785,7 +1833,7 @@ export class DBOSExecutor {
   }
 
   async initEventReceivers() {
-    this.wfqEnded = wfQueueRunner.dispatchLoop(this);
+    this.#wfqEnded = wfQueueRunner.dispatchLoop(this);
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();
@@ -1807,7 +1855,7 @@ export class DBOSExecutor {
     if (stopQueueThread) {
       try {
         wfQueueRunner.stop();
-        await this.wfqEnded;
+        await this.#wfqEnded;
       } catch (err) {
         const e = err as Error;
         this.logger.warn(`Error destroying wf queue runner: ${e.message}`);
@@ -1853,7 +1901,7 @@ export class DBOSExecutor {
     // Should be temporary workflows. Parse the name of the workflow.
     const wfName = wfStatus.workflowName;
     const nameArr = wfName.split('-');
-    if (!nameArr[0].startsWith(DBOSExecutor.tempWorkflowName)) {
+    if (!nameArr[0].startsWith(DBOSExecutor.#tempWorkflowName)) {
       throw new DBOSError(
         `Cannot find workflow function for a non-temporary workflow, ID ${workflowID}, class '${wfStatus.workflowClassName}', function '${wfName}'; did you change your code?`,
       );

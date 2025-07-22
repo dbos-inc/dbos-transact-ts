@@ -25,7 +25,7 @@ export async function getWorkflow(sysdb: SystemDatabase, workflowID: string): Pr
 
 export async function listWorkflowSteps(
   sysdb: SystemDatabase,
-  userdb: UserDatabase,
+  userdb: UserDatabase | undefined,
   workflowID: string,
 ): Promise<StepInfo[] | undefined> {
   const status = await sysdb.getWorkflowStatus(workflowID);
@@ -36,11 +36,13 @@ export async function listWorkflowSteps(
   type TxOutputs = Pick<transaction_outputs, 'function_id' | 'function_name' | 'output' | 'error'>;
   const [$steps, $txs] = await Promise.all([
     sysdb.getAllOperationResults(workflowID),
-    await userdb.query<TxOutputs, [string]>(
-      `SELECT function_id, function_name, output, error FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs 
+    userdb
+      ? await userdb.query<TxOutputs, [string]>(
+          `SELECT function_id, function_name, output, error FROM ${DBOSExecutor.systemDBSchemaName}.transaction_outputs 
       WHERE workflow_uuid=$1`,
-      workflowID,
-    ),
+          workflowID,
+        )
+      : Promise.resolve([]),
   ]);
 
   const steps: StepInfo[] = $steps.map((step) => ({
@@ -65,7 +67,7 @@ export async function listWorkflowSteps(
 
 export async function forkWorkflow(
   sysdb: SystemDatabase,
-  userdb: UserDatabase,
+  userdb: UserDatabase | undefined,
   workflowID: string,
   startStep: number,
   options: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number } = {},
@@ -77,7 +79,7 @@ export async function forkWorkflow(
     SELECT $1 AS workflow_uuid, function_id, output, error, txn_id, txn_snapshot, function_name
       FROM dbos.transaction_outputs 
       WHERE workflow_uuid= $2 AND function_id < $3`;
-  await userdb.query(query, newWorkflowID, workflowID, startStep);
+  await userdb?.query(query, newWorkflowID, workflowID, startStep);
   await sysdb.forkWorkflow(workflowID, startStep, { ...options, newWorkflowID });
   return newWorkflowID;
 }

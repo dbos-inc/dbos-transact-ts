@@ -9,6 +9,7 @@ import path from 'path';
 import dbosConfigSchema from '../../dbos-config.schema.json';
 import assert from 'assert';
 import validator from 'validator';
+import { DBOS } from '..';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
@@ -228,12 +229,21 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     system_database_url: options.systemDatabaseUrl,
     name: options.name,
   });
+
+  const userDbEnabled = options.enableUserDatabase ?? false;
+  if (!userDbEnabled && options.userDatabaseClient) {
+    DBOS.logger.warn(
+      `User database client configured as ${options.userDatabaseClient} but user database is not enabled.`,
+    );
+  }
+
   return {
     databaseUrl,
     userDbPoolSize: options.userDatabasePoolSize,
     systemDatabaseUrl,
     sysDbPoolSize: options.systemDatabasePoolSize,
-    userDbClient: options.userDatabaseClient,
+    userDbClient: userDbEnabled ? options.userDatabaseClient : undefined,
+    userDbEnabled,
     telemetry: {
       logs: {
         logLevel: options.logLevel || 'info',
