@@ -10,11 +10,7 @@ import { DBOSHello } from '../entities/DBOSHello';
 import { TypeOrmDataSource } from '@dbos-inc/typeorm-datasource';
 
 const config = {
-  host: process.env.PGHOST || 'localhost',
-  port: parseInt(process.env.PGPORT || '5432'),
-  database: process.env.PGDATABASE || 'dbos_typeorm',
-  user: process.env.PGUSER || 'postgres',
-  password: process.env.PGPASSWORD || 'dbos',
+  connectionString: process.env.DBOS_DATABASE_URL ?? 'postgres://postgres:dbos@localhost:5432/dbos_typeorm',
 };
 
 const dataSource = new TypeOrmDataSource('app-db', config, [DBOSHello]);
