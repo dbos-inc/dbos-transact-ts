@@ -336,7 +336,7 @@ async function main() {
 }
 
 async function main2() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -356,7 +356,7 @@ async function main2() {
 }
 
 async function main3() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -369,7 +369,7 @@ async function main3() {
 }
 
 async function main4() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -387,7 +387,7 @@ async function main4() {
 
 async function main5() {
   const wfq = new WorkflowQueue('wfq');
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -433,7 +433,7 @@ async function main5() {
 }
 
 async function main6() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -469,7 +469,7 @@ async function main6() {
 }
 
 async function main7() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -507,7 +507,7 @@ async function main7() {
 }
 
 async function main8() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -528,7 +528,7 @@ async function main8() {
 }
 
 async function main9() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -580,7 +580,7 @@ async function main9() {
 }
 
 async function main10() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();

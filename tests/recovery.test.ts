@@ -12,7 +12,7 @@ describe('recovery-tests', () => {
   let systemDBClient: Client;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });

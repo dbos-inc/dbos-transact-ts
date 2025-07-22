@@ -22,7 +22,7 @@ class WF {
 }
 
 async function main() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig('pg-node');
   await setUpDBOSTestDb({ ...config, logLevel: 'debug', addContextMetadata: true });
 
   DBOS.setConfig({ ...config, addContextMetadata: true });

@@ -50,8 +50,8 @@ describe('debugger-test', () => {
   let debugConfig: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    debugConfig = generateDBOSTestConfig(undefined);
+    config = generateDBOSTestConfig('pg-node');
+    debugConfig = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
   });
 

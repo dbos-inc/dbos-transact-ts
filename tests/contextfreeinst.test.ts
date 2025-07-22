@@ -125,7 +125,7 @@ const instB = new TestFunctions('B');
 
 async function main() {
   // First hurdle - configuration.
-  const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
+  const config = generateDBOSTestConfig('pg-node'); // Optional.  If you don't, it'll open the YAML file...
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -152,7 +152,7 @@ async function main() {
 }
 
 async function main2() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig('pg-node');
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -170,7 +170,7 @@ async function main2() {
 }
 
 async function main3() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig('pg-node');
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -182,7 +182,7 @@ async function main3() {
 }
 
 async function main4() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig('pg-node');
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -202,7 +202,7 @@ async function main4() {
 
 async function main5() {
   const wfq = new WorkflowQueue('wfq');
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig('pg-node');
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -241,7 +241,7 @@ async function main5() {
 }
 
 async function main6() {
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig('pg-node');
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -278,7 +278,7 @@ async function main7() {
   const testSecInst = new TestSec('Sec1');
   const testSec2Inst = new TestSec2('Sec2');
 
-  const config = generateDBOSTestConfig();
+  const config = generateDBOSTestConfig('pg-node');
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();

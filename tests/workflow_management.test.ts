@@ -23,7 +23,7 @@ describe('workflow-management-tests', () => {
   let systemDBClient: Client;
 
   beforeAll(() => {
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     DBOS.setConfig(config);
   });
 
@@ -761,7 +761,7 @@ describe('test-list-steps', () => {
   let config: DBOSConfig;
   const queue = new WorkflowQueue('child_queue');
   beforeAll(() => {
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     DBOS.setConfig(config);
   });
   beforeEach(async () => {
@@ -1301,7 +1301,7 @@ describe('test-list-steps', () => {
 describe('test-fork', () => {
   let config: DBOSConfig;
   beforeAll(() => {
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     DBOS.setConfig(config);
   });
   beforeEach(async () => {

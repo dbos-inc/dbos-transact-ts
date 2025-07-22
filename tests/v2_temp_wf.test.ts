@@ -44,7 +44,7 @@ describe('v2api-temp-wf', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
   });
 

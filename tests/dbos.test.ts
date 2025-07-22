@@ -18,7 +18,7 @@ describe('dbos-tests', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     expect(config.databaseUrl).toBeDefined();
     const url = new URL(config.databaseUrl!);
     username = url.username;

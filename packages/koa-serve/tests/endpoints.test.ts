@@ -34,6 +34,7 @@ describe('httpserver-tests', () => {
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'dbos-koa-test',
+      enableUserDatabase: true,
       userDatabaseClient: 'pg-node',
     });
     return Promise.resolve();

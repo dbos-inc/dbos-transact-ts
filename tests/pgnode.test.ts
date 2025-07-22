@@ -25,6 +25,7 @@ class TestEngine {
 describe('pgnode-engine-config-tests', () => {
   test('engine-config', async () => {
     const config: DBOSConfig = {
+      enableUserDatabase: true,
       userDatabaseClient: UserDatabaseName.PGNODE,
       userDatabasePoolSize: 2,
       systemDatabasePoolSize: 42,

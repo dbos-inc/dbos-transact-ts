@@ -195,8 +195,10 @@ export function getDbosConfig(
     config.language === undefined || config.language === 'node',
     `Config file specifies invalid language ${config.language}`,
   );
-  const userDbClient = config.database?.app_db_client ?? UserDatabaseName.KNEX;
-  assert(isValidUserDbClient(userDbClient), `Invalid app_db_client ${userDbClient} in config file`);
+  const userDbClient = config.database?.app_db_client;
+  if (userDbClient) {
+    assert(isValidUserDbClient(userDbClient), `Invalid app_db_client ${userDbClient} in config file`);
+  }
 
   return translateDbosConfig(
     {
@@ -204,6 +206,7 @@ export function getDbosConfig(
       databaseUrl: config.database_url,
       systemDatabaseUrl: config.system_database_url,
       userDatabaseClient: userDbClient,
+      enableUserDatabase: userDbClient !== undefined,
       logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
       addContextMetadata: config.telemetry?.logs?.addContextMetadata,
       otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
