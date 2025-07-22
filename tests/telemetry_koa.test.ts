@@ -1,5 +1,6 @@
 import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from './nodetraceprovider';
+import { DBOS } from '../src';
 
 const provider = new NodeTracerProvider();
 const memoryExporter = new InMemorySpanExporter();
@@ -12,7 +13,7 @@ import { context, trace, SpanStatusCode } from '@opentelemetry/api';
 import { isTraceContextWorking } from '../src/telemetry/traces';
 import { AddressInfo } from 'net';
 
-async function doSomethingTraced() {
+async function doSomethingTraced_internal() {
   const span = trace.getSpan(context.active());
   console.log('Current span:', span?.spanContext());
   if (span) {
@@ -21,15 +22,16 @@ async function doSomethingTraced() {
   return Promise.resolve('Done');
 }
 
+const doSomethingTraced = DBOS.registerWorkflow(doSomethingTraced_internal);
+
 export function createApp() {
   const app = new Koa();
   const router = new Router();
 
-  // Tracing middleware (emulates instrumentation, which is not working...)
+  // Tracing middleware (emulates instrumentation or full middleware, which is not working...)
   app.use(async (ctx, next) => {
     const current = trace.getSpan(context.active());
     if (current) {
-      console.log('Had context already...');
       return next() as Promise<unknown>;
     }
 
@@ -65,39 +67,50 @@ export function createApp() {
   return app;
 }
 
-test('trace spans propagate from HTTP to library', async () => {
-  expect(isTraceContextWorking()).toBe(true);
-
-  const app = createApp();
-  const server = app.listen(0); // Koa uses native HTTP
-
-  const { port } = server.address() as AddressInfo;
-
-  const res = await fetch(`http://localhost:${port}/test`, {
-    headers: {
-      traceparent: '00-4bf92f3577b34da6a3ce929d0e0e4736-abcdefabcdefabcd-01',
-    },
+describe('trace spans propagate ', () => {
+  beforeAll(async () => {
+    DBOS.setConfig({ name: 'trace-span-propagage' });
+    await DBOS.launch();
   });
 
-  expect(res.status).toBe(200);
-  server.close();
+  afterAll(async () => {
+    await DBOS.shutdown();
+  });
 
-  const spans = memoryExporter.getFinishedSpans();
-  expect(spans.length).toBeGreaterThan(0);
+  test('from-outside-into-DBOS-calls', async () => {
+    expect(isTraceContextWorking()).toBe(true);
 
-  console.log(
-    spans.map((span) => ({
-      name: span.name,
-      traceId: span.spanContext().traceId,
-      spanId: span.spanContext().spanId,
-      parentSpanId: span.parentSpanId,
-      attributes: span.attributes,
-    })),
-  );
+    const app = createApp();
+    const server = app.listen(0); // Koa uses native HTTP
 
-  const httpSpan = spans.find((s) => s.name.includes('/test'));
-  const libSpan = spans.find((s) => s.attributes['my-lib.didSomething'] === true);
+    const { port } = server.address() as AddressInfo;
 
-  expect(httpSpan).toBeDefined();
-  expect(libSpan).toBeDefined();
+    const res = await fetch(`http://localhost:${port}/test`);
+
+    expect(res.status).toBe(200);
+    server.close();
+
+    const spans = memoryExporter.getFinishedSpans();
+    expect(spans.length).toBeGreaterThan(0);
+
+    console.debug(
+      spans.map((span) => ({
+        name: span.name,
+        traceId: span.spanContext().traceId,
+        spanId: span.spanContext().spanId,
+        parentSpanId: span.parentSpanId,
+        attributes: span.attributes,
+      })),
+    );
+
+    const httpSpan = spans.find((s) => s.name.includes('/test'));
+    const libSpan = spans.find((s) => s.attributes['my-lib.didSomething'] === true);
+    const dbosSpan = spans.find((s) => s.name.includes('doSomethingTraced'));
+
+    expect(httpSpan).toBeDefined();
+    expect(libSpan).toBeDefined();
+    expect(dbosSpan).toBeDefined();
+    expect(dbosSpan).toBe(libSpan);
+    expect(dbosSpan?.parentSpanId).toBe(httpSpan?.spanContext().spanId);
+  });
 });
