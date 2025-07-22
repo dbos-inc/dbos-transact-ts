@@ -19,6 +19,7 @@ async function doSomethingTraced_internal() {
   if (span) {
     span.setAttribute('my-lib.didSomething', true);
   }
+  expect(DBOS.span).toBe(trace.getSpan(context.active()));
   return Promise.resolve('Done');
 }
 

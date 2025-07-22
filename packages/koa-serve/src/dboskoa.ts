@@ -325,7 +325,6 @@ export class DBOSKoa extends DBOSHTTPBase {
                       authenticatedUser,
                       authenticatedRoles,
                       idAssignedForNextWorkflow: headerWorkflowID,
-                      span,
                       request: koaCtxt.request,
                     },
                     async () => {

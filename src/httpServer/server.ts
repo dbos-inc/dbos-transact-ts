@@ -625,7 +625,6 @@ export class DBOSHttpServer {
         }
 
         const dctx: DBOSLocalCtx = {
-          span,
           request: {
             headers: koaCtxt.request.headers,
             rawHeaders: koaCtxt.req.rawHeaders,
@@ -758,14 +757,14 @@ export class DBOSHttpServer {
               }
             });
           });
-          dctx.span?.setStatus({ code: SpanStatusCode.OK });
+          span?.setStatus({ code: SpanStatusCode.OK });
         } catch (e) {
           if (e instanceof Error) {
             const annotated_e = e as Error & { dbos_already_logged?: boolean };
             if (annotated_e.dbos_already_logged !== true) {
               DBOS.logger.error(e);
             }
-            dctx.span?.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+            span?.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
             let st = (e as DBOSResponseError)?.status || 500;
             if (isDataValidationError(e)) {
               st = 400; // Set to 400: client-side error.
@@ -781,7 +780,7 @@ export class DBOSHttpServer {
             // FIXME we should have a standard, user friendly message for errors that are not instances of Error.
             // using stringify() will not produce a pretty output, because our format function uses stringify() too.
             DBOS.logger.error(DBOSJSON.stringify(e));
-            dctx.span?.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
+            span?.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
             koaCtxt.body = e;
             koaCtxt.status = 500;
           }
@@ -794,7 +793,7 @@ export class DBOSHttpServer {
             context: Koa.Context;
           }
           httpTracer.inject(
-            trace.setSpanContext(ROOT_CONTEXT, dctx.span!.spanContext()),
+            trace.setSpanContext(ROOT_CONTEXT, span!.spanContext()),
             {
               context: koaCtxt,
             },
@@ -804,7 +803,7 @@ export class DBOSHttpServer {
               },
             },
           );
-          dbosExec.tracer.endSpan(dctx.span!);
+          dbosExec.tracer.endSpan(span!);
           await koaNext();
         }
       };
