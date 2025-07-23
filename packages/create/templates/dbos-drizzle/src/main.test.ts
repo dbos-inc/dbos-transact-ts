@@ -1,7 +1,6 @@
-import { DBOS, getDatabaseUrl, readConfigFile } from '@dbos-inc/dbos-sdk';
-import { app, Hello } from './main';
+import { DBOS } from '@dbos-inc/dbos-sdk';
+import { app, config, Hello } from './main';
 import request from 'supertest';
-import { join } from 'path';
 import { Client } from 'pg';
 
 describe('operations-test', () => {
@@ -20,10 +19,7 @@ describe('operations-test', () => {
     const res = await Hello.helloTransaction('dbos');
     expect(res).toMatch('Hello, dbos! We have made');
 
-    const configFile = readConfigFile(join(__dirname, '..'));
-    const connectionString = getDatabaseUrl(configFile);
-
-    const client = new Client({ connectionString });
+    const client = new Client(config);
     try {
       await client.connect();
       const rows = await client.query('SELECT * FROM dbos_hello WHERE greet_count=1');
