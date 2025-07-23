@@ -92,7 +92,7 @@ async function main() {
     name: 'dbos-proc',
     databaseUrl: process.env.DBOS_DATABASE_URL,
   });
-  await DBOS.launch({ expressApp: app });
+  await DBOS.launch();
   const PORT = 3000;
   const ENV = process.env.NODE_ENV || 'development';
 

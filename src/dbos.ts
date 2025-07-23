@@ -9,7 +9,7 @@ import {
   functionIDGetIncrement,
 } from './context';
 import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
-import { Tracer } from './telemetry/traces';
+import { installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
 import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
@@ -69,7 +69,6 @@ import {
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
-import { koaTracingMiddleware, expressTracingMiddleware, honoTracingMiddleware } from './httpServer/middleware';
 import { Server } from 'http';
 import {
   DrizzleClient,
@@ -81,10 +80,6 @@ import {
 import { TransactionConfig } from './transaction';
 
 import Koa from 'koa';
-import { Application as ExpressApp } from 'express';
-import { INestApplication } from '@nestjs/common';
-import { FastifyInstance } from 'fastify';
-import _fastifyExpress from '@fastify/express'; // This is for fastify.use()
 import { randomUUID } from 'node:crypto';
 
 import { PoolClient } from 'pg';
@@ -95,23 +90,17 @@ import { ConfiguredInstance } from '.';
 import { StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
-import { Hono } from 'hono';
 import { Conductor } from './conductor/conductor';
 import { EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
+import { context, trace } from '@opentelemetry/api';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
-  // HTTP applications to add DBOS tracing middleware to (extract W3C Trace context, set request ID, etc)
-  koaApp?: Koa;
-  expressApp?: ExpressApp;
-  nestApp?: INestApplication;
-  fastifyApp?: FastifyInstance;
-  honoApp?: Hono;
   // For DBOS Conductor
   conductorURL?: string;
   conductorKey?: string;
@@ -243,6 +232,8 @@ export class DBOS {
    * @param options - Launch options for connecting to DBOS Conductor
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
+    if (!isTraceContextWorking()) installTraceContextManager();
+
     // Do nothing is DBOS is already initialized
     insertAllMiddleware();
 
@@ -324,31 +315,6 @@ export class DBOS {
       } catch (e) {
         logger.warn(`Unable to start DBOS admin server on port ${runtimeConfig.admin_port}`);
       }
-    }
-
-    if (options?.koaApp) {
-      DBOS.logger.debug('Setting up Koa tracing middleware');
-      options.koaApp.use(koaTracingMiddleware);
-    }
-    if (options?.expressApp) {
-      DBOS.logger.debug('Setting up Express tracing middleware');
-      options.expressApp.use(expressTracingMiddleware);
-    }
-    if (options?.fastifyApp) {
-      // Fastify can use express or middie under the hood, for middlewares.
-      // Middie happens to have the same semantic than express.
-      // See https://fastify.dev/docs/latest/Reference/Middleware/
-      DBOS.logger.debug('Setting up Fastify tracing middleware');
-      options.fastifyApp.use(expressTracingMiddleware);
-    }
-    if (options?.nestApp) {
-      // Nest.kj can use express or fastify under the hood. With fastify, Nest.js uses middie.
-      DBOS.logger.debug('Setting up NestJS tracing middleware');
-      options.nestApp.use(expressTracingMiddleware);
-    }
-    if (options?.honoApp) {
-      DBOS.logger.debug('Setting up Hono tracing middleware');
-      options.honoApp.use(honoTracingMiddleware);
     }
 
     recordDBOSLaunch();
@@ -513,7 +479,7 @@ export class DBOS {
 
   /** Get the current DBOS tracing span, appropriate to the current context */
   static get span(): Span | undefined {
-    return getCurrentContextStore()?.span;
+    return trace.getActiveSpan() as Span | undefined;
   }
 
   /**
@@ -1020,14 +986,26 @@ export class DBOS {
     request: object,
     callback: () => Promise<R>,
   ): Promise<R> {
-    return DBOS.#withTopContext(
-      {
-        operationCaller: callerName,
-        span,
-        request,
-      },
-      callback,
-    );
+    const parentCtx = context.active();
+    return await context.with(trace.setSpan(parentCtx, span), async () => {
+      return DBOS.#withTopContext(
+        {
+          operationCaller: callerName,
+          request,
+        },
+        async () => {
+          try {
+            return await callback();
+          } catch (err) {
+            span.recordException(err as Error);
+            span.setStatus({ code: 2 }); // ERROR
+            throw err;
+          } finally {
+            span.end();
+          }
+        },
+      );
+    });
   }
 
   /**
@@ -1118,22 +1096,7 @@ export class DBOS {
         }
       }
     } else {
-      const span = options.span;
-      if (!options.span) {
-        options.span = DBOS.#executor.tracer.startSpan('topContext', {
-          operationUUID: options.idAssignedForNextWorkflow,
-          operationType: options.operationType,
-          authenticatedUser: options.authenticatedUser,
-          assumedRole: options.assumedRole,
-          authenticatedRoles: options.authenticatedRoles,
-        });
-      }
-
-      try {
-        return await runWithTopContext(options, callback);
-      } finally {
-        options.span = span;
-      }
+      return await runWithTopContext(options, callback);
     }
   }
 
@@ -1472,20 +1435,6 @@ export class DBOS {
 
       return await invokeRegOp(wfParams, pwfid, funcId);
     } else {
-      // Else, we setup a parent context that includes all the potential metadata the application could have set in DBOSLocalCtx
-      if (pctx) {
-        // If pctx has no span, e.g., has not been setup through `withTracedContext`, set up a parent span for the workflow here.
-        pctx.span =
-          pctx.span ??
-          DBOS.#executor.tracer.startSpan(pctx.operationCaller || 'workflowCaller', {
-            operationUUID: wfId,
-            operationType: pctx.operationType,
-            authenticatedUser: pctx.authenticatedUser,
-            assumedRole: pctx.assumedRole,
-            authenticatedRoles: pctx.authenticatedRoles,
-          });
-      }
-
       const wfParams: InternalWorkflowParams = {
         workflowUUID: wfId,
         queueName,
@@ -1600,18 +1549,6 @@ export class DBOS {
 
         const wfId = getNextWFID(undefined);
 
-        const pctx = getCurrentContextStore();
-        if (pctx) {
-          pctx.span =
-            pctx.span ??
-            DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
-              operationType: pctx?.operationType,
-              authenticatedUser: pctx?.authenticatedUser,
-              assumedRole: pctx?.assumedRole,
-              authenticatedRoles: pctx?.authenticatedRoles,
-            });
-        }
-
         const wfParams: WorkflowParams = {
           configuredInstance: inst,
           workflowUUID: wfId,
@@ -1669,18 +1606,6 @@ export class DBOS {
         }
 
         const wfId = getNextWFID(undefined);
-
-        const pctx = getCurrentContextStore()!;
-        if (pctx) {
-          pctx.span =
-            pctx.span ??
-            DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
-              operationType: pctx?.operationType,
-              authenticatedUser: pctx?.authenticatedUser,
-              assumedRole: pctx?.assumedRole,
-              authenticatedRoles: pctx?.authenticatedRoles,
-            });
-        }
 
         const wfParams: WorkflowParams = {
           workflowUUID: wfId,
@@ -1761,18 +1686,6 @@ export class DBOS {
         }
 
         const wfId = getNextWFID(undefined);
-
-        const pctx = getCurrentContextStore();
-        if (pctx) {
-          pctx.span =
-            pctx.span ??
-            DBOS.#executor.tracer.startSpan(pctx?.operationCaller || 'transactionCaller', {
-              operationType: pctx?.operationType,
-              authenticatedUser: pctx?.authenticatedUser,
-              assumedRole: pctx?.assumedRole,
-              authenticatedRoles: pctx?.authenticatedRoles,
-            });
-        }
 
         const wfParams: WorkflowParams = {
           configuredInstance: inst,

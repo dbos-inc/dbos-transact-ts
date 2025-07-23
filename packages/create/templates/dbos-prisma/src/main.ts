@@ -10,6 +10,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaDataSource } from '@dbos-inc/prisma-datasource';
 
 process.env['DATABASE_URL'] =
+  process.env['DBOS_DATABASE_URL'] ||
   process.env['DATABASE_URL'] ||
   `postgresql://${process.env.PGUSER || 'postgres'}:${process.env.PGPASSWORD || 'dbos'}@${process.env.PGHOST || 'localhost'}:${process.env.PGPORT || '5432'}/${process.env.PGDATABASE || 'dbos_prisma'}`;
 
@@ -93,7 +94,7 @@ async function main() {
     name: 'dbos-prisma',
     databaseUrl: process.env.DBOS_DATABASE_URL,
   });
-  await DBOS.launch({ expressApp: app });
+  await DBOS.launch();
   const PORT = parseInt(process.env.NODE_PORT || '3000');
   const ENV = process.env.NODE_ENV || 'development';
 

@@ -74,7 +74,7 @@ import {
   MethodRegistrationBase,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
-import { SpanStatusCode } from '@opentelemetry/api';
+import { context, SpanStatusCode, trace } from '@opentelemetry/api';
 import knex, { Knex } from 'knex';
 import {
   runInStepContext,
@@ -248,7 +248,7 @@ export class DBOSExecutor {
       this.telemetryCollector = new TelemetryCollector();
     }
     this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs);
-    this.ctxLogger = new DBOSContextualLogger(this.logger, () => getCurrentContextStore()!.span!);
+    this.ctxLogger = new DBOSContextualLogger(this.logger, () => trace.getActiveSpan() as Span);
     this.tracer = new Tracer(this.telemetryCollector);
 
     if (this.#debugMode) {
@@ -577,19 +577,15 @@ export class DBOSExecutor {
 
     const wfname = wf.name; // TODO: Should be what was registered in wfInfo...
 
-    const span = this.tracer.startSpan(
-      wfname,
-      {
-        status: StatusString.PENDING,
-        operationUUID: workflowID,
-        operationType: OperationType.WORKFLOW,
-        operationName: wInfo?.name ?? wf.name,
-        authenticatedUser: pctx?.authenticatedUser ?? '',
-        authenticatedRoles: pctx?.authenticatedRoles ?? [],
-        assumedRole: pctx?.assumedRole ?? '',
-      },
-      pctx?.span,
-    );
+    const span = this.tracer.startSpan(wfname, {
+      status: StatusString.PENDING,
+      operationUUID: workflowID,
+      operationType: OperationType.WORKFLOW,
+      operationName: wInfo?.name ?? wf.name,
+      authenticatedUser: pctx?.authenticatedUser ?? '',
+      authenticatedRoles: pctx?.authenticatedRoles ?? [],
+      assumedRole: pctx?.assumedRole ?? '',
+    });
 
     const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname;
 
@@ -703,26 +699,27 @@ export class DBOSExecutor {
 
       // Execute the workflow.
       try {
-        const callResult = await runWithParentContext(
-          pctx,
-          {
-            presetID,
-            timeoutMS,
-            deadlineEpochMS,
-            workflowId: workflowID,
-            span,
-            logger: this.ctxLogger,
-          },
-          () => {
-            const callPromise = wf.call(params.configuredInstance, ...args);
+        const callResult = await context.with(trace.setSpan(context.active(), span), async () => {
+          return await runWithParentContext(
+            pctx,
+            {
+              presetID,
+              timeoutMS,
+              deadlineEpochMS,
+              workflowId: workflowID,
+              logger: this.ctxLogger,
+            },
+            () => {
+              const callPromise = wf.call(params.configuredInstance, ...args);
 
-            if ($deadlineEpochMS === undefined) {
-              return callPromise;
-            } else {
-              return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
-            }
-          },
-        );
+              if ($deadlineEpochMS === undefined) {
+                return callPromise;
+              } else {
+                return callPromiseWithTimeout(callPromise, $deadlineEpochMS, this.systemDatabase);
+              }
+            },
+          );
+        });
 
         if (this.#debugMode) {
           const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
@@ -997,19 +994,15 @@ export class DBOSExecutor {
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
     const funcId = functionIDGetIncrement();
-    const span: Span = this.tracer.startSpan(
-      txn.name,
-      {
-        operationUUID: wfid,
-        operationType: OperationType.TRANSACTION,
-        operationName: txn.name,
-        authenticatedUser: pctx.authenticatedUser ?? '',
-        assumedRole: pctx.assumedRole ?? '',
-        authenticatedRoles: pctx.authenticatedRoles ?? [],
-        isolationLevel: txnReg.txnConfig.isolationLevel,
-      },
-      pctx.span,
-    );
+    const span: Span = this.tracer.startSpan(txn.name, {
+      operationUUID: wfid,
+      operationType: OperationType.TRANSACTION,
+      operationName: txn.name,
+      authenticatedUser: pctx.authenticatedUser ?? '',
+      assumedRole: pctx.assumedRole ?? '',
+      authenticatedRoles: pctx.authenticatedRoles ?? [],
+      isolationLevel: txnReg.txnConfig.isolationLevel,
+    });
 
     while (true) {
       await this.systemDatabase.checkIfCanceled(wfid);
@@ -1051,23 +1044,24 @@ export class DBOSExecutor {
         const ctxlog = this.ctxLogger;
         const result = await (async function () {
           try {
-            return await runWithParentContext(
-              pctx,
-              {
-                authenticatedRoles: pctx?.authenticatedRoles,
-                authenticatedUser: pctx?.authenticatedUser,
-                workflowId: wfid,
-                curTxFunctionId: funcId,
-                parentCtx: pctx,
-                sqlClient: client,
-                logger: ctxlog,
-                span,
-              },
-              async () => {
-                const tf = txn as unknown as (...args: T) => Promise<R>;
-                return await tf.call(clsinst, ...args);
-              },
-            );
+            return await context.with(trace.setSpan(context.active(), span), async () => {
+              return await runWithParentContext(
+                pctx,
+                {
+                  authenticatedRoles: pctx?.authenticatedRoles,
+                  authenticatedUser: pctx?.authenticatedUser,
+                  workflowId: wfid,
+                  curTxFunctionId: funcId,
+                  parentCtx: pctx,
+                  sqlClient: client,
+                  logger: ctxlog,
+                },
+                async () => {
+                  const tf = txn as unknown as (...args: T) => Promise<R>;
+                  return await tf.call(clsinst, ...args);
+                },
+              );
+            });
           } catch (e) {
             return e instanceof Error ? e : new Error(`${e as any}`);
           }
@@ -1200,20 +1194,16 @@ export class DBOSExecutor {
 
     const executeLocally = this.#debugMode || (procConfig.executeLocally ?? false);
     const funcId = functionIDGetIncrement();
-    const span: Span = this.tracer.startSpan(
-      proc.name,
-      {
-        operationUUID: wfid,
-        operationType: OperationType.PROCEDURE,
-        operationName: proc.name,
-        authenticatedUser: pctx.authenticatedUser ?? '',
-        assumedRole: pctx.assumedRole ?? '',
-        authenticatedRoles: pctx.authenticatedRoles ?? [],
-        isolationLevel: procInfo.procConfig.isolationLevel,
-        executeLocally,
-      },
-      pctx.span,
-    );
+    const span: Span = this.tracer.startSpan(proc.name, {
+      operationUUID: wfid,
+      operationType: OperationType.PROCEDURE,
+      operationName: proc.name,
+      authenticatedUser: pctx.authenticatedUser ?? '',
+      assumedRole: pctx.assumedRole ?? '',
+      authenticatedRoles: pctx.authenticatedRoles ?? [],
+      isolationLevel: procInfo.procConfig.isolationLevel,
+      executeLocally,
+    });
 
     try {
       const result = executeLocally
@@ -1290,21 +1280,22 @@ export class DBOSExecutor {
             const pctx = getCurrentContextStore();
             if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
             if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
-            return await runWithParentContext(
-              pctx,
-              {
-                curTxFunctionId: funcId,
-                parentCtx: pctx,
-                isInStoredProc: true,
-                sqlClient: client,
-                logger: ctxlog,
-                span,
-              },
-              async () => {
-                const pf = proc as unknown as TypedAsyncFunction<T, R>;
-                return await pf(...args);
-              },
-            );
+            return await context.with(trace.setSpan(context.active(), span), async () => {
+              return await runWithParentContext(
+                pctx,
+                {
+                  curTxFunctionId: funcId,
+                  parentCtx: pctx,
+                  isInStoredProc: true,
+                  sqlClient: client,
+                  logger: ctxlog,
+                },
+                async () => {
+                  const pf = proc as unknown as TypedAsyncFunction<T, R>;
+                  return await pf(...args);
+                },
+              );
+            });
           } catch (e) {
             return e instanceof Error ? e : new Error(`${e as any}`);
           }
@@ -1555,22 +1546,18 @@ export class DBOSExecutor {
     const funcID = functionIDGetIncrement();
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
-    const span: Span = this.tracer.startSpan(
-      stepFnName,
-      {
-        operationUUID: wfid,
-        operationType: OperationType.STEP,
-        operationName: stepFnName,
-        authenticatedUser: lctx.authenticatedUser ?? '',
-        assumedRole: lctx.assumedRole ?? '',
-        authenticatedRoles: lctx.authenticatedRoles ?? [],
-        retriesAllowed: stepConfig.retriesAllowed,
-        intervalSeconds: stepConfig.intervalSeconds,
-        maxAttempts: stepConfig.maxAttempts,
-        backoffRate: stepConfig.backoffRate,
-      },
-      lctx.span,
-    );
+    const span: Span = this.tracer.startSpan(stepFnName, {
+      operationUUID: wfid,
+      operationType: OperationType.STEP,
+      operationName: stepFnName,
+      authenticatedUser: lctx.authenticatedUser ?? '',
+      assumedRole: lctx.assumedRole ?? '',
+      authenticatedRoles: lctx.authenticatedRoles ?? [],
+      retriesAllowed: stepConfig.retriesAllowed,
+      intervalSeconds: stepConfig.intervalSeconds,
+      maxAttempts: stepConfig.maxAttempts,
+      backoffRate: stepConfig.backoffRate,
+    });
 
     // Check if this execution previously happened, returning its original result if it did.
     const checkr = await this.systemDatabase.getOperationResultAndThrowIfCancelled(wfid, funcID);
@@ -1611,7 +1598,7 @@ export class DBOSExecutor {
           await this.systemDatabase.checkIfCanceled(wfid);
 
           let cresult: R | undefined;
-          await runInStepContext(lctx, funcID, span, maxAttempts, attemptNum, async () => {
+          await runInStepContext(lctx, funcID, maxAttempts, attemptNum, async () => {
             const sf = stepFn as unknown as (...args: T) => Promise<R>;
             cresult = await sf.call(clsInst, ...args);
           });
@@ -1639,9 +1626,11 @@ export class DBOSExecutor {
     } else {
       try {
         let cresult: R | undefined;
-        await runInStepContext(lctx, funcID, span, maxAttempts, undefined, async () => {
-          const sf = stepFn as unknown as (...args: T) => Promise<R>;
-          cresult = await sf.call(clsInst, ...args);
+        await context.with(trace.setSpan(context.active(), span), async () => {
+          await runInStepContext(lctx, funcID, maxAttempts, undefined, async () => {
+            const sf = stepFn as unknown as (...args: T) => Promise<R>;
+            cresult = await sf.call(clsInst, ...args);
+          });
         });
         result = cresult!;
       } catch (error) {

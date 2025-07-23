@@ -6,6 +6,31 @@ import { TelemetryCollector } from './collector';
 import { hrTime } from '@opentelemetry/core';
 import { globalParams } from '../utils';
 
+import { context, trace } from '@opentelemetry/api';
+import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
+
+export function isTraceContextWorking(): boolean {
+  const span = trace.getTracer('otel-bootstrap-check').startSpan('probe');
+  const testContext = trace.setSpan(context.active(), span);
+
+  let visible: boolean | undefined;
+  context.with(testContext, () => {
+    visible = trace.getSpan(context.active()) === span;
+  });
+
+  span.end?.();
+  return visible === true;
+}
+
+export function installTraceContextManager() {
+  const contextManager = new AsyncLocalStorageContextManager();
+  contextManager.enable();
+  context.setGlobalContextManager(contextManager);
+
+  const provider = new BasicTracerProvider();
+  provider.register();
+}
+
 export class Tracer {
   private readonly tracer: BasicTracerProvider;
   readonly applicationID: string;

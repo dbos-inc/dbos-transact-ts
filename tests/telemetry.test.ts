@@ -3,27 +3,32 @@ import { DBOSExecutor, DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import request from 'supertest';
 import { DBOS } from '../src';
+import { context, trace } from '@opentelemetry/api';
+import type { Span as SDKSpan } from '@opentelemetry/sdk-trace-base';
 import { translateDbosConfig } from '../src/dbos-runtime/config';
 
 export class TestClass {
-  @DBOS.transaction({ readOnly: false })
+  @DBOS.step({})
   static async test_function(name: string): Promise<string> {
-    const { rows } = await DBOS.pgClient.query(`select current_user from current_user where current_user=$1;`, [name]);
-    const result = JSON.stringify(rows[0]);
-    DBOS.logger.info(`transaction result: ${result}`);
-    return result;
+    expect(trace.getSpan(context.active())).toBeDefined();
+    expect((trace.getSpan(context.active()) as SDKSpan).name).toBe('test_function');
+    return Promise.resolve(`hello ${name}`);
   }
 
   @DBOS.workflow()
-  @DBOS.requiredRole(['dbosAppAdmin', 'dbosAppUser'])
   static async test_workflow(name: string): Promise<string> {
+    expect(trace.getSpan(context.active())).toBeDefined();
+    expect((trace.getSpan(context.active()) as SDKSpan).name).toBe('test_workflow');
+
     const funcResult = await TestClass.test_function(name);
     return funcResult;
   }
 
   @DBOS.getApi('/hello')
   static async hello() {
-    return Promise.resolve({ message: 'hello!' });
+    expect(trace.getSpan(context.active())).toBeDefined();
+    expect((trace.getSpan(context.active()) as SDKSpan).name).toBe('/hello');
+    return Promise.resolve({ message: await TestClass.test_workflow('joe') });
   }
 }
 
@@ -79,7 +84,7 @@ describe('dbos-telemetry', () => {
       const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello').set(headers);
       expect(response.statusCode).toBe(200);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(response.body.message).toBe('hello!');
+      expect(response.body.message).toBe('hello joe');
       // traceId should be the same, spanId should be different (ID of the last operation's span)
       expect(response.headers.traceparent).toContain('00-4bf92f3577b34da6a3ce929d0e0e4736');
       expect(response.headers.tracestate).toBe(headers[TRACE_STATE_HEADER]);
@@ -89,7 +94,7 @@ describe('dbos-telemetry', () => {
       const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
       expect(response.statusCode).toBe(200);
       // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(response.body.message).toBe('hello!');
+      expect(response.body.message).toBe('hello joe');
       // traceId should be the same, spanId should be different (ID of the last operation's span)
       expect(response.headers.traceparent).not.toBe(null);
     });
