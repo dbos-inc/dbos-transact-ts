@@ -11,7 +11,9 @@ import { DrizzleDataSource } from '@dbos-inc/drizzle-datasource';
 import { NodePgDatabase } from 'drizzle-orm/node-postgres';
 
 const config = {
-  connectionString: process.env.DBOS_DATABASE_URL ?? 'postgres://postgres:dbos@localhost:5432/dbos_drizzle',
+  connectionString:
+    process.env.DBOS_DATABASE_URL ||
+    `postgresql://${process.env.PGUSER || 'postgres'}:${process.env.PGPASSWORD || 'dbos'}@${process.env.PGHOST || 'localhost'}:${process.env.PGPORT || '5432'}/${process.env.PGDATABASE || 'dbos_drizzle'}`,
 };
 
 const drizzleds = new DrizzleDataSource<NodePgDatabase>('app-db', config);

@@ -10,6 +10,7 @@ import { PrismaClient } from '@prisma/client';
 import { PrismaDataSource } from '@dbos-inc/prisma-datasource';
 
 process.env['DATABASE_URL'] =
+  process.env['DBOS_DATABASE_URL'] ||
   process.env['DATABASE_URL'] ||
   `postgresql://${process.env.PGUSER || 'postgres'}:${process.env.PGPASSWORD || 'dbos'}@${process.env.PGHOST || 'localhost'}:${process.env.PGPORT || '5432'}/${process.env.PGDATABASE || 'dbos_prisma'}`;
 
