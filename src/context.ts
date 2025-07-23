@@ -1,4 +1,3 @@
-import { Span } from '@opentelemetry/sdk-trace-base';
 import { DBOSContextualLogger } from './telemetry/logs';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
@@ -17,7 +16,6 @@ export interface StepStatus {
 export interface DBOSContextOptions {
   idAssignedForNextWorkflow?: string;
   queueAssignedForWorkflows?: string;
-  span?: Span;
   logger?: DBOSContextualLogger;
   authenticatedUser?: string;
   authenticatedRoles?: string[];
@@ -118,7 +116,7 @@ export async function runWithParentContext<R>(
   );
 }
 
-export async function runWithDataSourceContext<R>(span: Span | undefined, callnum: number, callback: () => Promise<R>) {
+export async function runWithDataSourceContext<R>(callnum: number, callback: () => Promise<R>) {
   // Check we are in a workflow context and not in a step / transaction already
   const pctx = getCurrentContextStore() ?? {};
   return await asyncLocalCtx.run(
@@ -126,7 +124,6 @@ export async function runWithDataSourceContext<R>(span: Span | undefined, callnu
       ...pctx,
       curTxFunctionId: callnum,
       parentCtx: pctx,
-      span: span ? span : pctx.span,
       logger: DBOSExecutor.globalInstance!.ctxLogger,
     },
     callback,
@@ -136,7 +133,6 @@ export async function runWithDataSourceContext<R>(span: Span | undefined, callnu
 export async function runInStepContext<R>(
   pctx: DBOSLocalCtx,
   stepID: number,
-  span: Span,
   maxAttempts: number | undefined,
   currentAttempt: number | undefined,
   callback: () => Promise<R>,
@@ -158,7 +154,6 @@ export async function runInStepContext<R>(
       curStepFunctionId: stepID,
       parentCtx: pctx,
       logger: DBOSExecutor.globalInstance!.ctxLogger,
-      span,
     },
     callback,
   );

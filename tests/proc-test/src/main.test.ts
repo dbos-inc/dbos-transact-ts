@@ -12,7 +12,7 @@ async function dropLocalProcs() {
 
 describe('operations-test', () => {
   beforeAll(async () => {
-    await DBOS.launch({ expressApp: app });
+    await DBOS.launch();
     await dropLocalProcs();
   });
 

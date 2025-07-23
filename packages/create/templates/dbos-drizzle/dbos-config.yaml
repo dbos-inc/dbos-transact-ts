@@ -5,7 +5,6 @@
 
 name: dbos-drizzle
 language: node
-database_url: ${DBOS_DATABASE_URL}
 database:
   migrate:
     - npx drizzle-kit migrate

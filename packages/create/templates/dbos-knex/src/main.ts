@@ -9,7 +9,9 @@ import { KnexDataSource } from '@dbos-inc/knex-datasource';
 
 const config = {
   client: 'pg',
-  connection: process.env.DBOS_DATABASE_URL ?? 'postgres://postgres:dbos@localhost:5432/dbos_knex',
+  connection:
+    process.env.DBOS_DATABASE_URL ||
+    `postgresql://${process.env.PGUSER || 'postgres'}:${process.env.PGPASSWORD || 'dbos'}@${process.env.PGHOST || 'localhost'}:${process.env.PGPORT || '5432'}/${process.env.PGDATABASE || 'dbos_knex'}`,
 };
 
 const knexds = new KnexDataSource('app-db', config);
@@ -104,7 +106,7 @@ async function main() {
     name: 'dbos-knex',
     databaseUrl: process.env.DBOS_DATABASE_URL,
   });
-  await DBOS.launch({ expressApp: app });
+  await DBOS.launch();
   const PORT = parseInt(process.env.NODE_PORT || '3000');
   const ENV = process.env.NODE_ENV || 'development';
 

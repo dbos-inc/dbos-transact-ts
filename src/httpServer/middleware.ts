@@ -1,20 +1,12 @@
 import Koa from 'koa';
-import { Request, Response, NextFunction } from 'express';
 import { IncomingHttpHeaders } from 'http';
 
 import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from '../decorators';
 import { DBOSContextualLogger } from '../telemetry/logs';
 import { UserDatabaseClient } from '../user_database';
-import { OperationType } from '../dbos-executor';
-import { DBOS, getExecutor } from '../dbos';
-import { HTTPRequest } from '../context';
-import { Context as HonoContext, Next as HonoNext } from 'hono';
 
 import { Span } from '@opentelemetry/sdk-trace-base';
-import { W3CTraceContextPropagator } from '@opentelemetry/core';
-import { trace, defaultTextMapGetter, ROOT_CONTEXT, SpanStatusCode } from '@opentelemetry/api';
 import { randomUUID } from 'node:crypto';
-import { DBOSJSON } from '../utils';
 
 // Middleware context does not extend base context because it runs before handler/workflow operations.
 export interface MiddlewareContext {
@@ -159,144 +151,4 @@ export function getOrGenerateRequestID(headers: IncomingHttpHeaders): string {
   const newID = randomUUID();
   headers[RequestIDHeader.toLowerCase()] = newID; // This does not carry through the response
   return newID;
-}
-
-export function createHTTPSpan(request: HTTPRequest, httpTracer: W3CTraceContextPropagator): Span {
-  // If present, retrieve the trace context from the request
-  const extractedSpanContext = trace.getSpanContext(
-    httpTracer.extract(ROOT_CONTEXT, request.headers, defaultTextMapGetter),
-  );
-  let span: Span;
-  const spanAttributes = {
-    operationType: OperationType.HANDLER,
-    requestID: request.requestID,
-    requestIP: request.ip,
-    requestURL: request.url,
-    requestMethod: request.method,
-  };
-  if (extractedSpanContext === undefined) {
-    // request.url should be defined by now. Let's cast it to string
-    span = getExecutor().tracer.startSpan(request.url as string, spanAttributes);
-  } else {
-    extractedSpanContext.isRemote = true;
-    span = getExecutor().tracer.startSpanWithContext(extractedSpanContext, request.url as string, spanAttributes);
-  }
-  return span;
-}
-
-export async function koaTracingMiddleware(ctx: Koa.Context, next: Koa.Next) {
-  // Retrieve or generate the request ID
-  const requestID = getOrGenerateRequestID(ctx.request.headers);
-  // Attach it to the response headers (here through Koa's context)
-  ctx.set(RequestIDHeader, requestID);
-  const request: HTTPRequest = {
-    headers: ctx.request.headers,
-    rawHeaders: ctx.req.rawHeaders,
-    params: ctx.params,
-    body: ctx.request.body,
-    rawBody: ctx.request.rawBody,
-    query: ctx.request.query,
-    querystring: ctx.request.querystring,
-    url: ctx.request.url,
-    ip: ctx.request.ip,
-    method: ctx.request.method,
-    requestID,
-  };
-  const httpTracer = new W3CTraceContextPropagator();
-  const span = createHTTPSpan(request, httpTracer);
-
-  try {
-    await DBOS.withTracedContext(request.url as string, span, request, next);
-    span.setStatus({ code: SpanStatusCode.OK });
-  } catch (e) {
-    if (e instanceof Error) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-    } else {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
-    }
-    throw e;
-  } finally {
-    getExecutor().tracer.endSpan(span);
-  }
-}
-
-export async function expressTracingMiddleware(req: Request, res: Response, next: NextFunction) {
-  // Retrieve or generate the request ID
-  const requestID = getOrGenerateRequestID(req.headers);
-  // Attach it to the response headers (here through Express's response)
-  res.setHeader(RequestIDHeader, requestID);
-  const request: HTTPRequest = {
-    headers: req.headers,
-    rawHeaders: req.rawHeaders,
-    params: req.params,
-    body: req.body,
-    rawBody: req.rawBody,
-    // query: req.query,
-    querystring: req.url.split('?')[1],
-    url: req.url,
-    ip: req.ip,
-    method: req.method,
-    requestID,
-  };
-  const httpTracer = new W3CTraceContextPropagator();
-  const span = createHTTPSpan(request, httpTracer);
-
-  try {
-    await DBOS.withTracedContext(request.url as string, span, request, next as () => Promise<void>);
-    if (res.statusCode >= 400) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: res.statusMessage });
-    } else {
-      span.setStatus({ code: SpanStatusCode.OK });
-    }
-  } catch (e) {
-    if (e instanceof Error) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-    } else {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
-    }
-    throw e;
-  } finally {
-    getExecutor().tracer.endSpan(span);
-  }
-}
-
-export async function honoTracingMiddleware(ctx: HonoContext, next: HonoNext) {
-  const headers = ctx.req.header();
-  const rawHeaders: string[] = [];
-  ctx.req.raw.headers.forEach((v, k) => rawHeaders.push(k, v));
-  const url = ctx.req.url;
-  // Retrieve or generate the request ID
-  const requestID = getOrGenerateRequestID(headers);
-  // Attach it to the response headers (here through Koa's context)
-  ctx.set(RequestIDHeader, requestID);
-  const request: HTTPRequest = {
-    headers,
-    rawHeaders,
-    params: ctx.req.param(),
-    query: ctx.req.query(),
-    querystring: ctx.req.url.split('?')[1],
-    url,
-    method: ctx.req.method,
-    requestID,
-  };
-  const httpTracer = new W3CTraceContextPropagator();
-  const span = createHTTPSpan(request, httpTracer);
-
-  try {
-    await DBOS.withTracedContext(url, span, request, next as () => Promise<void>);
-    if (ctx.res.status >= 400) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: ctx.res.statusText });
-    } else {
-      span.setStatus({ code: SpanStatusCode.OK });
-    }
-  } catch (e) {
-    if (e instanceof Error) {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-    } else {
-      span.setStatus({ code: SpanStatusCode.ERROR, message: DBOSJSON.stringify(e) });
-    }
-    throw e;
-  } finally {
-    getExecutor().tracer.endSpan(span);
-  }
 }
