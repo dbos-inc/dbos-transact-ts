@@ -18,7 +18,7 @@ describe('httpserver-tests', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });

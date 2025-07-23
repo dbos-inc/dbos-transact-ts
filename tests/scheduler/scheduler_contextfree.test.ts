@@ -9,7 +9,7 @@ describe('cf-scheduled-wf-tests-simple', () => {
 
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
@@ -130,7 +130,7 @@ describe('cf-scheduled-wf-tests-oaoo', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
@@ -172,7 +172,7 @@ describe('cf-scheduled-wf-tests-when-active', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
@@ -256,7 +256,7 @@ describe('decorator-free-scheduled', () => {
 
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
-    config = generateDBOSTestConfig();
+    config = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();

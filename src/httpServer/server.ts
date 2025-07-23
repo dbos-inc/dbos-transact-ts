@@ -653,7 +653,7 @@ export class DBOSHttpServer {
                   logger: dbosExec.ctxLogger,
                   span,
                   query: (query, ...args) => {
-                    return dbosExec.userDatabase.queryFunction(query, ...args);
+                    return dbosExec.queryUserDbFunction(query, ...args);
                   },
                 });
                 if (res) {

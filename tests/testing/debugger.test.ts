@@ -13,8 +13,8 @@ describe('debugger-test', () => {
   let systemDBClient: Client;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig();
-    debugConfig = generateDBOSTestConfig(undefined);
+    config = generateDBOSTestConfig('pg-node');
+    debugConfig = generateDBOSTestConfig('pg-node');
     expect(config.databaseUrl).toBeDefined();
     const url = new URL(config.databaseUrl!);
     username = url.username ?? 'postgres';

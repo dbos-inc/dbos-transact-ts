@@ -20,7 +20,7 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
     name: 'dbostest',
     databaseUrl,
     systemDatabaseUrl,
-    userDatabaseClient: dbClient || UserDatabaseName.PGNODE,
+    userDatabaseClient: dbClient,
   };
 }
 

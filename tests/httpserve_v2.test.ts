@@ -220,7 +220,7 @@ async function main() {
 
 describe('dbos-v2api-tests-http', () => {
   beforeAll(async () => {
-    const config = generateDBOSTestConfig();
+    const config = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     await DBOS.launch();

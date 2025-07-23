@@ -1,6 +1,7 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { app, Hello } from './main';
+import { app, config, Hello } from './main';
 import request from 'supertest';
+import { Client } from 'pg';
 
 describe('operations-test', () => {
   beforeAll(async () => {
@@ -18,9 +19,14 @@ describe('operations-test', () => {
     const res = await Hello.helloTransaction('dbos');
     expect(res).toMatch('Hello, dbos! We have made');
 
-    // Check the greet count.
-    const rows = await DBOS.queryUserDB('SELECT * FROM dbos_hello WHERE greet_count=1');
-    expect(rows.length).toEqual(1);
+    const client = new Client(config);
+    try {
+      await client.connect();
+      const rows = await client.query('SELECT * FROM dbos_hello WHERE greet_count=1');
+      expect(rows.rows.length).toEqual(1);
+    } finally {
+      await client.end();
+    }
   });
 
   /**

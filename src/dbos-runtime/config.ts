@@ -194,8 +194,7 @@ export function getDbosConfig(
     config.language === undefined || config.language === 'node',
     `Config file specifies invalid language ${config.language}`,
   );
-  const userDbClient = config.database?.app_db_client ?? UserDatabaseName.KNEX;
-  assert(isValidUserDbClient(userDbClient), `Invalid app_db_client ${userDbClient} in config file`);
+  const userDbClient = config.database?.app_db_client;
 
   return translateDbosConfig(
     {
@@ -228,6 +227,11 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     system_database_url: options.systemDatabaseUrl,
     name: options.name,
   });
+
+  if (options.userDatabaseClient) {
+    assert(isValidUserDbClient(options.userDatabaseClient), `Invalid user db client ${options.userDatabaseClient}`);
+  }
+
   return {
     databaseUrl,
     userDbPoolSize: options.userDatabasePoolSize,

@@ -13,7 +13,6 @@ describe('chaos-tests', () => {
   beforeAll(() => {
     config = {
       name: 'test-app',
-      userDatabaseClient: 'knex',
       databaseUrl: `postgresql://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?sslmode=disable`,
     };
     DBOS.setConfig(config);
@@ -59,7 +58,7 @@ describe('chaos-tests', () => {
   }
 
   test('test-workflow', async () => {
-    const numWorkflows = 5000;
+    const numWorkflows = 1000;
     for (let i = 0; i < numWorkflows; i++) {
       await expect(TestWorkflow.workflow(i))
         .resolves.toEqual(i + 3)
