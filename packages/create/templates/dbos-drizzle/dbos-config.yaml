@@ -7,6 +7,7 @@ name: dbos-drizzle
 language: node
 database_url: ${DBOS_DATABASE_URL}
 database:
+  app_db_client: drizzle
   migrate:
     - npx drizzle-kit migrate
 runtimeConfig:

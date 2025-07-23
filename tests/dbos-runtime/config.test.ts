@@ -476,6 +476,7 @@ describe('dbos-config', () => {
           'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
         sysDbPoolSize: undefined,
         userDbClient: undefined,
+        userDbEnabled: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -504,6 +505,7 @@ describe('dbos-config', () => {
           'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
         sysDbPoolSize: undefined,
         userDbClient: undefined,
+        userDbEnabled: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -529,6 +531,7 @@ describe('dbos-config', () => {
           'postgres://jon:doe@mother:2345/dbostest_dbos_sys?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
         sysDbPoolSize: undefined,
         userDbClient: undefined,
+        userDbEnabled: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -554,6 +557,7 @@ describe('dbos-config', () => {
         systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
         sysDbPoolSize: undefined,
         userDbClient: undefined,
+        userDbEnabled: false,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -574,6 +578,7 @@ describe('dbos-config', () => {
       databaseUrl: 'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
       name: 'my-app',
       systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
+      userDbEnabled: true,
       telemetry: {
         logs: {
           logLevel: 'info',
