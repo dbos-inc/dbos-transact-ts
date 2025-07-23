@@ -122,7 +122,6 @@ export interface DBOSConfig {
   databaseUrl?: string;
   userDatabaseClient?: UserDatabaseName;
   userDatabasePoolSize?: number;
-  enableUserDatabase?: boolean;
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
@@ -139,7 +138,6 @@ export type DBOSConfigInternal = {
   name?: string;
 
   databaseUrl: string;
-  userDbEnabled: boolean;
   userDbPoolSize?: number;
   userDbClient?: UserDatabaseName;
 
@@ -257,7 +255,7 @@ export class DBOSExecutor {
       this.logger.info('Running in debug mode!');
     }
 
-    this.#procedurePool = this.config.userDbEnabled ? new Pool(getClientConfig(this.config.databaseUrl)) : undefined;
+    this.#procedurePool = this.config.userDbClient ? new Pool(getClientConfig(this.config.databaseUrl)) : undefined;
 
     if (systemDatabase) {
       this.logger.debug('Using provided system database'); // XXX print the name or something
@@ -373,7 +371,7 @@ export class DBOSExecutor {
         this.logger.debug(`Loaded ${length} ORM entities`);
       }
 
-      if (this.config.userDbEnabled) {
+      if (this.config.userDbClient) {
         if (!this.#debugMode) {
           await createDBIfDoesNotExist(this.config.databaseUrl, this.logger);
         }

@@ -241,7 +241,6 @@ describe('prisma-engine-config-tests', () => {
     config = {
       name: 'dbostest',
       userDatabaseClient: UserDatabaseName.PRISMA,
-      enableUserDatabase: true,
       userDatabasePoolSize: 2, // This is ignored with Prisma
       databaseUrl: `postgresql://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?connection_limit=2&connect_timeout=3`,
     };

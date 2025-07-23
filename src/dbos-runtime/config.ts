@@ -196,9 +196,6 @@ export function getDbosConfig(
     `Config file specifies invalid language ${config.language}`,
   );
   const userDbClient = config.database?.app_db_client;
-  if (userDbClient) {
-    assert(isValidUserDbClient(userDbClient), `Invalid app_db_client ${userDbClient} in config file`);
-  }
 
   return translateDbosConfig(
     {
@@ -206,7 +203,6 @@ export function getDbosConfig(
       databaseUrl: config.database_url,
       systemDatabaseUrl: config.system_database_url,
       userDatabaseClient: userDbClient,
-      enableUserDatabase: userDbClient !== undefined,
       logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
       addContextMetadata: config.telemetry?.logs?.addContextMetadata,
       otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
@@ -233,11 +229,8 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     name: options.name,
   });
 
-  const userDbEnabled = options.enableUserDatabase ?? false;
-  if (!userDbEnabled && options.userDatabaseClient) {
-    DBOS.logger.warn(
-      `User database client configured as ${options.userDatabaseClient} but user database is not enabled.`,
-    );
+  if (options.userDatabaseClient) {
+    assert(isValidUserDbClient(options.userDatabaseClient), `Invalid user db client ${options.userDatabaseClient}`);
   }
 
   return {
@@ -245,8 +238,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     userDbPoolSize: options.userDatabasePoolSize,
     systemDatabaseUrl,
     sysDbPoolSize: options.systemDatabasePoolSize,
-    userDbClient: userDbEnabled ? options.userDatabaseClient : undefined,
-    userDbEnabled,
+    userDbClient: options.userDatabaseClient,
     telemetry: {
       logs: {
         logLevel: options.logLevel || 'info',
