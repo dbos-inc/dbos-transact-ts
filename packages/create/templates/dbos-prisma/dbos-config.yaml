@@ -7,7 +7,6 @@ name: dbos-prisma
 language: node
 database_url: ${DBOS_DATABASE_URL}
 database:
-  app_db_client: prisma
   migrate:
     - npx prisma migrate deploy
 runtimeConfig:

@@ -7,7 +7,6 @@ name: dbos-knex
 language: node
 database_url: ${DBOS_DATABASE_URL}
 database:
-  app_db_client: knex 
   migrate:
     - npx knex migrate:latest
   rollback:
