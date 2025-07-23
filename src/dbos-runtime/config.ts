@@ -9,7 +9,6 @@ import path from 'path';
 import dbosConfigSchema from '../../dbos-config.schema.json';
 import assert from 'assert';
 import validator from 'validator';
-import { DBOS } from '..';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
