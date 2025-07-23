@@ -58,7 +58,7 @@ describe('chaos-tests', () => {
   }
 
   test('test-workflow', async () => {
-    const numWorkflows = 1000;
+    const numWorkflows = 5000;
     for (let i = 0; i < numWorkflows; i++) {
       await expect(TestWorkflow.workflow(i))
         .resolves.toEqual(i + 3)
