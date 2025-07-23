@@ -13,6 +13,7 @@ describe('chaos-tests', () => {
   beforeAll(() => {
     config = {
       name: 'test-app',
+      userDatabaseClient: 'knex',
       databaseUrl: `postgresql://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?sslmode=disable`,
     };
     DBOS.setConfig(config);
