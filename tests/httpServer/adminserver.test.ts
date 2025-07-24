@@ -63,7 +63,6 @@ describe('running-admin-server-tests', () => {
     DBOS.setConfig({ ...config, runAdminServer: true, adminPort: 3001 });
     await setUpDBOSTestDb(config);
     await DBOS.launch();
-    await DBOS.launchAppHTTPServer();
     systemDBClient = new Client({
       connectionString: config.systemDatabaseUrl,
     });
