@@ -127,22 +127,6 @@ type InvokeFunctionsAsyncInst<T> = T extends ConfiguredInstance
     }
   : never;
 
-function httpApiDec(verb: APITypes, url: string) {
-  return function apidec<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = wrapDBOSFunctionAndRegisterDec(target, propertyKey, inDescriptor);
-    const handlerRegistration = registration as unknown as HandlerRegistrationBase;
-    handlerRegistration.apiURL = url;
-    handlerRegistration.apiType = verb;
-    requestArgValidation(registration);
-
-    return descriptor;
-  };
-}
-
 export interface StartWorkflowParams {
   workflowID?: string;
   queueName?: string;
@@ -184,7 +168,6 @@ export class DBOS {
   // Lifecycle
   ///////
   static adminServer: Server | undefined = undefined;
-  static appServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
 
   /**
@@ -339,12 +322,6 @@ export class DBOS {
    *   Stops workflow processing and disconnects from databases
    */
   static async shutdown() {
-    // Stop the app server
-    if (DBOS.appServer) {
-      DBOS.appServer.close();
-      DBOS.appServer = undefined;
-    }
-
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
@@ -393,59 +370,6 @@ export class DBOS {
   // Global DBOS executor instance
   static get #executor() {
     return getExecutor();
-  }
-
-  /**
-   * Creates a node.js HTTP handler for all entrypoints registered with `@DBOS.getApi`
-   * and other decorators.  The handler can be retrieved with `DBOS.getHTTPHandlersCallback()`.
-   * This method does not start listening for requests.  For that, call `DBOS.launchAppHTTPServer()`.
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static setUpHandlerCallback() {
-    if (!DBOSExecutor.globalInstance) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    // Create the DBOS HTTP server
-    //  This may be a no-op if there are no registered endpoints
-    const server = new DBOSHttpServer(DBOSExecutor.globalInstance);
-
-    return server;
-  }
-
-  /**
-   * Creates a node.js HTTP handler for all entrypoints registered with `@DBOS.getApi`
-   * and other decorators.  This method also starts listening for requests, on the port
-   * specified in the `DBOSRuntimeConfig`.
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static async launchAppHTTPServer() {
-    const server = DBOS.setUpHandlerCallback();
-    if (DBOS.#port) {
-      // This will not listen if there's no decorated endpoint
-      DBOS.appServer = await server.appListen(DBOS.#port);
-    }
-  }
-
-  /**
-   * Retrieves the HTTP handlers callback for DBOS HTTP.
-   *  (This is the one that handles the @DBOS.getApi, etc., methods.)
-   *   Useful for testing purposes, or to combine the DBOS service with other
-   *   node.js HTTP server frameworks.
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static getHTTPHandlersCallback() {
-    if (!DBOSHttpServer.instance) {
-      return undefined;
-    }
-    return DBOSHttpServer.instance.app.callback();
-  }
-
-  /** For unit testing of admin server (do not call) */
-  static getAdminCallback() {
-    if (!DBOSHttpServer.instance) {
-      return undefined;
-    }
-    return DBOSHttpServer.instance.adminApp.callback();
   }
 
   //////
@@ -1793,46 +1717,6 @@ export class DBOS {
     }
 
     return func();
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP GET operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static getApi(url: string) {
-    return httpApiDec(APITypes.GET, url);
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP POST operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static postApi(url: string) {
-    return httpApiDec(APITypes.POST, url);
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP PUT operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static putApi(url: string) {
-    return httpApiDec(APITypes.PUT, url);
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP PATCH operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static patchApi(url: string) {
-    return httpApiDec(APITypes.PATCH, url);
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP DELETE operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static deleteApi(url: string) {
-    return httpApiDec(APITypes.DELETE, url);
   }
 
   /**

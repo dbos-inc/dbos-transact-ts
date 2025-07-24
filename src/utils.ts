@@ -183,10 +183,6 @@ export const DBOSJSON = {
   },
 };
 
-export function exhaustiveCheckGuard(_: never): never {
-  throw new Error('Exaustive matching is not applied');
-}
-
 // Capture original functions
 const originalStdoutWrite = process.stdout.write.bind(process.stdout);
 const originalStderrWrite = process.stderr.write.bind(process.stderr);

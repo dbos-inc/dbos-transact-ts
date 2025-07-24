@@ -160,7 +160,6 @@ export interface InternalWorkflowParams extends WorkflowParams {
 }
 
 export const OperationType = {
-  HANDLER: 'handler',
   WORKFLOW: 'workflow',
   TRANSACTION: 'transaction',
   STEP: 'step',
