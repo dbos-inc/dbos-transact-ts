@@ -116,6 +116,7 @@ program
 
 program
   .command('postgres')
+  .alias('pg')
   .description('Helps you setting up a local Postgres database with Docker')
   .addCommand(
     new Command('start').description('Start a local Postgres database with Docker').action(async () => {
