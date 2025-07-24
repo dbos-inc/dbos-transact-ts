@@ -31,7 +31,6 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   workflowId?: string;
   curWFFunctionId?: number; // If currently in a WF, the current call number / ID
   presetID?: boolean;
-  timeoutMS?: number | null;
   deadlineEpochMS?: number;
   inRecovery?: boolean;
   curStepFunctionId?: number; // If currently in a step, its function ID
