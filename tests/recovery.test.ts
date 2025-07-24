@@ -6,6 +6,7 @@ import { StatusString } from '../dist/src';
 import { DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
 import { sleepms } from '../src/utils';
 import { runWithTopContext } from '../src/context';
+import { randomUUID } from 'crypto';
 
 describe('recovery-tests', () => {
   let config: DBOSConfig;
@@ -245,5 +246,45 @@ describe('recovery-tests', () => {
     await expect(recoverHandles[0].getResult()).resolves.toEqual(expected);
     await expect(handle.getResult()).resolves.toEqual(expected);
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
+  });
+
+  async function stepOne(): Promise<void> {
+    return Promise.resolve();
+  }
+  async function stepTwo(): Promise<void> {
+    return Promise.resolve();
+  }
+
+  const childID = randomUUID();
+  const evt = new Event();
+
+  const childWorkflow = DBOS.registerWorkflow(
+    async () => {
+      for (let i = 0; i < 10; i++) {
+        await DBOS.runStep(stepOne);
+        await DBOS.runStep(stepTwo);
+        await evt.wait();
+      }
+      return DBOS.workflowID;
+    },
+    { name: 'childWorkflow' },
+  );
+  const parentWorkflow = DBOS.registerWorkflow(
+    async () => {
+      await DBOS.runStep(stepOne);
+      await DBOS.runStep(stepTwo);
+      await DBOS.startWorkflow(childWorkflow, { workflowID: childID })();
+      return DBOS.workflowID;
+    },
+    { name: 'parentWorkflow' },
+  );
+
+  test('child-workflow-recovery', async () => {
+    const parentHandle = await DBOS.startWorkflow(parentWorkflow)();
+    evt.set();
+    const childHandle = await DBOS.startWorkflow(childWorkflow, { workflowID: childID })();
+
+    await expect(parentHandle.getResult()).resolves.toEqual(parentHandle.workflowID);
+    await expect(childHandle.getResult()).resolves.toEqual(childHandle.workflowID);
   });
 });
