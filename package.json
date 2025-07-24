@@ -65,7 +65,7 @@
     "@inquirer/prompts": "^5.3.8",
     "@koa/bodyparser": "5.0.0",
     "@koa/cors": "5.0.0",
-    "@koa/router": "13.1.0",
+    "@koa/router": "13.1.1",
     "@opentelemetry/api": "1.8.0",
     "@opentelemetry/api-logs": "0.49.1",
     "@opentelemetry/context-async-hooks": "^2.0.1",
