@@ -470,6 +470,7 @@ describe('dbos-config', () => {
         name: 'dbostest',
       });
       expect(internalConfig).toEqual({
+        name: 'dbostest',
         databaseUrl: 'postgresql://postgres:dbos@localhost:5432/dbostest?connect_timeout=10&sslmode=disable',
         userDbPoolSize: undefined,
         systemDatabaseUrl:
@@ -498,6 +499,7 @@ describe('dbos-config', () => {
         true,
       );
       expect(internalConfig).toEqual({
+        name: 'dbostest',
         databaseUrl: 'postgresql://postgres:dbos@localhost:5432/dbostest?connect_timeout=10&sslmode=disable',
         userDbPoolSize: undefined,
         systemDatabaseUrl:
@@ -523,6 +525,7 @@ describe('dbos-config', () => {
         databaseUrl: 'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
       });
       expect(internalConfig).toEqual({
+        name: undefined,
         databaseUrl: 'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
         userDbPoolSize: undefined,
         systemDatabaseUrl:
@@ -549,6 +552,7 @@ describe('dbos-config', () => {
         systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
       });
       expect(internalConfig).toEqual({
+        name: undefined,
         databaseUrl: 'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
         userDbPoolSize: undefined,
         systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',

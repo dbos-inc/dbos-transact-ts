@@ -27,7 +27,6 @@ export const globalParams = {
   wasComputed: false, // Was app version set or computed? Stored procs don't support computed versions.
   executorID: process.env.DBOS__VMID || 'local', // The one true source of executorID
   appID: process.env.DBOS__APPID || '', // The one true source of appID
-  appName: '', // The one true source of appName
   dbosVersion: loadDbosVersion(), // The version of the DBOS library
 };
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));

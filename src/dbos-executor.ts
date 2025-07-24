@@ -273,6 +273,10 @@ export class DBOSExecutor {
     DBOSExecutor.globalInstance = this;
   }
 
+  get appName(): string | undefined {
+    return this.config.name;
+  }
+
   #configureDbClient() {
     const userDbClient = this.config.userDbClient;
     const userDBConfig: PoolConfig = getClientConfig(this.config.databaseUrl);

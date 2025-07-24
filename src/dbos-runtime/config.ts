@@ -233,6 +233,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
   }
 
   return {
+    name: options.name,
     databaseUrl,
     userDbPoolSize: options.userDatabasePoolSize,
     systemDatabaseUrl,
