@@ -6,6 +6,7 @@ import { StatusString } from '../dist/src';
 import { DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
 import { sleepms } from '../src/utils';
 import { runWithTopContext } from '../src/context';
+import assert from 'assert';
 
 describe('recovery-tests', () => {
   let config: DBOSConfig;
@@ -247,11 +248,11 @@ describe('recovery-tests', () => {
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
   });
 
-  async function stepOne(): Promise<void> {
-    return Promise.resolve();
+  async function stepOne(): Promise<number | undefined> {
+    return Promise.resolve(DBOS.stepID);
   }
-  async function stepTwo(): Promise<void> {
-    return Promise.resolve();
+  async function stepTwo(): Promise<number | undefined> {
+    return Promise.resolve(DBOS.stepID);
   }
 
   const evt = new Event();
@@ -259,8 +260,10 @@ describe('recovery-tests', () => {
   const childWorkflow = DBOS.registerWorkflow(
     async () => {
       for (let i = 0; i < 10; i++) {
-        await DBOS.runStep(stepOne);
-        await DBOS.runStep(stepTwo);
+        let id = await DBOS.runStep(stepOne);
+        assert.equal(id, i * 2);
+        id = await DBOS.runStep(stepTwo);
+        assert.equal(id, i * 2 + 1);
         await evt.wait();
       }
       return DBOS.workflowID;
