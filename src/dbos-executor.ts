@@ -86,7 +86,6 @@ import {
   DBOSLocalCtx,
   runWithTopContext,
 } from './context';
-import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
 import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
@@ -1999,20 +1998,6 @@ export class DBOSExecutor {
 
   async resumeWorkflow(workflowID: string): Promise<void> {
     await this.systemDatabase.resumeWorkflow(workflowID);
-  }
-
-  logRegisteredHTTPUrls() {
-    this.logger.info('HTTP endpoints supported:');
-    getAllRegisteredFunctions().forEach((registeredOperation) => {
-      const ro = registeredOperation as HandlerRegistrationBase;
-      if (ro.apiURL) {
-        this.logger.info('    ' + ro.apiType.padEnd(6) + '  :  ' + ro.apiURL);
-        const roles = ro.getRequiredRoles();
-        if (roles.length > 0) {
-          this.logger.info('        Required Roles: ' + DBOSJSON.stringify(roles));
-        }
-      }
-    });
   }
 
   /**

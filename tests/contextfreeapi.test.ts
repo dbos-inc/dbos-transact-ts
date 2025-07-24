@@ -1,17 +1,6 @@
-import {
-  ArgOptional,
-  ArgRequired,
-  Authentication,
-  DBOS,
-  DBOSResponseError,
-  DefaultArgValidate,
-  KoaMiddleware,
-  MiddlewareContext,
-  WorkflowQueue,
-} from '../src';
+import { DBOS, WorkflowQueue } from '../src';
 import { UserDatabaseName } from '../src/user_database';
 import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
-import jwt from 'koa-jwt';
 
 DBOS.logger.info('This should not cause a kaboom.');
 
@@ -91,29 +80,6 @@ class TestFunctions {
   static async argOptionalWorkflow(arg?: string) {
     return Promise.resolve(arg);
   }
-
-  @DBOS.workflow()
-  static async argRequiredWorkflow(@ArgRequired arg: string) {
-    return Promise.resolve(arg);
-  }
-}
-
-@DefaultArgValidate
-class OptionalArgs {
-  @DBOS.workflow()
-  static async argOptionalWorkflow(@ArgOptional arg?: string) {
-    return Promise.resolve(arg);
-  }
-
-  @DBOS.workflow()
-  static async argRequiredWorkflow(arg: string) {
-    return Promise.resolve(arg);
-  }
-
-  @DBOS.workflow()
-  static async argOptionalOops(@ArgOptional arg?: string) {
-    return OptionalArgs.argRequiredWorkflow(arg!);
-  }
 }
 
 const testTableName = 'dbos_test_kv';
@@ -174,51 +140,6 @@ class ChildWorkflows {
     const cwfh = await DBOS.startWorkflow(ChildWorkflows).childWF();
     const cres = await cwfh.getResult();
     return `ParentID:${DBOS.workflowID}|${cres}`;
-  }
-}
-
-const testJwt = jwt({
-  secret: 'your-secret-goes-here',
-});
-
-export async function testAuthMiddleware(ctx: MiddlewareContext) {
-  // Only extract user and roles if the operation specifies required roles.
-  if (ctx.requiredRole.length > 0) {
-    //console.log("required role: ", ctx.requiredRole);
-    if (!ctx.koaContext.state.user) {
-      throw new DBOSResponseError('No authenticated user!', 401);
-    }
-
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-    const authenticatedUser: string = ctx.koaContext.state.user['preferred_username'] ?? '';
-    //console.log("current user: ", authenticatedUser);
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access
-    const authenticatedRoles: string[] = ctx.koaContext.state.user['realm_access']['roles'] ?? [];
-    //console.log("JWT claimed roles: ", authenticatedRoles);
-    if (authenticatedRoles.includes('appAdmin')) {
-      // appAdmin role has more priviledges than appUser.
-      authenticatedRoles.push('appUser');
-    }
-    //console.log("authenticated roles: ", authenticatedRoles);
-    return Promise.resolve({ authenticatedUser: authenticatedUser, authenticatedRoles: authenticatedRoles });
-  }
-}
-
-@DBOS.defaultRequiredRole(['appUser'])
-@Authentication(testAuthMiddleware)
-@KoaMiddleware(testJwt)
-export class AuthTestOps {
-  @DBOS.transaction()
-  @DBOS.getApi('/api/list_all')
-  static async listAccountsFunc() {
-    return Promise.resolve('ok');
-  }
-
-  @DBOS.transaction()
-  @DBOS.postApi('/api/create_account')
-  @DBOS.requiredRole(['appAdmin']) // Only an admin can create a new account.
-  static async createAccountFunc() {
-    return Promise.resolve('ok');
   }
 }
 
@@ -497,10 +418,6 @@ async function main7() {
       return await TestSec2.bye();
     });
     expect(byejoe).toBe('bye user joe!');
-
-    await DBOS.withAuthedContext('admin', ['appAdmin'], async () => {
-      expect(await AuthTestOps.createAccountFunc()).toBe('ok');
-    });
   } finally {
     await DBOS.shutdown();
   }
@@ -579,34 +496,6 @@ async function main9() {
   }
 }
 
-async function main10() {
-  const config = generateDBOSTestConfig(UserDatabaseName.PGNODE);
-  await setUpDBOSTestDb(config);
-  DBOS.setConfig(config);
-  await DBOS.launch();
-  try {
-    // Shouldn't throw a validation error
-    await TestFunctions.argOptionalWorkflow('a');
-    await TestFunctions.argOptionalWorkflow();
-    await expect(async () => {
-      await TestFunctions.argRequiredWorkflow((undefined as string | undefined)!);
-    }).rejects.toThrow();
-
-    await OptionalArgs.argOptionalWorkflow('a');
-    await OptionalArgs.argOptionalWorkflow();
-
-    // await OptionalArgs.argRequiredWorkflow(); // Using the compiler for what it is good at
-    await OptionalArgs.argRequiredWorkflow('a');
-
-    await OptionalArgs.argOptionalOops('a');
-    await expect(async () => {
-      await OptionalArgs.argOptionalOops();
-    }).rejects.toThrow();
-  } finally {
-    await DBOS.shutdown();
-  }
-}
-
 async function main11() {
   expect(() => {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -650,10 +539,6 @@ describe('dbos-v2api-tests-main', () => {
 
   test('transitions', async () => {
     await main9();
-  }, 15000);
-
-  test('argvalidate', async () => {
-    await main10();
   }, 15000);
 
   test('double decorator error', async () => {

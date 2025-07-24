@@ -85,11 +85,9 @@ import { randomUUID } from 'node:crypto';
 import { PoolClient } from 'pg';
 import { Knex } from 'knex';
 import { StepConfig } from './step';
-import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
+import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, WorkflowHandle } from '.';
 import { ConfiguredInstance } from '.';
 import { StoredProcedureConfig } from './procedure';
-import { APITypes } from './httpServer/handlerTypes';
-import { HandlerRegistrationBase } from './httpServer/handler';
 import { Conductor } from './conductor/conductor';
 import { EnqueueOptions } from './system_database';
 import { wfQueueRunner } from './wfqueue';
@@ -300,7 +298,7 @@ export class DBOS {
   }
 
   /**
-   * Logs all workflows that can be invoked externally, rather than directly by the applicaton.
+   * Logs all workflows that can be invoked externally, rather than directly by the application.
    * This includes:
    *   All DBOS event receiver entrypoints (message queues, URLs, etc.)
    *   Scheduled workflows
@@ -308,7 +306,6 @@ export class DBOS {
    */
   static logRegisteredEndpoints(): void {
     if (!DBOSExecutor.globalInstance) return;
-    DBOSExecutor.globalInstance.logRegisteredHTTPUrls();
     wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
     for (const lcl of getLifecycleListeners()) {
       lcl.logRegisteredEndpoints?.();
@@ -411,33 +408,15 @@ export class DBOS {
     return getCurrentContextStore()?.request;
   }
 
-  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
+  /** Get the current HTTP request */
   static getRequest(): HTTPRequest | undefined {
     return this.requestObject() as HTTPRequest | undefined;
   }
 
-  /** Get the current HTTP request (within `@DBOS.getApi` et al) */
+  /** Get the current HTTP request */
   static get request(): HTTPRequest {
     const r = DBOS.getRequest();
     if (!r) throw new DBOSError('`DBOS.request` accessed from outside of HTTP requests');
-    return r;
-  }
-
-  /**
-   * Get the current Koa context (within `@DBOS.getApi` et al)
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static getKoaContext(): Koa.Context | undefined {
-    return getCurrentContextStore()?.koaContext;
-  }
-
-  /**
-   * Get the current Koa context (within `@DBOS.getApi` et al)
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static get koaContext(): Koa.Context {
-    const r = DBOS.getKoaContext();
-    if (!r) throw new DBOSError('`DBOS.koaContext` accessed from outside koa request');
     return r;
   }
 

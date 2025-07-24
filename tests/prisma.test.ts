@@ -2,8 +2,7 @@ import request from 'supertest';
 
 import { PrismaClient, testkv } from '@prisma/client';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { Authentication, MiddlewareContext, DBOS } from '../src';
-import { DBOSNotAuthorizedError } from '../src/error';
+import { DBOS } from '../src';
 
 import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
@@ -131,93 +130,6 @@ describe('prisma-tests', () => {
     const err: PrismaClientKnownRequestError = (errorResult as PromiseRejectedResult)
       .reason as PrismaClientKnownRequestError;
     expect((err as unknown as PrismaPGError).meta.code).toBe('23505');
-  });
-});
-
-const userTableName = 'dbos_test_user';
-
-@Authentication(PUserManager.authMiddlware)
-class PUserManager {
-  @DBOS.transaction()
-  @DBOS.postApi('/register')
-  static async createUser(uname: string) {
-    const res = await (DBOS.prismaClient as PrismaClient).dbos_test_user.create({
-      data: {
-        id: 1234,
-        username: uname,
-      },
-    });
-    return res;
-  }
-
-  @DBOS.getApi('/hello')
-  @DBOS.requiredRole(['user'])
-  static async hello() {
-    return Promise.resolve({ messge: 'hello ' + DBOS.authenticatedUser });
-  }
-
-  static async authMiddlware(ctx: MiddlewareContext) {
-    if (!ctx.requiredRole || !ctx.requiredRole.length) {
-      return;
-    }
-    const { user } = ctx.koaContext.query;
-    if (!user) {
-      throw new DBOSNotAuthorizedError('User not provided', 401);
-    }
-    const u = await ctx.query((dbClient: PrismaClient, uname: string) => {
-      return dbClient.dbos_test_user.findFirst({
-        where: {
-          username: uname,
-        },
-      });
-    }, user as string);
-
-    if (!u) {
-      throw new DBOSNotAuthorizedError('User does not exist', 403);
-    }
-    ctx.logger.info(`Allowed in user: ${u.username}`);
-    return {
-      authenticatedUser: u.username,
-      authenticatedRoles: ['user'],
-    };
-  }
-}
-
-describe('prisma-auth-tests', () => {
-  let config: DBOSConfig;
-
-  beforeAll(async () => {
-    config = generateDBOSTestConfig(UserDatabaseName.PRISMA);
-    await setUpDBOSTestDb(config);
-    DBOS.setConfig(config);
-  });
-
-  beforeEach(async () => {
-    await DBOS.launch();
-    DBOS.setUpHandlerCallback();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${userTableName} (id SERIAL PRIMARY KEY, username TEXT);`);
-  });
-
-  afterEach(async () => {
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${userTableName};`);
-    await DBOS.shutdown();
-  });
-
-  test('auth-prisma', async () => {
-    // No user name
-    const response1 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
-    expect(response1.statusCode).toBe(401);
-
-    // User name doesn't exist
-    const response2 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
-    expect(response2.statusCode).toBe(403);
-
-    const response3 = await request(DBOS.getHTTPHandlersCallback()!).post('/register').send({ uname: 'paul' });
-    expect(response3.statusCode).toBe(200);
-
-    const response4 = await request(DBOS.getHTTPHandlersCallback()!).get('/hello?user=paul');
-    expect(response4.statusCode).toBe(200);
   });
 });
 

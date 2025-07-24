@@ -5,32 +5,6 @@ import { DBOS } from "@dbos-inc/dbos-sdk";
 import { Knex } from 'knex';
 
 export class Test {
-  @DBOS.getApi('/test')
-  static async testGetHandler(): Promise<void> {  }
-
-  @DBOS.postApi('/test')
-  static async testPostHandler(): Promise<void> {  }
-
-  @DBOS.patchApi('/test')
-  static async testPatchHandler(): Promise<void> {  }
-
-  @DBOS.putApi('/test')
-  static async testPutHandler(): Promise<void> {  }
-
-  @DBOS.deleteApi('/test')
-  static async testDeleteHandler(): Promise<void> {  }
-
-  @DBOS.getApi('/test')
-  @DBOS.workflow()
-  static async testGetHandlerWorkflow(): Promise<void> {  }
-
-  @DBOS.getApi('/test')
-  @DBOS.transaction()
-  static async testGetHandlerTx(): Promise<void> {  }
-
-  @DBOS.getApi('/test')
-  @DBOS.step()
-  static async testGetHandlerStep(): Promise<void> {  }
 
   @DBOS.workflow()
   static async testWorkflow(): Promise<void> {  }
@@ -75,32 +49,6 @@ import { DBOS as TestDBOS } from "@dbos-inc/dbos-sdk";
 import { Knex } from 'knex';
 
 export class Test {
-  @TestDBOS.getApi('/test')
-  static async testGetHandler(): Promise<void> {  }
-
-  @TestDBOS.postApi('/test')
-  static async testPostHandler(): Promise<void> {  }
-
-  @TestDBOS.patchApi('/test')
-  static async testPatchHandler(): Promise<void> {  }
-
-  @TestDBOS.putApi('/test')
-  static async testPutHandler(): Promise<void> {  }
-
-  @TestDBOS.deleteApi('/test')
-  static async testDeleteHandler(): Promise<void> {  }
-
-  @TestDBOS.getApi('/test')
-  @TestDBOS.workflow()
-  static async testGetHandlerWorkflow(): Promise<void> {  }
-
-  @TestDBOS.getApi('/test')
-  @TestDBOS.transaction()
-  static async testGetHandlerTx(): Promise<void> {  }
-
-  @TestDBOS.getApi('/test')
-  @TestDBOS.step()
-  static async testGetHandlerStep(): Promise<void> {  }
 
   @TestDBOS.workflow()
   static async testWorkflow(): Promise<void> {  }

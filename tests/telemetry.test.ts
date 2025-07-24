@@ -23,13 +23,6 @@ export class TestClass {
     const funcResult = await TestClass.test_function(name);
     return funcResult;
   }
-
-  @DBOS.getApi('/hello')
-  static async hello() {
-    expect(trace.getSpan(context.active())).toBeDefined();
-    expect((trace.getSpan(context.active()) as SDKSpan).name).toBe('/hello');
-    return Promise.resolve({ message: await TestClass.test_workflow('joe') });
-  }
 }
 
 describe('dbos-telemetry', () => {
@@ -68,7 +61,6 @@ describe('dbos-telemetry', () => {
 
     beforeEach(async () => {
       await DBOS.launch();
-      DBOS.setUpHandlerCallback();
     });
 
     afterEach(async () => {

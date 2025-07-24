@@ -45,45 +45,11 @@ export {
   OrmEntities,
 } from './decorators';
 
-export {
-  ArgRequired,
-  ArgOptional,
-  ArgDate,
-  ArgVarchar,
-  DefaultArgRequired,
-  DefaultArgOptional,
-  DefaultArgValidate,
-  LogMask,
-  LogMasks,
-  SkipLogging,
-  requestArgValidation,
-} from './paramdecorators';
-
 export { readConfigFile, getDatabaseUrl } from './dbos-runtime/config';
 
 export { DBOSRuntimeConfig } from './dbos-runtime/runtime';
 
 export { DBOSConfig, DBOSExternalState, DBOSExternalState as DBOSEventReceiverState } from './dbos-executor';
-
-export {
-  DBOSHttpAuthMiddleware,
-  DBOSHttpAuthReturn,
-  MiddlewareContext,
-
-  // Middleware Decorators
-  Authentication,
-  KoaBodyParser,
-  KoaCors,
-  KoaGlobalMiddleware,
-  KoaMiddleware,
-} from './httpServer/middleware';
-
-export { ArgSources } from './httpServer/handlerTypes';
-
-export {
-  // Endpoint Parameter Decorators
-  ArgSource,
-} from './httpServer/handler';
 
 // Deprecated items below here...
 
