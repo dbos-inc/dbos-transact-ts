@@ -261,10 +261,6 @@ export class DBOS {
     DBOS.#port = runtimeConfig.port;
     DBOS.#userDbClient = internalConfig.userDbClient;
 
-    if (globalParams.appName === '' && internalConfig.name) {
-      globalParams.appName = internalConfig.name;
-    }
-
     DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig, { debugMode });
 

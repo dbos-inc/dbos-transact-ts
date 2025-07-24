@@ -7,6 +7,7 @@ import { GetQueuedWorkflowsInput } from '../workflow';
 import { hostname } from 'node:os';
 import { json as streamJSON } from 'stream/consumers';
 import { globalTimeout } from '../dbos-runtime/workflow_management';
+import assert from 'node:assert';
 
 export class Conductor {
   url: string;
@@ -25,7 +26,8 @@ export class Conductor {
     readonly conductorKey: string,
     readonly conductorURL: string,
   ) {
-    const appName = globalParams.appName;
+    const appName = dbosExec.appName;
+    assert(appName, 'Application name must be set in configuration in order to use DBOS Conductor');
     const cleanConductorURL = conductorURL.replace(/\/+$/, '');
     this.url = `${cleanConductorURL}/websocket/${appName}/${conductorKey}`;
   }
