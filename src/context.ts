@@ -108,7 +108,6 @@ export async function runWithParentContext<R>(
     {
       ...pctx,
       ...ctx,
-      workflowTimeoutMS: undefined, // Becomes deadline
       parentCtx: pctx,
     },
     callback,

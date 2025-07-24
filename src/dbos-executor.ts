@@ -708,6 +708,7 @@ export class DBOSExecutor {
             pctx,
             {
               presetID,
+              workflowTimeoutMS: undefined, // Becomes deadline
               deadlineEpochMS,
               workflowId: workflowID,
               logger: this.ctxLogger,
