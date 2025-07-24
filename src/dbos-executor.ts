@@ -712,6 +712,7 @@ export class DBOSExecutor {
               deadlineEpochMS,
               workflowId: workflowID,
               logger: this.ctxLogger,
+              curWFFunctionId: undefined,
             },
             () => {
               const callPromise = wf.call(params.configuredInstance, ...args);
