@@ -108,10 +108,10 @@ export async function runWithParentContext<R>(
   return await asyncLocalCtx.run(
     {
       ...pctx,
+      ...ctx,
       workflowTimeoutMS: undefined, // Becomes deadline
       parentCtx: pctx,
       curWFFunctionId: undefined,
-      ...ctx,
     },
     callback,
   );
