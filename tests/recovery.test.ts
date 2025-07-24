@@ -255,7 +255,6 @@ describe('recovery-tests', () => {
     return Promise.resolve();
   }
 
-  const childID = randomUUID();
   const evt = new Event();
 
   const childWorkflow = DBOS.registerWorkflow(
@@ -273,18 +272,19 @@ describe('recovery-tests', () => {
     async () => {
       await DBOS.runStep(stepOne);
       await DBOS.runStep(stepTwo);
-      await DBOS.startWorkflow(childWorkflow, { workflowID: childID })();
-      return DBOS.workflowID;
+      const handle = await DBOS.startWorkflow(childWorkflow)();
+      return handle.workflowID;
     },
     { name: 'parentWorkflow' },
   );
 
   test('child-workflow-recovery', async () => {
-    const parentHandle = await DBOS.startWorkflow(parentWorkflow)();
+    const childID = await parentWorkflow();
+    const originalChildHandle = DBOS.retrieveWorkflow(childID);
+    const recoveredChildHandle = await DBOS.startWorkflow(childWorkflow, { workflowID: childID })();
     evt.set();
-    const childHandle = await DBOS.startWorkflow(childWorkflow, { workflowID: childID })();
 
-    await expect(parentHandle.getResult()).resolves.toEqual(parentHandle.workflowID);
-    await expect(childHandle.getResult()).resolves.toEqual(childHandle.workflowID);
+    await expect(originalChildHandle.getResult()).resolves.toEqual(originalChildHandle.workflowID);
+    await expect(recoveredChildHandle.getResult()).resolves.toEqual(recoveredChildHandle.workflowID);
   });
 });
