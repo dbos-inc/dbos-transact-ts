@@ -6,7 +6,6 @@ import { StatusString } from '../dist/src';
 import { DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
 import { sleepms } from '../src/utils';
 import { runWithTopContext } from '../src/context';
-import { randomUUID } from 'crypto';
 
 describe('recovery-tests', () => {
   let config: DBOSConfig;
