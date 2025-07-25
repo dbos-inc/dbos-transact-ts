@@ -1,5 +1,4 @@
 #!/usr/bin/env node
-import { DBOSRuntime } from './runtime';
 import {
   ConfigFile,
   getDatabaseUrl,
@@ -44,20 +43,17 @@ function getDbosVersion(): string {
 program
   .command('start')
   .description('Start the server')
-  .option('-p, --port <number>', 'Specify the port number')
   .option('-l, --loglevel <string>', 'Specify log level')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
-  .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
-  .action(async (options: { port?: number; loglevel?: string; appDir?: string; appVersion?: string | boolean }) => {
+  .action(async (options: { loglevel?: string; appDir?: string }) => {
     const config = readConfigFile(options.appDir);
     const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel });
-    const runtimeConfig = getRuntimeConfig(config, options);
+    const runtimeConfig = getRuntimeConfig(config);
 
     // If no start commands are provided, start the DBOS runtime
     if (runtimeConfig.start.length === 0) {
-      const runtime = new DBOSRuntime(dbosConfig, runtimeConfig);
-      await runtime.initAndStart();
+      console.error('No start commands provided in the configuration file.');
+      exit(1);
     } else {
       const logger = getGlobalLogger(dbosConfig);
       for (const command of runtimeConfig.start) {
@@ -90,14 +86,11 @@ program
   .requiredOption('-u, --uuid <string>', 'Specify the workflow UUID to replay')
   .option('-l, --loglevel <string>', 'Specify log level')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .option('--app-version <string>', 'override DBOS__APPVERSION environment variable')
-  .option('--no-app-version', 'ignore DBOS__APPVERSION environment variable')
   .action(
     async (options: {
       uuid: string; // Workflow UUID
       loglevel?: string;
       appDir?: string;
-      appVersion?: string | boolean;
     }) => {
       const config = readConfigFile(options.appDir);
       const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel, forceConsole: true });

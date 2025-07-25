@@ -253,17 +253,18 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
   };
 }
 
-export function getRuntimeConfig(config: ConfigFile, options: { port?: number } = {}): DBOSRuntimeConfig {
-  return translateRuntimeConfig(config.runtimeConfig, options.port);
+export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
+  return translateRuntimeConfig(config.runtimeConfig);
 }
 
-export function translateRuntimeConfig(config: Partial<DBOSRuntimeConfig> = {}, port?: number): DBOSRuntimeConfig {
+export function translateRuntimeConfig(config: Partial<DBOSRuntimeConfig> = {}): DBOSRuntimeConfig {
+  // TODO: remove the parsing of entrypoints once debugWorkflow is updated to not use it
   const entrypoints = new Set<string>();
   config.entrypoints?.forEach((entry) => entrypoints.add(entry));
   if (entrypoints.size === 0) {
     entrypoints.add(defaultEntryPoint);
   }
-  port ??= config.port ?? 3000;
+  const port = config.port ?? 3000;
   return {
     entrypoints: [...entrypoints],
     port: port,
