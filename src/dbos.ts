@@ -36,7 +36,6 @@ import {
   translateDbosConfig,
   translateRuntimeConfig,
 } from './dbos-runtime/config';
-import { DBOSRuntime } from './dbos-runtime/runtime';
 import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
   associateClassWithExternal,
@@ -216,7 +215,7 @@ export class DBOS {
 
   // Load files with DBOS classes (running their decorators)
   static async loadClasses(dbosEntrypointFiles: string[]) {
-    return await DBOSRuntime.loadClasses(dbosEntrypointFiles);
+    return await DBOSExecutor.loadClasses(dbosEntrypointFiles);
   }
 
   /**

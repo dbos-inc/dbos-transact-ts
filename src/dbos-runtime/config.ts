@@ -1,7 +1,6 @@
 import { readFileSync } from '../utils';
-import { DBOSConfig, DBOSConfigInternal } from '../dbos-executor';
+import { DBOSConfig, DBOSRuntimeConfig, DBOSConfigInternal } from '../dbos-executor';
 import YAML from 'yaml';
-import { DBOSRuntimeConfig, defaultEntryPoint } from './runtime';
 import { UserDatabaseName } from '../user_database';
 import { writeFileSync } from 'fs';
 import Ajv from 'ajv';
@@ -258,12 +257,8 @@ export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
 }
 
 export function translateRuntimeConfig(config: Partial<DBOSRuntimeConfig> = {}): DBOSRuntimeConfig {
-  // TODO: remove the parsing of entrypoints once debugWorkflow is updated to not use it
   const entrypoints = new Set<string>();
   config.entrypoints?.forEach((entry) => entrypoints.add(entry));
-  if (entrypoints.size === 0) {
-    entrypoints.add(defaultEntryPoint);
-  }
   const port = config.port ?? 3000;
   return {
     entrypoints: [...entrypoints],
