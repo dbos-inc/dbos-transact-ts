@@ -161,7 +161,8 @@
           "type": "array",
           "items": {
             "type": "string"
-          }
+          },
+          "deprecated": true
         },
         "port": {
           "type": "number",

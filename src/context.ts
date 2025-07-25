@@ -42,18 +42,18 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   koaContext?: Koa.Context;
 }
 
-export function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
+function isWithinWorkflowCtx(ctx: DBOSLocalCtx) {
   if (ctx.workflowId === undefined) return false;
   return true;
 }
 
-export function isInStepCtx(ctx: DBOSLocalCtx) {
+function isInStepCtx(ctx: DBOSLocalCtx) {
   if (ctx.workflowId === undefined) return false;
   if (ctx.curStepFunctionId) return true;
   return false;
 }
 
-export function isInTxnCtx(ctx: DBOSLocalCtx) {
+function isInTxnCtx(ctx: DBOSLocalCtx) {
   if (ctx.workflowId === undefined) return false;
   if (ctx.curTxFunctionId) return true;
   return false;
@@ -66,7 +66,7 @@ export function isInWorkflowCtx(ctx: DBOSLocalCtx) {
   return true;
 }
 
-export const asyncLocalCtx = new AsyncLocalStorage<DBOSLocalCtx>();
+const asyncLocalCtx = new AsyncLocalStorage<DBOSLocalCtx>();
 
 export function getCurrentContextStore(): DBOSLocalCtx | undefined {
   return asyncLocalCtx.getStore();

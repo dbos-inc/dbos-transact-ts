@@ -109,8 +109,8 @@ import {
 import { getClientConfig } from './utils';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
-export interface DBOSNull {}
-export const dbosNull: DBOSNull = {};
+interface DBOSNull {}
+const dbosNull: DBOSNull = {};
 
 export const DBOS_QUEUE_MIN_PRIORITY = 1;
 export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647

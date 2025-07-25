@@ -306,7 +306,7 @@ export const createTransactionCompletionTablePG = `
   );
 `;
 
-export function getPGErrorCode(error: unknown): string | undefined {
+function getPGErrorCode(error: unknown): string | undefined {
   return error && typeof error === 'object' && 'code' in error ? (error.code as string) : undefined;
 }
 
@@ -320,10 +320,4 @@ export function isPGKeyConflictError(error: unknown): boolean {
 
 export function isPGFailedSqlTransactionError(error: unknown): boolean {
   return getPGErrorCode(error) === '25P02';
-}
-
-export type PGDBNotification = Notification;
-export type PGDBNotificationCallback = (n: PGDBNotification) => void;
-export interface PGDBNotificationListener {
-  close(): Promise<void>;
 }

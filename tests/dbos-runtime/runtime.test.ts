@@ -1,4 +1,3 @@
-import axios, { AxiosError } from 'axios';
 import { spawn, execSync, ChildProcess } from 'child_process';
 import { Writable } from 'stream';
 import { Client } from 'pg';
@@ -30,22 +29,20 @@ async function waitForMessageTest(
   }
 
   try {
-    // Axios will throw an exception if the return status is 500
-    // Trying and catching is the only way to debug issues in this test
     const maxAttempts = 10;
     for (let attempt = 0; attempt < maxAttempts; attempt++) {
       try {
         if (checkResponse) {
-          const response = await axios.get(`http://127.0.0.1:${port}/greeting/dbos`);
+          const response = await fetch(`http://127.0.0.1:${port}/greeting/dbos`);
           expect(response.status).toBe(200);
         }
-        const healthRes = await axios.get(`http://127.0.0.1:${adminPort}${HealthUrl}`);
+        const healthRes = await fetch(`http://127.0.0.1:${adminPort}${HealthUrl}`);
         expect(healthRes.status).toBe(200);
       } catch (error) {
         if (attempt < maxAttempts - 1) {
           await sleepms(1000);
         } else {
-          const errMsg = `Error sending test request: status: ${(error as AxiosError).response?.status}, statusText: ${(error as AxiosError).response?.statusText}`;
+          const errMsg = `Error sending test request: ${(error as Error).message}`;
           console.error(errMsg);
           throw error;
         }
