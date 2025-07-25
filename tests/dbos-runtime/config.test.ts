@@ -590,7 +590,6 @@ describe('dbos-config', () => {
       },
     };
     const runtimeConfig: DBOSRuntimeConfig = {
-      entrypoints: [],
       port: 0,
       admin_port: 0,
       runAdminServer: false,

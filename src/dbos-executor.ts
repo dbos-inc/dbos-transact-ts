@@ -13,6 +13,7 @@ import {
   DBOSInvalidQueuePriorityError,
   DBOSAwaitedWorkflowCancelledError,
   DBOSInvalidWorkflowTransitionError,
+  DBOSFailLoadOperationsError,
 } from './error';
 import {
   InvokedHandle,
@@ -90,6 +91,8 @@ import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
 import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import path from 'node:path';
+import fs from 'node:fs';
+import { pathToFileURL } from 'url';
 import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
 import { GetWorkflowsInput, InitContext } from '.';
@@ -132,6 +135,14 @@ export interface DBOSConfig {
   otlpLogsEndpoints?: string[];
   adminPort?: number;
   runAdminServer?: boolean;
+}
+
+export interface DBOSRuntimeConfig {
+  port: number;
+  admin_port: number;
+  runAdminServer: boolean;
+  start: string[];
+  setup: string[];
 }
 
 export type DBOSConfigInternal = {
@@ -232,6 +243,38 @@ export class DBOSExecutor {
   readonly executorID: string = globalParams.executorID;
 
   static globalInstance: DBOSExecutor | undefined = undefined;
+
+  static async loadClasses(entrypoints: string[]): Promise<object[]> {
+    type ModuleExports = Record<string, unknown>;
+
+    const allClasses: object[] = [];
+    for (const entrypoint of entrypoints) {
+      const operations = path.isAbsolute(entrypoint) ? entrypoint : path.join(process.cwd(), entrypoint);
+      let exports: ModuleExports;
+      if (fs.existsSync(operations)) {
+        const operationsURL = pathToFileURL(operations).href;
+        exports = (await import(operationsURL)) as ModuleExports;
+      } else {
+        throw new DBOSFailLoadOperationsError(`Failed to load operations from the entrypoint ${entrypoint}`);
+      }
+      const classes: object[] = [];
+      for (const key in exports) {
+        const $export = exports[key];
+        if (isObject($export)) {
+          classes.push($export);
+        }
+      }
+      allClasses.push(...classes);
+    }
+    if (allClasses.length === 0) {
+      throw new DBOSFailLoadOperationsError('operations not found');
+    }
+    return allClasses;
+
+    function isObject(value: unknown): value is object {
+      return typeof value === 'function' || (typeof value === 'object' && value !== null);
+    }
+  }
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(

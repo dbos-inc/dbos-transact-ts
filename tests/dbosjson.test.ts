@@ -1,5 +1,4 @@
 import { DBOSJSON } from '../src/utils';
-import _ from 'lodash';
 
 describe('dbos-json-reviver-replacer', () => {
   test('Replace revive dates', () => {
@@ -13,7 +12,7 @@ describe('dbos-json-reviver-replacer', () => {
     };
     const stringified = DBOSJSON.stringify(obj);
     const parsed = DBOSJSON.parse(stringified) as typeof obj;
-    expect(_.isEqual(obj, parsed)).toBe(true);
+    expect(parsed).toEqual(obj);
   });
 
   test('Replace revive buffers', () => {
@@ -26,7 +25,7 @@ describe('dbos-json-reviver-replacer', () => {
     };
     const stringified = DBOSJSON.stringify(obj);
     const parsed = DBOSJSON.parse(stringified) as typeof obj;
-    expect(_.isEqual(obj, parsed)).toBe(true);
+    expect(parsed).toEqual(obj);
   });
 
   test('Replace revive bigint', () => {
@@ -39,6 +38,6 @@ describe('dbos-json-reviver-replacer', () => {
     };
     const stringified = DBOSJSON.stringify(obj);
     const parsed = DBOSJSON.parse(stringified) as typeof obj;
-    expect(_.isEqual(obj, parsed)).toBe(true);
+    expect(parsed).toEqual(obj);
   });
 });

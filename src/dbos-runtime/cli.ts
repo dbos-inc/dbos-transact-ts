@@ -9,7 +9,6 @@ import {
 } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
-import { debugWorkflow } from './debug';
 import { migrate } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
@@ -80,24 +79,6 @@ program
     }
   });
 
-program
-  .command('debug')
-  .description('Debug a workflow')
-  .requiredOption('-u, --uuid <string>', 'Specify the workflow UUID to replay')
-  .option('-l, --loglevel <string>', 'Specify log level')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(
-    async (options: {
-      uuid: string; // Workflow UUID
-      loglevel?: string;
-      appDir?: string;
-    }) => {
-      const config = readConfigFile(options.appDir);
-      const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel, forceConsole: true });
-      const runtimeConfig = getRuntimeConfig(config);
-      await debugWorkflow(dbosConfig, runtimeConfig, options.uuid);
-    },
-  );
 program
   .command('migrate')
   .description('Perform a database migration')
