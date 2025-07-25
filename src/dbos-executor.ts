@@ -708,10 +708,11 @@ export class DBOSExecutor {
             pctx,
             {
               presetID,
-              timeoutMS,
+              workflowTimeoutMS: undefined, // Becomes deadline
               deadlineEpochMS,
               workflowId: workflowID,
               logger: this.ctxLogger,
+              curWFFunctionId: undefined,
             },
             () => {
               const callPromise = wf.call(params.configuredInstance, ...args);
