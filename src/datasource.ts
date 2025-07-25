@@ -11,7 +11,6 @@ import {
   wrapDBOSFunctionAndRegister,
 } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
-import type { Notification } from 'pg';
 
 /**
  * This interface is to be used for implementers of transactional data sources
