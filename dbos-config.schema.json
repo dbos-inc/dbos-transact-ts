@@ -166,11 +166,12 @@
         },
         "port": {
           "type": "number",
-          "description": "The port number of the application server (Default: 3000)"
+          "description": "The port number of the application server (Default: 3000)",
+          "deprecated": true
         },
         "admin_port": {
           "type": "number",
-          "description": "The port number of the admin server (Default: 3001 or the app server port + 1)"
+          "description": "The port number of the admin server (Default: 3001)"
         },
         "start": {
           "type": "array",
