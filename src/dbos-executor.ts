@@ -138,7 +138,6 @@ export interface DBOSConfig {
 }
 
 export interface DBOSRuntimeConfig {
-  entrypoints: string[];
   port: number;
   admin_port: number;
   runAdminServer: boolean;

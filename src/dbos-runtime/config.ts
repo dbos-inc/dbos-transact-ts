@@ -257,11 +257,8 @@ export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
 }
 
 export function translateRuntimeConfig(config: Partial<DBOSRuntimeConfig> = {}): DBOSRuntimeConfig {
-  const entrypoints = new Set<string>();
-  config.entrypoints?.forEach((entry) => entrypoints.add(entry));
   const port = config.port ?? 3000;
   return {
-    entrypoints: [...entrypoints],
     port: port,
     runAdminServer: config.runAdminServer ?? true,
     admin_port: config.admin_port ?? port + 1,
@@ -339,7 +336,6 @@ export function overwriteConfigForDBOSCloud(
   const overwriteDBOSRuntimeConfig: DBOSRuntimeConfig = {
     admin_port: 3001,
     runAdminServer: true,
-    entrypoints: providedRuntimeConfig.entrypoints,
     port: providedRuntimeConfig.port,
     start: providedRuntimeConfig.start,
     setup: providedRuntimeConfig.setup,
