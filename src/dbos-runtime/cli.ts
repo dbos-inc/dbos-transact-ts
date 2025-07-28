@@ -167,8 +167,8 @@ workflowCommands
         status: options.status as GetWorkflowsInput['status'],
         applicationVersion: options.applicationVersion,
       };
-      const sysDbUrl = getSystemDatabaseUrl(config);
-      const client = await DBOSClient.create(databaseUrl, sysDbUrl);
+      const systemDatabaseUrl = getSystemDatabaseUrl(config);
+      const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
       try {
         const output = await client.listWorkflows(input);
         console.log(JSON.stringify(output));
@@ -186,8 +186,8 @@ workflowCommands
   .action(async (uuid: string, options: { appDir?: string }) => {
     const config = readConfigFile(options.appDir);
     const databaseUrl = getDatabaseUrl(config);
-    const sysDbUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
+    const systemDatabaseUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
     try {
       const output = await client.getWorkflow(uuid);
       console.log(JSON.stringify(output));
@@ -204,8 +204,8 @@ workflowCommands
   .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
     const config = readConfigFile(options.appDir);
     const databaseUrl = getDatabaseUrl(config);
-    const sysDbUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
+    const systemDatabaseUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
     try {
       const output = await client.listWorkflowSteps(uuid);
       console.log(JSON.stringify(output));
@@ -222,8 +222,8 @@ workflowCommands
   .action(async (uuid: string, options: { appDir?: string }) => {
     const config = readConfigFile(options.appDir);
     const databaseUrl = getDatabaseUrl(config);
-    const sysDbUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
+    const systemDatabaseUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
     try {
       await client.cancelWorkflow(uuid);
     } finally {
@@ -239,8 +239,8 @@ workflowCommands
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const config = readConfigFile(options.appDir);
     const databaseUrl = getDatabaseUrl(config);
-    const sysDbUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
+    const systemDatabaseUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
     try {
       await client.resumeWorkflow(uuid);
     } finally {
@@ -256,8 +256,8 @@ workflowCommands
   .action(async (uuid: string, options: { appDir?: string; host: string }) => {
     const config = readConfigFile(options.appDir);
     const databaseUrl = getDatabaseUrl(config);
-    const sysDbUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create(databaseUrl, sysDbUrl);
+    const systemDatabaseUrl = getSystemDatabaseUrl(config);
+    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
     try {
       await client.forkWorkflow(uuid, 0);
     } finally {
@@ -305,8 +305,8 @@ queueCommands
       };
       const config = readConfigFile(options.appDir);
       const databaseUrl = getDatabaseUrl(config);
-      const sysDbUrl = getSystemDatabaseUrl(config);
-      const client = await DBOSClient.create(databaseUrl, sysDbUrl);
+      const systemDatabaseUrl = getSystemDatabaseUrl(config);
+      const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
       try {
         // TOD: Review!
         const output = await client.listQueuedWorkflows(input);

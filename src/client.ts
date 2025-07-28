@@ -21,6 +21,7 @@ import {
 } from './dbos-runtime/workflow_management';
 import { PGNodeUserDatabase, type UserDatabase } from './user_database';
 import { getSystemDatabaseUrl } from './dbos-runtime/config';
+import assert from 'node:assert';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -80,13 +81,18 @@ interface ClientEnqueueOptions {
 export class DBOSClient {
   private readonly logger: GlobalLogger;
   private readonly systemDatabase: SystemDatabase;
-  private readonly userDatabase: UserDatabase;
+  private readonly userDatabase: UserDatabase | undefined;
 
-  private constructor(databaseUrl: string, systemDatabaseUrl?: string) {
-    systemDatabaseUrl ??= getSystemDatabaseUrl(databaseUrl);
+  private constructor(databaseUrl: string | undefined, systemDatabaseUrl: string | undefined) {
+    if (!systemDatabaseUrl) {
+      assert(databaseUrl, 'At least one of databaseUrl or systemDatabaseUrl must be provided');
+      systemDatabaseUrl = getSystemDatabaseUrl(databaseUrl);
+    }
+
     this.logger = new GlobalLogger();
     this.systemDatabase = new PostgresSystemDatabase(systemDatabaseUrl, this.logger);
-    this.userDatabase = new PGNodeUserDatabase(getClientConfig(databaseUrl));
+
+    this.userDatabase = databaseUrl ? new PGNodeUserDatabase(getClientConfig(databaseUrl)) : undefined;
   }
 
   /**
@@ -95,8 +101,14 @@ export class DBOSClient {
    * @param systemDatabase - An optional name for the system database. If not provided, it defaults to the application database name with a `_dbos_sys` suffix.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
-  static async create(databaseUrl: string, systemDatabase?: string): Promise<DBOSClient> {
-    const client = new DBOSClient(databaseUrl, systemDatabase);
+  static async create({
+    databaseUrl,
+    systemDatabaseUrl,
+  }: {
+    databaseUrl?: string;
+    systemDatabaseUrl?: string;
+  }): Promise<DBOSClient> {
+    const client = new DBOSClient(databaseUrl, systemDatabaseUrl);
     await client.systemDatabase.init();
     return client;
   }
@@ -108,7 +120,7 @@ export class DBOSClient {
    */
   async destroy() {
     await this.systemDatabase.destroy();
-    await this.userDatabase.destroy();
+    await this.userDatabase?.destroy();
   }
 
   /**
