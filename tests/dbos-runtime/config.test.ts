@@ -12,7 +12,6 @@ import { AssertionError } from 'assert';
 import { DBOSConfigInternal } from '../../src/dbos-executor';
 import { DBOSRuntimeConfig } from '../../src';
 import { UserDatabaseName } from '../../src/user_database';
-import { TelemetryCollector } from '../../src/telemetry/collector';
 
 describe('dbos-config', () => {
   beforeEach(() => {
