@@ -17,16 +17,15 @@ import {
   createDBIfDoesNotExist,
 } from '../user_database';
 import { getClientConfig } from '../utils';
+import { DBOSConfigInternal } from '../dbos-executor';
 
-export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  const databaseUrl = getDatabaseUrl(configFile);
+export async function migrate(migrationCommands: string[], config: DBOSConfigInternal, logger: GlobalLogger) {
+  const databaseUrl = getDatabaseUrl(config);
   const url = new URL(databaseUrl);
   const database = url.pathname.slice(1);
 
   logger.info(`Starting migration: creating database ${database} if it does not exist`);
   await createDBIfDoesNotExist(databaseUrl, logger);
-
-  const migrationCommands = configFile.database?.migrate;
 
   try {
     migrationCommands?.forEach((cmd) => {
@@ -39,7 +38,7 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     return 1;
   }
 
-  const systemDatabaseUrl = getSystemDatabaseUrl(configFile);
+  const systemDatabaseUrl = getSystemDatabaseUrl(config);
   logger.info('Creating DBOS tables and system database.');
   try {
     await createDBOSTables(databaseUrl, systemDatabaseUrl, logger);

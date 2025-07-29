@@ -5,6 +5,7 @@ import {
   getDbosConfig,
   getRuntimeConfig,
   getSystemDatabaseUrl,
+  overwriteConfigForDBOSCloud,
   readConfigFile,
 } from './config';
 import { Command } from 'commander';
@@ -84,8 +85,14 @@ program
   .description('Perform a database migration')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (options: { appDir?: string }) => {
-    const config = readConfigFile(options.appDir);
-    await runAndLog(config, migrate);
+    const configFile = readConfigFile(options.appDir);
+    let config = getDbosConfig(configFile);
+    const runtimeConfig = getRuntimeConfig(configFile);
+    if (process.env.DBOS__CLOUD === 'true') {
+      [config] = overwriteConfigForDBOSCloud(config, runtimeConfig, configFile);
+    }
+
+    await runAndLog(configFile.database?.migrate ?? [], config, migrate);
   });
 
 program
@@ -333,20 +340,21 @@ if (!process.argv.slice(2).length) {
 //If action throws, logs the exception and sets the exit code to 1.
 //Finally, terminates the program with the exit code.
 export async function runAndLog(
-  configFile: ConfigFile,
-  action: (configFile: ConfigFile, logger: GlobalLogger) => Promise<number> | number,
+  migrationCommands: string[],
+  config: DBOSConfigInternal,
+  action: (migrationCommands: string[], config: DBOSConfigInternal, logger: GlobalLogger) => Promise<number> | number,
 ) {
   let logger = new GlobalLogger();
   let terminate = undefined;
-  if (configFile.telemetry?.OTLPExporter) {
+  if (config.telemetry.OTLPExporter) {
     logger = new GlobalLogger(
       new TelemetryCollector(
         new TelemetryExporter({
-          logsEndpoint: toArray(configFile.telemetry?.OTLPExporter?.logsEndpoint),
-          tracesEndpoint: toArray(configFile.telemetry?.OTLPExporter?.tracesEndpoint),
+          logsEndpoint: config.telemetry.OTLPExporter.logsEndpoint ?? [],
+          tracesEndpoint: config.telemetry.OTLPExporter.tracesEndpoint ?? [],
         }),
       ),
-      configFile.telemetry?.logs,
+      config.telemetry?.logs,
     );
     terminate = (code: number) => {
       void logger.destroy().finally(() => {
@@ -360,13 +368,9 @@ export async function runAndLog(
   }
   let returnCode = 1;
   try {
-    returnCode = await action(configFile, logger);
+    returnCode = await action(migrationCommands, config, logger);
   } catch (e) {
     logger.error(e);
   }
   terminate(returnCode);
-
-  function toArray(endpoint: string | string[] | undefined): Array<string> {
-    return endpoint ? (Array.isArray(endpoint) ? endpoint : [endpoint]) : [];
-  }
 }
