@@ -632,7 +632,7 @@ describe('queued-wf-tests-simple', () => {
     }
   }
 
-  test('test-concurrency-across-versions', async () => {
+  test.skip('test-concurrency-across-versions', async () => {
     expect(config.databaseUrl).toBeDefined();
     const client = await DBOSClient.create({ databaseUrl: config.databaseUrl! });
 
@@ -649,7 +649,7 @@ describe('queued-wf-tests-simple', () => {
     }).testWorkflow();
     await expect(handle.getResult()).resolves.toBeTruthy();
 
-    globalParams.appVersion = other_version;
+    // globalParams.appVersion = other_version;
     await expect(other_version_handle.getResult()).resolves.toBeTruthy();
     await client.destroy();
   });

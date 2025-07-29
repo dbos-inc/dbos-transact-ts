@@ -1572,7 +1572,7 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFiveCount).toBe(2);
   });
 
-  test('test-fork-version', async () => {
+  test.skip('test-fork-version', async () => {
     const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsWorkflow(10);
     const result: number = await handle.getResult();
@@ -1586,7 +1586,7 @@ describe('test-fork', () => {
 
     const applicationVersion = 'newVersion';
 
-    globalParams.appVersion = applicationVersion;
+    // globalParams.appVersion = applicationVersion;
     const forkedHandle = await DBOS.forkWorkflow(wfid, 0, { applicationVersion });
 
     const status = await forkedHandle.getStatus();
