@@ -135,6 +135,9 @@ export interface DBOSConfig {
   otlpLogsEndpoints?: string[];
   adminPort?: number;
   runAdminServer?: boolean;
+
+  executorID?: string;
+  appVersion?: string;
 }
 
 export interface DBOSRuntimeConfig {
@@ -156,6 +159,8 @@ export type DBOSConfigInternal = {
   sysDbPoolSize?: number;
 
   telemetry: TelemetryConfig;
+  executorID?: string;
+  appVersion?: string;
 
   http?: {
     cors_middleware?: boolean;
