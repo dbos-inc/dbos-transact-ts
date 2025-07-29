@@ -1,5 +1,5 @@
 import { DBOSExecutor } from '../dbos-executor';
-import { DBOSJSON, globalParams } from '../utils';
+import { DBOSJSON } from '../utils';
 import WebSocket from 'ws';
 import * as protocol from './protocol';
 import { GetWorkflowsInput, StatusString } from '..';
@@ -119,8 +119,8 @@ export class Conductor {
           case protocol.MessageType.EXECUTOR_INFO:
             const infoResp = new protocol.ExecutorInfoResponse(
               baseMsg.request_id,
-              globalParams.executorID,
-              globalParams.appVersion,
+              this.dbosExec.executorID,
+              this.dbosExec.appVersion,
               hostname(),
             );
             this.websocket!.send(DBOSJSON.stringify(infoResp));

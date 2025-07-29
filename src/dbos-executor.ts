@@ -245,8 +245,10 @@ export class DBOSExecutor {
   #scheduler = new ScheduledReceiver();
   #wfqEnded?: Promise<void> = undefined;
 
-  readonly executorID: string = globalParams.executorID;
   readonly #dbosVersion = loadDbosVersion();
+  readonly #executorID: string;
+  #appVersion: string;
+  #appVersionComputed = false;
 
   static globalInstance: DBOSExecutor | undefined = undefined;
 
@@ -288,6 +290,8 @@ export class DBOSExecutor {
     { systemDatabase, debugMode }: DBOSExecutorOptions = {},
   ) {
     this.#debugMode = debugMode ?? false;
+    this.#appVersion = config.appVersion || process.env.DBOS__APPVERSION || '';
+    this.#executorID = config.executorID || process.env.DBOS__VMID || 'local';
 
     if (config.telemetry.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
@@ -324,6 +328,14 @@ export class DBOSExecutor {
 
   get appName(): string | undefined {
     return this.config.name;
+  }
+
+  get appVersion(): string {
+    return this.#appVersion;
+  }
+
+  get executorID(): string {
+    return this.#executorID;
   }
 
   #configureDbClient() {
@@ -477,15 +489,17 @@ export class DBOSExecutor {
       }
 
       // Compute the application version if not provided
-      if (globalParams.appVersion === '') {
-        globalParams.appVersion = this.computeAppVersion();
-        globalParams.wasComputed = true;
+      if (this.#appVersion === '') {
+        this.#appVersion = this.computeAppVersion();
+        this.#appVersionComputed = true;
+      } else {
+        this.#appVersionComputed = false;
       }
       this.logger.info(`Initializing DBOS (v${this.#dbosVersion})`);
-      this.logger.info(`Executor ID: ${this.executorID}`);
-      this.logger.info(`Application version: ${globalParams.appVersion}`);
+      this.logger.info(`Executor ID: ${this.#executorID}`);
+      this.logger.info(`Application version: ${this.#appVersion}`);
 
-      await this.recoverPendingWorkflows([this.executorID]);
+      await this.recoverPendingWorkflows([this.#executorID]);
     }
 
     this.logger.info('DBOS launched!');
@@ -655,8 +669,8 @@ export class DBOSExecutor {
       assumedRole: pctx?.assumedRole || '',
       authenticatedRoles: pctx?.authenticatedRoles || [],
       request: pctx?.request || {},
-      executorId: globalParams.executorID,
-      applicationVersion: globalParams.appVersion,
+      executorId: this.#executorID,
+      applicationVersion: this.#appVersion,
       applicationID: globalParams.appID,
       createdAt: Date.now(), // Remember the start time of this workflow,
       timeoutMS: timeoutMS,
@@ -1502,7 +1516,7 @@ export class DBOSExecutor {
 
     const procname = getRegisteredFunctionFullName(proc);
     const plainProcName = `${procname.className}_${procname.name}_p`;
-    const procName = globalParams.wasComputed ? plainProcName : `v${globalParams.appVersion}_${plainProcName}`;
+    const procName = this.#appVersionComputed ? plainProcName : `v${this.#appVersion}_${plainProcName}`;
 
     const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
     try {
@@ -1840,13 +1854,13 @@ export class DBOSExecutor {
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
-      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID, globalParams.appVersion);
+      const pendingWorkflows = await this.systemDatabase.getPendingWorkflows(execID, this.#appVersion);
       if (pendingWorkflows.length > 0) {
         this.logger.info(
-          `Recovering ${pendingWorkflows.length} workflows from application version ${globalParams.appVersion}`,
+          `Recovering ${pendingWorkflows.length} workflows from application version ${this.#appVersion}`,
         );
       } else {
-        this.logger.info(`No workflows to recover from application version ${globalParams.appVersion}`);
+        this.logger.info(`No workflows to recover from application version ${this.#appVersion}`);
       }
       for (const pendingWorkflow of pendingWorkflows) {
         this.logger.debug(

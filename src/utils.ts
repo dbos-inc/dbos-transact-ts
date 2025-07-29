@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { ClientConfig } from 'pg';
+import { DBOSExecutor } from './dbos-executor';
 
 /*
  * A wrapper of readFileSync used for mocking in tests
@@ -23,9 +24,12 @@ export function loadDbosVersion(): string {
 }
 
 export const globalParams = {
-  appVersion: process.env.DBOS__APPVERSION || '', // The one true source of appVersion
-  wasComputed: false, // Was app version set or computed? Stored procs don't support computed versions.
-  executorID: process.env.DBOS__VMID || 'local', // The one true source of executorID
+  get appVersion() {
+    return DBOSExecutor.globalInstance?.appVersion || process.env.DBOS__APPVERSION || ''; // The one true source of appVersion
+  },
+  get executorID() {
+    return DBOSExecutor.globalInstance?.executorID || process.env.DBOS__VMID || 'local'; // The one true source of executorID
+  },
   get appID() {
     return process.env.DBOS__APPID || ''; // The one true source of appID
   },

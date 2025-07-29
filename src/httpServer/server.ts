@@ -12,7 +12,7 @@ import { getOrGenerateRequestID, MiddlewareDefaults, RequestIDHeader } from './m
 import { SpanStatusCode, trace, ROOT_CONTEXT, defaultTextMapGetter, context } from '@opentelemetry/api';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
-import { DBOSJSON, exhaustiveCheckGuard, globalParams } from '../utils';
+import { DBOSJSON, exhaustiveCheckGuard } from '../utils';
 import { DBOSLocalCtx, HTTPRequest, runWithTopContext } from '../context';
 import { QueueParameters, wfQueueRunner } from '../wfqueue';
 import { serializeError } from 'serialize-error';
@@ -247,7 +247,7 @@ export class DBOSHttpServer {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
       if (!DBOSHttpServer.isDeactivated) {
         dbosExec.logger.info(
-          `Deactivating DBOS executor ${globalParams.executorID} with version ${globalParams.appVersion}. This executor will complete existing workflows but will not create new workflows.`,
+          `Deactivating DBOS executor ${dbosExec.executorID} with version ${dbosExec.appVersion}. This executor will complete existing workflows but will not create new workflows.`,
         );
         DBOSHttpServer.isDeactivated = true;
       }

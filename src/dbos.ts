@@ -66,7 +66,7 @@ import {
   wrapDBOSFunctionAndRegister,
   wrapDBOSFunctionAndRegisterDec,
 } from './decorators';
-import { DBOSJSON, globalParams, sleepms } from './utils';
+import { DBOSJSON, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
 import { Server } from 'http';
 import {
@@ -240,11 +240,6 @@ export class DBOS {
       return;
     }
 
-    if (options?.conductorKey) {
-      // Use a generated executor ID.
-      globalParams.executorID = randomUUID();
-    }
-
     const debugMode = options?.debugMode ?? process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
     const configFile = readConfigFile();
 
@@ -252,6 +247,10 @@ export class DBOS {
       ? translateDbosConfig(DBOS.#dbosConfig, debugMode)
       : getDbosConfig(configFile);
     let runtimeConfig = DBOS.#dbosConfig ? translateRuntimeConfig(DBOS.#dbosConfig) : getRuntimeConfig(configFile);
+
+    if (options?.conductorKey) {
+      internalConfig.executorID = randomUUID();
+    }
 
     if (process.env.DBOS__CLOUD === 'true') {
       [internalConfig, runtimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, configFile);
@@ -369,11 +368,6 @@ export class DBOS {
     for (const [_n, ds] of transactionalDataSources) {
       await ds.destroy();
     }
-
-    // Reset the global app version and executor ID
-    globalParams.appVersion = process.env.DBOS__APPVERSION || '';
-    globalParams.wasComputed = false;
-    globalParams.executorID = process.env.DBOS__VMID || 'local';
 
     recordDBOSShutdown();
   }
