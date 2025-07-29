@@ -89,7 +89,7 @@ app.get('/greeting/:name', (req: Request, res: Response) => {
 async function main() {
   DBOS.setConfig({
     name: 'dbos-typeorm',
-    databaseUrl: process.env.DBOS_DATABASE_URL,
+    systemDatabaseUrl: process.env.DBOS_SYSTEM_DATABASE_URL,
   });
   await DBOS.launch();
   const PORT = parseInt(process.env.NODE_PORT || '3000');
