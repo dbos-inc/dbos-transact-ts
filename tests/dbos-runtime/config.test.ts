@@ -12,6 +12,7 @@ import { AssertionError } from 'assert';
 import { DBOSConfigInternal } from '../../src/dbos-executor';
 import { DBOSRuntimeConfig } from '../../src';
 import { UserDatabaseName } from '../../src/user_database';
+import { TelemetryCollector } from '../../src/telemetry/collector';
 
 describe('dbos-config', () => {
   beforeEach(() => {
@@ -364,10 +365,19 @@ describe('dbos-config', () => {
       expect(databaseUrl).toBe('postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable');
     });
 
+    test('uses default value even if environment variable is set', () => {
+      process.env.DBOS_DATABASE_URL = 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable';
+      const databaseUrl = getDatabaseUrl({
+        name: 'Test App',
+      });
+      expect(databaseUrl).toBe('postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=10&sslmode=disable');
+    });
+
     test('uses environment variable when provided', () => {
       process.env.DBOS_DATABASE_URL = 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable';
       const databaseUrl = getDatabaseUrl({
         name: 'Test App',
+        database_url: process.env.DBOS_DATABASE_URL,
       });
       expect(databaseUrl).toBe('postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable');
     });
@@ -441,16 +451,16 @@ describe('dbos-config', () => {
     );
   });
 
-  describe('translateDbosConfig', () => {
+  describe('getSystemDatabaseUrl', () => {
     test('get from config', () => {
       const url = getSystemDatabaseUrl({ system_database_url: 'postgres://a:b@c:1234/appdb_dbos_sys' });
       expect(url).toBe('postgres://a:b@c:1234/appdb_dbos_sys');
     });
 
-    test('get from env', () => {
+    test('use default url even when env var set', () => {
       process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:1234/appdb_dbos_sys';
-      const url = getSystemDatabaseUrl({});
-      expect(url).toBe('postgres://a:b@c:1234/appdb_dbos_sys');
+      const url = getSystemDatabaseUrl({ name: 'appdb' });
+      expect(url).toBe('postgresql://postgres:dbos@localhost:5432/appdb_dbos_sys?connect_timeout=10&sslmode=disable');
     });
 
     test('get from user db url', () => {
@@ -461,6 +471,20 @@ describe('dbos-config', () => {
     test('get from default url', () => {
       const url = getSystemDatabaseUrl({ name: 'appdb' });
       expect(url).toBe('postgresql://postgres:dbos@localhost:5432/appdb_dbos_sys?connect_timeout=10&sslmode=disable');
+    });
+
+    test('uses PG env values when config is empty', () => {
+      process.env.PGHOST = 'envhost';
+      process.env.PGPORT = '7777';
+      process.env.PGUSER = 'envuser';
+      process.env.PGPASSWORD = 'envpass';
+
+      const databaseUrl = getSystemDatabaseUrl({
+        name: 'Test App',
+      });
+      expect(databaseUrl).toBe(
+        'postgresql://envuser:envpass@envhost:7777/test_app_dbos_sys?connect_timeout=10&sslmode=allow',
+      );
     });
   });
 
@@ -597,42 +621,45 @@ describe('dbos-config', () => {
       setup: [],
     };
 
+    test('throws when cloud db url is missing', () => {
+      expect(() => overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {})).toThrow();
+    });
+
     test('uses cloud app name', () => {
+      process.env.DBOS_DATABASE_URL = 'fake://url';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, { name: 'cloud-app-name' });
       expect(newConfig.name).toBe('cloud-app-name');
     });
 
     test('uses cloud db url', () => {
-      const dbURL = 'postgres://a:b@c:2345/cloud_db';
-
-      process.env.DBOS_DATABASE_URL = dbURL;
+      process.env.DBOS_DATABASE_URL = 'postgres://a:b@c:2345/cloud_db';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, { name: 'cloud-app-name' });
-      expect(newConfig.databaseUrl).toBe(dbURL);
+      expect(newConfig.databaseUrl).toBe('postgres://a:b@c:2345/cloud_db');
     });
 
-    test('uses cloud sys db url', () => {
-      const dbURL = 'postgres://a:b@c:2345/cloud_sys_db';
-
-      process.env.DBOS_SYSTEM_DATABASE_URL = dbURL;
+    test('uses cloud sys db url when set', () => {
+      process.env.DBOS_DATABASE_URL = 'fake://url';
+      process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:2345/cloud_sys_db';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, { name: 'cloud-app-name' });
-      expect(newConfig.systemDatabaseUrl).toBe(dbURL);
+      expect(newConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
     });
 
     test('derives cloud sys db url from cloud db url', () => {
-      const dbURL = 'postgres://a:b@c:2345/cloud_db';
-
-      process.env.DBOS_DATABASE_URL = dbURL;
+      process.env.DBOS_DATABASE_URL = 'postgres://a:b@c:2345/cloud_db';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, { name: 'cloud-app-name' });
       expect(newConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_db_dbos_sys');
     });
 
     test('force admin server', () => {
+      process.env.DBOS_DATABASE_URL = 'fake://url';
       const [, newRuntimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {});
       expect(newRuntimeConfig.admin_port).toBe(3001);
       expect(newRuntimeConfig.runAdminServer).toBe(true);
     });
 
     test('combine otel endpoints', () => {
+      console.log(internalConfig.telemetry.OTLPExporter);
+      process.env.DBOS_DATABASE_URL = 'fake://url';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
         telemetry: {
           OTLPExporter: {
@@ -649,9 +676,12 @@ describe('dbos-config', () => {
         'http://otel-collector:4317/traces',
         'http://otel-collector:4317/traces-from-cloud',
       ]);
+      console.log(internalConfig.telemetry.OTLPExporter);
     });
 
     test('combine otel endpoints no duplicates', () => {
+      console.log(internalConfig.telemetry.OTLPExporter);
+      process.env.DBOS_DATABASE_URL = 'fake://url';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
         telemetry: {
           OTLPExporter: {
@@ -662,6 +692,7 @@ describe('dbos-config', () => {
       });
       expect(newConfig.telemetry.OTLPExporter?.logsEndpoint).toEqual(['http://otel-collector:4317/logs']);
       expect(newConfig.telemetry.OTLPExporter?.tracesEndpoint).toEqual(['http://otel-collector:4317/traces']);
+      console.log(internalConfig.telemetry.OTLPExporter);
     });
   });
 });

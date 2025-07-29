@@ -274,26 +274,15 @@ export function overwriteConfigForDBOSCloud(
   // 3. OTLP traces endpoints (add the config data to the provided config)
   // 4. Force admin_port and runAdminServer
 
-  const appName = configFile.name ?? providedDBOSConfig.name;
-  let databaseUrl = process.env.DBOS_DATABASE_URL;
-  if (!databaseUrl) {
-    databaseUrl = configFile.database_url;
-  }
-  if (!databaseUrl) {
-    databaseUrl = providedDBOSConfig.databaseUrl;
-  }
+  const databaseUrl = process.env.DBOS_DATABASE_URL;
+  assert(databaseUrl, 'DBOS_DATABASE_URL must be set in DBOS Cloud environment');
 
   let systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
-  if (!systemDatabaseUrl && process.env.DBOS_DATABASE_URL) {
-    systemDatabaseUrl = getSystemDatabaseUrl(process.env.DBOS_DATABASE_URL);
+  if (!systemDatabaseUrl) {
+    systemDatabaseUrl = getSystemDatabaseUrl(databaseUrl);
   }
 
-  if (!systemDatabaseUrl) {
-    systemDatabaseUrl = configFile.system_database_url;
-  }
-  if (!systemDatabaseUrl) {
-    systemDatabaseUrl = providedDBOSConfig.systemDatabaseUrl;
-  }
+  const appName = configFile.name ?? providedDBOSConfig.name;
 
   const logsSet = new Set(providedDBOSConfig.telemetry.OTLPExporter?.logsEndpoint);
   const logsEndpoint = configFile.telemetry?.OTLPExporter?.logsEndpoint;
@@ -321,20 +310,20 @@ export function overwriteConfigForDBOSCloud(
     databaseUrl,
     systemDatabaseUrl,
     telemetry: {
-      logs: providedDBOSConfig.telemetry.logs,
+      logs: {
+        ...providedDBOSConfig.telemetry.logs,
+      },
       OTLPExporter: {
-        tracesEndpoint: Array.from(tracesSet),
-        logsEndpoint: Array.from(logsSet),
+        logsEndpoint: Array.from(logsSet).filter((e) => !!e),
+        tracesEndpoint: Array.from(tracesSet).filter((e) => !!e),
       },
     },
   };
 
   const overwriteDBOSRuntimeConfig: DBOSRuntimeConfig = {
+    ...providedRuntimeConfig,
     admin_port: 3001,
     runAdminServer: true,
-    port: providedRuntimeConfig.port,
-    start: providedRuntimeConfig.start,
-    setup: providedRuntimeConfig.setup,
   };
 
   return [overwritenDBOSConfig, overwriteDBOSRuntimeConfig];
