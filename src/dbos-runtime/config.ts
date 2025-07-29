@@ -108,10 +108,6 @@ export function getSystemDatabaseUrl(
     return configFileOrString.system_database_url;
   }
 
-  if (process.env.DBOS_SYSTEM_DATABASE_URL) {
-    return process.env.DBOS_SYSTEM_DATABASE_URL;
-  }
-
   const databaseUrl = getDatabaseUrl(configFileOrString);
   return convertUserDbUrl(databaseUrl);
 
@@ -135,7 +131,7 @@ function isValidDBname(dbName: string): boolean {
 }
 
 export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
-  const databaseUrl = configFile.database_url || process.env.DBOS_DATABASE_URL || defaultDatabaseUrl(configFile.name);
+  const databaseUrl = configFile.database_url || defaultDatabaseUrl(configFile.name);
 
   const url = new URL(databaseUrl);
   const dbName = url.pathname.slice(1);
