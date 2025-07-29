@@ -268,19 +268,19 @@ DBOS is general-purpose, but is often used for data pipelines, allowing develope
 
 </details>
 
-<details><summary><strong>DBOS vs. Celery/BullMQ</strong></summary>
+<details><summary><strong>DBOS vs. BullMQ</strong></summary>
 
 ####
 
-DBOS provides a similar queue abstraction to dedicated queueing systems like Celery or BullMQ: you can declare queues, submit tasks to them, and control their flow with concurrency limits, rate limits, timeouts, prioritization, etc.
+DBOS provides a similar queue abstraction to dedicated queueing systems like BullMQ: you can declare queues, submit tasks to them, and control their flow with concurrency limits, rate limits, timeouts, prioritization, etc.
 However, DBOS queues are **durable and Postgres-backed** and integrate with durable workflows.
 For example, in DBOS you can write a durable workflow that enqueues a thousand tasks and waits for their results.
 DBOS checkpoints the workflow and each of its tasks in Postgres, guaranteeing that even if failures or interruptions occur, the tasks will complete and the workflow will collect their results.
-By contrast, Celery/BullMQ are Redis-backed and don't provide workflows, so they provide fewer guarantees but better performance.
+By contrast, BullMQ is Redis-backed and don't provide workflows, so they provide fewer guarantees but better performance.
 
 **When to use DBOS:** You need the reliability of enqueueing tasks from durable workflows.
 
-**When to use Celery/BullMQ**: You don't need durability, or you need very high throughput beyond what your Postgres server can support.
+**When to use BullMQ**: You don't need durability, or you need very high throughput beyond what your Postgres server can support.
 
 </details>
 
