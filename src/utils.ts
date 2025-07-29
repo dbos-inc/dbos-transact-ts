@@ -9,7 +9,7 @@ export function readFileSync(path: string, encoding: BufferEncoding = 'utf8'): s
   return fs.readFileSync(path, { encoding });
 }
 
-function loadDbosVersion(): string {
+export function loadDbosVersion(): string {
   try {
     const packageJsonPath = path.join(findPackageRoot(__dirname), 'package.json');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
@@ -27,7 +27,6 @@ export const globalParams = {
   wasComputed: false, // Was app version set or computed? Stored procs don't support computed versions.
   executorID: process.env.DBOS__VMID || 'local', // The one true source of executorID
   appID: process.env.DBOS__APPID || '', // The one true source of appID
-  dbosVersion: loadDbosVersion(), // The version of the DBOS library
 };
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 

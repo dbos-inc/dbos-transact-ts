@@ -89,7 +89,7 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
-import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
+import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME, loadDbosVersion } from './utils';
 import path from 'node:path';
 import fs from 'node:fs';
 import { pathToFileURL } from 'url';
@@ -241,6 +241,7 @@ export class DBOSExecutor {
   #wfqEnded?: Promise<void> = undefined;
 
   readonly executorID: string = globalParams.executorID;
+  readonly #dbosVersion = loadDbosVersion();
 
   static globalInstance: DBOSExecutor | undefined = undefined;
 
@@ -475,7 +476,7 @@ export class DBOSExecutor {
         globalParams.appVersion = this.computeAppVersion();
         globalParams.wasComputed = true;
       }
-      this.logger.info(`Initializing DBOS (v${globalParams.dbosVersion})`);
+      this.logger.info(`Initializing DBOS (v${this.#dbosVersion})`);
       this.logger.info(`Executor ID: ${this.executorID}`);
       this.logger.info(`Application version: ${globalParams.appVersion}`);
 
@@ -2074,7 +2075,7 @@ export class DBOSExecutor {
       .map((i) => i.origFunction.toString())
       .sort();
     // Different DBOS versions should produce different hashes.
-    sortedWorkflowSource.push(globalParams.dbosVersion);
+    sortedWorkflowSource.push(this.#dbosVersion);
     for (const sourceCode of sortedWorkflowSource) {
       hasher.update(sourceCode);
     }
