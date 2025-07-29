@@ -1,6 +1,5 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
-import { ConfigFile, getDatabaseUrl, getSystemDatabaseUrl } from './config';
 import { PoolConfig, Client } from 'pg';
 import {
   createUserDBSchema,
@@ -17,10 +16,13 @@ import {
   createDBIfDoesNotExist,
 } from '../user_database';
 import { getClientConfig } from '../utils';
-import { DBOSConfigInternal } from '../dbos-executor';
 
-export async function migrate(migrationCommands: string[], config: DBOSConfigInternal, logger: GlobalLogger) {
-  const databaseUrl = getDatabaseUrl(config);
+export async function migrate(
+  migrationCommands: string[],
+  databaseUrl: string,
+  systemDatabaseUrl: string,
+  logger: GlobalLogger,
+) {
   const url = new URL(databaseUrl);
   const database = url.pathname.slice(1);
 
@@ -38,7 +40,6 @@ export async function migrate(migrationCommands: string[], config: DBOSConfigInt
     return 1;
   }
 
-  const systemDatabaseUrl = getSystemDatabaseUrl(config);
   logger.info('Creating DBOS tables and system database.');
   try {
     await createDBOSTables(databaseUrl, systemDatabaseUrl, logger);

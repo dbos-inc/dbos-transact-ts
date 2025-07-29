@@ -1,6 +1,5 @@
 #!/usr/bin/env node
 import {
-  ConfigFile,
   getDatabaseUrl,
   getDbosConfig,
   getRuntimeConfig,
@@ -342,7 +341,12 @@ if (!process.argv.slice(2).length) {
 export async function runAndLog(
   migrationCommands: string[],
   config: DBOSConfigInternal,
-  action: (migrationCommands: string[], config: DBOSConfigInternal, logger: GlobalLogger) => Promise<number> | number,
+  action: (
+    migrationCommands: string[],
+    databaseUrl: string,
+    systemDatabaseUrl: string,
+    logger: GlobalLogger,
+  ) => Promise<number> | number,
 ) {
   let logger = new GlobalLogger();
   let terminate = undefined;
@@ -368,7 +372,7 @@ export async function runAndLog(
   }
   let returnCode = 1;
   try {
-    returnCode = await action(migrationCommands, config, logger);
+    returnCode = await action(migrationCommands, config.databaseUrl, config.systemDatabaseUrl, logger);
   } catch (e) {
     logger.error(e);
   }
