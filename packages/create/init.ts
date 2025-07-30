@@ -106,8 +106,7 @@ function updateLocalFileDependency(appName: string, deps?: Record<string, string
   for (const [depName, depVersion] of Object.entries(deps)) {
     if (depName.startsWith('@dbos-inc/') && depVersion.startsWith('file:')) {
       // Install the latest version of DBOS dependency.
-      // TODO: change it to latest after we release.
-      execSync(`npm install --no-fund --save ${depName}@preview --loglevel=error`, {
+      execSync(`npm install --no-fund --save ${depName}@latest --loglevel=error`, {
         cwd: appName,
         stdio: 'inherit',
       });
