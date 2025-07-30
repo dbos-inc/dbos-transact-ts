@@ -1,6 +1,5 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
-import { ConfigFile, getDatabaseUrl, getSystemDatabaseUrl } from './config';
 import { PoolConfig, Client } from 'pg';
 import {
   createUserDBSchema,
@@ -18,15 +17,17 @@ import {
 } from '../user_database';
 import { getClientConfig } from '../utils';
 
-export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
-  const databaseUrl = getDatabaseUrl(configFile);
+export async function migrate(
+  migrationCommands: string[],
+  databaseUrl: string,
+  systemDatabaseUrl: string,
+  logger: GlobalLogger,
+) {
   const url = new URL(databaseUrl);
   const database = url.pathname.slice(1);
 
   logger.info(`Starting migration: creating database ${database} if it does not exist`);
   await createDBIfDoesNotExist(databaseUrl, logger);
-
-  const migrationCommands = configFile.database?.migrate;
 
   try {
     migrationCommands?.forEach((cmd) => {
@@ -39,7 +40,6 @@ export async function migrate(configFile: ConfigFile, logger: GlobalLogger) {
     return 1;
   }
 
-  const systemDatabaseUrl = getSystemDatabaseUrl(configFile);
   logger.info('Creating DBOS tables and system database.');
   try {
     await createDBOSTables(databaseUrl, systemDatabaseUrl, logger);
