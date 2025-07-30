@@ -25,6 +25,7 @@ import fs from 'fs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
+import assert from 'assert';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -670,6 +671,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async init() {
     const url = new URL(this.systemDatabaseUrl);
     const sysDbName = url.pathname.slice(1);
+    assert(sysDbName, 'System database URL must include a database name in the path');
     url.pathname = '/postgres';
 
     const pgSystemClient = new Client(getClientConfig(url));
@@ -723,6 +725,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   static async dropSystemDB(systemDatabaseUrl: string) {
     const url = new URL(systemDatabaseUrl);
     const systemDbName = url.pathname.slice(1);
+    assert(systemDbName, 'System database URL must include a database name in the path');
     url.pathname = '/postgres';
 
     // Drop system database, for testing.
