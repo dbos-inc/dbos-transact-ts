@@ -39,7 +39,7 @@
     "@koa/router": "13.1.1",
     "@types/co-body": "^6.1.3",
     "jsonwebtoken": "^9.0.2",
-    "koa": "^2.15.4",
+    "koa": "^2.16.2",
     "serialize-error": "8.1.0"
   }
 }
