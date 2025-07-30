@@ -105,6 +105,9 @@ export function getSystemDatabaseUrl(
   }
 
   if (configFileOrString.system_database_url) {
+    const url = new URL(configFileOrString.system_database_url);
+    const sysDbName = url.pathname.slice(1);
+    assert(isValidDBname(sysDbName), `Database name "${sysDbName}" in system_database_url is invalid`);
     return configFileOrString.system_database_url;
   }
 
@@ -113,8 +116,10 @@ export function getSystemDatabaseUrl(
 
   function convertUserDbUrl(databaseUrl: string) {
     const url = new URL(databaseUrl);
-    const database = url.pathname.slice(1);
-    url.pathname = `/${database}_dbos_sys`;
+    const dbName = url.pathname.slice(1);
+    const sysDbName = `${dbName}_dbos_sys`;
+    assert(isValidDBname(sysDbName), `System database name "${sysDbName}" generated from "${dbName} is invalid.`);
+    url.pathname = `/${sysDbName}`;
     return url.toString();
   }
 }
