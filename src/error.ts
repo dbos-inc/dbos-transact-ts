@@ -19,7 +19,10 @@ export class DBOSError extends Error {
 
 const InitializationError = 3;
 export class DBOSInitializationError extends DBOSError {
-  constructor(msg: string) {
+  constructor(
+    msg: string,
+    readonly error?: Error,
+  ) {
     super(msg, InitializationError);
   }
 }

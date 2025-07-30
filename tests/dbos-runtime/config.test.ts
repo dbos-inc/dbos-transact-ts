@@ -485,6 +485,20 @@ describe('dbos-config', () => {
         'postgresql://envuser:envpass@envhost:7777/test_app_dbos_sys?connect_timeout=10&sslmode=allow',
       );
     });
+
+    test.each(['some_DB', '123db', 'very_very_very_long_very_very_very_long_very_very__database_name', 'largeDB'])(
+      'throws on invalid system database url string %s',
+      (name) => {
+        expect(() => getSystemDatabaseUrl(`postgres://host:5432/${name}`)).toThrow();
+      },
+    );
+
+    test.each(['some_DB', '123db', 'very_very_very_long_very_very_very_long_very_very__database_name', 'largeDB'])(
+      'throws on invalid system_database_url field %s',
+      (name) => {
+        expect(() => getSystemDatabaseUrl({ system_database_url: `postgres://host:5432/${name}` })).toThrow();
+      },
+    );
   });
 
   describe('translateDbosConfig', () => {
