@@ -432,10 +432,13 @@ export class DBOSExecutor {
         // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
         await this.#userDatabase.init(this.#debugMode);
       }
-      if (!this.#debugMode) {
-        await this.systemDatabase.init();
-      }
+
+      // Debug mode doesn't initialize the sys db
+      await this.systemDatabase.init(this.#debugMode);
     } catch (err) {
+      if (err instanceof DBOSInitializationError) {
+        throw err;
+      }
       let message = 'Failed to initialize workflow executor: ';
       if (err instanceof AggregateError) {
         for (const error of err.errors as Error[]) {

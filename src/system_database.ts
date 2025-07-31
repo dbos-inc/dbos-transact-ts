@@ -8,6 +8,7 @@ import {
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
   DBOSQueueDuplicatedError,
+  DBOSInitializationError,
 } from './error';
 import { GetPendingWorkflowsOutput, GetQueuedWorkflowsInput, GetWorkflowsInput, StatusString } from './workflow';
 import {
@@ -55,7 +56,7 @@ export const DBOS_FUNCNAME_GETSTATUS = 'getStatus';
  *     be done elsewhere (executor), as it may require application-specific logic or extensions.
  */
 export interface SystemDatabase {
-  init(): Promise<void>;
+  init(debugMode?: boolean): Promise<void>;
   destroy(): Promise<void>;
 
   initWorkflowStatus(
@@ -203,41 +204,94 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
-export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: GlobalLogger) {
-  let migrationsDirectory: string;
-
-  try {
-    migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
-  } catch (packageError) {
-    migrationsDirectory = path.join(__dirname, 'migrations');
-  }
-
-  // Check if migrations directory exists
-  if (!fs.existsSync(migrationsDirectory)) {
-    logger.warn(
-      'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
-        'Please run "npx dbos migrate" to create your system database before running your bundled application.',
-    );
-    return;
-  }
-
-  const knexConfig = {
+export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogger, debugMode: boolean = false) {
+  const knexDb = knex({
     client: 'pg',
-    connection: systemPoolConfig,
-    migrations: {
-      directory: migrationsDirectory,
-      tableName: 'knex_migrations',
-    },
-  };
-  const knexDB = knex(knexConfig);
+    connection: getClientConfig(sysDbUrl),
+  });
+
   try {
-    await knexDB.migrate.latest();
-  } catch (e) {
-    logger.warn(
-      `Exception during system database construction. This is most likely because the system database was configured using a later version of DBOS: ${(e as Error).message}`,
-    );
+    if (!debugMode) {
+      await ensureDatabase(sysDbUrl);
+    }
+
+    assert(await checkConnection(knexDb), 'Failed to connect to system database.');
+
+    const directory = getMigrationsDirectory();
+    if (!directory) {
+      logger.warn(
+        'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
+          'Please run "npx dbos migrate" to create your system database before running your bundled application.',
+      );
+      return;
+    }
+
+    const migrateConfig = { directory, tableName: 'knex_migrations' };
+    type CompletedMigration = { name: string };
+    type PendingMigration = { file: string; directory: string };
+    const [completed, pending] = (await knexDb.migrate.list(migrateConfig)) as [
+      CompletedMigration[],
+      PendingMigration[],
+    ];
+
+    if (pending.length === 0) {
+      logger.debug(`System database is up to date. ${completed.length} migrations have been applied.`);
+      return;
+    }
+
+    if (debugMode) {
+      logger.info(`Skipping system database migration in debug mode. ${pending.length} migrations pending`);
+      return;
+    }
+
+    await knexDb.migrate.latest(migrateConfig);
   } finally {
-    await knexDB.destroy();
+    await knexDb.destroy();
+  }
+
+  async function checkConnection(knexDb: Knex) {
+    try {
+      await knexDb.raw<ExistenceCheck>('SELECT EXISTS (SELECT * FROM pg_database LIMIT 1)');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function ensureDatabase(sysDbUrl: string) {
+    const url = new URL(sysDbUrl);
+    const sysDbName = url.pathname.slice(1);
+    assert(sysDbName, 'System database URL must include a database name in the path');
+    url.pathname = '/postgres';
+
+    const client = new Client(getClientConfig(url));
+    try {
+      await client.connect();
+      const dbExists = await client.query<ExistenceCheck>(
+        `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${sysDbName}')`,
+      );
+      if (!dbExists.rows[0].exists) {
+        logger.info(`Creating system database ${sysDbName}`);
+        await client.query(`CREATE DATABASE "${sysDbName}"`);
+      } else {
+        logger.debug(`System database ${sysDbName} already exists`);
+      }
+    } catch (e) {
+      const error = e instanceof Error ? e : new Error(String(e));
+      throw new DBOSInitializationError(`Error ensuring system database exists: ${error.message}`, error);
+    } finally {
+      await client.end();
+    }
+  }
+
+  function getMigrationsDirectory(): string | undefined {
+    let migrationsDirectory: string;
+    try {
+      migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+    } catch (packageError) {
+      migrationsDirectory = path.join(__dirname, 'migrations');
+    }
+    return fs.existsSync(migrationsDirectory) ? migrationsDirectory : undefined;
   }
 }
 
@@ -668,39 +722,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.knexDB = knex(knexConfig);
   }
 
-  async init() {
-    const url = new URL(this.systemDatabaseUrl);
-    const sysDbName = url.pathname.slice(1);
-    assert(sysDbName, 'System database URL must include a database name in the path');
-    url.pathname = '/postgres';
+  async init(debugMode: boolean = false) {
+    await ensureSystemDatabase(this.systemDatabaseUrl, this.logger, debugMode);
 
-    const pgSystemClient = new Client(getClientConfig(url));
-    await pgSystemClient.connect();
-    // Create the system database and load tables.
-    const dbExists = await pgSystemClient.query<ExistenceCheck>(
-      `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${sysDbName}')`,
-    );
-    if (!dbExists.rows[0].exists) {
-      // Create the DBOS system database.
-      await pgSystemClient.query(`CREATE DATABASE "${sysDbName}"`);
-    }
-
-    try {
-      await migrateSystemDatabase(this.systemPoolConfig, this.logger);
-    } catch (e) {
-      const tableExists = await this.pool.query<ExistenceCheck>(
-        `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`,
-      );
-      if (tableExists.rows[0].exists) {
-        this.logger.warn(
-          `System database migration failed, you may be running an old version of DBOS Transact: ${(e as Error).message}`,
-        );
-      } else {
-        throw e;
-      }
-    } finally {
-      await pgSystemClient.end();
-    }
     if (this.shouldUseDBNotifications) {
       await this.#listenForNotifications();
     }
@@ -713,7 +737,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     if (this.notificationsClient) {
       try {
-        this.notificationsClient.removeAllListeners();
         await this.notificationsClient.end();
       } catch (e) {
         this.logger.warn(`Error ending notifications client: ${String(e)}`);
