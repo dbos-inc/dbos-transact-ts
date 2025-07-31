@@ -454,19 +454,17 @@ export class DBOSExecutor {
         await this.systemDatabase.init();
       }
     } catch (err) {
+      let message = 'Failed to initialize workflow executor: ';
       if (err instanceof AggregateError) {
-        let combinedMessage = 'Failed to initialize workflow executor: ';
-        for (const error of err.errors) {
-          combinedMessage += `${(error as Error).message}; `;
+        for (const error of err.errors as Error[]) {
+          message += `${error.message}; `;
         }
-        throw new DBOSInitializationError(combinedMessage);
       } else if (err instanceof Error) {
-        const errorMessage = `Failed to initialize workflow executor: ${err.message}`;
-        throw new DBOSInitializationError(errorMessage);
+        message += err.message;
       } else {
-        const errorMessage = `Failed to initialize workflow executor: ${String(err)}`;
-        throw new DBOSInitializationError(errorMessage);
+        message += String(err);
       }
+      throw new DBOSInitializationError(message, err instanceof Error ? err : undefined);
     }
     this.initialized = true;
 
