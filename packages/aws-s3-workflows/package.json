@@ -30,8 +30,8 @@
     "@dbos-inc/dbos-sdk": "*"
   },
   "dependencies": {
-    "@aws-sdk/s3-presigned-post": "^3.858.0",
-    "@aws-sdk/s3-request-presigner": "^3.858.0",
+    "@aws-sdk/s3-presigned-post": "^3.842.0",
+    "@aws-sdk/s3-request-presigner": "^3.842.0",
     "uuid": "^9.0.1"
   }
 }
