@@ -1,7 +1,7 @@
 import { BasicTracerProvider, ReadableSpan, Span } from '@opentelemetry/sdk-trace-base';
 import { Resource } from '@opentelemetry/resources';
 import opentelemetry, { Attributes, SpanContext } from '@opentelemetry/api';
-import { SemanticResourceAttributes } from '@opentelemetry/semantic-conventions';
+import { SEMRESATTRS_SERVICE_NAME } from '@opentelemetry/semantic-conventions';
 import { TelemetryCollector } from './collector';
 import { hrTime } from '@opentelemetry/core';
 import { globalParams } from '../utils';
@@ -38,7 +38,7 @@ export class Tracer {
   constructor(private readonly telemetryCollector: TelemetryCollector) {
     this.tracer = new BasicTracerProvider({
       resource: new Resource({
-        [SemanticResourceAttributes.SERVICE_NAME]: 'dbos',
+        [SEMRESATTRS_SERVICE_NAME]: 'dbos',
       }),
     });
     this.tracer.register(); // this is a no-op if another tracer provider was already registered
