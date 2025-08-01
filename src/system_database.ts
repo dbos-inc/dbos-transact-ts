@@ -718,7 +718,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         min: 0,
         max: this.sysDbPoolSize,
       },
-    };
+    } as Knex.Config;
     this.knexDB = knex(knexConfig);
   }
 
