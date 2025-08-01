@@ -19,7 +19,7 @@
     "nodemon": "^3.1.0",
     "supertest": "^7.0.0",
     "ts-jest": "^29.1.2",
-    "typescript": "^5.4.5"
+    "typescript": "5.8.3"
   },
   "dependencies": {
     "@dbos-inc/dbos-sdk": "file:../../../..",
