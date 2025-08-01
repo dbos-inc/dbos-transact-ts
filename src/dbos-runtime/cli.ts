@@ -9,7 +9,7 @@ import {
 } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
-import { migrate } from './migrate';
+import { migrate, createSystemDatabase } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
@@ -92,6 +92,39 @@ program
     }
 
     await runAndLog(configFile.database?.migrate ?? [], config, migrate);
+  });
+
+program
+  .command('schema')
+  .description('Create the system database and its internal tables')
+  .argument('[systemDatabaseUrl]', 'System database URL (optional if provided in config)')
+  .option('-d, --appDir <string>', 'Specify the application root directory')
+  .action(async (systemDatabaseUrl: string | undefined, options: { appDir?: string }) => {
+    const logger = new GlobalLogger();
+    const configFile = readConfigFile(options.appDir);
+
+    // Determine system database URL from argument or config
+    let finalSystemDatabaseUrl = systemDatabaseUrl;
+    if (!finalSystemDatabaseUrl) {
+      try {
+        finalSystemDatabaseUrl = getSystemDatabaseUrl(configFile);
+      } catch {
+        // Config doesn't have system database URL
+      }
+    }
+
+    if (!finalSystemDatabaseUrl) {
+      logger.error('System database URL must be provided as argument or in dbos-config.yaml');
+      process.exit(1);
+    }
+
+    try {
+      await createSystemDatabase(finalSystemDatabaseUrl, logger);
+      logger.info('System database schema created successfully!');
+    } catch (e) {
+      logger.error(e);
+      process.exit(1);
+    }
   });
 
 program
