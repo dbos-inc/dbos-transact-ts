@@ -97,16 +97,16 @@ program
 program
   .command('schema')
   .description('Create the system database and its internal tables')
-  .argument('[systemDatabaseUrl]', 'System database URL (optional if provided in config)')
+  .argument('[systemDatabaseUrl]', 'System database URL (if not provided, uses dbos-config.yaml)')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (systemDatabaseUrl: string | undefined, options: { appDir?: string }) => {
     const logger = new GlobalLogger();
-    const configFile = readConfigFile(options.appDir);
 
     // Determine system database URL from argument or config
     let finalSystemDatabaseUrl = systemDatabaseUrl;
     if (!finalSystemDatabaseUrl) {
       try {
+        const configFile = readConfigFile(options.appDir);
         finalSystemDatabaseUrl = getSystemDatabaseUrl(configFile);
       } catch {
         // Config doesn't have system database URL
