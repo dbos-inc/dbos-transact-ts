@@ -98,7 +98,7 @@ import { context, trace } from '@opentelemetry/api';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
-// Declare all the options a user can pass to the DBOS object during launch()
+// Declare all the options a user can pass to the DBOS object during `launch()`
 export interface DBOSLaunchOptions {
   // For DBOS Conductor
   conductorURL?: string;
