@@ -280,7 +280,7 @@ By contrast, BullMQ is Redis-backed and don't provide workflows, so they provide
 
 **When to use DBOS:** You need the reliability of enqueueing tasks from durable workflows.
 
-**When to use BullMQ**: You don't need durability, or you need very high throughput beyond what your Postgres server can support.
+**When to use BullMQ**: You don't need durability, or you need very high throughput beyond what your Postgres server can support. Also, DBOS queues are push-based, while BullMQ supports strictly pull-based queues.
 
 </details>
 
