@@ -96,7 +96,7 @@ program
 
 program
   .command('schema')
-  .description('Create the system database and its internal tables')
+  .description('Create the DBOS system database and its internal tables')
   .argument('[systemDatabaseUrl]', 'System database URL')
   .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(async (systemDatabaseUrl: string | undefined, options: { appDir?: string }) => {
