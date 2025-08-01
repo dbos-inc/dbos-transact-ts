@@ -208,7 +208,7 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
   const knexDb = knex({
     client: 'pg',
     connection: getClientConfig(sysDbUrl),
-  });
+  } as Knex.Config);
 
   try {
     if (!debugMode) {
