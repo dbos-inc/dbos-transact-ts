@@ -228,7 +228,7 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger
       directory: migrationsDirectory,
       tableName: 'knex_migrations',
     },
-  };
+  } as Knex.Config;
   const knexDB = knex(knexConfig);
   try {
     await knexDB.migrate.latest();
@@ -664,7 +664,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         min: 0,
         max: this.sysDbPoolSize,
       },
-    };
+    } as Knex.Config;
     this.knexDB = knex(knexConfig);
   }
 
