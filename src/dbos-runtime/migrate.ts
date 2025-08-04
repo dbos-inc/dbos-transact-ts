@@ -17,6 +17,32 @@ import {
 } from '../user_database';
 import { getClientConfig } from '../utils';
 
+export async function createSystemDatabase(systemDatabaseUrl: string, logger: GlobalLogger) {
+  const url = new URL(systemDatabaseUrl);
+  const systemDbName = url.pathname.slice(1);
+
+  if (!systemDbName) {
+    logger.error('System database name is empty in the URL');
+    throw new Error('System database name is empty in the URL');
+  }
+
+  logger.info(`Creating system database: ${systemDbName}`);
+  await createDBIfDoesNotExist(systemDatabaseUrl, logger);
+
+  const systemPoolConfig: PoolConfig = getClientConfig(systemDatabaseUrl);
+
+  // Load the DBOS system schema.
+  logger.info('Creating DBOS system tables');
+  try {
+    await migrateSystemDatabase(systemPoolConfig, logger);
+    logger.info('System database created successfully!');
+    return 0;
+  } catch (e) {
+    logger.warn(`Error in system database creation: ${(e as Error).message}`);
+    throw e;
+  }
+}
+
 export async function migrate(
   migrationCommands: string[],
   databaseUrl: string,
