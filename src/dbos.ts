@@ -278,6 +278,8 @@ export class DBOS {
       return; // return for cases where process.exit is mocked
     }
 
+    recordDBOSLaunch();
+
     await DBOSExecutor.globalInstance.initEventReceivers();
     for (const [_n, ds] of transactionalDataSources) {
       await ds.initialize();
@@ -312,8 +314,6 @@ export class DBOS {
         logger.warn(`Unable to start DBOS admin server on port ${runtimeConfig.admin_port}`);
       }
     }
-
-    recordDBOSLaunch();
   }
 
   /**
@@ -1418,6 +1418,7 @@ export class DBOS {
     args: Args,
     params: StartWorkflowParams = {},
   ): Promise<WorkflowHandle<Return>> {
+    ensureDBOSIsLaunched('workflows');
     const wfId = getNextWFID(params.workflowID);
     const pctx = getCurrentContextStore();
     const queueName = params.queueName ?? pctx?.queueAssignedForWorkflows;
@@ -1537,6 +1538,7 @@ export class DBOS {
       registration.setTxnConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+        ensureDBOSIsLaunched('transactions');
         let inst: ConfiguredInstance | undefined = undefined;
         if (this === undefined || typeof this === 'function') {
           // This is static
@@ -1615,6 +1617,7 @@ export class DBOS {
       registration.setProcConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+        ensureDBOSIsLaunched('stored procedures');
         if (typeof this !== 'function') {
           throw new Error('Stored procedures must be static');
         }
@@ -1675,6 +1678,7 @@ export class DBOS {
       registration.setStepConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+        ensureDBOSIsLaunched('steps');
         let inst: ConfiguredInstance | undefined = undefined;
         if (this === undefined || typeof this === 'function') {
           // This is static
@@ -1751,6 +1755,8 @@ export class DBOS {
     const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, func);
 
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+      ensureDBOSIsLaunched('steps');
+
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const inst = this;
       const callFunc = reg.registeredFunction ?? reg.origFunction;
@@ -1794,6 +1800,8 @@ export class DBOS {
    * @returns - result (either obtained from invoking function, or retrieved if run before)
    */
   static runStep<Return>(func: () => Promise<Return>, config: StepConfig & { name?: string } = {}): Promise<Return> {
+    ensureDBOSIsLaunched('steps');
+
     const name = config.name ?? func.name;
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInTransaction()) {
