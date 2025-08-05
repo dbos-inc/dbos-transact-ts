@@ -512,6 +512,12 @@ export function ensureDBOSIsNotLaunched() {
   }
 }
 
+export function ensureDBOSIsLaunched(reason: string) {
+  if (!dbosLaunchPoint) {
+    throw new TypeError(`\`DBOS.launch()\` must be called before running ${reason}.`);
+  }
+}
+
 // DBOS launch lifecycle listener
 const lifecycleListeners: DBOSLifecycleCallback[] = [];
 export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
