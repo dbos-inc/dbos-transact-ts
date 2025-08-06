@@ -352,6 +352,7 @@ describe('dbos-streaming-tests', () => {
     const countingStep = DBOS.registerStep(
       async () => {
         callCount += 1;
+        await DBOS.writeStream('recovery_stream', `in step`);
         return Promise.resolve(callCount);
       },
       { name: 'counting-step' },
@@ -393,7 +394,7 @@ describe('dbos-streaming-tests', () => {
     for await (const value of DBOS.readStream(wfid, 'recovery_stream')) {
       values.push(value);
     }
-    expect(values).toEqual(['step_1', 'step_2']);
+    expect(values).toEqual(['in step', 'step_1', 'in step', 'step_2']);
 
     // Check workflow steps were recorded correctly
     const steps = await DBOS.listWorkflowSteps(wfid);
