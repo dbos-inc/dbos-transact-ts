@@ -2,6 +2,7 @@ import { DBOS } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
+import { DBOSClient } from '../src/client';
 
 describe('dbos-streaming-tests', () => {
   let config: DBOSConfig;
@@ -298,5 +299,147 @@ describe('dbos-streaming-tests', () => {
       stream3Values.push(value);
     }
     expect(stream3Values).toEqual(['3a']);
+  });
+});
+
+describe('dbos-client-streaming-tests', () => {
+  let config: DBOSConfig;
+  let client: DBOSClient;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+    client = await DBOSClient.create({ databaseUrl: config.databaseUrl });
+  });
+
+  beforeEach(async () => {});
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  afterAll(async () => {
+    await client.destroy();
+  });
+
+  test('client-basic-stream-read', async () => {
+    // Test basic client stream read functionality
+    const testValues = ['client_hello', 123, { client_key: 'client_value' }, [4, 5, 6], null];
+    const streamKey = 'client_test_stream';
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async (streamKey: string, testValues: unknown[]) => {
+        for (const value of testValues) {
+          await DBOS.writeStream(streamKey, value);
+        }
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'client-basic-stream-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+
+    // Start the writer workflow
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow(streamKey, testValues);
+    });
+
+    // Read the stream using client
+    const readValues: unknown[] = [];
+    for await (const value of client.readStream(wfid, streamKey)) {
+      readValues.push(value);
+    }
+
+    expect(readValues).toEqual(testValues);
+  });
+
+  test('client-empty-stream', async () => {
+    // Test client reading from an empty stream
+    const emptyStreamWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.closeStream('client_empty_stream');
+      },
+      { name: 'client-empty-stream-workflow' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await emptyStreamWorkflow();
+    });
+
+    // Read the empty stream using client
+    const values: unknown[] = [];
+    for await (const value of client.readStream(wfid, 'client_empty_stream')) {
+      values.push(value);
+    }
+    expect(values).toEqual([]);
+  });
+
+  test('client-unclosed-stream', async () => {
+    // Test client reading from unclosed stream stops when workflow terminates
+    const testValues = ['client_a', 'client_b', 'client_c'];
+    const streamKey = 'client_unclosed_stream';
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async (streamKey: string, testValues: unknown[]) => {
+        for (const value of testValues) {
+          await DBOS.writeStream(streamKey, value);
+        }
+        // Note: Not closing the stream
+      },
+      { name: 'client-unclosed-stream-writer' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await writerWorkflow(streamKey, testValues);
+    });
+
+    // Read the stream using client - should get all values and stop
+    const readValues: unknown[] = [];
+    for await (const value of client.readStream(wfid, streamKey)) {
+      readValues.push(value);
+    }
+    expect(readValues).toEqual(testValues);
+  });
+
+  test('client-multiple-streams', async () => {
+    // Test client reading from multiple streams
+    const multiStreamWorkflow = DBOS.registerWorkflow(
+      async () => {
+        await DBOS.writeStream('client_stream_x', 'x1');
+        await DBOS.writeStream('client_stream_y', 'y1');
+        await DBOS.writeStream('client_stream_x', 'x2');
+        await DBOS.writeStream('client_stream_y', 'y2');
+
+        await DBOS.closeStream('client_stream_x');
+        await DBOS.closeStream('client_stream_y');
+      },
+      { name: 'client-multiple-streams-workflow' },
+    );
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await multiStreamWorkflow();
+    });
+
+    // Read stream X using client
+    const streamXValues: unknown[] = [];
+    for await (const value of client.readStream(wfid, 'client_stream_x')) {
+      streamXValues.push(value);
+    }
+    expect(streamXValues).toEqual(['x1', 'x2']);
+
+    // Read stream Y using client
+    const streamYValues: unknown[] = [];
+    for await (const value of client.readStream(wfid, 'client_stream_y')) {
+      streamYValues.push(value);
+    }
+    expect(streamYValues).toEqual(['y1', 'y2']);
   });
 });
