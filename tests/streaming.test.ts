@@ -344,6 +344,65 @@ describe('dbos-streaming-tests', () => {
     const expectedValues = Array.from({ length: numValues }, (_, i) => `value_${i}`);
     expect(readValues).toEqual(expectedValues);
   }, 10000);
+
+  test('workflow-recovery', async () => {
+    // Test that stream operations are properly recovered during workflow replay
+    let callCount = 0;
+
+    const countingStep = DBOS.registerStep(
+      async () => {
+        callCount += 1;
+        return Promise.resolve(callCount);
+      },
+      { name: 'counting-step' },
+    );
+
+    const recoveryTestWorkflow = DBOS.registerWorkflow(
+      async () => {
+        const count1 = await countingStep();
+        await DBOS.writeStream('recovery_stream', `step_${count1}`);
+
+        const count2 = await countingStep();
+        await DBOS.writeStream('recovery_stream', `step_${count2}`);
+
+        await DBOS.closeStream('recovery_stream');
+      },
+      { name: 'recovery-test-workflow' },
+    );
+
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+
+    // Start the workflow
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await recoveryTestWorkflow();
+    });
+
+    // Reset call count and run the same workflow ID again (should replay)
+    callCount = 0;
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await recoveryTestWorkflow();
+    });
+
+    // The counting step should not have been called again (replayed from recorded results)
+    expect(callCount).toBe(0);
+
+    // Stream should still be readable and contain the same values
+    const values: unknown[] = [];
+    for await (const value of DBOS.readStream(wfid, 'recovery_stream')) {
+      values.push(value);
+    }
+    expect(values).toEqual(['step_1', 'step_2']);
+
+    // Check workflow steps were recorded correctly
+    const steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps).toBeDefined();
+    expect(steps!.length).toBe(5);
+    expect(steps![1].name).toBe('DBOS.writeStream');
+    expect(steps![3].name).toBe('DBOS.writeStream');
+    expect(steps![4].name).toBe('DBOS.closeStream');
+  });
 });
 
 describe('dbos-client-streaming-tests', () => {
