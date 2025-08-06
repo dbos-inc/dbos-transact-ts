@@ -16,7 +16,6 @@ import {
   workflow_status,
   workflow_events,
   event_dispatch_kv,
-  streams,
 } from '../schemas/system_db_schema';
 import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
@@ -2001,7 +2000,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       );
 
       // Next offset is max + 1, or 0 if no records exist
-      const nextOffset = maxOffsetResult.rows[0].max !== null ? maxOffsetResult.rows[0].max + 1 : 0;
+      const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
+      const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
 
       // Serialize the value before storing
       const serializedValue = JSON.stringify(value);
@@ -2041,7 +2041,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         );
 
         // Next offset is max + 1, or 0 if no records exist
-        const nextOffset = maxOffsetResult.rows[0].max !== null ? maxOffsetResult.rows[0].max + 1 : 0;
+        const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
+        const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
 
         // Serialize the value before storing
         const serializedValue = JSON.stringify(value);
@@ -2085,7 +2086,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
 
       // Deserialize the value before returning
-      return JSON.parse(result.rows[0].value);
+      const row = result.rows[0] as { value: string };
+      return JSON.parse(row.value);
     } finally {
       client.release();
     }

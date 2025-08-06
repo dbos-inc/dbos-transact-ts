@@ -23,7 +23,7 @@ describe('dbos-streaming-tests', () => {
 
     const wfid = randomUUID();
 
-    const writerWorkflow = DBOS.registerWorkflow(async (streamKey: string, testValues: any[]) => {
+    const writerWorkflow = DBOS.registerWorkflow(async (streamKey: string, testValues: unknown[]) => {
       for (const value of testValues) {
         await DBOS.writeStream(streamKey, value);
       }
@@ -37,7 +37,7 @@ describe('dbos-streaming-tests', () => {
     });
 
     // Read the stream
-    const readValues: any[] = [];
+    const readValues: unknown[] = [];
     for await (const value of DBOS.readStream(wfid, streamKey)) {
       readValues.push(value);
     }
@@ -45,7 +45,7 @@ describe('dbos-streaming-tests', () => {
     expect(readValues).toEqual(testValues);
 
     // Read the stream again, verify no changes
-    const readValues2: any[] = [];
+    const readValues2: unknown[] = [];
     for await (const value of DBOS.readStream(wfid, streamKey)) {
       readValues2.push(value);
     }
