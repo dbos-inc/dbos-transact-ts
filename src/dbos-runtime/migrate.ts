@@ -22,7 +22,7 @@ export async function grantDbosSchemaPermissions(
   roleName: string,
   logger: GlobalLogger,
 ): Promise<void> {
-  logger.info(`Granting permissions for DBOS schema to ${roleName} in database ${databaseUrl}`);
+  logger.info(`Granting permissions for DBOS schema to ${roleName}`);
 
   const client = new Client(getClientConfig(databaseUrl));
   await client.connect();

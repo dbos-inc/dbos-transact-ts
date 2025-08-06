@@ -61,10 +61,11 @@ describe('schema-command-tests', () => {
     // Using the admin role, create the DBOS database and verify it exists.
     // Set permissions for the test role.
     try {
-      execSync(`npx dbos schema ${dbUrl.toString()} -r ${roleName}`, {
+      const result = execSync(`npx dbos schema ${dbUrl.toString()} -r ${roleName}`, {
         env: process.env,
         stdio: 'pipe',
       });
+      console.log(result.toString());
     } catch (error) {
       console.error('Schema command failed:');
       const execError = error as { stdout?: Buffer; stderr?: Buffer; status?: number };
