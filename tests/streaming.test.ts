@@ -404,6 +404,77 @@ describe('dbos-streaming-tests', () => {
     expect(steps![3].name).toBe('DBOS.writeStream');
     expect(steps![4].name).toBe('DBOS.closeStream');
   });
+
+  test('write-from-step', async () => {
+    // Test writing to a stream from inside a step function that retries and throws exceptions
+    let callCount = 0;
+
+    const stepThatWritesAndFails = DBOS.registerStep(
+      async (streamKey: string, value: string) => {
+        callCount += 1;
+
+        // Always write to stream first
+        await DBOS.writeStream(streamKey, `${value}_attempt_${callCount}`);
+
+        // Throw exception to trigger retry (will succeed after 3 attempts)
+        if (callCount < 4) {
+          throw new Error(`Step failed on attempt ${callCount}`);
+        }
+
+        const stepId = DBOS.stepID;
+        expect(stepId).toBeDefined();
+        return stepId!;
+      },
+      { name: 'step-that-writes-and-fails', retriesAllowed: true, maxAttempts: 4, intervalSeconds: 0 },
+    );
+
+    const workflowWithFailingStep = DBOS.registerWorkflow(
+      async () => {
+        // This step will fail 3 times, then succeed on the 4th attempt
+        // But each failure should still write to the stream
+        const result = await stepThatWritesAndFails('retry_stream', 'test_value');
+        expect(result).toBe(0);
+
+        // Also write directly from workflow
+        await DBOS.writeStream('retry_stream', 'from_workflow');
+
+        // Close the stream
+        await DBOS.closeStream('retry_stream');
+      },
+      { name: 'workflow-with-failing-step' },
+    );
+
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+
+    // Start the workflow
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await workflowWithFailingStep();
+    });
+
+    // Read the stream and verify all values are present
+    // Should have 4 writes from the step (one per attempt) plus 1 from workflow
+    const streamValues: unknown[] = [];
+    for await (const value of DBOS.readStream(wfid, 'retry_stream')) {
+      streamValues.push(value);
+    }
+
+    // Verify we have the expected number of values
+    expect(streamValues).toHaveLength(5);
+
+    // Verify the step writes (one per retry attempt)
+    expect(streamValues[0]).toBe('test_value_attempt_1');
+    expect(streamValues[1]).toBe('test_value_attempt_2');
+    expect(streamValues[2]).toBe('test_value_attempt_3');
+    expect(streamValues[3]).toBe('test_value_attempt_4');
+
+    // Verify the workflow write
+    expect(streamValues[4]).toBe('from_workflow');
+
+    // Verify the step was called exactly 4 times (3 failures + 1 success)
+    expect(callCount).toBe(4);
+  });
 });
 
 describe('dbos-client-streaming-tests', () => {
