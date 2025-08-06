@@ -68,36 +68,6 @@ export async function grantDbosSchemaPermissions(
   }
 }
 
-export async function createSystemDatabase(systemDatabaseUrl: string, logger: GlobalLogger, appRole?: string) {
-  const url = new URL(systemDatabaseUrl);
-  const systemDbName = url.pathname.slice(1);
-
-  if (!systemDbName) {
-    logger.error('System database name is empty in the URL');
-    throw new Error('System database name is empty in the URL');
-  }
-
-  logger.info(`Creating system database: ${systemDbName}`);
-  await createDBIfDoesNotExist(systemDatabaseUrl, logger);
-
-  const systemPoolConfig: PoolConfig = getClientConfig(systemDatabaseUrl);
-
-  // Load the DBOS system schema.
-  logger.info('Creating DBOS system tables');
-  try {
-    await migrateSystemDatabase(systemPoolConfig, logger);
-
-    // Grant permissions to application role if specified
-    if (appRole) {
-      await grantDbosSchemaPermissions(systemDatabaseUrl, appRole, logger);
-    }
-    return 0;
-  } catch (e) {
-    logger.warn(`Error in system database creation: ${(e as Error).message}`);
-    throw e;
-  }
-}
-
 export async function migrate(
   migrationCommands: string[],
   databaseUrl: string,
