@@ -264,6 +264,8 @@ export class DBOS {
     DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig, { debugMode });
 
+    recordDBOSLaunch();
+
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
 
@@ -277,8 +279,6 @@ export class DBOS {
       process.exit(0);
       return; // return for cases where process.exit is mocked
     }
-
-    recordDBOSLaunch();
 
     await DBOSExecutor.globalInstance.initEventReceivers();
     for (const [_n, ds] of transactionalDataSources) {
