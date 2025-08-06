@@ -16,6 +16,7 @@ import {
   workflow_status,
   workflow_events,
   event_dispatch_kv,
+  streams,
 } from '../schemas/system_db_schema';
 import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
@@ -42,6 +43,10 @@ export const DBOS_FUNCNAME_SETEVENT = 'DBOS.setEvent';
 export const DBOS_FUNCNAME_GETEVENT = 'DBOS.getEvent';
 export const DBOS_FUNCNAME_SLEEP = 'DBOS.sleep';
 export const DBOS_FUNCNAME_GETSTATUS = 'getStatus';
+export const DBOS_FUNCNAME_WRITESTREAM = 'DBOS.writeStream';
+export const DBOS_FUNCNAME_CLOSESTREAM = 'DBOS.closeStream';
+
+export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 
 /**
  * General notes:
@@ -158,6 +163,12 @@ export interface SystemDatabase {
   //       The upsert returns the current record, which is useful if it is more recent.
   getEventDispatchState(service: string, workflowFnName: string, key: string): Promise<DBOSExternalState | undefined>;
   upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState>;
+
+  // Streaming
+  writeStreamFromWorkflow(workflowID: string, functionID: number, key: string, value: unknown): Promise<void>;
+  writeStreamFromStep(workflowID: string, key: string, value: unknown): Promise<void>;
+  closeStream(workflowID: string, functionID: number, key: string): Promise<void>;
+  readStream(workflowID: string, key: string, offset: number): Promise<unknown>;
 
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
@@ -1974,6 +1985,110 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Return the IDs of all functions we marked started
     return claimedIDs;
+  }
+
+  @dbRetry()
+  async writeStreamFromStep(workflowID: string, key: string, value: unknown): Promise<void> {
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+
+      // Find the maximum offset for this workflow_uuid and key combination
+      const maxOffsetResult = await client.query(
+        `SELECT MAX("offset") FROM ${DBOSExecutor.systemDBSchemaName}.streams 
+         WHERE workflow_uuid = $1 AND key = $2`,
+        [workflowID, key],
+      );
+
+      // Next offset is max + 1, or 0 if no records exist
+      const nextOffset = maxOffsetResult.rows[0].max !== null ? maxOffsetResult.rows[0].max + 1 : 0;
+
+      // Serialize the value before storing
+      const serializedValue = JSON.stringify(value);
+
+      // Insert the new stream entry
+      await client.query(
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.streams (workflow_uuid, key, value, "offset")
+         VALUES ($1, $2, $3, $4)`,
+        [workflowID, key, serializedValue, nextOffset],
+      );
+
+      await client.query('COMMIT');
+    } catch (e) {
+      this.logger.error(e);
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  @dbRetry()
+  async writeStreamFromWorkflow(workflowID: string, functionID: number, key: string, value: unknown): Promise<void> {
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+
+      const functionName =
+        value === DBOS_STREAM_CLOSED_SENTINEL ? DBOS_FUNCNAME_CLOSESTREAM : DBOS_FUNCNAME_WRITESTREAM;
+
+      await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
+        // Find the maximum offset for this workflow_uuid and key combination
+        const maxOffsetResult = await client.query(
+          `SELECT MAX("offset") FROM ${DBOSExecutor.systemDBSchemaName}.streams 
+           WHERE workflow_uuid = $1 AND key = $2`,
+          [workflowID, key],
+        );
+
+        // Next offset is max + 1, or 0 if no records exist
+        const nextOffset = maxOffsetResult.rows[0].max !== null ? maxOffsetResult.rows[0].max + 1 : 0;
+
+        // Serialize the value before storing
+        const serializedValue = JSON.stringify(value);
+
+        // Insert the new stream entry
+        await client.query(
+          `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.streams (workflow_uuid, key, value, "offset")
+           VALUES ($1, $2, $3, $4)`,
+          [workflowID, key, serializedValue, nextOffset],
+        );
+
+        return undefined;
+      });
+
+      await client.query('COMMIT');
+    } catch (e) {
+      this.logger.error(e);
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async closeStream(workflowID: string, functionID: number, key: string): Promise<void> {
+    await this.writeStreamFromWorkflow(workflowID, functionID, key, DBOS_STREAM_CLOSED_SENTINEL);
+  }
+
+  @dbRetry()
+  async readStream(workflowID: string, key: string, offset: number): Promise<unknown> {
+    const client: PoolClient = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT value FROM ${DBOSExecutor.systemDBSchemaName}.streams 
+         WHERE workflow_uuid = $1 AND key = $2 AND "offset" = $3`,
+        [workflowID, key, offset],
+      );
+
+      if (result.rows.length === 0) {
+        throw new Error(`No value found for workflow_uuid=${workflowID}, key=${key}, offset=${offset}`);
+      }
+
+      // Deserialize the value before returning
+      return JSON.parse(result.rows[0].value);
+    } finally {
+      client.release();
+    }
   }
 
   async garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void> {
