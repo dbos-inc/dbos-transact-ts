@@ -99,7 +99,8 @@ program
   .description('Create the DBOS system database and its internal tables')
   .argument('[systemDatabaseUrl]', 'System database URL')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (systemDatabaseUrl: string | undefined, options: { appDir?: string }) => {
+  .option('-r, --app-role <string>', 'The role with which you will run your DBOS application')
+  .action(async (systemDatabaseUrl: string | undefined, options: { appDir?: string; appRole?: string }) => {
     const logger = new GlobalLogger();
 
     // Determine system database URL from argument or config
@@ -119,7 +120,7 @@ program
     }
 
     try {
-      await createSystemDatabase(finalSystemDatabaseUrl, logger);
+      await createSystemDatabase(finalSystemDatabaseUrl, logger, options.appRole);
       logger.info('System database schema created successfully!');
     } catch (e) {
       logger.error(e);

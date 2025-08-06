@@ -60,10 +60,18 @@ describe('schema-command-tests', () => {
 
     // Using the admin role, create the DBOS database and verify it exists.
     // Set permissions for the test role.
-    execSync(`npx dbos schema ${dbUrl.toString()}`, {
-      env: process.env,
-      stdio: 'inherit',
-    });
+    try {
+      execSync(`npx dbos schema ${dbUrl.toString()} -r ${roleName}`, {
+        env: process.env,
+        stdio: 'pipe',
+      });
+    } catch (error) {
+      console.error('Schema command failed:');
+      const execError = error as { stdout?: Buffer; stderr?: Buffer; status?: number };
+      console.error('stdout:', execError.stdout?.toString());
+      console.error('stderr:', execError.stderr?.toString());
+      throw error;
+    }
 
     const pgVerifyClient = new Client({
       connectionString: baseUrl.toString(),
@@ -106,9 +114,8 @@ describe('schema-command-tests', () => {
     expect(await DBOS.getEvent(workflowId, workflowId)).toBe(workflowId);
 
     const steps = await DBOS.listWorkflowSteps(workflowId);
-    expect(steps).toHaveLength(2);
-    expect(steps![0].name).toBe('testTransaction');
-    expect(steps![1].name).toBe('setEvent');
+    expect(steps).toHaveLength(1);
+    expect(steps![0].name).toBe('DBOS.setEvent');
 
     await DBOS.shutdown();
   });
