@@ -12,10 +12,6 @@ describe('dbos-streaming-tests', () => {
     DBOS.setConfig(config);
   });
 
-  beforeEach(async () => {
-    await DBOS.launch();
-  });
-
   afterEach(async () => {
     await DBOS.shutdown();
   });
@@ -27,9 +23,17 @@ describe('dbos-streaming-tests', () => {
 
     const wfid = randomUUID();
 
+    const writerWorkflow = DBOS.registerWorkflow(async (streamKey: string, testValues: any[]) => {
+      for (const value of testValues) {
+        await DBOS.writeStream(streamKey, value);
+      }
+      await DBOS.closeStream(streamKey);
+    });
+    await DBOS.launch();
+
     // Start the writer workflow
     await DBOS.withNextWorkflowID(wfid, async () => {
-      await WriterWorkflow.writerWorkflow(streamKey, testValues);
+      await writerWorkflow(streamKey, testValues);
     });
 
     // Read the stream
@@ -49,13 +53,3 @@ describe('dbos-streaming-tests', () => {
     expect(readValues2).toEqual(testValues);
   });
 });
-
-class WriterWorkflow {
-  @DBOS.workflow()
-  static async writerWorkflow(streamKey: string, testValues: any[]) {
-    for (const value of testValues) {
-      await DBOS.writeStream(streamKey, value);
-    }
-    await DBOS.closeStream(streamKey);
-  }
-}
