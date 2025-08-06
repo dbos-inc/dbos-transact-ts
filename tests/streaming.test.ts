@@ -300,6 +300,50 @@ describe('dbos-streaming-tests', () => {
     }
     expect(stream3Values).toEqual(['3a']);
   });
+
+  test('concurrent-write-read', async () => {
+    // Test reading from a stream while it's being written to
+    const streamKey = 'concurrent_stream';
+    const numValues = 10;
+
+    const writerWorkflow = DBOS.registerWorkflow(
+      async (streamKey: string, numValues: number) => {
+        for (let i = 0; i < numValues; i++) {
+          await DBOS.writeStream(streamKey, `value_${i}`);
+          // Small delay to simulate real work
+          await DBOS.sleepms(200);
+        }
+        await DBOS.closeStream(streamKey);
+      },
+      { name: 'concurrent-writer-workflow' },
+    );
+
+    await DBOS.launch();
+
+    const wfid = randomUUID();
+
+    // Start the writer workflow in the background
+    const workflowHandle = await DBOS.withNextWorkflowID(wfid, async () => {
+      return DBOS.startWorkflow(writerWorkflow, {})(streamKey, numValues);
+    });
+
+    // Start reading immediately (while writing)
+    const readValues: unknown[] = [];
+    const startTime = Date.now();
+
+    for await (const value of DBOS.readStream(wfid, streamKey)) {
+      readValues.push(value);
+      // Ensure we're not waiting too long for each value (30 second safety timeout)
+      expect(Date.now() - startTime).toBeLessThan(30000);
+    }
+
+    // Wait for writer to complete
+    await workflowHandle.getResult();
+
+    // Verify all values were read
+    const expectedValues = Array.from({ length: numValues }, (_, i) => `value_${i}`);
+    expect(readValues).toEqual(expectedValues);
+  }, 10000);
 });
 
 describe('dbos-client-streaming-tests', () => {

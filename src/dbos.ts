@@ -1346,7 +1346,7 @@ export class DBOS {
         return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(DBOS.workflowID!, key, value);
       } else {
         throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `DBOS.writeStream` inside a `transaction` or `stored procedure`',
+          'Invalid call to `DBOS.writeStream` outside of a workflow or step',
         );
       }
     } else {
@@ -1366,7 +1366,7 @@ export class DBOS {
         return await DBOSExecutor.globalInstance!.systemDatabase.closeStream(DBOS.workflowID!, functionID, key);
       } else {
         throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `DBOS.closeStream` inside a `step` or `transaction`. closeStream must be called from within a workflow.',
+          'Invalid call to `DBOS.closeStream` outside of a workflow or step',
         );
       }
     } else {
