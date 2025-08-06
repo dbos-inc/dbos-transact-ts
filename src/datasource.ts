@@ -4,6 +4,7 @@ import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from '.
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
+  ensureDBOSIsLaunched,
   FunctionName,
   getTransactionalDataSource,
   registerFunctionWrapper,
@@ -117,6 +118,7 @@ export async function runTransaction<T>(
   funcName: string,
   options: { dsName?: string; config?: unknown } = {},
 ) {
+  ensureDBOSIsLaunched('transactions');
   const dsn = options.dsName ?? '<default>';
   const ds = getTransactionalDataSource(dsn);
 
@@ -190,6 +192,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
   const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+    ensureDBOSIsLaunched('transactions');
     const ds = getTransactionalDataSource(dsn);
     const callFunc = reg.registeredFunction ?? reg.origFunction;
 
