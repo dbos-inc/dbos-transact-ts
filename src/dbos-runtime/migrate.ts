@@ -17,29 +17,54 @@ import {
 } from '../user_database';
 import { getClientConfig } from '../utils';
 
-export async function createSystemDatabase(systemDatabaseUrl: string, logger: GlobalLogger) {
-  const url = new URL(systemDatabaseUrl);
-  const systemDbName = url.pathname.slice(1);
+export async function grantDbosSchemaPermissions(
+  databaseUrl: string,
+  roleName: string,
+  logger: GlobalLogger,
+): Promise<void> {
+  logger.info(`Granting permissions for DBOS schema to ${roleName}`);
 
-  if (!systemDbName) {
-    logger.error('System database name is empty in the URL');
-    throw new Error('System database name is empty in the URL');
-  }
+  const client = new Client(getClientConfig(databaseUrl));
+  await client.connect();
 
-  logger.info(`Creating system database: ${systemDbName}`);
-  await createDBIfDoesNotExist(systemDatabaseUrl, logger);
-
-  const systemPoolConfig: PoolConfig = getClientConfig(systemDatabaseUrl);
-
-  // Load the DBOS system schema.
-  logger.info('Creating DBOS system tables');
   try {
-    await migrateSystemDatabase(systemPoolConfig, logger);
-    logger.info('System database created successfully!');
-    return 0;
+    // Grant usage on the dbos schema
+    const grantUsageSql = `GRANT USAGE ON SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantUsageSql);
+    await client.query(grantUsageSql);
+
+    // Grant all privileges on all existing tables in dbos schema (includes views)
+    const grantTablesSql = `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantTablesSql);
+    await client.query(grantTablesSql);
+
+    // Grant all privileges on all sequences in dbos schema
+    const grantSequencesSql = `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantSequencesSql);
+    await client.query(grantSequencesSql);
+
+    // Grant execute on all functions and procedures in dbos schema
+    const grantFunctionsSql = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantFunctionsSql);
+    await client.query(grantFunctionsSql);
+
+    // Grant default privileges for future objects in dbos schema
+    const alterTablesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON TABLES TO "${roleName}"`;
+    logger.info(alterTablesSql);
+    await client.query(alterTablesSql);
+
+    const alterSequencesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON SEQUENCES TO "${roleName}"`;
+    logger.info(alterSequencesSql);
+    await client.query(alterSequencesSql);
+
+    const alterFunctionsSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`;
+    logger.info(alterFunctionsSql);
+    await client.query(alterFunctionsSql);
   } catch (e) {
-    logger.warn(`Error in system database creation: ${(e as Error).message}`);
+    logger.error(`Failed to grant permissions to role ${roleName}: ${(e as Error).message}`);
     throw e;
+  } finally {
+    await client.end();
   }
 }
 
