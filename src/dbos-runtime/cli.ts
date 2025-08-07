@@ -9,11 +9,15 @@ import {
 } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
-import { migrate, createSystemDatabase } from './migrate';
+import { migrate, grantDbosSchemaPermissions } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
+import { migrateSystemDatabase } from '../system_database';
+import { createDBIfDoesNotExist } from '../user_database';
+import { getClientConfig } from '../utils';
+import { PoolConfig } from 'pg';
 import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
@@ -99,7 +103,8 @@ program
   .description('Create the DBOS system database and its internal tables')
   .argument('[systemDatabaseUrl]', 'System database URL')
   .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (systemDatabaseUrl: string | undefined, options: { appDir?: string }) => {
+  .option('-r, --app-role <string>', 'The role with which you will run your DBOS application')
+  .action(async (systemDatabaseUrl: string | undefined, options: { appDir?: string; appRole?: string }) => {
     const logger = new GlobalLogger();
 
     // Determine system database URL from argument or config
@@ -119,8 +124,26 @@ program
     }
 
     try {
-      await createSystemDatabase(finalSystemDatabaseUrl, logger);
-      logger.info('System database schema created successfully!');
+      const url = new URL(finalSystemDatabaseUrl);
+      const systemDbName = url.pathname.slice(1);
+
+      if (!systemDbName) {
+        logger.error('Provided database URL does not specify the system database name');
+        process.exit(1);
+      }
+
+      await createDBIfDoesNotExist(finalSystemDatabaseUrl, logger);
+
+      const systemPoolConfig: PoolConfig = getClientConfig(finalSystemDatabaseUrl);
+
+      // Load the DBOS system schema.
+      logger.info('Creating DBOS system schema');
+      await migrateSystemDatabase(systemPoolConfig, logger);
+
+      // Grant permissions to application role if specified
+      if (options.appRole) {
+        await grantDbosSchemaPermissions(finalSystemDatabaseUrl, options.appRole, logger);
+      }
     } catch (e) {
       logger.error(e);
       process.exit(1);
