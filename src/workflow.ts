@@ -119,6 +119,10 @@ export const StatusString = {
   ENQUEUED: 'ENQUEUED',
 } as const;
 
+export function isWorkflowActive(status: string) {
+  return status === StatusString.PENDING || status === StatusString.ENQUEUED;
+}
+
 /**
  * Object representing an active or completed workflow execution, identified by the workflow UUID.
  * Allows retrieval of information about the workflow.

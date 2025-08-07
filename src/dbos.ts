@@ -14,6 +14,7 @@ import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
   GetWorkflowsOutput,
+  isWorkflowActive,
   RetrievedHandle,
   StepInfo,
   WorkflowConfig,
@@ -91,7 +92,7 @@ import { StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { Conductor } from './conductor/conductor';
-import { EnqueueOptions } from './system_database';
+import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
@@ -1323,6 +1324,89 @@ export class DBOS {
       ) as T;
     }
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
+  }
+
+  /**
+   * Write a value to a stream.
+   * @param key - The stream key/name within the workflow
+   * @param value - A serializable value to write to the stream
+   */
+  static async writeStream<T>(key: string, value: T): Promise<void> {
+    ensureDBOSIsLaunched('writeStream');
+    if (DBOS.isWithinWorkflow()) {
+      if (DBOS.isInWorkflow()) {
+        const functionID: number = functionIDGetIncrement();
+        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromWorkflow(
+          DBOS.workflowID!,
+          functionID,
+          key,
+          value,
+        );
+      } else if (DBOS.isInStep()) {
+        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(DBOS.workflowID!, key, value);
+      } else {
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `DBOS.writeStream` outside of a workflow or step',
+        );
+      }
+    } else {
+      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.writeStream` outside of a workflow or step');
+    }
+  }
+
+  /**
+   * Close a stream by writing a sentinel value.
+   * @param key - The stream key/name within the workflow
+   */
+  static async closeStream(key: string): Promise<void> {
+    ensureDBOSIsLaunched('closeStream');
+    if (DBOS.isWithinWorkflow()) {
+      if (DBOS.isInWorkflow()) {
+        const functionID: number = functionIDGetIncrement();
+        return await DBOSExecutor.globalInstance!.systemDatabase.closeStream(DBOS.workflowID!, functionID, key);
+      } else {
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `DBOS.closeStream` outside of a workflow or step',
+        );
+      }
+    } else {
+      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.closeStream` outside of a workflow');
+    }
+  }
+
+  /**
+   * Read values from a stream as an async generator.
+   * This function reads values from a stream identified by the workflowID and key,
+   * yielding each value in order until the stream is closed or the workflow terminates.
+   * @param workflowID - The workflow instance ID that owns the stream
+   * @param key - The stream key/name within the workflow
+   * @returns An async generator that yields each value in the stream until the stream is closed
+   */
+  static async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
+    ensureDBOSIsLaunched('readStream');
+    let offset = 0;
+
+    while (true) {
+      try {
+        const value = await DBOSExecutor.globalInstance!.systemDatabase.readStream(workflowID, key, offset);
+        if (value === DBOS_STREAM_CLOSED_SENTINEL) {
+          break;
+        }
+        yield value as T;
+        offset += 1;
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message.includes('No value found')) {
+          // Poll the offset until a value arrives or the workflow terminates
+          const status = await DBOS.getWorkflowStatus(workflowID);
+          if (!status || !isWorkflowActive(status.status)) {
+            break;
+          }
+          await sleepms(1000); // 1 second polling interval
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   /**
