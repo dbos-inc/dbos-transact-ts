@@ -1,5 +1,6 @@
 import { DBOS, DBOSExternalState } from '..';
 import { DBOSLifecycleCallback, FunctionName, MethodRegistrationBase } from '../decorators';
+import { INTERNAL_QUEUE_NAME } from '../utils';
 import { TimeMatcher } from './crontab';
 
 ////
@@ -166,7 +167,7 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
       const date = new Date(nextExec);
       if (methodReg.workflowConfig && methodReg.registeredFunction) {
         const workflowID = `sched-${name}-${date.toISOString()}`;
-        const wfParams = { workflowID, queueName };
+        const wfParams = { workflowID, queueName: queueName ?? INTERNAL_QUEUE_NAME };
         DBOS.logger.debug(`Executing scheduled workflow ${workflowID}`);
         await DBOS.startWorkflow(methodReg.registeredFunction as ScheduledHandler<unknown>, wfParams)(date, new Date());
       } else {
