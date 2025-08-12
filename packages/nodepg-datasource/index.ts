@@ -43,10 +43,10 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
 
   async initialize(): Promise<void> {
     const pool = this.#poolField;
+    await pool?.end();
     this.#poolField = new Pool(this.config);
 
     const client = await this.#poolField.connect();
-    await client.connect();
 
     try {
       // Check
@@ -67,7 +67,6 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
       }
     } finally {
       client.release();
-      await pool?.end();
     }
   }
 

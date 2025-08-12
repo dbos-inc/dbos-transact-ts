@@ -432,3 +432,69 @@ const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg);
 const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx);
 const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow);
 const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow);
+
+describe('KnexDataSourceAutoSchema', () => {
+  const userDB = new Pool(config.connection);
+
+  beforeAll(async () => {
+    {
+      const client = new Client({ ...config.connection, database: 'postgres' });
+      try {
+        await client.connect();
+        await dropDB(client, 'knex_ds_test', true);
+        await dropDB(client, 'knex_ds_test_dbos_sys', true);
+        await dropDB(client, config.connection.database, true);
+        await ensureDB(client, config.connection.database);
+      } finally {
+        await client.end();
+      }
+    }
+
+    // Initialize app DB but not system DB
+    {
+      const client = await userDB.connect();
+      try {
+        await client.query(
+          'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
+        );
+      } finally {
+        client.release();
+      }
+    }
+  });
+
+  afterAll(async () => {
+    await userDB.end();
+  });
+
+  beforeEach(async () => {
+    DBOS.setConfig({ name: 'knex-ds-test' });
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('run wf auto register DS schema', async () => {
+    const user = 'helloTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowReg(user))).resolves.toMatchObject({
+      user,
+      greet_count: 1,
+    });
+
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
+      [workflowID],
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].workflow_id).toBe(workflowID);
+    expect(rows[0].function_num).toBe(0);
+    expect(rows[0].output).not.toBeNull();
+    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+  });
+});
