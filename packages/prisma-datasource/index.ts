@@ -77,7 +77,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
       } catch (err) {
         throw new Error(
           `In initialization of 'PrismaDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
-              See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
+          See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
     }

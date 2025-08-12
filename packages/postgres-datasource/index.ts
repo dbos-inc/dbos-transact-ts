@@ -49,6 +49,22 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     const db = this.#dbField;
     this.#dbField = postgres(this.options);
     await db?.end();
+
+    const rows = (await this.#dbField.unsafe(checkSchemaInstallationPG)) as CheckSchemaInstallationReturn[];
+    const installed = rows[0]?.schema_exists && rows[0]?.table_exists;
+
+    // Install
+    if (!installed) {
+      try {
+        await this.#dbField.unsafe(createTransactionCompletionSchemaPG);
+        await this.#dbField.unsafe(createTransactionCompletionTablePG);
+      } catch (err) {
+        throw new Error(
+          `In initialization of 'PostgresDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
+        );
+      }
+    }
   }
 
   async destroy(): Promise<void> {
