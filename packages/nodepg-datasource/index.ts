@@ -43,8 +43,8 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
 
   async initialize(): Promise<void> {
     const pool = this.#poolField;
-    await pool?.end();
     this.#poolField = new Pool(this.config);
+    await pool?.end();
 
     const client = await this.#poolField.connect();
 

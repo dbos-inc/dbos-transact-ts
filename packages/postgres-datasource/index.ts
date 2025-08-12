@@ -50,8 +50,15 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     this.#dbField = postgres(this.options);
     await db?.end();
 
-    const rows = (await this.#dbField.unsafe(checkSchemaInstallationPG)) as CheckSchemaInstallationReturn[];
-    const installed = rows[0]?.schema_exists && rows[0]?.table_exists;
+    let installed: boolean | undefined;
+    try {
+      const rows = (await this.#dbField.unsafe(checkSchemaInstallationPG)) as CheckSchemaInstallationReturn[];
+      installed = !!rows[0]?.schema_exists && !!rows[0]?.table_exists;
+    } catch (e) {
+      throw new Error(
+        `In initialization of 'PostgresDataSource' ${this.name}: Database could not be reached: ${(e as Error).message}`,
+      );
+    }
 
     // Install
     if (!installed) {

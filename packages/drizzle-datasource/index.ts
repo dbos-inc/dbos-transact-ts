@@ -56,6 +56,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     const driver = new Pool(this.config);
     const db = drizzle(driver, { schema: this.entities });
     this.#connection = { db, end: () => driver.end() };
+    await conn?.end();
 
     const res = (await db.execute(sql.raw(checkSchemaInstallationPG))) as unknown;
     const row = Array.isArray(res)
@@ -74,7 +75,6 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
         );
       }
     }
-    await conn?.end();
   }
 
   async destroy(): Promise<void> {

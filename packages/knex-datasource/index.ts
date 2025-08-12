@@ -48,12 +48,20 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
   async initialize(): Promise<void> {
     const knexDB = this.#knexDBField;
     this.#knexDBField = knex(this.config);
+    await knexDB?.destroy();
 
     // Check for connectivity & the schema
-    const { rows } = (await this.#knexDBField.raw(checkSchemaInstallationPG)) as {
-      rows: CheckSchemaInstallationReturn[];
-    };
-    const installed = rows[0].schema_exists && rows[0].table_exists;
+    let installed: boolean | undefined = undefined;
+    try {
+      const { rows } = (await this.#knexDBField.raw(checkSchemaInstallationPG)) as {
+        rows: CheckSchemaInstallationReturn[];
+      };
+      installed = !!rows[0].schema_exists && !!rows[0].table_exists;
+    } catch (e) {
+      throw new Error(
+        `In initialization of 'KnexDataSource' ${this.name}: Database could not be reached: ${(e as Error).message}`,
+      );
+    }
 
     if (!installed) {
       try {
@@ -66,8 +74,6 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
         );
       }
     }
-
-    await knexDB?.destroy();
   }
 
   async destroy(): Promise<void> {
