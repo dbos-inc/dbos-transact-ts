@@ -10,6 +10,8 @@ import {
   runTransaction,
   DBOSDataSource,
   registerDataSource,
+  CheckSchemaInstallationReturn,
+  checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { drizzle, NodePgDatabase } from 'drizzle-orm/node-postgres';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -55,6 +57,23 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     const db = drizzle(driver, { schema: this.entities });
     this.#connection = { db, end: () => driver.end() };
 
+    const res = (await db.execute(sql.raw(checkSchemaInstallationPG))) as unknown;
+    const row = Array.isArray(res)
+      ? (res as CheckSchemaInstallationReturn[])[0]
+      : ((res as { rows?: CheckSchemaInstallationReturn[] }).rows?.[0] ?? (res as CheckSchemaInstallationReturn[])[0]);
+    const installed = !!row?.schema_exists && !!row?.table_exists;
+
+    if (!installed) {
+      try {
+        await db.execute(sql.raw(createTransactionCompletionSchemaPG));
+        await db.execute(sql.raw(createTransactionCompletionTablePG));
+      } catch (err) {
+        throw new Error(
+          `In initialization of 'DrizzleDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
+        );
+      }
+    }
     await conn?.end();
   }
 

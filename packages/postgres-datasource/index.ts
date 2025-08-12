@@ -14,6 +14,8 @@ import {
   PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
+  CheckSchemaInstallationReturn,
+  checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'node:async_hooks';
 import { SuperJSON } from 'superjson';

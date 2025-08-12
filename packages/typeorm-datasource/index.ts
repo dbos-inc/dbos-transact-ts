@@ -11,6 +11,8 @@ import {
   DBOSDataSource,
   registerDataSource,
   PGTransactionConfig,
+  CheckSchemaInstallationReturn,
+  checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
