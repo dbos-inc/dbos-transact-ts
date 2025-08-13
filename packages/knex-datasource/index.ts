@@ -53,9 +53,9 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     // Check for connectivity & the schema
     let installed: boolean | undefined = undefined;
     try {
-      const { rows } = (await this.#knexDBField.raw(checkSchemaInstallationPG)) as {
-        rows: CheckSchemaInstallationReturn[];
-      };
+      const { rows } = await this.#knexDBField.raw<{ rows: CheckSchemaInstallationReturn[] }>(
+        checkSchemaInstallationPG,
+      );
       installed = !!rows[0].schema_exists && !!rows[0].table_exists;
     } catch (e) {
       throw new Error(
