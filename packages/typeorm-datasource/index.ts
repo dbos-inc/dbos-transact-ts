@@ -74,7 +74,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     this.#dataSourceField = await TypeOrmTransactionHandler.createInstance(this.config, this.entities);
     await ds?.destroy();
 
-    let installed: boolean | undefined = undefined;
+    let installed = false;
     try {
       const res = await this.#dataSourceField.query<CheckSchemaInstallationReturn[]>(checkSchemaInstallationPG);
       installed = !!res[0]?.schema_exists && !!res[0]?.table_exists;

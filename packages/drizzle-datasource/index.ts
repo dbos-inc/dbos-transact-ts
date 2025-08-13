@@ -58,7 +58,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     this.#connection = { db, end: () => driver.end() };
     await conn?.end();
 
-    let installed: boolean | undefined = undefined;
+    let installed = false;
     try {
       const res = (await db.execute(sql.raw(checkSchemaInstallationPG))) as unknown;
       const row = Array.isArray(res)

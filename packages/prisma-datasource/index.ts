@@ -66,7 +66,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async initialize(): Promise<void> {
-    let installed: boolean | undefined = undefined;
+    let installed = false;
     try {
       const res = await this.#prismaDB.$queryRawUnsafe<CheckSchemaInstallationReturn[]>(checkSchemaInstallationPG);
       installed = !!res[0]?.schema_exists && !!res[0]?.table_exists;

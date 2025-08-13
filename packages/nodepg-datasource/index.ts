@@ -49,7 +49,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     const client = await this.#poolField.connect();
 
     try {
-      let installed: boolean | undefined = undefined;
+      let installed = false;
       try {
         const res = (await client.query(checkSchemaInstallationPG)) as { rows: CheckSchemaInstallationReturn[] };
         installed = !!res.rows[0].schema_exists && !!res.rows[0].table_exists;
