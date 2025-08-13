@@ -19,31 +19,7 @@ describe('KnexDataSource', () => {
   const userDB = new Pool(config.connection);
 
   beforeAll(async () => {
-    {
-      const client = new Client({ ...config.connection, database: 'postgres' });
-      try {
-        await client.connect();
-        await dropDB(client, 'knex_ds_test', true);
-        await dropDB(client, 'knex_ds_test_dbos_sys', true);
-        await dropDB(client, config.connection.database, true);
-        await ensureDB(client, config.connection.database);
-      } finally {
-        await client.end();
-      }
-    }
-
-    {
-      const client = await userDB.connect();
-      try {
-        await client.query(
-          'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
-        );
-      } finally {
-        client.release();
-      }
-    }
-
-    await KnexDataSource.initializeDBOSSchema(config);
+    await createDatabases(userDB, true);
   });
 
   afterAll(async () => {
@@ -328,6 +304,36 @@ export interface greetings {
   greet_count: number;
 }
 
+async function createDatabases(userDB: Pool, createTxCompletion: boolean) {
+  {
+    const client = new Client({ ...config.connection, database: 'postgres' });
+    try {
+      await client.connect();
+      await dropDB(client, 'knex_ds_test', true);
+      await dropDB(client, 'knex_ds_test_dbos_sys', true);
+      await dropDB(client, config.connection.database, true);
+      await ensureDB(client, config.connection.database);
+    } finally {
+      await client.end();
+    }
+  }
+
+  {
+    const client = await userDB.connect();
+    try {
+      await client.query(
+        'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
+      );
+    } finally {
+      client.release();
+    }
+  }
+
+  if (createTxCompletion) {
+    await KnexDataSource.initializeDBOSSchema(config);
+  }
+}
+
 async function insertFunction(user: string) {
   const rows = await dataSource
     .client<greetings>('greetings')
@@ -433,34 +439,11 @@ const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx);
 const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow);
 const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow);
 
-describe('KnexDataSourceAutoSchema', () => {
+describe('KnexDataSourceCreateTxCompletion', () => {
   const userDB = new Pool(config.connection);
 
   beforeAll(async () => {
-    {
-      const client = new Client({ ...config.connection, database: 'postgres' });
-      try {
-        await client.connect();
-        await dropDB(client, 'knex_ds_test', true);
-        await dropDB(client, 'knex_ds_test_dbos_sys', true);
-        await dropDB(client, config.connection.database, true);
-        await ensureDB(client, config.connection.database);
-      } finally {
-        await client.end();
-      }
-    }
-
-    // Initialize app DB but not system DB
-    {
-      const client = await userDB.connect();
-      try {
-        await client.query(
-          'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
-        );
-      } finally {
-        client.release();
-      }
-    }
+    await createDatabases(userDB, false);
   });
 
   afterAll(async () => {
