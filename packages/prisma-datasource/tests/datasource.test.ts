@@ -27,7 +27,7 @@ describe('PrismaDataSource', () => {
   const userDB = new Pool(config);
 
   beforeAll(async () => {
-    await createSchema(userDB, true);
+    await createDatabases(userDB, true);
   });
 
   afterAll(async () => {
@@ -312,7 +312,11 @@ export interface greetings {
   greet_count: number;
 }
 
-async function createSchema(userDB: Pool, createTxCompletion: boolean) {
+async function createDatabases(userDB: Pool, createTxCompletion: boolean) {
+  try {
+    await prisma.$disconnect();
+  } catch (e) {}
+
   {
     const client = new Client({ ...config, database: 'postgres' });
     try {
@@ -340,6 +344,10 @@ async function createSchema(userDB: Pool, createTxCompletion: boolean) {
   if (createTxCompletion) {
     await PrismaDataSource.initializeDBOSSchema(prisma);
   }
+
+  try {
+    await prisma.$connect();
+  } catch (e) {}
 }
 
 async function insertFunction(user: string) {
@@ -473,7 +481,7 @@ describe('PrismaDataSourceCreateTxC', () => {
   const userDB = new Pool(config);
 
   beforeAll(async () => {
-    await createSchema(userDB, false);
+    await createDatabases(userDB, false);
   });
 
   afterAll(async () => {
