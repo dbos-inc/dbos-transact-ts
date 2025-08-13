@@ -58,11 +58,19 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     this.#connection = { db, end: () => driver.end() };
     await conn?.end();
 
-    const res = (await db.execute(sql.raw(checkSchemaInstallationPG))) as unknown;
-    const row = Array.isArray(res)
-      ? (res as CheckSchemaInstallationReturn[])[0]
-      : ((res as { rows?: CheckSchemaInstallationReturn[] }).rows?.[0] ?? (res as CheckSchemaInstallationReturn[])[0]);
-    const installed = !!row?.schema_exists && !!row?.table_exists;
+    let installed: boolean | undefined = undefined;
+    try {
+      const res = (await db.execute(sql.raw(checkSchemaInstallationPG))) as unknown;
+      const row = Array.isArray(res)
+        ? (res as CheckSchemaInstallationReturn[])[0]
+        : ((res as { rows?: CheckSchemaInstallationReturn[] }).rows?.[0] ??
+          (res as CheckSchemaInstallationReturn[])[0]);
+      installed = !!row?.schema_exists && !!row?.table_exists;
+    } catch (e) {
+      throw new Error(
+        `In initialization of 'DrizzleDataSource' ${this.name}: Database could not be queried: ${(e as Error).message}`,
+      );
+    }
 
     if (!installed) {
       try {

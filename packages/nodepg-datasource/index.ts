@@ -49,9 +49,15 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     const client = await this.#poolField.connect();
 
     try {
-      // Check
-      const res = (await client.query(checkSchemaInstallationPG)) as { rows: CheckSchemaInstallationReturn[] };
-      const installed = res.rows[0].schema_exists && res.rows[0].table_exists;
+      let installed: boolean | undefined = undefined;
+      try {
+        const res = (await client.query(checkSchemaInstallationPG)) as { rows: CheckSchemaInstallationReturn[] };
+        installed = !!res.rows[0].schema_exists && !!res.rows[0].table_exists;
+      } catch (e) {
+        throw new Error(
+          `In initialization of 'NodePostgresDataSource' ${this.name}: Database could not be queried: ${(e as Error).message}`,
+        );
+      }
 
       // Install
       if (!installed) {
