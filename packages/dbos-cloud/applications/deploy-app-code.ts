@@ -131,6 +131,7 @@ export async function deployAppCode(
   const bearerToken = 'Bearer ' + userCredentials.token;
   logger.debug('  ... got cloud credentials');
 
+  logger.info('try to get deploy config from dbos-config.yaml ' + deployConfigFile);
   logger.debug('Retrieving app name...');
   appName = appName || retrieveApplicationName(logger, false, deployConfigFile);
   if (!appName) {
@@ -175,6 +176,33 @@ export async function deployAppCode(
       logger.error('No main binary found. Please compile your Go application against amd64 before deploying.');
       return 1;
     }
+  } else if (appLanguage === (AppLanguages.Java as string)) {
+    // const buildLibsDir = path.join(process.cwd(), 'build', 'libs');
+    const buildLibsDir = path.join(process.cwd());
+    const jarExists =
+      existsSync(buildLibsDir) &&
+      fs
+        .readdirSync(buildLibsDir)
+        .some((file) => file.endsWith('.jar') && !file.includes('sources') && !file.includes('javadoc'));
+
+    if (!jarExists) {
+      logger.error(
+        'No JAR file found in build/libs. Please run "gradlew build" to compile your Java application before deploying.',
+      );
+      return 1;
+    }
+
+    // Find the main JAR file (excluding sources and javadoc JARs)
+    const jarFiles = fs
+      .readdirSync(buildLibsDir)
+      .filter((file) => file.endsWith('.jar') && !file.includes('sources') && !file.includes('javadoc'));
+
+    if (jarFiles.length === 0) {
+      logger.error('No executable JAR file found. Please ensure your build produces a main JAR file.');
+      return 1;
+    }
+
+    // TODO: Optionally verify JAR contains a main method by checking manifest or scanning classes
   } else {
     logger.error(`dbos-config.yaml contains invalid language ${appLanguage}`);
     return 1;
