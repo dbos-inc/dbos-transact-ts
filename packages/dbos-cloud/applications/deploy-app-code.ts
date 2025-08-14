@@ -112,6 +112,72 @@ async function createZipData(logger: CLILogger, deployConfigFile: string): Promi
   return buffer.toString('base64');
 }
 
+async function createJavaZipData(logger: CLILogger, deployConfigFile: string): Promise<string> {
+  const zip = new JSZip();
+
+  logger.info('mjjjjjjjjjjjjjjjjjjjjjjjjj Creating Java deployment archive...');
+
+  try {
+    // (1) Add the JAR file from build/libs
+    const buildLibsDir = path.join(process.cwd(), 'build', 'libs');
+    console.log(` mjjjj Looking for JAR files in ${buildLibsDir}`);
+    if (!fs.existsSync(buildLibsDir)) {
+      throw new Error('build/libs directory not found. Please run "gradlew build" first.');
+    }
+
+    // Find the main JAR file (excluding sources and javadoc)
+    const jarFiles = fs.readdirSync(buildLibsDir).filter(
+      (file) =>
+        file.endsWith('.jar') && !file.includes('sources') && !file.includes('javadoc') && !file.includes('plain'), // Exclude plain JAR if fat JAR exists
+    );
+
+    if (jarFiles.length === 0) {
+      throw new Error('No executable JAR file found in build/libs directory.');
+    }
+
+    // Prefer fat/uber JAR if multiple exist, otherwise take the first one
+    const selectedJar =
+      jarFiles.find((jar) => jar.includes('fat') || jar.includes('uber') || jar.includes('all')) || jarFiles[0];
+
+    const jarPath = path.join(buildLibsDir, selectedJar);
+    logger.debug(`    Zipping JAR file ${jarPath}`);
+    const jarData = readFileSync(jarPath);
+    const jarPerms = getFilePermissions(jarPath);
+    logger.debug(`      JAR file permissions: ${jarPerms.toString(8)}`);
+    // Add JAR at root of zip (no path prefix)
+    zip.file(selectedJar, jarData, { binary: true, unixPermissions: jarPerms });
+
+    // NOTE we need a dbos-config.yaml in the current directory for the Java app to work.
+
+    // Add the interpolated config file at package root using the default config file path
+    logger.debug(`    Interpreting configuration from ${deployConfigFile}`);
+    const interpolatedConfig = readInterpolatedConfig(deployConfigFile, logger);
+    console.log(interpolatedConfig);
+    zip.file(defaultConfigFilePath, interpolatedConfig, { binary: true });
+
+    // Generate ZIP file as a Buffer
+    logger.debug(`    Finalizing zip archive ...`);
+    const buffer = await zip.generateAsync({
+      platform: 'UNIX',
+      type: 'nodebuffer',
+      compression: 'DEFLATE',
+    });
+
+    // Max string size is about 512MB. See https://developer.mozilla.org/en-US/docs/Web/JavaScript/Reference/Global_Objects/String/length#description.
+    if (buffer.length > 0x1fffffe8) {
+      throw new Error(`Zip archive is too large (${buffer.length} bytes)`);
+    }
+
+    logger.debug(`    ... zip archive complete (${buffer.length} bytes).`);
+    // This line could still fail if the buffer is too large. That's because base64 adds about 33% in size.
+    return buffer.toString('base64');
+  } catch (error) {
+    const err = error as Error;
+    logger.error(`Failed to create Java deployment archive: ${err.message}`);
+    throw error;
+  }
+}
+
 export async function deployAppCode(
   host: string,
   rollback: boolean,
@@ -177,8 +243,8 @@ export async function deployAppCode(
       return 1;
     }
   } else if (appLanguage === (AppLanguages.Java as string)) {
-    // const buildLibsDir = path.join(process.cwd(), 'build', 'libs');
-    const buildLibsDir = path.join(process.cwd());
+    const buildLibsDir = path.join(process.cwd(), 'build', 'libs');
+    // const buildLibsDir = path.join(process.cwd());
     const jarExists =
       existsSync(buildLibsDir) &&
       fs
@@ -261,7 +327,14 @@ export async function deployAppCode(
     const body: { application_archive?: string; previous_version?: string; target_database_name?: string } = {};
     if (previousVersion === null) {
       logger.debug('Creating application zip ...');
-      body.application_archive = await createZipData(logger, deployConfigFile);
+
+      if (appLanguage === AppLanguages.Java) {
+        logger.info('Java application, creating JAR zip archive...');
+        body.application_archive = await createJavaZipData(logger, deployConfigFile);
+      } else {
+        body.application_archive = await createZipData(logger, deployConfigFile);
+      }
+
       logger.debug('  ... application zipped.');
     } else {
       logger.info(`Restoring previous version ${previousVersion}`);
