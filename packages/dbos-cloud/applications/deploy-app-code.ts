@@ -115,12 +115,9 @@ async function createZipData(logger: CLILogger, deployConfigFile: string): Promi
 async function createJavaZipData(logger: CLILogger, deployConfigFile: string): Promise<string> {
   const zip = new JSZip();
 
-  logger.info('mjjjjjjjjjjjjjjjjjjjjjjjjj Creating Java deployment archive...');
-
   try {
     // (1) Add the JAR file from build/libs
     const buildLibsDir = path.join(process.cwd(), 'build', 'libs');
-    console.log(` mjjjj Looking for JAR files in ${buildLibsDir}`);
     if (!fs.existsSync(buildLibsDir)) {
       throw new Error('build/libs directory not found. Please run "gradlew build" first.');
     }
@@ -152,7 +149,6 @@ async function createJavaZipData(logger: CLILogger, deployConfigFile: string): P
     // Add the interpolated config file at package root using the default config file path
     logger.debug(`    Interpreting configuration from ${deployConfigFile}`);
     const interpolatedConfig = readInterpolatedConfig(deployConfigFile, logger);
-    console.log(interpolatedConfig);
     zip.file(defaultConfigFilePath, interpolatedConfig, { binary: true });
 
     // Generate ZIP file as a Buffer
@@ -244,7 +240,6 @@ export async function deployAppCode(
     }
   } else if (appLanguage === (AppLanguages.Java as string)) {
     const buildLibsDir = path.join(process.cwd(), 'build', 'libs');
-    // const buildLibsDir = path.join(process.cwd());
     const jarExists =
       existsSync(buildLibsDir) &&
       fs
@@ -328,6 +323,7 @@ export async function deployAppCode(
     if (previousVersion === null) {
       logger.debug('Creating application zip ...');
 
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-enum-comparison
       if (appLanguage === AppLanguages.Java) {
         logger.info('Java application, creating JAR zip archive...');
         body.application_archive = await createJavaZipData(logger, deployConfigFile);
