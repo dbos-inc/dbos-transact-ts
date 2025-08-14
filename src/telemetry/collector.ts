@@ -4,26 +4,10 @@ import { LogRecord } from '@opentelemetry/api-logs';
 
 export type TelemetrySignal = LogRecord | Span;
 
-class SignalsQueue {
-  data: TelemetrySignal[] = [];
-
-  push(signal: TelemetrySignal): void {
-    this.data.push(signal);
-  }
-
-  pop(): TelemetrySignal | undefined {
-    return this.data.shift();
-  }
-
-  size(): number {
-    return this.data.length;
-  }
-}
-
-// TODO: Handle temporary workflows properly.
+/** This class collects log / span records and exports them in batches, maintaining order */
 export class TelemetryCollector {
   // Signals buffer management
-  private readonly signals: SignalsQueue = new SignalsQueue();
+  private signals: TelemetrySignal[] = [];
   private readonly signalBufferID: NodeJS.Timeout;
 
   // We iterate on an interval and export whatever has accumulated so far
@@ -45,19 +29,17 @@ export class TelemetryCollector {
     this.signals.push(signal);
   }
 
-  private pop(): TelemetrySignal | undefined {
-    return this.signals.pop();
-  }
-
   async processAndExportSignals(): Promise<void> {
     const batch: TelemetrySignal[] = [];
-    while (this.signals.size() > 0) {
-      const signal = this.pop();
+    let consumed = 0;
+    while (this.signals.length > batch.length) {
+      const signal = this.signals[consumed++];
       if (!signal) {
         break;
       }
       batch.push(signal);
     }
+    this.signals = this.signals.splice(0, consumed);
     if (batch.length > 0) {
       if (this.exporter) {
         try {

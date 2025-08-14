@@ -33,8 +33,7 @@ import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
-import { TelemetryExporter } from './telemetry/exporters';
-import type { TelemetryConfig } from './telemetry';
+import { TelemetryExporter, type TelemetryConfig } from './telemetry/exporters';
 import { Pool, type PoolClient, type PoolConfig, type QueryResultRow } from 'pg';
 import {
   type SystemDatabase,
