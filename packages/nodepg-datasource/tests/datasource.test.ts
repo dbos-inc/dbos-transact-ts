@@ -19,31 +19,7 @@ describe('NodePostgresDataSource', () => {
   const userDB = new Pool(config);
 
   beforeAll(async () => {
-    {
-      const client = new Client({ ...config, database: 'postgres' });
-      try {
-        await client.connect();
-        await dropDB(client, 'node_pg_ds_test', true);
-        await dropDB(client, 'node_pg_ds_test_dbos_sys', true);
-        await dropDB(client, config.database, true);
-        await ensureDB(client, config.database);
-      } finally {
-        await client.end();
-      }
-    }
-
-    {
-      const client = await userDB.connect();
-      try {
-        await client.query(
-          'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
-        );
-      } finally {
-        client.release();
-      }
-    }
-
-    await NodePostgresDataSource.initializeDBOSSchema(config);
+    await createDatabases(userDB, true);
   });
 
   afterAll(async () => {
@@ -328,6 +304,36 @@ export interface greetings {
   greet_count: number;
 }
 
+async function createDatabases(userDB: Pool, createTxCompletion: boolean) {
+  {
+    const client = new Client({ ...config, database: 'postgres' });
+    try {
+      await client.connect();
+      await dropDB(client, 'node_pg_ds_test', true);
+      await dropDB(client, 'node_pg_ds_test_dbos_sys', true);
+      await dropDB(client, config.database, true);
+      await ensureDB(client, config.database);
+    } finally {
+      await client.end();
+    }
+  }
+
+  {
+    const client = await userDB.connect();
+    try {
+      await client.query(
+        'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
+      );
+    } finally {
+      client.release();
+    }
+  }
+
+  if (createTxCompletion) {
+    await NodePostgresDataSource.initializeDBOSSchema(config);
+  }
+}
+
 async function insertFunction(user: string) {
   const { rows } = await NodePostgresDataSource.client.query<Pick<greetings, 'greet_count'>>(
     `INSERT INTO greetings(name, greet_count) 
@@ -439,3 +445,46 @@ const regReadWorkflowReg = DBOS.registerWorkflow(readWorkflowReg);
 const regReadWorkflowRunTx = DBOS.registerWorkflow(readWorkflowRunTx);
 const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow);
 const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow);
+
+describe('NodePostgresDataSourceCreateTxC', () => {
+  const userDB = new Pool(config);
+
+  beforeAll(async () => {
+    await createDatabases(userDB, false);
+  });
+
+  afterAll(async () => {
+    await userDB.end();
+  });
+
+  beforeEach(async () => {
+    DBOS.setConfig({ name: 'node-pg-ds-test' });
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('insert dataSource.register function', async () => {
+    const user = 'helloTest1';
+
+    await userDB.query('DELETE FROM greetings WHERE name = $1', [user]);
+    const workflowID = randomUUID();
+
+    await expect(DBOS.withNextWorkflowID(workflowID, () => regInsertWorkflowReg(user))).resolves.toMatchObject({
+      user,
+      greet_count: 1,
+    });
+
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
+      [workflowID],
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].workflow_id).toBe(workflowID);
+    expect(rows[0].function_num).toBe(0);
+    expect(rows[0].output).not.toBeNull();
+    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+  });
+});

@@ -295,6 +295,26 @@ export interface PGTransactionConfig {
   readOnly?: boolean;
 }
 
+export interface CheckSchemaInstallationReturn {
+  schema_exists: number;
+  table_exists: number;
+}
+
+export const checkSchemaInstallationPG = `
+SELECT
+  EXISTS (
+    SELECT 1
+    FROM information_schema.schemata
+    WHERE schema_name = 'dbos'
+  ) AS schema_exists,
+  EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'dbos'
+      AND table_name = 'transaction_completion'
+  ) AS table_exists;
+`;
+
 export const createTransactionCompletionSchemaPG = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
 export const createTransactionCompletionTablePG = `
