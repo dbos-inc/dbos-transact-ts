@@ -197,7 +197,7 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
       // This write is not strictly essential and the scheduler is often the "canary in the coal mine"
       //  We will simply continue after giving full details.
       const err = e as Error;
-      DBOS.logger.warn(`Scheculer caught an error writing to system DB: ${err.message}`);
+      DBOS.logger.warn(`Scheduler caught an error writing to system DB: ${err.message}`);
       DBOS.logger.error(e);
     }
     return time;
