@@ -11,7 +11,6 @@ import {
   type GetQueuedWorkflowsInput,
   type GetWorkflowsInput,
   isWorkflowActive,
-  RetrievedHandle,
   StatusString,
   type StepInfo,
   type WorkflowHandle,
@@ -24,6 +23,7 @@ import {
   listQueuedWorkflows,
   listWorkflows,
   listWorkflowSteps,
+  toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
 import { PGNodeUserDatabase, type UserDatabase } from './user_database';
 import { getSystemDatabaseUrl } from './dbos-runtime/config';
@@ -79,6 +79,35 @@ interface ClientEnqueueOptions {
    * Workflows with higher priority will be dequeued first.
    */
   priority?: number;
+}
+
+export class ClientHandle<R> implements WorkflowHandle<R> {
+  constructor(
+    readonly systemDatabase: SystemDatabase,
+    readonly workflowUUID: string,
+  ) {}
+
+  getWorkflowUUID(): string {
+    return this.workflowUUID;
+  }
+
+  get workflowID(): string {
+    return this.workflowUUID;
+  }
+
+  async getStatus(): Promise<WorkflowStatus | null> {
+    const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
+    return status ? toWorkflowStatus(status) : null;
+  }
+
+  async getResult(): Promise<R> {
+    return (await this.systemDatabase.awaitWorkflowResult(this.workflowID)) as Promise<R>;
+  }
+
+  async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
+    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
+    return DBOSJSON.parse(status.input) as T;
+  }
 }
 
 /**
@@ -169,7 +198,7 @@ export class DBOSClient {
 
     await this.systemDatabase.initWorkflowStatus(internalStatus);
 
-    return new RetrievedHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
+    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
 
   /**
@@ -222,7 +251,7 @@ export class DBOSClient {
    * @returns a WorkflowHandle that represents the retrieved workflow.
    */
   retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
-    return new RetrievedHandle(this.systemDatabase, workflowID);
+    return new ClientHandle(this.systemDatabase, workflowID);
   }
 
   cancelWorkflow(workflowID: string): Promise<void> {
