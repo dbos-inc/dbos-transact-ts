@@ -51,6 +51,37 @@ export async function createDBIfDoesNotExist(databseUrl: string, logger: GlobalL
   }
 }
 
+export async function ensureDbosTables(databaseUrl: string) {
+  const pgUserClient = new Client(getClientConfig(databaseUrl));
+  try {
+    await pgUserClient.connect();
+
+    // Create DBOS table/schema in user DB.
+    // Always check if the schema/table exists before creating it to avoid locks.
+    const schemaExists = await pgUserClient.query<ExistenceCheck>(schemaExistsQuery);
+    if (!schemaExists.rows[0].exists) {
+      await pgUserClient.query(createUserDBSchema);
+    }
+    const txnOutputTableExists = await pgUserClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
+    if (!txnOutputTableExists.rows[0].exists) {
+      await pgUserClient.query(userDBSchema);
+    } else {
+      const columnExists = await pgUserClient.query<ExistenceCheck>(columnExistsQuery);
+
+      if (!columnExists.rows[0].exists) {
+        await pgUserClient.query(addColumnQuery);
+      }
+    }
+
+    const txnIndexExists = await pgUserClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
+    if (!txnIndexExists.rows[0].exists) {
+      await pgUserClient.query(userDBIndex);
+    }
+  } finally {
+    await pgUserClient.end();
+  }
+}
+
 export interface UserDatabase {
   init(debugMode?: boolean): Promise<void>;
   destroy(): Promise<void>;
