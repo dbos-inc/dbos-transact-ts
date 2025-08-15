@@ -10,6 +10,59 @@ const config = generateDBOSTestConfig('pg-node');
 const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest' } };
 const knexds = new KnexDataSource('app-db', dbConfig);
 
+const runALotOfThingsAtOnce = DBOS.registerWorkflow(
+  async (conc: boolean) => {
+    /*
+  getevent
+  setevent
+  send
+  recv
+  step
+  wf
+  startWorkflow
+  transaction / ds transaction / runtransaction
+  getresult / getWorkflowStatus
+  retrieveWorkflow
+  random / now
+  writeStream / closeStream / readStream
+  sp (runLocal)
+  step/tx with retry
+  error thrown
+  */
+    const things: { func: () => Promise<string>; expected: string }[] = [
+      {
+        func: async () => {
+          await DBOS.sleepms(500);
+          return 'slept';
+        },
+        expected: 'slept',
+      },
+      {
+        func: async () => {
+          return await DBOS.runStep(() => Promise.resolve('ranStep'));
+        },
+        expected: 'ranStep',
+      },
+    ];
+    if (conc) {
+      const promises: Promise<string>[] = [];
+      for (const t of things) {
+        promises.push(t.func());
+      }
+      const res = await Promise.allSettled(promises);
+      for (let i = 0; i < things.length; ++i) {
+        expect((res[i] as PromiseFulfilledResult<string>).value).toBe(things[i].expected);
+      }
+    } else {
+      for (const t of things) {
+        const res = await t.func();
+        expect(res).toBe(t.expected);
+      }
+    }
+  },
+  { name: 'runALotOfThingsAtOnce' },
+);
+
 describe('concurrency-tests', () => {
   beforeAll(async () => {
     await setUpDBOSTestDb(config);
@@ -113,6 +166,29 @@ describe('concurrency-tests', () => {
 
     const recvHandle = DBOS.retrieveWorkflow(recvUUID);
     await expect(recvHandle.getResult()).resolves.toBe('testmsg');
+  });
+
+  test('promise-all-settled', async () => {
+    const wfidSerial = randomUUID();
+    const wfidConcurrent = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfidSerial, async () => {
+      await runALotOfThingsAtOnce(false);
+    });
+    await DBOS.withNextWorkflowID(wfidConcurrent, async () => {
+      await runALotOfThingsAtOnce(true);
+    });
+
+    const wfstepsSerial = (await DBOS.listWorkflowSteps(wfidSerial))!;
+    const wfstepsConcurrent = (await DBOS.listWorkflowSteps(wfidSerial))!;
+
+    for (let i = 0; i < wfstepsSerial.length; ++i) {
+      expect(wfstepsConcurrent[i].name).toBe(wfstepsConcurrent[i].name);
+      expect(wfstepsConcurrent[i].functionID).toBe(wfstepsConcurrent[i].functionID);
+      expect(wfstepsConcurrent[i].error).toStrictEqual(wfstepsConcurrent[i].error);
+    }
+
+    await runALotOfThingsAtOnce(true);
   });
 });
 
