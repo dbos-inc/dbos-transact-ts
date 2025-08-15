@@ -606,7 +606,7 @@ function* unwrapErrors(e: unknown): Generator<unknown, void, void> {
 function retriablePostgresException(err: unknown): boolean {
   // Dig into AggregateErrors of various types
   for (const e of unwrapErrors(err)) {
-    const anyErr = err as AnyErr;
+    const anyErr = e as AnyErr;
 
     // For Postgres errors, check the code
     if (isPgDatabaseError(anyErr) && sqlStateLooksRetryable(anyErr.code)) {
