@@ -28,6 +28,8 @@ import {
 import { PGNodeUserDatabase, type UserDatabase } from './user_database';
 import { getSystemDatabaseUrl } from './dbos-runtime/config';
 import assert from 'node:assert';
+import { DBOSExecutor } from './dbos-executor';
+import { DBOSAwaitedWorkflowCancelledError } from './error';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -101,7 +103,11 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
-    return (await this.systemDatabase.awaitWorkflowResult(this.workflowID)) as Promise<R>;
+    const res = await this.systemDatabase.awaitWorkflowResult(this.workflowID);
+    if (res?.cancelled) {
+      throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
+    }
+    return DBOSExecutor.reviveResultOrError<R>(res!);
   }
 
   async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
