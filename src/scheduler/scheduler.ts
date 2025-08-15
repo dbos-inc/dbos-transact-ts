@@ -180,17 +180,25 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
   static async #setLastExecTime(name: string, time: number) {
     // Record the time of the wf kicked off
-    const state: DBOSExternalState = {
-      service: SCHEDULER_EVENT_SERVICE_NAME,
-      workflowFnName: name,
-      key: 'lastState',
-      value: `${time}`,
-      updateTime: time,
-    };
-    const newState = await DBOS.upsertEventDispatchState(state);
-    const dbTime = parseFloat(newState.value!);
-    if (dbTime && dbTime > time) {
-      return dbTime;
+    try {
+      const state: DBOSExternalState = {
+        service: SCHEDULER_EVENT_SERVICE_NAME,
+        workflowFnName: name,
+        key: 'lastState',
+        value: `${time}`,
+        updateTime: time,
+      };
+      const newState = await DBOS.upsertEventDispatchState(state);
+      const dbTime = parseFloat(newState.value!);
+      if (dbTime && dbTime > time) {
+        return dbTime;
+      }
+    } catch (e) {
+      // This write is not strictly essential and the scheduler is often the "canary in the coal mine"
+      //  We will simply continue after giving full details.
+      const err = e as Error;
+      DBOS.logger.warn(`Scheculer caught an error writing to system DB: ${err.message}`);
+      DBOS.logger.error(e);
     }
     return time;
   }
