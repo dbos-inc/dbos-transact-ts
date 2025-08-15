@@ -302,7 +302,8 @@ describe('DBOSClient', () => {
 
       let result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
-      // Shut down DBOS and retrieve agin (it should work because the client and DBOS are isolated)
+      // Shut down DBOS and retrieve again.
+      // It should work because the client and DBOS are isolated.
       await DBOS.shutdown();
       result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
