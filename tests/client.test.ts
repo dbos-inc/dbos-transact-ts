@@ -284,6 +284,7 @@ describe('DBOSClient', () => {
     const client = await DBOSClient.create({ databaseUrl });
 
     await DBOS.launch();
+    const version = globalParams.appVersion;
 
     let wfid: string;
     try {
@@ -299,7 +300,11 @@ describe('DBOSClient', () => {
       );
       wfid = handle.workflowID;
 
-      const result = await handle.getResult();
+      let result = await handle.getResult();
+      expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+      // Shut down DBOS and retrieve agin (it should work because the client and DBOS are isolated)
+      await DBOS.shutdown();
+      result = await handle.getResult();
       expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
     } finally {
       await client.destroy();
@@ -315,7 +320,7 @@ describe('DBOSClient', () => {
       expect(result.rows).toHaveLength(1);
       expect(result.rows[0].workflow_uuid).toBe(wfid);
       expect(result.rows[0].status).toBe('SUCCESS');
-      expect(result.rows[0].application_version).toBe(globalParams.appVersion);
+      expect(result.rows[0].application_version).toBe(version);
     } finally {
       await dbClient.end();
     }
