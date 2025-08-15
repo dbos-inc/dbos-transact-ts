@@ -193,7 +193,6 @@ export async function deployAppCode(
   const bearerToken = 'Bearer ' + userCredentials.token;
   logger.debug('  ... got cloud credentials');
 
-  logger.info('try to get deploy config from dbos-config.yaml ' + deployConfigFile);
   logger.debug('Retrieving app name...');
   appName = appName || retrieveApplicationName(logger, false, deployConfigFile);
   if (!appName) {
