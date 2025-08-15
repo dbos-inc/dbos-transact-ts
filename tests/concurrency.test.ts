@@ -2,15 +2,16 @@ import { DBOS } from '../src';
 import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSConfig } from '../src/dbos-executor';
+import { KnexDataSource } from '../packages/knex-datasource';
 
 const testTableName = 'dbos_concurrency_test_kv';
 
-describe('concurrency-tests', () => {
-  let config: DBOSConfig;
+const config = generateDBOSTestConfig('pg-node');
+const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest' } };
+const knexds = new KnexDataSource('app-db', dbConfig);
 
+describe('concurrency-tests', () => {
   beforeAll(async () => {
-    config = generateDBOSTestConfig('pg-node');
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
@@ -34,6 +35,23 @@ describe('concurrency-tests', () => {
     const results = await Promise.allSettled([
       (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteFunction(10)).getResult(),
       (await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testReadWriteFunction(10)).getResult(),
+    ]);
+    expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
+    expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
+    expect(ConcurrTestClass.cnt).toBe(1);
+  });
+
+  test('duplicate-dstransaction', async () => {
+    // Run two transactions concurrently with the same UUID.
+    // Both should return the correct result but only one should execute.
+    const workflowUUID = randomUUID();
+    const results = await Promise.allSettled([
+      (
+        await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testDSReadWriteFunction(10)
+      ).getResult(),
+      (
+        await DBOS.startWorkflow(ConcurrTestClass, { workflowID: workflowUUID }).testDSReadWriteFunction(10)
+      ).getResult(),
     ]);
     expect((results[0] as PromiseFulfilledResult<number>).value).toBe(10);
     expect((results[1] as PromiseFulfilledResult<number>).value).toBe(10);
@@ -119,6 +137,18 @@ class ConcurrTestClass {
   @DBOS.transaction()
   static async testReadWriteFunction(id: number) {
     await DBOS.pgClient.query(`INSERT INTO ${testTableName}(id, value) VALUES ($1, $2)`, [1, id]);
+    ConcurrTestClass.cnt++;
+    return id;
+  }
+
+  @DBOS.workflow()
+  static async testDSReadWriteFunction(id: number) {
+    return await ConcurrTestClass.testDSReadWrite(id);
+  }
+
+  @knexds.transaction()
+  static async testDSReadWrite(id: number) {
+    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [1, id]);
     ConcurrTestClass.cnt++;
     return id;
   }
