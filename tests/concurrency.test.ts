@@ -10,25 +10,15 @@ const config = generateDBOSTestConfig('pg-node');
 const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest' } };
 const knexds = new KnexDataSource('app-db', dbConfig);
 
+const simpleWF = DBOS.registerWorkflow(
+  async () => {
+    return Promise.resolve('WF Ran');
+  },
+  { name: 'simpleWF' },
+);
+
 const runALotOfThingsAtOnce = DBOS.registerWorkflow(
-  async (conc: boolean) => {
-    /*
-  getevent
-  setevent
-  send
-  recv
-  step
-  wf
-  startWorkflow
-  transaction / ds transaction / runtransaction
-  getresult / getWorkflowStatus
-  retrieveWorkflow
-  random / now
-  writeStream / closeStream / readStream
-  sp (runLocal)
-  step/tx with retry
-  error thrown
-  */
+  async (conc: boolean, baseid: number) => {
     const things: { func: () => Promise<string>; expected: string }[] = [
       {
         func: async () => {
@@ -39,11 +29,133 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
       },
       {
         func: async () => {
-          return await DBOS.runStep(() => Promise.resolve('ranStep'));
+          return await DBOS.runStep(() => Promise.resolve('ranStep'), { name: 'runStep1' });
         },
         expected: 'ranStep',
       },
+      {
+        func: async () => {
+          return await DBOS.runStep(() => Promise.resolve('ranStep'), { name: 'runStep2' });
+        },
+        expected: 'ranStep',
+      },
+      {
+        func: async () => {
+          return await DBOS.runStep(
+            () => {
+              if (DBOS.stepStatus!.currentAttempt! <= 2) throw new Error('Not yet');
+              return Promise.resolve('ranStep');
+            },
+            { retriesAllowed: true, maxAttempts: 5, intervalSeconds: 0.1, backoffRate: 1, name: 'runStepRetry' },
+          );
+        },
+        expected: 'ranStep',
+      },
+      {
+        func: async () => {
+          return (await ConcurrTestClass.testDSReadWrite(baseid + 1)).toString();
+        },
+        expected: `${baseid + 1}`,
+      },
+      {
+        func: async () => {
+          return (await ConcurrTestClass.testReadWriteFunction(baseid + 2)).toString();
+        },
+        expected: `${baseid + 2}`,
+      },
+      {
+        func: async () => {
+          return (
+            await knexds.runTransaction(
+              async () => {
+                return Promise.resolve('A');
+              },
+              { name: 'runTx' },
+            )
+          ).toString();
+        },
+        expected: `A`,
+      },
+      {
+        func: async () => {
+          return (await DBOS.now()).toString()[0];
+        },
+        expected: `1`,
+      },
+      {
+        func: async () => {
+          return (await DBOS.randomUUID()).length.toString();
+        },
+        expected: `36`,
+      },
+      {
+        func: async () => {
+          await DBOS.setEvent('eventkey', 'eval');
+          return 'set';
+        },
+        expected: `set`,
+      },
+      {
+        func: async () => {
+          return (await DBOS.getEvent(DBOS.workflowID!, 'eventkey')) ?? 'Nope';
+        },
+        expected: `eval`,
+      },
+      {
+        func: async () => {
+          await DBOS.send(DBOS.workflowID!, 'msg', 'topic');
+          return 'sent';
+        },
+        expected: `sent`,
+      },
+      {
+        func: async () => {
+          return (await DBOS.recv('topic')) ?? 'Nope';
+        },
+        expected: `msg`,
+      },
+      {
+        func: async () => {
+          return (await DBOS.getWorkflowStatus('nosuchwv'))?.status ?? 'Nope';
+        },
+        expected: `Nope`,
+      },
+      {
+        func: async () => {
+          return await simpleWF();
+        },
+        expected: 'WF Ran',
+      },
+      {
+        func: async () => {
+          await DBOS.startWorkflow(simpleWF, { workflowID: `${DBOS.workflowID}-cwf` })();
+          return 'started';
+        },
+        expected: 'started',
+      },
+      {
+        func: async () => {
+          const wfh = DBOS.retrieveWorkflow<string>(`${DBOS.workflowID}-cwf`);
+          return await wfh.getResult();
+        },
+        expected: 'WF Ran',
+      },
+      {
+        func: async () => {
+          await DBOS.writeStream('stream', 'val');
+          return 'wrote';
+        },
+        expected: 'wrote',
+      },
+      {
+        func: async () => {
+          const { value } = await DBOS.readStream(DBOS.workflowID!, 'stream').next();
+          return value as string;
+        },
+        expected: 'val',
+      },
     ];
+
     if (conc) {
       const promises: Promise<string>[] = [];
       for (const t of things) {
@@ -173,22 +285,25 @@ describe('concurrency-tests', () => {
     const wfidConcurrent = randomUUID();
 
     await DBOS.withNextWorkflowID(wfidSerial, async () => {
-      await runALotOfThingsAtOnce(false);
+      await runALotOfThingsAtOnce(false, 100);
     });
     await DBOS.withNextWorkflowID(wfidConcurrent, async () => {
-      await runALotOfThingsAtOnce(true);
+      await runALotOfThingsAtOnce(true, 200);
     });
 
     const wfstepsSerial = (await DBOS.listWorkflowSteps(wfidSerial))!;
-    const wfstepsConcurrent = (await DBOS.listWorkflowSteps(wfidSerial))!;
+    const wfstepsConcurrent = (await DBOS.listWorkflowSteps(wfidConcurrent))!;
 
     for (let i = 0; i < wfstepsSerial.length; ++i) {
-      expect(wfstepsConcurrent[i].name).toBe(wfstepsConcurrent[i].name);
-      expect(wfstepsConcurrent[i].functionID).toBe(wfstepsConcurrent[i].functionID);
-      expect(wfstepsConcurrent[i].error).toStrictEqual(wfstepsConcurrent[i].error);
+      console.log(`Output of ${wfstepsConcurrent[i].name}: ${JSON.stringify(wfstepsConcurrent[i].output)}`);
+      expect(wfstepsConcurrent[i].name).toBe(wfstepsSerial[i].name);
+      expect(wfstepsConcurrent[i].functionID).toBe(wfstepsSerial[i].functionID);
+      expect(wfstepsConcurrent[i].error).toStrictEqual(wfstepsSerial[i].error);
+      if (['DBOS.now', 'DBOS.randomUUID', 'DBOS.sleep'].includes(wfstepsConcurrent[i].name)) continue;
+      expect(wfstepsConcurrent[i].output).toStrictEqual(wfstepsSerial[i].output);
     }
 
-    await runALotOfThingsAtOnce(true);
+    await runALotOfThingsAtOnce(true, 300);
   });
 });
 
@@ -212,7 +327,7 @@ class ConcurrTestClass {
 
   @DBOS.transaction()
   static async testReadWriteFunction(id: number) {
-    await DBOS.pgClient.query(`INSERT INTO ${testTableName}(id, value) VALUES ($1, $2)`, [1, id]);
+    await DBOS.pgClient.query(`INSERT INTO ${testTableName}(id, value) VALUES ($1, $2)`, [id, 1]);
     ConcurrTestClass.cnt++;
     return id;
   }
@@ -224,7 +339,7 @@ class ConcurrTestClass {
 
   @knexds.transaction()
   static async testDSReadWrite(id: number) {
-    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [1, id]);
+    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
     ConcurrTestClass.cnt++;
     return id;
   }
