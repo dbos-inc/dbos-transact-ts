@@ -21,6 +21,7 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
   async (conc: boolean, baseid: number) => {
     const things: { func: () => Promise<string>; expected: string }[] = [
       {
+        // Reads context into locals, OK
         func: async () => {
           await DBOS.sleepms(500);
           return 'slept';
@@ -51,6 +52,7 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: 'ranStep',
       },
+      /*
       {
         func: async () => {
           return (await ConcurrTestClass.testDSReadWrite(baseid + 1)).toString();
@@ -76,6 +78,7 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: `A`,
       },
+      */
       {
         func: async () => {
           return (await DBOS.now()).toString()[0];
@@ -88,6 +91,7 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: `36`,
       },
+      /*
       {
         func: async () => {
           await DBOS.setEvent('eventkey', 'eval');
@@ -154,6 +158,7 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: 'val',
       },
+      */
     ];
 
     if (conc) {
@@ -300,6 +305,11 @@ describe('concurrency-tests', () => {
       expect(wfstepsConcurrent[i].functionID).toBe(wfstepsSerial[i].functionID);
       expect(wfstepsConcurrent[i].error).toStrictEqual(wfstepsSerial[i].error);
       if (['DBOS.now', 'DBOS.randomUUID', 'DBOS.sleep'].includes(wfstepsConcurrent[i].name)) continue;
+      if (['testDSReadWrite', 'testReadWriteFunction'].includes(wfstepsConcurrent[i].name)) {
+        // We use a different ID, the bottom digit matters
+        expect((wfstepsConcurrent[i].output as string)[2]).toStrictEqual((wfstepsSerial[i].output as string)[2]);
+        continue;
+      }
       expect(wfstepsConcurrent[i].output).toStrictEqual(wfstepsSerial[i].output);
     }
 

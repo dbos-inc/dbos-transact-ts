@@ -1584,12 +1584,13 @@ export class DBOSExecutor {
       throw new DBOSNotRegisteredError(stepFnName);
     }
 
-    const lctx = getCurrentContextStore()!;
+    // Intentionally advance the function ID before any awaits, then work with a copy of the context.
+    const funcID = functionIDGetIncrement();
+    const lctx = { ...getCurrentContextStore()! };
     const wfid = lctx.workflowId!;
 
     await this.systemDatabase.checkIfCanceled(wfid);
 
-    const funcID = functionIDGetIncrement();
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
     const span: Span = this.tracer.startSpan(stepFnName, {
