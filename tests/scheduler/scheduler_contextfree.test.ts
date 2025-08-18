@@ -1,7 +1,7 @@
 import EventEmitter from 'node:events';
 import { DBOS, SchedulerMode, WorkflowQueue } from '../../src';
 import { DBOSConfig } from '../../src/dbos-executor';
-import { sleepms } from '../../src/utils';
+import { INTERNAL_QUEUE_NAME, sleepms } from '../../src/utils';
 import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 
 describe('cf-scheduled-wf-tests-simple', () => {
@@ -282,6 +282,12 @@ describe('decorator-free-scheduled', () => {
       expect(events.length).toBeGreaterThanOrEqual(2);
     } finally {
       schedulerEmitter.off('scheduled', onScheduled);
+    }
+
+    const workflows = await DBOS.listWorkflows({ workflowName: 'scheduledFunc' });
+    expect(workflows.length).toBeGreaterThan(0);
+    for (const workflow of workflows) {
+      expect(workflow.queueName).toEqual(INTERNAL_QUEUE_NAME);
     }
   });
 });

@@ -56,6 +56,18 @@ async function waitForMessageTest(
   }
 }
 
+function runProcess(command: ChildProcess) {
+  return new Promise<void>((resolve, reject) => {
+    command.on('error', reject);
+
+    command.on('exit', (code, signal) => {
+      if (signal) reject(new Error(`Killed with signal ${signal}`));
+      else if (code !== 0) reject(new Error(`Exited with code ${code}`));
+      else resolve();
+    });
+  });
+}
+
 async function dropTemplateDatabases() {
   const config = generateDBOSTestConfig();
   expect(config.databaseUrl).toBeDefined();
@@ -108,13 +120,17 @@ describe('runtime-tests-knex', () => {
     await waitForMessageTest(command, '3000');
   });
 
-  test('test hello-knex creates database if does not exist', async () => {
+  test('test hello-knex if db does not exist', async () => {
     await dropTemplateDatabases();
     const command = spawn('node', ['dist/main.js'], {
       env: process.env,
     });
-    // Note the request will still fail because we didn't run user migrations.
-    await waitForMessageTest(command, '3000', '3001', false);
+
+    // Note the process should abort because we didn't create any DBs,
+    //  this is not configured with a user database (so no auto create)
+    //  and we expect a clear error message on launch if the DB is not
+    //  in a good condition
+    await expect(runProcess(command)).rejects.toThrow('Exited with code 1');
   });
 });
 

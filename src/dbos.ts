@@ -14,6 +14,7 @@ import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
   GetWorkflowsOutput,
+  isWorkflowActive,
   RetrievedHandle,
   StepInfo,
   WorkflowConfig,
@@ -65,6 +66,7 @@ import {
   wrapDBOSFunctionAndRegisterByUniqueNameDec,
   wrapDBOSFunctionAndRegister,
   wrapDBOSFunctionAndRegisterDec,
+  ensureDBOSIsLaunched,
 } from './decorators';
 import { DBOSJSON, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
@@ -90,7 +92,7 @@ import { StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { Conductor } from './conductor/conductor';
-import { EnqueueOptions } from './system_database';
+import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
@@ -262,6 +264,8 @@ export class DBOS {
     DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig, { debugMode });
 
+    recordDBOSLaunch();
+
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
 
@@ -310,8 +314,6 @@ export class DBOS {
         logger.warn(`Unable to start DBOS admin server on port ${runtimeConfig.admin_port}`);
       }
     }
-
-    recordDBOSLaunch();
   }
 
   /**
@@ -717,6 +719,7 @@ export class DBOS {
    * @returns The latest system database state for the specified service+workflow+item
    */
   static async getEventDispatchState(svc: string, wfn: string, key: string): Promise<DBOSExternalState | undefined> {
+    ensureDBOSIsLaunched('getEventDispatchState');
     return await DBOS.#executor.getEventDispatchState(svc, wfn, key);
   }
   /**
@@ -729,6 +732,7 @@ export class DBOS {
    * @returns The upsert returns the current record, which may be useful if it is more recent than the `state` provided.
    */
   static async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
+    ensureDBOSIsLaunched('upsertEventDispatchState');
     return await DBOS.#executor.upsertEventDispatchState(state);
   }
 
@@ -742,6 +746,7 @@ export class DBOS {
    * @returns status of the workflow as `WorkflowStatus`, or `null` if there is no workflow with `workflowID`
    */
   static getWorkflowStatus(workflowID: string): Promise<WorkflowStatus | null> {
+    ensureDBOSIsLaunched('getWorkflowStatus');
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInStep()) {
         // OK to use directly
@@ -764,6 +769,7 @@ export class DBOS {
    * @returns The return value of the workflow, or throws the exception thrown by the workflow, or `null` if times out
    */
   static async getResult<T>(workflowID: string, timeoutSeconds?: number): Promise<T | null> {
+    ensureDBOSIsLaunched('getResult');
     let timerFuncID: number | undefined = undefined;
     if (DBOS.isWithinWorkflow() && timeoutSeconds !== undefined) {
       timerFuncID = functionIDGetIncrement();
@@ -795,6 +801,7 @@ export class DBOS {
    * @returns `WorkflowHandle` that can be used to poll for the status or result of any workflow with `workflowID`
    */
   static retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
+    ensureDBOSIsLaunched('retrieveWorkflow');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError(
@@ -814,6 +821,7 @@ export class DBOS {
    * @deprecated Use `DBOS.listWorkflows` instead
    */
   static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
+    ensureDBOSIsLaunched('getWorkflows');
     return await runInternalStep(async () => {
       const wfs = await DBOS.#executor.listWorkflows(input);
       return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
@@ -826,6 +834,7 @@ export class DBOS {
    * @returns `WorkflowStatus` array containing details of the matching workflows
    */
   static async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
+    ensureDBOSIsLaunched('listWorkflows');
     return await runInternalStep(async () => {
       return await DBOS.#executor.listWorkflows(input);
     }, 'DBOS.listWorkflows');
@@ -837,6 +846,7 @@ export class DBOS {
    * @returns `WorkflowStatus` array containing details of the matching workflows
    */
   static async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
+    ensureDBOSIsLaunched('listQueuedWorkflows');
     return await runInternalStep(async () => {
       return await DBOS.#executor.listQueuedWorkflows(input);
     }, 'DBOS.listQueuedWorkflows');
@@ -848,6 +858,7 @@ export class DBOS {
    * @returns `StepInfo` array listing the executed steps of the workflow. If the workflow is not found, `undefined` is returned.
    */
   static async listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
+    ensureDBOSIsLaunched('listWorkflowSteps');
     return await runInternalStep(async () => {
       return await DBOS.#executor.listWorkflowSteps(workflowID);
     }, 'DBOS.listWorkflowSteps');
@@ -860,6 +871,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async cancelWorkflow(workflowID: string): Promise<void> {
+    ensureDBOSIsLaunched('cancelWorkflow');
     return await runInternalStep(async () => {
       return await DBOS.#executor.cancelWorkflow(workflowID);
     }, 'DBOS.cancelWorkflow');
@@ -870,6 +882,7 @@ export class DBOS {
    * @param workflowID - ID of the workflow
    */
   static async resumeWorkflow<T>(workflowID: string): Promise<WorkflowHandle<Awaited<T>>> {
+    ensureDBOSIsLaunched('resumeWorkflow');
     await runInternalStep(async () => {
       return await DBOS.#executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
@@ -889,6 +902,7 @@ export class DBOS {
     startStep: number,
     options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<WorkflowHandle<Awaited<T>>> {
+    ensureDBOSIsLaunched('forkWorkflow');
     const forkedID = await runInternalStep(async () => {
       return await DBOS.#executor.forkWorkflow(workflowID, startStep, options);
     }, 'DBOS.forkWorkflow');
@@ -956,6 +970,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withNextWorkflowID<R>(workflowID: string, callback: () => Promise<R>): Promise<R> {
+    ensureDBOSIsLaunched('workflows');
     return DBOS.#withTopContext({ idAssignedForNextWorkflow: workflowID }, callback);
   }
 
@@ -974,6 +989,7 @@ export class DBOS {
     request: object,
     callback: () => Promise<R>,
   ): Promise<R> {
+    ensureDBOSIsLaunched('tracing');
     const parentCtx = context.active();
     return await context.with(trace.setSpan(parentCtx, span), async () => {
       return DBOS.#withTopContext(
@@ -1006,6 +1022,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withAuthedContext<R>(authedUser: string, authedRoles: string[], callback: () => Promise<R>): Promise<R> {
+    ensureDBOSIsLaunched('auth');
     return DBOS.#withTopContext(
       {
         authenticatedUser: authedUser,
@@ -1023,6 +1040,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withNamedContext<R>(callerName: string, callback: () => Promise<R>): Promise<R> {
+    ensureDBOSIsLaunched('tracing');
     return DBOS.#withTopContext({ operationCaller: callerName }, callback);
   }
 
@@ -1034,6 +1052,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withWorkflowQueue<R>(queueName: string, callback: () => Promise<R>): Promise<R> {
+    ensureDBOSIsLaunched('workflows');
     return DBOS.#withTopContext({ queueAssignedForWorkflows: queueName }, callback);
   }
 
@@ -1044,6 +1063,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async withWorkflowTimeout<R>(timeoutMS: number | null, callback: () => Promise<R>): Promise<R> {
+    ensureDBOSIsLaunched('workflows');
     return DBOS.#withTopContext({ workflowTimeoutMS: timeoutMS }, callback);
   }
 
@@ -1055,6 +1075,7 @@ export class DBOS {
    * @returns - Return value from `callback`
    */
   static async runWithContext<R>(options: DBOSContextOptions, callback: () => Promise<R>): Promise<R> {
+    ensureDBOSIsLaunched('contexts');
     return DBOS.#withTopContext(options, callback);
   }
 
@@ -1128,6 +1149,7 @@ export class DBOS {
     target: UntypedAsyncFunction | ConfiguredInstance | object,
     params?: StartWorkflowParams,
   ): unknown {
+    ensureDBOSIsLaunched('workflows');
     const instance = typeof target === 'function' ? null : (target as ConfiguredInstance);
     if (instance && typeof instance !== 'function' && !(instance instanceof ConfiguredInstance)) {
       throw new DBOSInvalidWorkflowTransitionError(
@@ -1175,6 +1197,7 @@ export class DBOS {
    * @param idempotencyKey - Optional key for sending the message exactly once
    */
   static async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+    ensureDBOSIsLaunched('send');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.send` inside a `step` or `transaction`');
@@ -1209,6 +1232,7 @@ export class DBOS {
    * @returns Any message received, or `null` if the timeout expires
    */
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
+    ensureDBOSIsLaunched('recv');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.recv` inside a `step` or `transaction`');
@@ -1238,6 +1262,7 @@ export class DBOS {
    * @param value - The value to associate with `key`
    */
   static async setEvent<T>(key: string, value: T): Promise<void> {
+    ensureDBOSIsLaunched('setEvent');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError(
@@ -1268,6 +1293,7 @@ export class DBOS {
    * @returns The value to associate with `key`, or `null` if the timeout is hit
    */
   static async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
+    ensureDBOSIsLaunched('getEvent');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError(
@@ -1291,6 +1317,89 @@ export class DBOS {
       ) as T;
     }
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
+  }
+
+  /**
+   * Write a value to a stream.
+   * @param key - The stream key/name within the workflow
+   * @param value - A serializable value to write to the stream
+   */
+  static async writeStream<T>(key: string, value: T): Promise<void> {
+    ensureDBOSIsLaunched('writeStream');
+    if (DBOS.isWithinWorkflow()) {
+      if (DBOS.isInWorkflow()) {
+        const functionID: number = functionIDGetIncrement();
+        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromWorkflow(
+          DBOS.workflowID!,
+          functionID,
+          key,
+          value,
+        );
+      } else if (DBOS.isInStep()) {
+        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(DBOS.workflowID!, key, value);
+      } else {
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `DBOS.writeStream` outside of a workflow or step',
+        );
+      }
+    } else {
+      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.writeStream` outside of a workflow or step');
+    }
+  }
+
+  /**
+   * Close a stream by writing a sentinel value.
+   * @param key - The stream key/name within the workflow
+   */
+  static async closeStream(key: string): Promise<void> {
+    ensureDBOSIsLaunched('closeStream');
+    if (DBOS.isWithinWorkflow()) {
+      if (DBOS.isInWorkflow()) {
+        const functionID: number = functionIDGetIncrement();
+        return await DBOSExecutor.globalInstance!.systemDatabase.closeStream(DBOS.workflowID!, functionID, key);
+      } else {
+        throw new DBOSInvalidWorkflowTransitionError(
+          'Invalid call to `DBOS.closeStream` outside of a workflow or step',
+        );
+      }
+    } else {
+      throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.closeStream` outside of a workflow');
+    }
+  }
+
+  /**
+   * Read values from a stream as an async generator.
+   * This function reads values from a stream identified by the workflowID and key,
+   * yielding each value in order until the stream is closed or the workflow terminates.
+   * @param workflowID - The workflow instance ID that owns the stream
+   * @param key - The stream key/name within the workflow
+   * @returns An async generator that yields each value in the stream until the stream is closed
+   */
+  static async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
+    ensureDBOSIsLaunched('readStream');
+    let offset = 0;
+
+    while (true) {
+      try {
+        const value = await DBOSExecutor.globalInstance!.systemDatabase.readStream(workflowID, key, offset);
+        if (value === DBOS_STREAM_CLOSED_SENTINEL) {
+          break;
+        }
+        yield value as T;
+        offset += 1;
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message.includes('No value found')) {
+          // Poll the offset until a value arrives or the workflow terminates
+          const status = await DBOS.getWorkflowStatus(workflowID);
+          if (!status || !isWorkflowActive(status.status)) {
+            break;
+          }
+          await sleepms(1000); // 1 second polling interval
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 
   /**
@@ -1386,6 +1495,7 @@ export class DBOS {
     args: Args,
     params: StartWorkflowParams = {},
   ): Promise<WorkflowHandle<Return>> {
+    ensureDBOSIsLaunched('workflows');
     const wfId = getNextWFID(params.workflowID);
     const pctx = getCurrentContextStore();
     const queueName = params.queueName ?? pctx?.queueAssignedForWorkflows;
@@ -1467,6 +1577,7 @@ export class DBOS {
   ): (this: This, ...args: Args) => Promise<Return> {
     registration.setWorkflowConfig(config ?? {});
     const invoker = async function (this: This, ...rawArgs: Args): Promise<Return> {
+      ensureDBOSIsLaunched('workflows');
       const handle = await DBOS.#invokeWorkflow<This, Args, Return>(this, registration, rawArgs);
       return await handle.getResult();
     };
@@ -1504,6 +1615,7 @@ export class DBOS {
       registration.setTxnConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+        ensureDBOSIsLaunched('transactions');
         let inst: ConfiguredInstance | undefined = undefined;
         if (this === undefined || typeof this === 'function') {
           // This is static
@@ -1582,6 +1694,7 @@ export class DBOS {
       registration.setProcConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+        ensureDBOSIsLaunched('stored procedures');
         if (typeof this !== 'function') {
           throw new Error('Stored procedures must be static');
         }
@@ -1642,6 +1755,7 @@ export class DBOS {
       registration.setStepConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+        ensureDBOSIsLaunched('steps');
         let inst: ConfiguredInstance | undefined = undefined;
         if (this === undefined || typeof this === 'function') {
           // This is static
@@ -1718,6 +1832,8 @@ export class DBOS {
     const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, func);
 
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+      ensureDBOSIsLaunched('steps');
+
       // eslint-disable-next-line @typescript-eslint/no-this-alias
       const inst = this;
       const callFunc = reg.registeredFunction ?? reg.origFunction;
@@ -1761,6 +1877,8 @@ export class DBOS {
    * @returns - result (either obtained from invoking function, or retrieved if run before)
    */
   static runStep<Return>(func: () => Promise<Return>, config: StepConfig & { name?: string } = {}): Promise<Return> {
+    ensureDBOSIsLaunched('steps');
+
     const name = config.name ?? func.name;
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInTransaction()) {

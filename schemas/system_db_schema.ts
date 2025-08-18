@@ -58,6 +58,13 @@ export interface event_dispatch_kv {
   update_seq?: bigint; // Sequence number of record (for upsert)
 }
 
+export interface streams {
+  workflow_uuid: string;
+  key: string;
+  value: string;
+  offset: number;
+}
+
 // This is the deserialized version of operation_outputs
 export interface step_info {
   function_id: number;

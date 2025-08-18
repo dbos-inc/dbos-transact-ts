@@ -9,6 +9,8 @@ import {
   registerDataSource,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
+  CheckSchemaInstallationReturn,
+  checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import { SuperJSON } from 'superjson';
@@ -63,8 +65,29 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     return this.prismaAccess;
   }
 
-  initialize(): Promise<void> {
-    return Promise.resolve();
+  async initialize(): Promise<void> {
+    let installed = false;
+    try {
+      const res = await this.#prismaDB.$queryRawUnsafe<CheckSchemaInstallationReturn[]>(checkSchemaInstallationPG);
+      installed = !!res[0]?.schema_exists && !!res[0]?.table_exists;
+    } catch (e) {
+      throw new Error(
+        `In initialization of 'PrismaDataSource' ${this.name}: Database could not be queried: ${(e as Error).message}`,
+      );
+    }
+
+    // Install
+    if (!installed) {
+      try {
+        await this.#prismaDB.$executeRawUnsafe(createTransactionCompletionSchemaPG);
+        await this.#prismaDB.$executeRawUnsafe(createTransactionCompletionTablePG);
+      } catch (err) {
+        throw new Error(
+          `In initialization of 'PrismaDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
+        );
+      }
+    }
   }
 
   destroy(): Promise<void> {

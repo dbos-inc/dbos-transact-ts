@@ -232,6 +232,20 @@ describe('failures-tests', () => {
       async () => await expect(NDWFT.nondetWorkflow()).rejects.toThrow(DBOSUnexpectedStepError),
     );
   });
+
+  test('not launched', async () => {
+    await DBOS.shutdown();
+    const df = DBOS.registerWorkflow(
+      async () => {
+        return Promise.resolve('Unreached');
+      },
+      { name: 'unregistered' },
+    );
+
+    await expect(df()).rejects.toThrow('`DBOS.launch()` must be called before running workflows');
+
+    await DBOS.launch();
+  });
 });
 
 class FailureTestClass extends ConfiguredInstance {

@@ -42,6 +42,10 @@ export const DBOS_FUNCNAME_SETEVENT = 'DBOS.setEvent';
 export const DBOS_FUNCNAME_GETEVENT = 'DBOS.getEvent';
 export const DBOS_FUNCNAME_SLEEP = 'DBOS.sleep';
 export const DBOS_FUNCNAME_GETSTATUS = 'getStatus';
+export const DBOS_FUNCNAME_WRITESTREAM = 'DBOS.writeStream';
+export const DBOS_FUNCNAME_CLOSESTREAM = 'DBOS.closeStream';
+
+export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 
 /**
  * General notes:
@@ -159,6 +163,12 @@ export interface SystemDatabase {
   getEventDispatchState(service: string, workflowFnName: string, key: string): Promise<DBOSExternalState | undefined>;
   upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState>;
 
+  // Streaming
+  writeStreamFromWorkflow(workflowID: string, functionID: number, key: string, value: unknown): Promise<void>;
+  writeStreamFromStep(workflowID: string, key: string, value: unknown): Promise<void>;
+  closeStream(workflowID: string, functionID: number, key: string): Promise<void>;
+  readStream(workflowID: string, key: string, offset: number): Promise<unknown>;
+
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
   listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]>;
@@ -228,7 +238,7 @@ export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger
       directory: migrationsDirectory,
       tableName: 'knex_migrations',
     },
-  };
+  } as Knex.Config;
   const knexDB = knex(knexConfig);
   try {
     await knexDB.migrate.latest();
@@ -514,42 +524,107 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
   };
 }
 
-function retriablePostgresException(e: unknown): boolean {
-  // Recurse into AggregateErrors of various types
-  if (e && typeof e === 'object' && 'errors' in e && Array.isArray((e as { errors: unknown }).errors)) {
-    return (e as { errors: unknown[] }).errors.some((error: unknown) => retriablePostgresException(error));
+type AnyErr = { code?: string; errno?: number; message?: string; stack?: string; cause?: unknown };
+
+// SQLSTATE classes/codes that are generally safe to retry
+// https://www.postgresql.org/docs/current/errcodes-appendix.html
+const RETRY_SQLSTATE_PREFIXES = new Set([
+  '08', // Connection Exception
+  '53', // Insufficient Resources
+  '57', // Operator Intervention (e.g. admin_shutdown, cannot_connect_now)
+]);
+
+const RETRY_SQLSTATE_CODES = new Set([
+  '40003', // statement_completion_unknown
+]);
+
+// Node.js transient network error codes (system call level)
+const RETRY_NODE_ERRNOS = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ETIMEDOUT',
+  'ECONNABORTED',
+]);
+
+function isPgDatabaseError(e: AnyErr): e is DatabaseError & AnyErr {
+  // DatabaseError has 'code' (SQLSTATE)
+  return !!e && typeof e === 'object' && typeof e.code === 'string' && e.code.length === 5;
+}
+
+function sqlStateLooksRetryable(sqlstate: string | undefined): boolean {
+  if (!sqlstate) return false;
+  if (RETRY_SQLSTATE_CODES.has(sqlstate)) return true;
+  const prefix = sqlstate.toString().slice(0, 2);
+  return RETRY_SQLSTATE_PREFIXES.has(prefix);
+}
+
+function nodeErrnoLooksRetryable(e: AnyErr): boolean {
+  const code = e.code;
+  return !!code && RETRY_NODE_ERRNOS.has(code);
+}
+
+function messageLooksRetryable(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    msg.includes('ECONNREFUSED') ||
+    msg.includes('ECONNRESET') ||
+    m.includes('connection timeout') ||
+    m.includes('server closed the connection') ||
+    m.includes('connection terminated unexpectedly') ||
+    m.includes('client has encountered a connection error') ||
+    m.includes('timeout exceeded when trying to connect') ||
+    m.includes('could not connect to server')
+  );
+}
+
+function* unwrapErrors(e: unknown): Generator<unknown, void, void> {
+  // Walk through AggregateError.errors and cause chains
+  const queue: unknown[] = [e];
+  const seen = new Set<unknown>();
+  while (queue.length) {
+    const cur = queue.shift()!;
+    if (cur && typeof cur === 'object') {
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      // AggregateError (native and some libs)
+      const ae = cur as { errors?: unknown[] };
+      if (Array.isArray(ae.errors)) queue.push(...ae.errors);
+      // cause chain
+      const withCause = cur as { cause?: unknown };
+      if (withCause.cause) queue.push(withCause.cause);
+      // some libs wrap in { error }
+      const wrapped = cur as { error?: unknown };
+      if (wrapped.error) queue.push(wrapped.error);
+    }
+    yield cur;
   }
-  // For Postgres errors, check the code
-  if (e instanceof DatabaseError && e.code) {
-    // Operator intervention
-    if (e.code.startsWith('57')) {
+}
+
+// "What could possibly go wrong?"
+function retriablePostgresException(err: unknown): boolean {
+  // Dig into AggregateErrors of various types
+  for (const e of unwrapErrors(err)) {
+    const anyErr = e as AnyErr;
+
+    // For Postgres errors, check the code
+    if (isPgDatabaseError(anyErr) && sqlStateLooksRetryable(anyErr.code)) {
       return true;
     }
-    // Insufficent resources
-    if (e.code.startsWith('53')) {
+
+    // Look for node-like retriable errors
+    if (nodeErrnoLooksRetryable(anyErr)) {
       return true;
     }
-    // Connection exception
-    if (e.code.startsWith('08')) {
-      return true;
+
+    // Also, check for network issues in the string
+    if (e instanceof Error) {
+      if (e.stack && messageLooksRetryable(e.stack)) return true;
+      if (e.message && messageLooksRetryable(e.message)) return true;
+    } else {
+      if (messageLooksRetryable(String(e))) return true;
     }
-  }
-  // Otherwise, check for network issues in the string
-  const errorString = e instanceof Error ? e.stack || e.message : String(e);
-  if (errorString.includes('ECONNREFUSED')) {
-    return true;
-  }
-  if (errorString.includes('ECONNRESET')) {
-    return true;
-  }
-  if (errorString.toLowerCase().includes('connection timeout')) {
-    return true;
-  }
-  if (errorString.toLowerCase().includes('connection terminated unexpectedly')) {
-    return true;
-  }
-  if (errorString.toLowerCase().includes('client has encountered a connection error')) {
-    return true;
   }
   return false;
 }
@@ -664,7 +739,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         min: 0,
         max: this.sysDbPoolSize,
       },
-    };
+    } as Knex.Config;
     this.knexDB = knex(knexConfig);
   }
 
@@ -1974,6 +2049,113 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Return the IDs of all functions we marked started
     return claimedIDs;
+  }
+
+  @dbRetry()
+  async writeStreamFromStep(workflowID: string, key: string, value: unknown): Promise<void> {
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+
+      // Find the maximum offset for this workflow_uuid and key combination
+      const maxOffsetResult = await client.query(
+        `SELECT MAX("offset") FROM ${DBOSExecutor.systemDBSchemaName}.streams 
+         WHERE workflow_uuid = $1 AND key = $2`,
+        [workflowID, key],
+      );
+
+      // Next offset is max + 1, or 0 if no records exist
+      const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
+      const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
+
+      // Serialize the value before storing
+      const serializedValue = JSON.stringify(value);
+
+      // Insert the new stream entry
+      await client.query(
+        `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.streams (workflow_uuid, key, value, "offset")
+         VALUES ($1, $2, $3, $4)`,
+        [workflowID, key, serializedValue, nextOffset],
+      );
+
+      await client.query('COMMIT');
+    } catch (e) {
+      this.logger.error(e);
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  @dbRetry()
+  async writeStreamFromWorkflow(workflowID: string, functionID: number, key: string, value: unknown): Promise<void> {
+    const client: PoolClient = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+
+      const functionName =
+        value === DBOS_STREAM_CLOSED_SENTINEL ? DBOS_FUNCNAME_CLOSESTREAM : DBOS_FUNCNAME_WRITESTREAM;
+
+      await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
+        // Find the maximum offset for this workflow_uuid and key combination
+        const maxOffsetResult = await client.query(
+          `SELECT MAX("offset") FROM ${DBOSExecutor.systemDBSchemaName}.streams 
+           WHERE workflow_uuid = $1 AND key = $2`,
+          [workflowID, key],
+        );
+
+        // Next offset is max + 1, or 0 if no records exist
+        const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
+        const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
+
+        // Serialize the value before storing
+        const serializedValue = JSON.stringify(value);
+
+        // Insert the new stream entry
+        await client.query(
+          `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.streams (workflow_uuid, key, value, "offset")
+           VALUES ($1, $2, $3, $4)`,
+          [workflowID, key, serializedValue, nextOffset],
+        );
+
+        return undefined;
+      });
+
+      await client.query('COMMIT');
+    } catch (e) {
+      this.logger.error(e);
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  async closeStream(workflowID: string, functionID: number, key: string): Promise<void> {
+    await this.writeStreamFromWorkflow(workflowID, functionID, key, DBOS_STREAM_CLOSED_SENTINEL);
+  }
+
+  @dbRetry()
+  async readStream(workflowID: string, key: string, offset: number): Promise<unknown> {
+    const client: PoolClient = await this.pool.connect();
+    try {
+      const result = await client.query(
+        `SELECT value FROM ${DBOSExecutor.systemDBSchemaName}.streams 
+         WHERE workflow_uuid = $1 AND key = $2 AND "offset" = $3`,
+        [workflowID, key, offset],
+      );
+
+      if (result.rows.length === 0) {
+        throw new Error(`No value found for workflow_uuid=${workflowID}, key=${key}, offset=${offset}`);
+      }
+
+      // Deserialize the value before returning
+      const row = result.rows[0] as { value: string };
+      return JSON.parse(row.value);
+    } finally {
+      client.release();
+    }
   }
 
   async garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void> {
