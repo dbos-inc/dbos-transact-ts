@@ -524,42 +524,107 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
   };
 }
 
-function retriablePostgresException(e: unknown): boolean {
-  // Recurse into AggregateErrors of various types
-  if (e && typeof e === 'object' && 'errors' in e && Array.isArray((e as { errors: unknown }).errors)) {
-    return (e as { errors: unknown[] }).errors.some((error: unknown) => retriablePostgresException(error));
+type AnyErr = { code?: string; errno?: number; message?: string; stack?: string; cause?: unknown };
+
+// SQLSTATE classes/codes that are generally safe to retry
+// https://www.postgresql.org/docs/current/errcodes-appendix.html
+const RETRY_SQLSTATE_PREFIXES = new Set([
+  '08', // Connection Exception
+  '53', // Insufficient Resources
+  '57', // Operator Intervention (e.g. admin_shutdown, cannot_connect_now)
+]);
+
+const RETRY_SQLSTATE_CODES = new Set([
+  '40003', // statement_completion_unknown
+]);
+
+// Node.js transient network error codes (system call level)
+const RETRY_NODE_ERRNOS = new Set([
+  'ECONNRESET',
+  'ECONNREFUSED',
+  'EHOSTUNREACH',
+  'ENETUNREACH',
+  'ETIMEDOUT',
+  'ECONNABORTED',
+]);
+
+function isPgDatabaseError(e: AnyErr): e is DatabaseError & AnyErr {
+  // DatabaseError has 'code' (SQLSTATE)
+  return !!e && typeof e === 'object' && typeof e.code === 'string' && e.code.length === 5;
+}
+
+function sqlStateLooksRetryable(sqlstate: string | undefined): boolean {
+  if (!sqlstate) return false;
+  if (RETRY_SQLSTATE_CODES.has(sqlstate)) return true;
+  const prefix = sqlstate.toString().slice(0, 2);
+  return RETRY_SQLSTATE_PREFIXES.has(prefix);
+}
+
+function nodeErrnoLooksRetryable(e: AnyErr): boolean {
+  const code = e.code;
+  return !!code && RETRY_NODE_ERRNOS.has(code);
+}
+
+function messageLooksRetryable(msg: string): boolean {
+  const m = msg.toLowerCase();
+  return (
+    msg.includes('ECONNREFUSED') ||
+    msg.includes('ECONNRESET') ||
+    m.includes('connection timeout') ||
+    m.includes('server closed the connection') ||
+    m.includes('connection terminated unexpectedly') ||
+    m.includes('client has encountered a connection error') ||
+    m.includes('timeout exceeded when trying to connect') ||
+    m.includes('could not connect to server')
+  );
+}
+
+function* unwrapErrors(e: unknown): Generator<unknown, void, void> {
+  // Walk through AggregateError.errors and cause chains
+  const queue: unknown[] = [e];
+  const seen = new Set<unknown>();
+  while (queue.length) {
+    const cur = queue.shift()!;
+    if (cur && typeof cur === 'object') {
+      if (seen.has(cur)) continue;
+      seen.add(cur);
+      // AggregateError (native and some libs)
+      const ae = cur as { errors?: unknown[] };
+      if (Array.isArray(ae.errors)) queue.push(...ae.errors);
+      // cause chain
+      const withCause = cur as { cause?: unknown };
+      if (withCause.cause) queue.push(withCause.cause);
+      // some libs wrap in { error }
+      const wrapped = cur as { error?: unknown };
+      if (wrapped.error) queue.push(wrapped.error);
+    }
+    yield cur;
   }
-  // For Postgres errors, check the code
-  if (e instanceof DatabaseError && e.code) {
-    // Operator intervention
-    if (e.code.startsWith('57')) {
+}
+
+// "What could possibly go wrong?"
+function retriablePostgresException(err: unknown): boolean {
+  // Dig into AggregateErrors of various types
+  for (const e of unwrapErrors(err)) {
+    const anyErr = e as AnyErr;
+
+    // For Postgres errors, check the code
+    if (isPgDatabaseError(anyErr) && sqlStateLooksRetryable(anyErr.code)) {
       return true;
     }
-    // Insufficent resources
-    if (e.code.startsWith('53')) {
+
+    // Look for node-like retriable errors
+    if (nodeErrnoLooksRetryable(anyErr)) {
       return true;
     }
-    // Connection exception
-    if (e.code.startsWith('08')) {
-      return true;
+
+    // Also, check for network issues in the string
+    if (e instanceof Error) {
+      if (e.stack && messageLooksRetryable(e.stack)) return true;
+      if (e.message && messageLooksRetryable(e.message)) return true;
+    } else {
+      if (messageLooksRetryable(String(e))) return true;
     }
-  }
-  // Otherwise, check for network issues in the string
-  const errorString = e instanceof Error ? e.stack || e.message : String(e);
-  if (errorString.includes('ECONNREFUSED')) {
-    return true;
-  }
-  if (errorString.includes('ECONNRESET')) {
-    return true;
-  }
-  if (errorString.toLowerCase().includes('connection timeout')) {
-    return true;
-  }
-  if (errorString.toLowerCase().includes('connection terminated unexpectedly')) {
-    return true;
-  }
-  if (errorString.toLowerCase().includes('client has encountered a connection error')) {
-    return true;
   }
   return false;
 }
