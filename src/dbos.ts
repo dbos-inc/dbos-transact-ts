@@ -831,8 +831,7 @@ export class DBOS {
           'Invalid call to `retrieveWorkflow` inside a `transaction` or `step`',
         );
       }
-      const functionID: number = functionIDGetIncrement();
-      return new RetrievedHandle(DBOSExecutor.globalInstance!.systemDatabase, workflowID, DBOS.workflowID, functionID);
+      return new RetrievedHandle(DBOSExecutor.globalInstance!.systemDatabase, workflowID);
     }
     return DBOS.#executor.retrieveWorkflow(workflowID);
   }

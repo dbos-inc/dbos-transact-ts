@@ -165,8 +165,6 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
     readonly workflowPromise: Promise<R>,
     readonly workflowUUID: string,
     readonly workflowName: string,
-    readonly callerWFID?: string, // This is the call that started the WF
-    readonly callerFunctionID?: number, // This is the call that started the WF
   ) {}
 
   getWorkflowUUID(): string {
@@ -205,8 +203,6 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
   constructor(
     readonly systemDatabase: SystemDatabase,
     readonly workflowUUID: string,
-    readonly callerWFID?: string,
-    readonly callerFunctionID?: number,
   ) {}
 
   getWorkflowUUID(): string {

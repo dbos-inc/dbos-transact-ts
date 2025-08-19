@@ -94,8 +94,8 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: `36`,
       },
-      /*
       {
+        // These get func IDs and pass directly to sysdb
         func: async () => {
           await DBOS.setEvent('eventkey', 'eval');
           return 'set';
@@ -108,6 +108,7 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: `eval`,
       },
+      /*
       {
         func: async () => {
           await DBOS.send(DBOS.workflowID!, 'msg', 'topic');
@@ -121,21 +122,23 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: `msg`,
       },
+      */
       {
+        // Gets func ID in advance of sysdb call
         func: async () => {
           return (await DBOS.getWorkflowStatus('nosuchwv'))?.status ?? 'Nope';
         },
         expected: `Nope`,
       },
-      */
       {
+        // Needs to get its start and getresult func IDs in advance
         func: async () => {
           return await simpleWF();
         },
         expected: 'WF Ran',
       },
-      /*
       {
+        // Gets start func ID in advance
         func: async () => {
           await DBOS.startWorkflow(simpleWF, { workflowID: `${DBOS.workflowID}-cwf` })();
           return 'started';
@@ -143,13 +146,13 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         expected: 'started',
       },
       {
+        // getResult the func ID for the handle
         func: async () => {
           const wfh = DBOS.retrieveWorkflow<string>(`${DBOS.workflowID}-cwf`);
           return await wfh.getResult();
         },
         expected: 'WF Ran',
       },
-      */
       {
         // Uses sysdb directly after getting func id
         func: async () => {
@@ -306,18 +309,34 @@ describe('concurrency-tests', () => {
     const wfstepsSerial = (await DBOS.listWorkflowSteps(wfidSerial))!;
     const wfstepsConcurrent = (await DBOS.listWorkflowSteps(wfidConcurrent))!;
 
-    for (let i = 0; i < wfstepsSerial.length; ++i) {
-      console.log(`Output of ${wfstepsConcurrent[i].name}: ${JSON.stringify(wfstepsConcurrent[i].output)}`);
-      expect(wfstepsConcurrent[i].name).toBe(wfstepsSerial[i].name);
-      expect(wfstepsConcurrent[i].functionID).toBe(wfstepsSerial[i].functionID);
-      expect(wfstepsConcurrent[i].error).toStrictEqual(wfstepsSerial[i].error);
-      if (['DBOS.now', 'DBOS.randomUUID', 'DBOS.sleep'].includes(wfstepsConcurrent[i].name)) continue;
-      if (['testDSReadWrite', 'testReadWriteFunction'].includes(wfstepsConcurrent[i].name)) {
-        // We use a different ID, the bottom digit matters
-        expect((wfstepsConcurrent[i].output as string)[2]).toStrictEqual((wfstepsSerial[i].output as string)[2]);
+    let iconc = 0;
+    for (let i = 0; i < wfstepsSerial.length; ) {
+      console.log(
+        `Output of ${wfstepsConcurrent[iconc].name}@${wfstepsConcurrent[iconc].functionID}: ${JSON.stringify(wfstepsConcurrent[iconc].output)} vs. ${wfstepsSerial[i].name}@${wfstepsSerial[i].functionID}: ${JSON.stringify(wfstepsSerial[i].output)}`,
+      );
+      // Sleeps in things like getResult may or may not appear in parallel execution
+      //   (serial must do the set first and will have no sleep).
+      // They will be assigned consistent IDs in both cases, at least.
+      if (
+        wfstepsConcurrent[iconc].functionID < wfstepsSerial[i].functionID &&
+        wfstepsConcurrent[iconc].name === 'DBOS.sleep'
+      ) {
+        ++iconc;
         continue;
       }
-      expect(wfstepsConcurrent[i].output).toStrictEqual(wfstepsSerial[i].output);
+      expect(wfstepsConcurrent[iconc].functionID).toBe(wfstepsSerial[i].functionID);
+      expect(wfstepsConcurrent[iconc].name).toBe(wfstepsSerial[i].name);
+      expect(wfstepsConcurrent[iconc].error).toStrictEqual(wfstepsSerial[i].error);
+      if (['DBOS.now', 'DBOS.randomUUID', 'DBOS.sleep'].includes(wfstepsConcurrent[iconc].name)) {
+        // Result may differ, that's all
+      } else if (['testDSReadWrite', 'testReadWriteFunction'].includes(wfstepsConcurrent[i].name)) {
+        // We use a different ID, the bottom digit matters
+        expect((wfstepsConcurrent[iconc].output as string)[2]).toStrictEqual((wfstepsSerial[i].output as string)[2]);
+      } else {
+        expect(wfstepsConcurrent[iconc].output).toStrictEqual(wfstepsSerial[i].output);
+      }
+      ++i;
+      ++iconc;
     }
 
     await runALotOfThingsAtOnce(true, 300);

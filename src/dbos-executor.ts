@@ -685,7 +685,7 @@ export class DBOSExecutor {
       if (callerFunctionID !== undefined && callerID !== undefined) {
         const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
         if (result) {
-          return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!, callerID, callerFunctionID);
+          return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
         }
       }
       const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
@@ -831,9 +831,9 @@ export class DBOSExecutor {
       this.systemDatabase.registerRunningWorkflow(workflowID, workflowPromise);
 
       // Return the normal handle that doesn't capture errors.
-      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name, callerID, callerFunctionID);
+      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name);
     } else {
-      return new RetrievedHandle(this.systemDatabase, workflowID, callerID, callerFunctionID);
+      return new RetrievedHandle(this.systemDatabase, workflowID);
     }
   }
 
