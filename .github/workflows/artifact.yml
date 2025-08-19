@@ -18,7 +18,6 @@ jobs:
         uses: actions/setup-node@v4.0.2
         with:
           node-version: 20
-          registry-url: 'https://npm.pkg.github.com'
       - name: Nerdbank.GitVersioning
         id: nbgv
         uses: dotnet/nbgv@v0.4.2
