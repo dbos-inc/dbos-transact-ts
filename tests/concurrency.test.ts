@@ -108,8 +108,8 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: `eval`,
       },
-      /*
       {
+        // These get func IDs and pass directly to sysdb
         func: async () => {
           await DBOS.send(DBOS.workflowID!, 'msg', 'topic');
           return 'sent';
@@ -122,7 +122,6 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: `msg`,
       },
-      */
       {
         // Gets func ID in advance of sysdb call
         func: async () => {
