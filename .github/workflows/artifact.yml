@@ -28,7 +28,6 @@ jobs:
         run: npm ci
       - name: Stamp Packages Version
         run: npm version --workspaces --include-workspace-root --no-git-tag-version "$NBGV_NpmPackageVersion" --verbose
-        env:
       - name: Build Packages
         run: npm run build --workspaces --include-workspace-root
       - name: Pack Packages
