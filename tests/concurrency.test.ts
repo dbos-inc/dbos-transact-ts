@@ -29,18 +29,21 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         expected: 'slept',
       },
       {
+        // Step clones the ctx
         func: async () => {
           return await DBOS.runStep(() => Promise.resolve('ranStep'), { name: 'runStep1' });
         },
         expected: 'ranStep',
       },
       {
+        // Step clones the ctx
         func: async () => {
           return await DBOS.runStep(() => Promise.resolve('ranStep'), { name: 'runStep2' });
         },
         expected: 'ranStep',
       },
       {
+        // Step clones the ctx
         func: async () => {
           return await DBOS.runStep(
             () => {
@@ -52,7 +55,13 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: 'ranStep',
       },
-      /*
+      {
+        // Tx clones the ctx
+        func: async () => {
+          return (await ConcurrTestClass.testReadWriteFunction(baseid + 2)).toString();
+        },
+        expected: `${baseid + 2}`,
+      },
       {
         func: async () => {
           return (await ConcurrTestClass.testDSReadWrite(baseid + 1)).toString();
@@ -60,12 +69,7 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         expected: `${baseid + 1}`,
       },
       {
-        func: async () => {
-          return (await ConcurrTestClass.testReadWriteFunction(baseid + 2)).toString();
-        },
-        expected: `${baseid + 2}`,
-      },
-      {
+        // Grabs the call num before running in internalStep
         func: async () => {
           return (
             await knexds.runTransaction(
@@ -78,7 +82,6 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: `A`,
       },
-      */
       {
         func: async () => {
           return (await DBOS.now()).toString()[0];
@@ -124,12 +127,14 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: `Nope`,
       },
+      */
       {
         func: async () => {
           return await simpleWF();
         },
         expected: 'WF Ran',
       },
+      /*
       {
         func: async () => {
           await DBOS.startWorkflow(simpleWF, { workflowID: `${DBOS.workflowID}-cwf` })();
@@ -144,7 +149,9 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         },
         expected: 'WF Ran',
       },
+      */
       {
+        // Uses sysdb directly after getting func id
         func: async () => {
           await DBOS.writeStream('stream', 'val');
           return 'wrote';
@@ -152,13 +159,13 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         expected: 'wrote',
       },
       {
+        // Uses sysdb directly (polls, does not WF checkpoint)
         func: async () => {
           const { value } = await DBOS.readStream(DBOS.workflowID!, 'stream').next();
           return value as string;
         },
         expected: 'val',
       },
-      */
     ];
 
     if (conc) {

@@ -604,7 +604,7 @@ export class DBOSExecutor {
       }
     }
 
-    const pctx = getCurrentContextStore();
+    const pctx = { ...getCurrentContextStore() }; // function ID was already incremented...
 
     let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
@@ -1031,7 +1031,8 @@ export class DBOSExecutor {
       throw new DBOSNotRegisteredError(txn.name);
     }
 
-    const pctx = getCurrentContextStore()!;
+    const funcId = functionIDGetIncrement();
+    const pctx = { ...getCurrentContextStore()! };
     const wfid = pctx.workflowId!;
 
     await this.systemDatabase.checkIfCanceled(wfid);
@@ -1039,7 +1040,6 @@ export class DBOSExecutor {
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
-    const funcId = functionIDGetIncrement();
     const span: Span = this.tracer.startSpan(txn.name, {
       operationUUID: wfid,
       operationType: OperationType.TRANSACTION,

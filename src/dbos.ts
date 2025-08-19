@@ -14,6 +14,7 @@ import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
   GetWorkflowsOutput,
+  InternalWFHandle,
   isWorkflowActive,
   RetrievedHandle,
   StepInfo,
@@ -158,7 +159,12 @@ export function getExecutor() {
   return DBOSExecutor.globalInstance;
 }
 
-export function runInternalStep<T>(callback: () => Promise<T>, funcName: string, childWFID?: string): Promise<T> {
+export function runInternalStep<T>(
+  callback: () => Promise<T>,
+  funcName: string,
+  childWFID?: string,
+  assignedFuncID?: number,
+): Promise<T> {
   if (DBOS.isWithinWorkflow()) {
     if (DBOS.isInStep()) {
       // OK to use directly
@@ -168,7 +174,7 @@ export function runInternalStep<T>(callback: () => Promise<T>, funcName: string,
         callback,
         funcName,
         DBOS.workflowID!,
-        functionIDGetIncrement(),
+        assignedFuncID ?? functionIDGetIncrement(),
         childWFID,
       );
     } else {
@@ -781,6 +787,15 @@ export class DBOS {
     if (DBOS.isWithinWorkflow() && timeoutSeconds !== undefined) {
       timerFuncID = functionIDGetIncrement();
     }
+    return await DBOS.getResultInternal(workflowID, timeoutSeconds, timerFuncID, undefined);
+  }
+
+  static async getResultInternal<T>(
+    workflowID: string,
+    timeoutSeconds?: number,
+    timerFuncID?: number,
+    assignedFuncID?: number,
+  ): Promise<T | null> {
     return await runInternalStep(
       async () => {
         const rres = await DBOSExecutor.globalInstance!.systemDatabase.awaitWorkflowResult(
@@ -797,6 +812,7 @@ export class DBOS {
       },
       'DBOS.getResult',
       workflowID,
+      assignedFuncID,
     );
   }
 
@@ -1501,12 +1517,14 @@ export class DBOS {
     regOP: MethodRegistrationBase,
     args: Args,
     params: StartWorkflowParams = {},
-  ): Promise<WorkflowHandle<Return>> {
+    startWfFuncId?: number,
+  ): Promise<InternalWFHandle<Return>> {
     ensureDBOSIsLaunched('workflows');
     const wfId = getNextWFID(params.workflowID);
-    const pctx = getCurrentContextStore();
-    const queueName = params.queueName ?? pctx?.queueAssignedForWorkflows;
-    const timeoutMS = params.timeoutMS ?? pctx?.workflowTimeoutMS;
+    const ppctx = getCurrentContextStore();
+
+    const queueName = params.queueName ?? ppctx?.queueAssignedForWorkflows;
+    const timeoutMS = params.timeoutMS ?? ppctx?.workflowTimeoutMS;
 
     const instance = $this === undefined || typeof $this === 'function' ? undefined : ($this as ConfiguredInstance);
     if (instance && !(instance instanceof ConfiguredInstance)) {
@@ -1524,9 +1542,9 @@ export class DBOS {
         );
       }
 
+      const funcId = startWfFuncId ?? functionIDGetIncrement();
       const pctx = getCurrentContextStore()!;
       const pwfid = pctx.workflowId!;
-      const funcId = functionIDGetIncrement();
       const wfParams: WorkflowParams = {
         workflowUUID: wfId || pwfid + '-' + funcId,
         configuredInstance: instance,
@@ -1585,6 +1603,18 @@ export class DBOS {
     registration.setWorkflowConfig(config ?? {});
     const invoker = async function (this: This, ...rawArgs: Args): Promise<Return> {
       ensureDBOSIsLaunched('workflows');
+      if (DBOS.isInWorkflow()) {
+        const startWfFuncId = functionIDGetIncrement();
+        const getResFuncID = functionIDGetIncrement();
+        const handle = await DBOS.#invokeWorkflow<This, Args, Return>(
+          this,
+          registration,
+          rawArgs,
+          undefined,
+          startWfFuncId,
+        );
+        return await handle.getResult(getResFuncID);
+      }
       const handle = await DBOS.#invokeWorkflow<This, Args, Return>(this, registration, rawArgs);
       return await handle.getResult();
     };
