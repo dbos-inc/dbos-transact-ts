@@ -27,7 +27,7 @@ jobs:
       - name: Install Dependencies
         run: npm ci
       - name: Stamp Packages Version
-        run: npm version --workspaces --include-workspace-root --no-git-tag-version "$NBGV_NpmPackageVersion"
+        run: npm version --workspaces --include-workspace-root --no-git-tag-version "$NBGV_NpmPackageVersion" --verbose
         env:
           NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Packages
