@@ -3,6 +3,7 @@ import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { KnexDataSource } from '../packages/knex-datasource';
+import { StepInfo } from '../src/workflow';
 
 const testTableName = 'dbos_concurrency_test_kv';
 
@@ -17,8 +18,27 @@ const simpleWF = DBOS.registerWorkflow(
   { name: 'simpleWF' },
 );
 
+const regStep = DBOS.registerStep(
+  async () => {
+    return Promise.resolve('regStep ran');
+  },
+  { name: 'regStep' },
+);
+
+const regStepRetry = DBOS.registerStep(
+  async () => {
+    if (DBOS.stepStatus!.currentAttempt! <= 2) throw new Error('Not yet');
+    return Promise.resolve('regStepRetry ran');
+  },
+  { name: 'regStepRetry', retriesAllowed: true, maxAttempts: 5, intervalSeconds: 0.01, backoffRate: 1 },
+);
+
+const cleanDB = knexds.registerTransaction(async () => {
+  await knexds.client.raw(`DELETE FROM ${testTableName}`);
+});
+
 const runALotOfThingsAtOnce = DBOS.registerWorkflow(
-  async (conc: boolean, baseid: number) => {
+  async (conc: boolean) => {
     const things: { func: () => Promise<string>; expected: string }[] = [
       {
         // Reads context into locals, OK
@@ -50,7 +70,7 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
               if (DBOS.stepStatus!.currentAttempt! <= 2) throw new Error('Not yet');
               return Promise.resolve('ranStep');
             },
-            { retriesAllowed: true, maxAttempts: 5, intervalSeconds: 0.1, backoffRate: 1, name: 'runStepRetry' },
+            { retriesAllowed: true, maxAttempts: 5, intervalSeconds: 0.01, backoffRate: 1, name: 'runStepRetry' },
           );
         },
         expected: 'ranStep',
@@ -58,15 +78,19 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
       {
         // Tx clones the ctx
         func: async () => {
-          return (await ConcurrTestClass.testReadWriteFunction(baseid + 2)).toString();
+          return (await ConcurrTestClass.testReadWriteFunction(2)).toString();
         },
-        expected: `${baseid + 2}`,
+        expected: `2`,
       },
       {
         func: async () => {
-          return (await ConcurrTestClass.testDSReadWrite(baseid + 1)).toString();
+          return (await ConcurrTestClass.testDSReadWrite(1)).toString();
         },
-        expected: `${baseid + 1}`,
+        expected: `1`,
+      },
+      {
+        func: regStep,
+        expected: 'regStep ran',
       },
       {
         // Grabs the call num before running in internalStep
@@ -103,6 +127,10 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
         expected: `set`,
       },
       {
+        func: regStepRetry,
+        expected: 'regStepRetry ran',
+      },
+      {
         func: async () => {
           return (await DBOS.getEvent(DBOS.workflowID!, 'eventkey')) ?? 'Nope';
         },
@@ -115,6 +143,10 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
           return 'sent';
         },
         expected: `sent`,
+      },
+      {
+        func: () => ConcurrTestClass.testStepStr('3'),
+        expected: '3',
       },
       {
         func: async () => {
@@ -135,6 +167,10 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
           return await simpleWF();
         },
         expected: 'WF Ran',
+      },
+      {
+        func: () => ConcurrTestClass.testStepRetry('4'),
+        expected: '4',
       },
       {
         // Gets start func ID in advance
@@ -170,23 +206,88 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
       },
     ];
 
-    if (conc) {
-      const promises: Promise<string>[] = [];
-      for (const t of things) {
-        promises.push(t.func());
-      }
-      const res = await Promise.allSettled(promises);
-      for (let i = 0; i < things.length; ++i) {
-        expect((res[i] as PromiseFulfilledResult<string>).value).toBe(things[i].expected);
-      }
-    } else {
-      for (const t of things) {
-        const res = await t.func();
-        expect(res).toBe(t.expected);
-      }
-    }
+    await runThingsSerialOrConc(conc, things);
   },
   { name: 'runALotOfThingsAtOnce' },
+);
+
+const runALotOfStepsAtOnce = DBOS.registerWorkflow(
+  async (conc: boolean) => {
+    const things: { func: () => Promise<string>; expected: string }[] = [
+      {
+        // Step clones the ctx
+        func: async () => {
+          return await DBOS.runStep(() => Promise.resolve('ranStep'), { name: 'runStep1a' });
+        },
+        expected: 'ranStep',
+      },
+      {
+        // Step clones the ctx
+        func: async () => {
+          return await DBOS.runStep(
+            () => {
+              if (DBOS.stepStatus!.currentAttempt! <= 2) throw new Error('Not yet');
+              return Promise.resolve('ranStep');
+            },
+            { retriesAllowed: true, maxAttempts: 5, intervalSeconds: 0.02, backoffRate: 1, name: 'runStepRetry1' },
+          );
+        },
+        expected: 'ranStep',
+      },
+      {
+        func: regStepRetry,
+        expected: 'regStepRetry ran',
+      },
+      {
+        // Step clones the ctx
+        func: async () => {
+          return await DBOS.runStep(
+            () => {
+              if (DBOS.stepStatus!.currentAttempt! <= 2) throw new Error('Not yet');
+              return Promise.resolve('ranStep');
+            },
+            { retriesAllowed: true, maxAttempts: 5, intervalSeconds: 0.01, backoffRate: 1, name: 'runStepRetry2' },
+          );
+        },
+        expected: 'ranStep',
+      },
+      {
+        // Step clones the ctx
+        func: async () => {
+          return await DBOS.runStep(() => Promise.resolve('ranStep'), { name: 'runStep2' });
+        },
+        expected: 'ranStep',
+      },
+      {
+        func: () => ConcurrTestClass.testStepStr('3'),
+        expected: '3',
+      },
+      {
+        func: regStep,
+        expected: 'regStep ran',
+      },
+      {
+        // Step clones the ctx
+        func: async () => {
+          return await DBOS.runStep(
+            () => {
+              if (DBOS.stepStatus!.currentAttempt! <= 2) throw new Error('Not yet');
+              return Promise.resolve('ranStep');
+            },
+            { retriesAllowed: true, maxAttempts: 5, intervalSeconds: 0.03, backoffRate: 1, name: 'runStepRetry3' },
+          );
+        },
+        expected: 'ranStep',
+      },
+      {
+        func: () => ConcurrTestClass.testStepRetry('4'),
+        expected: '4',
+      },
+    ];
+
+    await runThingsSerialOrConc(conc, things);
+  },
+  { name: 'runALotOfStepsAtOnce' },
 );
 
 describe('concurrency-tests', () => {
@@ -294,52 +395,51 @@ describe('concurrency-tests', () => {
     await expect(recvHandle.getResult()).resolves.toBe('testmsg');
   });
 
-  test('promise-all-settled', async () => {
+  test('promise-all-settled-manythings', async () => {
     const wfidSerial = randomUUID();
     const wfidConcurrent = randomUUID();
 
+    await cleanDB();
     await DBOS.withNextWorkflowID(wfidSerial, async () => {
-      await runALotOfThingsAtOnce(false, 100);
+      await runALotOfThingsAtOnce(false);
     });
+    await cleanDB();
     await DBOS.withNextWorkflowID(wfidConcurrent, async () => {
-      await runALotOfThingsAtOnce(true, 200);
+      await runALotOfThingsAtOnce(true);
     });
 
     const wfstepsSerial = (await DBOS.listWorkflowSteps(wfidSerial))!;
     const wfstepsConcurrent = (await DBOS.listWorkflowSteps(wfidConcurrent))!;
 
-    let iconc = 0;
-    for (let i = 0; i < wfstepsSerial.length; ) {
-      console.log(
-        `Output of ${wfstepsConcurrent[iconc].name}@${wfstepsConcurrent[iconc].functionID}: ${JSON.stringify(wfstepsConcurrent[iconc].output)} vs. ${wfstepsSerial[i].name}@${wfstepsSerial[i].functionID}: ${JSON.stringify(wfstepsSerial[i].output)}`,
-      );
-      // Sleeps in things like getResult may or may not appear in parallel execution
-      //   (serial must do the set first and will have no sleep).
-      // They will be assigned consistent IDs in both cases, at least.
-      if (
-        wfstepsConcurrent[iconc].functionID < wfstepsSerial[i].functionID &&
-        wfstepsConcurrent[iconc].name === 'DBOS.sleep'
-      ) {
-        ++iconc;
-        continue;
-      }
-      expect(wfstepsConcurrent[iconc].functionID).toBe(wfstepsSerial[i].functionID);
-      expect(wfstepsConcurrent[iconc].name).toBe(wfstepsSerial[i].name);
-      expect(wfstepsConcurrent[iconc].error).toStrictEqual(wfstepsSerial[i].error);
-      if (['DBOS.now', 'DBOS.randomUUID', 'DBOS.sleep'].includes(wfstepsConcurrent[iconc].name)) {
-        // Result may differ, that's all
-      } else if (['testDSReadWrite', 'testReadWriteFunction'].includes(wfstepsConcurrent[i].name)) {
-        // We use a different ID, the bottom digit matters
-        expect((wfstepsConcurrent[iconc].output as string)[2]).toStrictEqual((wfstepsSerial[i].output as string)[2]);
-      } else {
-        expect(wfstepsConcurrent[iconc].output).toStrictEqual(wfstepsSerial[i].output);
-      }
-      ++i;
-      ++iconc;
-    }
+    compareWFRuns(wfstepsSerial, wfstepsConcurrent);
 
-    await runALotOfThingsAtOnce(true, 300);
-  });
+    await cleanDB();
+    await runALotOfThingsAtOnce(true);
+  }, 30000);
+
+  test('promise-all-settled-manysteps', async () => {
+    const wfidSerial = randomUUID();
+    const wfidConcurrent = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfidSerial, async () => {
+      await runALotOfStepsAtOnce(false);
+    });
+    await DBOS.withNextWorkflowID(wfidConcurrent, async () => {
+      await runALotOfStepsAtOnce(true);
+    });
+
+    const wfstepsSerial = (await DBOS.listWorkflowSteps(wfidSerial))!;
+    const wfstepsConcurrent = (await DBOS.listWorkflowSteps(wfidConcurrent))!;
+
+    compareWFRuns(wfstepsSerial, wfstepsConcurrent);
+
+    const fwf1 = await DBOS.forkWorkflow(wfidConcurrent, 5);
+    await fwf1.getResult();
+    const fwf2 = await DBOS.forkWorkflow(wfidConcurrent, 10);
+    await fwf2.getResult();
+    const fwf3 = await DBOS.forkWorkflow(wfidConcurrent, 15);
+    await fwf3.getResult();
+  }, 20000);
 });
 
 class ConcurrTestClass {
@@ -396,8 +496,64 @@ class ConcurrTestClass {
     return Promise.resolve(id);
   }
 
+  @DBOS.step()
+  static async testStepStr(id: string) {
+    return Promise.resolve(id);
+  }
+  @DBOS.step({ retriesAllowed: true, maxAttempts: 5, intervalSeconds: 0.01, backoffRate: 1 })
+  static async testStepRetry(id: string) {
+    if (DBOS.stepStatus!.currentAttempt! <= 2) throw new Error('Not yet');
+    return Promise.resolve(id);
+  }
+
   @DBOS.workflow()
   static async receiveWorkflow(topic: string, timeout: number) {
     return DBOS.recv<string>(topic, timeout);
+  }
+}
+function compareWFRuns(wfstepsSerial: StepInfo[], wfstepsConcurrent: StepInfo[]) {
+  let iconc = 0;
+  for (let i = 0; i < wfstepsSerial.length; ) {
+    console.log(
+      `Output of ${wfstepsConcurrent[iconc].name}@${wfstepsConcurrent[iconc].functionID}: ${JSON.stringify(wfstepsConcurrent[iconc].output)} vs. ${wfstepsSerial[i].name}@${wfstepsSerial[i].functionID}: ${JSON.stringify(wfstepsSerial[i].output)}`,
+    );
+    // Sleeps in things like getResult may or may not appear in parallel execution
+    //   (serial must do the set first and will have no sleep).
+    // They will be assigned consistent IDs in both cases, at least.
+    if (
+      wfstepsConcurrent[iconc].functionID < wfstepsSerial[i].functionID &&
+      wfstepsConcurrent[iconc].name === 'DBOS.sleep'
+    ) {
+      ++iconc;
+      continue;
+    }
+    expect(wfstepsConcurrent[iconc].functionID).toBe(wfstepsSerial[i].functionID);
+    expect(wfstepsConcurrent[iconc].name).toBe(wfstepsSerial[i].name);
+    expect(wfstepsConcurrent[iconc].error).toStrictEqual(wfstepsSerial[i].error);
+    if (['DBOS.now', 'DBOS.randomUUID', 'DBOS.sleep'].includes(wfstepsConcurrent[iconc].name)) {
+      // Result may differ, that's all
+    } else {
+      expect(wfstepsConcurrent[iconc].output).toStrictEqual(wfstepsSerial[i].output);
+    }
+    ++i;
+    ++iconc;
+  }
+}
+
+async function runThingsSerialOrConc(conc: boolean, things: { func: () => Promise<string>; expected: string }[]) {
+  if (conc) {
+    const promises: Promise<string>[] = [];
+    for (const t of things) {
+      promises.push(t.func());
+    }
+    const res = await Promise.allSettled(promises);
+    for (let i = 0; i < things.length; ++i) {
+      expect((res[i] as PromiseFulfilledResult<string>).value).toBe(things[i].expected);
+    }
+  } else {
+    for (const t of things) {
+      const res = await t.func();
+      expect(res).toBe(t.expected);
+    }
   }
 }
