@@ -37,6 +37,30 @@ const cleanDB = knexds.registerTransaction(async () => {
   await knexds.client.raw(`DELETE FROM ${testTableName}`);
 });
 
+const regDSTx = knexds.registerTransaction(
+  async (id) => {
+    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
+    return 'tx done';
+  },
+  { name: 'regDSTx' },
+);
+
+let retryCnt = 0;
+const regDSTxRetry = knexds.registerTransaction(
+  async (id) => {
+    if (retryCnt <= 2) {
+      ++retryCnt;
+      const e = new Error('Not yet') as Error & { code: string };
+      e.code = '40001';
+      throw e;
+    }
+    retryCnt = 0;
+    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
+    return 'txr done';
+  },
+  { name: 'regDSTxRetry' },
+);
+
 const runALotOfThingsAtOnce = DBOS.registerWorkflow(
   async (conc: boolean) => {
     const things: { func: () => Promise<string>; expected: string }[] = [
@@ -114,6 +138,12 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
       },
       {
         func: async () => {
+          return regDSTx(7);
+        },
+        expected: 'tx done',
+      },
+      {
+        func: async () => {
           return (await DBOS.randomUUID()).length.toString();
         },
         expected: `36`,
@@ -147,6 +177,12 @@ const runALotOfThingsAtOnce = DBOS.registerWorkflow(
       {
         func: () => ConcurrTestClass.testStepStr('3'),
         expected: '3',
+      },
+      {
+        func: async () => {
+          return regDSTxRetry(8);
+        },
+        expected: 'txr done',
       },
       {
         func: async () => {
@@ -288,6 +324,79 @@ const runALotOfStepsAtOnce = DBOS.registerWorkflow(
     await runThingsSerialOrConc(conc, things);
   },
   { name: 'runALotOfStepsAtOnce' },
+);
+
+const runALotOfTransactionsAtOnce = DBOS.registerWorkflow(
+  async (conc: boolean) => {
+    const things: { func: () => Promise<string>; expected: string }[] = [
+      {
+        func: async () => {
+          return (await ConcurrTestClass.testReadWriteFunction(2)).toString();
+        },
+        expected: `2`,
+      },
+      {
+        func: async () => {
+          return (await ConcurrTestClass.testDSReadWrite(1)).toString();
+        },
+        expected: `1`,
+      },
+      {
+        func: async () => {
+          return regDSTx(7);
+        },
+        expected: 'tx done',
+      },
+      {
+        func: async () => {
+          return (await ConcurrTestClass.testReadWriteFunction(4)).toString();
+        },
+        expected: `4`,
+      },
+      {
+        func: async () => {
+          return (
+            await knexds.runTransaction(
+              async () => {
+                return Promise.resolve('A');
+              },
+              { name: 'runTx' },
+            )
+          ).toString();
+        },
+        expected: `A`,
+      },
+      {
+        func: async () => {
+          return (await ConcurrTestClass.testDSReadWrite(3)).toString();
+        },
+        expected: `3`,
+      },
+      {
+        func: async () => {
+          return regDSTxRetry(8);
+        },
+        expected: 'txr done',
+      },
+      {
+        func: async () => {
+          return (
+            await knexds.runTransaction(
+              async () => {
+                await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [5, 1]);
+                return Promise.resolve('5');
+              },
+              { name: 'runTx5' },
+            )
+          ).toString();
+        },
+        expected: `5`,
+      },
+    ];
+
+    await runThingsSerialOrConc(conc, things);
+  },
+  { name: 'runALotOfTransactionsAtOnce' },
 );
 
 describe('concurrency-tests', () => {
@@ -433,11 +542,40 @@ describe('concurrency-tests', () => {
 
     compareWFRuns(wfstepsSerial, wfstepsConcurrent);
 
-    const fwf1 = await DBOS.forkWorkflow(wfidConcurrent, 5);
+    const fwf1 = await DBOS.forkWorkflow(wfidConcurrent, 3);
     await fwf1.getResult();
-    const fwf2 = await DBOS.forkWorkflow(wfidConcurrent, 10);
+    const fwf2 = await DBOS.forkWorkflow(wfidConcurrent, 5);
     await fwf2.getResult();
-    const fwf3 = await DBOS.forkWorkflow(wfidConcurrent, 15);
+    const fwf3 = await DBOS.forkWorkflow(wfidConcurrent, 7);
+    await fwf3.getResult();
+  }, 20000);
+
+  test('promise-all-settled-transactions', async () => {
+    const wfidSerial = randomUUID();
+    const wfidConcurrent = randomUUID();
+
+    await cleanDB();
+    await DBOS.withNextWorkflowID(wfidSerial, async () => {
+      await runALotOfTransactionsAtOnce(false);
+    });
+    await cleanDB();
+    await DBOS.withNextWorkflowID(wfidConcurrent, async () => {
+      await runALotOfTransactionsAtOnce(true);
+    });
+
+    const wfstepsSerial = (await DBOS.listWorkflowSteps(wfidSerial))!;
+    const wfstepsConcurrent = (await DBOS.listWorkflowSteps(wfidConcurrent))!;
+
+    compareWFRuns(wfstepsSerial, wfstepsConcurrent);
+
+    await cleanDB();
+    const fwf1 = await DBOS.forkWorkflow(wfidConcurrent, 2);
+    await fwf1.getResult();
+    await cleanDB();
+    const fwf2 = await DBOS.forkWorkflow(wfidConcurrent, 5);
+    await fwf2.getResult();
+    await cleanDB();
+    const fwf3 = await DBOS.forkWorkflow(wfidConcurrent, 7);
     await fwf3.getResult();
   }, 20000);
 });
