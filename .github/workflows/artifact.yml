@@ -29,7 +29,6 @@ jobs:
       - name: Stamp Packages Version
         run: npm version --workspaces --include-workspace-root --no-git-tag-version "$NBGV_NpmPackageVersion" --verbose
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: Build Packages
         run: npm run build --workspaces --include-workspace-root
       - name: Pack Packages
