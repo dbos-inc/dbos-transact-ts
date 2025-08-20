@@ -607,7 +607,7 @@ export class DBOSExecutor {
       }
     }
 
-    const pctx = getCurrentContextStore();
+    const pctx = { ...getCurrentContextStore() }; // function ID was already incremented...
 
     let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
@@ -688,7 +688,7 @@ export class DBOSExecutor {
       if (callerFunctionID !== undefined && callerID !== undefined) {
         const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
         if (result) {
-          return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!, callerID, callerFunctionID);
+          return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
         }
       }
       const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
@@ -834,9 +834,9 @@ export class DBOSExecutor {
       this.systemDatabase.registerRunningWorkflow(workflowID, workflowPromise);
 
       // Return the normal handle that doesn't capture errors.
-      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name, callerID, callerFunctionID);
+      return new InvokedHandle(this.systemDatabase, workflowPromise, workflowID, wf.name);
     } else {
-      return new RetrievedHandle(this.systemDatabase, workflowID, callerID, callerFunctionID);
+      return new RetrievedHandle(this.systemDatabase, workflowID);
     }
   }
 
@@ -1034,7 +1034,8 @@ export class DBOSExecutor {
       throw new DBOSNotRegisteredError(txn.name);
     }
 
-    const pctx = getCurrentContextStore()!;
+    const funcId = functionIDGetIncrement();
+    const pctx = { ...getCurrentContextStore()! };
     const wfid = pctx.workflowId!;
 
     await this.systemDatabase.checkIfCanceled(wfid);
@@ -1042,7 +1043,6 @@ export class DBOSExecutor {
     let retryWaitMillis = 1;
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
-    const funcId = functionIDGetIncrement();
     const span: Span = this.tracer.startSpan(txn.name, {
       operationUUID: wfid,
       operationType: OperationType.TRANSACTION,
@@ -1286,7 +1286,7 @@ export class DBOSExecutor {
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
 
-    const pctx = getCurrentContextStore()!;
+    const pctx = { ...getCurrentContextStore()! };
     const wfid = pctx.workflowId!;
 
     while (true) {
@@ -1326,7 +1326,6 @@ export class DBOSExecutor {
         const result = await (async function () {
           try {
             // Check we are in a workflow context and not in a step / transaction already
-            const pctx = getCurrentContextStore();
             if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
             if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
             return await context.with(trace.setSpan(context.active(), span), async () => {
@@ -1587,12 +1586,13 @@ export class DBOSExecutor {
       throw new DBOSNotRegisteredError(stepFnName);
     }
 
-    const lctx = getCurrentContextStore()!;
+    // Intentionally advance the function ID before any awaits, then work with a copy of the context.
+    const funcID = functionIDGetIncrement();
+    const lctx = { ...getCurrentContextStore()! };
     const wfid = lctx.workflowId!;
 
     await this.systemDatabase.checkIfCanceled(wfid);
 
-    const funcID = functionIDGetIncrement();
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
     const span: Span = this.tracer.startSpan(stepFnName, {
