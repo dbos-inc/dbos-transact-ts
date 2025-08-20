@@ -14,10 +14,8 @@ import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
-import { migrateSystemDatabase } from '../system_database';
+import { ensureSystemDatabase } from '../system_database';
 import { createDBIfDoesNotExist } from '../user_database';
-import { getClientConfig } from '../utils';
-import { PoolConfig } from 'pg';
 import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
@@ -134,11 +132,9 @@ program
 
       await createDBIfDoesNotExist(finalSystemDatabaseUrl, logger);
 
-      const systemPoolConfig: PoolConfig = getClientConfig(finalSystemDatabaseUrl);
-
       // Load the DBOS system schema.
       logger.info('Creating DBOS system schema');
-      await migrateSystemDatabase(systemPoolConfig, logger);
+      await ensureSystemDatabase(finalSystemDatabaseUrl, logger);
 
       // Grant permissions to application role if specified
       if (options.appRole) {

@@ -2,6 +2,8 @@ import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
 import { createDBIfDoesNotExist, ensureDbosTables } from '../user_database';
+import { Client } from 'pg';
+import { getClientConfig } from '../utils';
 
 export async function grantDbosSchemaPermissions(
   databaseUrl: string,
