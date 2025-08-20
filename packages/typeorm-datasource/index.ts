@@ -11,6 +11,8 @@ import {
   DBOSDataSource,
   registerDataSource,
   PGTransactionConfig,
+  CheckSchemaInstallationReturn,
+  checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { DataSource, EntityManager } from 'typeorm';
 import { AsyncLocalStorage } from 'async_hooks';
@@ -71,6 +73,29 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     const ds = this.#dataSourceField;
     this.#dataSourceField = await TypeOrmTransactionHandler.createInstance(this.config, this.entities);
     await ds?.destroy();
+
+    let installed = false;
+    try {
+      const res = await this.#dataSourceField.query<CheckSchemaInstallationReturn[]>(checkSchemaInstallationPG);
+      installed = !!res[0]?.schema_exists && !!res[0]?.table_exists;
+    } catch (e) {
+      throw new Error(
+        `In initialization of 'TypeOrmDataSource' ${this.name}: Database could not be reached: ${(e as Error).message}`,
+      );
+    }
+
+    // Install
+    if (!installed) {
+      try {
+        await this.#dataSourceField.query(createTransactionCompletionSchemaPG);
+        await this.#dataSourceField.query(createTransactionCompletionTablePG);
+      } catch (err) {
+        throw new Error(
+          `In initialization of 'TypeOrmDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
+        );
+      }
+    }
   }
 
   async destroy(): Promise<void> {

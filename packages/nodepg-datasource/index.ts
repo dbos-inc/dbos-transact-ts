@@ -12,6 +12,8 @@ import {
   PGTransactionConfig,
   DBOSDataSource,
   registerDataSource,
+  CheckSchemaInstallationReturn,
+  checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { Client, type ClientBase, type ClientConfig, Pool, type PoolConfig } from 'pg';
 import { AsyncLocalStorage } from 'node:async_hooks';
@@ -43,6 +45,35 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     const pool = this.#poolField;
     this.#poolField = new Pool(this.config);
     await pool?.end();
+
+    const client = await this.#poolField.connect();
+
+    try {
+      let installed = false;
+      try {
+        const res = (await client.query(checkSchemaInstallationPG)) as { rows: CheckSchemaInstallationReturn[] };
+        installed = !!res.rows[0].schema_exists && !!res.rows[0].table_exists;
+      } catch (e) {
+        throw new Error(
+          `In initialization of 'NodePostgresDataSource' ${this.name}: Database could not be queried: ${(e as Error).message}`,
+        );
+      }
+
+      // Install
+      if (!installed) {
+        try {
+          await client.query(createTransactionCompletionSchemaPG);
+          await client.query(createTransactionCompletionTablePG);
+        } catch (err) {
+          throw new Error(
+            `In initialization of 'NodePostgresDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+            See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
+          );
+        }
+      }
+    } finally {
+      client.release();
+    }
   }
 
   async destroy(): Promise<void> {

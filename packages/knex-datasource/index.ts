@@ -11,6 +11,8 @@ import {
   registerDataSource,
   createTransactionCompletionSchemaPG,
   createTransactionCompletionTablePG,
+  CheckSchemaInstallationReturn,
+  checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
 import knex, { type Knex } from 'knex';
@@ -47,6 +49,31 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     const knexDB = this.#knexDBField;
     this.#knexDBField = knex(this.config);
     await knexDB?.destroy();
+
+    // Check for connectivity & the schema
+    let installed = false;
+    try {
+      const { rows } = await this.#knexDBField.raw<{ rows: CheckSchemaInstallationReturn[] }>(
+        checkSchemaInstallationPG,
+      );
+      installed = !!rows[0].schema_exists && !!rows[0].table_exists;
+    } catch (e) {
+      throw new Error(
+        `In initialization of 'KnexDataSource' ${this.name}: Database could not be reached: ${(e as Error).message}`,
+      );
+    }
+
+    if (!installed) {
+      try {
+        await this.#knexDBField.raw(createTransactionCompletionSchemaPG);
+        await this.#knexDBField.raw(createTransactionCompletionTablePG);
+      } catch (err) {
+        throw new Error(
+          `In initialization of 'KnexDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+            See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
+        );
+      }
+    }
   }
 
   async destroy(): Promise<void> {

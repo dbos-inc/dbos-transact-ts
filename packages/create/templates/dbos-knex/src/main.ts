@@ -118,5 +118,8 @@ async function main() {
 
 // Only start the server when this file is run directly from Node
 if (require.main === module) {
-  main().catch(console.log);
+  main().catch((e) => {
+    console.error(e);
+    process.exit(1);
+  });
 }

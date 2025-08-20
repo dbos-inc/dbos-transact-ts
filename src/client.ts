@@ -1,27 +1,35 @@
-import { PostgresSystemDatabase, type SystemDatabase, type WorkflowStatusInternal } from './system_database';
+import {
+  PostgresSystemDatabase,
+  type SystemDatabase,
+  type WorkflowStatusInternal,
+  DBOS_STREAM_CLOSED_SENTINEL,
+} from './system_database';
 
 import { GlobalLogger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
 import {
   type GetQueuedWorkflowsInput,
   type GetWorkflowsInput,
-  RetrievedHandle,
+  isWorkflowActive,
   StatusString,
   type StepInfo,
   type WorkflowHandle,
   type WorkflowStatus,
 } from './workflow';
-import { DBOSJSON, getClientConfig } from './utils';
+import { DBOSJSON, getClientConfig, sleepms } from './utils';
 import {
   forkWorkflow,
   getWorkflow,
   listQueuedWorkflows,
   listWorkflows,
   listWorkflowSteps,
+  toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
 import { PGNodeUserDatabase, type UserDatabase } from './user_database';
 import { getSystemDatabaseUrl } from './dbos-runtime/config';
 import assert from 'node:assert';
+import { DBOSExecutor } from './dbos-executor';
+import { DBOSAwaitedWorkflowCancelledError } from './error';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -73,6 +81,39 @@ interface ClientEnqueueOptions {
    * Workflows with higher priority will be dequeued first.
    */
   priority?: number;
+}
+
+export class ClientHandle<R> implements WorkflowHandle<R> {
+  constructor(
+    readonly systemDatabase: SystemDatabase,
+    readonly workflowUUID: string,
+  ) {}
+
+  getWorkflowUUID(): string {
+    return this.workflowUUID;
+  }
+
+  get workflowID(): string {
+    return this.workflowUUID;
+  }
+
+  async getStatus(): Promise<WorkflowStatus | null> {
+    const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
+    return status ? toWorkflowStatus(status) : null;
+  }
+
+  async getResult(): Promise<R> {
+    const res = await this.systemDatabase.awaitWorkflowResult(this.workflowID);
+    if (res?.cancelled) {
+      throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
+    }
+    return DBOSExecutor.reviveResultOrError<R>(res!);
+  }
+
+  async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
+    const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
+    return DBOSJSON.parse(status.input) as T;
+  }
 }
 
 /**
@@ -164,7 +205,7 @@ export class DBOSClient {
 
     await this.systemDatabase.initWorkflowStatus(internalStatus);
 
-    return new RetrievedHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
+    return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
 
   /**
@@ -217,7 +258,7 @@ export class DBOSClient {
    * @returns a WorkflowHandle that represents the retrieved workflow.
    */
   retrieveWorkflow<T = unknown>(workflowID: string): WorkflowHandle<Awaited<T>> {
-    return new RetrievedHandle(this.systemDatabase, workflowID);
+    return new ClientHandle(this.systemDatabase, workflowID);
   }
 
   cancelWorkflow(workflowID: string): Promise<void> {
@@ -250,5 +291,39 @@ export class DBOSClient {
 
   listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
     return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
+  }
+
+  /**
+   * Read values from a stream as an async generator.
+   * This function reads values from a stream identified by the workflowID and key,
+   * yielding each value in order until the stream is closed or the workflow terminates.
+   * @param workflowID - The ID of the workflow that wrote to the stream
+   * @param key - The stream key to read from
+   * @returns An async generator that yields each value in the stream until the stream is closed
+   */
+  async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
+    let offset = 0;
+
+    while (true) {
+      try {
+        const value = await this.systemDatabase.readStream(workflowID, key, offset);
+        if (value === DBOS_STREAM_CLOSED_SENTINEL) {
+          break;
+        }
+        yield value as T;
+        offset += 1;
+      } catch (error: unknown) {
+        if (error instanceof Error && error.message.includes('No value found')) {
+          // Poll the offset until a value arrives or the workflow terminates
+          const status = await this.getWorkflow(workflowID);
+          if (!status || !isWorkflowActive(status.status)) {
+            break;
+          }
+          await sleepms(1000); // 1 second polling interval
+          continue;
+        }
+        throw error;
+      }
+    }
   }
 }

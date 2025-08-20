@@ -3,6 +3,57 @@ import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
 import { createDBIfDoesNotExist, ensureDbosTables } from '../user_database';
 
+export async function grantDbosSchemaPermissions(
+  databaseUrl: string,
+  roleName: string,
+  logger: GlobalLogger,
+): Promise<void> {
+  logger.info(`Granting permissions for DBOS schema to ${roleName}`);
+
+  const client = new Client(getClientConfig(databaseUrl));
+  await client.connect();
+
+  try {
+    // Grant usage on the dbos schema
+    const grantUsageSql = `GRANT USAGE ON SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantUsageSql);
+    await client.query(grantUsageSql);
+
+    // Grant all privileges on all existing tables in dbos schema (includes views)
+    const grantTablesSql = `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantTablesSql);
+    await client.query(grantTablesSql);
+
+    // Grant all privileges on all sequences in dbos schema
+    const grantSequencesSql = `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantSequencesSql);
+    await client.query(grantSequencesSql);
+
+    // Grant execute on all functions and procedures in dbos schema
+    const grantFunctionsSql = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantFunctionsSql);
+    await client.query(grantFunctionsSql);
+
+    // Grant default privileges for future objects in dbos schema
+    const alterTablesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON TABLES TO "${roleName}"`;
+    logger.info(alterTablesSql);
+    await client.query(alterTablesSql);
+
+    const alterSequencesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON SEQUENCES TO "${roleName}"`;
+    logger.info(alterSequencesSql);
+    await client.query(alterSequencesSql);
+
+    const alterFunctionsSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`;
+    logger.info(alterFunctionsSql);
+    await client.query(alterFunctionsSql);
+  } catch (e) {
+    logger.error(`Failed to grant permissions to role ${roleName}: ${(e as Error).message}`);
+    throw e;
+  } finally {
+    await client.end();
+  }
+}
+
 export async function migrate(
   migrationCommands: string[],
   databaseUrl: string,

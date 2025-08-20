@@ -26,6 +26,7 @@ export enum AppLanguages {
   Node = 'node',
   Python = 'python',
   Go = 'go',
+  Java = 'java',
 }
 
 export const defaultConfigFilePath = 'dbos-config.yaml';

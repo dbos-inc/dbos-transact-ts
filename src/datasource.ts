@@ -4,6 +4,7 @@ import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from '.
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
 import {
+  ensureDBOSIsLaunched,
   FunctionName,
   getTransactionalDataSource,
   registerFunctionWrapper,
@@ -117,6 +118,7 @@ export async function runTransaction<T>(
   funcName: string,
   options: { dsName?: string; config?: unknown } = {},
 ) {
+  ensureDBOSIsLaunched('transactions');
   const dsn = options.dsName ?? '<default>';
   const ds = getTransactionalDataSource(dsn);
 
@@ -190,6 +192,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
   const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
+    ensureDBOSIsLaunched('transactions');
     const ds = getTransactionalDataSource(dsn);
     const callFunc = reg.registeredFunction ?? reg.origFunction;
 
@@ -291,6 +294,26 @@ export interface PGTransactionConfig {
   /** If set, request read-only transaction from underlying app database */
   readOnly?: boolean;
 }
+
+export interface CheckSchemaInstallationReturn {
+  schema_exists: number;
+  table_exists: number;
+}
+
+export const checkSchemaInstallationPG = `
+SELECT
+  EXISTS (
+    SELECT 1
+    FROM information_schema.schemata
+    WHERE schema_name = 'dbos'
+  ) AS schema_exists,
+  EXISTS (
+    SELECT 1
+    FROM information_schema.tables
+    WHERE table_schema = 'dbos'
+      AND table_name = 'transaction_completion'
+  ) AS table_exists;
+`;
 
 export const createTransactionCompletionSchemaPG = `CREATE SCHEMA IF NOT EXISTS dbos;`;
 
