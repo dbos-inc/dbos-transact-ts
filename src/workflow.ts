@@ -152,17 +152,19 @@ export interface WorkflowHandle<R> {
   getWorkflowInputs<T extends any[]>(): Promise<T>;
 }
 
+export interface InternalWFHandle<R> extends WorkflowHandle<R> {
+  getResult(funcIdForGet?: number): Promise<R>;
+}
+
 /**
  * The handle returned when invoking a workflow with DBOSExecutor.workflow
  */
-export class InvokedHandle<R> implements WorkflowHandle<R> {
+export class InvokedHandle<R> implements InternalWFHandle<R> {
   constructor(
     readonly systemDatabase: SystemDatabase,
     readonly workflowPromise: Promise<R>,
     readonly workflowUUID: string,
     readonly workflowName: string,
-    readonly callerWFID?: string, // This is the call that started the WF
-    readonly callerFunctionID?: number, // This is the call that started the WF
   ) {}
 
   getWorkflowUUID(): string {
@@ -177,13 +179,14 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
     return await DBOS.getWorkflowStatus(this.workflowUUID);
   }
 
-  async getResult(): Promise<R> {
+  async getResult(funcIdForGet?: number): Promise<R> {
     return await runInternalStep(
       async () => {
         return await this.workflowPromise;
       },
       'DBOS.getResult',
       this.workflowUUID,
+      funcIdForGet,
     );
   }
 
@@ -196,12 +199,10 @@ export class InvokedHandle<R> implements WorkflowHandle<R> {
 /**
  * The handle returned when retrieving a workflow with DBOSExecutor.retrieve
  */
-export class RetrievedHandle<R> implements WorkflowHandle<R> {
+export class RetrievedHandle<R> implements InternalWFHandle<R> {
   constructor(
     readonly systemDatabase: SystemDatabase,
     readonly workflowUUID: string,
-    readonly callerWFID?: string,
-    readonly callerFunctionID?: number,
   ) {}
 
   getWorkflowUUID(): string {
@@ -216,8 +217,8 @@ export class RetrievedHandle<R> implements WorkflowHandle<R> {
     return await DBOS.getWorkflowStatus(this.workflowUUID);
   }
 
-  async getResult(): Promise<R> {
-    return (await DBOS.getResult<R>(this.workflowUUID)) as Promise<R>;
+  async getResult(funcIdForGet?: number): Promise<R> {
+    return (await DBOS.getResultInternal<R>(this.workflowUUID, undefined, undefined, funcIdForGet)) as Promise<R>;
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
