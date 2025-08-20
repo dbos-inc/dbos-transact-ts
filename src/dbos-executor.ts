@@ -1283,7 +1283,7 @@ export class DBOSExecutor {
     const backoffFactor = 1.5;
     const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
 
-    const pctx = getCurrentContextStore()!;
+    const pctx = { ...getCurrentContextStore()! };
     const wfid = pctx.workflowId!;
 
     while (true) {
@@ -1323,7 +1323,6 @@ export class DBOSExecutor {
         const result = await (async function () {
           try {
             // Check we are in a workflow context and not in a step / transaction already
-            const pctx = getCurrentContextStore();
             if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
             if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
             return await context.with(trace.setSpan(context.active(), span), async () => {
