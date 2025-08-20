@@ -439,6 +439,7 @@ export class DBOSExecutor {
       if (err instanceof DBOSInitializationError) {
         throw err;
       }
+      this.logger.error(err);
       let message = 'Failed to initialize workflow executor: ';
       if (err instanceof AggregateError) {
         for (const error of err.errors as Error[]) {
