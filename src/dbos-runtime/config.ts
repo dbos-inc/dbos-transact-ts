@@ -207,6 +207,7 @@ export function getDbosConfig(
       otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
       otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
       runAdminServer: config.runtimeConfig?.runAdminServer,
+      adminPort: config.runtimeConfig?.admin_port,
     },
     options.forceConsole,
   );
@@ -257,12 +258,14 @@ export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
   return translateRuntimeConfig(config.runtimeConfig);
 }
 
-export function translateRuntimeConfig(config: Partial<DBOSRuntimeConfig> = {}): DBOSRuntimeConfig {
+export function translateRuntimeConfig(
+  config: Partial<DBOSRuntimeConfig & DBOSConfig> /*eww*/ = {},
+): DBOSRuntimeConfig {
   const port = config.port ?? 3000;
   return {
     port: port,
     runAdminServer: config.runAdminServer ?? true,
-    admin_port: config.admin_port ?? port + 1,
+    admin_port: config.admin_port ?? config.adminPort ?? port + 1,
     start: config.start ?? [],
     setup: config.setup ?? [],
   };
