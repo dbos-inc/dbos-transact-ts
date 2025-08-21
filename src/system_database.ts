@@ -214,39 +214,6 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
-/*
-  try {
-    await migrateSystemDatabase(systemPoolConfig, logger);
-  } catch (e) {
-    const tableExists = await pgSystemClient.query<ExistenceCheck>(
-      `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`,
-    );
-    if (tableExists.rows[0].exists) {
-      // If the table has been created by someone else. Ignore the error.
-      logger.warn(`System tables creation failed, may conflict with concurrent tasks: ${(e as Error).message}`);
-    } else {
-      throw e;
-    }
-  } finally {
-    await pgSystemClient.end();
-    await pgUserClient.end();
-  }
-}
-
-export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: GlobalLogger) {
-
-  const knexDB = knex(knexConfig);
-  try {
-    await knexDB.migrate.latest();
-  } catch (e) {
-    logger.warn(
-      `Exception during system database construction. This is most likely because the system database was configured using a later version of DBOS: ${(e as Error).message}`,
-    );
-  } finally {
-    await knexDB.destroy();
-  }
-}*/
-
 export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogger, debugMode: boolean = false) {
   const knexDb = knex({
     client: 'pg',
@@ -270,7 +237,7 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
     }
 
     if (debugMode) {
-      logger.info(`Skipping system database migration in debug mode. ${pending.length} migrations pending`);
+      logger.info(`Skipping system database migration in debug mode.`);
       return;
     }
 

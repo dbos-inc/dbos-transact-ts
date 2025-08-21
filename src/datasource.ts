@@ -12,6 +12,7 @@ import {
   wrapDBOSFunctionAndRegister,
 } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
+import { Client } from 'pg';
 
 /**
  * This interface is to be used for implementers of transactional data sources
@@ -342,4 +343,359 @@ export function isPGKeyConflictError(error: unknown): boolean {
 
 export function isPGFailedSqlTransactionError(error: unknown): boolean {
   return getPGErrorCode(error) === '25P02';
+}
+
+// The authoritative implementation for dropping and creating databases.
+
+/**
+ * The logical thing to provide is the name of the DB to drop (`dbToDrop`) and a connection string with permission (`urlToDrop`)
+ * However, you can specify `urlToDrop` and we will do our best to find a way to connect and drop it.
+ */
+export interface DropDatabaseOptions {
+  /** Name of the database to drop */
+  dbToDrop?: string;
+  /** URL of the database to drop */
+  urlToDrop?: string;
+  /** Admin/alternate DB URL on the same server. If omitted, we'll try `<urlToDrop but with /postgres>` */
+  adminUrl?: string;
+  /** Optional logger (default: console.log) */
+  logger?: (msg: string) => void;
+  /** Also try /template1 if /postgres fails (default: true) */
+  tryTemplate1Fallback?: boolean;
+}
+
+export type DropDatabaseResult =
+  | { status: 'dropped' | 'already_missing'; notes: string[] }
+  | { status: 'failed'; notes: string[]; hint?: string };
+
+export async function dropPostgresDatabase(opts: DropDatabaseOptions = {}): Promise<DropDatabaseResult> {
+  const notes: string[] = [];
+  const log = (msg: string) => {
+    notes.push(msg);
+    (opts.logger ?? console.log)(msg);
+  };
+
+  const adminUrl = opts.adminUrl ?? (opts.urlToDrop ? deriveDatabaseUrl(opts.urlToDrop, 'postgres') : undefined);
+
+  if (!adminUrl) {
+    // We could consider the environment, but let's not right now.
+    throw new TypeError(
+      `dropPostgresDatabase requires a connection string to a database with permission to perform the DROP`,
+    );
+  }
+  if (!opts.urlToDrop && !opts.dbToDrop) {
+    throw new TypeError(`dropPostgresDatabase requires a target database name or URL to DROP`);
+  }
+
+  const maybeTemplate1Url = deriveDatabaseUrl(opts.urlToDrop ?? adminUrl, 'template1');
+  const tryTemplate1Fallback = opts.tryTemplate1Fallback ?? true;
+
+  const targetDb = opts.dbToDrop ?? parsePgUrl(opts.urlToDrop!).database;
+  if (!targetDb) {
+    return fail('Target URL has no database name in the path (e.g., /mydb).', 'Fix the target URL and retry.');
+  }
+
+  log(`Target DB to drop: ${targetDb}`);
+  log(`Admin URL (planned): ${maskDatabaseUrl(adminUrl)}`);
+
+  // 1) Try admin connection first (best signal for existence & privileges)
+  let admin = await tryConnect(adminUrl, log);
+  if (!admin && tryTemplate1Fallback) {
+    log(`Admin connect failed. Trying template1 as a fallback...`);
+    admin = await tryConnect(maybeTemplate1Url, log);
+  }
+
+  // Helper to check DB existence via catalog (requires admin connection)
+  const checkExistsViaAdmin = async (): Promise<boolean | 'unknown'> => {
+    if (!admin) return 'unknown';
+    const { rows } = await admin.query<{ exists: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS exists`,
+      [targetDb],
+    );
+    return rows[0]?.exists ?? false;
+  };
+
+  // If admin connected, see if the DB exists; if not, success.
+  let exists: boolean | 'unknown' = 'unknown';
+  if (admin) {
+    exists = await checkExistsViaAdmin();
+    if (exists === false) {
+      log(`DB "${targetDb}" does not exist (confirmed via catalog). Postcondition satisfied.`);
+      await admin.end().catch(() => {});
+      return { status: 'already_missing', notes };
+    }
+  }
+
+  // If we couldn't connect admin, try connecting to target to distinguish "doesn't exist".
+  if (!admin) {
+    const probe = await connectOutcome(
+      opts.urlToDrop ?? deriveDatabaseUrl(adminUrl, targetDb),
+      log,
+      'probe target (existence test)',
+    );
+    if (probe.kind === 'ok') {
+      // We can reach the target DB—so it exists—but we’re connected *to* it; we cannot DROP from within.
+      await probe.client.end().catch(() => {});
+      return fail(
+        `Database "${targetDb}" exists, but we could not establish an admin connection to drop it.`,
+        `Provide an admin/alternate DB URL (same server) with privileges to DROP DATABASE, or grant CONNECT on "postgres"/"template1" to the user.`,
+      );
+    } else if (probe.code === '3D000') {
+      log(`DB "${targetDb}" does not exist (error 3D000 while connecting). Postcondition satisfied.`);
+      return { status: 'already_missing', notes };
+    } else {
+      // Ambiguous: not proven missing, no admin path to check or drop.
+      return fail(
+        `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.kind}.`,
+        networkOrAuthHint(probe.code),
+      );
+    }
+  }
+
+  // 2) We have an admin connection and the DB likely exists. Check privileges upfront (nice error).
+  const who = await currentIdentity(admin);
+  const owner = await dbOwner(admin, targetDb);
+  const supportsForce = await serverSupportsForce(admin, log);
+
+  if (!who.isSuperuser && owner && owner !== who.user) {
+    log(`Ownership check: DB owned by "${owner}", current_user is "${who.user}" (superuser=${who.isSuperuser}).`);
+    // We can still try (maybe you have sufficient rights via membership), but warn early.
+    log(`Warning: You might lack privileges to DROP this database unless you are the owner or superuser.`);
+  }
+
+  // 3) Attempt the drop
+  try {
+    if (supportsForce) {
+      log(`Server supports DROP ... WITH (FORCE). Attempting forced drop...`);
+      await dropWithForce(admin, targetDb);
+    } else {
+      log(`Using terminate-and-drop path (server < 13).`);
+      await terminateAndDrop(admin, targetDb, 3000, log);
+    }
+  } catch (err) {
+    const e = err as Error & { code: string };
+    // If FORCE path failed due to syntax (older server), fallback once.
+    if (isForceSyntaxError(e)) {
+      log(`WITH (FORCE) not supported by server (syntax error). Falling back to terminate-and-drop.`);
+      try {
+        await terminateAndDrop(admin, targetDb, 3000, log);
+      } catch (err2) {
+        const e2 = err2 as Error & { code: string };
+        await admin.end().catch(() => {});
+        return fail(`Drop failed even after fallback: ${shortErr(e2)}`, dropHintFromSqlState(e2?.code));
+      }
+    } else {
+      await admin.end().catch(() => {});
+      return fail(`Drop failed: ${shortErr(e)}`, dropHintFromSqlState(e?.code));
+    }
+  }
+
+  // 4) Verify postcondition
+  const finalExists = await checkExistsViaAdmin();
+  await admin.end().catch(() => {});
+  if (finalExists === false) {
+    log(`Verified: database "${targetDb}" is gone.`);
+    return { status: 'dropped', notes };
+  } else if (finalExists === true) {
+    return fail(`After drop attempt, database "${targetDb}" still exists.`, `Terminate all sessions and retry.`);
+  } else {
+    // Unknown (shouldn't happen with admin connected)
+    log(`Could not verify postcondition due to unexpected state.`);
+    return { status: 'dropped', notes }; // we did our best; treat as success if we didn't see errors
+  }
+
+  function fail(msg: string, hint?: string): DropDatabaseResult {
+    log(`FAIL: ${msg}${hint ? ` | HINT: ${hint}` : ''}`);
+    return { status: 'failed', notes, hint };
+  }
+}
+
+function deriveDatabaseUrl(urlStr: string, otherDbName: string): string {
+  try {
+    const u = new URL(urlStr);
+    u.pathname = `/${otherDbName}`;
+    return u.toString();
+  } catch {
+    return urlStr; // best effort; connect will fail with clear message
+  }
+}
+
+function parsePgUrl(urlStr: string) {
+  const u = new URL(urlStr);
+  return {
+    protocol: u.protocol,
+    host: u.hostname,
+    port: u.port || undefined,
+    user: decodeURIComponent(u.username || ''),
+    password: decodeURIComponent(u.password || ''),
+    database: u.pathname?.replace(/^\//, '') || '',
+  };
+}
+
+export function maskDatabaseUrl(urlStr: string): string {
+  try {
+    const u = new URL(urlStr);
+    if (u.password) {
+      const p = decodeURIComponent(u.password);
+      const masked = p.length <= 2 ? p : `${p[0]}${'*'.repeat(p.length - 2)}${p[p.length - 1]}`;
+      u.password = encodeURIComponent(masked);
+    }
+    return u.toString();
+  } catch {
+    return urlStr;
+  }
+}
+
+async function tryConnect(url: string, log: (m: string) => void): Promise<Client | null> {
+  log(`Connecting: ${maskDatabaseUrl(url)}`);
+  const client = new Client({ connectionString: url });
+  try {
+    await client.connect();
+    return client;
+  } catch (err) {
+    const e = err as Error & { code?: string };
+    log(`Connect failed: ${shortErr(e)}${e?.code ? ` (code ${e.code})` : ''}`);
+    try {
+      await client.end();
+    } catch {}
+    return null;
+  }
+}
+
+async function connectOutcome(
+  url: string,
+  log: (m: string) => void,
+  label: string,
+): Promise<{ kind: 'ok'; client: Client } | { kind: 'error'; code?: string; message: string }> {
+  log(`Connecting to ${label}: ${maskDatabaseUrl(url)}`);
+  const client = new Client({ connectionString: url });
+  try {
+    await client.connect();
+    return { kind: 'ok', client };
+  } catch (err) {
+    const e = err as Error & { code?: string };
+    try {
+      await client.end();
+    } catch {}
+    return { kind: 'error', code: e?.code, message: e?.message ?? String(e) };
+  }
+}
+
+function shortErr(e: Error): string {
+  const m = e?.message ?? String(e);
+  return m.length > 300 ? `${m.slice(0, 300)}…` : m;
+}
+
+async function currentIdentity(admin: Client): Promise<{ user: string; isSuperuser: boolean }> {
+  const { rows: userRows } = await admin.query<{ user: string }>(`SELECT current_user AS user`);
+  const user = userRows[0]?.user ?? '';
+  const { rows: roleRows } = await admin.query<{ rolsuper: boolean }>(
+    `SELECT rolsuper FROM pg_roles WHERE rolname = current_user`,
+  );
+  return { user, isSuperuser: !!roleRows[0]?.rolsuper };
+}
+
+async function dbOwner(admin: Client, dbName: string): Promise<string | null> {
+  const { rows } = await admin.query<{ owner: string }>(
+    `SELECT r.rolname AS owner
+     FROM pg_database d JOIN pg_roles r ON r.oid = d.datdba
+     WHERE d.datname = $1`,
+    [dbName],
+  );
+  return rows[0]?.owner ?? null;
+}
+
+async function serverSupportsForce(admin: Client, log: (msg: string) => void): Promise<boolean> {
+  const { rows } = await admin.query<{ server_version_num: string }>(`SHOW server_version_num`);
+  const num = parseInt(rows[0]?.server_version_num ?? '0', 10);
+  const ok = Number.isFinite(num) && num >= 130000;
+  log(`Server version_num=${num} -> WITH (FORCE) supported=${ok}`);
+  return ok;
+}
+
+function ident(name: string): string {
+  return `"${name.replace(/"/g, '""')}"`;
+}
+
+async function dropWithForce(admin: Client, dbName: string): Promise<void> {
+  await admin.query(`DROP DATABASE IF EXISTS ${ident(dbName)} WITH (FORCE)`);
+}
+
+function isForceSyntaxError(e: { code?: string; message?: string }): boolean {
+  return e?.code === '42601' /* syntax_error */ || /WITH\s*\(\s*FORCE\s*\)/i.test(e?.message ?? '');
+}
+
+async function terminateAndDrop(
+  admin: Client,
+  dbName: string,
+  settleMs: number,
+  log: (m: string) => void,
+): Promise<void> {
+  // Prevent new connections (best-effort; ignore errors)
+  try {
+    await admin.query(`ALTER DATABASE ${ident(dbName)} WITH ALLOW_CONNECTIONS = false`);
+  } catch (e) {
+    log(`ALTER DATABASE ... ALLOW_CONNECTIONS=false failed (continuing): ${shortErr(e as Error)}`);
+  }
+  // Terminate existing sessions
+  await admin.query(
+    `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+    [dbName],
+  );
+  if (settleMs > 0) {
+    log(`Waiting ${settleMs}ms for backends to terminate...`);
+    await new Promise((r) => setTimeout(r, settleMs));
+  }
+  // Try DROP, and if "being accessed" shows up, retry once after an extra wait
+  try {
+    await admin.query(`DROP DATABASE IF EXISTS ${ident(dbName)}`);
+  } catch (err) {
+    const e = err as Error & { code: string };
+    if (e?.code === '55006') {
+      log(`DB still "being accessed by other users"; retrying after extra wait...`);
+      await new Promise((r) => setTimeout(r, Math.max(1000, settleMs)));
+      await admin.query(
+        `SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = $1 AND pid <> pg_backend_pid()`,
+        [dbName],
+      );
+      await admin.query(`DROP DATABASE IF EXISTS ${ident(dbName)}`);
+    } else {
+      throw e;
+    }
+  }
+}
+
+export function networkOrAuthHint(code?: string): string | undefined {
+  if (!code) return;
+  switch (code) {
+    case 'ECONNREFUSED':
+      return 'Server not reachable. Check host/port or firewall.';
+    case 'ENOTFOUND':
+      return 'Hostname not resolvable. Check DNS/host.';
+    case 'ETIMEDOUT':
+      return 'Connection timed out. Check network/firewall.';
+    case '28P01':
+      return 'Invalid password.';
+    case '28000':
+      return 'Authentication rejected (pg_hba.conf or method).';
+    default: {
+      if (code.substring(0, 2) === '28') return 'Other connection security error';
+      return undefined;
+    }
+  }
+}
+
+export function dropHintFromSqlState(code?: string): string | undefined {
+  switch (code?.substring(0, 2)) {
+    case '42':
+      return 'Insufficient privilege. You must be the owner or a superuser.';
+    case '3D':
+      return 'Target database does not exist (already gone).';
+    case '55':
+      return 'Database is in use. Terminate sessions or use PG13+ WITH (FORCE).';
+    case '53':
+      return 'Too many connections to server; free some slots.';
+    default:
+      return undefined;
+  }
 }
