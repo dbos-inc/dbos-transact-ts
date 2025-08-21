@@ -348,7 +348,7 @@ export function isPGFailedSqlTransactionError(error: unknown): boolean {
 // The authoritative implementation for dropping and creating databases.
 
 /**
- * The logical thing to provide is the name of the DB to drop (`dbToDrop`) and a connection string with permission (`urlToDrop`)
+ * The logical thing to provide is the name of the DB to drop (`dbToDrop`) and a connection string with permission (`adminUrl`)
  * However, you can specify `urlToDrop` and we will do our best to find a way to connect and drop it.
  */
 export interface DropDatabaseOptions {
@@ -368,7 +368,7 @@ export interface DropDatabaseOptions {
  * Result of a `dropPostgresDatabase` call.
  * Status of `dropped` or `did_not_exist` is a "success",
  *  from the perspective that we are completely sure the DB is not there at the end.
- * Status of `failed` means that the DB still exists exists, `connection_error` means we cannot say.
+ * Status of `failed` means that the DB still exists, `connection_error` means we cannot say.
  *  These two status values therefore are "failures" from the sense that the postcondition
  *  of a nonexistent DB is not verified.
  */
@@ -384,12 +384,21 @@ export type DropDatabaseResult =
  * @param opts - Options for connecting to DB and issuing the drop
  * @returns `DropDatabaseResult` indicating success, failures, and any notes or hints
  */
-export async function dropPostgresDatabase(opts: DropDatabaseOptions = {}): Promise<DropDatabaseResult> {
+export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<DropDatabaseResult> {
+  if (!opts.urlToDrop && !opts.dbToDrop) {
+    throw new TypeError(`dropPGDatabase requires a target database name or URL to DROP`);
+  }
+
   const notes: string[] = [];
   const log = (msg: string) => {
     notes.push(msg);
     (opts.logger ?? console.log)(msg);
   };
+
+  function fail(msg: string, hint?: string): DropDatabaseResult {
+    log(`FAIL: ${msg}${hint ? ` | HINT: ${hint}` : ''}`);
+    return { status: 'failed', notes, hint };
+  }
 
   const adminUrl = opts.adminUrl ?? (opts.urlToDrop ? deriveDatabaseUrl(opts.urlToDrop, 'postgres') : undefined);
 
@@ -398,9 +407,6 @@ export async function dropPostgresDatabase(opts: DropDatabaseOptions = {}): Prom
     throw new TypeError(
       `dropPostgresDatabase requires a connection string to a database with permission to perform the DROP`,
     );
-  }
-  if (!opts.urlToDrop && !opts.dbToDrop) {
-    throw new TypeError(`dropPostgresDatabase requires a target database name or URL to DROP`);
   }
 
   const maybeTemplate1Url = deriveDatabaseUrl(opts.urlToDrop ?? adminUrl, 'template1');
@@ -437,7 +443,7 @@ export async function dropPostgresDatabase(opts: DropDatabaseOptions = {}): Prom
     if (admin) {
       exists = await checkExistsViaAdmin();
       if (exists === false) {
-        log(`DB "${targetDb}" does not exist (confirmed via catalog). Postcondition satisfied.`);
+        log(`DB "${targetDb}" does not exist (confirmed via catalog).`);
         return { status: 'did_not_exist', notes };
       }
     }
@@ -492,11 +498,11 @@ export async function dropPostgresDatabase(opts: DropDatabaseOptions = {}): Prom
         } catch (err2) {
           const e2 = err2 as Error & { code: string };
           await admin.end().catch(() => {});
-          return fail(`Drop failed even after fallback: ${shortErr(e2)}`, dropHintFromSqlState(e2?.code));
+          return fail(`Drop failed even after fallback: ${shortErr(e2)}`, createDropHintFromSqlState(e2?.code));
         }
       } else {
         await admin.end().catch(() => {});
-        return fail(`Drop failed: ${shortErr(e)}`, dropHintFromSqlState(e?.code));
+        return fail(`Drop failed: ${shortErr(e)}`, createDropHintFromSqlState(e?.code));
       }
     }
 
@@ -509,16 +515,160 @@ export async function dropPostgresDatabase(opts: DropDatabaseOptions = {}): Prom
       return fail(`After drop attempt, database "${targetDb}" still exists.`, `Terminate all sessions and retry.`);
     } else {
       // Unknown (shouldn't happen with admin connected)
-      log(`Could not verify postcondition due to unexpected state.`);
+      log(`Could not verify drop due to unexpected state.`);
       return { status: 'dropped', notes }; // we did our best; treat as success if we didn't see errors
     }
   } finally {
     await admin?.end().catch(() => {});
   }
+}
 
-  function fail(msg: string, hint?: string): DropDatabaseResult {
+/**
+ * Result of a `ensurePGDatabase` call.
+ * Status of `created` or `already_exists` is a "success",
+ *  from the perspective that we are completely sure the DB is there at the end.
+ * Status of `failed` means that the DB still doesn't exist, `connection_error` means we cannot say.
+ *  These two status values therefore are "failures" from the sense that the postcondition
+ *  of an existing DB is not verified.
+ */
+export type EnsureDatabaseResult =
+  | { status: 'created' | 'already_exists'; notes: string[] }
+  | { status: 'failed' | 'connection_error'; notes: string[]; hint?: string };
+
+/**
+ * The logical thing to provide is the name of the DB to ensure (`dbToEnsure`) and a connection string with permission (`adminUrl`)
+ * However, you can specify `urlToEnsure` and we will do our best to find a way to connect and ensure it.
+ */
+export interface EnsureDatabaseOptions {
+  /** Name of the database to ensure */
+  dbToEnsure?: string;
+  /** URL of the database to ensure */
+  urlToEnsure?: string;
+  /** Admin/alternate DB URL on the same server. If omitted, we'll try `<urlToEnsure but with /postgres>` */
+  adminUrl?: string;
+  /** Optional logger (default: console.log) */
+  logger?: (msg: string) => void;
+  /** Also try /template1 if /postgres fails (default: true) */
+  tryTemplate1Fallback?: boolean;
+}
+export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<EnsureDatabaseResult> {
+  if (!opts.urlToEnsure && !opts.dbToEnsure) {
+    throw new TypeError(`ensurePGDatabase requires a target database name or URL to check`);
+  }
+
+  const notes: string[] = [];
+  const log = (msg: string) => {
+    notes.push(msg);
+    (opts.logger ?? console.log)(msg);
+  };
+
+  function fail(msg: string, hint?: string): EnsureDatabaseResult {
     log(`FAIL: ${msg}${hint ? ` | HINT: ${hint}` : ''}`);
     return { status: 'failed', notes, hint };
+  }
+
+  const targetDb = opts.dbToEnsure ?? parsePgUrl(opts.urlToEnsure!).database;
+  if (!targetDb) {
+    return fail('Target URL has no database name in the path (e.g., /mydb).', 'Fix the target URL and retry.');
+  }
+
+  // Try a quick connect attempt first; this requires the least assumptions and has the least chance of messing us up.
+  if (opts.urlToEnsure) {
+    try {
+      const probe = await connectOutcome(opts.urlToEnsure, log, 'probe target (existence test)');
+      if (probe.kind === 'ok') {
+        // We can reach the target DB, do nothing
+        await probe.client.end().catch(() => {});
+        return { status: 'already_exists', notes };
+      }
+    } catch (e) {
+      log(`Caught error probing database: (e as Error).message; attempting create.`);
+    }
+  }
+
+  // At this point, we know we need an admin URL, if only as a base of the real URL
+  const adminUrl = opts.adminUrl ?? (opts.urlToEnsure ? deriveDatabaseUrl(opts.urlToEnsure, 'postgres') : undefined);
+
+  if (!adminUrl) {
+    // We could consider the environment, but let's not right now.
+    throw new TypeError(
+      `dropPostgresDatabase requires a connection string to a database with permission to perform the DROP`,
+    );
+  }
+
+  const maybeTemplate1Url = deriveDatabaseUrl(opts.urlToEnsure ?? adminUrl, 'template1');
+  const tryTemplate1Fallback = opts.tryTemplate1Fallback ?? true;
+
+  // 1) Try admin connection first (best detection for existence & privileges)
+  let admin = await tryConnect(adminUrl, log);
+  if (!admin && tryTemplate1Fallback) {
+    log(`Admin connect failed. Trying template1 as a fallback...`);
+    admin = await tryConnect(maybeTemplate1Url, log);
+  }
+
+  // Helper to check DB existence via catalog (requires admin connection)
+  const checkExistsViaAdmin = async (): Promise<boolean | 'unknown'> => {
+    if (!admin) return 'unknown';
+    const { rows } = await admin.query<{ exists: boolean }>(
+      `SELECT EXISTS (SELECT 1 FROM pg_database WHERE datname = $1) AS exists`,
+      [targetDb],
+    );
+    return rows[0]?.exists ?? false;
+  };
+
+  try {
+    // If admin connected, see if the DB exists; if so, this is an early success.
+    let exists: boolean | 'unknown' = 'unknown';
+    if (admin) {
+      exists = await checkExistsViaAdmin();
+      if (exists === true) {
+        log(`DB "${targetDb}" exists (confirmed via catalog).`);
+        return { status: 'already_exists', notes };
+      }
+    }
+
+    // If we couldn't connect as admin, try connecting to target to distinguish "doesn't exist" from failure to connect.
+    if (!admin) {
+      const dbUrl = opts.dbToEnsure ?? deriveDatabaseUrl(adminUrl, targetDb);
+      const probe = await connectOutcome(dbUrl, log, 'probe target (existence test)');
+      if (probe.kind === 'ok') {
+        // We can reach the target DB.... via a URL derived from admin
+        await probe.client.end().catch(() => {});
+        log(`Probe of database ${targetDb} via ${maskDatabaseUrl(dbUrl)} succeeds.`);
+        return { status: 'already_exists', notes };
+      } else {
+        // Ambiguous: We do not know it to be there, and we can't make an admin connection to proceed.
+        return fail(
+          `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.kind}.`,
+          networkOrAuthHint(probe.code),
+        );
+      }
+    }
+
+    // 3) Attempt the CREATE
+    try {
+      log(`Attempting CREATE.`);
+      await createDb(admin, targetDb);
+    } catch (err) {
+      const e = err as Error & { code: string };
+      await admin.end().catch(() => {});
+      return fail(`Create failed: ${shortErr(e)}`, createDropHintFromSqlState(e?.code));
+    }
+
+    // 4) Verify postcondition
+    const finalExists = await checkExistsViaAdmin();
+    if (finalExists === true) {
+      log(`Verified: database "${targetDb}" exists.`);
+      return { status: 'created', notes };
+    } else if (finalExists === false) {
+      return fail(`After create attempt, database "${targetDb}" does not exist still.`);
+    } else {
+      // Unknown (shouldn't happen with admin connected)
+      log(`Could not verify creation due to unexpected state.`);
+      return { status: 'created', notes }; // we did our best; treat as success if we didn't see errors
+    }
+  } finally {
+    await admin?.end().catch(() => {});
   }
 }
 
@@ -529,6 +679,26 @@ function deriveDatabaseUrl(urlStr: string, otherDbName: string): string {
     return u.toString();
   } catch {
     return urlStr; // best effort; connect will fail with clear message
+  }
+}
+
+// The `pg` package we use does not parse the connect_timeout parameter, so we need to handle it ourselves.
+export function getPGClientConfig(databaseUrl: string | URL) {
+  const connectionString = typeof databaseUrl === 'string' ? databaseUrl : databaseUrl.toString();
+  const timeout = getTimeout(typeof databaseUrl === 'string' ? new URL(databaseUrl) : databaseUrl);
+  return {
+    connectionString,
+    connectionTimeoutMillis: timeout ? timeout * 1000 : 10000,
+  };
+
+  function getTimeout(url: URL) {
+    try {
+      const $timeout = url.searchParams.get('connect_timeout');
+      return $timeout ? parseInt($timeout, 10) : undefined;
+    } catch {
+      // Ignore errors in parsing the connect_timeout parameter
+      return undefined;
+    }
   }
 }
 
@@ -560,7 +730,7 @@ export function maskDatabaseUrl(urlStr: string): string {
 
 async function tryConnect(url: string, log: (m: string) => void): Promise<Client | null> {
   log(`Connecting: ${maskDatabaseUrl(url)}`);
-  const client = new Client({ connectionString: url });
+  const client = new Client(getPGClientConfig(url));
   try {
     await client.connect();
     return client;
@@ -580,7 +750,7 @@ async function connectOutcome(
   label: string,
 ): Promise<{ kind: 'ok'; client: Client } | { kind: 'error'; code?: string; message: string }> {
   log(`Connecting to ${label}: ${maskDatabaseUrl(url)}`);
-  const client = new Client({ connectionString: url });
+  const client = new Client(getPGClientConfig(url));
   try {
     await client.connect();
     return { kind: 'ok', client };
@@ -623,6 +793,10 @@ function ident(name: string): string {
 
 async function dropWithForce(admin: Client, dbName: string): Promise<void> {
   await admin.query(`DROP DATABASE IF EXISTS ${ident(dbName)} WITH (FORCE)`);
+}
+
+async function createDb(admin: Client, dbName: string): Promise<void> {
+  await admin.query(`CREATE DATABASE ${ident(dbName)}`);
 }
 
 function isForceSyntaxError(e: { code?: string; message?: string }): boolean {
@@ -689,7 +863,7 @@ export function networkOrAuthHint(code?: string): string | undefined {
   }
 }
 
-export function dropHintFromSqlState(code?: string): string | undefined {
+export function createDropHintFromSqlState(code?: string): string | undefined {
   switch (code?.substring(0, 2)) {
     case '42':
       return 'Insufficient privilege. You must be the owner or a superuser.';

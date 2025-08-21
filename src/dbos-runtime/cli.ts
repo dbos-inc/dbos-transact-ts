@@ -9,12 +9,12 @@ import {
 } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
-import { migrate, grantDbosSchemaPermissions } from './migrate';
+import { migrate } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
-import { ensureSystemDatabase } from '../system_database';
+import { ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_database';
 import { createDBIfDoesNotExist } from '../user_database';
 import { exit } from 'node:process';
 import { runCommand } from './commands';

@@ -26,7 +26,7 @@ import fs from 'fs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
-import assert from 'assert';
+import { ensurePGDatabase, maskDatabaseUrl } from './datasource';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -214,6 +214,57 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
+export async function grantDbosSchemaPermissions(
+  databaseUrl: string,
+  roleName: string,
+  logger: GlobalLogger,
+): Promise<void> {
+  logger.info(`Granting permissions for DBOS schema to ${roleName}`);
+
+  const client = new Client(getClientConfig(databaseUrl));
+  await client.connect();
+
+  try {
+    // Grant usage on the dbos schema
+    const grantUsageSql = `GRANT USAGE ON SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantUsageSql);
+    await client.query(grantUsageSql);
+
+    // Grant all privileges on all existing tables in dbos schema (includes views)
+    const grantTablesSql = `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantTablesSql);
+    await client.query(grantTablesSql);
+
+    // Grant all privileges on all sequences in dbos schema
+    const grantSequencesSql = `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantSequencesSql);
+    await client.query(grantSequencesSql);
+
+    // Grant execute on all functions and procedures in dbos schema
+    const grantFunctionsSql = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantFunctionsSql);
+    await client.query(grantFunctionsSql);
+
+    // Grant default privileges for future objects in dbos schema
+    const alterTablesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON TABLES TO "${roleName}"`;
+    logger.info(alterTablesSql);
+    await client.query(alterTablesSql);
+
+    const alterSequencesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON SEQUENCES TO "${roleName}"`;
+    logger.info(alterSequencesSql);
+    await client.query(alterSequencesSql);
+
+    const alterFunctionsSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`;
+    logger.info(alterFunctionsSql);
+    await client.query(alterFunctionsSql);
+  } catch (e) {
+    logger.error(`Failed to grant permissions to role ${roleName}: ${(e as Error).message}`);
+    throw e;
+  } finally {
+    await client.end();
+  }
+}
+
 export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogger, debugMode: boolean = false) {
   const knexDb = knex({
     client: 'pg',
@@ -222,10 +273,28 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
 
   try {
     if (!debugMode) {
-      await ensureDatabaseOrAttemptCreation(sysDbUrl);
+      const res = await ensurePGDatabase({
+        urlToEnsure: sysDbUrl,
+        logger: (msg: string) => logger.debug(msg),
+      });
+      if (res.status === 'connection_error') {
+        logger.warn(
+          `Failed to check or create connection to ${maskDatabaseUrl(sysDbUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+        );
+      }
+      if (res.status === 'failed') {
+        logger.warn(
+          `Database does not exist and could not be created: ${maskDatabaseUrl(sysDbUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+        );
+      }
     }
 
-    assert(await checkConnection(knexDb), 'Failed to connect to system database.');
+    if (!(await checkConnection(knexDb))) {
+      logger.warn(
+        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}${debugMode ? ' (debug mode)' : ''}`,
+      );
+      throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
+    }
 
     const directory = getMigrationsDirectory();
     if (!directory) {
@@ -313,32 +382,6 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
     const exists = await knexDb.schema.withSchema('dbos').hasTable('operation_outputs');
 
     return exists;
-  }
-
-  async function ensureDatabaseOrAttemptCreation(sysDbUrl: string) {
-    const url = new URL(sysDbUrl);
-    const sysDbName = url.pathname.slice(1);
-    assert(sysDbName, 'System database URL must include a database name in the path');
-    url.pathname = '/postgres';
-
-    const client = new Client(getClientConfig(url));
-    try {
-      await client.connect();
-      const dbExists = await client.query<ExistenceCheck>(
-        `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${sysDbName}')`,
-      );
-      if (!dbExists.rows[0].exists) {
-        logger.info(`Creating system database ${sysDbName}`);
-        await client.query(`CREATE DATABASE "${sysDbName}"`);
-      } else {
-        logger.debug(`System database ${sysDbName} already exists`);
-      }
-    } catch (e) {
-      const error = e instanceof Error ? e : new Error(String(e));
-      throw new DBOSInitializationError(`Error ensuring system database exists: ${error.message}`, error);
-    } finally {
-      await client.end();
-    }
   }
 
   function getMigrationsDirectory(): string | undefined {

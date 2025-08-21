@@ -1,7 +1,7 @@
 import { GlobalLogger } from '../telemetry/logs';
 import { confirm } from '@inquirer/prompts';
 import { ConfigFile, getSystemDatabaseUrl } from './config';
-import { dropPostgresDatabase } from '../datasource';
+import { dropPGDatabase } from '../datasource';
 
 export async function reset(config: ConfigFile, logger: GlobalLogger, cnf: boolean) {
   if (cnf) {
@@ -25,7 +25,7 @@ export async function reset(config: ConfigFile, logger: GlobalLogger, cnf: boole
   // The basic procedure for a DROP is that you need credentials to connect to ANOTHER database,
   //  with a user that has permission to drop the one you intend to drop.
   //  (We may want more options here.)
-  const res = await dropPostgresDatabase({
+  const res = await dropPGDatabase({
     urlToDrop: sysDbUrl,
     logger: (msg: string) => logger.info(msg),
   });
