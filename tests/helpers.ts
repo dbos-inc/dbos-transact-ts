@@ -4,6 +4,8 @@ import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
 import { getSystemDatabaseUrl, translateDbosConfig } from '../src/dbos-runtime/config';
+import { ensureSystemDatabase } from '../src/system_database';
+import { GlobalLogger } from '../src/telemetry/logs';
 
 /* DB management helpers */
 export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
@@ -41,6 +43,7 @@ export async function setUpDBOSTestDb(config: DBOSConfig) {
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
     await pgSystemClient.query(`CREATE DATABASE ${dbName};`);
     await pgSystemClient.query(`DROP DATABASE IF EXISTS ${sysDbName} WITH (FORCE);`);
+    await ensureSystemDatabase(sysDbUrl.toString(), new GlobalLogger());
   } catch (e) {
     if (e instanceof AggregateError) {
       console.error(`Test database setup failed: AggregateError containing ${e.errors.length} errors:`);
