@@ -867,22 +867,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
     await this.pool.end();
   }
 
-  static async dropSystemDB(systemDatabaseUrl: string) {
-    const url = new URL(systemDatabaseUrl);
-    const systemDbName = url.pathname.slice(1);
-    assert(systemDbName, 'System database URL must include a database name in the path');
-    url.pathname = '/postgres';
-
-    // Drop system database, for testing.
-    const pgSystemClient = new Client(getClientConfig(url));
-    try {
-      await pgSystemClient.connect();
-      await pgSystemClient.query(`DROP DATABASE IF EXISTS ${systemDbName};`);
-    } finally {
-      await pgSystemClient.end();
-    }
-  }
-
   @dbRetry()
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,

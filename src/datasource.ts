@@ -364,10 +364,26 @@ export interface DropDatabaseOptions {
   tryTemplate1Fallback?: boolean;
 }
 
+/**
+ * Result of a `dropPostgresDatabase` call.
+ * Status of `dropped` or `did_not_exist` is a "success",
+ *  from the perspective that we are completely sure the DB is not there at the end.
+ * Status of `failed` means that the DB still exists exists, `connection_error` means we cannot say.
+ *  These two status values therefore are "failures" from the sense that the postcondition
+ *  of a nonexistent DB is not verified.
+ */
 export type DropDatabaseResult =
-  | { status: 'dropped' | 'already_missing'; notes: string[] }
-  | { status: 'failed'; notes: string[]; hint?: string };
+  | { status: 'dropped' | 'did_not_exist'; notes: string[] }
+  | { status: 'failed' | 'connection_error'; notes: string[]; hint?: string };
 
+/**
+ * Drop a postgres database from a postgres server.  This requires a target DB name,
+ *  and a way to connect to its server with privileges to issue the drop.  See `opts`.
+ * Environment variables are not currently considered.
+ *
+ * @param opts - Options for connecting to DB and issuing the drop
+ * @returns `DropDatabaseResult` indicating success, failures, and any notes or hints
+ */
 export async function dropPostgresDatabase(opts: DropDatabaseOptions = {}): Promise<DropDatabaseResult> {
   const notes: string[] = [];
   const log = (msg: string) => {
@@ -398,7 +414,7 @@ export async function dropPostgresDatabase(opts: DropDatabaseOptions = {}): Prom
   log(`Target DB to drop: ${targetDb}`);
   log(`Admin URL (planned): ${maskDatabaseUrl(adminUrl)}`);
 
-  // 1) Try admin connection first (best signal for existence & privileges)
+  // 1) Try admin connection first (best detection for existence & privileges)
   let admin = await tryConnect(adminUrl, log);
   if (!admin && tryTemplate1Fallback) {
     log(`Admin connect failed. Trying template1 as a fallback...`);
@@ -415,93 +431,89 @@ export async function dropPostgresDatabase(opts: DropDatabaseOptions = {}): Prom
     return rows[0]?.exists ?? false;
   };
 
-  // If admin connected, see if the DB exists; if not, success.
-  let exists: boolean | 'unknown' = 'unknown';
-  if (admin) {
-    exists = await checkExistsViaAdmin();
-    if (exists === false) {
-      log(`DB "${targetDb}" does not exist (confirmed via catalog). Postcondition satisfied.`);
-      await admin.end().catch(() => {});
-      return { status: 'already_missing', notes };
-    }
-  }
-
-  // If we couldn't connect admin, try connecting to target to distinguish "doesn't exist".
-  if (!admin) {
-    const probe = await connectOutcome(
-      opts.urlToDrop ?? deriveDatabaseUrl(adminUrl, targetDb),
-      log,
-      'probe target (existence test)',
-    );
-    if (probe.kind === 'ok') {
-      // We can reach the target DB—so it exists—but we’re connected *to* it; we cannot DROP from within.
-      await probe.client.end().catch(() => {});
-      return fail(
-        `Database "${targetDb}" exists, but we could not establish an admin connection to drop it.`,
-        `Provide an admin/alternate DB URL (same server) with privileges to DROP DATABASE, or grant CONNECT on "postgres"/"template1" to the user.`,
-      );
-    } else if (probe.code === '3D000') {
-      log(`DB "${targetDb}" does not exist (error 3D000 while connecting). Postcondition satisfied.`);
-      return { status: 'already_missing', notes };
-    } else {
-      // Ambiguous: not proven missing, no admin path to check or drop.
-      return fail(
-        `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.kind}.`,
-        networkOrAuthHint(probe.code),
-      );
-    }
-  }
-
-  // 2) We have an admin connection and the DB likely exists. Check privileges upfront (nice error).
-  const who = await currentIdentity(admin);
-  const owner = await dbOwner(admin, targetDb);
-  const supportsForce = await serverSupportsForce(admin, log);
-
-  if (!who.isSuperuser && owner && owner !== who.user) {
-    log(`Ownership check: DB owned by "${owner}", current_user is "${who.user}" (superuser=${who.isSuperuser}).`);
-    // We can still try (maybe you have sufficient rights via membership), but warn early.
-    log(`Warning: You might lack privileges to DROP this database unless you are the owner or superuser.`);
-  }
-
-  // 3) Attempt the drop
   try {
-    if (supportsForce) {
-      log(`Server supports DROP ... WITH (FORCE). Attempting forced drop...`);
-      await dropWithForce(admin, targetDb);
-    } else {
-      log(`Using terminate-and-drop path (server < 13).`);
-      await terminateAndDrop(admin, targetDb, 3000, log);
-    }
-  } catch (err) {
-    const e = err as Error & { code: string };
-    // If FORCE path failed due to syntax (older server), fallback once.
-    if (isForceSyntaxError(e)) {
-      log(`WITH (FORCE) not supported by server (syntax error). Falling back to terminate-and-drop.`);
-      try {
-        await terminateAndDrop(admin, targetDb, 3000, log);
-      } catch (err2) {
-        const e2 = err2 as Error & { code: string };
-        await admin.end().catch(() => {});
-        return fail(`Drop failed even after fallback: ${shortErr(e2)}`, dropHintFromSqlState(e2?.code));
+    // If admin connected, see if the DB exists; if not, this is an early success.
+    let exists: boolean | 'unknown' = 'unknown';
+    if (admin) {
+      exists = await checkExistsViaAdmin();
+      if (exists === false) {
+        log(`DB "${targetDb}" does not exist (confirmed via catalog). Postcondition satisfied.`);
+        return { status: 'did_not_exist', notes };
       }
-    } else {
-      await admin.end().catch(() => {});
-      return fail(`Drop failed: ${shortErr(e)}`, dropHintFromSqlState(e?.code));
     }
-  }
 
-  // 4) Verify postcondition
-  const finalExists = await checkExistsViaAdmin();
-  await admin.end().catch(() => {});
-  if (finalExists === false) {
-    log(`Verified: database "${targetDb}" is gone.`);
-    return { status: 'dropped', notes };
-  } else if (finalExists === true) {
-    return fail(`After drop attempt, database "${targetDb}" still exists.`, `Terminate all sessions and retry.`);
-  } else {
-    // Unknown (shouldn't happen with admin connected)
-    log(`Could not verify postcondition due to unexpected state.`);
-    return { status: 'dropped', notes }; // we did our best; treat as success if we didn't see errors
+    // If we couldn't connect as admin, try connecting to target to distinguish "doesn't exist" from failure to connect.
+    if (!admin) {
+      const probe = await connectOutcome(
+        opts.urlToDrop ?? deriveDatabaseUrl(adminUrl, targetDb),
+        log,
+        'probe target (existence test)',
+      );
+      if (probe.kind === 'ok') {
+        // We can reach the target DB—so it exists—but we’re connected *to* it; we cannot DROP from within.
+        await probe.client.end().catch(() => {});
+        return fail(
+          `Database "${targetDb}" exists, but we could not establish an admin connection to drop it.`,
+          `Provide an admin/alternate DB URL (same server) with privileges to DROP DATABASE`,
+        );
+      } else if (probe.code === '3D000') {
+        log(`DB "${targetDb}" does not exist (error 3D000 while connecting). Database already does not exist.`);
+        return { status: 'did_not_exist', notes };
+      } else {
+        // Ambiguous: not proven missing, no admin path to check or drop.
+        return fail(
+          `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.kind}.`,
+          networkOrAuthHint(probe.code),
+        );
+      }
+    }
+
+    // 2) We have an admin connection and the DB likely exists. Check privileges upfront (nice error).
+    const who = await currentIdentity(admin);
+    const owner = await dbOwner(admin, targetDb);
+
+    if (!who.isSuperuser && owner && owner !== who.user) {
+      log(`Ownership check: DB owned by "${owner}", current_user is "${who.user}" (superuser=${who.isSuperuser}).`);
+      // We can still try (maybe you have sufficient rights via membership), but warn early.
+      log(`Warning: You might lack privileges to DROP this database unless you are the owner or superuser.`);
+    }
+
+    // 3) Attempt the drop
+    try {
+      log(`Attempting DROP ... WITH (FORCE).`);
+      await dropWithForce(admin, targetDb);
+    } catch (err) {
+      const e = err as Error & { code: string };
+      // If FORCE path failed due to syntax (older server), fallback once.
+      if (isForceSyntaxError(e)) {
+        log(`WITH (FORCE) not supported by server (syntax error). Falling back to terminate-and-drop.`);
+        try {
+          await terminateAndDrop(admin, targetDb, 3000, log);
+        } catch (err2) {
+          const e2 = err2 as Error & { code: string };
+          await admin.end().catch(() => {});
+          return fail(`Drop failed even after fallback: ${shortErr(e2)}`, dropHintFromSqlState(e2?.code));
+        }
+      } else {
+        await admin.end().catch(() => {});
+        return fail(`Drop failed: ${shortErr(e)}`, dropHintFromSqlState(e?.code));
+      }
+    }
+
+    // 4) Verify postcondition
+    const finalExists = await checkExistsViaAdmin();
+    if (finalExists === false) {
+      log(`Verified: database "${targetDb}" is gone.`);
+      return { status: 'dropped', notes };
+    } else if (finalExists === true) {
+      return fail(`After drop attempt, database "${targetDb}" still exists.`, `Terminate all sessions and retry.`);
+    } else {
+      // Unknown (shouldn't happen with admin connected)
+      log(`Could not verify postcondition due to unexpected state.`);
+      return { status: 'dropped', notes }; // we did our best; treat as success if we didn't see errors
+    }
+  } finally {
+    await admin?.end().catch(() => {});
   }
 
   function fail(msg: string, hint?: string): DropDatabaseResult {
@@ -603,14 +615,6 @@ async function dbOwner(admin: Client, dbName: string): Promise<string | null> {
     [dbName],
   );
   return rows[0]?.owner ?? null;
-}
-
-async function serverSupportsForce(admin: Client, log: (msg: string) => void): Promise<boolean> {
-  const { rows } = await admin.query<{ server_version_num: string }>(`SHOW server_version_num`);
-  const num = parseInt(rows[0]?.server_version_num ?? '0', 10);
-  const ok = Number.isFinite(num) && num >= 130000;
-  log(`Server version_num=${num} -> WITH (FORCE) supported=${ok}`);
-  return ok;
 }
 
 function ident(name: string): string {
