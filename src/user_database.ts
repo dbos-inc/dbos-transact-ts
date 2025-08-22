@@ -10,46 +10,7 @@ import {
 import { IsolationLevel, TransactionConfig } from './transaction';
 import { ValuesOf } from './utils';
 import { Knex } from 'knex';
-import { GlobalLogger } from './telemetry/logs';
 import { getClientConfig } from './utils';
-
-export async function createDBIfDoesNotExist(databseUrl: string, logger: GlobalLogger) {
-  const url = new URL(databseUrl);
-  const database = url.pathname.slice(1);
-
-  const pgUserClient = new Client(getClientConfig(databseUrl));
-  try {
-    await pgUserClient.connect(); // Try to establish a connection
-    await pgUserClient.end();
-    return; // If successful, return
-  } catch (error) {
-    logger.info(`Database ${database} does not exist, creating...`);
-  }
-
-  // Craft a db string from the app db string, replacing the database name:
-  url.pathname = '/postgres';
-
-  const postgresClient = new Client(getClientConfig(url));
-  let connection_failed = true;
-  try {
-    await postgresClient.connect();
-    connection_failed = false;
-    await postgresClient.query(`CREATE DATABASE ${database}`);
-  } catch (e) {
-    if (e instanceof Error) {
-      if (connection_failed) {
-        logger.error(`Error connecting to database ${url.host}:${url.port} with user ${url.username}: ${e.message}`);
-      } else {
-        logger.error(`Error creating database ${database}: ${e.message}`);
-      }
-    } else {
-      logger.error(e);
-    }
-    throw e;
-  } finally {
-    await postgresClient.end();
-  }
-}
 
 export async function ensureDbosTables(databaseUrl: string) {
   const pgUserClient = new Client(getClientConfig(databaseUrl));

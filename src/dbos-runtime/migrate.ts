@@ -1,7 +1,8 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
-import { createDBIfDoesNotExist, ensureDbosTables } from '../user_database';
+import { ensureDbosTables } from '../user_database';
+import { ensurePGDatabase, maskDatabaseUrl } from '../datasource';
 
 export async function migrate(
   migrationCommands: string[],
@@ -12,8 +13,24 @@ export async function migrate(
   const url = new URL(databaseUrl);
   const database = url.pathname.slice(1);
 
-  logger.info(`Starting migration: creating database ${database} if it does not exist`);
-  await createDBIfDoesNotExist(databaseUrl, logger);
+  if (databaseUrl) {
+    logger.info(`Starting migration: creating database ${database} if it does not exist`);
+
+    const res = await ensurePGDatabase({
+      urlToEnsure: databaseUrl,
+      logger: (msg: string) => logger.info(msg),
+    });
+    if (res.status === 'connection_error') {
+      logger.warn(
+        `Failed to check or create connection to ${maskDatabaseUrl(databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+      );
+    }
+    if (res.status === 'failed') {
+      logger.warn(
+        `Database does not exist and could not be created: ${maskDatabaseUrl(databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+      );
+    }
+  }
 
   try {
     migrationCommands?.forEach((cmd) => {

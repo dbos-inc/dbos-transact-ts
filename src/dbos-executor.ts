@@ -53,7 +53,6 @@ import {
   DrizzleUserDatabase,
   type UserDatabaseClient,
   pgNodeIsKeyConflictError,
-  createDBIfDoesNotExist,
   UserDatabaseQuery,
 } from './user_database';
 import {
@@ -110,6 +109,7 @@ import {
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
 import { getClientConfig } from './utils';
+import { ensurePGDatabase, maskDatabaseUrl } from './datasource';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -420,7 +420,20 @@ export class DBOSExecutor {
 
       if (this.config.userDbClient) {
         if (!this.#debugMode) {
-          await createDBIfDoesNotExist(this.config.databaseUrl, this.logger);
+          const res = await ensurePGDatabase({
+            urlToEnsure: this.config.databaseUrl,
+            logger: (msg: string) => this.logger.debug(msg),
+          });
+          if (res.status === 'connection_error') {
+            this.logger.warn(
+              `Failed to check or create connection to application database ${maskDatabaseUrl(this.config.databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+            );
+          }
+          if (res.status === 'failed') {
+            this.logger.warn(
+              `Application database does not exist and could not be created: ${maskDatabaseUrl(this.config.databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+            );
+          }
         }
         this.#configureDbClient();
 

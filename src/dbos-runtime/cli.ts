@@ -15,7 +15,6 @@ import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
 import { ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_database';
-import { createDBIfDoesNotExist } from '../user_database';
 import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
@@ -122,18 +121,8 @@ program
     }
 
     try {
-      const url = new URL(finalSystemDatabaseUrl);
-      const systemDbName = url.pathname.slice(1);
-
-      if (!systemDbName) {
-        logger.error('Provided database URL does not specify the system database name');
-        process.exit(1);
-      }
-
-      await createDBIfDoesNotExist(finalSystemDatabaseUrl, logger);
-
       // Load the DBOS system schema.
-      logger.info('Creating DBOS system schema');
+      logger.info('Creating DBOS system database and schema');
       await ensureSystemDatabase(finalSystemDatabaseUrl, logger);
 
       // Grant permissions to application role if specified
