@@ -412,7 +412,7 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
   const maybeTemplate1Url = deriveDatabaseUrl(opts.urlToDrop ?? adminUrl, 'template1');
   const tryTemplate1Fallback = opts.tryTemplate1Fallback ?? true;
 
-  const targetDb = opts.dbToDrop ?? parsePgUrl(opts.urlToDrop!).database;
+  const targetDb = opts.dbToDrop ?? getDbNameFromUrl(opts.urlToDrop!);
   if (!targetDb) {
     return fail('Target URL has no database name in the path (e.g., /mydb).', 'Fix the target URL and retry.');
   }
@@ -567,7 +567,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
     return { status: 'failed', notes, hint };
   }
 
-  const targetDb = opts.dbToEnsure ?? parsePgUrl(opts.urlToEnsure!).database;
+  const targetDb = opts.dbToEnsure ?? getDbNameFromUrl(opts.urlToEnsure!);
   if (!targetDb) {
     return fail('Target URL has no database name in the path (e.g., /mydb).', 'Fix the target URL and retry.');
   }
@@ -702,16 +702,9 @@ export function getPGClientConfig(databaseUrl: string | URL) {
   }
 }
 
-function parsePgUrl(urlStr: string) {
+function getDbNameFromUrl(urlStr: string) {
   const u = new URL(urlStr);
-  return {
-    protocol: u.protocol,
-    host: u.hostname,
-    port: u.port || undefined,
-    user: decodeURIComponent(u.username || ''),
-    password: decodeURIComponent(u.password || ''),
-    database: u.pathname?.replace(/^\//, '') || '',
-  };
+  return u.pathname?.replace(/^\//, '') || '';
 }
 
 export function maskDatabaseUrl(urlStr: string): string {
@@ -765,7 +758,7 @@ async function connectOutcome(
 
 function shortErr(e: Error): string {
   const m = e?.message ?? String(e);
-  return m.length > 300 ? `${m.slice(0, 300)}…` : m;
+  return m.length > 500 ? `${m.slice(0, 500)}…` : m;
 }
 
 async function currentIdentity(admin: Client): Promise<{ user: string; isSuperuser: boolean }> {
@@ -864,15 +857,23 @@ export function networkOrAuthHint(code?: string): string | undefined {
 }
 
 export function createDropHintFromSqlState(code?: string): string | undefined {
+  switch (code?.substring(0, 5)) {
+    case '42501':
+      return 'Insufficient privilege. You must be the owner or a superuser.';
+    case '53300':
+      return 'Too many connections to server; free some slots.';
+    default:
+      break;
+  }
   switch (code?.substring(0, 2)) {
     case '42':
-      return 'Insufficient privilege. You must be the owner or a superuser.';
+      return 'Syntax error or access rule violation.';
     case '3D':
       return 'Target database does not exist (already gone).';
     case '55':
       return 'Database is in use. Terminate sessions or use PG13+ WITH (FORCE).';
     case '53':
-      return 'Too many connections to server; free some slots.';
+      return 'Insufficient resources.';
     default:
       return undefined;
   }
