@@ -13,6 +13,8 @@ export async function migrate(
   const url = new URL(databaseUrl);
   const database = url.pathname.slice(1);
 
+  let status = 0;
+
   if (databaseUrl) {
     logger.info(`Starting migration: creating database ${database} if it does not exist`);
 
@@ -22,12 +24,12 @@ export async function migrate(
     });
     if (res.status === 'connection_error') {
       logger.warn(
-        `Failed to check or create connection to ${maskDatabaseUrl(databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+        `Failed to check or create connection to app database ${maskDatabaseUrl(databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
       );
     }
     if (res.status === 'failed') {
       logger.warn(
-        `Database does not exist and could not be created: ${maskDatabaseUrl(databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+        `Application database does not exist and could not be created: ${maskDatabaseUrl(databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
       );
     }
   }
@@ -40,24 +42,37 @@ export async function migrate(
     });
   } catch (e) {
     logMigrationError(e, logger, 'Error running migration');
-    return 1;
+    status = 1;
   }
 
-  logger.info('Creating DBOS tables and system database.');
+  logger.info('Creating DBOS system database.');
   try {
     await ensureSystemDatabase(systemDatabaseUrl, logger);
-    await ensureDbosTables(databaseUrl);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);
     } else {
       logger.error(e);
     }
-    return 1;
+    status = 1;
   }
 
-  logger.info('Migration successful!');
-  return 0;
+  try {
+    logger.info('Creating DBOS tables in user database.');
+    if (databaseUrl) await ensureDbosTables(databaseUrl);
+  } catch (e) {
+    if (e instanceof Error) {
+      logger.error(`Error installing DBOS table into user database: ${e.message}`);
+    } else {
+      logger.error(e);
+    }
+    status = 1;
+  }
+
+  if (status === 0) {
+    logger.info('All migration successful!');
+  }
+  return status;
 }
 
 type ExecSyncError<T> = Error & SpawnSyncReturns<T>;
