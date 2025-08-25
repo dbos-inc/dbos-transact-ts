@@ -1,5 +1,4 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
@@ -119,18 +118,8 @@ export function executeWorkflowById(workflowId: string) {
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {
-  const url = new URL(connectionString);
-  database ||= url.pathname.slice(1);
-  url.pathname = '/postgres';
-
-  // Drop system database, for testing.
-  const pgSystemClient = new Client({
-    connectionString: url.toString(),
-  });
-  try {
-    await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${database};`);
-  } finally {
-    await pgSystemClient.end();
+  const r = await dropPGDatabase({ urlToDrop: connectionString, dbToDrop: database });
+  if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
+    throw new Error(`Unable to drop ${maskDatabaseUrl(connectionString)}`);
   }
 }
