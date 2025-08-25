@@ -294,6 +294,20 @@ applicationCommands
   });
 
 applicationCommands
+  .command('resource-usage')
+  .description("Query resource usage for your applications")
+  .option(
+    '-l, --last <integer>',
+    'How far back to query, in seconds from current time. By default, returns data for the last hour',
+    parseInt,
+  )
+  .option('-g, --group-by <string>', 'Time interval for grouping data: \'minute\', \'hour\', or \'day\'')
+  .action(async (options: { last: number; pagesize: number }) => {
+    const exitCode = await getAppLogs(DBOSCloudHost, options.last, options.pagesize, appName);
+    process.exit(exitCode);
+  });
+
+applicationCommands
   .command('logs')
   .description("Print this application's logs")
   .argument('[string]', 'application name (Default: name from package.json)')
