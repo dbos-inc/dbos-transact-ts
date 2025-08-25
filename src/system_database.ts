@@ -8,6 +8,7 @@ import {
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
   DBOSQueueDuplicatedError,
+  DBOSInitializationError,
 } from './error';
 import { GetPendingWorkflowsOutput, GetQueuedWorkflowsInput, GetWorkflowsInput, StatusString } from './workflow';
 import {
@@ -25,7 +26,7 @@ import fs from 'fs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
-import assert from 'assert';
+import { ensurePGDatabase, maskDatabaseUrl } from './datasource';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -59,7 +60,7 @@ export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
  *     be done elsewhere (executor), as it may require application-specific logic or extensions.
  */
 export interface SystemDatabase {
-  init(): Promise<void>;
+  init(debugMode?: boolean): Promise<void>;
   destroy(): Promise<void>;
 
   initWorkflowStatus(
@@ -213,41 +214,184 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
-export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: GlobalLogger) {
-  let migrationsDirectory: string;
+export async function grantDbosSchemaPermissions(
+  databaseUrl: string,
+  roleName: string,
+  logger: GlobalLogger,
+): Promise<void> {
+  logger.info(`Granting permissions for DBOS schema to ${roleName}`);
+
+  const client = new Client(getClientConfig(databaseUrl));
+  await client.connect();
 
   try {
-    migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
-  } catch (packageError) {
-    migrationsDirectory = path.join(__dirname, 'migrations');
-  }
+    // Grant usage on the dbos schema
+    const grantUsageSql = `GRANT USAGE ON SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantUsageSql);
+    await client.query(grantUsageSql);
 
-  // Check if migrations directory exists
-  if (!fs.existsSync(migrationsDirectory)) {
-    logger.warn(
-      'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
-        'Please run "npx dbos migrate" to create your system database before running your bundled application.',
-    );
-    return;
-  }
+    // Grant all privileges on all existing tables in dbos schema (includes views)
+    const grantTablesSql = `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantTablesSql);
+    await client.query(grantTablesSql);
 
-  const knexConfig = {
-    client: 'pg',
-    connection: systemPoolConfig,
-    migrations: {
-      directory: migrationsDirectory,
-      tableName: 'knex_migrations',
-    },
-  } as Knex.Config;
-  const knexDB = knex(knexConfig);
-  try {
-    await knexDB.migrate.latest();
+    // Grant all privileges on all sequences in dbos schema
+    const grantSequencesSql = `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantSequencesSql);
+    await client.query(grantSequencesSql);
+
+    // Grant execute on all functions and procedures in dbos schema
+    const grantFunctionsSql = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantFunctionsSql);
+    await client.query(grantFunctionsSql);
+
+    // Grant default privileges for future objects in dbos schema
+    const alterTablesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON TABLES TO "${roleName}"`;
+    logger.info(alterTablesSql);
+    await client.query(alterTablesSql);
+
+    const alterSequencesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON SEQUENCES TO "${roleName}"`;
+    logger.info(alterSequencesSql);
+    await client.query(alterSequencesSql);
+
+    const alterFunctionsSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`;
+    logger.info(alterFunctionsSql);
+    await client.query(alterFunctionsSql);
   } catch (e) {
-    logger.warn(
-      `Exception during system database construction. This is most likely because the system database was configured using a later version of DBOS: ${(e as Error).message}`,
-    );
+    logger.error(`Failed to grant permissions to role ${roleName}: ${(e as Error).message}`);
+    throw e;
   } finally {
-    await knexDB.destroy();
+    await client.end();
+  }
+}
+
+export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogger, debugMode: boolean = false) {
+  const knexDb = knex({
+    client: 'pg',
+    connection: getClientConfig(sysDbUrl),
+  } as Knex.Config);
+
+  try {
+    if (!debugMode) {
+      const res = await ensurePGDatabase({
+        urlToEnsure: sysDbUrl,
+        logger: (msg: string) => logger.debug(msg),
+      });
+      if (res.status === 'connection_error') {
+        logger.warn(
+          `Failed to check or create connection to ${maskDatabaseUrl(sysDbUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+        );
+      }
+      if (res.status === 'failed') {
+        logger.warn(
+          `Database does not exist and could not be created: ${maskDatabaseUrl(sysDbUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+        );
+      }
+    }
+
+    if (!(await checkConnection(knexDb))) {
+      logger.warn(
+        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}${debugMode ? ' (debug mode)' : ''}`,
+      );
+      throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
+    }
+
+    const directory = getMigrationsDirectory();
+    if (!directory) {
+      logger.warn(
+        'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
+          'Please run "npx dbos migrate" to create your system database before running your bundled application.',
+      );
+      return;
+    }
+
+    if (debugMode) {
+      logger.info(`Skipping system database migration in debug mode.`);
+      return;
+    }
+
+    const migrateConfig = { directory, tableName: 'knex_migrations' };
+    type CompletedMigration = { name: string };
+    type PendingMigration = { file: string; directory: string };
+
+    try {
+      const [completed, pending] = (await knexDb.migrate.list(migrateConfig)) as [
+        CompletedMigration[],
+        PendingMigration[],
+      ];
+
+      if (pending.length === 0) {
+        logger.debug(`System database is up to date. ${completed.length} migrations have been applied.`);
+        return;
+      }
+    } catch (e) {
+      // This may occur if the system DB is basically there, maybe from a newer version.
+      const exists = await checkForExistingSysDBTables(knexDb);
+      if (exists) {
+        logger.warn(
+          `DBOS system database table migration failure; listing migrations reported: ${(e as Error).message}.
+  Key system database tables appear to be intact.  This may indicate that the database was created with a newer DBOS version.
+  Proceeding.`,
+        );
+      } else {
+        logger.warn(
+          `DBOS system database table migration failure reported: ${(e as Error).message}.
+  The system database does not appear to be intact.
+  Aborting.`,
+        );
+        throw e;
+      }
+    }
+
+    try {
+      await knexDb.migrate.latest(migrateConfig);
+    } catch (e) {
+      // This may occur if the system DB is basically there, maybe from a newer version.
+      const exists = await checkForExistingSysDBTables(knexDb);
+      if (exists) {
+        logger.warn(
+          `DBOS system database table migration failure reported: ${(e as Error).message}.
+  While migration failed, key system database tables appear to be intact.
+  This may indicate that the system database was created externally, or that it was created with a newer DBOS version.
+  Proceeding.`,
+        );
+      } else {
+        logger.warn(
+          `DBOS system database table migration failure reported: ${(e as Error).message}.
+  The system database does not appear to be intact.
+  Aborting.`,
+        );
+        throw e;
+      }
+    }
+  } finally {
+    await knexDb.destroy();
+  }
+
+  async function checkConnection(knexDb: Knex) {
+    try {
+      await knexDb.raw<ExistenceCheck>('SELECT EXISTS (SELECT * FROM pg_database LIMIT 1)');
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  async function checkForExistingSysDBTables(knexDb: Knex) {
+    // Check if the table already exists (created concurrently by someone else)
+    const exists = await knexDb.schema.withSchema('dbos').hasTable('operation_outputs');
+
+    return exists;
+  }
+
+  function getMigrationsDirectory(): string | undefined {
+    let migrationsDirectory: string;
+    try {
+      migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+    } catch (packageError) {
+      migrationsDirectory = path.join(__dirname, 'migrations');
+    }
+    return fs.existsSync(migrationsDirectory) ? migrationsDirectory : undefined;
   }
 }
 
@@ -743,39 +887,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.knexDB = knex(knexConfig);
   }
 
-  async init() {
-    const url = new URL(this.systemDatabaseUrl);
-    const sysDbName = url.pathname.slice(1);
-    assert(sysDbName, 'System database URL must include a database name in the path');
-    url.pathname = '/postgres';
+  async init(debugMode: boolean = false) {
+    await ensureSystemDatabase(this.systemDatabaseUrl, this.logger, debugMode);
 
-    const pgSystemClient = new Client(getClientConfig(url));
-    await pgSystemClient.connect();
-    // Create the system database and load tables.
-    const dbExists = await pgSystemClient.query<ExistenceCheck>(
-      `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${sysDbName}')`,
-    );
-    if (!dbExists.rows[0].exists) {
-      // Create the DBOS system database.
-      await pgSystemClient.query(`CREATE DATABASE "${sysDbName}"`);
-    }
-
-    try {
-      await migrateSystemDatabase(this.systemPoolConfig, this.logger);
-    } catch (e) {
-      const tableExists = await this.pool.query<ExistenceCheck>(
-        `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`,
-      );
-      if (tableExists.rows[0].exists) {
-        this.logger.warn(
-          `System database migration failed, you may be running an old version of DBOS Transact: ${(e as Error).message}`,
-        );
-      } else {
-        throw e;
-      }
-    } finally {
-      await pgSystemClient.end();
-    }
     if (this.shouldUseDBNotifications) {
       await this.#listenForNotifications();
     }
@@ -788,29 +902,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     if (this.notificationsClient) {
       try {
-        this.notificationsClient.removeAllListeners();
         await this.notificationsClient.end();
       } catch (e) {
         this.logger.warn(`Error ending notifications client: ${String(e)}`);
       }
     }
     await this.pool.end();
-  }
-
-  static async dropSystemDB(systemDatabaseUrl: string) {
-    const url = new URL(systemDatabaseUrl);
-    const systemDbName = url.pathname.slice(1);
-    assert(systemDbName, 'System database URL must include a database name in the path');
-    url.pathname = '/postgres';
-
-    // Drop system database, for testing.
-    const pgSystemClient = new Client(getClientConfig(url));
-    try {
-      await pgSystemClient.connect();
-      await pgSystemClient.query(`DROP DATABASE IF EXISTS ${systemDbName};`);
-    } finally {
-      await pgSystemClient.end();
-    }
   }
 
   @dbRetry()

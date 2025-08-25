@@ -150,7 +150,8 @@ export class DBOSClient {
     systemDatabaseUrl?: string;
   }): Promise<DBOSClient> {
     const client = new DBOSClient(databaseUrl, systemDatabaseUrl);
-    await client.systemDatabase.init();
+    // debug mode doesn't initialize the system database
+    await client.systemDatabase.init(true);
     return client;
   }
 
