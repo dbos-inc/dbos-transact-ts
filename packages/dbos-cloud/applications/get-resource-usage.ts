@@ -55,7 +55,7 @@ export async function getResourceUsage(
   };
   const params = {
     since: since,
-    upto:  upto ,
+    upto: upto,
     group_by: groupBy
   };
   try {
