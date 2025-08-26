@@ -18,6 +18,8 @@ export interface ListWorkflowsInput {
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sort_desc?: boolean; // Sort in DESC order by created_at (default ASC)
+  load_input?: boolean; // Load the input of the workflow
+  load_output?: boolean; // Load the output of the workflow
 }
 
 export interface ListQueuedWorkflowsInput {
@@ -29,6 +31,8 @@ export interface ListQueuedWorkflowsInput {
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sort_desc?: boolean; // Sort in DESC order by created_at (default ASC)
+  load_input?: boolean; // Load the input of the workflow
+  load_output?: boolean; // Load the output of the workflow
 }
 
 export async function listWorkflows(host: string, input: ListWorkflowsInput, appName?: string): Promise<number> {
@@ -40,6 +44,9 @@ export async function listWorkflows(host: string, input: ListWorkflowsInput, app
   if (!appName) {
     return 1;
   }
+
+  input['load_input'] = true;
+  input['load_output'] = true;
 
   try {
     const res = await axios.post(
@@ -79,6 +86,9 @@ export async function listQueuedWorkflows(
   if (!appName) {
     return 1;
   }
+
+  input['load_input'] = true;
+  input['load_output'] = true;
 
   try {
     const res = await axios.post(
