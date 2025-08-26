@@ -31,10 +31,10 @@ export async function getResourceUsage(
   groupBy: string | undefined
 ): Promise<number> {
   const logger = getLogger();
-  // Compose default "since" and "upto": a one-minute interval occurring about 5 minutes ago
+  // Compose default "since" and "upto": a one-minute interval occurring about 2 minutes ago
   const finishedMinute = new Date();
   finishedMinute.setSeconds(0, 0);
-  finishedMinute.setMinutes(finishedMinute.getMinutes() - 5);
+  finishedMinute.setMinutes(finishedMinute.getMinutes() - 2);
   const finishedMinutePlusOne = new Date(finishedMinute);
   finishedMinutePlusOne.setSeconds(59, 999);
   if (since === undefined) {
