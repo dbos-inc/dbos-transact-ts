@@ -22,7 +22,7 @@ type ResourceResponse = {
   upto: string;
   group_by: string;
   data: ResourceDataPoint[];
-}
+};
 
 export async function getResourceUsage(
   host: string,
