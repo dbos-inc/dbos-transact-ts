@@ -31,10 +31,10 @@ export async function getResourceUsage(
   groupBy: string | undefined
 ): Promise<number> {
   const logger = getLogger();
-  // Compose default "since" and "upto": the most recent full minute
+  // Compose default "since" and "upto": a one-minute interval occurring about 5 minutes ago
   const finishedMinute = new Date();
   finishedMinute.setSeconds(0, 0);
-  finishedMinute.setMinutes(finishedMinute.getMinutes() - 1);
+  finishedMinute.setMinutes(finishedMinute.getMinutes() - 5);
   const finishedMinutePlusOne = new Date(finishedMinute);
   finishedMinutePlusOne.setSeconds(59, 999);
   if (since === undefined) {
@@ -66,7 +66,7 @@ export async function getResourceUsage(
       group_by: groupBy,
       data: res.data as ResourceDataPoint[]
     }
-    if (response.data.length == 0) {
+    if (response.data.length === 0) {
       logger.info(`No vm usage found for the specified parameters`);
     } else {
       console.log(JSON.stringify(response, null, 2)); 

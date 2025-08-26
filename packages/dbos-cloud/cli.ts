@@ -311,14 +311,14 @@ applicationCommands
 
 applicationCommands
   .command('resource-usage')
-  .description("Query the resource usage for your applications")
+  .description("Query the resource usage for your applications. If no time range is provided, queries for a recent 1-minute interval of data that is likely to be settled.")
   .option(
     '-s, --since <string>',
-    'UTC time since which to start querying (formatted as 2006-01-02 15:04:05.000000). Defaults to the start of the most recent finished minute',
+    'UTC time since which to start querying (formatted as 2006-01-02 15:04:05.000000). Defaults to the start of a 1-minute interval 5 minutes ago',
   )
   .option(
     '-u, --upto <string>',
-    'UTC time up to which to start querying (formatted as 2006-01-02 15:04:05.000000). Defaults to the end of the most recent finished minute',
+    'UTC time up to which to start querying (formatted as 2006-01-02 15:04:05.000000). Defaults to the end of a 1-minute interval 5 minutes ago',
   )
   .option(
     '-g, --group-by <string>',
