@@ -44,7 +44,7 @@ export async function getResourceUsage(
     upto = finishedMinutePlusOne.toISOString().replace('T', ' ').replace('Z', '').padEnd(26, '9');
   }
   if (groupBy === undefined) {
-    groupBy = 'minute'
+    groupBy = 'minute';
   }
   const userCredentials = await getCloudCredentials(host, logger);
   const bearerToken = 'Bearer ' + userCredentials.token;
