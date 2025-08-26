@@ -7,6 +7,7 @@ import {
   deleteApp,
   deployAppCode,
   getAppLogs,
+  getResourceUsage,
   createSecret,
   listSecrets,
   deleteSecret,
@@ -294,20 +295,6 @@ applicationCommands
   });
 
 applicationCommands
-  .command('resource-usage')
-  .description("Query resource usage for your applications")
-  .option(
-    '-l, --last <integer>',
-    'How far back to query, in seconds from current time. By default, returns data for the last hour',
-    parseInt,
-  )
-  .option('-g, --group-by <string>', 'Time interval for grouping data: \'minute\', \'hour\', or \'day\'')
-  .action(async (options: { last: number; pagesize: number }) => {
-    const exitCode = await getAppLogs(DBOSCloudHost, options.last, options.pagesize, appName);
-    process.exit(exitCode);
-  });
-
-applicationCommands
   .command('logs')
   .description("Print this application's logs")
   .argument('[string]', 'application name (Default: name from package.json)')
@@ -319,6 +306,26 @@ applicationCommands
   .option('-p, --pagesize <integer>', 'How many lines to fetch at once when paginating. Default is 1000', parseInt)
   .action(async (appName: string | undefined, options: { last: number; pagesize: number }) => {
     const exitCode = await getAppLogs(DBOSCloudHost, options.last, options.pagesize, appName);
+    process.exit(exitCode);
+  });
+
+applicationCommands
+  .command('resource-usage')
+  .description("Query the resource usage for your applications")
+  .option(
+    '-s, --since <string>',
+    'UTC time since which to start querying (formatted as 2006-01-02 15:04:05.000000). Defaults to the start of the most recent finished minute',
+  )
+  .option(
+    '-u, --upto <string>',
+    'UTC time up to which to start querying (formatted as 2006-01-02 15:04:05.000000). Defaults to the end of the most recent finished minute',
+  )
+  .option(
+    '-g, --group-by <string>',
+    'Time interval for grouping data: \'minute\', \'hour\', or \'day\', defaults to minute'
+  )
+  .action(async (options: { since: string, upto: string, groupBy: string }) => {
+    const exitCode = await getResourceUsage(DBOSCloudHost, options.since, options.upto, options.groupBy);
     process.exit(exitCode);
   });
 
