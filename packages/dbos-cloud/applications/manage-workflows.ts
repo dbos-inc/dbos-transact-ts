@@ -43,7 +43,7 @@ export async function listWorkflows(host: string, input: ListWorkflowsInput, app
 
   try {
     const res = await axios.post(
-      `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/workflows`,
+      `https://${host}/appsadmin/${userCredentials.organization}/applications/${appName}/workflows`,
       input,
       {
         headers: {
@@ -82,7 +82,7 @@ export async function listQueuedWorkflows(
 
   try {
     const res = await axios.post(
-      `https://${host}/v1alpha1/${userCredentials.organization}/applications/${appName}/queues`,
+      `https://${host}/appsadmin/${userCredentials.organization}/applications/${appName}/queues`,
       input,
       {
         headers: {
