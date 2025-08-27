@@ -5,3 +5,4 @@ export { deleteApp } from './delete-app.js';
 export { deployAppCode } from './deploy-app-code.js';
 export { getAppLogs } from './get-app-logs.js';
 export { createSecret, listSecrets, deleteSecret } from './secrets.js';
+export { getResourceUsage } from './get-resource-usage.js';
