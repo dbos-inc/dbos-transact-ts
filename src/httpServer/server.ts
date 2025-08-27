@@ -84,19 +84,6 @@ export class DBOSHttpServer {
     return adminApp;
   }
 
-  /**
-   * Register HTTP endpoints and attach to the app. Then start the server at the given port.
-   * @param port
-   */
-  async listen(port: number, adminPort: number) {
-    const appServer = await this.appListen(port);
-
-    const adminServer = this.adminApp.listen(adminPort, () => {
-      this.logger.info(`DBOS Admin Server is running at http://localhost:${adminPort}`);
-    });
-    return { appServer: appServer, adminServer: adminServer };
-  }
-
   async appListen(port: number) {
     await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(port, this.logger);
 

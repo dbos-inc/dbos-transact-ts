@@ -37,6 +37,21 @@ describe('not-running-admin-server', () => {
     await DBOS.shutdown();
   });
 
+  test('test-admin-server-set-port', async () => {
+    config = generateDBOSTestConfig();
+    DBOS.setConfig({ ...config, adminPort: 4444 });
+    await setUpDBOSTestDb(config);
+    await DBOS.launch();
+
+    const healthzResponse = await fetch(`http://localhost:4444${HealthUrl}`, {
+      method: 'GET',
+    });
+    expect(healthzResponse.status).toBe(200);
+    expect(await healthzResponse.text()).toBe('healthy');
+
+    await DBOS.shutdown();
+  });
+
   test('admin-port-already-in-use', async () => {
     // Start a dummy server on the admin port
     const server = http.createServer().listen(3001, '127.0.0.1');
