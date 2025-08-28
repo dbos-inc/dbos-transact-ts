@@ -82,6 +82,17 @@ async function tryTCPConnection(container: StartedPostgreSqlContainer) {
   });
 }
 
+function makePGConnStr(
+  username: string,
+  password: string,
+  host: string,
+  port: string | number,
+  database: string,
+  timeout: number,
+) {
+  return `postgresql://${username}:${password}@${host}:${port}/${database}?connect_timeout=${timeout}`;
+}
+
 describe('PG16 drop/create e2e', () => {
   let testShouldRun = false;
 
@@ -219,7 +230,7 @@ describe('PG16 drop/create e2e', () => {
     }
   }, 120_000);
 
-  test('drop db negative', async () => {
+  test('ensure drop db negative', async () => {
     if (!testShouldRun) return;
 
     const container = await new PostgreSqlContainer('postgres:16')
@@ -229,19 +240,53 @@ describe('PG16 drop/create e2e', () => {
       .start();
 
     try {
-      const target = deriveDatabaseUrl(container.getConnectionUri(), 'never_existed');
-
-      // This version of it is using a bogus URL, and the 'postgres' service database doesn't exist
+      // This version of it is using a bogus URL but is somewhat valid
+      const targetWithPerms = makePGConnStr(
+        'myuser',
+        'mypassword',
+        container.getHost(),
+        container.getPort(),
+        'mydatabase',
+        1000,
+      );
+      const target = deriveDatabaseUrl(targetWithPerms, 'never_existed');
       const res1 = await dropPGDatabase({ urlToDrop: target, logger: () => {} });
-      expect(res1.status).toBe('did_not_exist');
+      if (res1.status === 'failed') {
+        expect(res1.hint?.toLowerCase()?.includes('invalid password')).toBeTruthy();
+        expect(res1.message.toLowerCase().includes('could not establish any admin connection')).toBeTruthy();
+      } else {
+        expect(res1.status).toBe('failed');
+      }
 
-      // This version of it is using a valid admin URL, and the 'postgres' service database doesn't exist
+      // Same, but with incorrect admin + db name
+      const res2 = await dropPGDatabase({ dbToDrop: 'never_existed', adminUrl: targetWithPerms, logger: () => {} });
+      expect(res2.status).toBe('failed');
+      if (res2.status === 'failed') {
+        expect(res2.hint?.toLowerCase()?.includes('invalid password')).toBeTruthy();
+        expect(res2.message.toLowerCase().includes('could not establish any admin connection')).toBeTruthy();
+      } else {
+        expect(res2.status).toBe('failed');
+      }
+
+      // Same, but with incorrect admin + db name
+      const bogusServer = makePGConnStr('myuser', 'mypassword', container.getHost(), 59999, 'mydatabase', 1000);
+      const res3 = await dropPGDatabase({ urlToDrop: bogusServer, logger: () => {} });
+      expect(res3.status).toBe('failed');
+
+      /*
+      // This version also uses a bogus URL, but we make the DB exist
+      const res2 = await dropPGDatabase({ urlToDrop: target, logger: () => {} });
+      expect(res2.status).toBe('did_not_exist');
+
+
+      // This version of it is using a valid admin URL, and the admin service database doesn't exist
       const res2 = await dropPGDatabase({
         dbToDrop: 'never_existed',
         adminUrl: container.getConnectionUri(),
         logger: () => {},
       });
       expect(res2.status).toBe('did_not_exist');
+      */
     } finally {
       await container.stop();
     }

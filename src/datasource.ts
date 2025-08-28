@@ -373,8 +373,8 @@ export interface DropDatabaseOptions {
  *  of a nonexistent DB is not verified.
  */
 export type DropDatabaseResult =
-  | { status: 'dropped' | 'did_not_exist'; notes: string[] }
-  | { status: 'failed' | 'connection_error'; notes: string[]; hint?: string };
+  | { status: 'dropped' | 'did_not_exist'; notes: string[]; message: string }
+  | { status: 'failed' | 'connection_error'; notes: string[]; hint?: string; message: string };
 
 /**
  * Drop a postgres database from a postgres server.  This requires a target DB name,
@@ -397,7 +397,7 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
 
   function fail(msg: string, hint?: string): DropDatabaseResult {
     log(`FAIL: ${msg}${hint ? ` | HINT: ${hint}` : ''}`);
-    return { status: 'failed', notes, hint };
+    return { message: msg, status: 'failed', notes, hint };
   }
 
   const adminUrl = opts.adminUrl ?? (opts.urlToDrop ? deriveDatabaseUrl(opts.urlToDrop, 'postgres') : undefined);
@@ -444,7 +444,7 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
       exists = await checkExistsViaAdmin();
       if (exists === false) {
         log(`DB "${targetDb}" does not exist (confirmed via catalog).`);
-        return { status: 'did_not_exist', notes };
+        return { status: 'did_not_exist', notes, message: 'Success (already dropped)' };
       }
     }
 
@@ -464,7 +464,7 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
         );
       } else if (probe.code === '3D000') {
         log(`DB "${targetDb}" does not exist (error 3D000 while connecting). Database already does not exist.`);
-        return { status: 'did_not_exist', notes };
+        return { status: 'did_not_exist', notes, message: 'Success (already dropped)' };
       } else {
         // Ambiguous: not proven missing, no admin path to check or drop.
         return fail(
@@ -510,13 +510,13 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
     const finalExists = await checkExistsViaAdmin();
     if (finalExists === false) {
       log(`Verified: database "${targetDb}" is gone.`);
-      return { status: 'dropped', notes };
+      return { status: 'dropped', notes, message: 'Success (dropped)' };
     } else if (finalExists === true) {
       return fail(`After drop attempt, database "${targetDb}" still exists.`, `Terminate all sessions and retry.`);
     } else {
       // Unknown (shouldn't happen with admin connected)
       log(`Could not verify drop due to unexpected state.`);
-      return { status: 'dropped', notes }; // we did our best; treat as success if we didn't see errors
+      return { status: 'dropped', notes, message: 'Success (dropped)' }; // we did our best; treat as success if we didn't see errors
     }
   } finally {
     await admin?.end().catch(() => {});
