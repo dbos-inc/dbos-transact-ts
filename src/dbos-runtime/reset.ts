@@ -36,7 +36,7 @@ export async function reset(config: ConfigFile, logger: GlobalLogger, cnf: boole
     logger.info(
       `Database '${sysDbName} was already dropped'.  To use DBOS in the future, you will need to create a new system database.`,
     );
-  } else if (res.status === 'connection_error') {
+  } else if (res.status === 'failed') {
     logger.info(
       `DROP operation for '${sysDbName} could not be attempted: \n ${res.notes.join('\n')} ${res.hint ?? ''}.`,
     );

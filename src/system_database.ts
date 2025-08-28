@@ -277,14 +277,9 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
         urlToEnsure: sysDbUrl,
         logger: (msg: string) => logger.debug(msg),
       });
-      if (res.status === 'connection_error') {
-        logger.warn(
-          `Failed to check or create connection to ${maskDatabaseUrl(sysDbUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
-        );
-      }
       if (res.status === 'failed') {
         logger.warn(
-          `Database does not exist and could not be created: ${maskDatabaseUrl(sysDbUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+          `Database could not be verified / created: ${maskDatabaseUrl(sysDbUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
         );
       }
     }

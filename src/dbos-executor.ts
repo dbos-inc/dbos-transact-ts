@@ -424,14 +424,9 @@ export class DBOSExecutor {
             urlToEnsure: this.config.databaseUrl,
             logger: (msg: string) => this.logger.debug(msg),
           });
-          if (res.status === 'connection_error') {
-            this.logger.warn(
-              `Failed to check or create connection to application database ${maskDatabaseUrl(this.config.databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
-            );
-          }
           if (res.status === 'failed') {
             this.logger.warn(
-              `Application database does not exist and could not be created: ${maskDatabaseUrl(this.config.databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+              `Application database could not be verified / created: ${maskDatabaseUrl(this.config.databaseUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
             );
           }
         }

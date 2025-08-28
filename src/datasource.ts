@@ -368,13 +368,12 @@ export interface DropDatabaseOptions {
  * Result of a `dropPostgresDatabase` call.
  * Status of `dropped` or `did_not_exist` is a "success",
  *  from the perspective that we are completely sure the DB is not there at the end.
- * Status of `failed` means that the DB still exists, `connection_error` means we cannot say.
- *  These two status values therefore are "failures" from the sense that the postcondition
- *  of a nonexistent DB is not verified.
+ * Status of `failed` means that the DB still exists,  or we cannot say.
+ *  This means "failure" in the sense that the postcondition of a nonexistent DB is not verified.
  */
 export type DropDatabaseResult =
   | { status: 'dropped' | 'did_not_exist'; notes: string[]; message: string }
-  | { status: 'failed' | 'connection_error'; notes: string[]; hint?: string; message: string };
+  | { status: 'failed'; notes: string[]; hint?: string; message: string };
 
 /**
  * Drop a postgres database from a postgres server.  This requires a target DB name,
@@ -527,13 +526,12 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
  * Result of a `ensurePGDatabase` call.
  * Status of `created` or `already_exists` is a "success",
  *  from the perspective that we are completely sure the DB is there at the end.
- * Status of `failed` means that the DB still doesn't exist, `connection_error` means we cannot say.
- *  These two status values therefore are "failures" from the sense that the postcondition
- *  of an existing DB is not verified.
+ * Status of `failed` means that the DB still doesn't exist, or we cannot say.
+ *  This is a "failure" from the sense that the postcondition of an existing DB is not verified.
  */
 export type EnsureDatabaseResult =
-  | { status: 'created' | 'already_exists'; notes: string[] }
-  | { status: 'failed' | 'connection_error'; notes: string[]; hint?: string };
+  | { status: 'created' | 'already_exists'; message: string; notes: string[] }
+  | { status: 'failed'; notes: string[]; message: string; hint?: string };
 
 /**
  * The logical thing to provide is the name of the DB to ensure (`dbToEnsure`) and a connection string with permission (`adminUrl`)
@@ -564,7 +562,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
 
   function fail(msg: string, hint?: string): EnsureDatabaseResult {
     log(`FAIL: ${msg}${hint ? ` | HINT: ${hint}` : ''}`);
-    return { status: 'failed', notes, hint };
+    return { status: 'failed', notes, hint, message: msg };
   }
 
   const targetDb = opts.dbToEnsure ?? getDbNameFromUrl(opts.urlToEnsure!);
@@ -579,7 +577,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
       if (probe.kind === 'ok') {
         // We can reach the target DB, do nothing
         await probe.client.end().catch(() => {});
-        return { status: 'already_exists', notes };
+        return { status: 'already_exists', notes, message: 'Success (already existed)' };
       }
     } catch (e) {
       log(`Caught error probing database: (e as Error).message; attempting create.`);
@@ -623,7 +621,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
       exists = await checkExistsViaAdmin();
       if (exists === true) {
         log(`DB "${targetDb}" exists (confirmed via catalog).`);
-        return { status: 'already_exists', notes };
+        return { status: 'already_exists', notes, message: 'Success (already existed)' };
       }
     }
 
@@ -635,7 +633,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
         // We can reach the target DB.... via a URL derived from admin
         await probe.client.end().catch(() => {});
         log(`Probe of database ${targetDb} via ${maskDatabaseUrl(dbUrl)} succeeds.`);
-        return { status: 'already_exists', notes };
+        return { status: 'already_exists', notes, message: 'Success (already existed)' };
       } else {
         // Ambiguous: We do not know it to be there, and we can't make an admin connection to proceed.
         return fail(
@@ -659,13 +657,13 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
     const finalExists = await checkExistsViaAdmin();
     if (finalExists === true) {
       log(`Verified: database "${targetDb}" exists.`);
-      return { status: 'created', notes };
+      return { status: 'created', notes, message: 'Success (created)' };
     } else if (finalExists === false) {
       return fail(`After create attempt, database "${targetDb}" does not exist still.`);
     } else {
       // Unknown (shouldn't happen with admin connected)
       log(`Could not verify creation due to unexpected state.`);
-      return { status: 'created', notes }; // we did our best; treat as success if we didn't see errors
+      return { status: 'created', notes, message: 'Success (unverified)' };
     }
   } finally {
     await admin?.end().catch(() => {});

@@ -22,14 +22,9 @@ export async function migrate(
       urlToEnsure: databaseUrl,
       logger: (msg: string) => logger.info(msg),
     });
-    if (res.status === 'connection_error') {
-      logger.warn(
-        `Failed to check or create connection to app database ${maskDatabaseUrl(databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
-      );
-    }
     if (res.status === 'failed') {
       logger.warn(
-        `Application database does not exist and could not be created: ${maskDatabaseUrl(databaseUrl)}: ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+        `Application database could not be verified or created: ${maskDatabaseUrl(databaseUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
       );
     }
   }
