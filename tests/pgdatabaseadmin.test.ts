@@ -2,7 +2,7 @@ import { Client } from 'pg';
 import { PostgreSqlContainer, type StartedPostgreSqlContainer } from '@testcontainers/postgresql';
 import net from 'net';
 
-import { dropPGDatabase, ensurePGDatabase } from '../src/datasource';
+import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
 import { spawn } from 'child_process';
 
 // Test routine to see if psql can contact container
@@ -82,8 +82,6 @@ async function tryTCPConnection(container: StartedPostgreSqlContainer) {
   });
 }
 
-const mkConn = (uri: string, db: string) => uri.replace(/\/[^/]*$/, `/${db}`);
-
 describe('PG16 drop/create e2e', () => {
   let testShouldRun = false;
 
@@ -144,12 +142,16 @@ describe('PG16 drop/create e2e', () => {
   afterAll(async () => {}, 120_000);
 
   // TODO Tests:
-  //  URL masking
   //  Errors for not connecting
   //  Errors from PG itself
   //  Admin DB not available
   //  Weird db names
-  //  Replace mkConn?
+
+  test('url masking', () => {
+    expect(maskDatabaseUrl('postgres://postgres:secret@localhost:5432/dbostest?connect_timeout=7')).toBe(
+      'postgres://postgres:s****t@localhost:5432/dbostest?connect_timeout=7',
+    );
+  });
 
   test('using url plus database', async () => {
     if (!testShouldRun) return;
@@ -163,12 +165,14 @@ describe('PG16 drop/create e2e', () => {
     try {
       // Creation via the admin URL
       const dbName = 'idle_db1';
-      expect((await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName })).status).toBe(
-        'created',
-      );
-      expect((await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName })).status).toBe(
-        'already_exists',
-      );
+      expect(
+        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName, logger: () => {} }))
+          .status,
+      ).toBe('created');
+      expect(
+        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName, logger: () => {} }))
+          .status,
+      ).toBe('already_exists');
 
       // Drop via the admin URL
       expect(
@@ -194,9 +198,9 @@ describe('PG16 drop/create e2e', () => {
     try {
       // Creation via the target URL (falls back on 'postgres')
       const dbName = 'idle_db2';
-      const target = mkConn(container.getConnectionUri(), dbName);
-      expect((await ensurePGDatabase({ urlToEnsure: target })).status).toBe('created');
-      expect((await ensurePGDatabase({ urlToEnsure: target })).status).toBe('already_exists');
+      const target = deriveDatabaseUrl(container.getConnectionUri(), dbName);
+      expect((await ensurePGDatabase({ urlToEnsure: target, logger: () => {} })).status).toBe('created');
+      expect((await ensurePGDatabase({ urlToEnsure: target, logger: () => {} })).status).toBe('already_exists');
 
       // Drop via the URL (falls back on 'postgres')
       expect((await dropPGDatabase({ urlToDrop: target, logger: () => {} })).status).toBe('dropped');
@@ -216,7 +220,7 @@ describe('PG16 drop/create e2e', () => {
       .start();
 
     try {
-      const target = mkConn(container.getConnectionUri(), 'never_existed');
+      const target = deriveDatabaseUrl(container.getConnectionUri(), 'never_existed');
 
       // This version of it is using a bogus URL, and the 'postgres' service database doesn't exist
       const res1 = await dropPGDatabase({ urlToDrop: target, logger: () => {} });
@@ -245,22 +249,23 @@ describe('PG16 drop/create e2e', () => {
 
     try {
       const dbName = 'busy_db';
-      expect((await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName })).status).toBe(
-        'created',
-      );
+      expect(
+        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName, logger: () => {} }))
+          .status,
+      ).toBe('created');
 
       // open a blocker connection
-      const busy = new Client({ connectionString: mkConn(container.getConnectionUri(), dbName) });
+      const busy = new Client({ connectionString: deriveDatabaseUrl(container.getConnectionUri(), dbName) });
       await busy.connect();
       busy.on('error', (err: { code?: string; message?: string }) => {
-        if (err?.code === '57P01' || /terminating connection/i.test(err?.message ?? '')) return;
+        if (err?.code === '57P01' || /terminat/i.test(err?.message ?? '')) return;
         if (err?.code === '08006' || err?.code === '08003') return;
         console.error('busy client unexpected error:', err);
       });
       await busy.query('BEGIN'); // keep a transaction open
 
       const res = await dropPGDatabase({
-        urlToDrop: mkConn(container.getConnectionUri(), dbName),
+        urlToDrop: deriveDatabaseUrl(container.getConnectionUri(), dbName),
         logger: () => {},
       });
 

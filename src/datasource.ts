@@ -672,7 +672,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
   }
 }
 
-function deriveDatabaseUrl(urlStr: string, otherDbName: string): string {
+export function deriveDatabaseUrl(urlStr: string, otherDbName: string): string {
   try {
     const u = new URL(urlStr);
     u.pathname = `/${otherDbName}`;
