@@ -627,7 +627,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
 
     // If we couldn't connect as admin, try connecting to target to distinguish "doesn't exist" from failure to connect.
     if (!admin) {
-      const dbUrl = opts.dbToEnsure ?? deriveDatabaseUrl(adminUrl, targetDb);
+      const dbUrl = opts.urlToEnsure ?? deriveDatabaseUrl(adminUrl, targetDb);
       const probe = await connectOutcome(dbUrl, log, 'probe target (existence test)');
       if (probe.kind === 'ok') {
         // We can reach the target DB.... via a URL derived from admin
@@ -683,6 +683,7 @@ export function deriveDatabaseUrl(urlStr: string, otherDbName: string): string {
 // The `pg` package we use does not parse the connect_timeout parameter, so we need to handle it ourselves.
 export function getPGClientConfig(databaseUrl: string | URL) {
   const connectionString = typeof databaseUrl === 'string' ? databaseUrl : databaseUrl.toString();
+  console.log(databaseUrl);
   const timeout = getTimeout(typeof databaseUrl === 'string' ? new URL(databaseUrl) : databaseUrl);
   return {
     connectionString,

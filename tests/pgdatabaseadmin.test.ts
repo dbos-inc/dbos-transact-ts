@@ -153,8 +153,7 @@ describe('PG16 drop/create e2e', () => {
   afterAll(async () => {}, 120_000);
 
   // TODO Tests:
-  //  Errors for not connecting
-  //  Errors from PG itself
+
   //  Admin DB not available
 
   test('url masking', () => {
@@ -258,6 +257,14 @@ describe('PG16 drop/create e2e', () => {
         expect(res1.status).toBe('failed');
       }
 
+      const res1c = await ensurePGDatabase({ urlToEnsure: target, logger: () => {} });
+      if (res1c.status === 'failed') {
+        expect(res1c.hint?.toLowerCase()?.includes('invalid password')).toBeTruthy();
+        expect(res1c.message.toLowerCase().includes('could not establish any admin connection')).toBeTruthy();
+      } else {
+        expect(res1c.status).toBe('failed');
+      }
+
       // Same, but with incorrect admin + db name
       const res2 = await dropPGDatabase({ dbToDrop: 'never_existed', adminUrl: targetWithPerms, logger: () => {} });
       expect(res2.status).toBe('failed');
@@ -267,12 +274,27 @@ describe('PG16 drop/create e2e', () => {
       } else {
         expect(res2.status).toBe('failed');
       }
+      const res2c = await ensurePGDatabase({
+        dbToEnsure: 'never_existed',
+        adminUrl: targetWithPerms,
+        logger: () => {},
+      });
+      expect(res2c.status).toBe('failed');
+      if (res2c.status === 'failed') {
+        expect(res2c.hint?.toLowerCase()?.includes('invalid password')).toBeTruthy();
+        expect(res2c.message.toLowerCase().includes('could not establish any admin connection')).toBeTruthy();
+      } else {
+        expect(res2c.status).toBe('failed');
+      }
 
       // Same, but with incorrect admin + db name
       const bogusServer = makePGConnStr('myuser', 'mypassword', container.getHost(), 59999, 'mydatabase', 1000);
       const res3 = await dropPGDatabase({ urlToDrop: bogusServer, logger: () => {} });
       expect(res3.status).toBe('failed');
       expect(res3.message.includes('connect failed'));
+      const res3c = await ensurePGDatabase({ urlToEnsure: bogusServer, logger: () => {} });
+      expect(res3c.status).toBe('failed');
+      expect(res3c.message.includes('connect failed'));
 
       // Same, but with incorrect admin + db name; target is not existent
       const bogusAdminServer = makePGConnStr('myuser', 'mypassword', container.getHost(), 59999, 'mydatabase', 1000);
@@ -282,6 +304,14 @@ describe('PG16 drop/create e2e', () => {
         logger: () => {},
       });
       expect(res4.status).toBe('did_not_exist');
+
+      // Bogus admin
+      const res4c = await ensurePGDatabase({
+        urlToEnsure: container.getConnectionUri(),
+        adminUrl: bogusAdminServer,
+        logger: () => {},
+      });
+      expect(res4c.status).toBe('already_exists');
     } finally {
       await container.stop();
     }
