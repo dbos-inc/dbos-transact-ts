@@ -145,7 +145,6 @@ describe('PG16 drop/create e2e', () => {
   //  Errors for not connecting
   //  Errors from PG itself
   //  Admin DB not available
-  //  Weird db names
 
   test('url masking', () => {
     expect(maskDatabaseUrl('postgres://postgres:secret@localhost:5432/dbostest?connect_timeout=7')).toBe(
@@ -181,6 +180,16 @@ describe('PG16 drop/create e2e', () => {
       expect(
         (await dropPGDatabase({ adminUrl: container.getConnectionUri(), dbToDrop: dbName, logger: () => {} })).status,
       ).toBe('did_not_exist');
+
+      const dbNameYuck = `do"not;name-your$db.this!'`;
+      expect(
+        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbNameYuck, logger: () => {} }))
+          .status,
+      ).toBe('created');
+      expect(
+        (await dropPGDatabase({ adminUrl: container.getConnectionUri(), dbToDrop: dbNameYuck, logger: () => {} }))
+          .status,
+      ).toBe('dropped');
     } finally {
       await container.stop();
     }
