@@ -89,6 +89,9 @@ class WFQueueRunner {
 
   private isRunning: boolean = false;
   private interruptResolve?: () => void;
+  private pollingIntervalMs: number = 1000;
+  private readonly minPollingIntervalMs: number = 1000;
+  private readonly maxPollingIntervalMs: number = 120000;
 
   stop() {
     if (!this.isRunning) return;
@@ -106,7 +109,7 @@ class WFQueueRunner {
       const timeoutPromise = new Promise<void>((resolve) => {
         timer = setTimeout(() => {
           resolve();
-        }, 1000);
+        }, this.pollingIntervalMs);
       });
 
       await Promise.race([timeoutPromise, new Promise<void>((_, reject) => (this.interruptResolve = reject))]).catch(
@@ -127,11 +130,17 @@ class WFQueueRunner {
           wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q, exec.executorID, globalParams.appVersion);
         } catch (e) {
           const err = e as Error;
-          // Silence row lock acquisition errors
-          if ('code' in err && err.code !== '55P03') {
+          // Handle serialization errors and lock contention with backoff
+          if ('code' in err && (err.code === '40001' || err.code === '55P03')) {
+            // 40001: serialization_failure, 55P03: lock_not_available
+            // Increase the polling interval on contention
+            this.pollingIntervalMs = Math.min(this.maxPollingIntervalMs, this.pollingIntervalMs * 2.0);
+            exec.logger.warn(
+              `Contention detected in queue thread for ${q.name}. Increasing polling interval to ${(this.pollingIntervalMs / 1000).toFixed(2)}s.`,
+            );
+          } else {
             exec.logger.warn(`Error getting startable workflows: ${err.message}`);
           }
-          // On the premise that this was a transaction conflict error, just try again later.
           wfids = [];
         }
 
@@ -147,6 +156,9 @@ class WFQueueRunner {
           }
         }
       }
+
+      // Gradually decrease the polling interval when there's no contention
+      this.pollingIntervalMs = Math.max(this.minPollingIntervalMs, this.pollingIntervalMs * 0.9);
     }
   }
 
