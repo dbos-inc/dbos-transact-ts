@@ -272,21 +272,16 @@ describe('PG16 drop/create e2e', () => {
       const bogusServer = makePGConnStr('myuser', 'mypassword', container.getHost(), 59999, 'mydatabase', 1000);
       const res3 = await dropPGDatabase({ urlToDrop: bogusServer, logger: () => {} });
       expect(res3.status).toBe('failed');
+      expect(res3.message.includes('connect failed'));
 
-      /*
-      // This version also uses a bogus URL, but we make the DB exist
-      const res2 = await dropPGDatabase({ urlToDrop: target, logger: () => {} });
-      expect(res2.status).toBe('did_not_exist');
-
-
-      // This version of it is using a valid admin URL, and the admin service database doesn't exist
-      const res2 = await dropPGDatabase({
-        dbToDrop: 'never_existed',
-        adminUrl: container.getConnectionUri(),
+      // Same, but with incorrect admin + db name; target is not existent
+      const bogusAdminServer = makePGConnStr('myuser', 'mypassword', container.getHost(), 59999, 'mydatabase', 1000);
+      const res4 = await dropPGDatabase({
+        urlToDrop: deriveDatabaseUrl(container.getConnectionUri(), 'never_existed'),
+        adminUrl: bogusAdminServer,
         logger: () => {},
       });
-      expect(res2.status).toBe('did_not_exist');
-      */
+      expect(res4.status).toBe('did_not_exist');
     } finally {
       await container.stop();
     }
