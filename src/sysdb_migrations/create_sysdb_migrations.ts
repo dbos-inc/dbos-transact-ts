@@ -68,23 +68,16 @@ export function makeRecordingKnex<K extends Knex>(
     const handler: ProxyHandler<T> = {
       get(target, prop, receiver) {
         if (prop === 'then') {
-          // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
-          return (
-            onFulfilled?: (v: unknown) => unknown | Promise<unknown>,
-            onRejected?: (r: unknown) => unknown | Promise<unknown>,
-          ) => {
+          return (onFulfilled?: (v: unknown) => unknown, onRejected?: (r: unknown) => unknown) => {
             captureCompiled(target.toSQL(), statements);
             return Promise.resolve(undefined).then(onFulfilled, onRejected);
           };
         }
         if (prop === 'catch') {
-          // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
-          return (onRejected?: (r: unknown) => unknown | Promise<unknown>) =>
-            Promise.resolve(undefined).catch(onRejected);
+          return (onRejected?: (r: unknown) => unknown) => Promise.resolve(undefined).catch(onRejected);
         }
         if (prop === 'finally') {
-          // eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
-          return (onFinally?: () => unknown | Promise<unknown>) => Promise.resolve(undefined).finally(onFinally);
+          return (onFinally?: () => unknown) => Promise.resolve(undefined).finally(onFinally);
         }
 
         const value = Reflect.get(target, prop, receiver);
