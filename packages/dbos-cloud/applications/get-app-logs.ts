@@ -23,7 +23,7 @@ export async function getAppLogs(
     throw new Error('The --last parmameter must be an integer greater than 0');
   }
   if (last === undefined) {
-    last = 0; //internally, 0 means "get all the logs." This is the default.
+    last = 3600; //the last hour
   }
 
   if (pagesize !== undefined && (isNaN(pagesize) || pagesize <= 0)) {
