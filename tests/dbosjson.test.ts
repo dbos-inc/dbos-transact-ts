@@ -1,13 +1,21 @@
 import { DBOSJSON, DBOSJSONLegacy } from '../src/utils';
 import superjson from 'superjson';
 
-// DBOSJSON tests are organized into three critical sections:
-// 1. Original functionality - Must continue working exactly as before
-// 2. SuperJSON enhancements - New types that are now supported
-// 3. Backwards compatibility - MUST parse data serialized with old DBOSJSON
-//
-// The backwards compatibility tests are the most critical - they ensure
-// existing data in production databases remains readable after upgrades.
+/**
+ * DBOSJSON was upgraded to use SuperJSON internally for richer type support.
+ *
+ * What changed: DBOSJSON.stringify() now uses SuperJSON, creating a different format.
+ * Why it matters: Production databases contain millions of rows serialized with the OLD format.
+ * The requirement: New DBOSJSON MUST deserialize both old AND new formats perfectly.
+ *
+ * Test structure:
+ * 1. "dbos-json-reviver-replacer" - Original features that already worked (dates, bigints, buffers)
+ * 2. "SuperJSON enhanced types" - New capabilities we added (Sets, Maps, undefined, RegExp, etc.)
+ * 3. "Backwards compatibility" - THE CRITICAL TESTS that verify old database data still works
+ *
+ * If backwards compatibility tests fail, DO NOT MERGE. It means the upgrade will break
+ * production by making existing database data unreadable.
+ */
 
 describe('dbos-json-reviver-replacer', () => {
   test('Replace revive dates', () => {
@@ -135,9 +143,24 @@ describe('SuperJSON enhanced types', () => {
 });
 
 describe('Backwards compatibility', () => {
-  // CRITICAL: These tests ensure DBOSJSON can deserialize data stored in production databases
-  // that was serialized with the old format. Breaking these tests means breaking existing
-  // deployments. The new DBOSJSON must ALWAYS be able to read old data.
+  /**
+   * These tests simulate reading data that's ALREADY in production databases.
+   *
+   * Context: Before this PR, DBOSJSON used custom replacer/reviver functions that created
+   * formats like {"dbos_type": "dbos_Date", "dbos_data": "2024-01-01T00:00:00.000Z"}.
+   *
+   * After this PR: DBOSJSON creates SuperJSON format like {"json": {...}, "meta": {...}}.
+   *
+   * The problem: Millions of workflow states in production were serialized with the OLD format.
+   * The solution: DBOSJSON.parse() now detects which format and uses the appropriate deserializer.
+   *
+   * These tests verify that solution works by:
+   * 1. Using DBOSJSONLegacy (the old implementation) to create old-format strings
+   * 2. Parsing those strings with the NEW DBOSJSON
+   * 3. Verifying the data is correctly restored
+   *
+   * If these tests fail, existing production data becomes unreadable. DO NOT MERGE if broken.
+   */
 
   test('parses legacy DBOSJSON dates', () => {
     const date = new Date('2024-01-01T12:00:00Z');
