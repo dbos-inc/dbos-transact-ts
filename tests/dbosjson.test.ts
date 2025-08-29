@@ -219,4 +219,22 @@ describe('Backwards compatibility', () => {
     const deserialized = DBOSJSON.parse(plainSerialized);
     expect(deserialized).toEqual(plain);
   });
+
+  test('does not confuse user data with SuperJSON format', () => {
+    // User data that happens to have a 'json' field should not be treated as SuperJSON
+    const userDataWithJson = {
+      json: { some: 'data' },
+      otherField: 'value',
+      anotherField: 123,
+    };
+    const serialized = JSON.stringify(userDataWithJson);
+    const deserialized = DBOSJSON.parse(serialized);
+    expect(deserialized).toEqual(userDataWithJson);
+
+    // Only {json} or {json, meta} should be treated as SuperJSON
+    const ambiguousData = { json: 'test', someOtherProp: true };
+    const ambiguousSerialized = JSON.stringify(ambiguousData);
+    const ambiguousDeserialized = DBOSJSON.parse(ambiguousSerialized);
+    expect(ambiguousDeserialized).toEqual(ambiguousData);
+  });
 });

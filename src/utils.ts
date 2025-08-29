@@ -195,6 +195,37 @@ export const DBOSJSONLegacy = {
 };
 
 /**
+ * Detects if a parsed object is in SuperJSON format.
+ * SuperJSON format has exactly these shapes:
+ * - {json: any} - for simple values without metadata
+ * - {json: any, meta: {...}} - for values with type metadata
+ */
+function isSuperJSONFormat(obj: unknown): boolean {
+  if (typeof obj !== 'object' || obj === null) {
+    return false;
+  }
+
+  const keys = Object.keys(obj);
+
+  // SuperJSON has exactly 1 key (json) or 2 keys (json + meta)
+  if (keys.length !== 1 && keys.length !== 2) {
+    return false;
+  }
+
+  // Must have 'json' property
+  if (!('json' in obj)) {
+    return false;
+  }
+
+  // If 2 keys, the other must be 'meta'
+  if (keys.length === 2 && !('meta' in obj)) {
+    return false;
+  }
+
+  return true;
+}
+
+/**
  * DBOSJSON with SuperJSON support for richer type serialization.
  *
  * Backwards compatible - can deserialize both old DBOSJSON format and new SuperJSON format.
@@ -207,8 +238,7 @@ export const DBOSJSON = {
     try {
       const parsed = JSON.parse(text);
 
-      // Check if it's SuperJSON format (has json field and optionally meta)
-      if (typeof parsed === 'object' && parsed !== null && 'json' in parsed) {
+      if (isSuperJSONFormat(parsed)) {
         // This is SuperJSON format, deserialize it
         return superjson.deserialize(parsed as Parameters<typeof superjson.deserialize>[0]);
       }
