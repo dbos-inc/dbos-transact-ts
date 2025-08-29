@@ -198,17 +198,26 @@ export const DBOSJSONLegacy = {
  * Detects if a parsed object is in our SuperJSON format.
  * We only treat objects with BOTH json and meta as SuperJSON to avoid ambiguity.
  * This prevents confusing user data like {json: {foo: 'bar'}} with SuperJSON format.
+ *
+ * Performance note: We check property existence before Object.keys() because
+ * 'in' operator is O(1) property lookup while Object.keys() creates a new array
+ * and iterates all properties. Most non-SuperJSON objects will fail the cheap
+ * checks first, avoiding the expensive operation.
  */
 function isSuperJSONFormat(obj: unknown): boolean {
   if (typeof obj !== 'object' || obj === null) {
     return false;
   }
 
-  const keys = Object.keys(obj);
+  // Fast checks first - 'in' operator is O(1) property lookup
+  if (!('json' in obj) || !('meta' in obj)) {
+    return false;
+  }
 
-  // Must have exactly 2 keys: json and meta
-  // This avoids ambiguity with user data that has a 'json' field
-  return keys.length === 2 && 'json' in obj && 'meta' in obj;
+  // Only now do the expensive check - Object.keys() allocates array and iterates properties
+  // SuperJSON must have exactly 2 keys to avoid ambiguity
+  const keys = Object.keys(obj);
+  return keys.length === 2;
 }
 
 /**
