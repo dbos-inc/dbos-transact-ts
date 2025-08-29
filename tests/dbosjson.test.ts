@@ -210,11 +210,11 @@ describe('Backwards compatibility', () => {
 
   test('handles null correctly', () => {
     expect(DBOSJSON.parse(null)).toBe(null);
-    // Now includes meta to avoid ambiguity
+    // Includes our marker to avoid ambiguity
     const nullSerialized = DBOSJSON.stringify(null);
     const nullParsed = JSON.parse(nullSerialized);
     expect(nullParsed).toHaveProperty('json', null);
-    expect(nullParsed).toHaveProperty('meta');
+    expect(nullParsed).toHaveProperty('__serializer', 'superjson');
   });
 
   test('parses plain JSON', () => {
@@ -248,22 +248,23 @@ describe('Backwards compatibility', () => {
     expect(moreDeserialized).toEqual(moreAmbiguous);
   });
 
-  test('new DBOSJSON always includes meta to avoid ambiguity', () => {
-    // Simple values should get a meta marker
+  test('new DBOSJSON always includes serializer marker to avoid ambiguity', () => {
+    // Simple values should get our marker
     const simpleValue = { foo: 'bar' };
     const serialized = DBOSJSON.stringify(simpleValue);
     const parsed = JSON.parse(serialized);
 
     expect(parsed).toHaveProperty('json');
-    expect(parsed).toHaveProperty('meta'); // Should always have meta to avoid ambiguity
+    expect(parsed).toHaveProperty('__serializer', 'superjson');
     expect(parsed.json).toEqual(simpleValue);
 
-    // Complex types already have meta from SuperJSON
+    // Complex types also get our marker
     const complexValue = new Set([1, 2, 3]);
     const complexSerialized = DBOSJSON.stringify(complexValue);
     const complexParsed = JSON.parse(complexSerialized);
 
     expect(complexParsed).toHaveProperty('json');
-    expect(complexParsed).toHaveProperty('meta');
+    expect(complexParsed).toHaveProperty('__serializer', 'superjson');
+    expect(complexParsed).toHaveProperty('meta'); // Complex types have meta from SuperJSON
   });
 });

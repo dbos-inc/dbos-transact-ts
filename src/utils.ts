@@ -194,30 +194,21 @@ export const DBOSJSONLegacy = {
   },
 };
 
+// Constants for SuperJSON serialization marker
+const SERIALIZER_MARKER_KEY = '__serializer' as const;
+const SERIALIZER_MARKER_VALUE = 'superjson' as const;
+
 /**
- * Detects if a parsed object is in our SuperJSON format.
- * We only treat objects with BOTH json and meta as SuperJSON to avoid ambiguity.
- * This prevents confusing user data like {json: {foo: 'bar'}} with SuperJSON format.
- *
- * Performance note: We check property existence before Object.keys() because
- * 'in' operator is O(1) property lookup while Object.keys() creates a new array
- * and iterates all properties. Most non-SuperJSON objects will fail the cheap
- * checks first, avoiding the expensive operation.
+ * Detects if a parsed object was serialized by our DBOSJSON with SuperJSON.
+ * We check for our explicit marker to avoid ANY ambiguity with user data.
  */
-function isSuperJSONFormat(obj: unknown): boolean {
-  if (typeof obj !== 'object' || obj === null) {
-    return false;
-  }
-
-  // Fast checks first - 'in' operator is O(1) property lookup
-  if (!('json' in obj) || !('meta' in obj)) {
-    return false;
-  }
-
-  // Only now do the expensive check - Object.keys() allocates array and iterates properties
-  // SuperJSON must have exactly 2 keys to avoid ambiguity
-  const keys = Object.keys(obj);
-  return keys.length === 2;
+function isSuperJSONSerialized(obj: unknown): boolean {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    SERIALIZER_MARKER_KEY in obj &&
+    (obj as any)[SERIALIZER_MARKER_KEY] === SERIALIZER_MARKER_VALUE
+  );
 }
 
 /**
@@ -233,17 +224,17 @@ export const DBOSJSON = {
     try {
       const parsed = JSON.parse(text);
 
-      if (isSuperJSONFormat(parsed)) {
-        // This is SuperJSON format, deserialize it
-        return superjson.deserialize(parsed as Parameters<typeof superjson.deserialize>[0]);
+      // Check if this is our SuperJSON format with explicit marker
+      if (isSuperJSONSerialized(parsed)) {
+        const { json, meta } = parsed as any;
+        return superjson.deserialize({ json, meta });
       }
 
-      // Not SuperJSON format, parse with legacy DBOS reviver for backwards compatibility
-      // This handles dates, bigints, buffers that were serialized with the old format
+      // Legacy DBOSJSON format - parse with custom reviver for backwards compatibility
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return JSON.parse(text, DBOSReviver);
     } catch (error) {
-      // Fallback to legacy parser if something goes wrong
+      // Fallback to legacy parser if initial parse fails
       // eslint-disable-next-line @typescript-eslint/no-unsafe-return
       return JSON.parse(text, DBOSReviver);
     }
@@ -253,14 +244,12 @@ export const DBOSJSON = {
     // Use SuperJSON for all new serialization
     const serialized = superjson.serialize(value);
 
-    // Always ensure meta exists to avoid ambiguity with user data
-    // If SuperJSON didn't add meta (for simple values), add an empty one
-    if (!('meta' in serialized)) {
-      // @ts-expect-error - Adding custom marker to meta for disambiguation
-      serialized.meta = { __dbos: true }; // Marker to indicate this is from DBOSJSON
-    }
-
-    return JSON.stringify(serialized);
+    // Add our explicit marker to make detection unambiguous
+    // This ensures we never confuse user data with our format
+    return JSON.stringify({
+      ...serialized,
+      [SERIALIZER_MARKER_KEY]: SERIALIZER_MARKER_VALUE,
+    });
   },
 };
 
