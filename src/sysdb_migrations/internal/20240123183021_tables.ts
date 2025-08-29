@@ -1,7 +1,6 @@
 /* Auto-generated from Knex migrations. Do not edit by hand. */
 import type { GeneratedMigration, SqlStatement } from '../migration_types';
 const up_pg__20240123183021_tables: ReadonlyArray<SqlStatement> = [
-  { sql: `(EXTRACT(EPOCH FROM now())*1000)::bigint`, bindings: [] },
   {
     sql: `create table "dbos"."operation_outputs" ("workflow_uuid" text not null, "function_id" integer not null, "output" text, "error" text, constraint "operation_outputs_pkey" primary key ("workflow_uuid", "function_id"))`,
     bindings: [],
@@ -15,7 +14,7 @@ const up_pg__20240123183021_tables: ReadonlyArray<SqlStatement> = [
     bindings: [],
   },
   {
-    sql: `create table "dbos"."notifications" ("destination_uuid" text not null, "topic" text, "message" text not null, "created_at_epoch_ms" bigint not null default '[object Promise]')`,
+    sql: `create table "dbos"."notifications" ("destination_uuid" text not null, "topic" text, "message" text not null, "created_at_epoch_ms" bigint not null default (EXTRACT(EPOCH FROM now())*1000)::bigint)`,
     bindings: [],
   },
   {

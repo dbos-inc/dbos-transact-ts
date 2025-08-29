@@ -1,10 +1,8 @@
 /* Auto-generated from Knex migrations. Do not edit by hand. */
 import type { GeneratedMigration, SqlStatement } from '../migration_types';
 const up_pg__20240124015239_status_timestamp: ReadonlyArray<SqlStatement> = [
-  { sql: `(EXTRACT(EPOCH FROM now())*1000)::bigint`, bindings: [] },
-  { sql: `(EXTRACT(EPOCH FROM now())*1000)::bigint`, bindings: [] },
   {
-    sql: `alter table "dbos"."workflow_status" add column "created_at" bigint not null default '[object Promise]', add column "updated_at" bigint not null default '[object Promise]'`,
+    sql: `alter table "dbos"."workflow_status" add column "created_at" bigint not null default (EXTRACT(EPOCH FROM now())*1000)::bigint, add column "updated_at" bigint not null default (EXTRACT(EPOCH FROM now())*1000)::bigint`,
     bindings: [],
   },
 ];

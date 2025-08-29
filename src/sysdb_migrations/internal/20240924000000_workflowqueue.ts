@@ -1,10 +1,9 @@
 /* Auto-generated from Knex migrations. Do not edit by hand. */
 import type { GeneratedMigration, SqlStatement } from '../migration_types';
 const up_pg__20240924000000_workflowqueue: ReadonlyArray<SqlStatement> = [
-  { sql: `(EXTRACT(EPOCH FROM now())*1000)::bigint`, bindings: [] },
   { sql: `alter table "dbos"."workflow_status" add column "queue_name" text default null`, bindings: [] },
   {
-    sql: `create table "dbos"."workflow_queue" ("queue_name" text not null, "workflow_uuid" text not null, "created_at_epoch_ms" bigint not null default '[object Promise]', "started_at_epoch_ms" bigint, "completed_at_epoch_ms" bigint, constraint "workflow_queue_pkey" primary key ("workflow_uuid"))`,
+    sql: `create table "dbos"."workflow_queue" ("queue_name" text not null, "workflow_uuid" text not null, "created_at_epoch_ms" bigint not null default (EXTRACT(EPOCH FROM now())*1000)::bigint, "started_at_epoch_ms" bigint, "completed_at_epoch_ms" bigint, constraint "workflow_queue_pkey" primary key ("workflow_uuid"))`,
     bindings: [],
   },
   {

@@ -20,7 +20,7 @@ export async function migrate(
 
     const res = await ensurePGDatabase({
       urlToEnsure: databaseUrl,
-      logger: (msg: string) => logger.info(msg),
+      logger: (msg: string) => logger.debug(msg),
     });
     if (res.status === 'failed') {
       logger.warn(

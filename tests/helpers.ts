@@ -31,16 +31,16 @@ export async function setUpDBOSTestDb(config: DBOSConfig) {
   const internalConfig = translateDbosConfig(config);
 
   if (internalConfig.databaseUrl) {
-    const r = await dropPGDatabase({ urlToDrop: internalConfig.databaseUrl });
+    const r = await dropPGDatabase({ urlToDrop: internalConfig.databaseUrl, logger: () => {} });
     if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
       throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.databaseUrl)}`);
     }
-    const rc = await ensurePGDatabase({ urlToEnsure: internalConfig.databaseUrl });
+    const rc = await ensurePGDatabase({ urlToEnsure: internalConfig.databaseUrl, logger: () => {} });
     if (rc.status !== 'already_exists' && rc.status !== 'created') {
       throw new Error(`Unable to create ${maskDatabaseUrl(internalConfig.databaseUrl)}`);
     }
   }
-  const r = await dropPGDatabase({ urlToDrop: internalConfig.systemDatabaseUrl });
+  const r = await dropPGDatabase({ urlToDrop: internalConfig.systemDatabaseUrl, logger: () => {} });
   if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
     throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.systemDatabaseUrl)}`);
   }

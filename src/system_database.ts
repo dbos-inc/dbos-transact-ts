@@ -27,6 +27,8 @@ import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './datasource';
+import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
+import { allMigrations } from './sysdb_migrations/internal';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -265,7 +267,12 @@ export async function grantDbosSchemaPermissions(
   }
 }
 
-export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogger, debugMode: boolean = false) {
+export async function ensureSystemDatabase(
+  sysDbUrl: string,
+  logger: GlobalLogger,
+  debugMode: boolean = false,
+  useKnex = false,
+) {
   const knexDb = knex({
     client: 'pg',
     connection: getClientConfig(sysDbUrl),
@@ -284,6 +291,15 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
       }
     }
 
+    async function checkConnection(knexDb: Knex) {
+      try {
+        await knexDb.raw<ExistenceCheck>('SELECT EXISTS (SELECT * FROM pg_database LIMIT 1)');
+        return true;
+      } catch {
+        return false;
+      }
+    }
+
     if (!(await checkConnection(knexDb))) {
       logger.warn(
         `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}${debugMode ? ' (debug mode)' : ''}`,
@@ -291,102 +307,107 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
       throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
     }
 
-    const directory = getMigrationsDirectory();
-    if (!directory) {
-      logger.warn(
-        'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
-          'Please run "npx dbos migrate" to create your system database before running your bundled application.',
-      );
-      return;
-    }
-
     if (debugMode) {
       logger.info(`Skipping system database migration in debug mode.`);
       return;
     }
 
-    const migrateConfig = { directory, tableName: 'knex_migrations' };
-    type CompletedMigration = { name: string };
-    type PendingMigration = { file: string; directory: string };
-
-    try {
-      const [completed, pending] = (await knexDb.migrate.list(migrateConfig)) as [
-        CompletedMigration[],
-        PendingMigration[],
-      ];
-
-      if (pending.length === 0) {
-        logger.debug(`System database is up to date. ${completed.length} migrations have been applied.`);
+    if (useKnex) {
+      const directory = getMigrationsDirectory();
+      if (!directory) {
+        logger.warn(
+          'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
+            'Please run "npx dbos migrate" to create your system database before running your bundled application.',
+        );
         return;
       }
-    } catch (e) {
-      // This may occur if the system DB is basically there, maybe from a newer version.
-      const exists = await checkForExistingSysDBTables(knexDb);
-      if (exists) {
-        logger.warn(
-          `DBOS system database table migration failure; listing migrations reported: ${(e as Error).message}.
-  Key system database tables appear to be intact.  This may indicate that the database was created with a newer DBOS version.
-  Proceeding.`,
-        );
-      } else {
-        logger.warn(
-          `DBOS system database table migration failure reported: ${(e as Error).message}.
-  The system database does not appear to be intact.
-  Aborting.`,
-        );
-        throw e;
-      }
-    }
 
-    try {
-      await knexDb.migrate.latest(migrateConfig);
-    } catch (e) {
-      // This may occur if the system DB is basically there, maybe from a newer version.
-      const exists = await checkForExistingSysDBTables(knexDb);
-      if (exists) {
-        logger.warn(
-          `DBOS system database table migration failure reported: ${(e as Error).message}.
-  While migration failed, key system database tables appear to be intact.
-  This may indicate that the system database was created externally, or that it was created with a newer DBOS version.
-  Proceeding.`,
-        );
-      } else {
-        logger.warn(
-          `DBOS system database table migration failure reported: ${(e as Error).message}.
-  The system database does not appear to be intact.
-  Aborting.`,
-        );
-        throw e;
+      const migrateConfig = { directory, tableName: 'knex_migrations' };
+      type CompletedMigration = { name: string };
+      type PendingMigration = { file: string; directory: string };
+
+      try {
+        const [completed, pending] = (await knexDb.migrate.list(migrateConfig)) as [
+          CompletedMigration[],
+          PendingMigration[],
+        ];
+
+        if (pending.length === 0) {
+          logger.debug(`System database is up to date. ${completed.length} migrations have been applied.`);
+          return;
+        }
+      } catch (e) {
+        // This may occur if the system DB is basically there, maybe from a newer version.
+        const exists = await checkForExistingSysDBTables(knexDb);
+        if (exists) {
+          logger.warn(
+            `DBOS system database table migration failure; listing migrations reported: ${(e as Error).message}.
+    Key system database tables appear to be intact.  This may indicate that the database was created with a newer DBOS version.
+    Proceeding.`,
+          );
+        } else {
+          logger.warn(
+            `DBOS system database table migration failure reported: ${(e as Error).message}.
+    The system database does not appear to be intact.
+    Aborting.`,
+          );
+          throw e;
+        }
+      }
+
+      try {
+        await knexDb.migrate.latest(migrateConfig);
+      } catch (e) {
+        // This may occur if the system DB is basically there, maybe from a newer version.
+        const exists = await checkForExistingSysDBTables(knexDb);
+        if (exists) {
+          logger.warn(
+            `DBOS system database table migration failure reported: ${(e as Error).message}.
+    While migration failed, key system database tables appear to be intact.
+    This may indicate that the system database was created externally, or that it was created with a newer DBOS version.
+    Proceeding.`,
+          );
+        } else {
+          logger.warn(
+            `DBOS system database table migration failure reported: ${(e as Error).message}.
+    The system database does not appear to be intact.
+    Aborting.`,
+          );
+          throw e;
+        }
+      }
+
+      async function checkForExistingSysDBTables(knexDb: Knex) {
+        // Check if the table already exists (created concurrently by someone else)
+        const exists = await knexDb.schema.withSchema('dbos').hasTable('operation_outputs');
+
+        return exists;
+      }
+      function getMigrationsDirectory(): string | undefined {
+        let migrationsDirectory: string;
+        try {
+          migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
+        } catch (packageError) {
+          migrationsDirectory = path.join(__dirname, 'migrations');
+        }
+        return fs.existsSync(migrationsDirectory) ? migrationsDirectory : undefined;
+      }
+    } else {
+      const client = new Client(getClientConfig(sysDbUrl));
+      await client.connect();
+
+      try {
+        await runSysMigrationsPg(client, allMigrations, {
+          onWarn: (e: string) => logger.warn(e),
+        });
+      } finally {
+        try {
+          await client.end();
+        } catch (e) {}
       }
     }
   } finally {
     await knexDb.destroy();
-  }
-
-  async function checkConnection(knexDb: Knex) {
-    try {
-      await knexDb.raw<ExistenceCheck>('SELECT EXISTS (SELECT * FROM pg_database LIMIT 1)');
-      return true;
-    } catch {
-      return false;
-    }
-  }
-
-  async function checkForExistingSysDBTables(knexDb: Knex) {
-    // Check if the table already exists (created concurrently by someone else)
-    const exists = await knexDb.schema.withSchema('dbos').hasTable('operation_outputs');
-
-    return exists;
-  }
-
-  function getMigrationsDirectory(): string | undefined {
-    let migrationsDirectory: string;
-    try {
-      migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
-    } catch (packageError) {
-      migrationsDirectory = path.join(__dirname, 'migrations');
-    }
-    return fs.existsSync(migrationsDirectory) ? migrationsDirectory : undefined;
   }
 }
 

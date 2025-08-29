@@ -95,7 +95,12 @@ export function makeRecordingKnex<K extends Knex>(
     return new Proxy<T>(builder, handler);
   };
 
-  // raw(): record immediately and resolve
+  const wrapRaw = (...args: ReadonlyArray<unknown>) => {
+    const rawBuilder = (realKnex as unknown as { raw: (...a: ReadonlyArray<unknown>) => unknown }).raw(...args);
+    // Capture at await-time (or discard)
+    return asMinimalBuilder(rawBuilder) ? wrapBuilder(rawBuilder as MinimalBuilder & object) : rawBuilder;
+  };
+  /*
   const wrapRaw = (...args: ReadonlyArray<unknown>): Promise<void> => {
     const compiled = (realKnex as unknown as { raw: (...a: ReadonlyArray<unknown>) => MinimalBuilder })
       .raw(...args)
@@ -103,6 +108,7 @@ export function makeRecordingKnex<K extends Knex>(
     captureCompiled(compiled, statements);
     return Promise.resolve();
   };
+  */
 
   // schema.* wrapping: builders become "await-record", has*/introspection return defaults
   const wrapSchema = (schemaObj: object): object => {
@@ -145,7 +151,7 @@ export function makeRecordingKnex<K extends Knex>(
       if (prop === 'raw') return wrapRaw;
       if (prop === 'schema') {
         const schemaObj = Reflect.get(target, prop, receiver);
-        return wrapSchema(schemaObj);
+        return wrapSchema(schemaObj); // unchanged from your bound-version
       }
       return Reflect.get(target, prop, receiver);
     },
