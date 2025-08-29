@@ -57,69 +57,9 @@ describe('DBOS Bundler Tests', () => {
     const bundleSize = statSync(bundleFile).size / (1024 * 1024);
     expect(bundleSize).toBeLessThan(50);
 
-    // Run the bundled app, validate it fails because the system database does not exist
+    // Run the bundled app again, verify it works (historically, issues w/ creating sys DB prevent this)
     let stdout = '';
     let stderr = '';
-
-    const runPromise = new Promise<number>((resolve, reject) => {
-      const child = spawn('node', [bundleFile], {
-        cwd: bundlerTestDir,
-        stdio: 'pipe',
-        env: {
-          ...process.env,
-          PGPASSWORD: dbPassword,
-          DBOS_DATABASE_URL: `postgresql://postgres:${dbPassword}@localhost:5432/${testDbName}`,
-        },
-      });
-
-      child.stdout.on('data', (data: Buffer) => {
-        stdout += data.toString();
-      });
-
-      child.stderr.on('data', (data: Buffer) => {
-        stderr += data.toString();
-      });
-
-      child.on('close', (code) => {
-        resolve(code || 0);
-      });
-
-      child.on('error', (error) => {
-        reject(error);
-      });
-
-      setTimeout(() => {
-        if (!child.killed) {
-          child.kill('SIGTERM');
-        }
-      }, 15000);
-    });
-
-    const exitCode1 = await runPromise;
-    const output = stdout + stderr;
-    console.log(output);
-    expect(output).toContain('migration files not found');
-    expect(exitCode1).not.toBe(0);
-
-    // Create the system database externally
-    try {
-      execSync('npx dbos migrate', {
-        cwd: bundlerTestDir,
-        stdio: 'inherit',
-        timeout: 60000,
-        env: {
-          ...process.env,
-          PGPASSWORD: dbPassword,
-          DBOS_DATABASE_URL: `postgresql://postgres:${dbPassword}@localhost:5432/${testDbName}`,
-        },
-      });
-    } catch (error) {
-      throw new Error(`Migration failed`);
-    }
-
-    // Run the bundled app again, verify it works
-    stdout = '';
-    stderr = '';
 
     const runPromise2 = new Promise<number>((resolve, reject) => {
       const child = spawn('node', [bundleFile], {
