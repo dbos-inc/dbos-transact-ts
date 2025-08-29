@@ -1,5 +1,16 @@
 import fs from 'fs';
 import path from 'path';
+import superjson from 'superjson';
+
+// Register Buffer transformer for SuperJSON
+superjson.registerCustom<Buffer, number[]>(
+  {
+    isApplicable: (v): v is Buffer => Buffer.isBuffer(v),
+    serialize: (v) => Array.from(v),
+    deserialize: (v) => Buffer.from(v),
+  },
+  'Buffer',
+);
 
 /*
  * A wrapper of readFileSync used for mocking in tests
@@ -172,13 +183,52 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
   }
 }
 
-export const DBOSJSON = {
+// Keep the old DBOSJSON implementation for reference/testing
+export const DBOSJSONLegacy = {
   parse: (text: string | null) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return text === null ? null : JSON.parse(text, DBOSReviver);
   },
   stringify: (value: unknown) => {
     return JSON.stringify(value, DBOSReplacer);
+  },
+};
+
+/**
+ * DBOSJSON with SuperJSON support for richer type serialization.
+ *
+ * Backwards compatible - can deserialize both old DBOSJSON format and new SuperJSON format.
+ * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
+ */
+export const DBOSJSON = {
+  parse: (text: string | null) => {
+    if (text === null) return null;
+
+    try {
+      const parsed = JSON.parse(text);
+
+      // Check if it's SuperJSON format (has json field and optionally meta)
+      if (typeof parsed === 'object' && parsed !== null && 'json' in parsed) {
+        // This is SuperJSON format, deserialize it
+        return superjson.deserialize(parsed as Parameters<typeof superjson.deserialize>[0]);
+      }
+
+      // Not SuperJSON format, parse with legacy DBOS reviver for backwards compatibility
+      // This handles dates, bigints, buffers that were serialized with the old format
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return JSON.parse(text, DBOSReviver);
+    } catch (error) {
+      // Fallback to legacy parser if something goes wrong
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+      return JSON.parse(text, DBOSReviver);
+    }
+  },
+
+  stringify: (value: unknown) => {
+    // Use SuperJSON for all new serialization to support richer types
+    // This includes Set, Map, undefined, RegExp, circular references, etc.
+    const serialized = superjson.serialize(value);
+    return JSON.stringify(serialized);
   },
 };
 
