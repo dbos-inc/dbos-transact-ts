@@ -1,6 +1,14 @@
 import { DBOSJSON, DBOSJSONLegacy } from '../src/utils';
 import superjson from 'superjson';
 
+// DBOSJSON tests are organized into three critical sections:
+// 1. Original functionality - Must continue working exactly as before
+// 2. SuperJSON enhancements - New types that are now supported
+// 3. Backwards compatibility - MUST parse data serialized with old DBOSJSON
+//
+// The backwards compatibility tests are the most critical - they ensure
+// existing data in production databases remains readable after upgrades.
+
 describe('dbos-json-reviver-replacer', () => {
   test('Replace revive dates', () => {
     const obj = {
@@ -127,6 +135,10 @@ describe('SuperJSON enhanced types', () => {
 });
 
 describe('Backwards compatibility', () => {
+  // CRITICAL: These tests ensure DBOSJSON can deserialize data stored in production databases
+  // that was serialized with the old format. Breaking these tests means breaking existing
+  // deployments. The new DBOSJSON must ALWAYS be able to read old data.
+
   test('parses legacy DBOSJSON dates', () => {
     const date = new Date('2024-01-01T12:00:00Z');
     const legacySerialized = DBOSJSONLegacy.stringify(date);
