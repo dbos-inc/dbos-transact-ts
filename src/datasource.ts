@@ -683,7 +683,6 @@ export function deriveDatabaseUrl(urlStr: string, otherDbName: string): string {
 // The `pg` package we use does not parse the connect_timeout parameter, so we need to handle it ourselves.
 export function getPGClientConfig(databaseUrl: string | URL) {
   const connectionString = typeof databaseUrl === 'string' ? databaseUrl : databaseUrl.toString();
-  console.log(databaseUrl);
   const timeout = getTimeout(typeof databaseUrl === 'string' ? new URL(databaseUrl) : databaseUrl);
   return {
     connectionString,

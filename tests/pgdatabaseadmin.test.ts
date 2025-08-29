@@ -152,10 +152,6 @@ describe('PG16 drop/create e2e', () => {
 
   afterAll(async () => {}, 120_000);
 
-  // TODO Tests:
-
-  //  Admin DB not available
-
   test('url masking', () => {
     expect(maskDatabaseUrl('postgres://postgres:secret@localhost:5432/dbostest?connect_timeout=7')).toBe(
       'postgres://postgres:s****t@localhost:5432/dbostest?connect_timeout=7',
@@ -370,36 +366,73 @@ describe('PG16 drop/create e2e', () => {
     }
   }, 120_000);
 
-  /*
-
   test('helpful failure when admin connect not possible', async () => {
-    // Create a non-superuser owner + DB
-    await adminClient.query(`CREATE ROLE appuser LOGIN PASSWORD 's3cret'`);
-    const dbName = 'blocked_admin';
-    await adminClient.query(`CREATE DATABASE "${dbName}" OWNER appuser`);
+    if (!testShouldRun) return;
 
-    // revoke CONNECT to /postgres for appuser
-    await adminClient.query(`REVOKE CONNECT ON DATABASE postgres FROM PUBLIC`);
-    await adminClient.query(`REVOKE CONNECT ON DATABASE postgres FROM appuser`);
+    const container = await new PostgreSqlContainer('postgres:16')
+      .withUsername('dbos')
+      .withPassword('dbos')
+      .withDatabase('foobar')
+      .start();
 
-    // craft target URL as appuser@/blocked_admin (no adminUrl provided)
-    const u = new URL(adminUri);
-    u.username = 'appuser';
-    u.password = 's3cret';
-    const target = mkConn(u.toString(), dbName);
+    try {
+      const adminClient = new Client({ connectionString: container.getConnectionUri() });
+      await adminClient.connect();
 
-    const res = await dropPGDatabase({
-      urlToDrop: target,
-      logger: () => {},
-    });
+      // Create a non-superuser owner + DB
+      await adminClient.query(`CREATE ROLE appuser LOGIN PASSWORD 's3cret'`);
+      const noAdminDb = 'blocked_admin';
+      await adminClient.query(`CREATE DATABASE "${noAdminDb}" OWNER appuser`);
 
-    expect(res.status).toBe('failed');
-    //expect(res.hint || '').toMatch(/Provide an admin\/alternate DB URL/i);
+      // revoke CONNECT to /postgres for appuser
+      await adminClient.query(`REVOKE CONNECT ON DATABASE postgres FROM PUBLIC`);
+      await adminClient.query(`REVOKE CONNECT ON DATABASE postgres FROM appuser`);
 
-    // cleanup with superuser
-    await adminClient.query(`GRANT CONNECT ON DATABASE postgres TO PUBLIC`);
-    await adminClient.query(`DROP DATABASE IF EXISTS "${dbName}"`);
-    await adminClient.query(`DROP ROLE IF EXISTS appuser`);
+      // Try creating (2 ways to fail, OK if already exists)
+      const userDb = makePGConnStr('appuser', 's3cret', container.getHost(), container.getPort(), noAdminDb, 1000);
+      const createUserDb = deriveDatabaseUrl(userDb, 'cant_create');
+      const res1c = await ensurePGDatabase({ urlToEnsure: createUserDb, logger: () => {} });
+      expect(res1c.status).toBe('failed');
+      expect(res1c.message.includes('permission denied')).toBeTruthy();
+      expect(res1c.notes.find((s) => s.includes('permission denied for database "postgres"'))).toBeDefined(); // Tried connecting to 'postgres'
+
+      const res3c = await ensurePGDatabase({ dbToEnsure: 'cant_create', adminUrl: userDb, logger: () => {} });
+      expect(res3c.status).toBe('failed');
+      expect(res3c.message.includes('permission denied')).toBeTruthy();
+      expect(res3c.notes.find((s) => s.includes('permission denied for database "postgres"'))).toBeUndefined(); // admin given, do not try 'postgres'
+
+      const res2c = await ensurePGDatabase({ urlToEnsure: userDb, logger: () => {} });
+      expect(res2c.status).toBe('already_exists');
+
+      // Try dropping (doesn't exist, vs cannot drop)
+      const res1d = await dropPGDatabase({ urlToDrop: createUserDb, logger: () => {} });
+      expect(res1d.status).toBe('did_not_exist');
+      const res2d = await dropPGDatabase({ dbToDrop: 'cant_create', adminUrl: userDb, logger: () => {} });
+      expect(res2d.status).toBe('did_not_exist');
+
+      // Create it and find it cannot be dropped
+      const dropUserDb = deriveDatabaseUrl(userDb, 'cant_drop');
+      const resc = await ensurePGDatabase({
+        dbToEnsure: 'cant_drop',
+        adminUrl: container.getConnectionUri(),
+        logger: () => {},
+      });
+      expect(resc.status).toBe('created');
+
+      const res3d = await dropPGDatabase({ urlToDrop: dropUserDb, logger: () => {} });
+      expect(res3d.status).toBe('failed');
+      expect(res3d.message.includes('must be owner')).toBeTruthy();
+      expect(res3d.notes.find((s) => s.includes('permission denied for database "postgres"'))).toBeDefined(); // Tried connecting to 'postgres'
+      const res4d = await dropPGDatabase({ dbToDrop: 'cant_drop', adminUrl: userDb, logger: () => {} });
+      expect(res4d.status).toBe('failed');
+      expect(res4d.message.includes('must be owner')).toBeTruthy();
+      expect(res4d.notes.find((s) => s.includes('permission denied for database "postgres"'))).toBeUndefined(); // admin given, do not try 'postgres'
+
+      try {
+        await adminClient.end();
+      } catch {}
+    } finally {
+      await container.stop();
+    }
   }, 120_000);
-  */
 });
