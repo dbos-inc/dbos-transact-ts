@@ -210,7 +210,11 @@ describe('Backwards compatibility', () => {
 
   test('handles null correctly', () => {
     expect(DBOSJSON.parse(null)).toBe(null);
-    expect(DBOSJSON.stringify(null)).toBe('{"json":null}');
+    // Now includes meta to avoid ambiguity
+    const nullSerialized = DBOSJSON.stringify(null);
+    const nullParsed = JSON.parse(nullSerialized);
+    expect(nullParsed).toHaveProperty('json', null);
+    expect(nullParsed).toHaveProperty('meta');
   });
 
   test('parses plain JSON', () => {
@@ -231,10 +235,35 @@ describe('Backwards compatibility', () => {
     const deserialized = DBOSJSON.parse(serialized);
     expect(deserialized).toEqual(userDataWithJson);
 
-    // Only {json} or {json, meta} should be treated as SuperJSON
-    const ambiguousData = { json: 'test', someOtherProp: true };
-    const ambiguousSerialized = JSON.stringify(ambiguousData);
+    // Critical case: {json: {foo: 'bar'}} should be treated as user data, not SuperJSON
+    const ambiguousUserData = { json: { foo: 'bar' } };
+    const ambiguousSerialized = JSON.stringify(ambiguousUserData);
     const ambiguousDeserialized = DBOSJSON.parse(ambiguousSerialized);
-    expect(ambiguousDeserialized).toEqual(ambiguousData);
+    expect(ambiguousDeserialized).toEqual(ambiguousUserData); // Should preserve the structure!
+
+    // Only {json, meta} together should be treated as SuperJSON
+    const moreAmbiguous = { json: 'test', someOtherProp: true };
+    const moreSerialized = JSON.stringify(moreAmbiguous);
+    const moreDeserialized = DBOSJSON.parse(moreSerialized);
+    expect(moreDeserialized).toEqual(moreAmbiguous);
+  });
+
+  test('new DBOSJSON always includes meta to avoid ambiguity', () => {
+    // Simple values should get a meta marker
+    const simpleValue = { foo: 'bar' };
+    const serialized = DBOSJSON.stringify(simpleValue);
+    const parsed = JSON.parse(serialized);
+
+    expect(parsed).toHaveProperty('json');
+    expect(parsed).toHaveProperty('meta'); // Should always have meta to avoid ambiguity
+    expect(parsed.json).toEqual(simpleValue);
+
+    // Complex types already have meta from SuperJSON
+    const complexValue = new Set([1, 2, 3]);
+    const complexSerialized = DBOSJSON.stringify(complexValue);
+    const complexParsed = JSON.parse(complexSerialized);
+
+    expect(complexParsed).toHaveProperty('json');
+    expect(complexParsed).toHaveProperty('meta');
   });
 });

@@ -195,10 +195,9 @@ export const DBOSJSONLegacy = {
 };
 
 /**
- * Detects if a parsed object is in SuperJSON format.
- * SuperJSON format has exactly these shapes:
- * - {json: any} - for simple values without metadata
- * - {json: any, meta: {...}} - for values with type metadata
+ * Detects if a parsed object is in our SuperJSON format.
+ * We only treat objects with BOTH json and meta as SuperJSON to avoid ambiguity.
+ * This prevents confusing user data like {json: {foo: 'bar'}} with SuperJSON format.
  */
 function isSuperJSONFormat(obj: unknown): boolean {
   if (typeof obj !== 'object' || obj === null) {
@@ -207,22 +206,9 @@ function isSuperJSONFormat(obj: unknown): boolean {
 
   const keys = Object.keys(obj);
 
-  // SuperJSON has exactly 1 key (json) or 2 keys (json + meta)
-  if (keys.length !== 1 && keys.length !== 2) {
-    return false;
-  }
-
-  // Must have 'json' property
-  if (!('json' in obj)) {
-    return false;
-  }
-
-  // If 2 keys, the other must be 'meta'
-  if (keys.length === 2 && !('meta' in obj)) {
-    return false;
-  }
-
-  return true;
+  // Must have exactly 2 keys: json and meta
+  // This avoids ambiguity with user data that has a 'json' field
+  return keys.length === 2 && 'json' in obj && 'meta' in obj;
 }
 
 /**
@@ -255,9 +241,16 @@ export const DBOSJSON = {
   },
 
   stringify: (value: unknown) => {
-    // Use SuperJSON for all new serialization to support richer types
-    // This includes Set, Map, undefined, RegExp, circular references, etc.
+    // Use SuperJSON for all new serialization
     const serialized = superjson.serialize(value);
+
+    // Always ensure meta exists to avoid ambiguity with user data
+    // If SuperJSON didn't add meta (for simple values), add an empty one
+    if (!('meta' in serialized)) {
+      // @ts-expect-error - Adding custom marker to meta for disambiguation
+      serialized.meta = { __dbos: true }; // Marker to indicate this is from DBOSJSON
+    }
+
     return JSON.stringify(serialized);
   },
 };
