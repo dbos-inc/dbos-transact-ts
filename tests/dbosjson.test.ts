@@ -1,5 +1,4 @@
-import { DBOSJSON, DBOSJSONLegacy } from '../src/utils';
-import superjson from 'superjson';
+import { DBOSJSON, DBOSJSONLegacy, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/utils';
 
 /**
  * DBOSJSON was upgraded to use SuperJSON internally for richer type support.
@@ -94,12 +93,16 @@ describe('SuperJSON enhanced types', () => {
   });
 
   test('handles NaN and Infinity', () => {
-    const obj = { nan: NaN, inf: Infinity, negInf: -Infinity };
+    const obj = {
+      nan: Number.NaN,
+      inf: Number.POSITIVE_INFINITY,
+      negInf: Number.NEGATIVE_INFINITY,
+    };
     const serialized = DBOSJSON.stringify(obj);
     const deserialized = DBOSJSON.parse(serialized) as typeof obj;
     expect(Number.isNaN(deserialized.nan)).toBe(true);
-    expect(deserialized.inf).toBe(Infinity);
-    expect(deserialized.negInf).toBe(-Infinity);
+    expect(deserialized.inf).toBe(Number.POSITIVE_INFINITY);
+    expect(deserialized.negInf).toBe(Number.NEGATIVE_INFINITY);
   });
 
   test('handles circular references', () => {
@@ -214,7 +217,7 @@ describe('Backwards compatibility', () => {
     const nullSerialized = DBOSJSON.stringify(null);
     const nullParsed = JSON.parse(nullSerialized);
     expect(nullParsed).toHaveProperty('json', null);
-    expect(nullParsed).toHaveProperty('__serializer', 'superjson');
+    expect(nullParsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
   });
 
   test('parses plain JSON', () => {
@@ -255,7 +258,7 @@ describe('Backwards compatibility', () => {
     const parsed = JSON.parse(serialized);
 
     expect(parsed).toHaveProperty('json');
-    expect(parsed).toHaveProperty('__serializer', 'superjson');
+    expect(parsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
     expect(parsed.json).toEqual(simpleValue);
 
     // Complex types also get our marker
@@ -264,7 +267,7 @@ describe('Backwards compatibility', () => {
     const complexParsed = JSON.parse(complexSerialized);
 
     expect(complexParsed).toHaveProperty('json');
-    expect(complexParsed).toHaveProperty('__serializer', 'superjson');
+    expect(complexParsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
     expect(complexParsed).toHaveProperty('meta'); // Complex types have meta from SuperJSON
   });
 });
