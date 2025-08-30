@@ -419,9 +419,7 @@ describe('workflow-management-tests', () => {
     // If there is a migration failure, the system DB should still be able to start.
     // This happens when the old code is running with a new system DB schema.
     await DBOS.shutdown();
-    await systemDBClient.query(
-      `INSERT INTO knex_migrations (name, batch, migration_time) VALUES ('faketest.js', 1, now());`,
-    );
+    await systemDBClient.query(`UPDATE "dbos"."dbos_migrations" SET "version" = 10000;`);
     await DBOS.launch();
     DBOS.setUpHandlerCallback();
     const response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');

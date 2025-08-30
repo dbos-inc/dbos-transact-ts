@@ -9,15 +9,12 @@ import {
 } from './config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
-import { migrate, grantDbosSchemaPermissions } from './migrate';
+import { migrate } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
-import { migrateSystemDatabase } from '../system_database';
-import { createDBIfDoesNotExist } from '../user_database';
-import { getClientConfig } from '../utils';
-import { PoolConfig } from 'pg';
+import { ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_database';
 import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { reset } from './reset';
@@ -124,21 +121,9 @@ program
     }
 
     try {
-      const url = new URL(finalSystemDatabaseUrl);
-      const systemDbName = url.pathname.slice(1);
-
-      if (!systemDbName) {
-        logger.error('Provided database URL does not specify the system database name');
-        process.exit(1);
-      }
-
-      await createDBIfDoesNotExist(finalSystemDatabaseUrl, logger);
-
-      const systemPoolConfig: PoolConfig = getClientConfig(finalSystemDatabaseUrl);
-
       // Load the DBOS system schema.
-      logger.info('Creating DBOS system schema');
-      await migrateSystemDatabase(systemPoolConfig, logger);
+      logger.info('Creating DBOS system database and schema');
+      await ensureSystemDatabase(finalSystemDatabaseUrl, logger);
 
       // Grant permissions to application role if specified
       if (options.appRole) {
