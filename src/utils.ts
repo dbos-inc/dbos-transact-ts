@@ -190,7 +190,7 @@ export const DBOSJSONLegacy = {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return text === null ? null : JSON.parse(text, DBOSReviver);
   },
-  stringify: (value: unknown) => {
+  stringify: (value: unknown): string | undefined => {
     return JSON.stringify(value, DBOSReplacer);
   },
 };
@@ -218,6 +218,24 @@ function isDBOSBrandedSuperjsonRecord(obj: unknown): obj is DBOSBrandedSuperjson
     obj[SERIALIZER_MARKER_KEY] === SERIALIZER_MARKER_VALUE &&
     'json' in obj
   );
+}
+
+// Type trickery; return is undefined if input may be
+function sjstringify(value: undefined): undefined;
+function sjstringify(value: null): undefined;
+function sjstringify<T>(value: T): string;
+function sjstringify(value: unknown) {
+  if (value === undefined) return undefined;
+  if (value === null) return undefined;
+
+  // Use SuperJSON for all new serialization
+  const serialized = superjson.serialize(value);
+
+  // Add our explicit marker to make detection unambiguous
+  return JSON.stringify({
+    ...serialized,
+    [SERIALIZER_MARKER_KEY]: SERIALIZER_MARKER_VALUE,
+  });
 }
 
 /**
@@ -258,18 +276,7 @@ export const DBOSJSON = {
     // Legacy DBOSJSON format
     return DBOSJSONLegacy.parse(text);
   },
-  stringify: (value: unknown): string => {
-    // Use SuperJSON for all new serialization
-    if (value === null || value === undefined) return undefined as unknown as string;
-    const serialized = superjson.serialize(value);
-
-    // Add our explicit marker to make detection unambiguous
-    // This ensures we never confuse user data with our format
-    return JSON.stringify({
-      ...serialized,
-      [SERIALIZER_MARKER_KEY]: SERIALIZER_MARKER_VALUE,
-    });
-  },
+  stringify: sjstringify,
 };
 
 export function exhaustiveCheckGuard(_: never): never {

@@ -1,21 +1,16 @@
 import { DBOSJSON, DBOSJSONLegacy, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/utils';
 
 /**
- * DBOSJSON was upgraded to use SuperJSON internally for richer type support.
- *
- * What changed: DBOSJSON.stringify() now uses SuperJSON, creating a different format.
- * Why it matters: Production databases contain millions of rows serialized with the OLD format.
- * The requirement: New DBOSJSON MUST deserialize both old AND new formats perfectly.
+ * DBOSJSON uses SuperJSON internally for rich type support.
+ *   This does not extend to null vs. undefined; they are treated the same.
  *
  * Test structure:
- * 1. "dbos-json-reviver-replacer" - Original features that already worked (dates, bigints, buffers)
- * 2. "SuperJSON enhanced types" - New capabilities we added (Sets, Maps, undefined, RegExp, etc.)
- * 3. "Backwards compatibility" - THE CRITICAL TESTS that verify old database data still works
+ * 1. "dbos-json-reviver-replacer" - (dates, bigints, buffers)
+ * 2. "SuperJSON enhanced types" - (Sets, Maps, undefined, RegExp, etc.)
+ * 3. "Backwards compatibility" - Verify old database data still works
  *
- * If backwards compatibility tests fail, DO NOT MERGE. It means the upgrade will break
- * production by making existing database data unreadable.
+ * Caution: Altering results of this test likely means a backward compatibility break.
  */
-
 describe('dbos-json-reviver-replacer', () => {
   test('Replace revive dates', () => {
     const obj = {
@@ -106,11 +101,12 @@ describe('SuperJSON enhanced types', () => {
   });
 
   test('handles circular references', () => {
-    const obj: any = { name: 'circular' };
+    type Obj = { name: string; self?: Obj };
+    const obj: Obj = { name: 'circular' };
     obj.self = obj;
 
     const serialized = DBOSJSON.stringify(obj);
-    const deserialized = DBOSJSON.parse(serialized) as any;
+    const deserialized = DBOSJSON.parse(serialized) as Obj;
 
     expect(deserialized.name).toBe('circular');
     expect(deserialized.self).toBe(deserialized); // Same reference
@@ -131,7 +127,7 @@ describe('SuperJSON enhanced types', () => {
       },
     };
     const serialized = DBOSJSON.stringify(complex);
-    const deserialized = DBOSJSON.parse(serialized) as any;
+    const deserialized = DBOSJSON.parse(serialized) as typeof complex;
 
     expect(deserialized.set).toEqual(complex.set);
     expect(deserialized.map).toEqual(complex.map);
@@ -211,13 +207,18 @@ describe('Backwards compatibility', () => {
     expect(parsed).toEqual(originalData);
   });
 
-  test('handles null correctly', () => {
+  test('handles null correctly - which is incorrectly', () => {
+    // DBOS JSON has historically not been transparent to null and undefined;
+    //  Keep it that way, at least for now.
     expect(DBOSJSON.parse(null)).toBe(null);
+    expect(DBOSJSON.parse(undefined)).toBe(null);
+    expect(DBOSJSON.stringify(null)).toBeUndefined();
+    expect(DBOSJSON.stringify(undefined)).toBeUndefined();
+    //
     // Includes our marker to avoid ambiguity
-    const nullSerialized = DBOSJSON.stringify(null);
-    const nullParsed = JSON.parse(nullSerialized);
-    expect(nullParsed).toHaveProperty('json', null);
-    expect(nullParsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
+    //const nullParsed = JSON.parse(nullSerialized);
+    //expect(nullParsed).toHaveProperty('json', null);
+    //expect(nullParsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
   });
 
   test('parses plain JSON', () => {
@@ -255,7 +256,7 @@ describe('Backwards compatibility', () => {
     // Simple values should get our marker
     const simpleValue = { foo: 'bar' };
     const serialized = DBOSJSON.stringify(simpleValue);
-    const parsed = JSON.parse(serialized);
+    const parsed = JSON.parse(serialized) as { json?: unknown };
 
     expect(parsed).toHaveProperty('json');
     expect(parsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
@@ -264,7 +265,7 @@ describe('Backwards compatibility', () => {
     // Complex types also get our marker
     const complexValue = new Set([1, 2, 3]);
     const complexSerialized = DBOSJSON.stringify(complexValue);
-    const complexParsed = JSON.parse(complexSerialized);
+    const complexParsed = JSON.parse(complexSerialized) as { json?: unknown };
 
     expect(complexParsed).toHaveProperty('json');
     expect(complexParsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
