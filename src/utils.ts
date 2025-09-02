@@ -52,7 +52,7 @@ When cancel is called, not only it clears the timeout, but also resolves the pro
 So any waiters on the cancelable sleep will be resolved
 */
 export function cancellableSleep(ms: number) {
-  let timeoutId: ReturnType<typeof setTimeout> | undefined;
+  let timeoutId: ReturnType<typeof setTimeout> | undefined = undefined;
   let resolvePromise: () => void;
   let resolved = false;
 
@@ -201,7 +201,6 @@ export const SERIALIZER_MARKER_VALUE = 'superjson';
 const SERIALIZER_MARKER_STRING = `"${SERIALIZER_MARKER_KEY}":"${SERIALIZER_MARKER_VALUE}"`;
 
 // Type for our branded SuperJSON record with the marker
-// eslint-disable-next-line @typescript-eslint/no-redundant-type-constituents
 type DBOSBrandedSuperjsonRecord = SuperJSONResult & {
   [SERIALIZER_MARKER_KEY]: typeof SERIALIZER_MARKER_VALUE;
 };
@@ -228,8 +227,8 @@ function isDBOSBrandedSuperjsonRecord(obj: unknown): obj is DBOSBrandedSuperjson
  * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
  */
 export const DBOSJSON = {
-  parse: (text: string | null): unknown => {
-    if (text === null) return null;
+  parse: (text: string | null | undefined): unknown => {
+    if (text === null || text === undefined) return null;
 
     /**
      * Performance optimization: String check before JSON parsing.
@@ -250,18 +249,18 @@ export const DBOSJSON = {
       // Parse without reviver first to check if it's really our SuperJSON format
       const vanillaParsed: unknown = JSON.parse(text);
       if (isDBOSBrandedSuperjsonRecord(vanillaParsed)) {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
         return superjson.deserialize(vanillaParsed);
       }
       // False positive - user data happened to contain our marker string
       // Fall through to parse with reviver
     }
 
-    // Legacy DBOSJSON format or plain JSON - parse with custom reviver
-    return JSON.parse(text, DBOSReviver);
+    // Legacy DBOSJSON format
+    return DBOSJSONLegacy.parse(text);
   },
   stringify: (value: unknown): string => {
     // Use SuperJSON for all new serialization
+    if (value === null || value === undefined) return undefined as unknown as string;
     const serialized = superjson.serialize(value);
 
     // Add our explicit marker to make detection unambiguous
