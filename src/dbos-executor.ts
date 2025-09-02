@@ -2034,7 +2034,7 @@ export class DBOSExecutor {
         function_id: row.function_id,
         function_name: row.function_name ?? '<unknown>',
         child_workflow_id: row.child_workflow_id,
-        output: row.output !== null ? (DBOSJSON.parse(row.output) as unknown) : null,
+        output: row.output !== null ? DBOSJSON.parse(row.output) : null,
         error: row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null,
       };
     });
