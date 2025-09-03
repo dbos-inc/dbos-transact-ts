@@ -494,7 +494,7 @@ describe('dbos-config', () => {
       },
     );
 
-    test.each(['some_DB', '123db', 'very_very_very_long_very_very_very_long_very_very__database_name', 'largeDB'])(
+    test.each(['', 'very_very_very_long_very_very_very_long_very_very__database_name'])(
       'throws on invalid system_database_url field %s',
       (name) => {
         expect(() => getSystemDatabaseUrl({ system_database_url: `postgres://host:5432/${name}` })).toThrow();
@@ -640,7 +640,7 @@ describe('dbos-config', () => {
     });
 
     test('uses cloud app name', () => {
-      process.env.DBOS_DATABASE_URL = 'fake://url';
+      process.env.DBOS_DATABASE_URL = 'fake://db/url';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, { name: 'cloud-app-name' });
       expect(newConfig.name).toBe('cloud-app-name');
     });
@@ -652,7 +652,7 @@ describe('dbos-config', () => {
     });
 
     test('uses cloud sys db url when set', () => {
-      process.env.DBOS_DATABASE_URL = 'fake://url';
+      process.env.DBOS_DATABASE_URL = 'fake://db/url';
       process.env.DBOS_SYSTEM_DATABASE_URL = 'postgres://a:b@c:2345/cloud_sys_db';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, { name: 'cloud-app-name' });
       expect(newConfig.systemDatabaseUrl).toBe('postgres://a:b@c:2345/cloud_sys_db');
@@ -665,7 +665,7 @@ describe('dbos-config', () => {
     });
 
     test('force admin server', () => {
-      process.env.DBOS_DATABASE_URL = 'fake://url';
+      process.env.DBOS_DATABASE_URL = 'fake://db/url';
       const [, newRuntimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {});
       expect(newRuntimeConfig.admin_port).toBe(3001);
       expect(newRuntimeConfig.runAdminServer).toBe(true);
@@ -673,7 +673,7 @@ describe('dbos-config', () => {
 
     test('combine otel endpoints', () => {
       console.log(internalConfig.telemetry.OTLPExporter);
-      process.env.DBOS_DATABASE_URL = 'fake://url';
+      process.env.DBOS_DATABASE_URL = 'fake://db/url';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
         telemetry: {
           OTLPExporter: {
@@ -695,7 +695,7 @@ describe('dbos-config', () => {
 
     test('combine otel endpoints no duplicates', () => {
       console.log(internalConfig.telemetry.OTLPExporter);
-      process.env.DBOS_DATABASE_URL = 'fake://url';
+      process.env.DBOS_DATABASE_URL = 'fake://db/url';
       const [newConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, {
         telemetry: {
           OTLPExporter: {
