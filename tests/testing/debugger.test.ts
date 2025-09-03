@@ -438,7 +438,7 @@ describe('debugger-test', () => {
     // Execute again with different input, should still get the same output.
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       await expect(DebuggerTest.diffWorkflow(2)).rejects.toThrow(
-        /DEBUGGER: Detected different inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.\s*Received: \[2\]\s*Original: \[1\]/gm,
+        /DEBUGGER: Detected different inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.\s*Received:.*?\[2\].*?\s*Original:.*?\[1\].*?/gm,
       );
     });
     await DBOS.shutdown();

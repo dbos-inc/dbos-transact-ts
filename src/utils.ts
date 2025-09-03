@@ -1,5 +1,17 @@
-import fs from 'fs';
-import path from 'path';
+import fs from 'node:fs';
+import path from 'node:path';
+import superjson from 'superjson';
+import type { SuperJSONResult } from 'superjson/dist/types';
+
+// Register Buffer transformer for SuperJSON
+superjson.registerCustom<Buffer, number[]>(
+  {
+    isApplicable: (v): v is Buffer => Buffer.isBuffer(v),
+    serialize: (v) => Array.from(v),
+    deserialize: (v) => Buffer.from(v),
+  },
+  'Buffer',
+);
 
 /*
  * A wrapper of readFileSync used for mocking in tests
@@ -172,14 +184,99 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
   }
 }
 
-export const DBOSJSON = {
+// Keep the old DBOSJSON implementation for reference/testing
+export const DBOSJSONLegacy = {
   parse: (text: string | null) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return text === null ? null : JSON.parse(text, DBOSReviver);
   },
-  stringify: (value: unknown) => {
+  stringify: (value: unknown): string | undefined => {
     return JSON.stringify(value, DBOSReplacer);
   },
+};
+
+// Constants for SuperJSON serialization marker
+export const SERIALIZER_MARKER_KEY = '__dbos_serializer';
+export const SERIALIZER_MARKER_VALUE = 'superjson';
+const SERIALIZER_MARKER_STRING = `"${SERIALIZER_MARKER_KEY}":"${SERIALIZER_MARKER_VALUE}"`;
+
+// Type for our branded SuperJSON record with the marker
+type DBOSBrandedSuperjsonRecord = SuperJSONResult & {
+  [SERIALIZER_MARKER_KEY]: typeof SERIALIZER_MARKER_VALUE;
+};
+
+/**
+ * Detects if a parsed object was serialized by our DBOSJSON with SuperJSON.
+ * We check for our explicit marker to avoid ANY ambiguity with user data.
+ * Also validates the object has the shape expected by superjson.deserialize().
+ */
+function isDBOSBrandedSuperjsonRecord(obj: unknown): obj is DBOSBrandedSuperjsonRecord {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    SERIALIZER_MARKER_KEY in obj &&
+    obj[SERIALIZER_MARKER_KEY] === SERIALIZER_MARKER_VALUE &&
+    'json' in obj
+  );
+}
+
+// Type trickery; return is undefined if input may be
+function sjstringify(value: undefined): undefined;
+function sjstringify(value: null): undefined;
+function sjstringify<T>(value: T): string;
+function sjstringify(value: unknown) {
+  if (value === undefined) return undefined;
+  if (value === null) return undefined;
+
+  // Use SuperJSON for all new serialization
+  const serialized = superjson.serialize(value);
+
+  // Add our explicit marker to make detection unambiguous
+  return JSON.stringify({
+    ...serialized,
+    [SERIALIZER_MARKER_KEY]: SERIALIZER_MARKER_VALUE,
+  });
+}
+
+/**
+ * DBOSJSON with SuperJSON support for richer type serialization.
+ *
+ * Backwards compatible - can deserialize both old DBOSJSON format and new SuperJSON format.
+ * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
+ */
+export const DBOSJSON = {
+  parse: (text: string | null | undefined): unknown => {
+    if (text === null || text === undefined) return null;
+
+    /**
+     * Performance optimization: String check before JSON parsing.
+     *
+     * Why not just parse once and check the resulting object?
+     * - Legacy DBOSJSON data needs the DBOSReviver function during parsing
+     * - SuperJSON data must be parsed WITHOUT the reviver (it would corrupt the structure)
+     * - We can't know which parser to use without inspecting the data first
+     *
+     * This string check lets us:
+     * 1. Parse legacy data correctly with DBOSReviver in one pass (99% of cases)
+     * 2. Only double-parse when we detect new SuperJSON format (rare for now)
+     * 3. Avoid corrupting SuperJSON's meta structure with the wrong reviver
+     */
+    const hasSuperJSONMarker = text.includes(SERIALIZER_MARKER_STRING);
+
+    if (hasSuperJSONMarker) {
+      // Parse without reviver first to check if it's really our SuperJSON format
+      const vanillaParsed: unknown = JSON.parse(text);
+      if (isDBOSBrandedSuperjsonRecord(vanillaParsed)) {
+        return superjson.deserialize(vanillaParsed);
+      }
+      // False positive - user data happened to contain our marker string
+      // Fall through to parse with reviver
+    }
+
+    // Legacy DBOSJSON format
+    return DBOSJSONLegacy.parse(text);
+  },
+  stringify: sjstringify,
 };
 
 export function exhaustiveCheckGuard(_: never): never {
@@ -201,9 +298,8 @@ export function interceptStreams(onMessage: (msg: string, stream: 'stdout' | 'st
       onMessage(message, stream);
       if (typeof encodingOrCb === 'function') {
         return originalWrite(chunk, encodingOrCb); // Handle case where encodingOrCb is a callback
-      } else {
-        return originalWrite(chunk, encodingOrCb as BufferEncoding, cb); // Handle case where encodingOrCb is a BufferEncoding
       }
+      return originalWrite(chunk, encodingOrCb as BufferEncoding, cb); // Handle case where encodingOrCb is a BufferEncoding
     };
   };
 
@@ -223,7 +319,7 @@ export function getClientConfig(databaseUrl: string | URL) {
   function getTimeout(url: URL) {
     try {
       const $timeout = url.searchParams.get('connect_timeout');
-      return $timeout ? parseInt($timeout, 10) : undefined;
+      return $timeout ? Number.parseInt($timeout, 10) : undefined;
     } catch {
       // Ignore errors in parsing the connect_timeout parameter
       return undefined;
