@@ -249,8 +249,15 @@ export class DBOS {
     }
 
     if (options?.conductorKey) {
-      // Use a generated executor ID.
+      // Always use a generated executor ID in Conductor.
       globalParams.executorID = randomUUID();
+    }
+    // Globally set the application version.
+    // In DBOS Cloud, instead use the value supplied through environment variables.
+    if (process.env.DBOS__CLOUD !== 'true') {
+      if (DBOS.#dbosConfig?.applicationVersion) {
+        globalParams.appVersion = DBOS.#dbosConfig.applicationVersion;
+      }
     }
 
     const debugMode = options?.debugMode ?? process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
