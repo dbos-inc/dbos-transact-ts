@@ -2,7 +2,7 @@ import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { getSystemDatabaseUrl, translateDbosConfig } from '../src/dbos-runtime/config';
+import { getSysDatabaseUrlFromUserDb, translateDbosConfig } from '../src/dbos-runtime/config';
 import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
@@ -16,7 +16,7 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
   const _silenceLogs = process.env.SILENCE_LOGS === 'true';
 
   const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
-  const systemDatabaseUrl = getSystemDatabaseUrl(databaseUrl);
+  const systemDatabaseUrl = getSysDatabaseUrlFromUserDb(databaseUrl);
 
   return {
     name: 'dbostest',

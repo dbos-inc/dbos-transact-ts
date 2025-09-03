@@ -3,6 +3,7 @@ import {
   ConfigFile,
   getDatabaseUrl,
   getDbosConfig,
+  getSysDatabaseUrlFromUserDb,
   getSystemDatabaseUrl,
   overwriteConfigForDBOSCloud,
   readConfigFile,
@@ -463,7 +464,7 @@ describe('dbos-config', () => {
     });
 
     test('get from user db url', () => {
-      const url = getSystemDatabaseUrl('postgres://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable');
+      const url = getSysDatabaseUrlFromUserDb('postgres://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable');
       expect(url).toBe('postgres://a:b@c:1234/appdb_dbos_sys?connect_timeout=22&sslmode=disable');
     });
 
@@ -486,10 +487,10 @@ describe('dbos-config', () => {
       );
     });
 
-    test.each(['some_DB', '123db', 'very_very_very_long_very_very_very_long_very_very__database_name', 'largeDB'])(
+    test.each(['', 'very_very_very_long_very_very_very_long_very_very__database_name'])(
       'throws on invalid system database url string %s',
       (name) => {
-        expect(() => getSystemDatabaseUrl(`postgres://host:5432/${name}`)).toThrow();
+        expect(() => getSysDatabaseUrlFromUserDb(`postgres://host:5432/${name}`)).toThrow();
       },
     );
 

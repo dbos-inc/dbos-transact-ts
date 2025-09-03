@@ -162,7 +162,8 @@ export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_u
     throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
   }
 
-  assert(isReasonableDatabaseName(dbName), `Database name "${dbName}" in database_url is invalid.`);
+  if (!isValidDatabaseName(dbName))
+    throw new Error(`Database name "${dbName}" in database_url ${maskDatabaseUrl(databaseUrl)} is invalid.`);
 
   if (process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined) {
     // If in debug mode, apply the debug overrides
@@ -186,7 +187,16 @@ export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_u
     const timeout = process.env.PGCONNECT_TIMEOUT || '10';
     const sslmode = process.env.PGSSLMODE || (host === 'localhost' ? 'disable' : 'allow');
 
-    return `postgresql://${username}:${password}@${host}:${port}/${database}?connect_timeout=${timeout}&sslmode=${sslmode}`;
+    const dbUrl = new URL(`postgresql://host/database`);
+    dbUrl.username = username;
+    dbUrl.password = password;
+    dbUrl.hostname = host;
+    dbUrl.port = port;
+    dbUrl.protocol = 'postgresql';
+    dbUrl.pathname = `/${database}`;
+    dbUrl.searchParams.set('connect_timeout', timeout);
+    dbUrl.searchParams.set('sslmode', sslmode);
+    return dbUrl.toString();
   }
 
   function toDbName(appName: string) {
