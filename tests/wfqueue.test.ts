@@ -499,9 +499,9 @@ describe('queued-wf-tests-simple', () => {
       // Unblock the two first workflows
       TestQueueRecovery.stopEvent.set();
       // Verify all queue entries eventually get cleaned up.
-      expect(await wfh1.getResult()).toBe(null);
-      expect(await wfh2.getResult()).toBe(null);
-      expect(await wfh3.getResult()).toBe(null);
+      expect(await wfh1.getResult()).toBeUndefined();
+      expect(await wfh2.getResult()).toBeUndefined();
+      expect(await wfh3.getResult()).toBeUndefined();
       const result = await systemDBClient.query(
         'SELECT executor_id FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [wfh3.workflowID],
@@ -556,7 +556,7 @@ describe('queued-wf-tests-simple', () => {
     await expect(blockedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
     });
-    await expect(regularHandle.getResult()).resolves.toBeNull();
+    await expect(regularHandle.getResult()).resolves.toBeUndefined();
 
     // Complete the blocked workflow
     TestCancelQueues.blockingEvent.set();
@@ -612,12 +612,12 @@ describe('queued-wf-tests-simple', () => {
 
     await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
 
-    await expect(regularHandle.getResult()).resolves.toBeNull();
+    await expect(regularHandle.getResult()).resolves.toBeUndefined();
 
     // Complete the blocked workflow. Verify the second regular workflow also completes.
     TestResumeQueues.blockingEvent.set();
-    await expect(blockedHandle.getResult()).resolves.toBeNull();
-    await expect(regularHandleTwo.getResult()).resolves.toBeNull();
+    await expect(blockedHandle.getResult()).resolves.toBeUndefined();
+    await expect(regularHandleTwo.getResult()).resolves.toBeUndefined();
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);

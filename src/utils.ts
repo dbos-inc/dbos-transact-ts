@@ -220,14 +220,7 @@ function isDBOSBrandedSuperjsonRecord(obj: unknown): obj is DBOSBrandedSuperjson
   );
 }
 
-// Type trickery; return is undefined if input may be
-function sjstringify(value: undefined): undefined;
-function sjstringify(value: null): undefined;
-function sjstringify<T>(value: T): string;
 function sjstringify(value: unknown) {
-  if (value === undefined) return undefined;
-  if (value === null) return undefined;
-
   // Use SuperJSON for all new serialization
   const serialized = superjson.serialize(value);
 
@@ -246,7 +239,7 @@ function sjstringify(value: unknown) {
  */
 export const DBOSJSON = {
   parse: (text: string | null | undefined): unknown => {
-    if (text === null || text === undefined) return null;
+    if (text === null || text === undefined) return null; // This is from legacy; SuperJSON can do it.
 
     /**
      * Performance optimization: String check before JSON parsing.
