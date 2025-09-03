@@ -48,7 +48,6 @@ export async function listWorkflowSteps(
   const steps: StepInfo[] = $steps.map((step) => ({
     functionID: step.function_id,
     name: step.function_name ?? '',
-    //eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     output: step.output ? DBOSJSON.parse(step.output) : null,
     error: step.error ? deserializeError(DBOSJSON.parse(step.error)) : null,
     childWorkflowID: step.child_workflow_id,
@@ -56,7 +55,6 @@ export async function listWorkflowSteps(
   const txs: StepInfo[] = $txs.map((row) => ({
     functionID: row.function_id,
     name: row.function_name,
-    //eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     output: row.output ? DBOSJSON.parse(row.output) : null,
     error: row.error ? deserializeError(DBOSJSON.parse(row.error)) : null,
     childWorkflowID: null,
