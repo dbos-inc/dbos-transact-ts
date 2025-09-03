@@ -6,7 +6,7 @@ import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from
 describe('test-app-version', () => {
   let config: DBOSConfig;
 
-  beforeAll(async () => {
+  beforeEach(async () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
@@ -58,6 +58,16 @@ describe('test-app-version', () => {
     expect(globalParams.appVersion.length).toBeGreaterThan(0);
     expect(globalParams.appVersion).not.toEqual(appVersion);
     await expect(AnotherWorkflow.anotherWorkflow()).resolves.toEqual(1);
+
+    // Verify that app version can be set
+    await DBOS.shutdown();
+    config = generateDBOSTestConfig();
+    const test_version = 'test_version';
+    config.applicationVersion = test_version;
+    DBOS.setConfig(config);
+    expect(globalParams.appVersion.length).toBe(0);
+    await DBOS.launch();
+    expect(globalParams.appVersion).toBe(test_version);
   });
 
   test('test-app-version-recovery', async () => {

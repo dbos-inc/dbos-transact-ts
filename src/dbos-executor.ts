@@ -135,6 +135,7 @@ export interface DBOSConfig {
   otlpLogsEndpoints?: string[];
   adminPort?: number;
   runAdminServer?: boolean;
+  applicationVersion?: string;
 }
 
 export interface DBOSRuntimeConfig {

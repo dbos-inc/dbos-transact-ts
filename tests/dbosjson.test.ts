@@ -2,7 +2,6 @@ import { DBOSJSON, DBOSJSONLegacy, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALU
 
 /**
  * DBOSJSON uses SuperJSON internally for rich type support.
- *   This does not extend to null vs. undefined; they are treated the same.
  *
  * Test structure:
  * 1. "dbos-json-reviver-replacer" - (dates, bigints, buffers)
@@ -207,18 +206,15 @@ describe('Backwards compatibility', () => {
     expect(parsed).toEqual(originalData);
   });
 
-  test('handles null correctly - which is incorrectly', () => {
-    // DBOS JSON has historically not been transparent to null and undefined;
-    //  Keep it that way, at least for now.
+  test('handles null correctly', () => {
+    // These are legacy cases
     expect(DBOSJSON.parse(null)).toBe(null);
     expect(DBOSJSON.parse(undefined)).toBe(null);
-    expect(DBOSJSON.stringify(null)).toBeUndefined();
-    expect(DBOSJSON.stringify(undefined)).toBeUndefined();
-    //
-    // Includes our marker to avoid ambiguity
-    //const nullParsed = JSON.parse(nullSerialized);
-    //expect(nullParsed).toHaveProperty('json', null);
-    //expect(nullParsed).toHaveProperty(SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE);
+
+    expect(DBOSJSON.parse(DBOSJSON.stringify(null))).toBeNull();
+    expect(DBOSJSON.parse(DBOSJSON.stringify(undefined))).toBeUndefined();
+    expect(DBOSJSON.stringify(null)).toBeTruthy();
+    expect(DBOSJSON.stringify(undefined)).toBeTruthy();
   });
 
   test('parses plain JSON', () => {
