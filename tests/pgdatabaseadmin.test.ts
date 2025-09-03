@@ -4,6 +4,7 @@ import net from 'net';
 
 import { deriveDatabaseUrl, dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
 import { spawn } from 'child_process';
+import { DBOS } from '../src';
 
 // Test routine to see if psql can contact container
 async function execHostPsql(
@@ -431,6 +432,59 @@ describe('PG16 drop/create e2e', () => {
       try {
         await adminClient.end();
       } catch {}
+    } finally {
+      await container.stop();
+    }
+  }, 120_000);
+
+  test('launch DBOS with weird sysdb name', async () => {
+    if (!testShouldRun) return;
+
+    const container = await new PostgreSqlContainer('postgres:16')
+      .withUsername('dbos')
+      .withPassword('dbos')
+      .withDatabase('foobar')
+      .start();
+
+    try {
+      const dbName = `"db".'v1'-a$6`;
+      expect(
+        (await ensurePGDatabase({ adminUrl: container.getConnectionUri(), dbToEnsure: dbName, logger: () => {} }))
+          .status,
+      ).toBe('created');
+
+      DBOS.setConfig({
+        name: 'weird-sysdb-test',
+        systemDatabaseUrl: makePGConnStr(
+          container.getUsername(),
+          container.getPassword(),
+          container.getHost(),
+          container.getPort(),
+          dbName,
+          3000,
+        ),
+      });
+
+      const testWorkflow = DBOS.registerWorkflow(
+        async (testValue: string) => {
+          const step1 = await DBOS.runStep(async () => {
+            return Promise.resolve('1');
+          });
+          const step2 = await DBOS.runStep(async () => {
+            return Promise.resolve('2');
+          });
+          return testValue + step1 + step2;
+        },
+        { name: 'weird-sysdb-test-workflow' },
+      );
+
+      await DBOS.launch();
+      try {
+        const res = await testWorkflow('a');
+        expect(res).toBe('a12');
+      } finally {
+        await DBOS.shutdown();
+      }
     } finally {
       await container.stop();
     }
