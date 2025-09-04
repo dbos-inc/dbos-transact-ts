@@ -8,7 +8,7 @@ import path from 'path';
 import dbosConfigSchema from '../../dbos-config.schema.json';
 import assert from 'assert';
 import validator from 'validator';
-import { maskDatabaseUrl } from '../datasource';
+import { maskDatabaseUrl } from '../database_utils';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });

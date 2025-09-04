@@ -109,7 +109,7 @@ import {
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
 import { getClientConfig } from './utils';
-import { ensurePGDatabase, maskDatabaseUrl } from './datasource';
+import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}

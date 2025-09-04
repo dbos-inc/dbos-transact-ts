@@ -1,7 +1,7 @@
 import { GlobalLogger } from '../telemetry/logs';
 import { confirm } from '@inquirer/prompts';
 import { ConfigFile, getSystemDatabaseUrl } from './config';
-import { dropPGDatabase } from '../datasource';
+import { dropPGDatabase } from '../database_utils';
 
 export async function reset(config: ConfigFile, logger: GlobalLogger, cnf: boolean) {
   if (cnf) {

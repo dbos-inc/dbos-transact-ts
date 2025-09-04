@@ -2,7 +2,7 @@ import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
 import { ensureDbosTables } from '../user_database';
-import { ensurePGDatabase, maskDatabaseUrl } from '../datasource';
+import { ensurePGDatabase, maskDatabaseUrl } from '../database_utils';
 
 export async function migrate(
   migrationCommands: string[],

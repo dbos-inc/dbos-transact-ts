@@ -26,7 +26,7 @@ import fs from 'fs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
-import { ensurePGDatabase, maskDatabaseUrl } from './datasource';
+import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal';
 
