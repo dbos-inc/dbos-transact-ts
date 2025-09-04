@@ -474,6 +474,11 @@ export class DBOSExecutor {
         globalParams.wasComputed = true;
       }
       this.logger.info(`Initializing DBOS (v${globalParams.dbosVersion})`);
+      const sanitizedDBUrl = new URL(this.config.systemDatabaseUrl);
+      if (sanitizedDBUrl.password) {
+        sanitizedDBUrl.password = '****';
+      }
+      this.logger.info(`System Database URL: ${sanitizedDBUrl}`);
       this.logger.info(`Executor ID: ${this.executorID}`);
       this.logger.info(`Application version: ${globalParams.appVersion}`);
 
