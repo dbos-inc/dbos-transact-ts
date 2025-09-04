@@ -178,13 +178,14 @@ workflowCommands
   .option('-n, --name <string>', 'Retrieve functions with this name')
   .option('-l, --limit <number>', 'Limit the results returned', '10')
   .option('-u, --user <string>', 'Retrieve workflows run by this user')
-  .option('-s, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
+  .option('-t, --start-time <string>', 'Retrieve workflows starting after this timestamp (ISO 8601 format)')
   .option('-e, --end-time <string>', 'Retrieve workflows starting before this timestamp (ISO 8601 format)')
   .option(
     '-S, --status <string>',
     'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, ENQUEUED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED)',
   )
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
+  .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(
     async (options: {
       name?: string;
@@ -194,9 +195,8 @@ workflowCommands
       endTime?: string;
       status?: string;
       applicationVersion?: string;
+      sysDbUrl?: string;
     }) => {
-      const config = readConfigFile();
-      const databaseUrl = getApplicationDatabaseUrl(config);
       const validStatuses = Object.values(StatusString) as readonly string[];
 
       if (options.status && !validStatuses.includes(options.status)) {
@@ -213,8 +213,11 @@ workflowCommands
         status: options.status as GetWorkflowsInput['status'],
         applicationVersion: options.applicationVersion,
       };
-      const systemDatabaseUrl = getSystemDatabaseUrl(config);
-      const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
+      const urls = getDatabaseURLs(options.sysDbUrl);
+      const client = await DBOSClient.create({
+        databaseUrl: urls.applicationDatabaseURL,
+        systemDatabaseUrl: urls.systemDatabaseURL,
+      });
       try {
         const output = await client.listWorkflows(input);
         console.log(JSON.stringify(output));
@@ -311,7 +314,7 @@ queueCommands
   .command('list')
   .description('List enqueued functions from your application')
   .option('-n, --name <string>', 'Retrieve functions with this name')
-  .option('-s, --start-time <string>', 'Retrieve functions starting after this timestamp (ISO 8601 format)')
+  .option('-t, --start-time <string>', 'Retrieve functions starting after this timestamp (ISO 8601 format)')
   .option('-e, --end-time <string>', 'Retrieve functions starting before this timestamp (ISO 8601 format)')
   .option(
     '-S, --status <string>',
