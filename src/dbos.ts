@@ -70,6 +70,7 @@ import {
   ensureDBOSIsLaunched,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
+import { SerializableOnly, SerializableArgs } from './serialization';
 import { DBOSHttpServer } from './httpServer/server';
 import { Server } from 'http';
 import {
@@ -1404,7 +1405,7 @@ export class DBOS {
    * @param key - The stream key/name within the workflow
    * @returns An async generator that yields each value in the stream until the stream is closed
    */
-  static async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
+  static async *readStream<T>(workflowID: string, key: string): AsyncGenerator<SerializableOnly<T>, void, unknown> {
     ensureDBOSIsLaunched('readStream');
     let offset = 0;
 
@@ -1414,7 +1415,7 @@ export class DBOS {
         if (value === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield value as T;
+        yield value as SerializableOnly<T>;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {
@@ -1506,7 +1507,7 @@ export class DBOS {
    * @param options - Configuration information for the registered workflow
    */
   static registerWorkflow<This, Args extends unknown[], Return>(
-    func: (this: This, ...args: Args) => Promise<Return>,
+    func: (this: This, ...args: SerializableArgs<Args>) => Promise<SerializableOnly<Return>>,
     config?: FunctionName & WorkflowConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
     const registration = wrapDBOSFunctionAndRegisterByUniqueName(
@@ -1867,7 +1868,7 @@ export class DBOS {
    * @param config - Configuration information for the step, particularly the retry policy and name
    */
   static registerStep<This, Args extends unknown[], Return>(
-    func: (this: This, ...args: Args) => Promise<Return>,
+    func: (this: This, ...args: Args) => Promise<SerializableOnly<Return>>,
     config: StepConfig & FunctionName = {},
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;

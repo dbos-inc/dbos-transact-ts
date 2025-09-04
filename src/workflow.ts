@@ -2,6 +2,7 @@
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
 import { DBOSJSON } from './utils';
+import { SerializableOnly, SerializableArgs } from './serialization';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
 
@@ -136,7 +137,7 @@ export interface WorkflowHandle<R> {
   /**
    * Await workflow completion and return its result.
    */
-  getResult(): Promise<R>;
+  getResult(): Promise<SerializableOnly<R>>;
   /**
    * @deprecated use `.workflowID` instead of `.getWorkflowUUID()`
    * Return the workflow's ID, which may be a UUID (but not necessarily).
@@ -149,11 +150,11 @@ export interface WorkflowHandle<R> {
   /**
    * Return the workflow's inputs
    */
-  getWorkflowInputs<T extends any[]>(): Promise<T>;
+  getWorkflowInputs<T extends any[]>(): Promise<SerializableArgs<T>>;
 }
 
 export interface InternalWFHandle<R> extends WorkflowHandle<R> {
-  getResult(funcIdForGet?: number): Promise<R>;
+  getResult(funcIdForGet?: number): Promise<SerializableOnly<R>>;
 }
 
 /**
@@ -190,9 +191,9 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
     );
   }
 
-  async getWorkflowInputs<T extends any[]>(): Promise<T> {
+  async getWorkflowInputs<T extends any[]>(): Promise<SerializableArgs<T>> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return DBOSJSON.parse(status.input) as T;
+    return DBOSJSON.parse(status.input) as SerializableArgs<T>;
   }
 }
 
@@ -217,12 +218,14 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
     return await DBOS.getWorkflowStatus(this.workflowUUID);
   }
 
-  async getResult(funcIdForGet?: number): Promise<R> {
-    return (await DBOS.getResultInternal<R>(this.workflowUUID, undefined, undefined, funcIdForGet)) as Promise<R>;
+  async getResult(funcIdForGet?: number): Promise<SerializableOnly<R>> {
+    return (await DBOS.getResultInternal<R>(this.workflowUUID, undefined, undefined, funcIdForGet)) as Promise<
+      SerializableOnly<R>
+    >;
   }
 
-  async getWorkflowInputs<T extends any[]>(): Promise<T> {
+  async getWorkflowInputs<T extends any[]>(): Promise<SerializableArgs<T>> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return DBOSJSON.parse(status.input) as T;
+    return DBOSJSON.parse(status.input) as SerializableArgs<T>;
   }
 }
