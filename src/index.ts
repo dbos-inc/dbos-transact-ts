@@ -59,6 +59,8 @@ export {
   requestArgValidation,
 } from './paramdecorators';
 
+export { readConfigFile, getApplicationDatabaseUrl as getDatabaseUrl } from './dbos-runtime/config';
+
 export {
   DBOSConfig,
   DBOSRuntimeConfig,
