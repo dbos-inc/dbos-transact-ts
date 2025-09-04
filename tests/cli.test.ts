@@ -1,3 +1,8 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { execSync } from 'child_process';
 import { Client } from 'pg';
 import { generateDBOSTestConfig } from './helpers';
@@ -188,10 +193,8 @@ describe('workflow-management-cli-tests', () => {
       const output = execSync(command, { encoding: 'utf8', env: process.env });
       console.log(output);
       return output.trim();
-    } catch (error: any) {
-      throw new Error(
-        `Command failed: ${command}\nError: ${error.message}\nOutput: ${error.stdout || ''}\nStderr: ${error.stderr || ''}`,
-      );
+    } catch (error: unknown) {
+      throw new Error(`Command failed: ${command}\nError: ${String(error)}`);
     }
   }
 

@@ -1,7 +1,6 @@
 #!/usr/bin/env node
 import {
   dbosConfigFilePath,
-  getApplicationDatabaseUrl,
   getDbosConfig,
   getRuntimeConfig,
   getSystemDatabaseUrl,
