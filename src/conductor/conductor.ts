@@ -1,5 +1,5 @@
 import { DBOSExecutor } from '../dbos-executor';
-import { DBOSJSON, globalParams } from '../utils';
+import { globalParams } from '../utils';
 import WebSocket from 'ws';
 import * as protocol from './protocol';
 import { GetWorkflowsInput, StatusString } from '..';
@@ -112,7 +112,7 @@ export class Conductor {
 
       this.websocket.on('message', async (data: string) => {
         this.dbosExec.logger.debug(`Received message from conductor: ${data}`);
-        const baseMsg = DBOSJSON.parse(data) as protocol.BaseMessage;
+        const baseMsg = JSON.parse(data) as protocol.BaseMessage;
         const msgType = baseMsg.type;
         let errorMsg: string | undefined = undefined;
         switch (msgType) {
@@ -123,7 +123,7 @@ export class Conductor {
               globalParams.appVersion,
               hostname(),
             );
-            this.websocket!.send(DBOSJSON.stringify(infoResp));
+            this.websocket!.send(JSON.stringify(infoResp));
             this.dbosExec.logger.info('Connected to DBOS conductor');
             break;
           case protocol.MessageType.RECOVERY:
@@ -137,7 +137,7 @@ export class Conductor {
               success = false;
             }
             const recoveryResp = new protocol.RecoveryResponse(baseMsg.request_id, success, errorMsg);
-            this.websocket!.send(DBOSJSON.stringify(recoveryResp));
+            this.websocket!.send(JSON.stringify(recoveryResp));
             break;
           case protocol.MessageType.CANCEL:
             const cancelMsg = baseMsg as protocol.CancelRequest;
@@ -150,7 +150,7 @@ export class Conductor {
               cancelSuccess = false;
             }
             const cancelResp = new protocol.CancelResponse(baseMsg.request_id, cancelSuccess, errorMsg);
-            this.websocket!.send(DBOSJSON.stringify(cancelResp));
+            this.websocket!.send(JSON.stringify(cancelResp));
             break;
           case protocol.MessageType.RESUME:
             const resumeMsg = baseMsg as protocol.ResumeRequest;
@@ -163,7 +163,7 @@ export class Conductor {
               resumeSuccess = false;
             }
             const resumeResp = new protocol.ResumeResponse(baseMsg.request_id, resumeSuccess, errorMsg);
-            this.websocket!.send(DBOSJSON.stringify(resumeResp));
+            this.websocket!.send(JSON.stringify(resumeResp));
             break;
           case protocol.MessageType.RESTART:
             const restartMsg = baseMsg as protocol.RestartRequest;
@@ -176,7 +176,7 @@ export class Conductor {
               restartSuccess = false;
             }
             const restartResp = new protocol.RestartResponse(baseMsg.request_id, restartSuccess, errorMsg);
-            this.websocket!.send(DBOSJSON.stringify(restartResp));
+            this.websocket!.send(JSON.stringify(restartResp));
             break;
           case protocol.MessageType.FORK_WORKFLOW:
             const forkMsg = baseMsg as protocol.ForkWorkflowRequest;
@@ -192,7 +192,7 @@ export class Conductor {
               newWorkflowID = undefined;
             }
             const forkResp = new protocol.ForkWorkflowResponse(baseMsg.request_id, newWorkflowID, errorMsg);
-            this.websocket!.send(DBOSJSON.stringify(forkResp));
+            this.websocket!.send(JSON.stringify(forkResp));
             break;
           case protocol.MessageType.LIST_WORKFLOWS:
             const listWFMsg = baseMsg as protocol.ListWorkflowsRequest;
@@ -220,7 +220,7 @@ export class Conductor {
               this.dbosExec.logger.error(errorMsg);
             }
             const wfsResp = new protocol.ListWorkflowsResponse(listWFMsg.request_id, workflowsOutput, errorMsg);
-            this.websocket!.send(DBOSJSON.stringify(wfsResp));
+            this.websocket!.send(JSON.stringify(wfsResp));
             break;
           case protocol.MessageType.LIST_QUEUED_WORKFLOWS:
             const listQueuedWFMsg = baseMsg as protocol.ListQueuedWorkflowsRequest;
@@ -249,7 +249,7 @@ export class Conductor {
               queuedWFOutput,
               errorMsg,
             );
-            this.websocket!.send(DBOSJSON.stringify(queuedWfsResp));
+            this.websocket!.send(JSON.stringify(queuedWfsResp));
             break;
           case protocol.MessageType.GET_WORKFLOW:
             const getWFMsg = baseMsg as protocol.GetWorkflowRequest;
@@ -264,7 +264,7 @@ export class Conductor {
               this.dbosExec.logger.error(errorMsg);
             }
             const getWFResp = new protocol.GetWorkflowResponse(getWFMsg.request_id, wfOutput, errorMsg);
-            this.websocket!.send(DBOSJSON.stringify(getWFResp));
+            this.websocket!.send(JSON.stringify(getWFResp));
             break;
           case protocol.MessageType.EXIST_PENDING_WORKFLOWS:
             const existPendingMsg = baseMsg as protocol.ExistPendingWorkflowsRequest;
@@ -284,7 +284,7 @@ export class Conductor {
               hasPendingWFs,
               errorMsg,
             );
-            this.websocket!.send(DBOSJSON.stringify(existPendingResp));
+            this.websocket!.send(JSON.stringify(existPendingResp));
             break;
           case protocol.MessageType.LIST_STEPS:
             const listStepsMessage = baseMsg as protocol.ListStepsRequest;
@@ -301,7 +301,7 @@ export class Conductor {
               workflowSteps,
               errorMsg,
             );
-            this.websocket!.send(DBOSJSON.stringify(listStepsResponse));
+            this.websocket!.send(JSON.stringify(listStepsResponse));
             break;
           case protocol.MessageType.RETENTION:
             const retentionMessage = baseMsg as protocol.RetentionRequest;
@@ -324,13 +324,13 @@ export class Conductor {
               retentionSuccess,
               errorMsg,
             );
-            this.websocket!.send(DBOSJSON.stringify(retentionResponse));
+            this.websocket!.send(JSON.stringify(retentionResponse));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
             // Still need to send a response to the conductor
             const unknownResp = new protocol.BaseResponse(baseMsg.type, baseMsg.request_id, 'Unknown message type');
-            this.websocket!.send(DBOSJSON.stringify(unknownResp));
+            this.websocket!.send(JSON.stringify(unknownResp));
         }
       });
 
@@ -348,7 +348,7 @@ export class Conductor {
       this.websocket.on('unexpected-response', async (_, res) => {
         const resBody = await streamJSON(res);
         this.dbosExec.logger.warn(
-          `Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}. Details: ${DBOSJSON.stringify(resBody)}`,
+          `Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}. Details: ${JSON.stringify(resBody)}`,
         );
         this.resetWebsocket();
       });
