@@ -242,16 +242,16 @@ workflowCommands
 workflowCommands
   .command('get')
   .description('Retrieve the status of a workflow')
-  .argument('<uuid>', 'Target workflow ID')
+  .argument('<workflowID>', 'Target workflow ID')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
-  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+  .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
     const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
     try {
-      const output = await client.getWorkflow(uuid);
+      const output = await client.getWorkflow(workflowID);
       console.log(JSON.stringify(output));
     } finally {
       await client.destroy();
@@ -261,16 +261,16 @@ workflowCommands
 workflowCommands
   .command('steps')
   .description('List the steps of a workflow')
-  .argument('<uuid>', 'Target workflow ID')
+  .argument('<workflowID>', 'Target workflow ID')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
-  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+  .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
     const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
     try {
-      const output = await client.listWorkflowSteps(uuid);
+      const output = await client.listWorkflowSteps(workflowID);
       console.log(JSON.stringify(output));
     } finally {
       await client.destroy();
@@ -280,16 +280,16 @@ workflowCommands
 workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
-  .argument('<uuid>', 'Target workflow ID')
+  .argument('<workflowID>', 'Target workflow ID')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
-  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+  .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
     const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
     try {
-      await client.cancelWorkflow(uuid);
+      await client.cancelWorkflow(workflowID);
     } finally {
       await client.destroy();
     }
@@ -298,16 +298,16 @@ workflowCommands
 workflowCommands
   .command('resume')
   .description('Resume a workflow from the last step it executed, keeping its workflow ID')
-  .argument('<uuid>', 'Target workflow ID')
+  .argument('<workflowID>', 'Target workflow ID')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
-  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+  .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
     const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
     try {
-      await client.resumeWorkflow(uuid);
+      await client.resumeWorkflow(workflowID);
     } finally {
       await client.destroy();
     }
@@ -316,16 +316,16 @@ workflowCommands
 workflowCommands
   .command('restart')
   .description('Restart a workflow from the beginning with a new workflow ID')
-  .argument('<uuid>', 'Target workflow ID')
+  .argument('<workflowID>', 'Target workflow ID')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
-  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+  .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
     const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
     try {
-      await client.forkWorkflow(uuid, 0);
+      await client.forkWorkflow(workflowID, 0);
     } finally {
       await client.destroy();
     }
