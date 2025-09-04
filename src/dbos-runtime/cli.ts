@@ -13,15 +13,15 @@ import { DBOSConfigInternal } from '../dbos-executor';
 import { migrate, grantDbosSchemaPermissions } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
+import { confirm } from '@inquirer/prompts';
 import { TelemetryExporter } from '../telemetry/exporters';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
-import { migrateSystemDatabase } from '../system_database';
+import { migrateSystemDatabase, PostgresSystemDatabase } from '../system_database';
 import { createDBIfDoesNotExist } from '../user_database';
 import { getClientConfig } from '../utils';
 import { PoolConfig } from 'pg';
 import { exit } from 'node:process';
 import { runCommand } from './commands';
-import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
 import { readFileSync } from '../utils';
@@ -156,10 +156,22 @@ program
   .command('reset')
   .description('reset the system database')
   .option('-y, --yes', 'Skip confirmation prompt', false)
-  .action(async (options: { yes: boolean }) => {
-    const logger = new GlobalLogger();
-    const config = readConfigFile();
-    await reset(config, logger, options.yes);
+  .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
+  .action(async (options: { yes: boolean; sysDbUrl?: string }) => {
+    if (options.yes) {
+      const userConfirmed = await confirm({
+        message:
+          'This command resets your DBOS system database, deleting metadata about past workflows and steps. Are you sure you want to proceed?',
+        default: false, // Default value for confirmation
+      });
+
+      if (!userConfirmed) {
+        console.log('Operation cancelled.');
+        process.exit(0); // Exit the process if the user cancels
+      }
+    }
+    const urls = getDatabaseURLs(options.sysDbUrl);
+    await PostgresSystemDatabase.dropSystemDB(urls.systemDatabaseURL);
   });
 
 /////////////////////////
