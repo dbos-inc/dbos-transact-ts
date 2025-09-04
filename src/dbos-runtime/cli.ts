@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import {
+  dbosConfigFilePath,
   getApplicationDatabaseUrl,
   getDbosConfig,
   getRuntimeConfig,
@@ -24,6 +25,7 @@ import { reset } from './reset';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
 import { readFileSync } from '../utils';
+import { existsSync } from 'node:fs';
 
 const program = new Command();
 
@@ -388,6 +390,27 @@ program.parse(process.argv);
 // If no arguments provided, display help by default
 if (!process.argv.slice(2).length) {
   program.outputHelp();
+}
+
+function getDatabaseURLs(systemDatabaseURL: string): { applicationDatabaseURL: string; systemDatabaseURL: string } {
+  if (process.env.DBOS__CLOUD === 'true') {
+    return {
+      applicationDatabaseURL: process.env.DBOS_DATABASE_URL!,
+      systemDatabaseURL: process.env.DBOS_SYSTEM_DATABASE_URL!,
+    };
+  }
+  if (systemDatabaseURL) {
+    return { applicationDatabaseURL: systemDatabaseURL, systemDatabaseURL: systemDatabaseURL };
+  }
+  if (existsSync(dbosConfigFilePath)) {
+    const config = readConfigFile();
+    return {
+      applicationDatabaseURL: getApplicationDatabaseUrl(config),
+      systemDatabaseURL: getSystemDatabaseUrl(config),
+    };
+  } else {
+    throw new Error('Error: Missing database URL: please set it using CLI flags or your dbos-config.yaml file.');
+  }
 }
 
 //Takes an action function(configFile, logger) that returns a numeric exit code.
