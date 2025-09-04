@@ -101,7 +101,7 @@ export function getSystemDatabaseUrl(
   configFileOrString: string | Pick<ConfigFile, 'name' | 'database_url' | 'system_database_url'>,
 ): string {
   if (typeof configFileOrString === 'string') {
-    return convertUserDbUrl(configFileOrString);
+    return convertAppDBUrl(configFileOrString);
   }
 
   if (configFileOrString.system_database_url) {
@@ -111,10 +111,10 @@ export function getSystemDatabaseUrl(
     return configFileOrString.system_database_url;
   }
 
-  const databaseUrl = getDatabaseUrl(configFileOrString);
-  return convertUserDbUrl(databaseUrl);
+  const databaseUrl = getApplicationDatabaseUrl(configFileOrString);
+  return convertAppDBUrl(databaseUrl);
 
-  function convertUserDbUrl(databaseUrl: string) {
+  function convertAppDBUrl(databaseUrl: string) {
     const url = new URL(databaseUrl);
     const dbName = url.pathname.slice(1);
     const sysDbName = `${dbName}_dbos_sys`;
@@ -135,7 +135,7 @@ function isValidDBname(dbName: string): boolean {
   return validator.matches(dbName, '^[a-z0-9_]+$');
 }
 
-export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
+export function getApplicationDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
   const databaseUrl = configFile.database_url || defaultDatabaseUrl(configFile.name);
 
   const url = new URL(databaseUrl);
@@ -222,7 +222,7 @@ function isValidUserDbClient(name: string): name is UserDatabaseName {
 }
 
 export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
-  const databaseUrl = getDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
+  const databaseUrl = getApplicationDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
   const systemDatabaseUrl = getSystemDatabaseUrl({
     database_url: options.databaseUrl,
     system_database_url: options.systemDatabaseUrl,
