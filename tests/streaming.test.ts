@@ -485,7 +485,7 @@ describe('dbos-client-streaming-tests', () => {
     config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
-    client = await DBOSClient.create({ databaseUrl: config.databaseUrl });
+    client = DBOSClient.create({ databaseUrl: config.databaseUrl });
   });
 
   beforeEach(async () => {});

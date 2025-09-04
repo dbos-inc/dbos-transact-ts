@@ -226,7 +226,7 @@ workflowCommands
         applicationVersion: options.applicationVersion,
       };
       const urls = getDatabaseURLs(options.sysDbUrl);
-      const client = await DBOSClient.create({
+      const client = DBOSClient.create({
         databaseUrl: urls.applicationDatabaseURL,
         systemDatabaseUrl: urls.systemDatabaseURL,
       });
@@ -246,7 +246,7 @@ workflowCommands
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (uuid: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
-    const client = await DBOSClient.create({
+    const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
@@ -265,7 +265,7 @@ workflowCommands
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (uuid: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
-    const client = await DBOSClient.create({
+    const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
@@ -284,7 +284,7 @@ workflowCommands
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (uuid: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
-    const client = await DBOSClient.create({
+    const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
@@ -302,7 +302,7 @@ workflowCommands
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (uuid: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
-    const client = await DBOSClient.create({
+    const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
@@ -320,7 +320,7 @@ workflowCommands
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (uuid: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
-    const client = await DBOSClient.create({
+    const client = DBOSClient.create({
       databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
@@ -370,7 +370,7 @@ queueCommands
         queueName: options.queue,
       };
       const urls = getDatabaseURLs(options.sysDbUrl);
-      const client = await DBOSClient.create({
+      const client = DBOSClient.create({
         databaseUrl: urls.applicationDatabaseURL,
         systemDatabaseUrl: urls.systemDatabaseURL,
       });

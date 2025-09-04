@@ -142,15 +142,8 @@ export class DBOSClient {
    * @param systemDatabase - An optional name for the system database. If not provided, it defaults to the application database name with a `_dbos_sys` suffix.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
-  static async create({
-    databaseUrl,
-    systemDatabaseUrl,
-  }: {
-    databaseUrl?: string;
-    systemDatabaseUrl?: string;
-  }): Promise<DBOSClient> {
-    const client = new DBOSClient(databaseUrl, systemDatabaseUrl);
-    return client;
+  static create({ databaseUrl, systemDatabaseUrl }: { databaseUrl?: string; systemDatabaseUrl?: string }): DBOSClient {
+    return new DBOSClient(databaseUrl, systemDatabaseUrl);
   }
 
   /**
