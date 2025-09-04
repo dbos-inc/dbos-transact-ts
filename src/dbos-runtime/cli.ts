@@ -243,11 +243,13 @@ workflowCommands
   .command('get')
   .description('Retrieve the status of a workflow')
   .argument('<uuid>', 'Target workflow ID')
-  .action(async (uuid: string) => {
-    const config = readConfigFile();
-    const databaseUrl = getApplicationDatabaseUrl(config);
-    const systemDatabaseUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
+  .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
+  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+    const urls = getDatabaseURLs(options.sysDbUrl);
+    const client = await DBOSClient.create({
+      databaseUrl: urls.applicationDatabaseURL,
+      systemDatabaseUrl: urls.systemDatabaseURL,
+    });
     try {
       const output = await client.getWorkflow(uuid);
       console.log(JSON.stringify(output));
@@ -260,11 +262,13 @@ workflowCommands
   .command('steps')
   .description('List the steps of a workflow')
   .argument('<uuid>', 'Target workflow ID')
-  .action(async (uuid: string) => {
-    const config = readConfigFile();
-    const databaseUrl = getApplicationDatabaseUrl(config);
-    const systemDatabaseUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
+  .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
+  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+    const urls = getDatabaseURLs(options.sysDbUrl);
+    const client = await DBOSClient.create({
+      databaseUrl: urls.applicationDatabaseURL,
+      systemDatabaseUrl: urls.systemDatabaseURL,
+    });
     try {
       const output = await client.listWorkflowSteps(uuid);
       console.log(JSON.stringify(output));
@@ -277,11 +281,13 @@ workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
   .argument('<uuid>', 'Target workflow ID')
-  .action(async (uuid: string) => {
-    const config = readConfigFile();
-    const databaseUrl = getApplicationDatabaseUrl(config);
-    const systemDatabaseUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
+  .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
+  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+    const urls = getDatabaseURLs(options.sysDbUrl);
+    const client = await DBOSClient.create({
+      databaseUrl: urls.applicationDatabaseURL,
+      systemDatabaseUrl: urls.systemDatabaseURL,
+    });
     try {
       await client.cancelWorkflow(uuid);
     } finally {
@@ -293,11 +299,13 @@ workflowCommands
   .command('resume')
   .description('Resume a workflow from the last step it executed, keeping its workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .action(async (uuid: string) => {
-    const config = readConfigFile();
-    const databaseUrl = getApplicationDatabaseUrl(config);
-    const systemDatabaseUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
+  .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
+  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+    const urls = getDatabaseURLs(options.sysDbUrl);
+    const client = await DBOSClient.create({
+      databaseUrl: urls.applicationDatabaseURL,
+      systemDatabaseUrl: urls.systemDatabaseURL,
+    });
     try {
       await client.resumeWorkflow(uuid);
     } finally {
@@ -309,11 +317,13 @@ workflowCommands
   .command('restart')
   .description('Restart a workflow from the beginning with a new workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .action(async (uuid: string) => {
-    const config = readConfigFile();
-    const databaseUrl = getApplicationDatabaseUrl(config);
-    const systemDatabaseUrl = getSystemDatabaseUrl(config);
-    const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
+  .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
+  .action(async (uuid: string, options: { sysDbUrl?: string }) => {
+    const urls = getDatabaseURLs(options.sysDbUrl);
+    const client = await DBOSClient.create({
+      databaseUrl: urls.applicationDatabaseURL,
+      systemDatabaseUrl: urls.systemDatabaseURL,
+    });
     try {
       await client.forkWorkflow(uuid, 0);
     } finally {
@@ -334,6 +344,7 @@ queueCommands
   )
   .option('-l, --limit <number>', 'Limit the results returned')
   .option('-q, --queue <string>', 'Retrieve functions run on this queue')
+  .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(
     async (options: {
       name?: string;
@@ -342,6 +353,7 @@ queueCommands
       status?: string;
       limit?: string;
       queue?: string;
+      sysDbUrl?: string;
     }) => {
       const validStatuses = Object.values(StatusString) as readonly string[];
       if (options.status && !validStatuses.includes(options.status)) {
@@ -357,10 +369,11 @@ queueCommands
         workflowName: options.name,
         queueName: options.queue,
       };
-      const config = readConfigFile();
-      const databaseUrl = getApplicationDatabaseUrl(config);
-      const systemDatabaseUrl = getSystemDatabaseUrl(config);
-      const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
+      const urls = getDatabaseURLs(options.sysDbUrl);
+      const client = await DBOSClient.create({
+        databaseUrl: urls.applicationDatabaseURL,
+        systemDatabaseUrl: urls.systemDatabaseURL,
+      });
       try {
         // TOD: Review!
         const output = await client.listQueuedWorkflows(input);
