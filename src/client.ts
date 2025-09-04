@@ -16,6 +16,7 @@ import {
   type WorkflowHandle,
   type WorkflowStatus,
 } from './workflow';
+import type { SerializableOnly, SerializableArgs } from './serialization';
 import { DBOSJSON, getClientConfig, sleepms } from './utils';
 import {
   forkWorkflow,
@@ -102,17 +103,17 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     return status ? toWorkflowStatus(status) : null;
   }
 
-  async getResult(): Promise<R> {
+  async getResult(): Promise<SerializableOnly<R>> {
     const res = await this.systemDatabase.awaitWorkflowResult(this.workflowID);
     if (res?.cancelled) {
       throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
     }
-    return DBOSExecutor.reviveResultOrError<R>(res!);
+    return DBOSExecutor.reviveResultOrError<R>(res!) as SerializableOnly<R>;
   }
 
-  async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
+  async getWorkflowInputs<T extends unknown[]>(): Promise<SerializableArgs<T>> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return DBOSJSON.parse(status.input) as T;
+    return DBOSJSON.parse(status.input) as SerializableArgs<T>;
   }
 }
 
@@ -300,7 +301,7 @@ export class DBOSClient {
    * @param key - The stream key to read from
    * @returns An async generator that yields each value in the stream until the stream is closed
    */
-  async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
+  async *readStream<T>(workflowID: string, key: string): AsyncGenerator<SerializableOnly<T>, void, unknown> {
     let offset = 0;
 
     while (true) {
@@ -309,7 +310,7 @@ export class DBOSClient {
         if (value === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield value as T;
+        yield value as SerializableOnly<T>;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {

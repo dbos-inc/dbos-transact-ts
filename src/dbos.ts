@@ -1405,7 +1405,7 @@ export class DBOS {
    * @param key - The stream key/name within the workflow
    * @returns An async generator that yields each value in the stream until the stream is closed
    */
-  static async *readStream<T>(workflowID: string, key: string): AsyncGenerator<T, void, unknown> {
+  static async *readStream<T>(workflowID: string, key: string): AsyncGenerator<SerializableOnly<T>, void, unknown> {
     ensureDBOSIsLaunched('readStream');
     let offset = 0;
 
@@ -1415,7 +1415,7 @@ export class DBOS {
         if (value === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield value as T;
+        yield value as SerializableOnly<T>;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {
