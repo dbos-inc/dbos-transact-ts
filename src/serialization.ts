@@ -50,6 +50,11 @@ export type NotSerializable<Context extends string = ""> = {
 };
 
 /**
+ * Helper type to format property names in error messages.
+ */
+type PropertyName<K> = K extends string ? K : K extends number ? `[${K}]` : K extends symbol ? "[symbol]" : "unknown";
+
+/**
  * Constrains a type to only include SuperJSON serializable values.
  * Non-serializable types are replaced with branded error types that provide clear error messages.
  * 
@@ -73,11 +78,11 @@ export type SerializableOnly<T> = T extends SuperJSONSerializable
                 : T extends Buffer // Buffer is supported via custom transformer
                   ? Buffer
                   : {
-                      [K in keyof T as T[K] extends (...args: any[]) => any
-                        ? never
+                      [K in keyof T]: T[K] extends (...args: any[]) => any
+                        ? NotSerializable<`Function property '${PropertyName<K>}' cannot be serialized. Remove or convert to data.`>
                         : T[K] extends symbol
-                          ? never
-                          : K]: SerializableOnly<T[K]>;
+                          ? NotSerializable<`Symbol property '${PropertyName<K>}' cannot be serialized. Use string or number instead.`>
+                          : SerializableOnly<T[K]>;
                     }
         : T;
 
