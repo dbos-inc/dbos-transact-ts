@@ -29,18 +29,27 @@ export type SuperJSONComplex =
 export type SuperJSONSerializable = SuperJSONPrimitive | SuperJSONComplex;
 
 /**
+ * Branded error type that provides clear error messages when non-serializable types are used.
+ * This appears in TypeScript error messages to guide developers.
+ */
+export type NotSerializable<Context extends string = ""> = {
+  readonly __error: "This type cannot be serialized and persisted by DBOS";
+  readonly __hint: "Functions, Symbols, and class instances (except Date, Error, RegExp, URL) cannot cross serialization boundaries";
+  readonly __context: Context;
+};
+
+/**
  * Constrains a type to only include SuperJSON serializable values.
- * Non-serializable properties (functions, symbols, classes, etc.) are converted to never,
- * effectively removing them from the type.
+ * Non-serializable types are replaced with branded error types that provide clear error messages.
  * 
  * This ensures compile-time type safety for workflow and step return types.
  */
 export type SerializableOnly<T> = T extends SuperJSONSerializable
   ? T
   : T extends (...args: any[]) => any
-    ? never
+    ? NotSerializable<"Functions cannot be serialized. Remove function properties or convert to data.">
     : T extends symbol
-      ? never
+      ? NotSerializable<"Symbols cannot be serialized. Use strings or numbers instead.">
       : T extends object
         ? T extends Error | Date | RegExp | URL // These are allowed objects
           ? T
