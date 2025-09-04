@@ -70,6 +70,7 @@ import {
   ensureDBOSIsLaunched,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
+import { SerializableOnly, SerializableArgs } from './serialization';
 import { DBOSHttpServer } from './httpServer/server';
 import { Server } from 'http';
 import {
@@ -1506,7 +1507,7 @@ export class DBOS {
    * @param options - Configuration information for the registered workflow
    */
   static registerWorkflow<This, Args extends unknown[], Return>(
-    func: (this: This, ...args: Args) => Promise<Return>,
+    func: (this: This, ...args: SerializableArgs<Args>) => Promise<SerializableOnly<Return>>,
     config?: FunctionName & WorkflowConfig,
   ): (this: This, ...args: Args) => Promise<Return> {
     const registration = wrapDBOSFunctionAndRegisterByUniqueName(
@@ -1867,7 +1868,7 @@ export class DBOS {
    * @param config - Configuration information for the step, particularly the retry policy and name
    */
   static registerStep<This, Args extends unknown[], Return>(
-    func: (this: This, ...args: Args) => Promise<Return>,
+    func: (this: This, ...args: Args) => Promise<SerializableOnly<Return>>,
     config: StepConfig & FunctionName = {},
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;

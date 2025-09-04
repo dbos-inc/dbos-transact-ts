@@ -2,6 +2,7 @@
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
 import { DBOSJSON } from './utils';
+import { SerializableOnly } from './serialization';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
 
@@ -136,7 +137,7 @@ export interface WorkflowHandle<R> {
   /**
    * Await workflow completion and return its result.
    */
-  getResult(): Promise<R>;
+  getResult(): Promise<SerializableOnly<R>>;
   /**
    * @deprecated use `.workflowID` instead of `.getWorkflowUUID()`
    * Return the workflow's ID, which may be a UUID (but not necessarily).
@@ -153,7 +154,7 @@ export interface WorkflowHandle<R> {
 }
 
 export interface InternalWFHandle<R> extends WorkflowHandle<R> {
-  getResult(funcIdForGet?: number): Promise<R>;
+  getResult(funcIdForGet?: number): Promise<SerializableOnly<R>>;
 }
 
 /**
