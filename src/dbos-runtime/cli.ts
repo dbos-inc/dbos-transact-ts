@@ -110,23 +110,11 @@ program
     const logger = new GlobalLogger();
 
     // Determine system database URL from argument or config
-    let finalSystemDatabaseUrl = systemDatabaseUrl;
-    if (!finalSystemDatabaseUrl) {
-      try {
-        const configFile = readConfigFile(options.appDir);
-        finalSystemDatabaseUrl = getSystemDatabaseUrl(configFile);
-      } catch {
-        // Config doesn't have system database URL
-      }
-    }
-
-    if (!finalSystemDatabaseUrl) {
-      logger.error('System database URL must be provided as argument or in dbos-config.yaml');
-      process.exit(1);
-    }
+    const databaseURLs = getDatabaseURLs(systemDatabaseUrl);
+    systemDatabaseUrl = databaseURLs.systemDatabaseURL;
 
     try {
-      const url = new URL(finalSystemDatabaseUrl);
+      const url = new URL(systemDatabaseUrl);
       const systemDbName = url.pathname.slice(1);
 
       if (!systemDbName) {
@@ -134,9 +122,9 @@ program
         process.exit(1);
       }
 
-      await createDBIfDoesNotExist(finalSystemDatabaseUrl, logger);
+      await createDBIfDoesNotExist(systemDatabaseUrl, logger);
 
-      const systemPoolConfig: PoolConfig = getClientConfig(finalSystemDatabaseUrl);
+      const systemPoolConfig: PoolConfig = getClientConfig(systemDatabaseUrl);
 
       // Load the DBOS system schema.
       logger.info('Creating DBOS system schema');
@@ -144,7 +132,7 @@ program
 
       // Grant permissions to application role if specified
       if (options.appRole) {
-        await grantDbosSchemaPermissions(finalSystemDatabaseUrl, options.appRole, logger);
+        await grantDbosSchemaPermissions(systemDatabaseUrl, options.appRole, logger);
       }
     } catch (e) {
       logger.error(e);
@@ -392,7 +380,10 @@ if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
 
-function getDatabaseURLs(systemDatabaseURL: string): { applicationDatabaseURL: string; systemDatabaseURL: string } {
+function getDatabaseURLs(systemDatabaseURL: string | undefined): {
+  applicationDatabaseURL: string;
+  systemDatabaseURL: string;
+} {
   if (process.env.DBOS__CLOUD === 'true') {
     return {
       applicationDatabaseURL: process.env.DBOS_DATABASE_URL!,
