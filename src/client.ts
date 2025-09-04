@@ -150,7 +150,6 @@ export class DBOSClient {
     systemDatabaseUrl?: string;
   }): Promise<DBOSClient> {
     const client = new DBOSClient(databaseUrl, systemDatabaseUrl);
-    await client.systemDatabase.init();
     return client;
   }
 
