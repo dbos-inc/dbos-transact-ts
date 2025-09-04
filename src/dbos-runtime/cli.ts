@@ -396,7 +396,7 @@ if (!process.argv.slice(2).length) {
 }
 
 function getDatabaseURLs(systemDatabaseURL: string | undefined): {
-  applicationDatabaseURL: string;
+  applicationDatabaseURL?: string;
   systemDatabaseURL: string;
 } {
   if (process.env.DBOS__CLOUD === 'true') {
@@ -406,12 +406,12 @@ function getDatabaseURLs(systemDatabaseURL: string | undefined): {
     };
   }
   if (systemDatabaseURL) {
-    return { applicationDatabaseURL: systemDatabaseURL, systemDatabaseURL: systemDatabaseURL };
+    return { applicationDatabaseURL: undefined, systemDatabaseURL: systemDatabaseURL };
   }
   if (existsSync(dbosConfigFilePath)) {
     const config = readConfigFile();
     return {
-      applicationDatabaseURL: getApplicationDatabaseUrl(config),
+      applicationDatabaseURL: config.database_url,
       systemDatabaseURL: getSystemDatabaseUrl(config),
     };
   } else {
