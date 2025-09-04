@@ -29,26 +29,19 @@ export type SuperJSONComplex =
 export type SuperJSONSerializable = SuperJSONPrimitive | SuperJSONComplex;
 
 /**
- * Branded error type that provides clear, actionable error messages when non-serializable types are used.
+ * Branded error type for non-serializable values.
  * 
- * Instead of TypeScript's default "Type 'X' is not assignable to type 'never'" error,
- * developers see helpful messages explaining what went wrong and how to fix it.
+ * Uses TypeScript's structural typing to embed error messages directly in the type.
+ * When type checking fails, the error message appears in the TypeScript output.
  * 
  * @example
- * When a developer tries to return a function from a workflow:
  * ```typescript
  * async function myWorkflow() {
- *   return { callback: () => {} };  // ❌ Error shows: "Functions cannot be serialized"
+ *   return { callback: () => {} };
  * }
+ * // Error: Type '() => void' is not assignable to type
+ * // 'NotSerializable<"Functions cannot be serialized. Remove function properties or convert to data.">'
  * ```
- * 
- * The error message will include:
- * - The specific problem (functions can't be serialized)
- * - Actionable guidance (remove function properties or convert to data)
- * - General context about serialization boundaries
- * 
- * This technique uses TypeScript's structural typing to create an impossible-to-satisfy
- * type that carries error information in its structure, making errors self-documenting.
  */
 export type NotSerializable<Context extends string = ""> = {
   readonly __error: "This type cannot be serialized and persisted by DBOS";
