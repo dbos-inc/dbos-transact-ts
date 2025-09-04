@@ -485,6 +485,8 @@ describe('PG16 drop/create e2e', () => {
       } finally {
         await DBOS.shutdown();
       }
+      const dres = await dropPGDatabase({ adminUrl: container.getConnectionUri(), dbToDrop: dbName, logger: () => {} });
+      expect(dres.status).toBe('dropped');
     } finally {
       await container.stop();
     }
