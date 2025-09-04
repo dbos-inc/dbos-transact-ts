@@ -314,22 +314,33 @@ workflowCommands
   });
 
 workflowCommands
-  .command('restart')
-  .description('Restart a workflow from the beginning with a new workflow ID')
+  .command('fork')
+  .description('Fork a workflow from a step with a new ID')
   .argument('<workflowID>', 'Target workflow ID')
+  .requiredOption('-S, --step <number>', 'Restart from this step')
+  .option('-f, --forked-workflow-id <string>', 'Custom ID for the forked workflow')
+  .option('-v, --application-version <string>', 'Custom application version for the forked workflow')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
-  .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
-    const urls = getDatabaseURLs(options.sysDbUrl);
-    const client = DBOSClient.create({
-      databaseUrl: urls.applicationDatabaseURL,
-      systemDatabaseUrl: urls.systemDatabaseURL,
-    });
-    try {
-      await client.forkWorkflow(workflowID, 0);
-    } finally {
-      await client.destroy();
-    }
-  });
+  .action(
+    async (
+      workflowID: string,
+      options: { step: number; forkedWorkflowId?: string; applicationVersion?: string; sysDbUrl?: string },
+    ) => {
+      const urls = getDatabaseURLs(options.sysDbUrl);
+      const client = DBOSClient.create({
+        databaseUrl: urls.applicationDatabaseURL,
+        systemDatabaseUrl: urls.systemDatabaseURL,
+      });
+      try {
+        await client.forkWorkflow(workflowID, options.step, {
+          newWorkflowID: options.forkedWorkflowId,
+          applicationVersion: options.applicationVersion,
+        });
+      } finally {
+        await client.destroy();
+      }
+    },
+  );
 
 const queueCommands = workflowCommands.command('queue').alias('queues').alias('q').description('Manage DBOS queues');
 queueCommands
