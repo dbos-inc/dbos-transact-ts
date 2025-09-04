@@ -131,17 +131,11 @@ describe('workflow-management-cli-tests', () => {
     systemDbUrl = config.systemDatabaseUrl!;
     DBOS.setConfig(config);
 
-    // Set up database
-    const url = new URL(systemDbUrl);
-    const dbName = url.pathname.slice(1);
-    url.pathname = '/postgres';
-    const pgClient = new Client({ connectionString: url.toString() });
-    await pgClient.connect();
-    await pgClient.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
-    await pgClient.end();
-
-    // Create schema
-    execSync(`npx dbos schema ${systemDbUrl}`, { env: process.env, stdio: 'pipe' });
+    // Reset system database
+    const resetOutput = execSync(`npx dbos reset -y -s ${systemDbUrl}`, { env: process.env, stdio: 'pipe' });
+    console.log(resetOutput.toString());
+    const schemaOutput = execSync(`npx dbos schema ${systemDbUrl}`, { env: process.env, stdio: 'pipe' });
+    console.log(schemaOutput.toString());
 
     await DBOS.launch();
   });
