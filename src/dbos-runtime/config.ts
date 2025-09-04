@@ -53,8 +53,8 @@ export function substituteEnvVars(content: string): string {
   });
 }
 
-export function readConfigFile(dirPath?: string): ConfigFile {
-  dirPath ??= process.cwd();
+export function readConfigFile(): ConfigFile {
+  const dirPath = process.cwd();
   const dbosConfigPath = path.join(dirPath, dbosConfigFilePath);
   const configContent = readFile(dbosConfigPath);
 

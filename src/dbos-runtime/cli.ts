@@ -49,9 +49,8 @@ program
   .command('start')
   .description('Start the server')
   .option('-l, --loglevel <string>', 'Specify log level')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (options: { loglevel?: string; appDir?: string }) => {
-    const config = readConfigFile(options.appDir);
+  .action(async (options: { loglevel?: string }) => {
+    const config = readConfigFile();
     const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel });
     const runtimeConfig = getRuntimeConfig(config);
 
@@ -63,7 +62,7 @@ program
       const logger = getGlobalLogger(dbosConfig);
       for (const command of runtimeConfig.start) {
         try {
-          const ret = await runCommand(command, logger, options.appDir);
+          const ret = await runCommand(command, logger);
           if (ret !== 0) {
             process.exit(ret);
           }
@@ -88,9 +87,8 @@ program
 program
   .command('migrate')
   .description('Perform a database migration')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (options: { appDir?: string }) => {
-    const configFile = readConfigFile(options.appDir);
+  .action(async () => {
+    const configFile = readConfigFile();
     let config = getDbosConfig(configFile);
     const runtimeConfig = getRuntimeConfig(configFile);
     if (process.env.DBOS__CLOUD === 'true') {
@@ -104,9 +102,8 @@ program
   .command('schema')
   .description('Create the DBOS system database and its internal tables')
   .argument('[systemDatabaseUrl]', 'System database URL')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
   .option('-r, --app-role <string>', 'The role with which you will run your DBOS application')
-  .action(async (systemDatabaseUrl: string | undefined, options: { appDir?: string; appRole?: string }) => {
+  .action(async (systemDatabaseUrl: string | undefined, options: { appRole?: string }) => {
     const logger = new GlobalLogger();
 
     // Determine system database URL from argument or config
@@ -159,10 +156,9 @@ program
   .command('reset')
   .description('reset the system database')
   .option('-y, --yes', 'Skip confirmation prompt', false)
-  .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (options: { yes: boolean; appDir?: string }) => {
+  .action(async (options: { yes: boolean }) => {
     const logger = new GlobalLogger();
-    const config = readConfigFile(options.appDir);
+    const config = readConfigFile();
     await reset(config, logger, options.yes);
   });
 
@@ -189,7 +185,6 @@ workflowCommands
     'Retrieve workflows with this status (PENDING, SUCCESS, ERROR, ENQUEUED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED)',
   )
   .option('-v, --application-version <string>', 'Retrieve workflows with this application version')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
     async (options: {
       name?: string;
@@ -199,9 +194,8 @@ workflowCommands
       endTime?: string;
       status?: string;
       applicationVersion?: string;
-      appDir?: string;
     }) => {
-      const config = readConfigFile(options.appDir);
+      const config = readConfigFile();
       const databaseUrl = getApplicationDatabaseUrl(config);
       const validStatuses = Object.values(StatusString) as readonly string[];
 
@@ -234,9 +228,8 @@ workflowCommands
   .command('get')
   .description('Retrieve the status of a workflow')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string }) => {
-    const config = readConfigFile(options.appDir);
+  .action(async (uuid: string) => {
+    const config = readConfigFile();
     const databaseUrl = getApplicationDatabaseUrl(config);
     const systemDatabaseUrl = getSystemDatabaseUrl(config);
     const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
@@ -252,9 +245,8 @@ workflowCommands
   .command('steps')
   .description('List the steps of a workflow')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string; request: boolean; silent: boolean }) => {
-    const config = readConfigFile(options.appDir);
+  .action(async (uuid: string) => {
+    const config = readConfigFile();
     const databaseUrl = getApplicationDatabaseUrl(config);
     const systemDatabaseUrl = getSystemDatabaseUrl(config);
     const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
@@ -270,9 +262,8 @@ workflowCommands
   .command('cancel')
   .description('Cancel a workflow so it is no longer automatically retried or restarted')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string }) => {
-    const config = readConfigFile(options.appDir);
+  .action(async (uuid: string) => {
+    const config = readConfigFile();
     const databaseUrl = getApplicationDatabaseUrl(config);
     const systemDatabaseUrl = getSystemDatabaseUrl(config);
     const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
@@ -287,9 +278,8 @@ workflowCommands
   .command('resume')
   .description('Resume a workflow from the last step it executed, keeping its workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
-    const config = readConfigFile(options.appDir);
+  .action(async (uuid: string) => {
+    const config = readConfigFile();
     const databaseUrl = getApplicationDatabaseUrl(config);
     const systemDatabaseUrl = getSystemDatabaseUrl(config);
     const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
@@ -304,9 +294,8 @@ workflowCommands
   .command('restart')
   .description('Restart a workflow from the beginning with a new workflow ID')
   .argument('<uuid>', 'Target workflow ID')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
-  .action(async (uuid: string, options: { appDir?: string; host: string }) => {
-    const config = readConfigFile(options.appDir);
+  .action(async (uuid: string) => {
+    const config = readConfigFile();
     const databaseUrl = getApplicationDatabaseUrl(config);
     const systemDatabaseUrl = getSystemDatabaseUrl(config);
     const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
@@ -330,7 +319,6 @@ queueCommands
   )
   .option('-l, --limit <number>', 'Limit the results returned')
   .option('-q, --queue <string>', 'Retrieve functions run on this queue')
-  .option('-d, --appDir <string>', 'Specify the application root directory')
   .action(
     async (options: {
       name?: string;
@@ -339,7 +327,6 @@ queueCommands
       status?: string;
       limit?: string;
       queue?: string;
-      appDir?: string;
     }) => {
       const validStatuses = Object.values(StatusString) as readonly string[];
       if (options.status && !validStatuses.includes(options.status)) {
@@ -355,7 +342,7 @@ queueCommands
         workflowName: options.name,
         queueName: options.queue,
       };
-      const config = readConfigFile(options.appDir);
+      const config = readConfigFile();
       const databaseUrl = getApplicationDatabaseUrl(config);
       const systemDatabaseUrl = getSystemDatabaseUrl(config);
       const client = await DBOSClient.create({ databaseUrl, systemDatabaseUrl });
