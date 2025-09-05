@@ -425,6 +425,15 @@ describe('workflow-management-tests', () => {
     const response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('alice');
+
+    // Test schema install idempotence
+    await DBOS.shutdown();
+    await systemDBClient.query(`UPDATE "dbos"."dbos_migrations" SET "version" = 0;`);
+    await DBOS.launch();
+    DBOS.setUpHandlerCallback();
+    const response2 = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
+    expect(response2.statusCode).toBe(200);
+    expect(response2.text).toBe('alice');
   });
 
   async function testAuthMiddleware(_ctx: MiddlewareContext) {

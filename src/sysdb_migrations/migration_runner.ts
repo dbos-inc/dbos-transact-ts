@@ -50,7 +50,7 @@ function isDDLAlreadyAppliedPgError(err: unknown, ignoreCodes: ReadonlySet<strin
   if (err.code && ignoreCodes.has(err.code)) return true;
   const msg = err.message ?? '';
   // Fallback on message matching (best-effort)
-  return /already exists/i.test(msg) || /duplicate/i.test(msg);
+  return /already exists/i.test(msg) || /duplicate/i.test(msg) || /multiple.*?not allowed/i.test(msg);
 }
 
 /** Run a list of statements, ignoring “already applied” errors. */
