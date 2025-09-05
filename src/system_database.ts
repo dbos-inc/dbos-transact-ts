@@ -28,7 +28,7 @@ import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
-import { allMigrations } from './sysdb_migrations/internal';
+import { allMigrations } from './sysdb_migrations/internal/migrations';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {

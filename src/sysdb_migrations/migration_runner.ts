@@ -1,4 +1,4 @@
-import type { SqlStatement, GeneratedMigration } from './migration_types';
+import type { GeneratedMigration } from './migration_types';
 
 import type { Client } from 'pg';
 
@@ -52,16 +52,16 @@ function isIgnorablePgError(err: unknown, ignoreCodes: ReadonlySet<string>): boo
 /** Run a list of statements, ignoring “already applied” errors. */
 async function runStatementsIgnoring(
   client: Client,
-  stmts: ReadonlyArray<SqlStatement>,
+  stmts: ReadonlyArray<string>,
   ignoreCodes: ReadonlySet<string>,
   warn: (m: string, e?: unknown) => void,
 ): Promise<void> {
   for (const s of stmts) {
     try {
-      await client.query(s.sql, s.bindings ?? []);
+      await client.query(s, []);
     } catch (err) {
       if (isIgnorablePgError(err, ignoreCodes)) {
-        warn(`Ignoring idempotent error while executing: ${s.sql}`, err);
+        warn(`Ignoring idempotent error while executing: ${s}`, err);
         continue;
       }
       throw err;

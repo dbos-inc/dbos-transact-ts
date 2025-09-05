@@ -3,9 +3,9 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
 import type { Knex } from 'knex';
-import { DBOSJSON } from '../utils';
 import knexFactory from 'knex';
-import { RecordedStatement } from './migration_types';
+
+export type RecordedStatement = { sql: string; bindings?: unknown[] };
 
 // Knex's compiled output shape across builders/raw
 type CompiledQueryItem = {
@@ -100,15 +100,6 @@ export function makeRecordingKnex<K extends Knex>(
     // Capture at await-time (or discard)
     return asMinimalBuilder(rawBuilder) ? wrapBuilder(rawBuilder as MinimalBuilder & object) : rawBuilder;
   };
-  /*
-  const wrapRaw = (...args: ReadonlyArray<unknown>): Promise<void> => {
-    const compiled = (realKnex as unknown as { raw: (...a: ReadonlyArray<unknown>) => MinimalBuilder })
-      .raw(...args)
-      .toSQL();
-    captureCompiled(compiled, statements);
-    return Promise.resolve();
-  };
-  */
 
   // schema.* wrapping: builders become "await-record", has*/introspection return defaults
   const wrapSchema = (schemaObj: object): object => {
@@ -206,63 +197,43 @@ function escTemplate(s: string): string {
   return s.replace(/\\/g, '\\\\').replace(/`/g, '\\`');
 }
 
-function serializeBindings(b: ReadonlyArray<unknown> | undefined): string {
-  if (!b || b.length === 0) return '[]';
-  return DBOSJSON.stringify(b);
-}
-
-function toIdentifier(name: string): string {
-  return name.replace(/\W+/g, '_').replace(/^(\d)/, '_$1').replace(/_+$/g, '');
-}
-
-async function writeOneOutFile(outDir: string, baseName: string, perDialect: Partial<PerDialect>): Promise<void> {
-  const id = toIdentifier(baseName);
-  const file = path.join(outDir, `${baseName}.ts`);
-
-  const header = `/* Auto-generated from Knex migrations. Do not edit by hand. */
-import type { GeneratedMigration, SqlStatement } from "../migration_types";
-`;
-
-  const bodies: string[] = [];
-
+function getOneMigration(baseName: string, perDialect: Partial<PerDialect>) {
   const dialects: ReadonlyArray<Dialect> = ['pg', 'sqlite3'];
+  const downmap: Map<Dialect, string> = new Map();
+  const upmap: Map<Dialect, string> = new Map();
   for (const d of dialects) {
     const pd = perDialect[d];
     if (!pd) continue;
 
-    const upArr = pd.up
-      .map((s) => `  { sql: \`${escTemplate(s.sql)}\`, bindings: ${serializeBindings(s.bindings)} }`)
-      .join(',\n');
-    const downArr = pd.down
-      .map((s) => `  { sql: \`${escTemplate(s.sql)}\`, bindings: ${serializeBindings(s.bindings)} }`)
-      .join(',\n');
+    const upArr = pd.up.map((s) => `        \`${escTemplate(s.sql)}\``).join(',\n');
+    const downArr = pd.down.map((s) => `        \`${escTemplate(s.sql)}\``).join(',\n');
 
-    bodies.push(`const up_${d}_${id}: ReadonlyArray<SqlStatement> = [\n${upArr}\n];`);
-    bodies.push(`const down_${d}_${id}: ReadonlyArray<SqlStatement> = [\n${downArr}\n];`);
+    upmap.set(d, `[\n${upArr}\n      ],`);
+    downmap.set(d, `[\n${downArr}\n      ],`);
   }
 
-  const mapFor = (dir: 'up' | 'down') =>
+  const mapFor = (mmap: Map<Dialect, string>) =>
     ['pg', 'sqlite3']
       .map((d) => {
-        const key = `${dir}_${d}_${id}`;
-        return (perDialect as Partial<Record<string, unknown>>)[d] ? `    ${d as Dialect}: ${key}` : '';
+        return (perDialect as Partial<Record<string, unknown>>)[d]
+          ? `      ${d as Dialect}: ${mmap.get(d as Dialect)}`
+          : '';
       })
       .filter(Boolean)
-      .join(',\n  ');
+      .join('');
 
-  const footer = `
-export const migration: GeneratedMigration = {
-  name: "${baseName}",
-  up: {
-${mapFor('up')}
-  },
-  down: {
-${mapFor('down')}
-  },
-};
-`;
+  const mig = `
+  {
+    name: '${baseName}',
+    up: {
+${mapFor(upmap)}
+    },
+    down: {
+${mapFor(downmap)}
+    },
+  },`;
 
-  await fs.writeFile(file, header + bodies.join('\n\n') + footer, 'utf8');
+  return mig;
 }
 
 async function main(opts: GenOptions, logger?: (l: string) => void): Promise<void> {
@@ -273,20 +244,13 @@ async function main(opts: GenOptions, logger?: (l: string) => void): Promise<voi
 
   const files = (await fs.readdir(srcDir)).filter((f) => /\.(t|j)s$/u.test(f)).sort((a, b) => a.localeCompare(b, 'en'));
 
-  const indexExports: string[] = [];
-  const indexImports: string[] = [];
-  const indexIds: string[] = [];
+  const migrations: string[] = [];
 
-  let idx = 0;
   for (const file of files) {
-    ++idx;
-    const id = `sysdb_${idx}`;
     console.log(`Processing: ${file}`);
     const full = path.join(srcDir, file);
     const baseName = path.basename(file, path.extname(file));
     const modUrl = pathToFileURL(full).href;
-    indexImports.push(`import { migration as ${id} } from "./${baseName}";`);
-    indexIds.push(id);
 
     const { up, down } = await loadMigration(modUrl);
 
@@ -301,18 +265,16 @@ async function main(opts: GenOptions, logger?: (l: string) => void): Promise<voi
       };
     }
 
-    await writeOneOutFile(outDir, baseName, perDialect);
-    indexExports.push(`export { migration as ${toIdentifier(baseName)} } from "./${baseName}";`);
+    migrations.push(getOneMigration(baseName, perDialect));
   }
 
   await fs.writeFile(
-    path.join(outDir, 'index.ts'),
-    `/* Auto-generated. */
+    path.join(outDir, 'migrations.ts'),
+    `
 import type { GeneratedMigration } from "../migration_types";
-${indexImports.join('\n')}
 
 export const allMigrations: ReadonlyArray<GeneratedMigration> = [
-  ${indexIds.join(',\n  ')}
+  ${migrations.join('')}
 ];
 `,
     'utf8',
