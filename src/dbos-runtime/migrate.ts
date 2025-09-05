@@ -1,72 +1,8 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
-import { PoolConfig, Client } from 'pg';
-import {
-  createUserDBSchema,
-  userDBIndex,
-  userDBSchema,
-  columnExistsQuery,
-  addColumnQuery,
-} from '../../schemas/user_db_schema';
-import { ExistenceCheck, migrateSystemDatabase } from '../system_database';
-import {
-  schemaExistsQuery,
-  txnOutputIndexExistsQuery,
-  txnOutputTableExistsQuery,
-  createDBIfDoesNotExist,
-} from '../user_database';
-import { getClientConfig } from '../utils';
-
-export async function grantDbosSchemaPermissions(
-  databaseUrl: string,
-  roleName: string,
-  logger: GlobalLogger,
-): Promise<void> {
-  logger.info(`Granting permissions for DBOS schema to ${roleName}`);
-
-  const client = new Client(getClientConfig(databaseUrl));
-  await client.connect();
-
-  try {
-    // Grant usage on the dbos schema
-    const grantUsageSql = `GRANT USAGE ON SCHEMA dbos TO "${roleName}"`;
-    logger.info(grantUsageSql);
-    await client.query(grantUsageSql);
-
-    // Grant all privileges on all existing tables in dbos schema (includes views)
-    const grantTablesSql = `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA dbos TO "${roleName}"`;
-    logger.info(grantTablesSql);
-    await client.query(grantTablesSql);
-
-    // Grant all privileges on all sequences in dbos schema
-    const grantSequencesSql = `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA dbos TO "${roleName}"`;
-    logger.info(grantSequencesSql);
-    await client.query(grantSequencesSql);
-
-    // Grant execute on all functions and procedures in dbos schema
-    const grantFunctionsSql = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA dbos TO "${roleName}"`;
-    logger.info(grantFunctionsSql);
-    await client.query(grantFunctionsSql);
-
-    // Grant default privileges for future objects in dbos schema
-    const alterTablesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON TABLES TO "${roleName}"`;
-    logger.info(alterTablesSql);
-    await client.query(alterTablesSql);
-
-    const alterSequencesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON SEQUENCES TO "${roleName}"`;
-    logger.info(alterSequencesSql);
-    await client.query(alterSequencesSql);
-
-    const alterFunctionsSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`;
-    logger.info(alterFunctionsSql);
-    await client.query(alterFunctionsSql);
-  } catch (e) {
-    logger.error(`Failed to grant permissions to role ${roleName}: ${(e as Error).message}`);
-    throw e;
-  } finally {
-    await client.end();
-  }
-}
+import { ensureSystemDatabase } from '../system_database';
+import { ensureDbosTables } from '../user_database';
+import { ensurePGDatabase, maskDatabaseUrl } from '../database_utils';
 
 export async function migrate(
   migrationCommands: string[],
@@ -77,8 +13,21 @@ export async function migrate(
   const url = new URL(databaseUrl);
   const database = url.pathname.slice(1);
 
-  logger.info(`Starting migration: creating database ${database} if it does not exist`);
-  await createDBIfDoesNotExist(databaseUrl, logger);
+  let status = 0;
+
+  if (databaseUrl) {
+    logger.info(`Starting migration: creating database ${database} if it does not exist`);
+
+    const res = await ensurePGDatabase({
+      urlToEnsure: databaseUrl,
+      logger: (msg: string) => logger.debug(msg),
+    });
+    if (res.status === 'failed') {
+      logger.warn(
+        `Application database could not be verified or created: ${maskDatabaseUrl(databaseUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+      );
+    }
+  }
 
   try {
     migrationCommands?.forEach((cmd) => {
@@ -88,85 +37,37 @@ export async function migrate(
     });
   } catch (e) {
     logMigrationError(e, logger, 'Error running migration');
-    return 1;
+    status = 1;
   }
 
-  logger.info('Creating DBOS tables and system database.');
+  logger.info('Creating DBOS system database.');
   try {
-    await createDBOSTables(databaseUrl, systemDatabaseUrl, logger);
+    await ensureSystemDatabase(systemDatabaseUrl, logger);
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);
     } else {
       logger.error(e);
     }
-    return 1;
+    status = 1;
   }
-
-  logger.info('Migration successful!');
-  return 0;
-}
-
-// Create DBOS system DB and tables.
-async function createDBOSTables(databaseUrl: string, systemDatabaseUrl: string, logger: GlobalLogger) {
-  const url = new URL(systemDatabaseUrl);
-  const systemDbName = url.pathname.slice(1);
-
-  const systemPoolConfig: PoolConfig = getClientConfig(systemDatabaseUrl);
-
-  const pgUserClient = new Client(getClientConfig(databaseUrl));
-  await pgUserClient.connect();
-
-  // Create DBOS table/schema in user DB.
-  // Always check if the schema/table exists before creating it to avoid locks.
-  const schemaExists = await pgUserClient.query<ExistenceCheck>(schemaExistsQuery);
-  if (!schemaExists.rows[0].exists) {
-    await pgUserClient.query(createUserDBSchema);
-  }
-  const txnOutputTableExists = await pgUserClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
-  if (!txnOutputTableExists.rows[0].exists) {
-    await pgUserClient.query(userDBSchema);
-  } else {
-    const columnExists = await pgUserClient.query<ExistenceCheck>(columnExistsQuery);
-
-    if (!columnExists.rows[0].exists) {
-      await pgUserClient.query(addColumnQuery);
-    }
-  }
-
-  const txnIndexExists = await pgUserClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
-  if (!txnIndexExists.rows[0].exists) {
-    await pgUserClient.query(userDBIndex);
-  }
-
-  // Create the DBOS system database.
-  const dbExists = await pgUserClient.query<ExistenceCheck>(
-    `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${systemDbName}')`,
-  );
-  if (!dbExists.rows[0].exists) {
-    await pgUserClient.query(`CREATE DATABASE ${systemDbName}`);
-  }
-
-  // Load the DBOS system schema.
-  const pgSystemClient = new Client(systemPoolConfig);
-  await pgSystemClient.connect();
 
   try {
-    await migrateSystemDatabase(systemPoolConfig, logger);
+    logger.info('Creating DBOS tables in user database.');
+    if (databaseUrl) await ensureDbosTables(databaseUrl);
   } catch (e) {
-    const tableExists = await pgSystemClient.query<ExistenceCheck>(
-      `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`,
-    );
-    if (tableExists.rows[0].exists) {
-      // If the table has been created by someone else. Ignore the error.
-      logger.warn(`System tables creation failed, may conflict with concurrent tasks: ${(e as Error).message}`);
+    if (e instanceof Error) {
+      logger.error(`Error installing DBOS table into user database: ${e.message}`);
     } else {
-      throw e;
+      logger.error(e);
     }
-  } finally {
-    await pgSystemClient.end();
-    await pgUserClient.end();
+    status = 1;
   }
+
+  if (status === 0) {
+    logger.info('All migration successful!');
+  }
+  return status;
 }
 
 type ExecSyncError<T> = Error & SpawnSyncReturns<T>;
