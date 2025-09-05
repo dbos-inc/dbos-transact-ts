@@ -573,3 +573,40 @@ describe('registerWorkflow-tests', () => {
     expect(() => DBOS.registerWorkflow(workflow2, { name: 'workflow1' })).toThrow(DBOSConflictingRegistrationError);
   });
 });
+
+const wfDoesSomethingNasty1 = DBOS.registerWorkflow(
+  async () => {
+    return await DBOS.runStep(
+      async () => {
+        return Promise.resolve({
+          getResult: () => 'Hello',
+        });
+      },
+      { name: 'step1' },
+    );
+  },
+  { name: '' },
+);
+
+describe('unserializable-arg-negative-tests', () => {
+  test('nonserializable-step-return', async () => {
+    await DBOS.launch();
+    try {
+      // We want a clear error from this case, because the code looks like it worked, but in recovery
+      //  (Or even a simple retrieve of stored result from WF) it does not work.  This is a serious
+      //  issue because the error is so latent (and recovery tends to be a stressful time!)
+      const wfid = randomUUID();
+      await DBOS.withNextWorkflowID(wfid, async () => {
+        // This passes but shouldn't, the result is not reproducible in recovery.
+        expect((await wfDoesSomethingNasty1()).getResult()).toBe('Hello');
+      });
+
+      // This passes but shouldn't, the result is not reproducible in recovery (or even in retrieve).
+      const storedResH = DBOS.retrieveWorkflow<Awaited<ReturnType<typeof wfDoesSomethingNasty1>>>(wfid);
+      const storedRes = await storedResH.getResult();
+      expect(storedRes.getResult()).toBe('Hello');
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+});
