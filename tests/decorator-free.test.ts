@@ -585,7 +585,35 @@ const wfDoesSomethingNasty1 = DBOS.registerWorkflow(
       { name: 'step1' },
     );
   },
-  { name: '' },
+  { name: 'wfDoesSomethingNasty1' },
+);
+
+const wfDoesSomethingNasty2 = DBOS.registerWorkflow(
+  async () => {
+    const sr = await DBOS.runStep(
+      async () => {
+        return Promise.resolve('Hello');
+      },
+      { name: 'step1' },
+    );
+    return {
+      getResult: () => sr,
+    };
+  },
+  { name: 'wfDoesSomethingNasty2' },
+);
+
+const wfDoesSomethingNasty3 = DBOS.registerWorkflow(
+  async (input: { getResult: () => string }) => {
+    const sr = await DBOS.runStep(
+      async () => {
+        return Promise.resolve(input.getResult());
+      },
+      { name: 'step1' },
+    );
+    return sr;
+  },
+  { name: 'wfDoesSomethingNasty3' },
 );
 
 describe('unserializable-arg-negative-tests', () => {
@@ -601,10 +629,51 @@ describe('unserializable-arg-negative-tests', () => {
         expect((await wfDoesSomethingNasty1()).getResult()).toBe('Hello');
       });
 
-      // This passes but shouldn't, the result is not reproducible in recovery (or even in retrieve).
+      // The above passed but shouldn't, see that the result is not reproducible in recovery (or even in retrieve):
       const storedResH = DBOS.retrieveWorkflow<Awaited<ReturnType<typeof wfDoesSomethingNasty1>>>(wfid);
       const storedRes = await storedResH.getResult();
-      expect(storedRes.getResult()).toBe('Hello');
+      expect(storedRes.getResult).toBeUndefined();
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('nonserializable-wf-return', async () => {
+    await DBOS.launch();
+    try {
+      // We want a clear error from this case, because the code looks like it worked, but in recovery
+      //  (Or even a simple retrieve of stored result from WF) it does not work.  This is a serious
+      //  issue because the error is so latent (and recovery tends to be a stressful time!)
+      const wfid = randomUUID();
+      await DBOS.withNextWorkflowID(wfid, async () => {
+        // This passes but shouldn't, the result is not reproducible in recovery.
+        expect((await wfDoesSomethingNasty2()).getResult()).toBe('Hello');
+      });
+
+      // The above passed but shouldn't, see that the result is not reproducible in recovery (or even in retrieve):
+      const storedResH = DBOS.retrieveWorkflow<Awaited<ReturnType<typeof wfDoesSomethingNasty2>>>(wfid);
+      const storedRes = await storedResH.getResult();
+      expect(storedRes.getResult).toBeUndefined();
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('nonserializable-wf-input', async () => {
+    await DBOS.launch();
+    try {
+      // We want a clear error from this case, because the code looks like it worked, but in recovery
+      //  (Or even a simple retrieve of stored result from WF) it does not work.  This is a serious
+      //  issue because the error is so latent (and recovery tends to be a stressful time!)
+      const wfid = randomUUID();
+      await DBOS.withNextWorkflowID(wfid, async () => {
+        // This passes but shouldn't, the result is not reproducible in recovery.
+        expect(await wfDoesSomethingNasty3({ getResult: () => 'TakeThis' })).toBe('TakeThis');
+      });
+
+      // The above passed but shouldn't, see that the reexecuted workflow does not execute:
+      const forkedHandle = await DBOS.forkWorkflow(wfid, 0);
+      await expect(forkedHandle.getResult()).rejects.toThrow();
     } finally {
       await DBOS.shutdown();
     }
