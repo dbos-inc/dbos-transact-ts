@@ -1,6 +1,10 @@
-import type { GeneratedMigration } from './migration_types';
-
 import type { Client } from 'pg';
+
+export type DBMigration = {
+  name?: string;
+  up: { pg?: ReadonlyArray<string>; sqlite3?: ReadonlyArray<string> };
+  down: { pg?: ReadonlyArray<string>; sqlite3?: ReadonlyArray<string> };
+};
 
 /** Get the current DB version, or 0 if table is missing/empty. */
 export async function getCurrentSysDBVersion(client: Client): Promise<number> {
@@ -78,7 +82,7 @@ async function runStatementsIgnoring(
  */
 export async function runSysMigrationsPg(
   client: Client,
-  allMigrations: ReadonlyArray<GeneratedMigration>,
+  allMigrations: ReadonlyArray<DBMigration>,
   opts: PgMigratorOptions = {},
 ): Promise<{
   fromVersion: number;

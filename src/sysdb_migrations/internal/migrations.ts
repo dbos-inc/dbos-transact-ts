@@ -1,6 +1,6 @@
-import type { GeneratedMigration } from '../migration_types';
+import type { DBMigration } from '../migration_runner';
 
-export const allMigrations: ReadonlyArray<GeneratedMigration> = [
+export const allMigrations: ReadonlyArray<DBMigration> = [
   {
     name: '20240123182943_schema',
     up: {
