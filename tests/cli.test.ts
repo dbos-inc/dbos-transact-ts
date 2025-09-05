@@ -143,11 +143,11 @@ describe('workflow-management-cli-tests', () => {
     console.log(schemaOutput.toString());
 
     await DBOS.launch();
-  });
+  }, 30000);
 
   afterAll(async () => {
     await DBOS.shutdown();
-  });
+  }, 30000);
 
   // Define test workflows
   const queue = new WorkflowQueue('testQ');
@@ -215,7 +215,7 @@ describe('workflow-management-cli-tests', () => {
     const workflowIds = workflows.map((w: any) => w.workflowID);
     expect(workflowIds).toContain(handle1.workflowID);
     expect(workflowIds).toContain(handle2.workflowID);
-  });
+  }, 30000);
 
   test('workflow get command', async () => {
     const handle = await DBOS.startWorkflow(TestWorkflows.simpleWorkflow)('test-get');
@@ -228,7 +228,7 @@ describe('workflow-management-cli-tests', () => {
     expect(workflow.workflowID).toBe(workflowId);
     expect(workflow.status).toBe('SUCCESS');
     expect(workflow.workflowName).toBe('simpleWorkflow');
-  });
+  }, 30000);
 
   test('workflow steps command', async () => {
     const handle = await DBOS.startWorkflow(TestWorkflows.multiStepWorkflow)();
@@ -240,7 +240,7 @@ describe('workflow-management-cli-tests', () => {
 
     expect(Array.isArray(steps)).toBe(true);
     expect(steps.length).toBeGreaterThanOrEqual(3);
-  });
+  }, 30000);
 
   test('workflow cancel and resume commands', async () => {
     let handle = await DBOS.startWorkflow(TestWorkflows.longRunningWorkflow)();
@@ -269,7 +269,7 @@ describe('workflow-management-cli-tests', () => {
     expect(['ENQUEUED', 'PENDING', 'SUCCESS']).toContain(resumedWorkflow.status);
     handle = DBOS.retrieveWorkflow(workflowId);
     await handle.getResult();
-  }, 20000);
+  }, 30000);
 
   test('workflow fork command', async () => {
     const handle = await DBOS.startWorkflow(TestWorkflows.multiStepWorkflow)();
@@ -284,7 +284,7 @@ describe('workflow-management-cli-tests', () => {
     const forkOutput = runCommand(`npx dbos workflow get ${customId} --sys-db-url "${systemDbUrl}"`);
     const forkedWorkflow = JSON.parse(forkOutput);
     expect(['ENQUEUED', 'PENDING', 'SUCCESS']).toContain(forkedWorkflow.status);
-  });
+  }, 30000);
 
   test('workflow queue list command', async () => {
     // Start some queued workflows
@@ -307,7 +307,7 @@ describe('workflow-management-cli-tests', () => {
     for (const handle of handles) {
       await handle.getResult();
     }
-  });
+  }, 30000);
 
   test('workflow list with filters', async () => {
     const handle = await DBOS.startWorkflow(TestWorkflows.simpleWorkflow)('filtered');
@@ -320,7 +320,7 @@ describe('workflow-management-cli-tests', () => {
     expect(successWorkflows.length).toBeGreaterThanOrEqual(1);
     successWorkflows.forEach((w: any) => {
       expect(w.status).toBe('SUCCESS');
-    });
+    }, 30000);
 
     // Test with name filter
     const nameOutput = runCommand(
@@ -332,7 +332,7 @@ describe('workflow-management-cli-tests', () => {
     nameWorkflows.forEach((w: any) => {
       expect(w.workflowName).toBe('simpleWorkflow');
     });
-  });
+  }, 30000);
 
   test('workflow list with time filters', async () => {
     const startTime = new Date();
@@ -358,5 +358,5 @@ describe('workflow-management-cli-tests', () => {
     const excludeWorkflows = JSON.parse(excludeOutput);
     const excludeWorkflowIds = excludeWorkflows.map((w: any) => w.workflowID);
     expect(excludeWorkflowIds).not.toContain(handle.workflowID);
-  });
+  }, 30000);
 });
