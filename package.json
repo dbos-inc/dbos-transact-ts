@@ -29,7 +29,6 @@
     "build": "tsc --project tsconfig.json && npm run --workspaces build",
     "lint": "eslint --ignore-pattern **/coverage/ .",
     "setversion": "npm run --workspaces setversion && grunt setversion",
-    "makesysmigrations": "npx ts-node src/sysdb_migrations/create_sysdb_migrations.ts",
     "test": "npm run build && npm run --workspaces test && npx prisma generate --schema tests/prisma/schema.prisma && jest ./tests --coverage --collectCoverageFrom='src/**/*' --detectOpenHandles",
     "prepare": "husky"
   },
