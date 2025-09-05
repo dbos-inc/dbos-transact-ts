@@ -108,7 +108,7 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
         log,
         'probe target (existence test)',
       );
-      if (probe.kind === 'ok') {
+      if (probe.result === 'ok') {
         // We can reach the target DB—so it exists—but we’re connected *to* it; we cannot DROP from within.
         await probe.client.end().catch(() => {});
         return fail(
@@ -121,7 +121,7 @@ export async function dropPGDatabase(opts: DropDatabaseOptions = {}): Promise<Dr
       } else {
         // Ambiguous: not proven missing, no admin path to check or drop.
         return fail(
-          `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.kind}.`,
+          `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.result}.`,
           networkOrAuthHint(probe.code),
         );
       }
@@ -229,7 +229,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
   if (opts.urlToEnsure) {
     try {
       const probe = await connectToPGAndReportOutcome(opts.urlToEnsure, log, 'probe target (existence test)');
-      if (probe.kind === 'ok') {
+      if (probe.result === 'ok') {
         // We can reach the target DB, do nothing
         await probe.client.end().catch(() => {});
         return { status: 'already_exists', notes, message: 'Success (already existed)' };
@@ -284,7 +284,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
     if (!admin) {
       const dbUrl = opts.urlToEnsure ?? deriveDatabaseUrl(adminUrl, targetDb);
       const probe = await connectToPGAndReportOutcome(dbUrl, log, 'probe target (existence test)');
-      if (probe.kind === 'ok') {
+      if (probe.result === 'ok') {
         // We can reach the target DB.... via a URL derived from admin
         await probe.client.end().catch(() => {});
         log(`Probe of database ${targetDb} via ${maskDatabaseUrl(dbUrl)} succeeds.`);
@@ -292,7 +292,7 @@ export async function ensurePGDatabase(opts: EnsureDatabaseOptions): Promise<Ens
       } else {
         // Ambiguous: We do not know it to be there, and we can't make an admin connection to proceed.
         return fail(
-          `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.kind}.`,
+          `Could not establish any admin connection, and target connect failed with ${probe.code ?? probe.result}.`,
           networkOrAuthHint(probe.code),
         );
       }
@@ -394,18 +394,18 @@ export async function connectToPGAndReportOutcome(
   url: string,
   log: (m: string) => void,
   label: string,
-): Promise<{ kind: 'ok'; client: Client } | { kind: 'error'; code?: string; message: string }> {
+): Promise<{ result: 'ok'; client: Client } | { result: 'error'; code?: string; message: string }> {
   log(`Connecting to ${label}: ${maskDatabaseUrl(url)}`);
   const client = new Client(getPGClientConfig(url));
   try {
     await client.connect();
-    return { kind: 'ok', client };
+    return { result: 'ok', client };
   } catch (err) {
     const e = err as Error & { code?: string };
     try {
       await client.end();
     } catch {}
-    return { kind: 'error', code: e?.code, message: e?.message ?? String(e) };
+    return { result: 'error', code: e?.code, message: e?.message ?? String(e) };
   }
 }
 

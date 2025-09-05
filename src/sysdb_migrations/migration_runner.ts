@@ -41,7 +41,7 @@ function isPgErrorLike(x: unknown): x is PgErrorLike {
   return typeof x === 'object' && x !== null && ('code' in x || 'message' in x);
 }
 
-function isIgnorablePgError(err: unknown, ignoreCodes: ReadonlySet<string>): boolean {
+function isDDLAlreadyAppliedPgError(err: unknown, ignoreCodes: ReadonlySet<string>): boolean {
   if (!isPgErrorLike(err)) return false;
   if (err.code && ignoreCodes.has(err.code)) return true;
   const msg = err.message ?? '';
@@ -60,7 +60,7 @@ async function runStatementsIgnoring(
     try {
       await client.query(s, []);
     } catch (err) {
-      if (isIgnorablePgError(err, ignoreCodes)) {
+      if (isDDLAlreadyAppliedPgError(err, ignoreCodes)) {
         warn(`Ignoring idempotent error while executing: ${s}`, err);
         continue;
       }
