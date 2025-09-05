@@ -2,8 +2,8 @@ import type { Client } from 'pg';
 
 export type DBMigration = {
   name?: string;
-  up: { pg?: ReadonlyArray<string>; sqlite3?: ReadonlyArray<string> };
-  down: { pg?: ReadonlyArray<string>; sqlite3?: ReadonlyArray<string> };
+  pg?: ReadonlyArray<string>;
+  sqlite3?: ReadonlyArray<string>;
 };
 
 /** Get the current DB version, or 0 if table is missing/empty. */
@@ -121,7 +121,7 @@ export async function runSysMigrationsPg(
       continue;
     }
 
-    const stmts = m.up.pg ?? [];
+    const stmts = m.pg ?? [];
     if (stmts.length === 0) {
       onWarn(`Migration "${m.name}" has no Postgres statements; skipping.`);
       skipped++;
