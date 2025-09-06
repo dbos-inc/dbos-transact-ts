@@ -634,6 +634,8 @@ export class DBOSExecutor {
     });
 
     const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname;
+    const stringifiedArgs = DBOSJSON.stringify(args);
+    args = DBOSJSON.parse(stringifiedArgs) as typeof args;
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
@@ -654,7 +656,7 @@ export class DBOSExecutor {
       createdAt: Date.now(), // Remember the start time of this workflow,
       timeoutMS: timeoutMS,
       deadlineEpochMS: deadlineEpochMS,
-      input: DBOSJSON.stringify(args),
+      input: stringifiedArgs,
       deduplicationID: params.enqueueOptions?.deduplicationID,
       priority: priority ?? 0,
     };
@@ -676,9 +678,9 @@ export class DBOSExecutor {
       }
 
       // Make sure we use the same input.
-      if (DBOSJSON.stringify(args) !== wfStatus.input) {
+      if (stringifiedArgs !== wfStatus.input) {
         throw new DBOSDebuggerError(
-          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${wfStatus.input}`,
+          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${stringifiedArgs}\n Original: ${wfStatus.input}`,
         );
       }
       status = wfStatus.status;
@@ -789,7 +791,9 @@ export class DBOSExecutor {
           return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
         }
 
-        internalStatus.output = DBOSJSON.stringify(result);
+        const resultStr = DBOSJSON.stringify(result);
+        result = DBOSJSON.parse(resultStr) as typeof result;
+        internalStatus.output = resultStr;
         internalStatus.status = StatusString.SUCCESS;
         if (!this.#debugMode) {
           await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
@@ -1158,7 +1162,7 @@ export class DBOSExecutor {
           }
         }
 
-        return result;
+        return DBOSJSON.parse(DBOSJSON.stringify(result)) as typeof result;
       };
 
       try {
@@ -1697,12 +1701,13 @@ export class DBOSExecutor {
       throw err as Error;
     } else {
       // Record the execution and return.
+      const stringResult = DBOSJSON.stringify(result);
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, {
-        output: DBOSJSON.stringify(result),
+        output: stringResult,
       });
       span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(span);
-      return result as R;
+      return DBOSJSON.parse(stringResult) as R;
     }
   }
 
@@ -1780,7 +1785,7 @@ export class DBOSExecutor {
         output: DBOSJSON.stringify(output),
         childWorkflowID: childWfId,
       });
-      return output;
+      return DBOSJSON.parse(DBOSJSON.stringify(output)) as typeof output;
     } catch (e) {
       await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, {
         error: DBOSJSON.stringify(serializeError(e)),

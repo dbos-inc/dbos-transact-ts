@@ -573,3 +573,95 @@ describe('registerWorkflow-tests', () => {
     expect(() => DBOS.registerWorkflow(workflow2, { name: 'workflow1' })).toThrow(DBOSConflictingRegistrationError);
   });
 });
+
+const wfDoesSomethingNasty1 = DBOS.registerWorkflow(
+  async () => {
+    return (
+      await DBOS.runStep(
+        async () => {
+          return Promise.resolve({
+            getResult: () => 'Hello',
+          });
+        },
+        { name: 'step1' },
+      )
+    ).getResult();
+  },
+  { name: 'wfDoesSomethingNasty1' },
+);
+
+const wfDoesSomethingNasty2 = DBOS.registerWorkflow(
+  async () => {
+    const sr = await DBOS.runStep(
+      async () => {
+        return Promise.resolve('Hello');
+      },
+      { name: 'step1' },
+    );
+    return {
+      getResult: () => sr,
+    };
+  },
+  { name: 'wfDoesSomethingNasty2' },
+);
+
+const wfDoesSomethingNasty3 = DBOS.registerWorkflow(
+  async (input: { getResult: () => string }) => {
+    const sr = await DBOS.runStep(
+      async () => {
+        return Promise.resolve(input.getResult());
+      },
+      { name: 'step1' },
+    );
+    return sr;
+  },
+  { name: 'wfDoesSomethingNasty3' },
+);
+
+describe('unserializable-negative-tests', () => {
+  test('nonserializable-step-return', async () => {
+    await DBOS.launch();
+    try {
+      // We want a clear error from this case.  We don't want it to only fail in recovery.
+      const wfid = randomUUID();
+      await expect(
+        DBOS.withNextWorkflowID(wfid, async () => {
+          return await wfDoesSomethingNasty1();
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('nonserializable-wf-return', async () => {
+    await DBOS.launch();
+    try {
+      // We want a clear error from this case, because the code will not work if
+      //  queued or restarted in recovery
+      const wfid = randomUUID();
+      await expect(
+        DBOS.withNextWorkflowID(wfid, async () => {
+          (await wfDoesSomethingNasty2()).getResult();
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('nonserializable-wf-input', async () => {
+    await DBOS.launch();
+    try {
+      // We want a clear error from this case, so that the code works in recovery
+      const wfid = randomUUID();
+      await expect(
+        DBOS.withNextWorkflowID(wfid, async () => {
+          await wfDoesSomethingNasty3({ getResult: () => 'TakeThis' });
+        }),
+      ).rejects.toThrow();
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+});
