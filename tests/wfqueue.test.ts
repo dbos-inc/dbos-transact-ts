@@ -634,7 +634,7 @@ describe('queued-wf-tests-simple', () => {
 
   test('test-concurrency-across-versions', async () => {
     expect(config.databaseUrl).toBeDefined();
-    const client = DBOSClient.create({ databaseUrl: config.databaseUrl! });
+    const client = await DBOSClient.create({ databaseUrl: config.databaseUrl! });
 
     const other_version = 'other_version';
     const other_version_handle = await client.enqueue({
