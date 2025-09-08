@@ -628,7 +628,9 @@ describe('unserializable-negative-tests', () => {
         DBOS.withNextWorkflowID(wfid, async () => {
           return await wfDoesSomethingNasty1();
         }),
-      ).rejects.toThrow();
+      ).rejects.toThrow(
+        `Attempted to call 'getResult' at path step1.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization.`,
+      );
     } finally {
       await DBOS.shutdown();
     }
@@ -644,7 +646,9 @@ describe('unserializable-negative-tests', () => {
         DBOS.withNextWorkflowID(wfid, async () => {
           (await wfDoesSomethingNasty2()).getResult();
         }),
-      ).rejects.toThrow();
+      ).rejects.toThrow(
+        `Attempted to call 'getResult' at path wfDoesSomethingNasty2.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization.`,
+      );
     } finally {
       await DBOS.shutdown();
     }
@@ -659,7 +663,9 @@ describe('unserializable-negative-tests', () => {
         DBOS.withNextWorkflowID(wfid, async () => {
           await wfDoesSomethingNasty3({ getResult: () => 'TakeThis' });
         }),
-      ).rejects.toThrow();
+      ).rejects.toThrow(
+        `Attempted to call 'getResult' at path wfDoesSomethingNasty3.<arguments>["0"] on an object that is a serialized function input our output value. Functions are not preserved through serialization.`,
+      );
     } finally {
       await DBOS.shutdown();
     }
