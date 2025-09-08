@@ -487,6 +487,7 @@ export class DBOSExecutor {
         globalParams.wasComputed = true;
       }
       this.logger.info(`Initializing DBOS (v${globalParams.dbosVersion})`);
+      this.logger.info(`System Database URL: ${maskDatabaseUrl(this.config.systemDatabaseUrl)}`);
       this.logger.info(`Executor ID: ${this.executorID}`);
       this.logger.info(`Application version: ${globalParams.appVersion}`);
 

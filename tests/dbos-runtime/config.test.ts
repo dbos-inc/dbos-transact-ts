@@ -1,7 +1,7 @@
 import * as utils from '../../src/utils';
 import {
   ConfigFile,
-  getDatabaseUrl,
+  getApplicationDatabaseUrl,
   getDbosConfig,
   getSysDatabaseUrlFromUserDb,
   getSystemDatabaseUrl,
@@ -358,7 +358,7 @@ describe('dbos-config', () => {
     //           Should we be validating that in database_url?
 
     test('uses database_url from config when provided', () => {
-      const databaseUrl = getDatabaseUrl({
+      const databaseUrl = getApplicationDatabaseUrl({
         name: 'Test App',
         database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable',
       });
@@ -367,7 +367,7 @@ describe('dbos-config', () => {
 
     test('uses default value even if environment variable is set', () => {
       process.env.DBOS_DATABASE_URL = 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable';
-      const databaseUrl = getDatabaseUrl({
+      const databaseUrl = getApplicationDatabaseUrl({
         name: 'Test App',
       });
       expect(databaseUrl).toBe('postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=10&sslmode=disable');
@@ -375,7 +375,7 @@ describe('dbos-config', () => {
 
     test('uses environment variable when provided', () => {
       process.env.DBOS_DATABASE_URL = 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable';
-      const databaseUrl = getDatabaseUrl({
+      const databaseUrl = getApplicationDatabaseUrl({
         name: 'Test App',
         database_url: process.env.DBOS_DATABASE_URL,
       });
@@ -383,14 +383,14 @@ describe('dbos-config', () => {
     });
 
     test('uses default values when config is empty', () => {
-      const databaseUrl = getDatabaseUrl({
+      const databaseUrl = getApplicationDatabaseUrl({
         name: 'Test App',
       });
       expect(databaseUrl).toBe('postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=10&sslmode=disable');
     });
 
     test('throws when db url not set and app name is missing', () => {
-      expect(() => getDatabaseUrl({})).toThrow(AssertionError);
+      expect(() => getApplicationDatabaseUrl({})).toThrow(AssertionError);
     });
 
     test('uses PG env values when config is empty', () => {
@@ -399,7 +399,7 @@ describe('dbos-config', () => {
       process.env.PGUSER = 'envuser';
       process.env.PGPASSWORD = 'envpass';
 
-      const databaseUrl = getDatabaseUrl({
+      const databaseUrl = getApplicationDatabaseUrl({
         name: 'Test App',
       });
       expect(databaseUrl).toBe('postgresql://envuser:envpass@envhost:7777/test_app?connect_timeout=10&sslmode=allow');
@@ -412,14 +412,14 @@ describe('dbos-config', () => {
       process.env.DBOS_DBPASSWORD = 'envpass';
       process.env.DBOS_DEBUG_WORKFLOW_ID = 'debug-workflow-id';
 
-      const url = getDatabaseUrl({
+      const url = getApplicationDatabaseUrl({
         database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable',
       });
       expect(url).toBe('postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=22&sslmode=disable');
     });
 
     test('correctly handles app names with spaces', () => {
-      const url = getDatabaseUrl({
+      const url = getApplicationDatabaseUrl({
         name: 'app name with spaces',
       });
       expect(url).toBe(
@@ -428,25 +428,27 @@ describe('dbos-config', () => {
     });
 
     test('correctly handles db url w/o password', () => {
-      const url = getDatabaseUrl({ database_url: 'postgresql://postgres@localhost:5432/dbostest?sslmode=disable' });
+      const url = getApplicationDatabaseUrl({
+        database_url: 'postgresql://postgres@localhost:5432/dbostest?sslmode=disable',
+      });
       expect(url).toBe('postgresql://postgres@localhost:5432/dbostest?sslmode=disable');
     });
 
     test('throws with invalid database_url format', () => {
-      expect(() => getDatabaseUrl({ database_url: 'not-a-valid-url' })).toThrow();
+      expect(() => getApplicationDatabaseUrl({ database_url: 'not-a-valid-url' })).toThrow();
     });
 
     test.each(['postgres://host:5432/db', 'postgres://user:pass@:5432/db', 'postgres://user:pass@host:5432/'])(
       'throws when database_url is missing required fields %s',
       (database_url) => {
-        expect(() => getDatabaseUrl({ database_url })).toThrow();
+        expect(() => getApplicationDatabaseUrl({ database_url })).toThrow();
       },
     );
 
     test.each(['some_DB', '123db', 'very_very_very_long_very_very_very_long_very_very__database_name', 'largeDB'])(
       'throws on invalid database name %s',
       (name) => {
-        expect(() => getDatabaseUrl({ database_url: `postgres://host:5432/${name}` })).toThrow();
+        expect(() => getApplicationDatabaseUrl({ database_url: `postgres://host:5432/${name}` })).toThrow();
       },
     );
   });

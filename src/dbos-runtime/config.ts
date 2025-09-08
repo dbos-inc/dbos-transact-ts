@@ -124,7 +124,7 @@ export function getSystemDatabaseUrl(
   }
 
   // CB TODO: This code path is awful...
-  const databaseUrl = getDatabaseUrl(configOrFile);
+  const databaseUrl = getApplicationDatabaseUrl(configOrFile);
   return getSysDatabaseUrlFromUserDb(databaseUrl);
 }
 
@@ -147,7 +147,7 @@ export function isReasonableDatabaseName(dbName: string): boolean {
   return validator.matches(dbName, '^[a-z0-9_]+$');
 }
 
-export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
+export function getApplicationDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
   const databaseUrl = configFile.database_url || defaultDatabaseUrl(configFile.name);
 
   const url = new URL(databaseUrl);
@@ -244,7 +244,7 @@ function isValidUserDbClient(name: string): name is UserDatabaseName {
 }
 
 export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
-  const databaseUrl = getDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
+  const databaseUrl = getApplicationDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
   const systemDatabaseUrl = getSystemDatabaseUrl({
     database_url: options.databaseUrl,
     system_database_url: options.systemDatabaseUrl,
