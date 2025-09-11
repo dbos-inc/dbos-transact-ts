@@ -1,4 +1,5 @@
-import { DBOS, Debouncer, DBOSConfig, WorkflowQueue } from '../src';
+import { DBOS, Debouncer, DBOSConfig, WorkflowQueue, StatusString } from '../src';
+import { DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import assert from 'node:assert';
 
@@ -75,9 +76,17 @@ describe('debouncer-tests', () => {
     await DBOS.shutdown();
     const testWorkflow = DBOS.registerWorkflow(test);
     await DBOS.launch();
-    const workflowID = await DBOS.randomUUID();
-    const originalHandle = await DBOS.startWorkflow(testWorkflow, { workflowID })();
+    const originalHandle = await DBOS.startWorkflow(testWorkflow)();
     await originalHandle.getResult();
+
+    // Rerun the workflow, verify it still works
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
+      originalHandle.workflowID,
+      StatusString.PENDING,
+      true,
+    );
+    const recoverHandle = await DBOS.startWorkflow(testWorkflow, { workflowID: originalHandle.workflowID })();
+    await recoverHandle.getResult();
   }, 30000);
 
   test('test-debouncer-timeout', async () => {
