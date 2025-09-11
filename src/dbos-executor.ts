@@ -14,6 +14,7 @@ import {
   DBOSAwaitedWorkflowCancelledError,
   DBOSInvalidWorkflowTransitionError,
   DBOSFailLoadOperationsError,
+  DBOSQueueDuplicatedError,
 } from './error';
 import {
   InvokedHandle,
@@ -702,7 +703,21 @@ export class DBOSExecutor {
           return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
         }
       }
-      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
+      let ires;
+      try {
+        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
+      } catch (e) {
+        if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
+          await this.systemDatabase.recordOperationResult(
+            callerID,
+            callerFunctionID,
+            internalStatus.workflowName,
+            true,
+            { error: DBOSJSON.stringify(serializeError(e)) },
+          );
+        }
+        throw e;
+      }
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(callerID, callerFunctionID, internalStatus.workflowName, true, {

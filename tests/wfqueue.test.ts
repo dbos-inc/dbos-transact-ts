@@ -9,7 +9,7 @@ import {
 } from './helpers';
 import { WorkflowQueue } from '../src';
 import { randomUUID } from 'node:crypto';
-import { globalParams, sleepms } from '../src/utils';
+import { DBOSJSON, globalParams, sleepms } from '../src/utils';
 
 import { WF } from './wfqtestprocess';
 
@@ -1425,6 +1425,11 @@ describe('queue-time-outs', () => {
   test('dedup-recovery', async () => {
     const handle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow)();
     const childID = await handle.getResult();
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    assert.ok(steps !== undefined);
+    assert.equal(steps.length, 2);
+    console.log(steps[1].error);
+    expect(steps[1].error).toBeInstanceOf(Error);
     dedupRecoveryEvent.set();
     const childHandle = DBOS.retrieveWorkflow(childID);
     await childHandle.getResult();
