@@ -9,7 +9,7 @@ import {
 } from './helpers';
 import { WorkflowQueue } from '../src';
 import { randomUUID } from 'node:crypto';
-import { DBOSJSON, globalParams, sleepms } from '../src/utils';
+import { globalParams, sleepms } from '../src/utils';
 
 import { WF } from './wfqtestprocess';
 
@@ -21,6 +21,8 @@ import {
   DBOSConflictingWorkflowError,
   DBOSQueueDuplicatedError,
   DBOSAwaitedWorkflowCancelledError,
+  QueueDedupIDDuplicated,
+  getDBOSErrorCode,
 } from '../src/error';
 
 const execFileAsync = promisify(execFile);
@@ -1429,7 +1431,9 @@ describe('queue-time-outs', () => {
     assert.ok(steps !== undefined);
     assert.equal(steps.length, 2);
     console.log(steps[1].error);
-    expect(steps[1].error).toBeInstanceOf(Error);
+    // Instanceof is not preserved by serialization, so we must assert the error code
+    assert.ok(steps[1].error !== null);
+    assert.equal(getDBOSErrorCode(steps[1].error), QueueDedupIDDuplicated);
     dedupRecoveryEvent.set();
     const childHandle = DBOS.retrieveWorkflow(childID);
     await childHandle.getResult();

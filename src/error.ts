@@ -1,3 +1,5 @@
+import {} from 'serialize-error';
+
 export function isDataValidationError(e: Error) {
   const dbosErrorCode = (e as DBOSError)?.dbosErrorCode;
   if (!dbosErrorCode) return false;
@@ -189,7 +191,7 @@ export class DBOSAwaitedWorkflowCancelledError extends DBOSError {
   }
 }
 
-const QueueDedupIDDuplicated = 28;
+export const QueueDedupIDDuplicated = 28;
 /** Exception raised when workflow with same dedupid is queued*/
 export class DBOSQueueDuplicatedError extends DBOSError {
   constructor(
@@ -214,4 +216,12 @@ export class DBOSInvalidQueuePriorityError extends DBOSError {
   ) {
     super(`Invalid priority ${priority}. Priority must be between ${min} and ${max}.`, InvalidQueuePriority);
   }
+}
+
+export function getDBOSErrorCode(e: Error): number | undefined {
+  if (e && typeof e === 'object' && 'dbosErrorCode' in e) {
+    const code = (e as Record<string, unknown>).dbosErrorCode;
+    return typeof code === 'number' ? code : undefined;
+  }
+  return undefined;
 }
