@@ -1411,7 +1411,7 @@ describe('queue-time-outs', () => {
           queueName: dedupRecoveryQueue.name,
           enqueueOptions: { deduplicationID: dedupRecoveryKey },
         })();
-      }, DBOSQueueDuplicatedError);
+      }, Error);
       return handle.workflowID;
     },
     { name: 'dedupRecoveryParentWorkflow' },
@@ -1430,12 +1430,16 @@ describe('queue-time-outs', () => {
     const steps = await DBOS.listWorkflowSteps(handle.workflowID);
     assert.ok(steps !== undefined);
     assert.equal(steps.length, 2);
-    console.log(steps[1].error);
     // Instanceof is not preserved by serialization, so we must assert the error code
     assert.ok(steps[1].error !== null);
     assert.equal(getDBOSErrorCode(steps[1].error), QueueDedupIDDuplicated);
     dedupRecoveryEvent.set();
     const childHandle = DBOS.retrieveWorkflow(childID);
     await childHandle.getResult();
+
+    // Verify it still works on recovery
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(handle.workflowID, StatusString.PENDING, true);
+    const recoveredHandle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow, { workflowID: handle.workflowID })();
+    await recoveredHandle.getResult();
   });
 });

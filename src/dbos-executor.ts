@@ -700,6 +700,9 @@ export class DBOSExecutor {
       if (callerFunctionID !== undefined && callerID !== undefined) {
         const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
         if (result) {
+          if (result.error) {
+            throw deserializeError(DBOSJSON.parse(result.error));
+          }
           return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
         }
       }
