@@ -29,13 +29,14 @@ describe('debouncer-tests', () => {
   );
 
   test('test-debouncer', async () => {
+    const key = 'debouncer_key';
+    const debouncerPeriodMs = 1000;
+    const input = 5;
     const debouncer = new Debouncer({
-      debouncerKey: '5',
       workflowName: 'workflow',
       workflowClassName: '',
-      startWorkflowParams: { workflowID: '5' },
     });
-    const handle = await debouncer.debounce(5, 5);
-    assert.equal(await handle.getResult(), 5);
+    const handle = await debouncer.debounce(key, debouncerPeriodMs, input);
+    assert.equal(await handle.getResult(), input);
   });
 });

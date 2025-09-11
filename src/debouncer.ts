@@ -6,7 +6,7 @@ import { getFunctionRegistrationByName, UntypedAsyncFunction } from './decorator
 interface DebouncerWorkflowParams {
   workflowClassName: string;
   workflowName: string;
-  startWorkflowParams: StartWorkflowParams;
+  startWorkflowParams?: StartWorkflowParams;
   debounceTimeoutMs?: number;
 }
 
@@ -20,9 +20,8 @@ interface DebouncerMessage {
 interface DebouncerConfig {
   workflowClassName: string;
   workflowName: string;
-  startWorkflowParams: StartWorkflowParams;
+  startWorkflowParams?: StartWorkflowParams;
   debounceTimeoutMs?: number;
-  debouncerKey: string;
 }
 
 const _DEBOUNCER_TOPIC = 'DEBOUNCER_TOPIC';
@@ -55,7 +54,6 @@ const debouncerWorkflow = DBOS.registerWorkflow(
 
 export class Debouncer {
   private readonly cfg: DebouncerWorkflowParams;
-  private readonly debouncerKey: string;
   constructor(params: DebouncerConfig) {
     this.cfg = {
       workflowClassName: params.workflowClassName,
@@ -63,11 +61,12 @@ export class Debouncer {
       startWorkflowParams: params.startWorkflowParams,
       debounceTimeoutMs: params.debounceTimeoutMs,
     };
-    this.debouncerKey = params.debouncerKey;
   }
 
-  async debounce(debouncePeriodMs: number, ...args: unknown[]) {
+  async debounce(debounceKey: string, debouncePeriodMs: number, ...args: unknown[]) {
+    this.cfg.startWorkflowParams = this.cfg.startWorkflowParams ?? {};
+    this.cfg.startWorkflowParams.workflowID = this.cfg.startWorkflowParams.workflowID ?? (await DBOS.randomUUID());
     await DBOS.startWorkflow(debouncerWorkflow)(debouncePeriodMs, this.cfg, ...args);
-    return DBOS.retrieveWorkflow(this.cfg.startWorkflowParams.workflowID!);
+    return DBOS.retrieveWorkflow(this.cfg.startWorkflowParams.workflowID);
   }
 }
