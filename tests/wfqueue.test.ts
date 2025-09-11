@@ -1393,4 +1393,33 @@ describe('queue-time-outs', () => {
       status: StatusString.CANCELLED,
     });
   });
+
+  const dedupRecoveryEvent = new Event();
+  const dedupRecoveryQueue = new WorkflowQueue('dedup-recovery-queue');
+  const dedupRecoveryKey = 'my-dedup-id';
+  const dedupRecoveryParentWorkflow = DBOS.registerWorkflow(
+    async () => {
+      const handle = await DBOS.startWorkflow(dedupRecoveryChildWorkflow, {
+        queueName: dedupRecoveryQueue.name,
+        enqueueOptions: { deduplicationID: dedupRecoveryKey },
+      })();
+      return handle.workflowID;
+    },
+    { name: 'dedupRecoveryParentWorkflow' },
+  );
+
+  const dedupRecoveryChildWorkflow = DBOS.registerWorkflow(
+    async () => {
+      await dedupRecoveryEvent.wait();
+    },
+    { name: 'dedupRecoveryChildWorkflow' },
+  );
+
+  test('dedup-recovery', async () => {
+    const handle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow)();
+    const childID = await handle.getResult();
+    dedupRecoveryEvent.set();
+    const childHandle = DBOS.retrieveWorkflow(childID);
+    await childHandle.getResult();
+  });
 });
