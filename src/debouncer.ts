@@ -53,6 +53,7 @@ const debouncerWorkflow = DBOS.registerWorkflow(
     const func = methReg?.registeredFunction as UntypedAsyncFunction;
     await DBOS.startWorkflow(func, cfg.startWorkflowParams)(...workflowInputs);
   },
+  { name: '_debouncer_workflow' },
 );
 
 export class Debouncer {
@@ -67,17 +68,18 @@ export class Debouncer {
   }
 
   async debounce(debounceKey: string, debouncePeriodMs: number, ...args: unknown[]) {
-    this.cfg.startWorkflowParams = this.cfg.startWorkflowParams ?? {};
-    this.cfg.startWorkflowParams.workflowID = this.cfg.startWorkflowParams.workflowID ?? (await DBOS.randomUUID());
+    const cfg = { ...this.cfg };
+    cfg.startWorkflowParams = this.cfg.startWorkflowParams ? { ...this.cfg.startWorkflowParams } : {};
+    cfg.startWorkflowParams.workflowID = cfg.startWorkflowParams.workflowID ?? (await DBOS.randomUUID());
     while (true) {
-      const deduplicationID = `${this.cfg.workflowClassName}.${this.cfg.workflowName}-${debounceKey}`;
+      const deduplicationID = `${cfg.workflowClassName}.${cfg.workflowName}-${debounceKey}`;
       try {
         // Attempt to enqueue a debouncer for this workflow
         await DBOS.startWorkflow(debouncerWorkflow, {
           queueName: INTERNAL_QUEUE_NAME,
           enqueueOptions: { deduplicationID },
-        })(debouncePeriodMs, this.cfg, ...args);
-        return DBOS.retrieveWorkflow(this.cfg.startWorkflowParams.workflowID);
+        })(debouncePeriodMs, cfg, ...args);
+        return DBOS.retrieveWorkflow(cfg.startWorkflowParams.workflowID);
       } catch (e) {
         // If there is already a debouncer, send a message to it.
         if (e instanceof Error && getDBOSErrorCode(e) === QueueDedupIDDuplicated) {
@@ -96,7 +98,7 @@ export class Debouncer {
               args,
               debouncePeriodMs,
             };
-            await DBOS.send(deduplicationID, message, _DEBOUNCER_TOPIC);
+            await DBOS.send(dedupWorkflowID, message, _DEBOUNCER_TOPIC);
             // Wait for the debouncer to acknowledge receipt of the message.
             // If the message is not acknowledged, this likely means the debouncer started its workflow
             // and exited without processing this message, so try again.

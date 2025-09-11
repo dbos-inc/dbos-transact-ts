@@ -3,6 +3,7 @@ import { DBOSConfig } from '../src/dbos-executor';
 import { Debouncer } from '../src/debouncer';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import assert from 'node:assert';
+import { WorkflowQueue } from '../src/wfqueue';
 
 describe('debouncer-tests', () => {
   let config: DBOSConfig;
@@ -21,6 +22,7 @@ describe('debouncer-tests', () => {
     await DBOS.shutdown();
   }, 10000);
 
+  // Register a simple workflow for testing
   DBOS.registerWorkflow(
     async (x: number) => {
       return Promise.resolve(x);
@@ -28,15 +30,163 @@ describe('debouncer-tests', () => {
     { name: 'workflow' },
   );
 
-  test('test-debouncer', async () => {
-    const key = 'debouncer_key';
-    const debouncerPeriodMs = 1000;
-    const input = 5;
-    const debouncer = new Debouncer({
+  test('test-debouncer-workflow', async () => {
+    const firstValue = 0;
+    const secondValue = 1;
+    const thirdValue = 2;
+    const fourthValue = 3;
+    const debouncePeriodMs = 2000;
+
+    // Test that two calls with the same key merge into one workflow
+    const debouncer1 = new Debouncer({
       workflowName: 'workflow',
       workflowClassName: '',
     });
-    const handle = await debouncer.debounce(key, debouncerPeriodMs, input);
-    assert.equal(await handle.getResult(), input);
-  });
+    const firstHandle = await debouncer1.debounce('key', debouncePeriodMs, firstValue);
+
+    const debouncer2 = new Debouncer({
+      workflowName: 'workflow',
+      workflowClassName: '',
+    });
+    const secondHandle = await debouncer2.debounce('key', debouncePeriodMs, secondValue);
+
+    assert.equal(firstHandle.workflowID, secondHandle.workflowID);
+    assert.equal(await firstHandle.getResult(), secondValue);
+    assert.equal(await secondHandle.getResult(), secondValue);
+
+    const debouncer3 = new Debouncer({
+      workflowName: 'workflow',
+      workflowClassName: '',
+    });
+    const thirdHandle = await debouncer3.debounce('key', debouncePeriodMs, thirdValue);
+
+    const debouncer4 = new Debouncer({
+      workflowName: 'workflow',
+      workflowClassName: '',
+    });
+    const fourthHandle = await debouncer4.debounce('key', debouncePeriodMs, fourthValue);
+
+    assert.notEqual(thirdHandle.workflowID, firstHandle.workflowID);
+    assert.equal(thirdHandle.workflowID, fourthHandle.workflowID);
+    assert.equal(await thirdHandle.getResult(), fourthValue);
+    assert.equal(await fourthHandle.getResult(), fourthValue);
+  }, 30000);
+
+  test('test-debouncer-timeout', async () => {
+    const firstValue = 0;
+    const secondValue = 1;
+    const thirdValue = 2;
+    const fourthValue = 3;
+    const longDebouncePeriodMs = 10000000000;
+    const shortDebouncePeriodMs = 1000;
+
+    // Set a huge period but small timeout, verify workflows start after the timeout
+    const debouncer1 = new Debouncer({
+      workflowName: 'workflow',
+      workflowClassName: '',
+      debounceTimeoutMs: 2000,
+    });
+
+    const firstHandle = await debouncer1.debounce('key', longDebouncePeriodMs, firstValue);
+    const secondHandle = await debouncer1.debounce('key', longDebouncePeriodMs, secondValue);
+
+    assert.equal(firstHandle.workflowID, secondHandle.workflowID);
+    assert.equal(await firstHandle.getResult(), secondValue);
+    assert.equal(await secondHandle.getResult(), secondValue);
+
+    const thirdHandle = await debouncer1.debounce('key', longDebouncePeriodMs, thirdValue);
+    const fourthHandle = await debouncer1.debounce('key', longDebouncePeriodMs, fourthValue);
+
+    assert.notEqual(thirdHandle.workflowID, firstHandle.workflowID);
+    assert.equal(thirdHandle.workflowID, fourthHandle.workflowID);
+    assert.equal(await thirdHandle.getResult(), fourthValue);
+    assert.equal(await fourthHandle.getResult(), fourthValue);
+
+    const debouncer2 = new Debouncer({
+      workflowName: 'workflow',
+      workflowClassName: '',
+    });
+
+    const fifthHandle = await debouncer2.debounce('key', longDebouncePeriodMs, firstValue);
+    const sixthHandle = await debouncer2.debounce('key', shortDebouncePeriodMs, secondValue);
+
+    assert.notEqual(fourthHandle.workflowID, fifthHandle.workflowID);
+    assert.equal(fifthHandle.workflowID, sixthHandle.workflowID);
+    assert.equal(await fifthHandle.getResult(), secondValue);
+    assert.equal(await sixthHandle.getResult(), secondValue);
+  }, 30000);
+
+  test('test-multiple-debouncers', async () => {
+    const firstValue = 0;
+    const secondValue = 1;
+    const thirdValue = 2;
+    const fourthValue = 3;
+    const debouncePeriodMs = 2000;
+
+    // Create two debouncers with different keys
+    const debouncerOne = new Debouncer({
+      workflowName: 'workflow',
+      workflowClassName: '',
+    });
+
+    const debouncerTwo = new Debouncer({
+      workflowName: 'workflow',
+      workflowClassName: '',
+    });
+
+    const firstHandle = await debouncerOne.debounce('key_one', debouncePeriodMs, firstValue);
+    const secondHandle = await debouncerOne.debounce('key_one', debouncePeriodMs, secondValue);
+    const thirdHandle = await debouncerTwo.debounce('key_two', debouncePeriodMs, thirdValue);
+    const fourthHandle = await debouncerTwo.debounce('key_two', debouncePeriodMs, fourthValue);
+
+    // Verify that debouncers with different keys create different workflows
+    assert.equal(firstHandle.workflowID, secondHandle.workflowID);
+    assert.notEqual(firstHandle.workflowID, thirdHandle.workflowID);
+    assert.equal(thirdHandle.workflowID, fourthHandle.workflowID);
+
+    assert.equal(await firstHandle.getResult(), secondValue);
+    assert.equal(await secondHandle.getResult(), secondValue);
+    assert.equal(await thirdHandle.getResult(), fourthValue);
+    assert.equal(await fourthHandle.getResult(), fourthValue);
+  }, 30000);
+
+  test('test-debouncer-queue', async () => {
+    const firstValue = 0;
+    const secondValue = 1;
+    const thirdValue = 2;
+    const fourthValue = 3;
+    const debouncePeriodMs = 2000;
+
+    // Create a queue for testing
+    const queue = new WorkflowQueue('test-queue');
+
+    const debouncer = new Debouncer({
+      workflowName: 'workflow',
+      workflowClassName: '',
+      startWorkflowParams: { queueName: queue.name, timeoutMS: 5000 },
+    });
+
+    const firstHandle = await debouncer.debounce('key', debouncePeriodMs, firstValue);
+    const secondHandle = await debouncer.debounce('key', debouncePeriodMs, secondValue);
+
+    assert.equal(firstHandle.workflowID, secondHandle.workflowID);
+    assert.equal(await firstHandle.getResult(), secondValue);
+    assert.equal(await secondHandle.getResult(), secondValue);
+
+    const secondStatus = await secondHandle.getStatus();
+    assert.equal(secondStatus?.queueName, queue.name);
+
+    const thirdHandle = await debouncer.debounce('key', debouncePeriodMs, thirdValue);
+    const fourthHandle = await debouncer.debounce('key', debouncePeriodMs, fourthValue);
+
+    assert.notEqual(thirdHandle.workflowID, firstHandle.workflowID);
+    assert.equal(thirdHandle.workflowID, fourthHandle.workflowID);
+    assert.equal(await thirdHandle.getResult(), fourthValue);
+    assert.equal(await fourthHandle.getResult(), fourthValue);
+
+    const fourthStatus = await fourthHandle.getStatus();
+    assert.equal(fourthStatus?.queueName, queue.name);
+    assert.equal(fourthStatus?.timeoutMS, 5000);
+    assert(fourthStatus?.deadlineEpochMS);
+  }, 30000);
 });
