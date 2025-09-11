@@ -6,13 +6,13 @@ import assert from 'node:assert';
 describe('debouncer-tests', () => {
   let config: DBOSConfig;
 
-  beforeAll(async () => {
+  beforeAll(() => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
+    await setUpDBOSTestDb(config);
     await DBOS.launch();
   });
 
@@ -82,13 +82,13 @@ describe('debouncer-tests', () => {
     await originalHandle.getResult();
 
     // Rerun the workflow, verify it still works
-    // await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
-    //   originalHandle.workflowID,
-    //   StatusString.PENDING,
-    //   true,
-    // );
-    // const recoverHandle = await DBOS.startWorkflow(testWorkflow, { workflowID: originalHandle.workflowID })();
-    // await recoverHandle.getResult();
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
+      originalHandle.workflowID,
+      StatusString.PENDING,
+      true,
+    );
+    const recoverHandle = await DBOS.startWorkflow(testWorkflow, { workflowID: originalHandle.workflowID })();
+    await recoverHandle.getResult();
   }, 30000);
 
   test('test-debouncer-timeout', async () => {
