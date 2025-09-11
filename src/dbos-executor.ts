@@ -53,7 +53,6 @@ import {
   DrizzleUserDatabase,
   type UserDatabaseClient,
   pgNodeIsKeyConflictError,
-  createDBIfDoesNotExist,
   UserDatabaseQuery,
 } from './user_database';
 import {
@@ -110,6 +109,7 @@ import {
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
 import { getClientConfig } from './utils';
+import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -421,7 +421,15 @@ export class DBOSExecutor {
 
       if (this.config.userDbClient) {
         if (!this.#debugMode) {
-          await createDBIfDoesNotExist(this.config.databaseUrl, this.logger);
+          const res = await ensurePGDatabase({
+            urlToEnsure: this.config.databaseUrl,
+            logger: (msg: string) => this.logger.debug(msg),
+          });
+          if (res.status === 'failed') {
+            this.logger.warn(
+              `Application database could not be verified / created: ${maskDatabaseUrl(this.config.databaseUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+            );
+          }
         }
         this.#configureDbClient();
 
@@ -433,10 +441,14 @@ export class DBOSExecutor {
         // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
         await this.#userDatabase.init(this.#debugMode);
       }
-      if (!this.#debugMode) {
-        await this.systemDatabase.init();
-      }
+
+      // Debug mode doesn't initialize the sys db
+      await this.systemDatabase.init(this.#debugMode);
     } catch (err) {
+      if (err instanceof DBOSInitializationError) {
+        throw err;
+      }
+      this.logger.error(err);
       let message = 'Failed to initialize workflow executor: ';
       if (err instanceof AggregateError) {
         for (const error of err.errors as Error[]) {
@@ -475,6 +487,7 @@ export class DBOSExecutor {
         globalParams.wasComputed = true;
       }
       this.logger.info(`Initializing DBOS (v${globalParams.dbosVersion})`);
+      this.logger.info(`System Database URL: ${maskDatabaseUrl(this.config.systemDatabaseUrl)}`);
       this.logger.info(`Executor ID: ${this.executorID}`);
       this.logger.info(`Application version: ${globalParams.appVersion}`);
 

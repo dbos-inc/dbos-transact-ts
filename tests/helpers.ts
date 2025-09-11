@@ -1,9 +1,11 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { Client } from 'pg';
 import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { getSystemDatabaseUrl, translateDbosConfig } from '../src/dbos-runtime/config';
+import { getSysDatabaseUrlFromUserDb, translateDbosConfig } from '../src/dbos-runtime/config';
+import { ensureSystemDatabase } from '../src/system_database';
+import { GlobalLogger } from '../src/telemetry/logs';
+import { dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
 
 /* DB management helpers */
 export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
@@ -14,7 +16,7 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
   const _silenceLogs = process.env.SILENCE_LOGS === 'true';
 
   const databaseUrl = `postgresql://postgres:${dbPassword}@localhost:5432/dbostest?sslmode=disable`;
-  const systemDatabaseUrl = getSystemDatabaseUrl(databaseUrl);
+  const systemDatabaseUrl = getSysDatabaseUrlFromUserDb(databaseUrl);
 
   return {
     name: 'dbostest',
@@ -28,32 +30,21 @@ export async function setUpDBOSTestDb(config: DBOSConfig) {
   config.name ??= 'dbostest';
   const internalConfig = translateDbosConfig(config);
 
-  const url = new URL(internalConfig.databaseUrl);
-  const dbName = url.pathname.slice(1);
-  url.pathname = '/postgres';
-
-  const sysDbUrl = new URL(internalConfig.systemDatabaseUrl);
-  const sysDbName = sysDbUrl.pathname.slice(1);
-
-  const pgSystemClient = new Client({ connectionString: `${url}` });
-  try {
-    await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${dbName} WITH (FORCE);`);
-    await pgSystemClient.query(`CREATE DATABASE ${dbName};`);
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${sysDbName} WITH (FORCE);`);
-  } catch (e) {
-    if (e instanceof AggregateError) {
-      console.error(`Test database setup failed: AggregateError containing ${e.errors.length} errors:`);
-      e.errors.forEach((err, index) => {
-        console.error(`  Error ${index + 1}:`, err);
-      });
-    } else {
-      console.error(`Test database setup failed:`, e);
+  if (internalConfig.databaseUrl) {
+    const r = await dropPGDatabase({ urlToDrop: internalConfig.databaseUrl, logger: () => {} });
+    if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
+      throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.databaseUrl)}`);
     }
-    throw e;
-  } finally {
-    await pgSystemClient.end();
+    const rc = await ensurePGDatabase({ urlToEnsure: internalConfig.databaseUrl, logger: () => {} });
+    if (rc.status !== 'already_exists' && rc.status !== 'created') {
+      throw new Error(`Unable to create ${maskDatabaseUrl(internalConfig.databaseUrl)}`);
+    }
   }
+  const r = await dropPGDatabase({ urlToDrop: internalConfig.systemDatabaseUrl, logger: () => {} });
+  if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
+    throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.systemDatabaseUrl)}`);
+  }
+  await ensureSystemDatabase(internalConfig.systemDatabaseUrl, new GlobalLogger());
 }
 
 /* Common test types */
@@ -127,18 +118,8 @@ export function executeWorkflowById(workflowId: string) {
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {
-  const url = new URL(connectionString);
-  database ||= url.pathname.slice(1);
-  url.pathname = '/postgres';
-
-  // Drop system database, for testing.
-  const pgSystemClient = new Client({
-    connectionString: url.toString(),
-  });
-  try {
-    await pgSystemClient.connect();
-    await pgSystemClient.query(`DROP DATABASE IF EXISTS ${database};`);
-  } finally {
-    await pgSystemClient.end();
+  const r = await dropPGDatabase({ urlToDrop: connectionString, dbToDrop: database });
+  if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
+    throw new Error(`Unable to drop ${maskDatabaseUrl(connectionString)}`);
   }
 }

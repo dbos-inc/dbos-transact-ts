@@ -8,6 +8,7 @@ import {
   DBOSUnexpectedStepError,
   DBOSWorkflowCancelledError,
   DBOSQueueDuplicatedError,
+  DBOSInitializationError,
 } from './error';
 import { GetPendingWorkflowsOutput, GetQueuedWorkflowsInput, GetWorkflowsInput, StatusString } from './workflow';
 import {
@@ -17,15 +18,15 @@ import {
   workflow_events,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
-import { findPackageRoot, globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
+import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import knex, { Knex } from 'knex';
-import path from 'path';
-import fs from 'fs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
-import assert from 'assert';
+import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
+import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
+import { allMigrations } from './sysdb_migrations/internal/migrations';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -59,7 +60,7 @@ export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
  *     be done elsewhere (executor), as it may require application-specific logic or extensions.
  */
 export interface SystemDatabase {
-  init(): Promise<void>;
+  init(debugMode?: boolean): Promise<void>;
   destroy(): Promise<void>;
 
   initWorkflowStatus(
@@ -213,41 +214,92 @@ export interface ExistenceCheck {
   exists: boolean;
 }
 
-export async function migrateSystemDatabase(systemPoolConfig: PoolConfig, logger: GlobalLogger) {
-  let migrationsDirectory: string;
+export async function grantDbosSchemaPermissions(
+  databaseUrl: string,
+  roleName: string,
+  logger: GlobalLogger,
+): Promise<void> {
+  logger.info(`Granting permissions for DBOS schema to ${roleName}`);
+
+  const client = new Client(getClientConfig(databaseUrl));
+  await client.connect();
 
   try {
-    migrationsDirectory = path.join(findPackageRoot(__dirname), 'migrations');
-  } catch (packageError) {
-    migrationsDirectory = path.join(__dirname, 'migrations');
-  }
+    // Grant usage on the dbos schema
+    const grantUsageSql = `GRANT USAGE ON SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantUsageSql);
+    await client.query(grantUsageSql);
 
-  // Check if migrations directory exists
-  if (!fs.existsSync(migrationsDirectory)) {
-    logger.warn(
-      'DBOS system database migration files not found. If you are using a bundler, DBOS cannot automatically create the system database. ' +
-        'Please run "npx dbos migrate" to create your system database before running your bundled application.',
-    );
-    return;
-  }
+    // Grant all privileges on all existing tables in dbos schema (includes views)
+    const grantTablesSql = `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantTablesSql);
+    await client.query(grantTablesSql);
 
-  const knexConfig = {
-    client: 'pg',
-    connection: systemPoolConfig,
-    migrations: {
-      directory: migrationsDirectory,
-      tableName: 'knex_migrations',
-    },
-  } as Knex.Config;
-  const knexDB = knex(knexConfig);
-  try {
-    await knexDB.migrate.latest();
+    // Grant all privileges on all sequences in dbos schema
+    const grantSequencesSql = `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantSequencesSql);
+    await client.query(grantSequencesSql);
+
+    // Grant execute on all functions and procedures in dbos schema
+    const grantFunctionsSql = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA dbos TO "${roleName}"`;
+    logger.info(grantFunctionsSql);
+    await client.query(grantFunctionsSql);
+
+    // Grant default privileges for future objects in dbos schema
+    const alterTablesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON TABLES TO "${roleName}"`;
+    logger.info(alterTablesSql);
+    await client.query(alterTablesSql);
+
+    const alterSequencesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT ALL ON SEQUENCES TO "${roleName}"`;
+    logger.info(alterSequencesSql);
+    await client.query(alterSequencesSql);
+
+    const alterFunctionsSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA dbos GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`;
+    logger.info(alterFunctionsSql);
+    await client.query(alterFunctionsSql);
   } catch (e) {
-    logger.warn(
-      `Exception during system database construction. This is most likely because the system database was configured using a later version of DBOS: ${(e as Error).message}`,
-    );
+    logger.error(`Failed to grant permissions to role ${roleName}: ${(e as Error).message}`);
+    throw e;
   } finally {
-    await knexDB.destroy();
+    await client.end();
+  }
+}
+
+export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogger, debugMode: boolean = false) {
+  if (!debugMode) {
+    const res = await ensurePGDatabase({
+      urlToEnsure: sysDbUrl,
+      logger: (msg: string) => logger.debug(msg),
+    });
+    if (res.status === 'failed') {
+      logger.warn(
+        `Database could not be verified / created: ${maskDatabaseUrl(sysDbUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+      );
+    }
+  }
+
+  const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
+  if (cconnect.result !== 'ok') {
+    logger.warn(
+      `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}${debugMode ? ' (debug mode)' : ''}
+      ${cconnect.message}: (${cconnect.code ? cconnect.code : 'connectivity problem'})`,
+    );
+    throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
+  }
+
+  try {
+    if (debugMode) {
+      logger.info(`Skipping system database migration in debug mode.`);
+      return;
+    }
+
+    await runSysMigrationsPg(cconnect.client, allMigrations, {
+      onWarn: (e: string) => logger.info(e),
+    });
+  } finally {
+    try {
+      await cconnect.client.end();
+    } catch (e) {}
   }
 }
 
@@ -743,39 +795,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.knexDB = knex(knexConfig);
   }
 
-  async init() {
-    const url = new URL(this.systemDatabaseUrl);
-    const sysDbName = url.pathname.slice(1);
-    assert(sysDbName, 'System database URL must include a database name in the path');
-    url.pathname = '/postgres';
+  async init(debugMode: boolean = false) {
+    await ensureSystemDatabase(this.systemDatabaseUrl, this.logger, debugMode);
 
-    const pgSystemClient = new Client(getClientConfig(url));
-    await pgSystemClient.connect();
-    // Create the system database and load tables.
-    const dbExists = await pgSystemClient.query<ExistenceCheck>(
-      `SELECT EXISTS (SELECT FROM pg_database WHERE datname = '${sysDbName}')`,
-    );
-    if (!dbExists.rows[0].exists) {
-      // Create the DBOS system database.
-      await pgSystemClient.query(`CREATE DATABASE "${sysDbName}"`);
-    }
-
-    try {
-      await migrateSystemDatabase(this.systemPoolConfig, this.logger);
-    } catch (e) {
-      const tableExists = await this.pool.query<ExistenceCheck>(
-        `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'operation_outputs')`,
-      );
-      if (tableExists.rows[0].exists) {
-        this.logger.warn(
-          `System database migration failed, you may be running an old version of DBOS Transact: ${(e as Error).message}`,
-        );
-      } else {
-        throw e;
-      }
-    } finally {
-      await pgSystemClient.end();
-    }
     if (this.shouldUseDBNotifications) {
       await this.#listenForNotifications();
     }
@@ -788,29 +810,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     if (this.notificationsClient) {
       try {
-        this.notificationsClient.removeAllListeners();
         await this.notificationsClient.end();
       } catch (e) {
         this.logger.warn(`Error ending notifications client: ${String(e)}`);
       }
     }
     await this.pool.end();
-  }
-
-  static async dropSystemDB(systemDatabaseUrl: string) {
-    const url = new URL(systemDatabaseUrl);
-    const systemDbName = url.pathname.slice(1);
-    assert(systemDbName, 'System database URL must include a database name in the path');
-    url.pathname = '/postgres';
-
-    // Drop system database, for testing.
-    const pgSystemClient = new Client(getClientConfig(url));
-    try {
-      await pgSystemClient.connect();
-      await pgSystemClient.query(`DROP DATABASE IF EXISTS ${systemDbName};`);
-    } finally {
-      await pgSystemClient.end();
-    }
   }
 
   @dbRetry()

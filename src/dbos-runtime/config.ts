@@ -8,6 +8,7 @@ import path from 'path';
 import dbosConfigSchema from '../../dbos-config.schema.json';
 import assert from 'assert';
 import validator from 'validator';
+import { maskDatabaseUrl } from '../database_utils';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
@@ -97,34 +98,45 @@ export function writeConfigFile(configFile: ConfigFile, configFilePath: string) 
   }
 }
 
-export function getSystemDatabaseUrl(
-  configFileOrString: string | Pick<ConfigFile, 'name' | 'database_url' | 'system_database_url'>,
-): string {
-  if (typeof configFileOrString === 'string') {
-    return convertUserDbUrl(configFileOrString);
+export function getSysDatabaseUrlFromUserDb(userDB: string) {
+  const url = new URL(userDB);
+  const dbName = url.pathname.slice(1);
+  if (!isValidDatabaseName(dbName)) {
+    throw new Error(`Database name in ${maskDatabaseUrl(userDB)} is invalid.`);
   }
-
-  if (configFileOrString.system_database_url) {
-    const url = new URL(configFileOrString.system_database_url);
-    const sysDbName = url.pathname.slice(1);
-    assert(isValidDBname(sysDbName), `Database name "${sysDbName}" in system_database_url is invalid`);
-    return configFileOrString.system_database_url;
-  }
-
-  const databaseUrl = getDatabaseUrl(configFileOrString);
-  return convertUserDbUrl(databaseUrl);
-
-  function convertUserDbUrl(databaseUrl: string) {
-    const url = new URL(databaseUrl);
-    const dbName = url.pathname.slice(1);
-    const sysDbName = `${dbName}_dbos_sys`;
-    assert(isValidDBname(sysDbName), `System database name "${sysDbName}" generated from "${dbName} is invalid.`);
-    url.pathname = `/${sysDbName}`;
-    return url.toString();
-  }
+  const sysDbName = `${dbName}_dbos_sys`;
+  url.pathname = `/${sysDbName}`;
+  return url.toString();
 }
 
-function isValidDBname(dbName: string): boolean {
+export function getSystemDatabaseUrl(
+  configOrFile: Pick<ConfigFile, 'name' | 'database_url' | 'system_database_url'>,
+): string {
+  if (configOrFile.system_database_url) {
+    const url = new URL(configOrFile.system_database_url);
+    const sysDbName = url.pathname.slice(1);
+    if (!isValidDatabaseName(sysDbName)) {
+      throw new Error(
+        `Database name "${sysDbName}" in system_database_url ${maskDatabaseUrl(configOrFile.system_database_url)} is invalid`,
+      );
+    }
+    return configOrFile.system_database_url;
+  }
+
+  // CB TODO: This code path is awful...
+  const databaseUrl = getApplicationDatabaseUrl(configOrFile);
+  return getSysDatabaseUrlFromUserDb(databaseUrl);
+}
+
+export function isValidDatabaseName(dbName: string): boolean {
+  if (dbName.length < 1 || dbName.length > 63) {
+    return false;
+  }
+  return true;
+}
+
+// A lot of other things are *legal* DB names, this would be a sane restriction in the UI though
+export function isReasonableDatabaseName(dbName: string): boolean {
   if (dbName.length < 1 || dbName.length > 63) {
     return false;
   }
@@ -135,7 +147,7 @@ function isValidDBname(dbName: string): boolean {
   return validator.matches(dbName, '^[a-z0-9_]+$');
 }
 
-export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
+export function getApplicationDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
   const databaseUrl = configFile.database_url || defaultDatabaseUrl(configFile.name);
 
   const url = new URL(databaseUrl);
@@ -150,7 +162,8 @@ export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_u
     throw new Error(`Invalid database URL: missing required field(s): ${missingFields.join(', ')}`);
   }
 
-  assert(isValidDBname(dbName), `Database name "${dbName}" in database_url is invalid.`);
+  if (!isValidDatabaseName(dbName))
+    throw new Error(`Database name "${dbName}" in database_url ${maskDatabaseUrl(databaseUrl)} is invalid.`);
 
   if (process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined) {
     // If in debug mode, apply the debug overrides
@@ -174,7 +187,16 @@ export function getDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_u
     const timeout = process.env.PGCONNECT_TIMEOUT || '10';
     const sslmode = process.env.PGSSLMODE || (host === 'localhost' ? 'disable' : 'allow');
 
-    return `postgresql://${username}:${password}@${host}:${port}/${database}?connect_timeout=${timeout}&sslmode=${sslmode}`;
+    const dbUrl = new URL(`postgresql://host/database`);
+    dbUrl.username = username;
+    dbUrl.password = password;
+    dbUrl.hostname = host;
+    dbUrl.port = port;
+    dbUrl.protocol = 'postgresql';
+    dbUrl.pathname = `/${database}`;
+    dbUrl.searchParams.set('connect_timeout', timeout);
+    dbUrl.searchParams.set('sslmode', sslmode);
+    return dbUrl.toString();
   }
 
   function toDbName(appName: string) {
@@ -222,7 +244,7 @@ function isValidUserDbClient(name: string): name is UserDatabaseName {
 }
 
 export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
-  const databaseUrl = getDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
+  const databaseUrl = getApplicationDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
   const systemDatabaseUrl = getSystemDatabaseUrl({
     database_url: options.databaseUrl,
     system_database_url: options.systemDatabaseUrl,
@@ -287,7 +309,7 @@ export function overwriteConfigForDBOSCloud(
 
   let systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
   if (!systemDatabaseUrl) {
-    systemDatabaseUrl = getSystemDatabaseUrl(databaseUrl);
+    systemDatabaseUrl = getSysDatabaseUrlFromUserDb(databaseUrl);
   }
 
   const appName = configFile.name ?? providedDBOSConfig.name;
