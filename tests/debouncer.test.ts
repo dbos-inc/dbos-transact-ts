@@ -28,7 +28,7 @@ describe('debouncer-tests', () => {
     { name: 'workflow' },
   );
 
-  test('debouncer', async () => {
+  test('test-debouncer-workflow', async () => {
     await debouncerWorkflow(
       0,
       { workflowClassName: '', workflowName: 'workflow', startWorkflowParams: { workflowID: '5' } },
