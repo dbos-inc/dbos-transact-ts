@@ -29,7 +29,11 @@ describe('debouncer-tests', () => {
   );
 
   test('debouncer', async () => {
-    await debouncerWorkflow(0, { workflow_id: '5' }, { workflow_class_name: '', workflow_name: 'workflow' }, 5);
+    await debouncerWorkflow(
+      0,
+      { workflowClassName: '', workflowName: 'workflow', startWorkflowParams: { workflowID: '5' } },
+      5,
+    );
     const handle = DBOS.retrieveWorkflow('5');
     assert.equal(await handle.getResult(), 5);
   });
