@@ -1,9 +1,6 @@
-import { DBOS } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
-import { Debouncer } from '../src/debouncer';
+import { DBOS, Debouncer, DBOSConfig, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import assert from 'node:assert';
-import { WorkflowQueue } from '../src/wfqueue';
 
 describe('debouncer-tests', () => {
   let config: DBOSConfig;
