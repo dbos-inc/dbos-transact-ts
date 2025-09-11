@@ -34,39 +34,43 @@ describe('debouncer-tests', () => {
     const fourthValue = 3;
     const debouncePeriodMs = 2000;
 
-    // Test that two calls with the same key merge into one workflow
-    const debouncer1 = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
-    });
-    const firstHandle = await debouncer1.debounce('key', debouncePeriodMs, firstValue);
+    const testFunction = async () => {
+      // Test that two calls with the same key merge into one workflow
+      const debouncer1 = new Debouncer({
+        workflowName: 'workflow',
+        workflowClassName: '',
+      });
+      const firstHandle = await debouncer1.debounce('key', debouncePeriodMs, firstValue);
 
-    const debouncer2 = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
-    });
-    const secondHandle = await debouncer2.debounce('key', debouncePeriodMs, secondValue);
+      const debouncer2 = new Debouncer({
+        workflowName: 'workflow',
+        workflowClassName: '',
+      });
+      const secondHandle = await debouncer2.debounce('key', debouncePeriodMs, secondValue);
 
-    assert.equal(firstHandle.workflowID, secondHandle.workflowID);
-    assert.equal(await firstHandle.getResult(), secondValue);
-    assert.equal(await secondHandle.getResult(), secondValue);
+      assert.equal(firstHandle.workflowID, secondHandle.workflowID);
+      assert.equal(await firstHandle.getResult(), secondValue);
+      assert.equal(await secondHandle.getResult(), secondValue);
 
-    const debouncer3 = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
-    });
-    const thirdHandle = await debouncer3.debounce('key', debouncePeriodMs, thirdValue);
+      const debouncer3 = new Debouncer({
+        workflowName: 'workflow',
+        workflowClassName: '',
+      });
+      const thirdHandle = await debouncer3.debounce('key', debouncePeriodMs, thirdValue);
 
-    const debouncer4 = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
-    });
-    const fourthHandle = await debouncer4.debounce('key', debouncePeriodMs, fourthValue);
+      const debouncer4 = new Debouncer({
+        workflowName: 'workflow',
+        workflowClassName: '',
+      });
+      const fourthHandle = await debouncer4.debounce('key', debouncePeriodMs, fourthValue);
 
-    assert.notEqual(thirdHandle.workflowID, firstHandle.workflowID);
-    assert.equal(thirdHandle.workflowID, fourthHandle.workflowID);
-    assert.equal(await thirdHandle.getResult(), fourthValue);
-    assert.equal(await fourthHandle.getResult(), fourthValue);
+      assert.notEqual(thirdHandle.workflowID, firstHandle.workflowID);
+      assert.equal(thirdHandle.workflowID, fourthHandle.workflowID);
+      assert.equal(await thirdHandle.getResult(), fourthValue);
+      assert.equal(await fourthHandle.getResult(), fourthValue);
+    };
+    // First, run the test operations directly
+    await testFunction();
   }, 30000);
 
   test('test-debouncer-timeout', async () => {
