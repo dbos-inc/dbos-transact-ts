@@ -1,6 +1,9 @@
 import { DBOS } from '.';
 import { StartWorkflowParams } from './dbos';
+import { DBOSExecutor } from './dbos-executor';
 import { getFunctionRegistrationByName, UntypedAsyncFunction } from './decorators';
+import { getDBOSErrorCode, QueueDedupIDDuplicated } from './error';
+import { INTERNAL_QUEUE_NAME } from './utils';
 
 // Parameters for the debouncer workflow
 interface DebouncerWorkflowParams {
@@ -66,7 +69,52 @@ export class Debouncer {
   async debounce(debounceKey: string, debouncePeriodMs: number, ...args: unknown[]) {
     this.cfg.startWorkflowParams = this.cfg.startWorkflowParams ?? {};
     this.cfg.startWorkflowParams.workflowID = this.cfg.startWorkflowParams.workflowID ?? (await DBOS.randomUUID());
-    await DBOS.startWorkflow(debouncerWorkflow)(debouncePeriodMs, this.cfg, ...args);
-    return DBOS.retrieveWorkflow(this.cfg.startWorkflowParams.workflowID);
+    while (true) {
+      const deduplicationID = `${this.cfg.workflowClassName}.${this.cfg.workflowName}-${debounceKey}`;
+      try {
+        // Attempt to enqueue a debouncer for this workflow
+        await DBOS.startWorkflow(debouncerWorkflow, {
+          queueName: INTERNAL_QUEUE_NAME,
+          enqueueOptions: { deduplicationID },
+        })(debouncePeriodMs, this.cfg, ...args);
+        return DBOS.retrieveWorkflow(this.cfg.startWorkflowParams.workflowID);
+      } catch (e) {
+        // If there is already a debouncer, send a message to it.
+        if (e instanceof Error && getDBOSErrorCode(e) === QueueDedupIDDuplicated) {
+          const dedupWorkflowID = await DBOS.runStep(async () => {
+            return await DBOSExecutor.globalInstance?.systemDatabase.getDeduplicatedWorkflow(
+              INTERNAL_QUEUE_NAME,
+              deduplicationID,
+            );
+          });
+          if (!dedupWorkflowID) {
+            continue;
+          } else {
+            const messageID = await DBOS.randomUUID();
+            const message: DebouncerMessage = {
+              messageID,
+              args,
+              debouncePeriodMs,
+            };
+            await DBOS.send(deduplicationID, message, _DEBOUNCER_TOPIC);
+            // Wait for the debouncer to acknowledge receipt of the message.
+            // If the message is not acknowledged, this likely means the debouncer started its workflow
+            // and exited without processing this message, so try again.
+            const event = await DBOS.getEvent(dedupWorkflowID, messageID, 1000);
+            if (!event) {
+              continue;
+            }
+            // Retrieve the user workflow ID from the input to the debouncer
+            // and return a handle to it.
+            const dedupWorkflowInput = await DBOS.retrieveWorkflow(dedupWorkflowID).getWorkflowInputs();
+            const typedInput = dedupWorkflowInput as Parameters<typeof debouncerWorkflow>;
+            const userWorkflowID = typedInput[1].startWorkflowParams!.workflowID!;
+            return DBOS.retrieveWorkflow(userWorkflowID);
+          }
+        } else {
+          throw e;
+        }
+      }
+    }
   }
 }
