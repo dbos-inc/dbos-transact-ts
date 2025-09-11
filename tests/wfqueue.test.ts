@@ -31,6 +31,7 @@ import {
   // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
+import assert from 'node:assert';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -1403,6 +1404,12 @@ describe('queue-time-outs', () => {
         queueName: dedupRecoveryQueue.name,
         enqueueOptions: { deduplicationID: dedupRecoveryKey },
       })();
+      await assert.rejects(async () => {
+        await DBOS.startWorkflow(dedupRecoveryChildWorkflow, {
+          queueName: dedupRecoveryQueue.name,
+          enqueueOptions: { deduplicationID: dedupRecoveryKey },
+        })();
+      }, DBOSQueueDuplicatedError);
       return handle.workflowID;
     },
     { name: 'dedupRecoveryParentWorkflow' },
