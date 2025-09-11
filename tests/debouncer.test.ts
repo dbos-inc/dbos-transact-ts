@@ -1,6 +1,6 @@
 import { DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { debouncerWorkflow } from '../src/debouncer';
+import { Debouncer } from '../src/debouncer';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import assert from 'node:assert';
 
@@ -28,13 +28,14 @@ describe('debouncer-tests', () => {
     { name: 'workflow' },
   );
 
-  test('test-debouncer-workflow', async () => {
-    await debouncerWorkflow(
-      0,
-      { workflowClassName: '', workflowName: 'workflow', startWorkflowParams: { workflowID: '5' } },
-      5,
-    );
-    const handle = DBOS.retrieveWorkflow('5');
+  test('test-debouncer', async () => {
+    const debouncer = new Debouncer({
+      debouncerKey: '5',
+      workflowName: 'workflow',
+      workflowClassName: '',
+      startWorkflowParams: { workflowID: '5' },
+    });
+    const handle = await debouncer.debounce(5, 5);
     assert.equal(await handle.getResult(), 5);
   });
 });

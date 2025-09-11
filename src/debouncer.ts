@@ -3,7 +3,7 @@ import { StartWorkflowParams } from './dbos';
 import { getFunctionRegistrationByName, UntypedAsyncFunction } from './decorators';
 
 // Parameters for the debouncer workflow
-interface DebouncerOptions {
+interface DebouncerWorkflowParams {
   workflowClassName: string;
   workflowName: string;
   startWorkflowParams: StartWorkflowParams;
@@ -17,14 +17,20 @@ interface DebouncerMessage {
   debouncePeriodMs: number;
 }
 
+interface DebouncerConfig {
+  workflowClassName: string;
+  workflowName: string;
+  startWorkflowParams: StartWorkflowParams;
+  debounceTimeoutMs?: number;
+  debouncerKey: string;
+}
+
 const _DEBOUNCER_TOPIC = 'DEBOUNCER_TOPIC';
 
-export const debouncerWorkflow = DBOS.registerWorkflow(
-  async (initialDebouncePeriodMs: number, options: DebouncerOptions, ...args: unknown[]) => {
+const debouncerWorkflow = DBOS.registerWorkflow(
+  async (initialDebouncePeriodMs: number, cfg: DebouncerWorkflowParams, ...args: unknown[]) => {
     let workflowInputs = args;
-    const debounceDeadlineEpochMs = options.debounceTimeoutMs
-      ? Date.now() + options.debounceTimeoutMs
-      : Number.MAX_VALUE;
+    const debounceDeadlineEpochMs = cfg.debounceTimeoutMs ? Date.now() + cfg.debounceTimeoutMs : Number.MAX_VALUE;
     let debouncePeriodMs = initialDebouncePeriodMs;
     while (Date.now() < debounceDeadlineEpochMs) {
       const timeUntilDeadline = Math.max(debounceDeadlineEpochMs - Date.now(), 0);
@@ -38,11 +44,30 @@ export const debouncerWorkflow = DBOS.registerWorkflow(
         await DBOS.setEvent(message.messageID, message.messageID);
       }
     }
-    const methReg = getFunctionRegistrationByName(options.workflowClassName, options.workflowName);
+    const methReg = getFunctionRegistrationByName(cfg.workflowClassName, cfg.workflowName);
     if (!methReg || !methReg.registeredFunction) {
-      throw Error(`Invalid workflow name provided to debouncer: ${options.workflowName}`);
+      throw Error(`Invalid workflow name provided to debouncer: ${cfg.workflowName}`);
     }
     const func = methReg?.registeredFunction as UntypedAsyncFunction;
-    await DBOS.startWorkflow(func, options.startWorkflowParams)(...workflowInputs);
+    await DBOS.startWorkflow(func, cfg.startWorkflowParams)(...workflowInputs);
   },
 );
+
+export class Debouncer {
+  private readonly cfg: DebouncerWorkflowParams;
+  private readonly debouncerKey: string;
+  constructor(params: DebouncerConfig) {
+    this.cfg = {
+      workflowClassName: params.workflowClassName,
+      workflowName: params.workflowName,
+      startWorkflowParams: params.startWorkflowParams,
+      debounceTimeoutMs: params.debounceTimeoutMs,
+    };
+    this.debouncerKey = params.debouncerKey;
+  }
+
+  async debounce(debouncePeriodMs: number, ...args: unknown[]) {
+    await DBOS.startWorkflow(debouncerWorkflow)(debouncePeriodMs, this.cfg, ...args);
+    return DBOS.retrieveWorkflow(this.cfg.startWorkflowParams.workflowID!);
+  }
+}
