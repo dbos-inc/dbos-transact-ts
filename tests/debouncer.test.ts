@@ -34,7 +34,7 @@ describe('debouncer-tests', () => {
     const fourthValue = 3;
     const debouncePeriodMs = 2000;
 
-    const testFunction = async () => {
+    const test = async () => {
       // Test that two calls with the same key merge into one workflow
       const debouncer1 = new Debouncer({
         workflowName: 'workflow',
@@ -70,7 +70,14 @@ describe('debouncer-tests', () => {
       assert.equal(await fourthHandle.getResult(), fourthValue);
     };
     // First, run the test operations directly
-    await testFunction();
+    await test();
+    // Then, run the test operations inside a workflow and verify they work there
+    await DBOS.shutdown();
+    const testWorkflow = DBOS.registerWorkflow(test);
+    await DBOS.launch();
+    const workflowID = await DBOS.randomUUID();
+    const originalHandle = await DBOS.startWorkflow(testWorkflow, { workflowID })();
+    await originalHandle.getResult();
   }, 30000);
 
   test('test-debouncer-timeout', async () => {
