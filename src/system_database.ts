@@ -294,7 +294,7 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
     }
 
     await runSysMigrationsPg(cconnect.client, allMigrations, {
-      onWarn: (e: string) => logger.warn(e),
+      onWarn: (e: string) => logger.info(e),
     });
   } finally {
     try {

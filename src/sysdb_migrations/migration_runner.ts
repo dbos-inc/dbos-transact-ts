@@ -65,7 +65,7 @@ async function runStatementsIgnoring(
       await client.query(s, []);
     } catch (err) {
       if (isDDLAlreadyAppliedPgError(err, ignoreCodes)) {
-        warn(`Ignoring idempotent error while executing: ${s}`, err);
+        warn(`Ignoring migration error; migration was likely already applied.  Occurred while executing: ${s}`, err);
         continue;
       }
       throw err;
@@ -91,7 +91,7 @@ export async function runSysMigrationsPg(
   skippedCount: number;
   notice?: string;
 }> {
-  const { ignoreErrorCodes = DEFAULT_IGNORABLE_CODES, onWarn = (m) => console.warn(m) } = opts;
+  const { ignoreErrorCodes = DEFAULT_IGNORABLE_CODES, onWarn = (m) => console.info(m) } = opts;
 
   const current = await getCurrentSysDBVersion(client);
   const maxKnown = allMigrations.length;
@@ -111,6 +111,7 @@ export async function runSysMigrationsPg(
   let applied = 0;
   let skipped = 0;
   let lastAppliedVersion = current;
+  let loggedInfo = false;
 
   // Apply needed migrations in order
   for (let i = 0; i < allMigrations.length; i++) {
@@ -119,6 +120,11 @@ export async function runSysMigrationsPg(
     if (v <= current) {
       skipped++;
       continue;
+    }
+
+    if (!loggedInfo) {
+      onWarn(`Running DBOS system database migrations...`);
+      loggedInfo = true;
     }
 
     const stmts = m.pg ?? [];
