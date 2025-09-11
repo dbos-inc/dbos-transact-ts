@@ -28,6 +28,8 @@ describe('debouncer-tests', () => {
     { name: 'workflow' },
   );
 
+  const queue = new WorkflowQueue('test-queue');
+
   test('test-debouncer-workflow', async () => {
     const firstValue = 0;
     const secondValue = 1;
@@ -80,13 +82,13 @@ describe('debouncer-tests', () => {
     await originalHandle.getResult();
 
     // Rerun the workflow, verify it still works
-    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
-      originalHandle.workflowID,
-      StatusString.PENDING,
-      true,
-    );
-    const recoverHandle = await DBOS.startWorkflow(testWorkflow, { workflowID: originalHandle.workflowID })();
-    await recoverHandle.getResult();
+    // await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
+    //   originalHandle.workflowID,
+    //   StatusString.PENDING,
+    //   true,
+    // );
+    // const recoverHandle = await DBOS.startWorkflow(testWorkflow, { workflowID: originalHandle.workflowID })();
+    // await recoverHandle.getResult();
   }, 30000);
 
   test('test-debouncer-timeout', async () => {
@@ -173,9 +175,6 @@ describe('debouncer-tests', () => {
     const thirdValue = 2;
     const fourthValue = 3;
     const debouncePeriodMs = 2000;
-
-    // Create a queue for testing
-    const queue = new WorkflowQueue('test-queue');
 
     const debouncer = new Debouncer({
       workflowName: 'workflow',

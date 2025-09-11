@@ -95,7 +95,7 @@ import fs from 'node:fs';
 import { pathToFileURL } from 'url';
 import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { GetWorkflowsInput, InitContext } from '.';
+import { DBOS, GetWorkflowsInput, InitContext } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
@@ -111,6 +111,7 @@ import {
 } from './dbos-runtime/workflow_management';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
+import { debouncerWorkflowFunction } from './debouncer';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -2118,5 +2119,16 @@ export class DBOSExecutor {
       return;
     }
     DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME, {});
+  }
+
+  static debouncerWorkflow: UntypedAsyncFunction | undefined = undefined;
+
+  static createDebouncerWorkflow() {
+    if (DBOSExecutor.debouncerWorkflow !== undefined) {
+      return;
+    }
+    DBOSExecutor.debouncerWorkflow = DBOS.registerWorkflow(debouncerWorkflowFunction, {
+      name: '_debouncer_workflow',
+    }) as UntypedAsyncFunction;
   }
 }
