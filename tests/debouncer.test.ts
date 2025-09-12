@@ -89,6 +89,8 @@ describe('debouncer-tests', () => {
     );
     const recoverHandle = await DBOS.startWorkflow(testWorkflow, { workflowID: originalHandle.workflowID })();
     await recoverHandle.getResult();
+    const status = await recoverHandle.getStatus();
+    assert.equal(status?.status, StatusString.SUCCESS);
   }, 30000);
 
   test('test-debouncer-timeout', async () => {

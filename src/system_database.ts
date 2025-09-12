@@ -1138,9 +1138,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
           `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
           [destinationID, topic, message],
         );
-        await client.query('COMMIT');
         return undefined;
       });
+      await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
       const err: DatabaseError = error as DatabaseError;
@@ -1306,9 +1306,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
              RETURNING workflow_uuid;`,
           [workflowID, key, message],
         );
-        await client.query('COMMIT');
         return undefined;
       });
+      await client.query('COMMIT');
     } catch (e) {
       this.logger.error(e);
       await client.query(`ROLLBACK`);
