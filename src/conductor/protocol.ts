@@ -1,5 +1,4 @@
 import { serializeError } from 'serialize-error';
-import { DBOSJSON } from '../utils';
 import type { StepInfo, WorkflowStatus } from '../workflow';
 
 export enum MessageType {
@@ -167,11 +166,11 @@ export class WorkflowsOutput {
     this.AuthenticatedUser = info.authenticatedUser ? info.authenticatedUser : undefined;
     this.AssumedRole = info.assumedRole ? info.assumedRole : undefined;
     this.AuthenticatedRoles =
-      (info.authenticatedRoles ?? []).length > 0 ? DBOSJSON.stringify(info.authenticatedRoles) : undefined;
-    this.Input = info.input ? DBOSJSON.stringify(info.input) : undefined;
-    this.Output = info.output ? DBOSJSON.stringify(info.output) : undefined;
-    this.Request = info.request ? DBOSJSON.stringify(info.request) : undefined;
-    this.Error = info.error ? DBOSJSON.stringify(serializeError(info.error)) : undefined;
+      (info.authenticatedRoles ?? []).length > 0 ? JSON.stringify(info.authenticatedRoles) : undefined;
+    this.Input = info.input ? JSON.stringify(info.input) : undefined;
+    this.Output = info.output ? JSON.stringify(info.output) : undefined;
+    this.Request = info.request ? JSON.stringify(info.request) : undefined;
+    this.Error = info.error ? JSON.stringify(serializeError(info.error)) : undefined;
     this.CreatedAt = info.createdAt ? String(info.createdAt) : undefined;
     this.UpdatedAt = info.updatedAt ? String(info.updatedAt) : undefined;
     this.QueueName = info.queueName ? info.queueName : undefined;
@@ -190,8 +189,8 @@ export class WorkflowSteps {
   constructor(info: StepInfo) {
     this.function_id = info.functionID;
     this.function_name = info.name;
-    this.output = info.output ? DBOSJSON.stringify(info.output) : undefined;
-    this.error = info.error ? DBOSJSON.stringify(serializeError(info.error)) : undefined;
+    this.output = info.output ? JSON.stringify(info.output) : undefined;
+    this.error = info.error ? JSON.stringify(serializeError(info.error)) : undefined;
     this.child_workflow_id = info.childWorkflowID ?? undefined;
   }
 }
