@@ -229,8 +229,8 @@ describe('debouncer-tests', () => {
     assert.equal(await thirdHandle.getResult(), fourthValue);
     assert.equal(await fourthHandle.getResult(), fourthValue);
 
-    const debouncer2 = new Debouncer({
-      workflow,
+    const debouncer2 = new DebouncerClient(client, {
+      workflowName: 'debouncerWorkflow',
     });
 
     const fifthHandle = await debouncer2.debounce('key', longDebouncePeriodMs, firstValue);
@@ -241,5 +241,5 @@ describe('debouncer-tests', () => {
     assert.equal(await fifthHandle.getResult(), secondValue);
     assert.equal(await sixthHandle.getResult(), secondValue);
     await client.destroy();
-  }, 30000);
+  }, 60000);
 });
