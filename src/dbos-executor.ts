@@ -89,7 +89,13 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
-import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
+import {
+  globalParams,
+  DBOSJSON,
+  sleepms,
+  INTERNAL_QUEUE_NAME,
+  DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME,
+} from './utils';
 import path from 'node:path';
 import fs from 'node:fs';
 import { pathToFileURL } from 'url';
@@ -2128,7 +2134,7 @@ export class DBOSExecutor {
       return;
     }
     DBOSExecutor.debouncerWorkflow = DBOS.registerWorkflow(debouncerWorkflowFunction, {
-      name: '_debouncer_workflow',
+      name: DEBOUNCER_WORKLOW_NAME,
     }) as UntypedAsyncFunction;
   }
 }

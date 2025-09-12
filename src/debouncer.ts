@@ -1,9 +1,10 @@
-import { DBOS } from '.';
+import { randomUUID } from 'node:crypto';
+import { DBOS, DBOSClient } from '.';
 import { StartWorkflowParams } from './dbos';
 import { DBOSExecutor } from './dbos-executor';
 import { getFunctionRegistrationByName, UntypedAsyncFunction } from './decorators';
 import { getDBOSErrorCode, QueueDedupIDDuplicated } from './error';
-import { INTERNAL_QUEUE_NAME } from './utils';
+import { DEBOUNCER_WORKLOW_NAME, INTERNAL_QUEUE_NAME } from './utils';
 
 // Parameters for the debouncer workflow
 interface DebouncerWorkflowParams {
@@ -113,6 +114,76 @@ export class Debouncer {
             const typedInput = dedupWorkflowInput as Parameters<typeof debouncerWorkflowFunction>;
             const userWorkflowID = typedInput[1].startWorkflowParams!.workflowID!;
             return DBOS.retrieveWorkflow(userWorkflowID);
+          }
+        } else {
+          throw e;
+        }
+      }
+    }
+  }
+}
+
+export class DebouncerClient {
+  private readonly cfg: DebouncerWorkflowParams;
+  constructor(
+    readonly client: DBOSClient,
+    params: DebouncerConfig,
+  ) {
+    this.cfg = {
+      workflowClassName: params.workflowClassName,
+      workflowName: params.workflowName,
+      startWorkflowParams: params.startWorkflowParams,
+      debounceTimeoutMs: params.debounceTimeoutMs,
+    };
+  }
+
+  async debounce(debounceKey: string, debouncePeriodMs: number, ...args: unknown[]) {
+    const cfg = { ...this.cfg };
+    cfg.startWorkflowParams = this.cfg.startWorkflowParams ? { ...this.cfg.startWorkflowParams } : {};
+    cfg.startWorkflowParams.workflowID = cfg.startWorkflowParams.workflowID ?? String(randomUUID());
+    while (true) {
+      const deduplicationID = `${cfg.workflowClassName}.${cfg.workflowName}-${debounceKey}`;
+      try {
+        // Attempt to enqueue a debouncer for this workflow
+        await this.client.enqueue(
+          { workflowName: DEBOUNCER_WORKLOW_NAME, queueName: INTERNAL_QUEUE_NAME, deduplicationID },
+          debouncePeriodMs,
+          cfg,
+          ...args,
+        );
+        return this.client.retrieveWorkflow(cfg.startWorkflowParams.workflowID);
+      } catch (e) {
+        // If there is already a debouncer, send a message to it.
+        if (e instanceof Error && getDBOSErrorCode(e) === QueueDedupIDDuplicated) {
+          // Access the private client system database
+          // eslint-disable-next-line @typescript-eslint/no-unsafe-call, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-explicit-any
+          const dedupWorkflowID = (await (this.client as any).systemDatabase.getDeduplicatedWorkflow(
+            INTERNAL_QUEUE_NAME,
+            deduplicationID,
+          )) as string;
+          if (!dedupWorkflowID) {
+            continue;
+          } else {
+            const messageID = String(randomUUID());
+            const message: DebouncerMessage = {
+              messageID,
+              args,
+              debouncePeriodMs,
+            };
+            await this.client.send(dedupWorkflowID, message, _DEBOUNCER_TOPIC);
+            // Wait for the debouncer to acknowledge receipt of the message.
+            // If the message is not acknowledged, this likely means the debouncer started its workflow
+            // and exited without processing this message, so try again.
+            const event = await this.client.getEvent(dedupWorkflowID, messageID, 1000);
+            if (!event) {
+              continue;
+            }
+            // Retrieve the user workflow ID from the input to the debouncer
+            // and return a handle to it.
+            const dedupWorkflowInput = await this.client.retrieveWorkflow(dedupWorkflowID).getWorkflowInputs();
+            const typedInput = dedupWorkflowInput as Parameters<typeof debouncerWorkflowFunction>;
+            const userWorkflowID = typedInput[1].startWorkflowParams!.workflowID!;
+            return this.client.retrieveWorkflow(userWorkflowID);
           }
         } else {
           throw e;
