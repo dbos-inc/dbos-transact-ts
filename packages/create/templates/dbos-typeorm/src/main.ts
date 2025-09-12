@@ -15,7 +15,7 @@ const config = {
     `postgresql://${process.env.PGUSER || 'postgres'}:${process.env.PGPASSWORD || 'dbos'}@${process.env.PGHOST || 'localhost'}:${process.env.PGPORT || '5432'}/${process.env.PGDATABASE || 'dbos_typeorm'}`,
 };
 
-const dataSource = new TypeOrmDataSource('app-db', config, [DBOSHello]);
+const dataSource = TypeOrmDataSource.createFromConfig('app-db', config, [DBOSHello]);
 
 export class Hello {
   // This transaction uses DBOS and TypeORM to perform database operations.
