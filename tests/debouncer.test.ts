@@ -21,11 +21,11 @@ describe('debouncer-tests', () => {
   }, 10000);
 
   // Register a simple workflow for testing
-  DBOS.registerWorkflow(
+  const workflow = DBOS.registerWorkflow(
     async (x: number) => {
       return Promise.resolve(x);
     },
-    { name: 'workflow' },
+    { name: 'debouncerWorkflow' },
   );
 
   const queue = new WorkflowQueue('test-queue');
@@ -40,14 +40,12 @@ describe('debouncer-tests', () => {
     const test = async () => {
       // Test that two calls with the same key merge into one workflow
       const debouncer1 = new Debouncer({
-        workflowName: 'workflow',
-        workflowClassName: '',
+        workflow,
       });
       const firstHandle = await debouncer1.debounce('key', debouncePeriodMs, firstValue);
 
       const debouncer2 = new Debouncer({
-        workflowName: 'workflow',
-        workflowClassName: '',
+        workflow,
       });
       const secondHandle = await debouncer2.debounce('key', debouncePeriodMs, secondValue);
 
@@ -56,14 +54,12 @@ describe('debouncer-tests', () => {
       assert.equal(await secondHandle.getResult(), secondValue);
 
       const debouncer3 = new Debouncer({
-        workflowName: 'workflow',
-        workflowClassName: '',
+        workflow,
       });
       const thirdHandle = await debouncer3.debounce('key', debouncePeriodMs, thirdValue);
 
       const debouncer4 = new Debouncer({
-        workflowName: 'workflow',
-        workflowClassName: '',
+        workflow,
       });
       const fourthHandle = await debouncer4.debounce('key', debouncePeriodMs, fourthValue);
 
@@ -103,8 +99,7 @@ describe('debouncer-tests', () => {
 
     // Set a huge period but small timeout, verify workflows start after the timeout
     const debouncer1 = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
+      workflow,
       debounceTimeoutMs: 2000,
     });
 
@@ -124,8 +119,7 @@ describe('debouncer-tests', () => {
     assert.equal(await fourthHandle.getResult(), fourthValue);
 
     const debouncer2 = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
+      workflow,
     });
 
     const fifthHandle = await debouncer2.debounce('key', longDebouncePeriodMs, firstValue);
@@ -146,13 +140,11 @@ describe('debouncer-tests', () => {
 
     // Create two debouncers with different keys
     const debouncerOne = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
+      workflow,
     });
 
     const debouncerTwo = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
+      workflow,
     });
 
     const firstHandle = await debouncerOne.debounce('key_one', debouncePeriodMs, firstValue);
@@ -179,8 +171,7 @@ describe('debouncer-tests', () => {
     const debouncePeriodMs = 2000;
 
     const debouncer = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
+      workflow,
       startWorkflowParams: { queueName: queue.name, timeoutMS: 5000 },
     });
 
@@ -219,8 +210,7 @@ describe('debouncer-tests', () => {
     // Set a huge period but small timeout, verify workflows start after the timeout
     const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl });
     const debouncer1 = new DebouncerClient(client, {
-      workflowName: 'workflow',
-      workflowClassName: '',
+      workflowName: 'debouncerWorkflow',
       debounceTimeoutMs: 2000,
     });
 
@@ -240,8 +230,7 @@ describe('debouncer-tests', () => {
     assert.equal(await fourthHandle.getResult(), fourthValue);
 
     const debouncer2 = new Debouncer({
-      workflowName: 'workflow',
-      workflowClassName: '',
+      workflow,
     });
 
     const fifthHandle = await debouncer2.debounce('key', longDebouncePeriodMs, firstValue);
