@@ -319,13 +319,8 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     return new TypeOrmDataSource(name, config, entities);
   }
 
-  static createFromDataSource(
-    name: string,
-    config: PoolConfig,
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-    entities: Function[],
-  ) {
-    return new TypeOrmDataSource(name, config, entities);
+  static createFromDataSource(name: string, ds: DataSource) {
+    return new TypeOrmDataSource(name, undefined, undefined, ds);
   }
 
   /**
