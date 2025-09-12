@@ -2,13 +2,19 @@ import { randomUUID } from 'node:crypto';
 import { DBOS, DBOSClient } from '.';
 import { StartWorkflowParams } from './dbos';
 import { DBOSExecutor } from './dbos-executor';
-import { getFunctionRegistration, getFunctionRegistrationByName, UntypedAsyncFunction } from './decorators';
+import {
+  getFunctionRegistration,
+  getFunctionRegistrationByName,
+  getRegisteredFunctionClassName,
+  UntypedAsyncFunction,
+} from './decorators';
 import { getDBOSErrorCode, QueueDedupIDDuplicated } from './error';
 import { DEBOUNCER_WORKLOW_NAME, INTERNAL_QUEUE_NAME } from './utils';
 
 // Parameters for the debouncer workflow
 interface DebouncerWorkflowParams {
   workflowName: string;
+  workflowClassName: string;
   startWorkflowParams?: StartWorkflowParams;
   debounceTimeoutMs?: number;
 }
@@ -28,6 +34,7 @@ interface DebouncerConfig<Args extends unknown[], Return> {
 
 interface DebouncerClientConfig {
   workflowName: string;
+  workflowClassName?: string;
   startWorkflowParams?: StartWorkflowParams;
   debounceTimeoutMs?: number;
 }
@@ -54,7 +61,7 @@ export const debouncerWorkflowFunction = async (
       await DBOS.setEvent(message.messageID, message.messageID);
     }
   }
-  const methReg = getFunctionRegistrationByName('', cfg.workflowName);
+  const methReg = getFunctionRegistrationByName(cfg.workflowClassName, cfg.workflowName);
   if (!methReg || !methReg.registeredFunction) {
     throw Error(`Invalid workflow name provided to debouncer: ${cfg.workflowName}`);
   }
@@ -68,6 +75,7 @@ export class Debouncer<Args extends unknown[], Return> {
     const wInfo = getFunctionRegistration(params.workflow);
     this.cfg = {
       workflowName: wInfo?.name ?? params.workflow.name,
+      workflowClassName: getRegisteredFunctionClassName(params.workflow),
       startWorkflowParams: params.startWorkflowParams,
       debounceTimeoutMs: params.debounceTimeoutMs,
     };
@@ -78,7 +86,7 @@ export class Debouncer<Args extends unknown[], Return> {
     cfg.startWorkflowParams = this.cfg.startWorkflowParams ? { ...this.cfg.startWorkflowParams } : {};
     cfg.startWorkflowParams.workflowID = cfg.startWorkflowParams.workflowID ?? (await DBOS.randomUUID());
     while (true) {
-      const deduplicationID = `${cfg.workflowName}-${debounceKey}`;
+      const deduplicationID = `${cfg.workflowClassName}.${cfg.workflowName}-${debounceKey}`;
       try {
         // Attempt to enqueue a debouncer for this workflow
         await DBOS.startWorkflow(DBOSExecutor.debouncerWorkflow!, {
@@ -135,6 +143,7 @@ export class DebouncerClient {
   ) {
     this.cfg = {
       workflowName: params.workflowName,
+      workflowClassName: params.workflowClassName || '',
       startWorkflowParams: params.startWorkflowParams,
       debounceTimeoutMs: params.debounceTimeoutMs,
     };
@@ -145,7 +154,7 @@ export class DebouncerClient {
     cfg.startWorkflowParams = this.cfg.startWorkflowParams ? { ...this.cfg.startWorkflowParams } : {};
     cfg.startWorkflowParams.workflowID = cfg.startWorkflowParams.workflowID ?? String(randomUUID());
     while (true) {
-      const deduplicationID = `${cfg.workflowName}-${debounceKey}`;
+      const deduplicationID = `${cfg.workflowClassName}.${cfg.workflowName}-${debounceKey}`;
       try {
         // Attempt to enqueue a debouncer for this workflow
         await this.client.enqueue(

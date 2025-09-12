@@ -38,7 +38,6 @@ describe('debouncer-tests', () => {
     const debouncePeriodMs = 2000;
 
     const test = async () => {
-      // Test that two calls with the same key merge into one workflow
       const debouncer1 = new Debouncer({
         workflow,
       });
@@ -138,7 +137,7 @@ describe('debouncer-tests', () => {
     const fourthValue = 3;
     const debouncePeriodMs = 2000;
 
-    // Create two debouncers with different keys
+    // Create two debouncers and use two different keys
     const debouncerOne = new Debouncer({
       workflow,
     });
@@ -242,4 +241,57 @@ describe('debouncer-tests', () => {
     assert.equal(await sixthHandle.getResult(), secondValue);
     await client.destroy();
   }, 60000);
+
+  class TestClass {
+    @DBOS.workflow()
+    static async exampleWorkflow(x: number) {
+      return Promise.resolve(x);
+    }
+  }
+
+  test('test-debouncer-class', async () => {
+    const firstValue = 0;
+    const secondValue = 1;
+    const thirdValue = 2;
+    const fourthValue = 3;
+    const fifthValue = 4;
+    const sixthValue = 5;
+    const debouncePeriodMs = 2000;
+
+    // Test that two calls with the same key merge into one workflow
+    const debouncer = new Debouncer({
+      workflow: TestClass.exampleWorkflow,
+    });
+    const firstHandle = await debouncer.debounce('key', debouncePeriodMs, firstValue);
+
+    const secondHandle = await debouncer.debounce('key', debouncePeriodMs, secondValue);
+
+    assert.equal(firstHandle.workflowID, secondHandle.workflowID);
+    assert.equal(await firstHandle.getResult(), secondValue);
+    assert.equal(await secondHandle.getResult(), secondValue);
+
+    const thirdHandle = await debouncer.debounce('key', debouncePeriodMs, thirdValue);
+    const fourthHandle = await debouncer.debounce('key', debouncePeriodMs, fourthValue);
+
+    assert.notEqual(thirdHandle.workflowID, firstHandle.workflowID);
+    assert.equal(thirdHandle.workflowID, fourthHandle.workflowID);
+    assert.equal(await thirdHandle.getResult(), fourthValue);
+    assert.equal(await fourthHandle.getResult(), fourthValue);
+
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl });
+    const clientDebouncer = new DebouncerClient(client, {
+      workflowClassName: 'TestClass',
+      workflowName: 'exampleWorkflow',
+      debounceTimeoutMs: 2000,
+    });
+
+    const fifthHandle = await clientDebouncer.debounce('key', debouncePeriodMs, fifthValue);
+    const sixthHandle = await clientDebouncer.debounce('key', debouncePeriodMs, sixthValue);
+
+    assert.notEqual(fourthHandle.workflowID, fifthHandle.workflowID);
+    assert.equal(fifthHandle.workflowID, sixthHandle.workflowID);
+    assert.equal(await fifthHandle.getResult(), sixthValue);
+    assert.equal(await fifthHandle.getResult(), sixthValue);
+    await client.destroy();
+  }, 30000);
 });
