@@ -774,7 +774,6 @@ class InterProcessWorkflow {
     }
   }
 
-  @DBOS.step()
   static startWorkerProcesses(nWorkers: number): Promise<Promise<void>[]> {
     const workerPromises: Promise<void>[] = [];
     for (let i = 0; i < nWorkers; i++) {

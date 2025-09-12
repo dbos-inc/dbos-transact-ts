@@ -272,6 +272,172 @@ export const DBOSJSON = {
   stringify: sjstringify,
 };
 
+//#region Serialization Protection
+// Serialization protection - for a serialized object, provide a replacement that gives clear errors
+//  from called functions that will not be there after deserialization.
+
+type PathToMember = Array<string | number | symbol>;
+type AnyObject = { [key: string | symbol]: unknown };
+
+/**
+ * Roundtrips `value` and then attaches throwing stubs for any
+ * functions present on the original (own props + prototype methods) that
+ * aren’t present as functions on the deserialized.
+ */
+export function serializeFunctionInputOutput<T>(
+  value: T,
+  path: PathToMember = [],
+): { deserialized: T; stringified: string } {
+  const stringified = DBOSJSON.stringify(value);
+  const deserialized = DBOSJSON.parse(stringified) as T;
+  if (isObjectish(deserialized)) {
+    attachFunctionStubs(value as unknown as AnyObject, deserialized as unknown as AnyObject, path);
+  }
+  return { deserialized, stringified };
+}
+
+// Walks original & deserialized in lockstep and attaches stubs for missing functions.
+function attachFunctionStubs(original: AnyObject, deserialized: AnyObject, path: PathToMember = []): void {
+  // Avoid infinite cycles
+  const seen = new WeakSet<object>();
+  const pairQueue: Array<{ o: AnyObject; d: AnyObject; p: PathToMember }> = [{ o: original, d: deserialized, p: path }];
+
+  while (pairQueue.length) {
+    const { o, d, p } = pairQueue.pop()!;
+    if (seen.has(o)) continue;
+    seen.add(o);
+
+    // Collect function keys from the original
+    for (const key of collectFunctionKeys(o)) {
+      const hasInDeser = key in d;
+
+      if (!hasInDeser) {
+        defineThrowingStub(d, key, p);
+      }
+    }
+
+    // Recurse into child properties (plain objects & arrays, but not maps/sets)
+    for (const key of getAllKeys(o)) {
+      try {
+        const childO = o[key];
+        const childD = d[key];
+
+        if (!shouldRecurse(childO, childD)) continue;
+
+        pairQueue.push({ o: childO as AnyObject, d: childD as AnyObject, p: [...p, key] });
+      } catch {
+        // Ignore property accessors that throw
+      }
+    }
+
+    // Map/Set values
+    if (o instanceof Map && d instanceof Map) {
+      for (const [k, vO] of o as Map<unknown, unknown>) {
+        const vD = (d as Map<unknown, unknown>).get(k);
+        if (shouldRecurse(vO, vD)) {
+          const step = isIndexableKey(k) ? String(k) : '[MapValue]';
+          pairQueue.push({ o: vO as AnyObject, d: vD as AnyObject, p: [...p, step] });
+        }
+      }
+    }
+    if (o instanceof Set && d instanceof Set) {
+      const arrO = Array.from(o as Set<unknown>);
+      const arrD = Array.from(d as Set<unknown>);
+      for (let i = 0; i < Math.min(arrO.length, arrD.length); i++) {
+        const vO = arrO[i];
+        const vD = arrD[i];
+        if (shouldRecurse(vO, vD)) {
+          pairQueue.push({ o: vO as AnyObject, d: vD as AnyObject, p: [...p, i] });
+        }
+      }
+    }
+  }
+}
+
+function isObjectish(v: unknown): v is object {
+  return (typeof v === 'object' && v !== null) || typeof v === 'function';
+}
+
+function defineThrowingStub(target: AnyObject, key: string | symbol, path: PathToMember) {
+  const stub = function (this: unknown, ..._args: unknown[]) {
+    throw new Error(
+      `Attempted to call '${String(
+        key,
+      )}' at path ${formatPath(path)} on an object that is a serialized function input our output value. ` +
+        `Functions are not preserved through serialization. `,
+    );
+  };
+
+  try {
+    Object.defineProperty(target, key, {
+      value: stub,
+      configurable: true,
+      writable: false,
+      enumerable: false,
+    });
+  } catch {
+    // Fall back to assignment
+    target[key] = stub;
+  }
+}
+
+function shouldRecurse(a: unknown, b: unknown): a is object & NonNullable<AnyObject> {
+  if (!a || !b) return false;
+  if (typeof a !== 'object' || typeof b !== 'object') return false;
+  // Avoid recursing into special non-plain objects (Date, RegExp, etc.)
+  const bad = [Date, RegExp, WeakMap, WeakSet, ArrayBuffer, DataView];
+  if (bad.some((t) => a instanceof t)) return false;
+  return true;
+}
+
+function getAllKeys(obj: object): Array<string | symbol> {
+  const names = Object.getOwnPropertyNames(obj);
+  const syms = Object.getOwnPropertySymbols(obj);
+  return [...names, ...syms];
+}
+
+function collectFunctionKeys(obj: object): Array<string | symbol> {
+  const keys = new Set<string | symbol>();
+  // Own props
+  for (const k of getAllKeys(obj)) {
+    const d = Object.getOwnPropertyDescriptor(obj, k);
+    if (d && 'value' in d && typeof d.value === 'function') keys.add(k);
+  }
+  // Prototype chain methods (so we also stub class methods lost after deserialization)
+  let proto = Object.getPrototypeOf(obj) as unknown;
+  while (proto && proto !== Object.prototype) {
+    for (const k of Object.getOwnPropertyNames(proto)) {
+      if (k === 'constructor') continue;
+      const d = Object.getOwnPropertyDescriptor(proto, k);
+      if (d && 'value' in d && typeof d.value === 'function') keys.add(k);
+    }
+    proto = Object.getPrototypeOf(proto);
+  }
+  return Array.from(keys);
+}
+
+function formatPath(path: PathToMember): string {
+  if (path.length === 0) return '(root)';
+  return path
+    .map((seg) =>
+      typeof seg === 'number'
+        ? `[${seg}]`
+        : typeof seg === 'symbol'
+          ? `[${String(seg)}]`
+          : /^<?[A-Za-z_$][A-Za-z0-9_$]*>?$/.test(seg)
+            ? `.${seg}`
+            : `[${JSON.stringify(seg)}]`,
+    )
+    .join('')
+    .replace(/^\./, '');
+}
+
+function isIndexableKey(k: unknown): k is string | number {
+  return typeof k === 'string' || typeof k === 'number';
+}
+
+//#endregion
+
 export function exhaustiveCheckGuard(_: never): never {
   throw new Error('Exaustive matching is not applied');
 }
