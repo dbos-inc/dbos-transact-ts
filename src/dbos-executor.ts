@@ -14,6 +14,7 @@ import {
   DBOSAwaitedWorkflowCancelledError,
   DBOSInvalidWorkflowTransitionError,
   DBOSFailLoadOperationsError,
+  DBOSQueueDuplicatedError,
 } from './error';
 import {
   InvokedHandle,
@@ -88,13 +89,19 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
-import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME } from './utils';
+import {
+  globalParams,
+  DBOSJSON,
+  sleepms,
+  INTERNAL_QUEUE_NAME,
+  DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME,
+} from './utils';
 import path from 'node:path';
 import fs from 'node:fs';
 import { pathToFileURL } from 'url';
 import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { GetWorkflowsInput, InitContext } from '.';
+import { DBOS, GetWorkflowsInput, InitContext } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
@@ -110,6 +117,7 @@ import {
 } from './dbos-runtime/workflow_management';
 import { getClientConfig } from './utils';
 import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
+import { debouncerWorkflowFunction } from './debouncer';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -699,10 +707,27 @@ export class DBOSExecutor {
       if (callerFunctionID !== undefined && callerID !== undefined) {
         const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
         if (result) {
+          if (result.error) {
+            throw deserializeError(DBOSJSON.parse(result.error));
+          }
           return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
         }
       }
-      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
+      let ires;
+      try {
+        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
+      } catch (e) {
+        if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
+          await this.systemDatabase.recordOperationResult(
+            callerID,
+            callerFunctionID,
+            internalStatus.workflowName,
+            true,
+            { error: DBOSJSON.stringify(serializeError(e)) },
+          );
+        }
+        throw e;
+      }
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(callerID, callerFunctionID, internalStatus.workflowName, true, {
@@ -2100,5 +2125,16 @@ export class DBOSExecutor {
       return;
     }
     DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME, {});
+  }
+
+  static debouncerWorkflow: UntypedAsyncFunction | undefined = undefined;
+
+  static createDebouncerWorkflow() {
+    if (DBOSExecutor.debouncerWorkflow !== undefined) {
+      return;
+    }
+    DBOSExecutor.debouncerWorkflow = DBOS.registerWorkflow(debouncerWorkflowFunction, {
+      name: DEBOUNCER_WORKLOW_NAME,
+    }) as UntypedAsyncFunction;
   }
 }

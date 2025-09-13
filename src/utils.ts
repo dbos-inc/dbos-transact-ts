@@ -44,6 +44,7 @@ export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // The name of the internal queue used by DBOS
 export const INTERNAL_QUEUE_NAME = '_dbos_internal_queue';
+export const DEBOUNCER_WORKLOW_NAME = '_dbos_debouncer_workflow';
 
 /*
 A cancellable sleep function that returns a promise and a callback

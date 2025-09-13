@@ -1,6 +1,6 @@
-import { DBOS } from '../src/';
+import { DBOS, StatusString } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
 
@@ -348,6 +348,7 @@ describe('dbos-streaming-tests', () => {
   test('workflow-recovery', async () => {
     // Test that stream operations are properly recovered during workflow replay
     let callCount = 0;
+    let workflowCallCount = 0;
 
     const countingStep = DBOS.registerStep(
       async () => {
@@ -360,6 +361,7 @@ describe('dbos-streaming-tests', () => {
 
     const recoveryTestWorkflow = DBOS.registerWorkflow(
       async () => {
+        workflowCallCount += 1;
         const count1 = await countingStep();
         await DBOS.writeStream('recovery_stream', `step_${count1}`);
 
@@ -380,6 +382,8 @@ describe('dbos-streaming-tests', () => {
       await recoveryTestWorkflow();
     });
 
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(wfid, StatusString.PENDING, true);
+
     // Reset call count and run the same workflow ID again (should replay)
     callCount = 0;
     await DBOS.withNextWorkflowID(wfid, async () => {
@@ -388,6 +392,7 @@ describe('dbos-streaming-tests', () => {
 
     // The counting step should not have been called again (replayed from recorded results)
     expect(callCount).toBe(0);
+    expect(workflowCallCount).toBe(2);
 
     // Stream should still be readable and contain the same values
     const values: unknown[] = [];

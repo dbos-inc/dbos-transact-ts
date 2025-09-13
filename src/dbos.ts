@@ -275,6 +275,7 @@ export class DBOS {
     DBOS.#port = runtimeConfig.port;
     DBOS.#userDbClient = internalConfig.userDbClient;
 
+    DBOSExecutor.createDebouncerWorkflow();
     DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig, { debugMode });
 

@@ -25,6 +25,8 @@ export {
   WorkflowStatus,
 } from './workflow';
 
+export { Debouncer, DebouncerClient } from './debouncer';
+
 export { StepConfig } from './step';
 
 export {
