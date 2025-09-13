@@ -82,6 +82,9 @@ export class Debouncer<Args extends unknown[], Return> {
   }
 
   async debounce(debounceKey: string, debouncePeriodMs: number, ...args: Args) {
+    if (debouncePeriodMs <= 0) {
+      throw Error(`debouncePeriodMs must be positive, not ${debouncePeriodMs}`);
+    }
     const cfg = { ...this.cfg };
     cfg.startWorkflowParams = this.cfg.startWorkflowParams ? { ...this.cfg.startWorkflowParams } : {};
     cfg.startWorkflowParams.workflowID = cfg.startWorkflowParams.workflowID ?? (await DBOS.randomUUID());
@@ -150,6 +153,9 @@ export class DebouncerClient {
   }
 
   async debounce(debounceKey: string, debouncePeriodMs: number, ...args: unknown[]) {
+    if (debouncePeriodMs <= 0) {
+      throw Error(`debouncePeriodMs must be positive, not ${debouncePeriodMs}`);
+    }
     const cfg = { ...this.cfg };
     cfg.startWorkflowParams = this.cfg.startWorkflowParams ? { ...this.cfg.startWorkflowParams } : {};
     cfg.startWorkflowParams.workflowID = cfg.startWorkflowParams.workflowID ?? String(randomUUID());
