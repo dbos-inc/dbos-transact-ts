@@ -290,6 +290,9 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
 
   #provider: TypeOrmTransactionHandler;
 
+  /**
+   * @deprecated - For readability, use `createFromConfig` or `createFromDataSource`
+   */
   constructor(
     readonly name: string,
     config?: PoolConfig,
