@@ -118,6 +118,7 @@ export interface SystemDatabase {
 
   // Queues
   clearQueueAssignment(workflowID: string): Promise<boolean>;
+  getDeduplicatedWorkflow(queueName: string, deduplicationID: string): Promise<string | null>;
 
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
@@ -1137,9 +1138,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
           `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
           [destinationID, topic, message],
         );
-        await client.query('COMMIT');
         return undefined;
       });
+      await client.query('COMMIT');
     } catch (error) {
       await client.query('ROLLBACK');
       const err: DatabaseError = error as DatabaseError;
@@ -1305,9 +1306,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
              RETURNING workflow_uuid;`,
           [workflowID, key, message],
         );
-        await client.query('COMMIT');
         return undefined;
       });
+      await client.query('COMMIT');
     } catch (e) {
       this.logger.error(e);
       await client.query(`ROLLBACK`);
@@ -1937,6 +1938,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
     // If no rows were affected, the workflow is not anymore in the queue or was already completed
     return (wqRes.rowCount ?? 0) > 0;
+  }
+
+  @dbRetry()
+  async getDeduplicatedWorkflow(queueName: string, deduplicationID: string): Promise<string | null> {
+    const { rows } = await this.pool.query<workflow_status>(
+      `SELECT workflow_uuid FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
+       WHERE queue_name = $1 AND deduplication_id = $2`,
+      [queueName, deduplicationID],
+    );
+
+    if (rows.length === 0) {
+      return null;
+    }
+
+    return rows[0].workflow_uuid;
   }
 
   async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]> {
