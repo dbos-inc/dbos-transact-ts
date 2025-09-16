@@ -2046,14 +2046,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
         for (const id of workflowIDs) {
           // If we have a rate limit, stop starting functions when the number
           //   of functions started this period exceeds the limit.
-          if (queue.rateLimit && numRecentQueries >= queue.rateLimit.limitPerPeriod) {
+          if (queue.rateLimit && claimedIDs.length + numRecentQueries >= queue.rateLimit.limitPerPeriod) {
             break;
           }
 
           // Start the functions by marking them as pending and updating their executor IDs
-          const res = await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
+          await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
             .where('workflow_uuid', id)
-            .andWhere('status', StatusString.ENQUEUED)
             .update({
               status: StatusString.PENDING,
               executor_id: executorID,
@@ -2063,13 +2062,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
                 'CASE WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms ELSE workflow_deadline_epoch_ms END',
               ),
             });
-
-          if (res > 0) {
-            claimedIDs.push(id);
-          }
-
-          // If we did not update this record, probably someone else did.  Count in either case.
-          ++numRecentQueries;
+          claimedIDs.push(id);
         }
       },
       { isolationLevel: 'repeatable read' },
