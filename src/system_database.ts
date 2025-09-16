@@ -2022,8 +2022,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
           .andWhere((b) => {
             b.whereNull('application_version').orWhere('application_version', appVersion);
           })
-          .forUpdate()
-          .noWait();
+          .forUpdate();
+        // Unless global concurrency is set, use skipLocked to only select
+        // rows that can be locked. If global concurrency is set, use noWait
+        // to ensure all processes have a consistent view of the table.
+        if (queue.concurrency) {
+          query = query.noWait();
+        } else {
+          query = query.skipLocked();
+        }
         if (queue.priorityEnabled) {
           query = query.orderBy('priority', 'asc').orderBy('created_at', 'asc');
         } else {
