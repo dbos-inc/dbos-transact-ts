@@ -16,7 +16,7 @@ class Greeting {
 }
 
 const config = { user: 'postgres', database: 'typeorm_ds_test_datasource' };
-const dataSource = new TypeOrmDataSource('app-db', config, [Greeting]);
+const dataSource = TypeOrmDataSource.createFromConfig('app-db', config, [Greeting]);
 
 interface transaction_completion {
   workflow_id: string;
@@ -347,7 +347,7 @@ async function createDatabases(createTxCompletions: boolean) {
 
 async function insertFunction(user: string) {
   type Result = Array<{ greet_count: number }>;
-  const rows = await TypeOrmDataSource.entityManager.sql<Result>`
+  const rows = await dataSource.entityManager.sql<Result>`
      INSERT INTO greetings(name, greet_count) VALUES(${user}, 1)
      ON CONFLICT(name) DO UPDATE SET greet_count = greetings.greet_count + 1
      RETURNING greet_count`;
