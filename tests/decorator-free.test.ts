@@ -1,4 +1,4 @@
-import { ConfiguredInstance, DBOS, DBOSClient, WorkflowQueue } from '../src/';
+import { ConfiguredInstance, DBOS, DBOSClient, WorkflowHandle, WorkflowQueue } from '../src/';
 import { DBOSConflictingRegistrationError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
@@ -38,6 +38,13 @@ function wfRegRetry(value: number) {
 const regWFRegStep = DBOS.registerWorkflow(wfRegStep, { name: 'wfRegStep' });
 const regWFRunStep = DBOS.registerWorkflow(wfRunStep, { name: 'wfRunStep' });
 const regWFRunRetry = DBOS.registerWorkflow(wfRegRetry);
+
+const wfReturningString = DBOS.registerWorkflow(async (x: string) => Promise.resolve(`${x}${x}`), {
+  name: 'wfReturningString',
+});
+const wfReturningHandle = DBOS.registerWorkflow(async (x: string) => await DBOS.startWorkflow(wfReturningString)(x), {
+  name: 'wfReturningHandle',
+});
 
 class TestClass extends ConfiguredInstance {
   @DBOS.workflow()
@@ -666,6 +673,16 @@ describe('unserializable-negative-tests', () => {
       ).rejects.toThrow(
         `Attempted to call 'getResult' at path wfDoesSomethingNasty3.<arguments>["0"] on an object that is a serialized function input our output value. Functions are not preserved through serialization.`,
       );
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('wf-returns-wfh', async () => {
+    await DBOS.launch();
+    try {
+      const wfh: WorkflowHandle<string> = await wfReturningHandle('hello');
+      await expect(wfh.getResult()).resolves.toBe('hellohello');
     } finally {
       await DBOS.shutdown();
     }

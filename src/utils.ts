@@ -1,17 +1,27 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import superjson from 'superjson';
-import type { SuperJSONResult } from 'superjson/dist/types';
+import type { SuperJSONResult, JSONValue } from 'superjson/dist/types';
+export { type JSONValue };
+
+export type SerializationRecipe<T, S extends JSONValue> = {
+  name: string;
+  isApplicable: (v: unknown) => v is T;
+  serialize: (v: T) => S;
+  deserialize: (s: S) => T;
+};
+
+export function registerSerializationRecipe<T, S extends JSONValue>(r: SerializationRecipe<T, S>) {
+  superjson.registerCustom(r, r.name);
+}
 
 // Register Buffer transformer for SuperJSON
-superjson.registerCustom<Buffer, number[]>(
-  {
-    isApplicable: (v): v is Buffer => Buffer.isBuffer(v),
-    serialize: (v) => Array.from(v),
-    deserialize: (v) => Buffer.from(v),
-  },
-  'Buffer',
-);
+registerSerializationRecipe<Buffer, number[]>({
+  isApplicable: (v): v is Buffer => Buffer.isBuffer(v),
+  serialize: (v) => Array.from(v),
+  deserialize: (v) => Buffer.from(v),
+  name: 'Buffer',
+});
 
 /*
  * A wrapper of readFileSync used for mocking in tests
