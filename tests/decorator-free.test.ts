@@ -625,6 +625,21 @@ const wfDoesSomethingNasty3 = DBOS.registerWorkflow(
   { name: 'wfDoesSomethingNasty3' },
 );
 
+class Frobnicator {
+  constructor(
+    readonly frobni: string,
+    readonly cator: string,
+  ) {}
+  frobnicate() {
+    return this.frobni + this.cator;
+  }
+}
+
+const frobnicateWorkflow = DBOS.registerWorkflow(
+  async (f: string, c: string) => Promise.resolve(new Frobnicator(f, c)),
+  { name: 'frobnicate' },
+);
+
 describe('unserializable-negative-tests', () => {
   test('nonserializable-step-return', async () => {
     await DBOS.launch();
@@ -636,7 +651,7 @@ describe('unserializable-negative-tests', () => {
           return await wfDoesSomethingNasty1();
         }),
       ).rejects.toThrow(
-        `Attempted to call 'getResult' at path step1.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization.`,
+        `Attempted to call 'getResult' at path step1.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
       );
     } finally {
       await DBOS.shutdown();
@@ -654,7 +669,7 @@ describe('unserializable-negative-tests', () => {
           (await wfDoesSomethingNasty2()).getResult();
         }),
       ).rejects.toThrow(
-        `Attempted to call 'getResult' at path wfDoesSomethingNasty2.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization.`,
+        `Attempted to call 'getResult' at path wfDoesSomethingNasty2.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
       );
     } finally {
       await DBOS.shutdown();
@@ -671,7 +686,7 @@ describe('unserializable-negative-tests', () => {
           await wfDoesSomethingNasty3({ getResult: () => 'TakeThis' });
         }),
       ).rejects.toThrow(
-        `Attempted to call 'getResult' at path wfDoesSomethingNasty3.<arguments>["0"] on an object that is a serialized function input our output value. Functions are not preserved through serialization.`,
+        `Attempted to call 'getResult' at path wfDoesSomethingNasty3.<arguments>["0"] on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
       );
     } finally {
       await DBOS.shutdown();
@@ -683,6 +698,34 @@ describe('unserializable-negative-tests', () => {
     try {
       const wfh: WorkflowHandle<string> = await wfReturningHandle('hello');
       await expect(wfh.getResult()).resolves.toBe('hellohello');
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('wf-returns-wfh', async () => {
+    await DBOS.launch();
+    try {
+      const wfh: WorkflowHandle<string> = await wfReturningHandle('hello');
+      await expect(wfh.getResult()).resolves.toBe('hellohello');
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('custom-serialize', async () => {
+    DBOS.registerSerialization<Frobnicator, { f: string; c: string }>({
+      name: 'mycompany.Frobnicator',
+      serialize: (f: Frobnicator) => {
+        return { f: f.frobni, c: f.cator };
+      },
+      deserialize: (fc: { f: string; c: string }) => new Frobnicator(fc.f, fc.c),
+      isApplicable: (v: unknown): v is Frobnicator => v instanceof Frobnicator,
+    });
+    await DBOS.launch();
+    try {
+      const f = await frobnicateWorkflow('a', 'b');
+      expect(f.frobnicate()).toBe('ab');
     } finally {
       await DBOS.shutdown();
     }

@@ -322,9 +322,7 @@ function attachFunctionStubs(original: AnyObject, deserialized: AnyObject, path:
 
     // Collect function keys from the original
     for (const key of collectFunctionKeys(o)) {
-      const hasInDeser = key in d;
-
-      if (!hasInDeser) {
+      if (!(key in d)) {
         defineThrowingStub(d, key, p);
       }
     }
@@ -377,7 +375,7 @@ function defineThrowingStub(target: AnyObject, key: string | symbol, path: PathT
       `Attempted to call '${String(
         key,
       )}' at path ${formatPath(path)} on an object that is a serialized function input our output value. ` +
-        `Functions are not preserved through serialization. `,
+        `Functions are not preserved through serialization; see 'DBOS.registerSerialization'. `,
     );
   };
 
