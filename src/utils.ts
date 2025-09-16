@@ -291,9 +291,11 @@ type PathToMember = Array<string | number | symbol>;
 type AnyObject = { [key: string | symbol]: unknown };
 
 /**
- * Roundtrips `value` and then attaches throwing stubs for any
- * functions present on the original (own props + prototype methods) that
- * aren’t present as functions on the deserialized.
+ * Roundtrips `value` through serialization.  This doesn't preserve functions by default.
+ *   So then, we recursively attach function stubs that throw clear errors, for any
+ *   functions present on the original (own props + prototype methods) that
+ *   aren’t present as functions on the deserialized object.
+ * The return is both the deserialized object and its serialized string.
  */
 export function serializeFunctionInputOutput<T>(
   value: T,
