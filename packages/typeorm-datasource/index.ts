@@ -38,16 +38,17 @@ interface transaction_completion {
 
 class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'TypeOrm';
-  #dataSourceField: DataSource | undefined;
+  #createdDataSource: DataSource | undefined;
 
   constructor(
     readonly name: string,
-    private readonly config: PoolConfig,
+    private readonly config?: PoolConfig,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-    private readonly entities: Function[],
+    private readonly entities?: Function[],
+    private readonly providedDataSource?: DataSource,
   ) {}
 
-  static async createInstance(
+  static async createDataSource(
     config: PoolConfig,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     entities: Function[],
@@ -69,14 +70,24 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     return ds;
   }
 
+  get dataSource(): DataSource {
+    const ds = this.providedDataSource ?? this.#createdDataSource;
+    if (!ds) {
+      throw new Error(`DataSource ${this.name} is not initialized.`);
+    }
+    return ds;
+  }
+
   async initialize(): Promise<void> {
-    const ds = this.#dataSourceField;
-    this.#dataSourceField = await TypeOrmTransactionHandler.createInstance(this.config, this.entities);
-    await ds?.destroy();
+    if (!this.providedDataSource) {
+      const ds = this.#createdDataSource;
+      this.#createdDataSource = await TypeOrmTransactionHandler.createDataSource(this.config!, this.entities!);
+      await ds?.destroy();
+    }
 
     let installed = false;
     try {
-      const res = await this.#dataSourceField.query<CheckSchemaInstallationReturn[]>(checkSchemaInstallationPG);
+      const res = await this.dataSource.query<CheckSchemaInstallationReturn[]>(checkSchemaInstallationPG);
       installed = !!res[0]?.schema_exists && !!res[0]?.table_exists;
     } catch (e) {
       throw new Error(
@@ -87,8 +98,8 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     // Install
     if (!installed) {
       try {
-        await this.#dataSourceField.query(createTransactionCompletionSchemaPG);
-        await this.#dataSourceField.query(createTransactionCompletionTablePG);
+        await this.dataSource.query(createTransactionCompletionSchemaPG);
+        await this.dataSource.query(createTransactionCompletionTablePG);
       } catch (err) {
         throw new Error(
           `In initialization of 'TypeOrmDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
@@ -99,16 +110,9 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async destroy(): Promise<void> {
-    const ds = this.#dataSourceField;
-    this.#dataSourceField = undefined;
+    const ds = this.#createdDataSource;
+    this.#createdDataSource = undefined;
     await ds?.destroy();
-  }
-
-  get #dataSource() {
-    if (!this.#dataSourceField) {
-      throw new Error(`DataSource ${this.name} is not initialized.`);
-    }
-    return this.#dataSourceField;
   }
 
   async #checkExecution(
@@ -116,7 +120,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     stepID: number,
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type TxOutputRow = Pick<transaction_completion, 'output' | 'error'>;
-    const rows = await this.#dataSource.query<TxOutputRow[]>(
+    const rows = await this.dataSource.query<TxOutputRow[]>(
       `SELECT output, error FROM dbos.transaction_completion
        WHERE workflow_id=$1 AND function_num=$2;`,
       [workflowID, stepID],
@@ -157,7 +161,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
 
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
-      await this.#dataSource.query(
+      await this.dataSource.query(
         `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error)
          VALUES ($1, $2, $3)`,
         [workflowID, stepID, error],
@@ -206,7 +210,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
       }
 
       try {
-        const result = await this.#dataSource.transaction(isolationLevel, async (entityManager: EntityManager) => {
+        const result = await this.dataSource.transaction(isolationLevel, async (entityManager: EntityManager) => {
           if (readOnly) {
             await entityManager.query('SET TRANSACTION READ ONLY');
           }
@@ -275,7 +279,7 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
   }
 
   static async initializeDBOSSchema(config: PoolConfig): Promise<void> {
-    const ds = await TypeOrmTransactionHandler.createInstance(config, []);
+    const ds = await TypeOrmTransactionHandler.createDataSource(config, []);
     try {
       await ds.query(createTransactionCompletionSchemaPG);
       await ds.query(createTransactionCompletionTablePG);
@@ -286,14 +290,40 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
 
   #provider: TypeOrmTransactionHandler;
 
+  /**
+   * @deprecated - For readability, use `createFromConfig` or `createFromDataSource`
+   */
   constructor(
     readonly name: string,
+    config?: PoolConfig,
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+    entities?: Function[],
+    dataSource?: DataSource,
+  ) {
+    if (config && entities) {
+      this.#provider = new TypeOrmTransactionHandler(name, config, entities, undefined);
+      registerDataSource(this.#provider);
+    } else if (dataSource) {
+      this.#provider = new TypeOrmTransactionHandler(name, undefined, undefined, dataSource);
+      registerDataSource(this.#provider);
+    } else {
+      throw new TypeError(
+        'TypeOrmDataSource must be provided with the underlying `DataSource` or with a configuration and entity list',
+      );
+    }
+  }
+
+  static createFromConfig(
+    name: string,
     config: PoolConfig,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     entities: Function[],
   ) {
-    this.#provider = new TypeOrmTransactionHandler(name, config, entities);
-    registerDataSource(this.#provider);
+    return new TypeOrmDataSource(name, config, entities);
+  }
+
+  static createFromDataSource(name: string, ds: DataSource) {
+    return new TypeOrmDataSource(name, undefined, undefined, ds);
   }
 
   /**

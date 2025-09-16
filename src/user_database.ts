@@ -10,44 +10,36 @@ import {
 import { IsolationLevel, TransactionConfig } from './transaction';
 import { ValuesOf } from './utils';
 import { Knex } from 'knex';
-import { GlobalLogger } from './telemetry/logs';
 import { getClientConfig } from './utils';
 
-export async function createDBIfDoesNotExist(databseUrl: string, logger: GlobalLogger) {
-  const url = new URL(databseUrl);
-  const database = url.pathname.slice(1);
-
-  const pgUserClient = new Client(getClientConfig(databseUrl));
+export async function ensureDbosTables(databaseUrl: string) {
+  const pgUserClient = new Client(getClientConfig(databaseUrl));
   try {
-    await pgUserClient.connect(); // Try to establish a connection
-    await pgUserClient.end();
-    return; // If successful, return
-  } catch (error) {
-    logger.info(`Database ${database} does not exist, creating...`);
-  }
+    await pgUserClient.connect();
 
-  // Craft a db string from the app db string, replacing the database name:
-  url.pathname = '/postgres';
-
-  const postgresClient = new Client(getClientConfig(url));
-  let connection_failed = true;
-  try {
-    await postgresClient.connect();
-    connection_failed = false;
-    await postgresClient.query(`CREATE DATABASE ${database}`);
-  } catch (e) {
-    if (e instanceof Error) {
-      if (connection_failed) {
-        logger.error(`Error connecting to database ${url.host}:${url.port} with user ${url.username}: ${e.message}`);
-      } else {
-        logger.error(`Error creating database ${database}: ${e.message}`);
-      }
-    } else {
-      logger.error(e);
+    // Create DBOS table/schema in user DB.
+    // Always check if the schema/table exists before creating it to avoid locks.
+    const schemaExists = await pgUserClient.query<ExistenceCheck>(schemaExistsQuery);
+    if (!schemaExists.rows[0].exists) {
+      await pgUserClient.query(createUserDBSchema);
     }
-    throw e;
+    const txnOutputTableExists = await pgUserClient.query<ExistenceCheck>(txnOutputTableExistsQuery);
+    if (!txnOutputTableExists.rows[0].exists) {
+      await pgUserClient.query(userDBSchema);
+    } else {
+      const columnExists = await pgUserClient.query<ExistenceCheck>(columnExistsQuery);
+
+      if (!columnExists.rows[0].exists) {
+        await pgUserClient.query(addColumnQuery);
+      }
+    }
+
+    const txnIndexExists = await pgUserClient.query<ExistenceCheck>(txnOutputIndexExistsQuery);
+    if (!txnIndexExists.rows[0].exists) {
+      await pgUserClient.query(userDBIndex);
+    }
   } finally {
-    await postgresClient.end();
+    await pgUserClient.end();
   }
 }
 

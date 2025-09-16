@@ -21,6 +21,8 @@ import {
   DBOSConflictingWorkflowError,
   DBOSQueueDuplicatedError,
   DBOSAwaitedWorkflowCancelledError,
+  QueueDedupIDDuplicated,
+  getDBOSErrorCode,
 } from '../src/error';
 
 const execFileAsync = promisify(execFile);
@@ -31,6 +33,7 @@ import {
   // DEBUG_TRIGGER_WORKFLOW_ENQUEUE,
   setDebugTrigger,
 } from '../src/debugpoint';
+import assert from 'node:assert';
 
 const queue = new WorkflowQueue('testQ');
 const serialqueue = new WorkflowQueue('serialQ', 1);
@@ -1391,5 +1394,51 @@ describe('queue-time-outs', () => {
     await expect(handle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
     });
+  });
+
+  const dedupRecoveryEvent = new Event();
+  const dedupRecoveryQueue = new WorkflowQueue('dedup-recovery-queue');
+  const dedupRecoveryKey = 'my-dedup-id';
+  const dedupRecoveryParentWorkflow = DBOS.registerWorkflow(
+    async () => {
+      const handle = await DBOS.startWorkflow(dedupRecoveryChildWorkflow, {
+        queueName: dedupRecoveryQueue.name,
+        enqueueOptions: { deduplicationID: dedupRecoveryKey },
+      })();
+      await assert.rejects(async () => {
+        await DBOS.startWorkflow(dedupRecoveryChildWorkflow, {
+          queueName: dedupRecoveryQueue.name,
+          enqueueOptions: { deduplicationID: dedupRecoveryKey },
+        })();
+      }, Error);
+      return handle.workflowID;
+    },
+    { name: 'dedupRecoveryParentWorkflow' },
+  );
+
+  const dedupRecoveryChildWorkflow = DBOS.registerWorkflow(
+    async () => {
+      await dedupRecoveryEvent.wait();
+    },
+    { name: 'dedupRecoveryChildWorkflow' },
+  );
+
+  test('dedup-recovery', async () => {
+    const handle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow)();
+    const childID = await handle.getResult();
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    assert.ok(steps !== undefined);
+    assert.equal(steps.length, 2);
+    // Instanceof is not preserved by serialization, so we must assert the error code
+    assert.ok(steps[1].error !== null);
+    assert.equal(getDBOSErrorCode(steps[1].error), QueueDedupIDDuplicated);
+    dedupRecoveryEvent.set();
+    const childHandle = DBOS.retrieveWorkflow(childID);
+    await childHandle.getResult();
+
+    // Verify it still works on recovery
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(handle.workflowID, StatusString.PENDING, true);
+    const recoveredHandle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow, { workflowID: handle.workflowID })();
+    await recoveredHandle.getResult();
   });
 });

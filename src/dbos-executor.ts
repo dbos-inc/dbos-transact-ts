@@ -14,6 +14,7 @@ import {
   DBOSAwaitedWorkflowCancelledError,
   DBOSInvalidWorkflowTransitionError,
   DBOSFailLoadOperationsError,
+  DBOSQueueDuplicatedError,
 } from './error';
 import {
   InvokedHandle,
@@ -53,7 +54,6 @@ import {
   DrizzleUserDatabase,
   type UserDatabaseClient,
   pgNodeIsKeyConflictError,
-  createDBIfDoesNotExist,
   UserDatabaseQuery,
 } from './user_database';
 import {
@@ -89,13 +89,20 @@ import {
 } from './context';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { deserializeError, ErrorObject, serializeError } from 'serialize-error';
-import { globalParams, DBOSJSON, sleepms, INTERNAL_QUEUE_NAME, serializeFunctionInputOutput } from './utils';
+import {
+  globalParams,
+  DBOSJSON,
+  sleepms,
+  serializeFunctionInputOutput,
+  INTERNAL_QUEUE_NAME,
+  DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME,
+} from './utils';
 import path from 'node:path';
 import fs from 'node:fs';
 import { pathToFileURL } from 'url';
 import { StoredProcedureConfig } from './procedure';
 import { NoticeMessage } from 'pg-protocol/dist/messages';
-import { GetWorkflowsInput, InitContext } from '.';
+import { DBOS, GetWorkflowsInput, InitContext } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
@@ -110,6 +117,8 @@ import {
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
 import { getClientConfig } from './utils';
+import { ensurePGDatabase, maskDatabaseUrl } from './database_utils';
+import { debouncerWorkflowFunction } from './debouncer';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -421,7 +430,15 @@ export class DBOSExecutor {
 
       if (this.config.userDbClient) {
         if (!this.#debugMode) {
-          await createDBIfDoesNotExist(this.config.databaseUrl, this.logger);
+          const res = await ensurePGDatabase({
+            urlToEnsure: this.config.databaseUrl,
+            logger: (msg: string) => this.logger.debug(msg),
+          });
+          if (res.status === 'failed') {
+            this.logger.warn(
+              `Application database could not be verified / created: ${maskDatabaseUrl(this.config.databaseUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
+            );
+          }
         }
         this.#configureDbClient();
 
@@ -433,10 +450,14 @@ export class DBOSExecutor {
         // Debug mode doesn't need to initialize the DBs. Everything should appear to be read-only.
         await this.#userDatabase.init(this.#debugMode);
       }
-      if (!this.#debugMode) {
-        await this.systemDatabase.init();
-      }
+
+      // Debug mode doesn't initialize the sys db
+      await this.systemDatabase.init(this.#debugMode);
     } catch (err) {
+      if (err instanceof DBOSInitializationError) {
+        throw err;
+      }
+      this.logger.error(err);
       let message = 'Failed to initialize workflow executor: ';
       if (err instanceof AggregateError) {
         for (const error of err.errors as Error[]) {
@@ -475,6 +496,7 @@ export class DBOSExecutor {
         globalParams.wasComputed = true;
       }
       this.logger.info(`Initializing DBOS (v${globalParams.dbosVersion})`);
+      this.logger.info(`System Database URL: ${maskDatabaseUrl(this.config.systemDatabaseUrl)}`);
       this.logger.info(`Executor ID: ${this.executorID}`);
       this.logger.info(`Application version: ${globalParams.appVersion}`);
 
@@ -688,10 +710,27 @@ export class DBOSExecutor {
       if (callerFunctionID !== undefined && callerID !== undefined) {
         const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
         if (result) {
+          if (result.error) {
+            throw deserializeError(DBOSJSON.parse(result.error));
+          }
           return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
         }
       }
-      const ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
+      let ires;
+      try {
+        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
+      } catch (e) {
+        if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
+          await this.systemDatabase.recordOperationResult(
+            callerID,
+            callerFunctionID,
+            internalStatus.workflowName,
+            true,
+            { error: DBOSJSON.stringify(serializeError(e)) },
+          );
+        }
+        throw e;
+      }
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
         await this.systemDatabase.recordOperationResult(callerID, callerFunctionID, internalStatus.workflowName, true, {
@@ -2094,5 +2133,16 @@ export class DBOSExecutor {
       return;
     }
     DBOSExecutor.internalQueue = new WorkflowQueue(INTERNAL_QUEUE_NAME, {});
+  }
+
+  static debouncerWorkflow: UntypedAsyncFunction | undefined = undefined;
+
+  static createDebouncerWorkflow() {
+    if (DBOSExecutor.debouncerWorkflow !== undefined) {
+      return;
+    }
+    DBOSExecutor.debouncerWorkflow = DBOS.registerWorkflow(debouncerWorkflowFunction, {
+      name: DEBOUNCER_WORKLOW_NAME,
+    }) as UntypedAsyncFunction;
   }
 }

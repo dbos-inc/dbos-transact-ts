@@ -25,6 +25,8 @@ export {
   WorkflowStatus,
 } from './workflow';
 
+export { Debouncer, DebouncerClient } from './debouncer';
+
 export { StepConfig } from './step';
 
 export {
@@ -59,7 +61,11 @@ export {
   requestArgValidation,
 } from './paramdecorators';
 
-export { readConfigFile, getDatabaseUrl } from './dbos-runtime/config';
+export {
+  readConfigFile,
+  getApplicationDatabaseUrl,
+  getApplicationDatabaseUrl as getDatabaseUrl,
+} from './dbos-runtime/config';
 
 export {
   DBOSConfig,

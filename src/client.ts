@@ -26,7 +26,7 @@ import {
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
 import { PGNodeUserDatabase, type UserDatabase } from './user_database';
-import { getSystemDatabaseUrl } from './dbos-runtime/config';
+import { getSysDatabaseUrlFromUserDb } from './dbos-runtime/config';
 import assert from 'node:assert';
 import { DBOSExecutor } from './dbos-executor';
 import { DBOSAwaitedWorkflowCancelledError } from './error';
@@ -127,7 +127,7 @@ export class DBOSClient {
   private constructor(databaseUrl: string | undefined, systemDatabaseUrl: string | undefined) {
     if (!systemDatabaseUrl) {
       assert(databaseUrl, 'At least one of databaseUrl or systemDatabaseUrl must be provided');
-      systemDatabaseUrl = getSystemDatabaseUrl(databaseUrl);
+      systemDatabaseUrl = getSysDatabaseUrlFromUserDb(databaseUrl);
     }
 
     this.logger = new GlobalLogger();
@@ -150,8 +150,7 @@ export class DBOSClient {
     systemDatabaseUrl?: string;
   }): Promise<DBOSClient> {
     const client = new DBOSClient(databaseUrl, systemDatabaseUrl);
-    await client.systemDatabase.init();
-    return client;
+    return Promise.resolve(client);
   }
 
   /**

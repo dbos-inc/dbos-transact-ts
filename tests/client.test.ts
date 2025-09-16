@@ -94,10 +94,10 @@ describe('DBOSClient', () => {
   });
 
   test('enqueue-timeout-simple', async () => {
+    await DBOS.launch(); // Before client create as it will create sysdb
+
     const client = await DBOSClient.create({ databaseUrl });
     const wfid = randomUUID();
-
-    await DBOS.launch();
 
     try {
       const handle = await client.enqueue<typeof ClientTest.blockingWorkflow>({
@@ -117,10 +117,10 @@ describe('DBOSClient', () => {
   });
 
   test('enqueue-timeout-direct-parent', async () => {
+    await DBOS.launch(); // Before client create as it will create sysdb
+
     const client = await DBOSClient.create({ databaseUrl });
     const wfid = randomUUID();
-
-    await DBOS.launch();
 
     try {
       const handle = await client.enqueue<typeof ClientTest.blockingParentDirect>({
@@ -147,10 +147,10 @@ describe('DBOSClient', () => {
   });
 
   test('enqueue-timeout-startwf-parent', async () => {
+    await DBOS.launch(); // Before client create as it will create sysdb
+
     const client = await DBOSClient.create({ databaseUrl });
     const wfid = randomUUID();
-
-    await DBOS.launch();
 
     try {
       const handle = await client.enqueue<typeof ClientTest.blockingParentStart>({
@@ -239,10 +239,10 @@ describe('DBOSClient', () => {
   }, 20000);
 
   test('DBOSClient-enqueue-appVer-notSet', async () => {
+    await DBOS.launch(); // Before client create as it will create sysdb
+
     const client = await DBOSClient.create({ databaseUrl });
     const wfid = `client-enqueue-${Date.now()}`;
-
-    await DBOS.launch();
 
     try {
       await client.enqueue<EnqueueTest>(
@@ -281,9 +281,10 @@ describe('DBOSClient', () => {
   }, 20000);
 
   test('DBOSClient-enqueue-and-get-result', async () => {
+    await DBOS.launch(); // Before client create as it will create sysdb
+
     const client = await DBOSClient.create({ databaseUrl });
 
-    await DBOS.launch();
     const version = globalParams.appVersion;
 
     let wfid: string;
@@ -328,9 +329,9 @@ describe('DBOSClient', () => {
   }, 20000);
 
   test('DBOSClient-enqueue-dedupid', async () => {
-    const client = await DBOSClient.create({ databaseUrl });
+    await DBOS.launch(); // Before client create as it will create sysdb
 
-    await DBOS.launch();
+    const client = await DBOSClient.create({ databaseUrl });
 
     try {
       const handle = await client.enqueue<EnqueueTest>(
@@ -371,9 +372,9 @@ describe('DBOSClient', () => {
   }, 20000);
 
   test('DBOSClient-enqueue-priority', async () => {
-    const client = await DBOSClient.create({ databaseUrl });
+    await DBOS.launch(); // Before client create as it will create sysdb
 
-    await DBOS.launch();
+    const client = await DBOSClient.create({ databaseUrl });
 
     type PriorityTest = typeof ClientTest.priorityTest;
 
@@ -422,10 +423,10 @@ describe('DBOSClient', () => {
   }, 30000);
 
   test('DBOSClient-enqueue-appVer-set', async () => {
+    await DBOS.launch(); // Before client create as it will create sysdb
+
     const client = await DBOSClient.create({ databaseUrl });
     const wfid = `client-enqueue-${Date.now()}`;
-
-    await DBOS.launch();
 
     try {
       await client.enqueue<EnqueueTest>(
