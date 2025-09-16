@@ -1973,7 +1973,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             .first())!.count;
           numRecentQueries = parseInt(`${numRecentQueriesS}`);
           if (numRecentQueries >= queue.rateLimit.limitPerPeriod) {
-            return [];
+            return;
           }
         }
 
@@ -2012,6 +2012,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
             const availableTasks = Math.max(0, queue.concurrency - totalRunningTasks);
             maxTasks = Math.min(maxTasks, availableTasks);
           }
+        }
+
+        // Return immediately if there are no available tasks due to flow control limits
+        if (maxTasks <= 0) {
+          return;
         }
 
         // Retrieve the first max_tasks workflows in the queue.
