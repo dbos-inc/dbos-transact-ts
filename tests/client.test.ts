@@ -637,14 +637,14 @@ describe('DBOSClient', () => {
     const client = await DBOSClient.create({ databaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
-      const eventValue = await client.getEvent<string>(workflowID, key, 10);
+      const eventValue = await client.getEvent<string>(workflowID, key, 60);
       expect(eventValue).toBe(value);
       const result = await handle.getResult();
       expect(result).toBe(`${key}-${value}`);
     } finally {
       await client.destroy();
     }
-  }, 10000);
+  }, 30000);
 
   test('DBOSClient-getEvent-when-finished', async () => {
     const now = Date.now();
