@@ -104,9 +104,6 @@ export const DBOS_QUEUE_MAX_PRIORITY = 2 ** 31 - 1; // 2,147,483,647
 export interface DBOSConfig {
   name?: string;
 
-  databaseUrl?: string;
-  userDatabasePoolSize?: number;
-
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
 
@@ -129,9 +126,6 @@ export interface DBOSRuntimeConfig {
 
 export type DBOSConfigInternal = {
   name?: string;
-
-  databaseUrl: string;
-  userDbPoolSize?: number;
 
   systemDatabaseUrl: string;
   sysDbPoolSize?: number;

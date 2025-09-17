@@ -1,32 +1,9 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
-import { ensurePGDatabase, maskDatabaseUrl } from '../database_utils';
 
-export async function migrate(
-  migrationCommands: string[],
-  databaseUrl: string,
-  systemDatabaseUrl: string,
-  logger: GlobalLogger,
-) {
-  const url = new URL(databaseUrl);
-  const database = url.pathname.slice(1);
-
+export async function migrate(migrationCommands: string[], systemDatabaseUrl: string, logger: GlobalLogger) {
   let status = 0;
-
-  if (databaseUrl) {
-    logger.info(`Starting migration: creating database ${database} if it does not exist`);
-
-    const res = await ensurePGDatabase({
-      urlToEnsure: databaseUrl,
-      logger: (msg: string) => logger.debug(msg),
-    });
-    if (res.status === 'failed') {
-      logger.warn(
-        `Application database could not be verified or created: ${maskDatabaseUrl(databaseUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
-      );
-    }
-  }
 
   try {
     migrationCommands?.forEach((cmd) => {

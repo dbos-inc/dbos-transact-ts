@@ -230,7 +230,6 @@ workflowCommands
       };
       const urls = getDatabaseURLs(options.sysDbUrl);
       const client = await DBOSClient.create({
-        databaseUrl: urls.applicationDatabaseURL,
         systemDatabaseUrl: urls.systemDatabaseURL,
       });
       try {
@@ -250,7 +249,6 @@ workflowCommands
   .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
     const client = await DBOSClient.create({
-      databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
     try {
@@ -269,7 +267,6 @@ workflowCommands
   .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
     const client = await DBOSClient.create({
-      databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
     try {
@@ -288,7 +285,6 @@ workflowCommands
   .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
     const client = await DBOSClient.create({
-      databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
     try {
@@ -306,7 +302,6 @@ workflowCommands
   .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
     const urls = getDatabaseURLs(options.sysDbUrl);
     const client = await DBOSClient.create({
-      databaseUrl: urls.applicationDatabaseURL,
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
     try {
@@ -331,7 +326,6 @@ workflowCommands
     ) => {
       const urls = getDatabaseURLs(options.sysDbUrl);
       const client = await DBOSClient.create({
-        databaseUrl: urls.applicationDatabaseURL,
         systemDatabaseUrl: urls.systemDatabaseURL,
       });
       try {
@@ -385,7 +379,6 @@ queueCommands
       };
       const urls = getDatabaseURLs(options.sysDbUrl);
       const client = await DBOSClient.create({
-        databaseUrl: urls.applicationDatabaseURL,
         systemDatabaseUrl: urls.systemDatabaseURL,
       });
       try {
@@ -410,22 +403,19 @@ if (!process.argv.slice(2).length) {
 }
 
 function getDatabaseURLs(systemDatabaseURL: string | undefined): {
-  applicationDatabaseURL?: string;
   systemDatabaseURL: string;
 } {
   if (process.env.DBOS__CLOUD === 'true') {
     return {
-      applicationDatabaseURL: process.env.DBOS_DATABASE_URL!,
       systemDatabaseURL: process.env.DBOS_SYSTEM_DATABASE_URL!,
     };
   }
   if (systemDatabaseURL) {
-    return { applicationDatabaseURL: undefined, systemDatabaseURL: systemDatabaseURL };
+    return { systemDatabaseURL: systemDatabaseURL };
   }
   if (existsSync(dbosConfigFilePath)) {
     const config = readConfigFile();
     return {
-      applicationDatabaseURL: config.database_url,
       systemDatabaseURL: getSystemDatabaseUrl(config),
     };
   } else {
@@ -440,12 +430,7 @@ function getDatabaseURLs(systemDatabaseURL: string | undefined): {
 export async function runAndLog(
   migrationCommands: string[],
   config: DBOSConfigInternal,
-  action: (
-    migrationCommands: string[],
-    databaseUrl: string,
-    systemDatabaseUrl: string,
-    logger: GlobalLogger,
-  ) => Promise<number> | number,
+  action: (migrationCommands: string[], systemDatabaseUrl: string, logger: GlobalLogger) => Promise<number> | number,
 ) {
   let logger = new GlobalLogger();
   let terminate = undefined;
@@ -471,7 +456,7 @@ export async function runAndLog(
   }
   let returnCode = 1;
   try {
-    returnCode = await action(migrationCommands, config.databaseUrl, config.systemDatabaseUrl, logger);
+    returnCode = await action(migrationCommands, config.systemDatabaseUrl, logger);
   } catch (e) {
     logger.error(e);
   }

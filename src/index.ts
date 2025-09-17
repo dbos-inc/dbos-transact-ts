@@ -58,12 +58,6 @@ export {
 } from './paramdecorators';
 
 export {
-  readConfigFile,
-  getApplicationDatabaseUrl,
-  getApplicationDatabaseUrl as getDatabaseUrl,
-} from './dbos-runtime/config';
-
-export {
   DBOSConfig,
   DBOSRuntimeConfig,
   DBOSExternalState,

@@ -4,7 +4,7 @@ import { sleepms } from '../src/utils';
 import { getSysDatabaseUrlFromUserDb, translateDbosConfig } from '../src/dbos-runtime/config';
 import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
-import { dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
+import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
 
 /* DB management helpers */
 export function generateDBOSTestConfig(): DBOSConfig {
@@ -19,7 +19,6 @@ export function generateDBOSTestConfig(): DBOSConfig {
 
   return {
     name: 'dbostest',
-    databaseUrl,
     systemDatabaseUrl,
   };
 }
@@ -28,16 +27,6 @@ export async function setUpDBOSTestDb(config: DBOSConfig) {
   config.name ??= 'dbostest';
   const internalConfig = translateDbosConfig(config);
 
-  if (internalConfig.databaseUrl) {
-    const r = await dropPGDatabase({ urlToDrop: internalConfig.databaseUrl, logger: () => {} });
-    if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
-      throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.databaseUrl)}`);
-    }
-    const rc = await ensurePGDatabase({ urlToEnsure: internalConfig.databaseUrl, logger: () => {} });
-    if (rc.status !== 'already_exists' && rc.status !== 'created') {
-      throw new Error(`Unable to create ${maskDatabaseUrl(internalConfig.databaseUrl)}`);
-    }
-  }
   const r = await dropPGDatabase({ urlToDrop: internalConfig.systemDatabaseUrl, logger: () => {} });
   if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
     throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.systemDatabaseUrl)}`);

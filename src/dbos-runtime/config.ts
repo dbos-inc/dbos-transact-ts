@@ -15,7 +15,6 @@ const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
 export interface ConfigFile {
   name?: string;
   language?: string;
-  database_url?: string;
   system_database_url?: string;
   database?: {
     migrate?: string[];
@@ -107,25 +106,6 @@ export function getSysDatabaseUrlFromUserDb(userDB: string) {
   return url.toString();
 }
 
-export function getSystemDatabaseUrl(
-  configOrFile: Pick<ConfigFile, 'name' | 'database_url' | 'system_database_url'>,
-): string {
-  if (configOrFile.system_database_url) {
-    const url = new URL(configOrFile.system_database_url);
-    const sysDbName = url.pathname.slice(1);
-    if (!isValidDatabaseName(sysDbName)) {
-      throw new Error(
-        `Database name "${sysDbName}" in system_database_url ${maskDatabaseUrl(configOrFile.system_database_url)} is invalid`,
-      );
-    }
-    return configOrFile.system_database_url;
-  }
-
-  // CB TODO: This code path is awful...
-  const databaseUrl = getApplicationDatabaseUrl(configOrFile);
-  return getSysDatabaseUrlFromUserDb(databaseUrl);
-}
-
 export function isValidDatabaseName(dbName: string): boolean {
   if (dbName.length < 1 || dbName.length > 63) {
     return false;
@@ -145,8 +125,8 @@ export function isReasonableDatabaseName(dbName: string): boolean {
   return validator.matches(dbName, '^[a-z0-9_]+$');
 }
 
-export function getApplicationDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'database_url'>): string {
-  const databaseUrl = configFile.database_url || defaultDatabaseUrl(configFile.name);
+export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'system_database_url'>): string {
+  const databaseUrl = configFile.system_database_url || defaultDatabaseUrl(configFile.name);
 
   const url = new URL(databaseUrl);
   const dbName = url.pathname.slice(1);
@@ -218,7 +198,6 @@ export function getDbosConfig(
   return translateDbosConfig(
     {
       name: config.name,
-      databaseUrl: config.database_url,
       systemDatabaseUrl: config.system_database_url,
       logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
       addContextMetadata: config.telemetry?.logs?.addContextMetadata,
@@ -236,17 +215,13 @@ function toArray(endpoint: string | string[] | undefined): Array<string> {
 }
 
 export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
-  const databaseUrl = getApplicationDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
   const systemDatabaseUrl = getSystemDatabaseUrl({
-    database_url: options.databaseUrl,
     system_database_url: options.systemDatabaseUrl,
     name: options.name,
   });
 
   return {
     name: options.name,
-    databaseUrl,
-    userDbPoolSize: options.userDatabasePoolSize,
     systemDatabaseUrl,
     sysDbPoolSize: options.systemDatabasePoolSize,
     telemetry: {
@@ -291,13 +266,8 @@ export function overwriteConfigForDBOSCloud(
   // 3. OTLP traces endpoints (add the config data to the provided config)
   // 4. Force admin_port and runAdminServer
 
-  const databaseUrl = process.env.DBOS_DATABASE_URL;
-  assert(databaseUrl, 'DBOS_DATABASE_URL must be set in DBOS Cloud environment');
-
-  let systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
-  if (!systemDatabaseUrl) {
-    systemDatabaseUrl = getSysDatabaseUrlFromUserDb(databaseUrl);
-  }
+  const systemDatabaseUrl = process.env.DBOS_SYSTEM_DATABASE_URL;
+  assert(systemDatabaseUrl, 'DBOS_SYSTEM_DATABASE_URL must be set in DBOS Cloud environment');
 
   const appName = configFile.name ?? providedDBOSConfig.name;
 
@@ -324,7 +294,6 @@ export function overwriteConfigForDBOSCloud(
   const overwritenDBOSConfig: DBOSConfigInternal = {
     ...providedDBOSConfig,
     name: appName,
-    databaseUrl,
     systemDatabaseUrl,
     telemetry: {
       logs: {

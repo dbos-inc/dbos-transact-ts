@@ -12,8 +12,8 @@ describe('dbos-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    expect(config.databaseUrl).toBeDefined();
-    const url = new URL(config.databaseUrl!);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const url = new URL(config.systemDatabaseUrl!);
     username = url.username;
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);

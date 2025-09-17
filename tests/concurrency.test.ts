@@ -6,7 +6,7 @@ import { KnexDataSource } from '../packages/knex-datasource';
 import { StepInfo } from '../src/workflow';
 
 const config = generateDBOSTestConfig();
-const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest' } };
+const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest_dbos_sys' } };
 const knexds = new KnexDataSource('app-db', dbConfig);
 
 const simpleWF = DBOS.registerWorkflow(
