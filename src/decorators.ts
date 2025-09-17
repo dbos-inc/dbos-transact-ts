@@ -1,5 +1,3 @@
-import 'reflect-metadata';
-
 import { WorkflowConfig } from './workflow';
 import { StepConfig } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
@@ -229,36 +227,10 @@ export interface ArgDataType {
 }
 
 export class MethodParameter {
-  name: string = '';
-  index: number = -1;
-
-  externalRegInfo: Map<AnyConstructor | object | string, object> = new Map();
-
-  getRegisteredInfo(reg: AnyConstructor | object | string) {
-    if (!this.externalRegInfo.has(reg)) {
-      this.externalRegInfo.set(reg, {});
-    }
-    return this.externalRegInfo.get(reg)!;
-  }
-
-  get dataType() {
-    return (this.getRegisteredInfo('type') as ArgDataType).dataType;
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  initializeBaseType(at?: Function) {
-    if (!this.externalRegInfo.has('type')) {
-      this.externalRegInfo.set('type', {});
-    }
-    const adt = this.externalRegInfo.get('type') as ArgDataType;
-    adt.dataType = DBOSDataType.fromArg(at);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  constructor(idx: number, at?: Function) {
-    this.index = idx;
-    this.initializeBaseType(at);
-  }
+  constructor(
+    readonly idx: number,
+    readonly name: string,
+  ) {}
 }
 
 export const DBOS_AUTH = 'auth';
@@ -611,52 +583,6 @@ export function getRegisteredFunctionsByClassname(target: string): ReadonlyArray
   return registeredOperations;
 }
 
-const methodArgsByFunction: Map<unknown, MethodParameter[]> = new Map();
-
-export function getOrCreateMethodArgsRegistration(
-  target: object | undefined,
-  funcName: PropertyKey,
-  origFunc?: (...args: unknown[]) => unknown,
-): MethodParameter[] {
-  let regtarget = target;
-  if (regtarget && typeof regtarget !== 'function') {
-    regtarget = regtarget.constructor;
-  }
-
-  if (!origFunc) {
-    origFunc = Object.getOwnPropertyDescriptor(target, funcName)!.value as UntypedAsyncFunction;
-  }
-
-  let mParameters: MethodParameter[] | undefined = methodArgsByFunction.get(origFunc);
-
-  if (mParameters === undefined) {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-    let designParamTypes: Function[] | undefined = undefined;
-    if (target) {
-      designParamTypes = Reflect.getMetadata('design:paramtypes', target, funcName as string | symbol) as  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-        | Function[]
-        | undefined;
-    }
-    if (designParamTypes) {
-      mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
-    } else {
-      if (origFunc) {
-        const argnames = getArgNames(origFunc);
-        mParameters = argnames.map((_value, index) => new MethodParameter(index));
-      } else {
-        const descriptor = Object.getOwnPropertyDescriptor(target, funcName);
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-        const argnames = getArgNames(descriptor?.value as Function);
-        mParameters = argnames.map((_value, index) => new MethodParameter(index));
-      }
-    }
-
-    methodArgsByFunction.set(origFunc, mParameters);
-  }
-
-  return mParameters;
-}
-
 function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   target: object | undefined,
   className: string | undefined,
@@ -685,17 +611,8 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
     methReg.className = classReg.name;
     methReg.defaults = classReg;
 
-    methReg.args = getOrCreateMethodArgsRegistration(target, propertyKey, func as UntypedAsyncFunction);
-
     const argNames = getArgNames(func);
-
-    methReg.args.forEach((e) => {
-      if (!e.name) {
-        if (e.index < argNames.length) {
-          e.name = argNames[e.index];
-        }
-      }
-    });
+    methReg.args = argNames.map((val, idx) => new MethodParameter(idx, val));
 
     const wrappedMethod = async function (this: This, ...rawArgs: Args) {
       let validatedArgs = rawArgs;
