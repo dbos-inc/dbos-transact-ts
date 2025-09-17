@@ -14,8 +14,6 @@ export { DBOSResponseError, DBOSWorkflowConflictError } from './error';
 
 export { TransactionConfig } from './transaction';
 
-export { StoredProcedureConfig } from './procedure';
-
 export {
   WorkflowConfig,
   WorkflowHandle,

@@ -294,7 +294,6 @@ export interface MethodRegistrationBase {
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   stepConfig?: StepConfig;
-  procConfig?: TransactionConfig;
   isInstance: boolean;
 
   // This is for any class or object to keep stuff associated with a class
@@ -343,7 +342,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   workflowConfig?: WorkflowConfig;
   txnConfig?: TransactionConfig;
   stepConfig?: StepConfig;
-  procConfig?: TransactionConfig;
   regLocation?: string[];
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
@@ -354,11 +352,10 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
     return this.externalRegInfo.get(reg)!;
   }
 
-  getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | 'Procedure' | undefined {
+  getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | undefined {
     if (this.txnConfig) return 'Transaction';
     if (this.workflowConfig) return 'Workflow';
     if (this.stepConfig) return 'Step';
-    if (this.procConfig) return 'Procedure';
     return undefined;
   }
 
@@ -388,11 +385,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   setStepConfig(stepCfg: StepConfig): void {
     this.checkFuncTypeUnassigned('Step');
     this.stepConfig = stepCfg;
-  }
-
-  setProcConfig(procCfg: TransactionConfig): void {
-    this.checkFuncTypeUnassigned('Procedure');
-    this.procConfig = procCfg;
   }
 
   setWorkflowConfig(wfCfg: WorkflowConfig): void {

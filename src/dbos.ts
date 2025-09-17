@@ -89,7 +89,6 @@ import { Knex } from 'knex';
 import { StepConfig } from './step';
 import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
 import { ConfiguredInstance } from '.';
-import { StoredProcedureConfig } from './procedure';
 import { APITypes } from './httpServer/handlerTypes';
 import { HandlerRegistrationBase } from './httpServer/handler';
 import { Conductor } from './conductor/conductor';
@@ -570,11 +569,6 @@ export class DBOS {
     return getCurrentContextStore()?.curTxFunctionId !== undefined;
   }
 
-  /** @returns true if called from within a stored procedure, false otherwise */
-  static isInStoredProc(): boolean {
-    return getCurrentContextStore()?.isInStoredProc ?? false;
-  }
-
   /** @returns true if called from within a step, false otherwise */
   static isInStep(): boolean {
     return getCurrentContextStore()?.curStepFunctionId !== undefined;
@@ -594,7 +588,7 @@ export class DBOS {
    *  a step, transaction, or procedure, or false otherwise
    */
   static isInWorkflow(): boolean {
-    return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep() && !DBOS.isInStoredProc();
+    return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
   }
 
   // sql session (various forms)
@@ -621,7 +615,7 @@ export class DBOS {
    * @deprecated - use data source packages such as `@dbos-inc/node-pg-datasource`
    */
   static get pgClient(): PoolClient {
-    if (!DBOS.isInStoredProc() && DBOS.#userDbClient !== UserDatabaseName.PGNODE) {
+    if (DBOS.#userDbClient !== UserDatabaseName.PGNODE) {
       throw new DBOSInvalidWorkflowTransitionError(
         `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.#userDbClient}'`,
       );
@@ -635,9 +629,6 @@ export class DBOS {
    * @deprecated - use `@dbos-inc/knex-datasource` package
    */
   static get knexClient(): Knex {
-    if (DBOS.isInStoredProc()) {
-      throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.knexClient' from within a stored procedure`);
-    }
     if (DBOS.#userDbClient !== UserDatabaseName.KNEX) {
       throw new DBOSInvalidWorkflowTransitionError(
         `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.#userDbClient}'`,
@@ -652,9 +643,6 @@ export class DBOS {
    * @deprecated - use `@dbos-inc/prisma-datasource` package
    */
   static get prismaClient(): PrismaClient {
-    if (DBOS.isInStoredProc()) {
-      throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.prismaClient' from within a stored procedure`);
-    }
     if (DBOS.#userDbClient !== UserDatabaseName.PRISMA) {
       throw new DBOSInvalidWorkflowTransitionError(
         `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.#userDbClient}'`,
@@ -669,9 +657,6 @@ export class DBOS {
    * @deprecated - use `@dbos-inc/typeorm-datasource` package
    */
   static get typeORMClient(): TypeORMEntityManager {
-    if (DBOS.isInStoredProc()) {
-      throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.typeORMClient' from within a stored procedure`);
-    }
     if (DBOS.#userDbClient !== UserDatabaseName.TYPEORM) {
       throw new DBOSInvalidWorkflowTransitionError(
         `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#userDbClient}'`,
@@ -686,9 +671,6 @@ export class DBOS {
    * @deprecated - use `@dbos-inc/drizzle-datasource` package
    */
   static get drizzleClient(): DrizzleClient {
-    if (DBOS.isInStoredProc()) {
-      throw new DBOSInvalidWorkflowTransitionError(`Requested 'DBOS.drizzleClient' from within a stored procedure`);
-    }
     if (DBOS.#userDbClient !== UserDatabaseName.DRIZZLE) {
       throw new DBOSInvalidWorkflowTransitionError(
         `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.#userDbClient}'`,
@@ -1715,65 +1697,6 @@ export class DBOS {
 
       return descriptor;
     }
-    return decorator;
-  }
-
-  /**
-   * Decorator designating a method as a DBOS stored procedure.
-   *   Within the procedure, `DBOS.sqlClient` is available for database operations.
-   *   A durable execution checkpoint will be applied to to the underlying database transaction
-   * @param config - Configuration information for the stored procedure, particularly its execution mode
-   */
-  static storedProcedure(config: StoredProcedureConfig = {}) {
-    function decorator<This, Args extends unknown[], Return>(
-      target: object,
-      propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-    ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
-        target,
-        propertyKey,
-        inDescriptor,
-      );
-      registration.setProcConfig(config);
-
-      const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-        ensureDBOSIsLaunched('stored procedures');
-        if (typeof this !== 'function') {
-          throw new Error('Stored procedures must be static');
-        }
-
-        if (DBOS.isWithinWorkflow()) {
-          return await DBOSExecutor.globalInstance!.callProcedureFunction(
-            registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
-            ...rawArgs,
-          );
-        }
-
-        const wfId = getNextWFID(undefined);
-
-        const wfParams: WorkflowParams = {
-          workflowUUID: wfId,
-        };
-
-        return await DBOS.#executor.runProcedureTempWF(
-          registration.registeredFunction as (...args: Args) => Promise<Return>,
-          wfParams,
-          ...rawArgs,
-        );
-      };
-
-      descriptor.value = invokeWrapper;
-      registration.wrappedFunction = invokeWrapper;
-      registerFunctionWrapper(invokeWrapper, registration);
-
-      Object.defineProperty(invokeWrapper, 'name', {
-        value: registration.name,
-      });
-
-      return descriptor;
-    }
-
     return decorator;
   }
 

@@ -12,7 +12,6 @@ import {
   DBOSUnexpectedStepError,
   DBOSInvalidQueuePriorityError,
   DBOSAwaitedWorkflowCancelledError,
-  DBOSInvalidWorkflowTransitionError,
   DBOSFailLoadOperationsError,
   DBOSQueueDuplicatedError,
 } from './error';
@@ -29,14 +28,14 @@ import {
   DEFAULT_MAX_RECOVERY_ATTEMPTS,
 } from './workflow';
 
-import { IsolationLevel, type TransactionConfig } from './transaction';
+import { IsolationLevel } from './transaction';
 import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import type { TelemetryConfig } from './telemetry';
-import { Pool, type PoolClient, type PoolConfig, type QueryResultRow } from 'pg';
+import { Pool, type PoolConfig } from 'pg';
 import {
   type SystemDatabase,
   PostgresSystemDatabase,
@@ -53,12 +52,10 @@ import {
   KnexUserDatabase,
   DrizzleUserDatabase,
   type UserDatabaseClient,
-  pgNodeIsKeyConflictError,
   UserDatabaseQuery,
 } from './user_database';
 import {
   MethodRegistration,
-  getRegisteredFunctionFullName,
   getRegisteredFunctionClassName,
   getRegisteredFunctionName,
   getConfiguredInstance,
@@ -72,7 +69,6 @@ import {
   getFunctionRegistrationByName,
   getAllRegisteredFunctions,
   getFunctionRegistration,
-  MethodRegistrationBase,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import { context, SpanStatusCode, trace } from '@opentelemetry/api';
@@ -83,7 +79,6 @@ import {
   functionIDGetIncrement,
   runWithParentContext,
   getCurrentContextStore,
-  isInWorkflowCtx,
   DBOSLocalCtx,
   runWithTopContext,
 } from './context';
@@ -99,8 +94,6 @@ import {
 import path from 'node:path';
 import fs from 'node:fs';
 import { pathToFileURL } from 'url';
-import { StoredProcedureConfig } from './procedure';
-import { NoticeMessage } from 'pg-protocol/dist/messages';
 import { DBOS, GetWorkflowsInput, InitContext } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -503,29 +496,6 @@ export class DBOSExecutor {
     }
 
     this.logger.info('DBOS launched!');
-  }
-
-  #logNotice(msg: NoticeMessage) {
-    switch (msg.severity) {
-      case 'INFO':
-      case 'LOG':
-      case 'NOTICE':
-        this.logger.info(msg.message);
-        break;
-      case 'WARNING':
-        this.logger.warn(msg.message);
-        break;
-      case 'DEBUG':
-        this.logger.debug(msg.message);
-        break;
-      case 'ERROR':
-      case 'FATAL':
-      case 'PANIC':
-        this.logger.error(msg.message);
-        break;
-      default:
-        this.logger.error(`Unknown notice severity: ${msg.severity} - ${msg.message}`);
-    }
   }
 
   async destroy() {
@@ -1239,331 +1209,6 @@ export class DBOSExecutor {
         this.tracer.endSpan(span);
         throw err;
       }
-    }
-  }
-
-  async runProcedureTempWF<T extends unknown[], R>(
-    proc: (...args: T) => Promise<R>,
-    params: WorkflowParams,
-    ...args: T
-  ): Promise<R> {
-    // Create a workflow and call procedure.
-    const temp_workflow = async (...args: T) => {
-      return this.callProcedureFunction(proc, ...args);
-    };
-    return await (
-      await this.workflow(
-        temp_workflow,
-        {
-          ...params,
-          tempWfType: TempWorkflowType.procedure,
-          tempWfName: getRegisteredFunctionName(proc),
-          tempWfClass: getRegisteredFunctionClassName(proc),
-        },
-        ...args,
-      )
-    ).getResult();
-  }
-
-  async callProcedureFunction<T extends unknown[], R>(proc: (...args: T) => Promise<R>, ...args: T): Promise<R> {
-    const procInfo = getFunctionRegistration(proc);
-    if (!procInfo || !procInfo.procConfig) {
-      throw new DBOSNotRegisteredError(proc.name);
-    }
-    const procConfig = procInfo.procConfig as StoredProcedureConfig;
-
-    const pctx = getCurrentContextStore()!;
-    const wfid = pctx.workflowId!;
-
-    await this.systemDatabase.checkIfCanceled(wfid);
-
-    const executeLocally = this.#debugMode || (procConfig.executeLocally ?? false);
-    const funcId = functionIDGetIncrement();
-    const span: Span = this.tracer.startSpan(proc.name, {
-      operationUUID: wfid,
-      operationType: OperationType.PROCEDURE,
-      operationName: proc.name,
-      authenticatedUser: pctx.authenticatedUser ?? '',
-      assumedRole: pctx.assumedRole ?? '',
-      authenticatedRoles: pctx.authenticatedRoles ?? [],
-      isolationLevel: procInfo.procConfig.isolationLevel,
-      executeLocally,
-    });
-
-    try {
-      const result = executeLocally
-        ? await this.#callProcedureFunctionLocal(proc, args, span, procInfo, funcId)
-        : await this.#callProcedureFunctionRemote(proc, args, span, procConfig, funcId);
-      span.setStatus({ code: SpanStatusCode.OK });
-      return result;
-    } catch (e) {
-      const { message } = e as { message: string };
-      span.setStatus({ code: SpanStatusCode.ERROR, message });
-      throw e;
-    } finally {
-      this.tracer.endSpan(span);
-    }
-  }
-
-  async #callProcedureFunctionLocal<T extends unknown[], R>(
-    proc: (...args: T) => Promise<R>,
-    args: T,
-    span: Span,
-    procInfo: MethodRegistrationBase,
-    funcId: number,
-  ): Promise<R> {
-    const procPool = this.#procedurePool;
-    const userDB = this.#userDatabase;
-    if (!procPool || !userDB) {
-      throw new Error('User database not enabled.');
-    }
-
-    let retryWaitMillis = 1;
-    const backoffFactor = 1.5;
-    const maxRetryWaitMs = 2000; // Maximum wait 2 seconds.
-
-    const pctx = { ...getCurrentContextStore()! };
-    const wfid = pctx.workflowId!;
-
-    while (true) {
-      await this.systemDatabase.checkIfCanceled(wfid);
-
-      let txn_snapshot = 'invalid';
-      const wrappedProcedure = async (client: PoolClient): Promise<R> => {
-        let prevResult: R | Error | DBOSNull = dbosNull;
-        const queryFunc = <T>(sql: string, args: unknown[]) => procPool.query(sql, args).then((v) => v.rows as T[]);
-        if (pctx.presetID) {
-          const executionResult = await this.#checkExecution<R>(queryFunc, wfid, funcId, proc.name);
-          prevResult = executionResult.result;
-          txn_snapshot = executionResult.txn_snapshot;
-          if (prevResult !== dbosNull) {
-            span.setAttribute('cached', true);
-
-            // Return/throw the previous result
-            if (prevResult instanceof Error) {
-              throw prevResult;
-            } else {
-              return prevResult as R;
-            }
-          }
-        } else {
-          // Collect snapshot information for read-only transactions and non-preset UUID transactions, if not already collected above
-          txn_snapshot = await DBOSExecutor.#retrieveSnapshot(queryFunc);
-        }
-
-        if (this.#debugMode && prevResult === dbosNull) {
-          throw new DBOSDebuggerError(
-            `Failed to find the recorded output for the procedure: workflow UUID ${wfid}, step number ${funcId}`,
-          );
-        }
-
-        // Execute the user's transaction.
-        const ctxlog = this.ctxLogger;
-        const result = await (async function () {
-          try {
-            // Check we are in a workflow context and not in a step / transaction already
-            if (!pctx) throw new DBOSInvalidWorkflowTransitionError();
-            if (!isInWorkflowCtx(pctx)) throw new DBOSInvalidWorkflowTransitionError();
-            return await context.with(trace.setSpan(context.active(), span), async () => {
-              return await runWithParentContext(
-                pctx,
-                {
-                  curTxFunctionId: funcId,
-                  parentCtx: pctx,
-                  isInStoredProc: true,
-                  sqlClient: client,
-                  logger: ctxlog,
-                },
-                async () => {
-                  const pf = proc as unknown as TypedAsyncFunction<T, R>;
-                  return await pf(...args);
-                },
-              );
-            });
-          } catch (e) {
-            return e instanceof Error ? e : new Error(`${e as any}`);
-          }
-        })();
-
-        if (this.#debugMode) {
-          if (prevResult instanceof Error) {
-            throw prevResult;
-          }
-          const prevResultJson = DBOSJSON.stringify(prevResult);
-          const resultJson = DBOSJSON.stringify(result);
-          if (prevResultJson !== resultJson) {
-            this.logger.error(
-              `Detected different transaction output than the original one!\n Result: ${resultJson}\n Original: ${DBOSJSON.stringify(prevResultJson)}`,
-            );
-          }
-          return prevResult as R;
-        }
-
-        if (result instanceof Error) {
-          throw result;
-        }
-
-        // Synchronously record the output of write transactions and obtain the transaction ID.
-        const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then((v) => v.rows as T[]);
-        const pg_txn_id = await this.#recordOutput(
-          func,
-          wfid,
-          funcId,
-          txn_snapshot,
-          result,
-          pgNodeIsKeyConflictError,
-          proc.name,
-        );
-
-        // const pg_txn_id = await wfCtx.recordOutputProc<R>(client, funcId, txn_snapshot, result);
-        span.setAttribute('pg_txn_id', pg_txn_id);
-
-        return result;
-      };
-
-      try {
-        const result = await this.invokeStoredProcFunction(wrappedProcedure, {
-          isolationLevel: procInfo.procConfig!.isolationLevel,
-        });
-        span.setStatus({ code: SpanStatusCode.OK });
-        return result;
-      } catch (err) {
-        if (!this.#debugMode) {
-          if (userDB.isRetriableTransactionError(err)) {
-            // serialization_failure in PostgreSQL
-            span.addEvent('TXN SERIALIZATION FAILURE', { retryWaitMillis: retryWaitMillis }, performance.now());
-            // Retry serialization failures.
-            await sleepms(retryWaitMillis);
-            retryWaitMillis *= backoffFactor;
-            retryWaitMillis = retryWaitMillis < maxRetryWaitMs ? retryWaitMillis : maxRetryWaitMs;
-            continue;
-          }
-
-          // Record and throw other errors.
-          const e: Error = err as Error;
-          await this.invokeStoredProcFunction(
-            async (client: PoolClient) => {
-              const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then((v) => v.rows as T[]);
-              await this.#recordError(func, wfid, funcId, txn_snapshot, e, pgNodeIsKeyConflictError, proc.name);
-            },
-            { isolationLevel: IsolationLevel.ReadCommitted },
-          );
-
-          await userDB.transaction(
-            async (client: UserDatabaseClient) => {
-              const func = <T>(sql: string, args: unknown[]) => userDB.queryWithClient<T>(client, sql, ...args);
-              await this.#recordError(
-                func,
-                wfid,
-                funcId,
-                txn_snapshot,
-                e,
-                (error) => userDB.isKeyConflictError(error),
-                proc.name,
-              );
-            },
-            { isolationLevel: IsolationLevel.ReadCommitted },
-          );
-        }
-        throw err;
-      }
-    }
-  }
-
-  async #callProcedureFunctionRemote<T extends unknown[], R>(
-    proc: (...args: T) => Promise<R>,
-    args: T,
-    span: Span,
-    config: StoredProcedureConfig,
-    funcId: number,
-  ): Promise<R> {
-    if (this.#debugMode) {
-      throw new DBOSDebuggerError("Can't invoke stored procedure in debug mode.");
-    }
-
-    const pctx = getCurrentContextStore()!;
-    const wfid = pctx.workflowId!;
-
-    await this.systemDatabase.checkIfCanceled(wfid);
-
-    const $jsonCtx = {
-      request: pctx.request,
-      authenticatedUser: pctx.authenticatedUser,
-      authenticatedRoles: pctx.authenticatedRoles,
-      assumedRole: pctx.assumedRole,
-    };
-
-    // TODO (Qian/Harry): remove this unshift when we remove the resultBuffer argument
-    // Note, node-pg converts JS arrays to postgres array literals, so must call JSON.strigify on
-    // args and bufferedResults before being passed to #invokeStoredProc
-    const $args = [wfid, funcId, pctx.presetID, $jsonCtx, null, JSON.stringify(args)] as unknown[];
-
-    const readonly = config.readOnly ?? false;
-    if (!readonly) {
-      $args.unshift(null);
-    }
-
-    type ReturnValue = {
-      return_value: { output?: R; error?: unknown; txn_id?: string; txn_snapshot?: string; created_at?: number };
-    };
-    const [{ return_value }] = await this.#invokeStoredProc<ReturnValue>(proc as UntypedAsyncFunction, $args);
-
-    const { error, output, txn_id } = return_value;
-
-    // if the stored proc returns an error, deserialize and throw it.
-    // stored proc saves the error in tx_output before returning
-    if (error) {
-      throw deserializeError(error);
-    }
-
-    if (txn_id) {
-      span.setAttribute('pg_txn_id', txn_id);
-    }
-    span.setStatus({ code: SpanStatusCode.OK });
-    return output!;
-  }
-
-  async #invokeStoredProc<R extends QueryResultRow = any>(proc: UntypedAsyncFunction, args: unknown[]): Promise<R[]> {
-    if (!this.#procedurePool) {
-      throw new Error('User Database not enabled.');
-    }
-    const client = await this.#procedurePool.connect();
-    const log = (msg: NoticeMessage) => this.#logNotice(msg);
-
-    const procname = getRegisteredFunctionFullName(proc);
-    const plainProcName = `${procname.className}_${procname.name}_p`;
-    const procName = globalParams.wasComputed ? plainProcName : `v${globalParams.appVersion}_${plainProcName}`;
-
-    const sql = `CALL "${procName}"(${args.map((_v, i) => `$${i + 1}`).join()});`;
-    try {
-      client.on('notice', log);
-      return await client.query<R>(sql, args).then((value) => value.rows);
-    } finally {
-      client.off('notice', log);
-      client.release();
-    }
-  }
-
-  async invokeStoredProcFunction<R>(func: (client: PoolClient) => Promise<R>, config: TransactionConfig): Promise<R> {
-    if (!this.#procedurePool) {
-      throw new Error('User Database not enabled.');
-    }
-    const client = await this.#procedurePool.connect();
-    try {
-      const readOnly = config.readOnly ?? false;
-      const isolationLevel = config.isolationLevel ?? IsolationLevel.Serializable;
-      await client.query(`BEGIN ISOLATION LEVEL ${isolationLevel}`);
-      if (readOnly) {
-        await client.query(`SET TRANSACTION READ ONLY`);
-      }
-      const result: R = await func(client);
-      await client.query(`COMMIT`);
-      return result;
-    } catch (err) {
-      await client.query(`ROLLBACK`);
-      throw err;
-    } finally {
-      client.release();
     }
   }
 

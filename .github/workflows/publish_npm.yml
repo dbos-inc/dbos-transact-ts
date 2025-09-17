@@ -17,7 +17,6 @@ jobs:
             packages/confluent-kafka-receive,
             packages/create,
             packages/dbos-cloud,
-            packages/dbos-compiler,
             packages/drizzle-datasource,
             packages/kafkajs-receive,
             packages/knex-datasource,
