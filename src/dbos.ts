@@ -68,7 +68,7 @@ import {
   ensureDBOSIsLaunched,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
-import { DBOSHttpServer } from './adminserver';
+import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
 
 import { randomUUID } from 'node:crypto';
@@ -261,9 +261,9 @@ export class DBOS {
     // Start the DBOS admin server
     const logger = DBOS.logger;
     if (runtimeConfig.runAdminServer) {
-      const adminApp = DBOSHttpServer.setupAdminApp(executor);
+      const adminApp = DBOSAdminServer.setupAdminApp(executor);
       try {
-        await DBOSHttpServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
+        await DBOSAdminServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
         // Wrap the listen call in a promise to properly catch errors
         DBOS.adminServer = await new Promise((resolve, reject) => {
           const server = adminApp.listen(runtimeConfig?.admin_port, () => {
@@ -360,10 +360,10 @@ export class DBOS {
 
   /** For unit testing of admin server (do not call) */
   static getAdminCallback() {
-    if (!DBOSHttpServer.instance) {
+    if (!DBOSAdminServer.instance) {
       return undefined;
     }
-    return DBOSHttpServer.instance.adminApp.callback();
+    return DBOSAdminServer.instance.adminApp.callback();
   }
 
   //////

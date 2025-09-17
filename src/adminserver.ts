@@ -20,15 +20,14 @@ export const WorkflowUUIDHeader = 'dbos-idempotency-key';
 export const WorkflowRecoveryUrl = '/dbos-workflow-recovery';
 export const HealthUrl = '/dbos-healthz';
 export const PerfUrl = '/dbos-perf';
-// FIXME this should be /dbos-deactivate to be consistent with other endpoints.
 export const DeactivateUrl = '/deactivate';
 export const WorkflowQueuesMetadataUrl = '/dbos-workflow-queues-metadata';
 
-export class DBOSHttpServer {
+export class DBOSAdminServer {
   readonly adminApp: Koa;
   readonly logger: GlobalLogger;
   static nRegisteredEndpoints: number = 0;
-  static instance?: DBOSHttpServer = undefined;
+  static instance?: DBOSAdminServer = undefined;
 
   /**
    * Create a Koa app.
@@ -37,8 +36,8 @@ export class DBOSHttpServer {
    */
   constructor(readonly dbosExec: DBOSExecutor) {
     this.logger = dbosExec.logger;
-    this.adminApp = DBOSHttpServer.setupAdminApp(this.dbosExec);
-    DBOSHttpServer.instance = this;
+    this.adminApp = DBOSAdminServer.setupAdminApp(this.dbosExec);
+    DBOSAdminServer.instance = this;
   }
 
   static setupAdminApp(dbosExec: DBOSExecutor): Koa {
@@ -48,21 +47,21 @@ export class DBOSHttpServer {
     adminApp.use(cors());
 
     // Register HTTP endpoints.
-    DBOSHttpServer.registerHealthEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerRecoveryEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerPerfEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerDeactivateEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerCancelWorkflowEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerResumeWorkflowEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerRestartWorkflowEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerQueueMetadataEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerListWorkflowStepsEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerListWorkflowsEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerListQueuedWorkflowsEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerGetWorkflowEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerForkWorkflowEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerGarbageCollectEndpoint(dbosExec, adminRouter);
-    DBOSHttpServer.registerGlobalTimeoutEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerHealthEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerRecoveryEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerPerfEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerDeactivateEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerCancelWorkflowEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerResumeWorkflowEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerRestartWorkflowEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerQueueMetadataEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerListWorkflowStepsEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerListWorkflowsEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerListQueuedWorkflowsEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerGetWorkflowEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerForkWorkflowEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerGarbageCollectEndpoint(dbosExec, adminRouter);
+    DBOSAdminServer.registerGlobalTimeoutEndpoint(dbosExec, adminRouter);
     adminApp.use(adminRouter.routes()).use(adminRouter.allowedMethods());
     return adminApp;
   }
@@ -202,11 +201,11 @@ export class DBOSHttpServer {
   static isDeactivated = false;
   static registerDeactivateEndpoint(dbosExec: DBOSExecutor, router: Router) {
     const deactivateHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
-      if (!DBOSHttpServer.isDeactivated) {
+      if (!DBOSAdminServer.isDeactivated) {
         dbosExec.logger.info(
           `Deactivating DBOS executor ${globalParams.executorID} with version ${globalParams.appVersion}. This executor will complete existing workflows but will not create new workflows.`,
         );
-        DBOSHttpServer.isDeactivated = true;
+        DBOSAdminServer.isDeactivated = true;
       }
       await dbosExec.deactivateEventReceivers(false);
       koaCtxt.body = 'Deactivated';
