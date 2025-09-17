@@ -957,11 +957,6 @@ export function associateMethodWithExternal<This, Args extends unknown[], Return
 export interface ExternalRegistration {
   classConfig?: unknown;
   methodConfig?: unknown;
-  paramConfig: {
-    name: string;
-    index: number;
-    paramConfig?: object;
-  }[];
   methodReg: MethodRegistrationBase;
 }
 
@@ -1001,19 +996,8 @@ export function getRegistrationsForExternal(
   function collectRegForFunction(f: MethodRegistrationBase) {
     const methodConfig = f.externalRegInfo.get(external);
     const classConfig = f.defaults?.externalRegInfo.get(external);
-    const paramConfig: { name: string; index: number; paramConfig?: object }[] = [];
-    let hasParamConfig = false;
-    for (const arg of f.args) {
-      if (arg.externalRegInfo.has(external)) hasParamConfig = true;
-
-      paramConfig.push({
-        name: arg.name,
-        index: arg.index,
-        paramConfig: arg.externalRegInfo.get(external),
-      });
-    }
-    if (!methodConfig && !classConfig && !hasParamConfig) return;
-    res.push({ methodReg: f, methodConfig, classConfig: classConfig ?? {}, paramConfig });
+    if (!methodConfig && !classConfig) return;
+    res.push({ methodReg: f, methodConfig, classConfig: classConfig ?? {} });
   }
 }
 
