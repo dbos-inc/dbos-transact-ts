@@ -22,6 +22,27 @@ export function readFileSync(path: string, encoding: BufferEncoding = 'utf8'): s
 
 function loadDbosVersion(): string {
   try {
+    function findPackageRoot(start: string | string[]): string {
+      if (typeof start === 'string') {
+        if (!start.endsWith(path.sep)) {
+          start += path.sep;
+        }
+        start = start.split(path.sep);
+      }
+
+      if (start.length === 0) {
+        throw new Error('package.json not found in path');
+      }
+
+      start.pop();
+      const dir = start.join(path.sep);
+
+      if (fs.existsSync(path.join(dir, 'package.json'))) {
+        return dir;
+      }
+
+      return findPackageRoot(start);
+    }
     const packageJsonPath = path.join(findPackageRoot(__dirname), 'package.json');
     // eslint-disable-next-line @typescript-eslint/no-require-imports
     const packageJson = require(packageJsonPath) as { version: string };
@@ -79,29 +100,6 @@ export function cancellableSleep(ms: number) {
 }
 
 export type ValuesOf<T> = T[keyof T];
-
-// Adapated and translated from from: https://github.com/junosuarez/find-root
-export function findPackageRoot(start: string | string[]): string {
-  if (typeof start === 'string') {
-    if (!start.endsWith(path.sep)) {
-      start += path.sep;
-    }
-    start = start.split(path.sep);
-  }
-
-  if (start.length === 0) {
-    throw new Error('package.json not found in path');
-  }
-
-  start.pop();
-  const dir = start.join(path.sep);
-
-  if (fs.existsSync(path.join(dir, 'package.json'))) {
-    return dir;
-  }
-
-  return findPackageRoot(start);
-}
 
 /**
  * Reviver and Replacer
