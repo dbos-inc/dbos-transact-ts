@@ -2,17 +2,17 @@ import Koa from 'koa';
 import Router from '@koa/router';
 import { bodyParser } from '@koa/bodyparser';
 import cors from '@koa/cors';
-import { GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from '../workflow';
-import { DBOSDataValidationError, DBOSError } from '../error';
-import { DBOSExecutor } from '../dbos-executor';
-import { GlobalLogger } from '../telemetry/logs';
+import { GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from './workflow';
+import { DBOSDataValidationError, DBOSError } from './error';
+import { DBOSExecutor } from './dbos-executor';
+import { GlobalLogger } from './telemetry/logs';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
-import { DBOSJSON, globalParams } from '../utils';
-import { QueueParameters, wfQueueRunner } from '../wfqueue';
+import { DBOSJSON, globalParams } from './utils';
+import { QueueParameters, wfQueueRunner } from './wfqueue';
 import { serializeError } from 'serialize-error';
-import { globalTimeout } from '../dbos-runtime/workflow_management';
-import * as protocol from '../conductor/protocol';
+import { globalTimeout } from './dbos-runtime/workflow_management';
+import * as protocol from './conductor/protocol';
 
 export type QueueMetadataResponse = QueueParameters & { name: string };
 

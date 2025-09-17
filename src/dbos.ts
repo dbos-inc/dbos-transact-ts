@@ -68,7 +68,7 @@ import {
   ensureDBOSIsLaunched,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
-import { DBOSHttpServer } from './httpServer/server';
+import { DBOSHttpServer } from './adminserver';
 import { Server } from 'http';
 
 import { randomUUID } from 'node:crypto';
