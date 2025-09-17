@@ -45,12 +45,6 @@ export async function setUpDBOSTestDb(config: DBOSConfig) {
   await ensureSystemDatabase(internalConfig.systemDatabaseUrl, new GlobalLogger());
 }
 
-/* Common test types */
-export interface TestKvTable {
-  id?: number;
-  value?: string;
-}
-
 // A helper class for testing concurrency. Behaves similarly to threading.Event in Python.
 // The class contains a promise and a resolution.
 // Await Event.wait() to await the promise.

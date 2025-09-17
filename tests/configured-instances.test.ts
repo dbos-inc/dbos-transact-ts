@@ -1,19 +1,9 @@
 import { ConfiguredInstance, DBOS, WorkflowQueue } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 class TestFunctions extends ConfiguredInstance {
   constructor(name: string) {
     super(name);
-  }
-
-  override async initialize() {
-    return Promise.resolve();
-  }
-
-  @DBOS.transaction()
-  async doTransaction(arg: string) {
-    await DBOS.pgClient.query('SELECT 1');
-    return Promise.resolve(`selected ${arg} from ${this.name}`);
   }
 
   @DBOS.step()
@@ -23,20 +13,20 @@ class TestFunctions extends ConfiguredInstance {
 
   @DBOS.workflow()
   async doWorkflow() {
-    await this.doTransaction('');
+    await this.doStep('');
     return `done ${this.name}`;
   }
 
   @DBOS.workflow()
   async doWorkflowAAAAA() {
     expect(DBOS.workflowID).toBe('aaaaa');
-    await this.doTransaction('');
+    await this.doStep('');
     return `done ${this.name}`;
   }
 
   @DBOS.workflow()
   async doWorkflowArg(arg: string) {
-    await this.doTransaction('');
+    await this.doStep('');
     return `done ${arg} from ${this.name}`;
   }
 
@@ -74,8 +64,6 @@ class TestFunctions extends ConfiguredInstance {
   }
 }
 
-const testTableName = 'dbos_test_kv';
-
 @DBOS.defaultRequiredRole(['user'])
 class TestSec extends ConfiguredInstance {
   constructor(name: string) {
@@ -88,19 +76,9 @@ class TestSec extends ConfiguredInstance {
     return Promise.resolve(`hello ${name} from ${this.name}`);
   }
 
-  @DBOS.transaction()
-  async testTranscation(name: string) {
-    const { rows } = await DBOS.pgClient.query<TestKvTable>(
-      `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
-      [name],
-    );
-    return `hello ${name} ${rows[0].id} from ${this.name}`;
-  }
-
   @DBOS.workflow()
   async testWorkflow(name: string) {
-    const res = await this.testTranscation(name);
-    return res;
+    return Promise.resolve(name);
   }
 }
 
@@ -125,7 +103,7 @@ const instB = new TestFunctions('B');
 
 async function main() {
   // First hurdle - configuration.
-  const config = generateDBOSTestConfig('pg-node'); // Optional.  If you don't, it'll open the YAML file...
+  const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -152,7 +130,7 @@ async function main() {
 }
 
 async function main2() {
-  const config = generateDBOSTestConfig('pg-node');
+  const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -170,7 +148,7 @@ async function main2() {
 }
 
 async function main3() {
-  const config = generateDBOSTestConfig('pg-node');
+  const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -182,15 +160,10 @@ async function main3() {
 }
 
 async function main4() {
-  const config = generateDBOSTestConfig('pg-node');
+  const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
-
-  const tres1 = await instA.doTransaction('a');
-  expect(tres1).toBe('selected a from A');
-  const tres2 = await instB.doTransaction('b');
-  expect(tres2).toBe('selected b from B');
 
   const sres1 = await instA.doStep('a');
   expect(sres1).toBe('step a done from A');
@@ -202,7 +175,7 @@ async function main4() {
 
 async function main5() {
   const wfq = new WorkflowQueue('wfq');
-  const config = generateDBOSTestConfig('pg-node');
+  const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -241,7 +214,7 @@ async function main5() {
 }
 
 async function main6() {
-  const config = generateDBOSTestConfig('pg-node');
+  const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
@@ -278,12 +251,10 @@ async function main7() {
   const testSecInst = new TestSec('Sec1');
   const testSec2Inst = new TestSec2('Sec2');
 
-  const config = generateDBOSTestConfig('pg-node');
+  const config = generateDBOSTestConfig();
   await setUpDBOSTestDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
-  await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-  await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
 
   await expect(async () => {
     await testSecInst.testWorkflow('unauthorized');
@@ -299,7 +270,7 @@ async function main7() {
   const hijoe = await DBOS.withAuthedContext('joe', ['user'], async () => {
     return await testSecInst.testWorkflow('joe');
   });
-  expect(hijoe).toBe('hello joe 1 from Sec1');
+  expect(hijoe).toBe('joe');
 
   const byejoe = await DBOS.withAuthedContext('joe', ['user'], async () => {
     return await testSec2Inst.bye();
