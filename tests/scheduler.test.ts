@@ -9,7 +9,7 @@ describe('cf-scheduled-wf-tests-simple', () => {
 
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
@@ -56,16 +56,16 @@ class DBOSSchedTestClass {
     DBOSSchedTestClass.doSleep = doSleep;
   }
 
-  @DBOS.transaction({ isolationLevel: 'READ COMMITTED' })
-  static async scheduledTxn() {
+  @DBOS.step()
+  static async scheduledStep() {
     DBOSSchedTestClass.nCalls++;
-    await DBOS.pgClient.query('SELECT 1');
+    await Promise.resolve();
   }
 
   @DBOS.scheduled({ crontab: '* * * * * *', mode: SchedulerMode.ExactlyOncePerIntervalWhenActive })
   @DBOS.workflow()
   static async scheduledDefault(schedTime: Date, startTime: Date) {
-    await DBOSSchedTestClass.scheduledTxn();
+    await DBOSSchedTestClass.scheduledStep();
     if (schedTime.getTime() > startTime.getTime() + 2) {
       // Floating point, sleep, etc., is a little imprecise
       console.log(
@@ -98,16 +98,16 @@ class DBOSSchedTestClass {
 class DBOSSchedDuplicate {
   static nCalls = 0;
 
-  @DBOS.transaction({ isolationLevel: 'READ COMMITTED' })
-  static async scheduledTxn() {
+  @DBOS.step()
+  static async scheduledStep() {
     DBOSSchedDuplicate.nCalls++;
-    await DBOS.pgClient.query('SELECT 1');
+    await Promise.resolve();
   }
 
   @DBOS.scheduled({ crontab: '* * * * * *', mode: SchedulerMode.ExactlyOncePerIntervalWhenActive })
   @DBOS.workflow()
   static async scheduledDefault(_schedTime: Date, _startTime: Date) {
-    await DBOSSchedDuplicate.scheduledTxn();
+    await DBOSSchedDuplicate.scheduledStep();
   }
 }
 
@@ -130,7 +130,7 @@ describe('cf-scheduled-wf-tests-oaoo', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
@@ -172,7 +172,7 @@ describe('cf-scheduled-wf-tests-when-active', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
@@ -256,7 +256,7 @@ describe('decorator-free-scheduled', () => {
 
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
