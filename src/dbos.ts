@@ -41,7 +41,6 @@ import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/s
 import {
   associateClassWithExternal,
   associateMethodWithExternal,
-  associateParameterWithExternal,
   ClassAuthDefaults,
   DBOS_AUTH,
   ExternalRegistration,
@@ -1595,26 +1594,6 @@ export class DBOS {
     target: FunctionName,
   ) {
     return associateMethodWithExternal(external, target.ctorOrProto, target.className, target.name ?? func.name, func);
-  }
-
-  /**
-   * Register information to be associated with a DBOS function
-   */
-  static associateParamWithInfo<This, Args extends unknown[], Return>(
-    external: AnyConstructor | object | string,
-    func: (this: This, ...args: Args) => Promise<Return>,
-    target: FunctionName & {
-      param: number | string;
-    },
-  ) {
-    return associateParameterWithExternal(
-      external,
-      target.ctorOrProto,
-      target.className,
-      target.name ?? func.name,
-      func,
-      target.param,
-    );
   }
 
   /** Get registrations */

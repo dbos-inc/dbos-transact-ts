@@ -134,27 +134,9 @@ export class DBOSHTTPBase implements DBOSLifecycleCallback {
     return this.httpApiDec(APITypes.DELETE, url);
   }
 
-  /** Parameter decorator indicating which source to use (URL, BODY, etc) for arg data */
-  static argSource(source: ArgSources) {
-    return function (target: object, propertyKey: PropertyKey, parameterIndex: number) {
-      const curParam = DBOS.associateParamWithInfo(
-        DBOSHTTP,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-argument
-        Object.getOwnPropertyDescriptor(target, propertyKey)!.value,
-        {
-          ctorOrProto: target,
-          name: propertyKey.toString(),
-          param: parameterIndex,
-        },
-      ) as DBOSHTTPArgInfo;
-
-      curParam.argSource = source;
-    };
-  }
-
   protected getArgSource(arg: MethodParameter) {
-    const arginfo = arg.getRegisteredInfo(DBOSHTTP) as DBOSHTTPArgInfo;
-    return arginfo?.argSource ?? ArgSources.AUTO;
+    void arg;
+    return ArgSources.AUTO;
   }
 
   logRegisteredEndpoints(): void {

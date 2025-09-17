@@ -954,38 +954,6 @@ export function associateMethodWithExternal<This, Args extends unknown[], Return
   return { registration, regInfo: registration.externalRegInfo.get(external)! };
 }
 
-/*
- * Associates a DBOS function or method parameters with an external class or object.
- *   Likely, this will be invoking or intercepting the method.
- */
-export function associateParameterWithExternal<This, Args extends unknown[], Return>(
-  external: AnyConstructor | object | string,
-  target: object | undefined,
-  className: string | undefined,
-  funcName: string,
-  func: ((this: This, ...args: Args) => Promise<Return>) | undefined,
-  paramId: number | string,
-): object | undefined {
-  if (!func) {
-    func = Object.getOwnPropertyDescriptor(target, funcName)!.value as (this: This, ...args: Args) => Promise<Return>;
-  }
-  const registration = wrapDBOSFunctionAndRegister(target, className, funcName, func);
-  let param: MethodParameter | undefined;
-  if (typeof paramId === 'number') {
-    param = registration.args[paramId];
-  } else {
-    param = registration.args.find((p) => p.name === paramId);
-  }
-
-  if (!param) return undefined;
-
-  if (!param.externalRegInfo.has(external)) {
-    param.externalRegInfo.set(external, {});
-  }
-
-  return param.externalRegInfo.get(external)!;
-}
-
 export interface ExternalRegistration {
   classConfig?: unknown;
   methodConfig?: unknown;
