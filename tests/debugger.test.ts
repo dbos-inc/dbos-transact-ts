@@ -1,7 +1,7 @@
-import { ConfiguredInstance, DBOS } from '../../src/';
-import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { ConfiguredInstance, DBOS } from '../src/';
+import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
-import { DBOSConfig } from '../../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 
 describe('debugger-test', () => {
