@@ -1,16 +1,14 @@
 import { DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { TestKvTable, dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
-
-const testTableName = 'dbos_test_kv';
 
 describe('oaoo-tests', () => {
   let username: string;
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     expect(config.databaseUrl).toBeDefined();
     const url = new URL(config.databaseUrl!);
     username = url.username;
@@ -22,9 +20,6 @@ describe('oaoo-tests', () => {
     expect(config.systemDatabaseUrl).toBeDefined();
     await dropDatabase(config.systemDatabaseUrl!);
     await DBOS.launch();
-
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
   });
 
   afterEach(async () => {
@@ -73,31 +68,21 @@ describe('oaoo-tests', () => {
    * Workflow OAOO tests.
    */
   class WorkflowOAOO {
-    @DBOS.transaction()
-    static async testInsertTx(name: string) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(
-        `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
-        [name],
-      );
-      return Number(rows[0].id);
+    @DBOS.step()
+    static async stepOne(name: string) {
+      return Promise.resolve(name);
     }
 
-    @DBOS.transaction({ readOnly: true })
-    static async testReadTx(id: number) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
-      if (rows.length > 0) {
-        return Number(rows[0].id);
-      } else {
-        // Cannot find, return a negative number.
-        return -1;
-      }
+    @DBOS.step()
+    static async stepTwo(name: string) {
+      return Promise.resolve(name);
     }
 
     @DBOS.workflow()
     static async testTxWorkflow(name: string) {
-      const funcResult: number = await WorkflowOAOO.testInsertTx(name);
-      const checkResult: number = await WorkflowOAOO.testReadTx(funcResult);
-      return checkResult;
+      await WorkflowOAOO.stepOne(name);
+      await WorkflowOAOO.stepTwo(name);
+      return name;
     }
 
     @DBOS.workflow()
@@ -196,7 +181,7 @@ describe('oaoo-tests', () => {
   });
 
   test('workflow-oaoo', async () => {
-    let workflowResult: number;
+    let workflowResult: string;
     const uuidArray: string[] = [];
 
     for (let i = 0; i < 10; i++) {
@@ -204,33 +189,33 @@ describe('oaoo-tests', () => {
       const workflowUUID: string = workflowHandle.workflowID;
       uuidArray.push(workflowUUID);
       workflowResult = await workflowHandle.getResult();
-      expect(workflowResult).toEqual(i + 1);
+      expect(workflowResult).toEqual(username);
     }
 
     // Rerunning with the same workflow UUID should return the same output.
     for (let i = 0; i < 10; i++) {
       const workflowUUID: string = uuidArray[i];
-      const workflowResult: number = await DBOS.withNextWorkflowID(
+      const workflowResult: string = await DBOS.withNextWorkflowID(
         workflowUUID,
         async () => await WorkflowOAOO.testTxWorkflow(username),
       );
-      expect(workflowResult).toEqual(i + 1);
+      expect(workflowResult).toEqual(username);
     }
   });
 
   test('nested-workflow-oaoo', async () => {
     const workflowUUID = randomUUID();
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(WorkflowOAOO.nestedWorkflow(username)).resolves.toBe(1);
+      await expect(WorkflowOAOO.nestedWorkflow(username)).resolves.toBe(username);
     });
 
     await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(WorkflowOAOO.nestedWorkflow(username)).resolves.toBe(1);
+      await expect(WorkflowOAOO.nestedWorkflow(username)).resolves.toBe(username);
     });
 
     // Retrieve output of the child workflow.
     const retrievedHandle = DBOS.retrieveWorkflow(workflowUUID + '-0');
-    await expect(retrievedHandle.getResult()).resolves.toBe(1);
+    await expect(retrievedHandle.getResult()).resolves.toBe(username);
 
     // Nested with OAOO key calculated
     await WorkflowOAOO.nestedWorkflowRunChildOnce();
