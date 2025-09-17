@@ -38,7 +38,7 @@ describe('dbos-telemetry', () => {
   });
 
   test('DBOS init works with exporters', async () => {
-    const dbosConfig = generateDBOSTestConfig('pg-node');
+    const dbosConfig = generateDBOSTestConfig();
     dbosConfig.otlpLogsEndpoints = ['http://localhost:4317/v1/logs'];
     dbosConfig.otlpTracesEndpoints = ['http://localhost:4317/v1/traces'];
 
@@ -61,7 +61,7 @@ describe('dbos-telemetry', () => {
     let config: DBOSConfig;
 
     beforeAll(async () => {
-      config = generateDBOSTestConfig('pg-node');
+      config = generateDBOSTestConfig();
       await setUpDBOSTestDb(config);
       DBOS.setConfig(config);
     });
