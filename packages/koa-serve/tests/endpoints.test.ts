@@ -448,7 +448,7 @@ describe('httpserver-tests', () => {
     @dhttp.postApi('/error')
     @DBOS.workflow()
     static async testWorkflowError(name: string) {
-      // This workflow should encounter duplicate primary key error.
+      await Promise.resolve();
       throw Error(name);
     }
 
