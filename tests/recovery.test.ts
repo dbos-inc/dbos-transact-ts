@@ -13,7 +13,7 @@ describe('recovery-tests', () => {
   let systemDBClient: Client;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
@@ -75,32 +75,6 @@ describe('recovery-tests', () => {
     static promise4 = new Promise<void>((resolve) => {
       LocalRecovery.resolve4 = resolve;
     });
-
-    @DBOS.workflow()
-    static async testTxErrorWorkflow(input: number) {
-      const message = `Error in transaction with input: ${input}`;
-      let errorMessage: string | undefined = undefined;
-      try {
-        await LocalRecovery.errorTransaction(message);
-      } catch (e) {
-        errorMessage = (e as Error).message;
-      }
-
-      LocalRecovery.cnt += input;
-      if (LocalRecovery.cnt > input) {
-        LocalRecovery.resolve4();
-      }
-
-      await LocalRecovery.promise3;
-      return { errorMessage };
-    }
-
-    @DBOS.transaction()
-    static async errorTransaction(message: string) {
-      // simulate async work to make linter happy
-      await Promise.resolve();
-      throw new Error(message);
-    }
 
     static recoveryCount = 0;
     static readonly maxRecoveryAttempts = 5;
@@ -226,25 +200,6 @@ describe('recovery-tests', () => {
     expect(recoverHandles.length).toBe(1);
     await expect(recoverHandles[0].getResult()).resolves.toBe('test_recovery_user');
     await expect(handle.getResult()).resolves.toBe('test_recovery_user');
-    expect(LocalRecovery.cnt).toBe(10); // Should run twice.
-  });
-
-  test('failing-tx-correct-exception-on-recovery', async () => {
-    LocalRecovery.cnt = 0;
-    // Run a workflow until pending and start recovery.
-
-    const handle = await DBOS.startWorkflow(LocalRecovery).testTxErrorWorkflow(5);
-
-    const recoverHandles = await recoverPendingWorkflows();
-    await LocalRecovery.promise4; // Wait for the recovery to be done.
-    LocalRecovery.resolve3(); // Both can finish now.
-
-    const expected = {
-      errorMessage: 'Error in transaction with input: 5',
-    };
-    expect(recoverHandles.length).toBe(1);
-    await expect(recoverHandles[0].getResult()).resolves.toEqual(expected);
-    await expect(handle.getResult()).resolves.toEqual(expected);
     expect(LocalRecovery.cnt).toBe(10); // Should run twice.
   });
 
