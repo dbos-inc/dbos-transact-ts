@@ -17,7 +17,7 @@ THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
  OR IN CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
 */
 
-import { validateCrontab as validate, convertExpression as conversion, TimeMatcher } from '../../src/scheduler/crontab';
+import { validateCrontab as validate, convertExpression as conversion, TimeMatcher } from '../src/scheduler/crontab';
 
 //////////////////
 // Conversion tests

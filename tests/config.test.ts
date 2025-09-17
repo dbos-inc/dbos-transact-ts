@@ -1,4 +1,4 @@
-import * as utils from '../../src/utils';
+import * as utils from '../src/utils';
 import {
   ConfigFile,
   getApplicationDatabaseUrl,
@@ -8,10 +8,10 @@ import {
   overwriteConfigForDBOSCloud,
   readConfigFile,
   translateDbosConfig,
-} from '../../src/dbos-runtime/config';
+} from '../src/dbos-runtime/config';
 import { AssertionError } from 'assert';
-import { DBOSConfigInternal } from '../../src/dbos-executor';
-import { DBOSRuntimeConfig } from '../../src';
+import { DBOSConfigInternal } from '../src/dbos-executor';
+import { DBOSRuntimeConfig } from '../src';
 
 describe('dbos-config', () => {
   beforeEach(() => {

@@ -1,8 +1,8 @@
 import EventEmitter from 'node:events';
-import { DBOS, SchedulerMode, WorkflowQueue } from '../../src';
-import { DBOSConfig } from '../../src/dbos-executor';
-import { INTERNAL_QUEUE_NAME, sleepms } from '../../src/utils';
-import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
+import { DBOS, SchedulerMode, WorkflowQueue } from '../src';
+import { DBOSConfig } from '../src/dbos-executor';
+import { INTERNAL_QUEUE_NAME, sleepms } from '../src/utils';
+import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 
 describe('cf-scheduled-wf-tests-simple', () => {
   let config: DBOSConfig;

@@ -1,9 +1,9 @@
 import { spawn, execSync, ChildProcess } from 'child_process';
 import { Writable } from 'stream';
 import { Client } from 'pg';
-import { generateDBOSTestConfig } from '../helpers';
-import { HealthUrl } from '../../src/httpServer/server';
-import { sleepms } from '../../src/utils';
+import { generateDBOSTestConfig } from './helpers';
+import { HealthUrl } from '../src/httpServer/server';
+import { sleepms } from '../src/utils';
 
 async function waitForMessageTest(
   command: ChildProcess,
