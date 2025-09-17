@@ -1,4 +1,4 @@
-import { DBOS } from '../../src/';
+import { ConfiguredInstance, DBOS } from '../../src/';
 import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { randomUUID } from 'node:crypto';
 import { DBOSConfig } from '../../src/dbos-executor';
@@ -386,6 +386,126 @@ describe('debugger-test', () => {
         /DEBUGGER: Detected different inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}.\s*Received:.*?\[2\].*?\s*Original:.*?\[1\].*?/gm,
       );
     });
+    await DBOS.shutdown();
+  });
+});
+
+export class TestApp {
+  static bgTaskValue: number = 0;
+
+  @DBOS.workflow()
+  static async backgroundTask(n: number): Promise<void> {
+    TestApp.bgTaskValue = n;
+    for (let i = 1; i <= n; i++) {
+      await TestApp.backgroundTaskStep(i);
+    }
+  }
+
+  static stepCount: number = 0;
+  @DBOS.step()
+  static async backgroundTaskStep(step: number): Promise<void> {
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    TestApp.stepCount += step;
+  }
+}
+
+describe('dbos-debug-v2-library', () => {
+  it('should run a background task', async () => {
+    const wfUUID = `wf-${Date.now()}`;
+
+    const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+
+    await DBOS.launch();
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      TestApp.bgTaskValue = 0;
+      TestApp.stepCount = 0;
+      await TestApp.backgroundTask(10);
+      expect(TestApp.bgTaskValue).toBe(10);
+      expect(TestApp.stepCount).toBe(55);
+    });
+    await DBOS.shutdown();
+
+    process.env.DBOS_DEBUG_WORKFLOW_ID = wfUUID;
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-argument, @typescript-eslint/no-explicit-any
+    const mockExit = jest.spyOn(process, 'exit').mockImplementation((() => {}) as any);
+    try {
+      TestApp.bgTaskValue = 0;
+      TestApp.stepCount = 0;
+      await DBOS.launch();
+      expect(TestApp.bgTaskValue).toBe(10);
+      expect(TestApp.stepCount).toBe(0);
+      expect(mockExit).toHaveBeenCalledWith(0);
+    } finally {
+      mockExit.mockRestore();
+      delete process.env.DBOS_DEBUG_WORKFLOW_ID;
+    }
+  }, 30000);
+});
+
+class DebuggerCCTest extends ConfiguredInstance {
+  constructor(name: string) {
+    super(name);
+  }
+
+  @DBOS.workflow()
+  async testWorkflow(name: string) {
+    expect(this.name).toBe('configA');
+    const funcResult = await this.testStep(name);
+    return `${name}${funcResult}`;
+  }
+
+  @DBOS.step()
+  async testStep(inp: string) {
+    expect(this.name).toBe('configA');
+    return Promise.resolve(inp);
+  }
+
+  // Workflow that sleep, call comm, call tx, call child WF
+  @DBOS.workflow()
+  async mixedWorkflow(num: number) {
+    expect(this.name).toBe('configA');
+    await DBOS.sleepSeconds(1);
+    const cResult = await this.testStep('comm');
+    const wfResult = await this.testWorkflow('cwf');
+    return `${this.name}${cResult}${wfResult}-${num}`;
+  }
+}
+
+const configR = new DebuggerCCTest('configA');
+
+describe('debugger-test', () => {
+  let config: DBOSConfig;
+  let debugConfig: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    debugConfig = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+  });
+
+  test('debug-workflow', async () => {
+    const wfUUID = randomUUID();
+    // Execute the workflow and destroy the runtime
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      const res = await configR.mixedWorkflow(23);
+      expect(res).toBe('configAcommcwfcwf-23');
+    });
+    await DBOS.shutdown();
+
+    // Execute again in debug mode.
+    DBOS.setConfig(debugConfig);
+    await DBOS.launch({ debugMode: true });
+    await DBOS.withNextWorkflowID(wfUUID, async () => {
+      const res = await configR.mixedWorkflow(23);
+      expect(res).toBe('configAcommcwfcwf-23');
+    });
+
+    // Execute again with the provided UUID.
+    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe('configAcommcwfcwf-23');
     await DBOS.shutdown();
   });
 });
