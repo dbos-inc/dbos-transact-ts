@@ -1,10 +1,8 @@
-import { DBOSInitializer, DBOS } from '../../src/';
-import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from '../helpers';
+import { DBOS } from '../../src/';
+import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from '../helpers';
 import { randomUUID } from 'node:crypto';
 import { DBOSConfig } from '../../src/dbos-executor';
 import { Client } from 'pg';
-
-const testTableName = 'debugger_test_kv';
 
 describe('debugger-test', () => {
   let username: string;
@@ -13,8 +11,8 @@ describe('debugger-test', () => {
   let systemDBClient: Client;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig('pg-node');
-    debugConfig = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
+    debugConfig = generateDBOSTestConfig();
     expect(config.databaseUrl).toBeDefined();
     const url = new URL(config.databaseUrl!);
     username = url.username ?? 'postgres';
@@ -40,25 +38,9 @@ describe('debugger-test', () => {
   class DebuggerTest {
     static count: number = 0;
 
-    @DBOSInitializer()
-    static async init() {
-      await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-      await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
-    }
-
-    @DBOS.transaction({ readOnly: true })
-    static async testReadOnlyFunction(number: number) {
-      const { rows } = await DBOS.pgClient.query<{ one: number }>(`SELECT 1 AS one`);
-      return Number(rows[0].one) + number;
-    }
-
-    @DBOS.transaction()
+    @DBOS.step()
     static async testFunction(name: string) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(
-        `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
-        [name],
-      );
-      return Number(rows[0].id);
+      return Promise.resolve(name);
     }
 
     @DBOS.workflow()
@@ -100,7 +82,7 @@ describe('debugger-test', () => {
       return val1 + '-' + val2;
     }
 
-    @DBOS.transaction()
+    @DBOS.step()
     static async voidFunction() {
       if (DebuggerTest.count > 0) {
         return Promise.resolve(DebuggerTest.count);
@@ -118,9 +100,9 @@ describe('debugger-test', () => {
 
     // Workflow that sleep
     @DBOS.workflow()
-    static async sleepWorkflow(num: number) {
+    static async sleepWorkflow(val: string) {
       await DBOS.sleepSeconds(1);
-      const funcResult = await DebuggerTest.testReadOnlyFunction(num);
+      const funcResult = await DebuggerTest.testFunction(val);
       return funcResult;
     }
 
@@ -128,11 +110,11 @@ describe('debugger-test', () => {
 
     @DBOS.workflow()
     static async debugWF(value: number) {
-      return await DebuggerTest.debugTx(value);
+      return await DebuggerTest.debugStep(value);
     }
 
-    @DBOS.transaction()
-    static async debugTx(value: number) {
+    @DBOS.step()
+    static async debugStep(value: number) {
       DebuggerTest.debugCount++;
       return Promise.resolve(value * 10);
     }
@@ -140,7 +122,7 @@ describe('debugger-test', () => {
 
   // Test we're robust to duplicated function names
   class DebuggerTestDup {
-    @DBOS.transaction()
+    @DBOS.step()
     static async voidFunction() {
       // Nothing here
       return Promise.resolve();
@@ -154,7 +136,7 @@ describe('debugger-test', () => {
     await DBOS.launch();
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       const res = await DebuggerTest.testWorkflow(username);
-      expect(res).toBe(1);
+      expect(res).toBe(username);
     });
     await DBOS.shutdown();
 
@@ -162,7 +144,7 @@ describe('debugger-test', () => {
     await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
       const debugRes = await DebuggerTest.testWorkflow(username);
-      expect(debugRes).toBe(1);
+      expect(debugRes).toBe(username);
     });
     await DBOS.shutdown();
 
@@ -170,7 +152,7 @@ describe('debugger-test', () => {
     DBOS.setConfig(debugConfig);
     await DBOS.launch({ debugMode: true });
     const debugRes1 = await (await executeWorkflowById(wfUUID)).getResult();
-    expect(debugRes1).toBe(1);
+    expect(debugRes1).toBe(username);
     await DBOS.shutdown();
 
     // Execute a non-exist UUID should fail under debugger.
@@ -221,8 +203,8 @@ describe('debugger-test', () => {
     // Execute the workflow and destroy the runtime
     await DBOS.launch();
     await DBOS.withNextWorkflowID(wfUUID, async () => {
-      const res = await DebuggerTest.sleepWorkflow(2);
-      expect(res).toBe(3);
+      const res = await DebuggerTest.sleepWorkflow('val');
+      expect(res).toBe('val');
     });
     await DBOS.shutdown();
 
@@ -230,8 +212,8 @@ describe('debugger-test', () => {
     DBOS.setConfig(debugConfig);
     await DBOS.launch({ debugMode: true });
     await DBOS.withNextWorkflowID(wfUUID, async () => {
-      const res = await DebuggerTest.sleepWorkflow(2);
-      expect(res).toBe(3);
+      const res = await DebuggerTest.sleepWorkflow('val');
+      expect(res).toBe('val');
     });
     await DBOS.shutdown();
   });
@@ -280,43 +262,6 @@ describe('debugger-test', () => {
     expect(result.rows[0].class_name).toBe('DebuggerTest');
     expect(result.rows[0].name).toContain('voidFunction');
     expect(result.rows[0].status).toBe('SUCCESS');
-  });
-
-  test('debug-transaction', async () => {
-    const wfUUID = randomUUID();
-
-    DBOS.setConfig(config);
-    await DBOS.launch();
-
-    // Execute the workflow and destroy the runtime
-    await DBOS.withNextWorkflowID(wfUUID, async () => {
-      await expect(DebuggerTest.testFunction(username)).resolves.toBe(1);
-    });
-    await DBOS.shutdown();
-
-    // Execute again in debug mode.
-    DBOS.setConfig(debugConfig);
-    await DBOS.launch({ debugMode: true });
-    await DBOS.withNextWorkflowID(wfUUID, async () => {
-      await expect(DebuggerTest.testFunction(username)).resolves.toBe(1);
-    });
-
-    // Execute again with the provided UUID.
-    await expect(executeWorkflowById(wfUUID).then((x) => x.getResult())).resolves.toBe(1);
-
-    // Execute a non-exist UUID should fail.
-    const wfUUID2 = randomUUID();
-    await DBOS.withNextWorkflowID(wfUUID2, async () => {
-      await expect(DebuggerTest.testFunction(username)).rejects.toThrow(
-        `DEBUGGER: Failed to find inputs for workflow UUID ${wfUUID2}`,
-      );
-    });
-
-    // Execute a workflow without specifying the UUID should fail.
-    await expect(DebuggerTest.testFunction(username)).rejects.toThrow(
-      /DEBUGGER: Failed to find inputs for workflow UUID [0-9a-f]{8}-[0-9a-f]{4}-[4][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}/gm,
-    );
-    await DBOS.shutdown();
   });
 
   test('debug-step', async () => {
