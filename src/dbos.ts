@@ -66,7 +66,6 @@ import {
   wrapDBOSFunctionAndRegisterByUniqueName,
   wrapDBOSFunctionAndRegisterByUniqueNameDec,
   wrapDBOSFunctionAndRegister,
-  wrapDBOSFunctionAndRegisterDec,
   ensureDBOSIsLaunched,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
@@ -77,10 +76,8 @@ import Koa from 'koa';
 import { randomUUID } from 'node:crypto';
 
 import { StepConfig } from './step';
-import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
+import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, WorkflowHandle } from '.';
 import { ConfiguredInstance } from '.';
-import { APITypes } from './httpServer/handlerTypes';
-import { HandlerRegistrationBase } from './httpServer/handler';
 import { Conductor } from './conductor/conductor';
 import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL } from './system_database';
 import { wfQueueRunner } from './wfqueue';
@@ -117,22 +114,6 @@ type InvokeFunctionsAsyncInst<T> = T extends ConfiguredInstance
         : never;
     }
   : never;
-
-function httpApiDec(verb: APITypes, url: string) {
-  return function apidec<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = wrapDBOSFunctionAndRegisterDec(target, propertyKey, inDescriptor);
-    const handlerRegistration = registration as unknown as HandlerRegistrationBase;
-    handlerRegistration.apiURL = url;
-    handlerRegistration.apiType = verb;
-    requestArgValidation(registration);
-
-    return descriptor;
-  };
-}
 
 export interface StartWorkflowParams {
   workflowID?: string;
@@ -1632,46 +1613,6 @@ export class DBOS {
     }
 
     return func();
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP GET operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static getApi(url: string) {
-    return httpApiDec(APITypes.GET, url);
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP POST operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static postApi(url: string) {
-    return httpApiDec(APITypes.POST, url);
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP PUT operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static putApi(url: string) {
-    return httpApiDec(APITypes.PUT, url);
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP PATCH operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static patchApi(url: string) {
-    return httpApiDec(APITypes.PATCH, url);
-  }
-
-  /**
-   * Decorator indicating that the method is the target of HTTP DELETE operations for `url`
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static deleteApi(url: string) {
-    return httpApiDec(APITypes.DELETE, url);
   }
 
   /**

@@ -29,7 +29,6 @@ export {
   FunctionName,
 
   // Method Decorators
-  DBOSInitializer,
   DBOSMethodMiddlewareInstaller,
 
   // Class Instances
@@ -37,25 +36,7 @@ export {
 
   // Parameter Decorators
   MethodParameter,
-  ArgName,
-
-  // ORM Class Decorators
-  OrmEntities,
 } from './decorators';
-
-export {
-  ArgRequired,
-  ArgOptional,
-  ArgDate,
-  ArgVarchar,
-  DefaultArgRequired,
-  DefaultArgOptional,
-  DefaultArgValidate,
-  LogMask,
-  LogMasks,
-  SkipLogging,
-  requestArgValidation,
-} from './paramdecorators';
 
 export {
   DBOSConfig,
