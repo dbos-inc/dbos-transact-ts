@@ -10,11 +10,6 @@ import request from 'supertest';
 
 const dhttp = new DBOSKoa();
 
-interface TestKvTable {
-  id?: number;
-  value?: string;
-}
-
 import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'http';
 import { bodyParser } from '@koa/bodyparser';
@@ -29,12 +24,9 @@ describe('httpserver-tests', () => {
   let app: Koa;
   let appRouter: Router;
 
-  const testTableName = 'dbos_test_kv';
-
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'dbos-koa-test',
-      userDatabaseClient: 'pg-node',
     });
     return Promise.resolve();
   });
@@ -42,8 +34,6 @@ describe('httpserver-tests', () => {
   beforeEach(async () => {
     const _classes = [TestEndpoints];
     await DBOS.launch();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
     app = new Koa();
     appRouter = new Router();
     dhttp.registerWithApp(app, appRouter);
@@ -160,12 +150,6 @@ describe('httpserver-tests', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  test('endpoint-transaction', async () => {
-    const response = await request(app.callback()).post('/transaction/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
-  });
-
   test('endpoint-step', async () => {
     const response = await request(app.callback()).get('/step/alice');
     expect(response.statusCode).toBe(200);
@@ -175,31 +159,30 @@ describe('httpserver-tests', () => {
   test('endpoint-workflow', async () => {
     const response = await request(app.callback()).post('/workflow?name=alice');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('alice');
   });
 
   test('endpoint-error', async () => {
     const response = await request(app.callback()).post('/error').send({ name: 'alice' });
     expect(response.statusCode).toBe(500);
-    expect(response.body.details.code).toBe('23505'); // Should be the expected error.
   });
 
   test('endpoint-handler', async () => {
     const response = await request(app.callback()).get('/handler/alice');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('alice');
   });
 
   test('endpoint-testStartWorkflow', async () => {
     const response = await request(app.callback()).get('/testStartWorkflow/alice');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('alice');
   });
 
   test('endpoint-testInvokeWorkflow', async () => {
     const response = await request(app.callback()).get('/testInvokeWorkflow/alice');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('alice');
   });
 
   // This feels unclean, but supertest doesn't expose the error message the people we want. See:
@@ -292,12 +275,12 @@ describe('httpserver-tests', () => {
       .post('/workflow?name=bob')
       .set({ 'dbos-idempotency-key': workflowID });
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('bob');
 
     // Retrieve the workflow with WFID.
     const retrievedHandle = DBOS.retrieveWorkflow(workflowID);
     expect(retrievedHandle).not.toBeNull();
-    await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
+    await expect(retrievedHandle.getResult()).resolves.toBe('bob');
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -307,12 +290,12 @@ describe('httpserver-tests', () => {
     const workflowID = randomUUID();
     const response = await request(app.callback()).get('/handler/bob').set({ 'dbos-idempotency-key': workflowID });
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('bob');
 
     // Retrieve the workflow with WFID.
     const retrievedHandle = DBOS.retrieveWorkflow(workflowID);
     expect(retrievedHandle).not.toBeNull();
-    await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
+    await expect(retrievedHandle.getResult()).resolves.toBe('bob');
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -378,6 +361,12 @@ describe('httpserver-tests', () => {
       return Promise.resolve(url);
     }
 
+    @dhttp.getApi('/dbos-error')
+    @DBOS.workflow()
+    static async dbosErr() {
+      return Promise.reject(new DBOSResponseError('customize error', 503));
+    }
+
     @dhttp.getApi('/query')
     static async helloQuery(name: string) {
       DBOS.logger.info(`query with name ${name}`); // Test logging.
@@ -423,12 +412,6 @@ describe('httpserver-tests', () => {
       return Promise.resolve(`hello ${name}`);
     }
 
-    @dhttp.getApi('/dbos-error')
-    @DBOS.transaction()
-    static async dbosErr() {
-      return Promise.reject(new DBOSResponseError('customize error', 503));
-    }
-
     @dhttp.getApi('/handler/:name')
     static async testHandler(name: string) {
       const workflowID: string = DBOSKoa.koaContext.get(WorkflowIDHeader);
@@ -450,16 +433,6 @@ describe('httpserver-tests', () => {
       return await TestEndpoints.testWorkflow(name);
     }
 
-    @dhttp.postApi('/transaction/:name')
-    @DBOS.transaction()
-    static async testTransaction(name: string) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(
-        `INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`,
-        [name],
-      );
-      return `hello ${rows[0].id}`;
-    }
-
     @dhttp.getApi('/step/:input')
     @DBOS.step()
     static async testStep(input: string) {
@@ -469,17 +442,14 @@ describe('httpserver-tests', () => {
     @dhttp.postApi('/workflow')
     @DBOS.workflow()
     static async testWorkflow(name: string) {
-      const res = await TestEndpoints.testTransaction(name);
-      return TestEndpoints.testStep(res);
+      return TestEndpoints.testStep(name);
     }
 
     @dhttp.postApi('/error')
     @DBOS.workflow()
     static async testWorkflowError(name: string) {
       // This workflow should encounter duplicate primary key error.
-      let res = await TestEndpoints.testTransaction(name);
-      res = await TestEndpoints.testTransaction(name);
-      return res;
+      throw Error(name);
     }
 
     @dhttp.getApi('/requireduser')

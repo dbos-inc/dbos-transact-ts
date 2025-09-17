@@ -23,7 +23,6 @@ describe('httpserver-defsec-tests', () => {
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'dbos-koa-test',
-      userDatabaseClient: 'pg-node',
     });
     return Promise.resolve();
   });
@@ -31,8 +30,6 @@ describe('httpserver-defsec-tests', () => {
   beforeEach(async () => {
     const _classes = [TestEndpointDefSec, SecondClass];
     await DBOS.launch();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     middlewareCounter = 0;
     middlewareCounter2 = 0;
     middlewareCounterG = 0;
@@ -93,22 +90,6 @@ describe('httpserver-defsec-tests', () => {
   test('cascade-authorized', async () => {
     const response = await request(app.callback()).get('/workflow?name=alice&userid=a_real_user');
     expect(response.statusCode).toBe(200);
-
-    const txnResponse = await request(app.callback()).get('/transaction?name=alice&userid=a_real_user');
-    expect(txnResponse.statusCode).toBe(200);
-  });
-
-  // We can directly test a transaction with passed in authorizedRoles.
-  test('direct-transaction-test', async () => {
-    await DBOS.withAuthedContext('user', ['user'], async () => {
-      const res = await TestEndpointDefSec.testTranscation('alice');
-      expect(res).toBe('hello 1');
-    });
-
-    // Unauthorized.
-    await expect(TestEndpointDefSec.testTranscation('alice')).rejects.toThrow(
-      new DBOSError.DBOSNotAuthorizedError('User does not have a role with permission to call testTranscation', 403),
-    );
   });
 
   async function authTestMiddleware(ctx: DBOSKoaAuthContext) {
@@ -171,29 +152,20 @@ describe('httpserver-defsec-tests', () => {
       return Promise.resolve(`Please say hello to ${name}`);
     }
 
-    @DBOS.transaction()
-    static async testTranscation(name: string) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(
-        `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
-        [name],
-      );
-      return `hello ${rows[0].id}`;
+    @DBOS.step()
+    static async testStep(name: string) {
+      return `hello ${name}`;
     }
 
     @DBOS.workflow()
     static async testWorkflow(name: string) {
-      const res = await TestEndpointDefSec.testTranscation(name);
+      const res = await TestEndpointDefSec.testStep(name);
       return res;
     }
 
     @dhttp.getApi('/workflow')
     static async testWfEndpoint(name: string) {
       return await TestEndpointDefSec.testWorkflow(name);
-    }
-
-    @dhttp.getApi('/transaction')
-    static async testTxnEndpoint(name: string) {
-      return await TestEndpointDefSec.testTranscation(name);
     }
   }
 
