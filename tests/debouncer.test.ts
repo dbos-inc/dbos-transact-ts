@@ -207,7 +207,7 @@ describe('debouncer-tests', () => {
     const shortDebouncePeriodMs = 1000;
 
     // Set a huge period but small timeout, verify workflows start after the timeout
-    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
     const debouncer1 = new DebouncerClient(client, {
       workflowName: 'debouncerWorkflow',
       debounceTimeoutMs: 2000,
@@ -278,7 +278,7 @@ describe('debouncer-tests', () => {
     assert.equal(await thirdHandle.getResult(), fourthValue);
     assert.equal(await fourthHandle.getResult(), fourthValue);
 
-    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
     const clientDebouncer = new DebouncerClient(client, {
       workflowClassName: 'TestClass',
       workflowName: 'exampleWorkflow',

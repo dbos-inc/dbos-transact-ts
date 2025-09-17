@@ -259,8 +259,8 @@ describe('decorator-free-tests', () => {
   });
 
   test('wf-free-step-reg-client', async () => {
-    expect(config.databaseUrl).toBeDefined();
-    const client = await DBOSClient.create({ databaseUrl: config.databaseUrl! });
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
     try {
       const handle = await client.enqueue<typeof regWFRegStep>(
         {
@@ -372,8 +372,8 @@ describe('decorator-free-tests', () => {
   });
 
   test('wf-static-step-reg-client', async () => {
-    expect(config.databaseUrl).toBeDefined();
-    const client = await DBOSClient.create({ databaseUrl: config.databaseUrl! });
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
     try {
       const handle = await client.enqueue<typeof TestClass.wfRunStepStatic>(
         {
@@ -484,8 +484,8 @@ describe('decorator-free-tests', () => {
   });
 
   test('wf-inst-step-reg-client', async () => {
-    expect(config.databaseUrl).toBeDefined();
-    const client = await DBOSClient.create({ databaseUrl: config.databaseUrl! });
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
     try {
       const handle = await client.enqueue<typeof TestClass.prototype.wfRegStep>(
         {

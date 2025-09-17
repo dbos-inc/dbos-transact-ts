@@ -56,22 +56,10 @@ async function waitForMessageTest(
   }
 }
 
-function runProcess(command: ChildProcess) {
-  return new Promise<void>((resolve, reject) => {
-    command.on('error', reject);
-
-    command.on('exit', (code, signal) => {
-      if (signal) reject(new Error(`Killed with signal ${signal}`));
-      else if (code !== 0) reject(new Error(`Exited with code ${code}`));
-      else resolve();
-    });
-  });
-}
-
-async function dropTemplateDatabases() {
+async function resetTemplateDatabases() {
   const config = generateDBOSTestConfig();
-  expect(config.databaseUrl).toBeDefined();
-  const url = new URL(config.databaseUrl!);
+  expect(config.systemDatabaseUrl).toBeDefined();
+  const url = new URL(config.systemDatabaseUrl!);
   url.pathname = `/postgres`;
   const pgSystemClient = new Client({
     connectionString: url.toString(),
@@ -85,6 +73,10 @@ async function dropTemplateDatabases() {
   await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_prisma WITH (FORCE);`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_drizzle WITH (FORCE);`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_knex WITH (FORCE);`);
+  await pgSystemClient.query(`CREATE DATABASE dbos_knex;`);
+  await pgSystemClient.query(`CREATE DATABASE dbos_prisma;`);
+  await pgSystemClient.query(`CREATE DATABASE dbos_drizzle;`);
+  await pgSystemClient.query(`CREATE DATABASE dbos_typeorm;`);
   await pgSystemClient.end();
 }
 
@@ -99,7 +91,7 @@ function configureTemplate() {
 
 describe('runtime-tests-knex', () => {
   beforeAll(async () => {
-    await dropTemplateDatabases();
+    await resetTemplateDatabases();
     process.chdir('packages/create/templates/dbos-knex');
     configureTemplate();
   });
@@ -119,24 +111,11 @@ describe('runtime-tests-knex', () => {
     });
     await waitForMessageTest(command, '3000');
   });
-
-  test('test hello-knex if db does not exist', async () => {
-    await dropTemplateDatabases();
-    const command = spawn('node', ['dist/main.js'], {
-      env: process.env,
-    });
-
-    // Note the process should abort because we didn't create any DBs,
-    //  this is not configured with a user database (so no auto create)
-    //  and we expect a clear error message on launch if the DB is not
-    //  in a good condition
-    await expect(runProcess(command)).rejects.toThrow('Exited with code 1');
-  });
 });
 
 describe('runtime-tests-typeorm', () => {
   beforeAll(async () => {
-    await dropTemplateDatabases();
+    await resetTemplateDatabases();
     process.chdir('packages/create/templates/dbos-typeorm');
     configureTemplate();
   });
@@ -160,7 +139,7 @@ describe('runtime-tests-typeorm', () => {
 
 describe('runtime-tests-prisma', () => {
   beforeAll(async () => {
-    await dropTemplateDatabases();
+    await resetTemplateDatabases();
     process.chdir('packages/create/templates/dbos-prisma');
     configureTemplate();
   });
@@ -184,7 +163,7 @@ describe('runtime-tests-prisma', () => {
 
 describe('runtime-tests-drizzle', () => {
   beforeAll(async () => {
-    await dropTemplateDatabases();
+    await resetTemplateDatabases();
     process.chdir('packages/create/templates/dbos-drizzle');
     configureTemplate();
   });

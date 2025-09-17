@@ -376,7 +376,7 @@ async function wfFunctionGuts() {
 const wfFunction = DBOS.registerWorkflow(wfFunctionGuts, { name: 'workflow' });
 
 // Intentionally initialize DS after we've already tried to register a transaction to it
-const dsa = new DBOSKnexDS('knexA', { connectionString: config.databaseUrl });
+const dsa = new DBOSKnexDS('knexA', { connectionString: config.systemDatabaseUrl });
 
 // Decoratory example
 class DBWFI {

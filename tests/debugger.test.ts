@@ -13,8 +13,8 @@ describe('debugger-test', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig();
-    expect(config.databaseUrl).toBeDefined();
-    const url = new URL(config.databaseUrl!);
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const url = new URL(config.systemDatabaseUrl!);
     username = url.username ?? 'postgres';
     await setUpDBOSTestDb(config);
   });
