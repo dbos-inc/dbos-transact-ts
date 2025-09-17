@@ -1,4 +1,4 @@
-import { ArgOptional, DBOS, ConfiguredInstance } from '../src/';
+import { DBOS, ConfiguredInstance } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
@@ -193,7 +193,7 @@ class FailureTestClass extends ConfiguredInstance {
   static success: string = '';
 
   @DBOS.step({ retriesAllowed: false })
-  static async testStep(@ArgOptional code?: number) {
+  static async testStep(code?: number) {
     const err = code
       ? new DBOSError('test dbos error with code.', code)
       : new DBOSError('test dbos error without code.');

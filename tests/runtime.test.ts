@@ -2,7 +2,7 @@ import { spawn, execSync, ChildProcess } from 'child_process';
 import { Writable } from 'stream';
 import { Client } from 'pg';
 import { generateDBOSTestConfig } from './helpers';
-import { HealthUrl } from '../src/httpServer/server';
+import { HealthUrl } from '../src/adminserver';
 import { sleepms } from '../src/utils';
 
 async function waitForMessageTest(
