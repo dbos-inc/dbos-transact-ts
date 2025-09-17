@@ -1,7 +1,7 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { getSysDatabaseUrlFromUserDb, translateDbosConfig } from '../src/dbos-runtime/config';
+import { getSysDatabaseUrlFromUserDb, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';

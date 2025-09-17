@@ -1,13 +1,13 @@
-import { readFileSync } from '../utils';
-import { DBOSConfig, DBOSRuntimeConfig, DBOSConfigInternal } from '../dbos-executor';
+import { readFileSync } from './utils';
+import { DBOSConfig, DBOSRuntimeConfig, DBOSConfigInternal } from './dbos-executor';
 import YAML from 'yaml';
 import { writeFileSync } from 'fs';
 import Ajv from 'ajv';
 import path from 'path';
-import dbosConfigSchema from '../../dbos-config.schema.json';
+import dbosConfigSchema from '../dbos-config.schema.json';
 import assert from 'assert';
 import validator from 'validator';
-import { maskDatabaseUrl } from '../database_utils';
+import { maskDatabaseUrl } from './database_utils';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });

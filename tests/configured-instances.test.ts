@@ -180,10 +180,8 @@ async function main5() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  const res = await DBOS.withWorkflowQueue(wfq.name, async () => {
-    return await instA.doWorkflow();
-  });
-  expect(res).toBe('done A');
+  const handle = await DBOS.startWorkflow(instA, { queueName: wfq.name }).doWorkflow();
+  await expect(handle.getResult()).resolves.toBe('done A');
 
   const wfs = await DBOS.listWorkflows({ workflowName: 'doWorkflow' });
   expect(wfs.length).toBeGreaterThanOrEqual(1);

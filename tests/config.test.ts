@@ -6,7 +6,7 @@ import {
   overwriteConfigForDBOSCloud,
   readConfigFile,
   translateDbosConfig,
-} from '../src/dbos-runtime/config';
+} from '../src/config';
 import { AssertionError } from 'assert';
 import { DBOSConfigInternal } from '../src/dbos-executor';
 import { DBOSRuntimeConfig } from '../src';

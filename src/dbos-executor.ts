@@ -88,7 +88,7 @@ import {
   listWorkflows,
   listWorkflowSteps,
   toWorkflowStatus,
-} from './dbos-runtime/workflow_management';
+} from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
 import { debouncerWorkflowFunction } from './debouncer';
 

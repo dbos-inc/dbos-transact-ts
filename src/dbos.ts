@@ -36,7 +36,7 @@ import {
   readConfigFile,
   translateDbosConfig,
   translateRuntimeConfig,
-} from './dbos-runtime/config';
+} from './config';
 import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
   associateClassWithExternal,

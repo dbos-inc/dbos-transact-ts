@@ -6,7 +6,7 @@ import {
   getSystemDatabaseUrl,
   overwriteConfigForDBOSCloud,
   readConfigFile,
-} from './config';
+} from '../config';
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { migrate } from './migrate';

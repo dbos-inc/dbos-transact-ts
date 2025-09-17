@@ -11,7 +11,7 @@ import { performance } from 'perf_hooks';
 import { DBOSJSON, globalParams } from './utils';
 import { QueueParameters, wfQueueRunner } from './wfqueue';
 import { serializeError } from 'serialize-error';
-import { globalTimeout } from './dbos-runtime/workflow_management';
+import { globalTimeout } from './workflow_management';
 import * as protocol from './conductor/protocol';
 
 export type QueueMetadataResponse = QueueParameters & { name: string };

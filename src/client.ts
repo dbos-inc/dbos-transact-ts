@@ -24,7 +24,7 @@ import {
   listWorkflows,
   listWorkflowSteps,
   toWorkflowStatus,
-} from './dbos-runtime/workflow_management';
+} from './workflow_management';
 import { DBOSExecutor } from './dbos-executor';
 import { DBOSAwaitedWorkflowCancelledError } from './error';
 

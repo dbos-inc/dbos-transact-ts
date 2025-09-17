@@ -1,7 +1,6 @@
-import type { GetWorkflowsInput } from '..';
-import type { SystemDatabase, WorkflowStatusInternal } from '../system_database';
-import type { GetQueuedWorkflowsInput, StepInfo, WorkflowStatus } from '../workflow';
-import { DBOSJSON } from '../utils';
+import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
+import type { GetQueuedWorkflowsInput, StepInfo, WorkflowStatus, GetWorkflowsInput } from './workflow';
+import { DBOSJSON } from './utils';
 import { deserializeError } from 'serialize-error';
 import { randomUUID } from 'node:crypto';
 
