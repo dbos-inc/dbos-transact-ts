@@ -72,20 +72,10 @@ import {
 import { DBOSJSON, globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
 import { Server } from 'http';
-import {
-  DrizzleClient,
-  PrismaClient,
-  TypeORMEntityManager,
-  UserDatabaseClient,
-  UserDatabaseName,
-} from './user_database';
-import { TransactionConfig } from './transaction';
 
 import Koa from 'koa';
 import { randomUUID } from 'node:crypto';
 
-import { PoolClient } from 'pg';
-import { Knex } from 'knex';
 import { StepConfig } from './step';
 import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, requestArgValidation, WorkflowHandle } from '.';
 import { ConfiguredInstance } from '.';
@@ -202,24 +192,6 @@ export class DBOS {
     DBOS.#dbosConfig = config;
   }
 
-  /**
-   * Use ORMEntities to set up database schema.
-   * Only relevant for TypeORM, and for testing purposes only, not production
-   * @deprecated - use data source packages such as `@dbos-inc/typeorm-datasource`
-   */
-  static async createUserSchema() {
-    return DBOSExecutor.globalInstance?.createUserSchema();
-  }
-
-  /**
-   * Use ORMEntities to drop database schema.
-   * Only relevant for TypeORM, and for testing purposes only, not production
-   * @deprecated - use data source packages such as `@dbos-inc/typeorm-datasource`
-   */
-  static async dropUserSchema() {
-    return DBOSExecutor.globalInstance?.dropUserSchema();
-  }
-
   // Load files with DBOS classes (running their decorators)
   static async loadClasses(dbosEntrypointFiles: string[]) {
     return await DBOSExecutor.loadClasses(dbosEntrypointFiles);
@@ -272,7 +244,6 @@ export class DBOS {
     }
 
     DBOS.#port = runtimeConfig.port;
-    DBOS.#userDbClient = internalConfig.userDbClient;
 
     DBOSExecutor.createDebouncerWorkflow();
     DBOSExecutor.createInternalQueue();
@@ -467,7 +438,6 @@ export class DBOS {
   //////
   static #dbosConfig?: DBOSConfig;
   static #port?: number;
-  static #userDbClient?: UserDatabaseName;
 
   //////
   // Context
@@ -589,118 +559,6 @@ export class DBOS {
    */
   static isInWorkflow(): boolean {
     return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
-  }
-
-  // sql session (various forms)
-  /**
-   * @returns the current SQL client; only allowed within `@DBOS.transaction` functions
-   * @deprecated - use data source packages such as:
-   *  `@dbos-inc/drizzle-datasource`
-   *  `@dbos-inc/knex-datasource`
-   *  `@dbos-inc/node-pg-datasource`
-   *  `@dbos-inc/postgres-datasource`
-   *  `@dbos-inc/prisma-datasource`
-   *  `@dbos-inc/typeorm-datasource`
-   */
-  static get sqlClient(): UserDatabaseClient {
-    const c = getCurrentContextStore()?.sqlClient;
-    if (!DBOS.isInTransaction() || !c)
-      throw new DBOSInvalidWorkflowTransitionError('Invalid use of `DBOS.sqlClient` outside of a `transaction`');
-    return c;
-  }
-
-  /**
-   * @returns the current PG SQL client;
-   *  only allowed within `@DBOS.transaction` functions when a `PGNODE` user database is in use
-   * @deprecated - use data source packages such as `@dbos-inc/node-pg-datasource`
-   */
-  static get pgClient(): PoolClient {
-    if (DBOS.#userDbClient !== UserDatabaseName.PGNODE) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.pgClient' but client is configured with type '${DBOS.#userDbClient}'`,
-      );
-    }
-    return DBOS.sqlClient as PoolClient;
-  }
-
-  /**
-   * @returns the current Knex SQL client;
-   *  only allowed within `@DBOS.transaction` functions when a `KNEX` user database is in use
-   * @deprecated - use `@dbos-inc/knex-datasource` package
-   */
-  static get knexClient(): Knex {
-    if (DBOS.#userDbClient !== UserDatabaseName.KNEX) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.knexClient' but client is configured with type '${DBOS.#userDbClient}'`,
-      );
-    }
-    return DBOS.sqlClient as Knex;
-  }
-
-  /**
-   * @returns the current Prisma SQL client;
-   *  only allowed within `@DBOS.transaction` functions when a `PRISMA` user database is in use
-   * @deprecated - use `@dbos-inc/prisma-datasource` package
-   */
-  static get prismaClient(): PrismaClient {
-    if (DBOS.#userDbClient !== UserDatabaseName.PRISMA) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.prismaClient' but client is configured with type '${DBOS.#userDbClient}'`,
-      );
-    }
-    return DBOS.sqlClient as PrismaClient;
-  }
-
-  /**
-   * @returns the current  TypeORM SQL client;
-   *  only allowed within `@DBOS.transaction` functions when the `TYPEORM` user database is in use
-   * @deprecated - use `@dbos-inc/typeorm-datasource` package
-   */
-  static get typeORMClient(): TypeORMEntityManager {
-    if (DBOS.#userDbClient !== UserDatabaseName.TYPEORM) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.typeORMClient' but client is configured with type '${DBOS.#userDbClient}'`,
-      );
-    }
-    return DBOS.sqlClient as TypeORMEntityManager;
-  }
-
-  /**
-   * @returns the current Drizzle SQL client;
-   *  only allowed within `@DBOS.transaction` functions when the `DRIZZLE` user database is in use
-   * @deprecated - use `@dbos-inc/drizzle-datasource` package
-   */
-  static get drizzleClient(): DrizzleClient {
-    if (DBOS.#userDbClient !== UserDatabaseName.DRIZZLE) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Requested 'DBOS.drizzleClient' but client is configured with type '${DBOS.#userDbClient}'`,
-      );
-    }
-    return DBOS.sqlClient as DrizzleClient;
-  }
-
-  /**
-   * Query the current application database
-   * @param sql - parameterized SQL statement (string) to execute
-   * @param params - parameter values for `sql`
-   * @template T - Type for the returned records
-   * @returns Array of records returned by the SQL statement
-   * @deprecated - use data source packages such as:
-   *  `@dbos-inc/drizzle-datasource`
-   *  `@dbos-inc/knex-datasource`
-   *  `@dbos-inc/node-pg-datasource`
-   *  `@dbos-inc/postgres-datasource`
-   *  `@dbos-inc/prisma-datasource`
-   *  `@dbos-inc/typeorm-datasource`
-   */
-  static async queryUserDB<T = unknown>(sql: string, params?: unknown[]): Promise<T[]> {
-    if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
-      throw new DBOSInvalidWorkflowTransitionError(
-        'Invalid call to `queryUserDB` inside a `workflow`, without being in a `step`',
-      );
-    }
-
-    return DBOS.#executor.queryUserDB(sql, params) as Promise<T[]>;
   }
 
   //////
@@ -1563,16 +1421,6 @@ export class DBOS {
         const func = regOP.registeredFunction as TypedAsyncFunction<Args, Return>;
         return DBOSExecutor.globalInstance!.internalWorkflow(func, wfParams, workflowID, funcNum, ...args);
       }
-      if (regOP.txnConfig) {
-        const func = regOP.registeredFunction;
-        return DBOSExecutor.globalInstance!.startTransactionTempWF(
-          func as (...args: Args) => Promise<Return>,
-          wfParams,
-          workflowID,
-          funcNum,
-          ...args,
-        );
-      }
       if (regOP.stepConfig) {
         const func = regOP.registeredFunction as TypedAsyncFunction<Args, Return>;
         return DBOSExecutor.globalInstance!.startStepTempWF(func, wfParams, workflowID, funcNum, ...args);
@@ -1612,92 +1460,6 @@ export class DBOS {
       value: registration.name,
     });
     return invoker;
-  }
-
-  /**
-   * Decorator designating a method as a DBOS transaction, making SQL clients available.
-   *   A durable execution checkpoint will be applied to to the underlying database transaction
-   * @see `DBOS.sqlClient`
-   * @param config - Configuration information for the transaction, particularly its isolation mode
-   * @deprecated - use data source packages such as:
-   *  `@dbos-inc/drizzle-datasource`
-   *  `@dbos-inc/knex-datasource`
-   *  `@dbos-inc/node-pg-datasource`
-   *  `@dbos-inc/postgres-datasource`
-   *  `@dbos-inc/prisma-datasource`
-   *  `@dbos-inc/typeorm-datasource`
-   */
-  static transaction(config: TransactionConfig = {}) {
-    function decorator<This, Args extends unknown[], Return>(
-      target: object,
-      propertyKey: string,
-      inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-    ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
-        target,
-        propertyKey,
-        inDescriptor,
-      );
-      registration.setTxnConfig(config);
-
-      const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
-        ensureDBOSIsLaunched('transactions');
-        let inst: ConfiguredInstance | undefined = undefined;
-        if (this === undefined || typeof this === 'function') {
-          // This is static
-        } else {
-          inst = this as ConfiguredInstance;
-          if (!(inst instanceof ConfiguredInstance)) {
-            throw new DBOSInvalidWorkflowTransitionError(
-              'Attempt to call a `transaction` function on an object that is not a `ConfiguredInstance`',
-            );
-          }
-        }
-
-        if (DBOS.isWithinWorkflow()) {
-          if (DBOS.isInTransaction()) {
-            throw new DBOSInvalidWorkflowTransitionError(
-              'Invalid call to a `transaction` function from within a `transaction`',
-            );
-          }
-          if (DBOS.isInStep()) {
-            throw new DBOSInvalidWorkflowTransitionError(
-              'Invalid call to a `transaction` function from within a `step`',
-            );
-          }
-
-          return await DBOSExecutor.globalInstance!.callTransactionFunction(
-            registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
-            inst ?? null,
-            ...rawArgs,
-          );
-        }
-
-        const wfId = getNextWFID(undefined);
-
-        const wfParams: WorkflowParams = {
-          configuredInstance: inst,
-          workflowUUID: wfId,
-        };
-
-        return await DBOS.#executor.runTransactionTempWF(
-          registration.registeredFunction as (...args: unknown[]) => Promise<Return>,
-          wfParams,
-          ...rawArgs,
-        );
-      };
-
-      descriptor.value = invokeWrapper;
-      registration.wrappedFunction = invokeWrapper;
-      registerFunctionWrapper(invokeWrapper, registration);
-
-      Object.defineProperty(invokeWrapper, 'name', {
-        value: registration.name,
-      });
-
-      return descriptor;
-    }
-    return decorator;
   }
 
   /**
@@ -2013,26 +1775,5 @@ export class DBOS {
     funcName?: string,
   ): readonly ExternalRegistration[] {
     return getRegistrationsForExternal(external, cls, funcName);
-  }
-}
-
-/** @deprecated */
-export class InitContext {
-  createUserSchema(): Promise<void> {
-    DBOS.logger.warn(
-      'Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations',
-    );
-    return DBOS.createUserSchema();
-  }
-
-  dropUserSchema(): Promise<void> {
-    DBOS.logger.warn(
-      'Schema synchronization is deprecated and unsafe for production use. Please use migrations instead: https://typeorm.io/migrations',
-    );
-    return DBOS.dropUserSchema();
-  }
-
-  queryUserDB<R>(sql: string, ...params: unknown[]): Promise<R[]> {
-    return DBOS.queryUserDB(sql, params);
   }
 }

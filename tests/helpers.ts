@@ -1,5 +1,4 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
 import { getSysDatabaseUrlFromUserDb, translateDbosConfig } from '../src/dbos-runtime/config';
@@ -8,7 +7,7 @@ import { GlobalLogger } from '../src/telemetry/logs';
 import { dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
 
 /* DB management helpers */
-export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
+export function generateDBOSTestConfig(): DBOSConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
@@ -22,7 +21,6 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
     name: 'dbostest',
     databaseUrl,
     systemDatabaseUrl,
-    userDatabaseClient: dbClient,
   };
 }
 

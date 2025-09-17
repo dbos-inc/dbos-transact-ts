@@ -1,7 +1,6 @@
 import { readFileSync } from '../utils';
 import { DBOSConfig, DBOSRuntimeConfig, DBOSConfigInternal } from '../dbos-executor';
 import YAML from 'yaml';
-import { UserDatabaseName } from '../user_database';
 import { writeFileSync } from 'fs';
 import Ajv from 'ajv';
 import path from 'path';
@@ -19,7 +18,6 @@ export interface ConfigFile {
   database_url?: string;
   system_database_url?: string;
   database?: {
-    app_db_client?: UserDatabaseName;
     migrate?: string[];
   };
   telemetry?: {
@@ -216,14 +214,12 @@ export function getDbosConfig(
     config.language === undefined || config.language === 'node',
     `Config file specifies invalid language ${config.language}`,
   );
-  const userDbClient = config.database?.app_db_client;
 
   return translateDbosConfig(
     {
       name: config.name,
       databaseUrl: config.database_url,
       systemDatabaseUrl: config.system_database_url,
-      userDatabaseClient: userDbClient,
       logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
       addContextMetadata: config.telemetry?.logs?.addContextMetadata,
       otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
@@ -239,10 +235,6 @@ function toArray(endpoint: string | string[] | undefined): Array<string> {
   return endpoint ? (Array.isArray(endpoint) ? endpoint : [endpoint]) : [];
 }
 
-function isValidUserDbClient(name: string): name is UserDatabaseName {
-  return Object.values(UserDatabaseName).includes(name as UserDatabaseName);
-}
-
 export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean = false): DBOSConfigInternal {
   const databaseUrl = getApplicationDatabaseUrl({ database_url: options.databaseUrl, name: options.name });
   const systemDatabaseUrl = getSystemDatabaseUrl({
@@ -251,17 +243,12 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     name: options.name,
   });
 
-  if (options.userDatabaseClient) {
-    assert(isValidUserDbClient(options.userDatabaseClient), `Invalid user db client ${options.userDatabaseClient}`);
-  }
-
   return {
     name: options.name,
     databaseUrl,
     userDbPoolSize: options.userDatabasePoolSize,
     systemDatabaseUrl,
     sysDbPoolSize: options.systemDatabasePoolSize,
-    userDbClient: options.userDatabaseClient,
     telemetry: {
       logs: {
         logLevel: options.logLevel || 'info',

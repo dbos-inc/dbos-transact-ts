@@ -1,24 +1,17 @@
-import { WorkflowHandle, DBOSInitializer, InitContext, DBOS } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
+import { WorkflowHandle, DBOS } from '../src/';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
-import { transaction_outputs } from '../schemas/user_db_schema';
-import {
-  DBOSFailedSqlTransactionError,
-  DBOSWorkflowCancelledError,
-  DBOSAwaitedWorkflowCancelledError,
-} from '../src/error';
-
-const testTableName = 'dbos_test_kv';
+import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 
 describe('dbos-tests', () => {
   let username: string;
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     expect(config.databaseUrl).toBeDefined();
     const url = new URL(config.databaseUrl!);
     username = url.username;
@@ -38,7 +31,7 @@ describe('dbos-tests', () => {
   test('simple-function', async () => {
     const workflowHandle: WorkflowHandle<string> = await DBOS.startWorkflow(DBOSTestClass).testWorkflow(username);
     const workflowResult: string = await workflowHandle.getResult();
-    expect(JSON.parse(workflowResult)).toEqual({ current_user: username });
+    expect(workflowResult).toEqual(username);
   });
 
   test('simple-workflow-attempts-counter', async () => {
@@ -81,11 +74,6 @@ describe('dbos-tests', () => {
   });
 
   test('abort-function', async () => {
-    for (let i = 0; i < 10; i++) {
-      expect(await DBOSTestClass.testFailWorkflow(username)).toBe(i + 1);
-    }
-
-    // Should not appear in the database.
     await expect(DBOSTestClass.testFailWorkflow('fail')).rejects.toThrow('fail');
   });
 
@@ -127,68 +115,6 @@ describe('dbos-tests', () => {
     await expect(DBOS.getEvent(workflowUUID, 'fail', 0)).resolves.toBe(null);
   });
 
-  class ReadRecording {
-    static cnt: number = 0;
-    static wfCnt: number = 0;
-
-    @DBOS.transaction({ readOnly: true })
-    static async testReadFunction(id: number) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(`SELECT value FROM ${testTableName} WHERE id=$1`, [id]);
-      ReadRecording.cnt++;
-      await DBOS.pgClient.query(`SELECT pg_current_xact_id()`); // Increase transaction ID, testing if we can capture xid and snapshot correctly.
-      if (rows.length === 0) {
-        return null;
-      }
-      return rows[0].value;
-    }
-
-    @DBOS.transaction()
-    static async updateFunction(id: number, name: string) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(
-        `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`,
-        [id, name],
-      );
-      return rows[0].value;
-    }
-
-    @DBOS.workflow()
-    static async testRecordingWorkflow(id: number, name: string) {
-      await ReadRecording.testReadFunction(id);
-      ReadRecording.wfCnt++;
-      await ReadRecording.updateFunction(id, name);
-      ReadRecording.wfCnt++;
-      // Make sure the workflow actually runs.
-      throw Error('dumb test error');
-    }
-  }
-
-  test('txn-snapshot-recording', async () => {
-    // Test the recording of transaction snapshot information in our transaction_outputs table.
-    const workflowUUID = randomUUID();
-    // Invoke the workflow, should get the error.
-    await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(ReadRecording.testRecordingWorkflow(123, 'test')).rejects.toThrow(new Error('dumb test error'));
-    });
-
-    // Check the transaction output table and make sure we record transaction information correctly.
-    const readRec = await DBOS.queryUserDB<transaction_outputs>(
-      'SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2',
-      [workflowUUID, 0],
-    );
-    expect(readRec[0].txn_id).toBeTruthy();
-    expect(readRec[0].txn_snapshot).toBeTruthy();
-
-    const writeRec = await DBOS.queryUserDB<transaction_outputs>(
-      'SELECT txn_id, txn_snapshot FROM dbos.transaction_outputs WHERE workflow_uuid = $1 AND function_id = $2',
-      [workflowUUID, 1],
-    );
-    expect(writeRec[0].txn_id).toBeTruthy();
-    expect(writeRec[0].txn_snapshot).toBeTruthy();
-
-    // Two snapshots must be different because we bumped transaction ID.
-    expect(readRec[0].txn_snapshot).not.toEqual(writeRec[0].txn_snapshot);
-  });
-
   class RetrieveWorkflowStatus {
     // Test workflow status changes correctly.
     static resolve1: () => void;
@@ -206,22 +132,12 @@ describe('dbos-tests', () => {
       RetrieveWorkflowStatus.resolve3 = resolve;
     });
 
-    @DBOS.transaction()
-    static async testWriteFunction(id: number, name: string) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(
-        `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) ON CONFLICT (id) DO UPDATE SET value=EXCLUDED.value RETURNING value;`,
-        [id, name],
-      );
-      return rows[0].value;
-    }
-
     @DBOS.workflow()
     static async testStatusWorkflow(id: number, name: string) {
       await RetrieveWorkflowStatus.promise1;
-      const value = await RetrieveWorkflowStatus.testWriteFunction(id, name);
       RetrieveWorkflowStatus.resolve3(); // Signal the execution has done.
       await RetrieveWorkflowStatus.promise2;
-      return value;
+      return name;
     }
   }
 
@@ -266,15 +182,6 @@ describe('dbos-tests', () => {
     });
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
-    });
-  });
-
-  test('aborted-transaction', async () => {
-    const workflowUUID: string = randomUUID();
-    await DBOS.withNextWorkflowID(workflowUUID, async () => {
-      await expect(DBOSTestClass.attemptToCatchAbortingStoredProc()).rejects.toThrow(
-        new DBOSFailedSqlTransactionError(workflowUUID, 'attemptToCatchAbortingStoredProc'),
-      );
     });
   });
 
@@ -513,41 +420,25 @@ class DBOSTimeoutTestClass {
 }
 
 class DBOSTestClass {
-  static initialized = false;
   static cnt: number = 0;
 
-  @DBOSInitializer()
-  static async init(ctx: InitContext) {
-    DBOSTestClass.initialized = true;
-    // ctx and DBOS should be interchangeable
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await ctx.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
-    await ctx.queryUserDB(`CREATE OR REPLACE FUNCTION test_proc_raise() returns void as $$
-    BEGIN
-      raise 'something bad happened';
-    END
-    $$ language plpgsql;`);
-  }
-
-  @DBOS.transaction()
+  @DBOS.step()
   static async testFunction(name: string) {
-    const { rows } = await DBOS.pgClient.query(`select current_user from current_user where current_user=$1;`, [name]);
-    return JSON.stringify(rows[0]);
+    return Promise.resolve(name);
   }
 
   @DBOS.workflow()
   static async testWorkflow(name: string) {
-    expect(DBOSTestClass.initialized).toBe(true);
     const funcResult = await DBOSTestClass.testFunction(name);
     return funcResult;
   }
 
-  @DBOS.transaction()
+  @DBOS.step()
   static async testVoidFunction() {
     return Promise.resolve();
   }
 
-  @DBOS.transaction()
+  @DBOS.step()
   static async testNameFunction(name: string) {
     return Promise.resolve(name);
   }
@@ -557,44 +448,17 @@ class DBOSTestClass {
     return DBOSTestClass.testNameFunction(name); // Missing await is intentional
   }
 
-  @DBOS.transaction()
+  @DBOS.step()
   static async testFailFunction(name: string) {
-    const { rows } = await DBOS.pgClient.query<TestKvTable>(
-      `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
-      [name],
-    );
     if (name === 'fail') {
       throw new Error('fail');
     }
-    return Number(rows[0].id);
-  }
-
-  @DBOS.transaction({ readOnly: true })
-  static async testKvFunctionRead(id: number) {
-    const { rows } = await DBOS.pgClient.query<TestKvTable>(`SELECT id FROM ${testTableName} WHERE id=$1`, [id]);
-    if (rows.length > 0) {
-      return Number(rows[0].id);
-    } else {
-      // Cannot find, return a negative number.
-      return -1;
-    }
-  }
-
-  @DBOS.transaction()
-  static async attemptToCatchAbortingStoredProc() {
-    try {
-      return await DBOS.pgClient.query('select xx()');
-    } catch (e) {
-      return 'all good';
-    }
+    return Promise.resolve(name);
   }
 
   @DBOS.workflow()
   static async testFailWorkflow(name: string) {
-    expect(DBOSTestClass.initialized).toBe(true);
-    const funcResult: number = await DBOSTestClass.testFailFunction(name);
-    const checkResult: number = await DBOSTestClass.testKvFunctionRead(funcResult);
-    return checkResult;
+    await DBOSTestClass.testFailFunction(name);
   }
 
   @DBOS.step()
@@ -604,7 +468,6 @@ class DBOSTestClass {
 
   @DBOS.workflow()
   static async receiveWorkflow() {
-    expect(DBOSTestClass.initialized).toBe(true);
     const message1 = await DBOS.recv<string>();
     const message2 = await DBOS.recv<string>();
     const fail = await DBOS.recv('fail', 0);

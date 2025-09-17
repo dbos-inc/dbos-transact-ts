@@ -16,7 +16,7 @@ import {
   type WorkflowHandle,
   type WorkflowStatus,
 } from './workflow';
-import { DBOSJSON, getClientConfig, sleepms } from './utils';
+import { DBOSJSON, sleepms } from './utils';
 import {
   forkWorkflow,
   getWorkflow,
@@ -25,7 +25,6 @@ import {
   listWorkflowSteps,
   toWorkflowStatus,
 } from './dbos-runtime/workflow_management';
-import { PGNodeUserDatabase, type UserDatabase } from './user_database';
 import { getSysDatabaseUrlFromUserDb } from './dbos-runtime/config';
 import assert from 'node:assert';
 import { DBOSExecutor } from './dbos-executor';
@@ -122,7 +121,6 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
 export class DBOSClient {
   private readonly logger: GlobalLogger;
   private readonly systemDatabase: SystemDatabase;
-  private readonly userDatabase: UserDatabase | undefined;
 
   private constructor(databaseUrl: string | undefined, systemDatabaseUrl: string | undefined) {
     if (!systemDatabaseUrl) {
@@ -132,8 +130,6 @@ export class DBOSClient {
 
     this.logger = new GlobalLogger();
     this.systemDatabase = new PostgresSystemDatabase(systemDatabaseUrl, this.logger);
-
-    this.userDatabase = databaseUrl ? new PGNodeUserDatabase(getClientConfig(databaseUrl)) : undefined;
   }
 
   /**
@@ -160,7 +156,6 @@ export class DBOSClient {
    */
   async destroy() {
     await this.systemDatabase.destroy();
-    await this.userDatabase?.destroy();
   }
 
   /**
@@ -272,7 +267,7 @@ export class DBOSClient {
     startStep: number,
     options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<string> {
-    return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, options);
+    return forkWorkflow(this.systemDatabase, workflowID, startStep, options);
   }
 
   getWorkflow(workflowID: string): Promise<WorkflowStatus | undefined> {
@@ -288,7 +283,7 @@ export class DBOSClient {
   }
 
   listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
-    return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
+    return listWorkflowSteps(this.systemDatabase, workflowID);
   }
 
   /**

@@ -12,8 +12,6 @@ export * as Error from './error';
 
 export { DBOSResponseError, DBOSWorkflowConflictError } from './error';
 
-export { TransactionConfig } from './transaction';
-
 export {
   WorkflowConfig,
   WorkflowHandle,
@@ -91,7 +89,3 @@ export {
   // Endpoint Parameter Decorators
   ArgSource,
 } from './httpServer/handler';
-
-// Deprecated items below here...
-
-export { InitContext } from './dbos';

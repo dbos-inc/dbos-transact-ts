@@ -3,7 +3,6 @@ import { IncomingHttpHeaders } from 'http';
 
 import { ClassRegistration, RegistrationDefaults, getOrCreateClassRegistration } from '../decorators';
 import { DBOSContextualLogger } from '../telemetry/logs';
-import { UserDatabaseClient } from '../user_database';
 
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { randomUUID } from 'node:crypto';
@@ -16,11 +15,6 @@ export interface MiddlewareContext {
 
   readonly logger: DBOSContextualLogger; // Logger, for logging from middleware
   readonly span: Span; // Existing span
-
-  query<C extends UserDatabaseClient, R, T extends unknown[]>(
-    qry: (dbclient: C, ...args: T) => Promise<R>,
-    ...args: T
-  ): Promise<R>;
 }
 
 /**

@@ -1,7 +1,6 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
 import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
-import { ensureDbosTables } from '../user_database';
 import { ensurePGDatabase, maskDatabaseUrl } from '../database_utils';
 
 export async function migrate(
@@ -46,18 +45,6 @@ export async function migrate(
   } catch (e) {
     if (e instanceof Error) {
       logger.error(`Error creating DBOS system database: ${e.message}`);
-    } else {
-      logger.error(e);
-    }
-    status = 1;
-  }
-
-  try {
-    logger.info('Creating DBOS tables in user database.');
-    if (databaseUrl) await ensureDbosTables(databaseUrl);
-  } catch (e) {
-    if (e instanceof Error) {
-      logger.error(`Error installing DBOS table into user database: ${e.message}`);
     } else {
       logger.error(e);
     }

@@ -639,9 +639,6 @@ export class DBOSHttpServer {
                   koaContext: koaCtxt,
                   logger: dbosExec.ctxLogger,
                   span,
-                  query: (query, ...args) => {
-                    return dbosExec.queryUserDbFunction(query, ...args);
-                  },
                 });
                 if (res) {
                   dctx.authenticatedUser = res.authenticatedUser;
@@ -716,13 +713,7 @@ export class DBOSHttpServer {
           };
           await context.with(trace.setSpan(context.active(), span), async () => {
             await runWithTopContext(dctx, async () => {
-              if (ro.txnConfig) {
-                koaCtxt.body = await dbosExec.runTransactionTempWF(
-                  ro.registeredFunction as UntypedAsyncFunction,
-                  wfParams,
-                  ...args,
-                );
-              } else if (ro.workflowConfig) {
+              if (ro.workflowConfig) {
                 koaCtxt.body = await (
                   await dbosExec.workflow(ro.registeredFunction as UntypedAsyncFunction, wfParams, ...args)
                 ).getResult();

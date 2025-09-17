@@ -1,10 +1,8 @@
 import 'reflect-metadata';
 
-import { TransactionConfig } from './transaction';
 import { WorkflowConfig } from './workflow';
 import { StepConfig } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
-import { InitContext } from './dbos';
 import { DataSourceTransactionHandler } from './datasource';
 
 // #region Interfaces and supporting types
@@ -292,7 +290,6 @@ export interface MethodRegistrationBase {
   getRequiredRoles(): string[];
 
   workflowConfig?: WorkflowConfig;
-  txnConfig?: TransactionConfig;
   stepConfig?: StepConfig;
   isInstance: boolean;
 
@@ -340,7 +337,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
   wrappedFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined = undefined;
   workflowConfig?: WorkflowConfig;
-  txnConfig?: TransactionConfig;
   stepConfig?: StepConfig;
   regLocation?: string[];
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
@@ -352,8 +348,7 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
     return this.externalRegInfo.get(reg)!;
   }
 
-  getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | undefined {
-    if (this.txnConfig) return 'Transaction';
+  getAssignedType(): 'Workflow' | 'Step' | undefined {
     if (this.workflowConfig) return 'Workflow';
     if (this.stepConfig) return 'Step';
     return undefined;
@@ -375,11 +370,6 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
     } else {
       this.regLocation = new StackGrabber().getCleanStack(3);
     }
-  }
-
-  setTxnConfig(txCfg: TransactionConfig): void {
-    this.checkFuncTypeUnassigned('Transaction');
-    this.txnConfig = txCfg;
   }
 
   setStepConfig(stepCfg: StepConfig): void {
@@ -421,13 +411,6 @@ export abstract class ConfiguredInstance {
     }
     this.name = name;
     registerClassInstance(this, name);
-  }
-  /**
-   * Override this method to perform async initialization.
-   * @param _ctx - @deprecated This parameter is unnecessary, use `DBOS` instead.
-   */
-  initialize(_ctx: InitContext): Promise<void> {
-    return Promise.resolve();
   }
 }
 
