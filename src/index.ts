@@ -44,23 +44,3 @@ export {
   DBOSExternalState,
   DBOSExternalState as DBOSEventReceiverState,
 } from './dbos-executor';
-
-export {
-  DBOSHttpAuthMiddleware,
-  DBOSHttpAuthReturn,
-  MiddlewareContext,
-
-  // Middleware Decorators
-  Authentication,
-  KoaBodyParser,
-  KoaCors,
-  KoaGlobalMiddleware,
-  KoaMiddleware,
-} from './httpServer/middleware';
-
-export { ArgSources } from './httpServer/handlerTypes';
-
-export {
-  // Endpoint Parameter Decorators
-  ArgSource,
-} from './httpServer/handler';

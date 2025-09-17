@@ -82,10 +82,6 @@ export interface GetQueuedWorkflowsInput {
   loadInput?: boolean; // Load the input of the workflow (default true)
 }
 
-export interface GetWorkflowsOutput {
-  workflowUUIDs: string[];
-}
-
 export interface GetPendingWorkflowsOutput {
   workflowUUID: string;
   queueName?: string;

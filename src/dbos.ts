@@ -13,7 +13,6 @@ import { installTraceContextManager, isTraceContextWorking, Tracer } from './tel
 import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
-  GetWorkflowsOutput,
   InternalWFHandle,
   isWorkflowActive,
   RetrievedHandle,
@@ -72,7 +71,6 @@ import { DBOSJSON, globalParams, sleepms } from './utils';
 import { DBOSHttpServer } from './httpServer/server';
 import { Server } from 'http';
 
-import Koa from 'koa';
 import { randomUUID } from 'node:crypto';
 
 import { StepConfig } from './step';
@@ -291,7 +289,6 @@ export class DBOS {
    */
   static logRegisteredEndpoints(): void {
     if (!DBOSExecutor.globalInstance) return;
-    DBOSExecutor.globalInstance.logRegisteredHTTPUrls();
     wfQueueRunner.logRegisteredEndpoints(DBOSExecutor.globalInstance);
     for (const lcl of getLifecycleListeners()) {
       lcl.logRegisteredEndpoints?.();
@@ -361,51 +358,6 @@ export class DBOS {
     return getExecutor();
   }
 
-  /**
-   * Creates a node.js HTTP handler for all entrypoints registered with `@DBOS.getApi`
-   * and other decorators.  The handler can be retrieved with `DBOS.getHTTPHandlersCallback()`.
-   * This method does not start listening for requests.  For that, call `DBOS.launchAppHTTPServer()`.
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static setUpHandlerCallback() {
-    if (!DBOSExecutor.globalInstance) {
-      throw new DBOSExecutorNotInitializedError();
-    }
-    // Create the DBOS HTTP server
-    //  This may be a no-op if there are no registered endpoints
-    const server = new DBOSHttpServer(DBOSExecutor.globalInstance);
-
-    return server;
-  }
-
-  /**
-   * Creates a node.js HTTP handler for all entrypoints registered with `@DBOS.getApi`
-   * and other decorators.  This method also starts listening for requests, on the port
-   * specified in the `DBOSRuntimeConfig`.
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static async launchAppHTTPServer() {
-    const server = DBOS.setUpHandlerCallback();
-    if (DBOS.#port) {
-      // This will not listen if there's no decorated endpoint
-      DBOS.appServer = await server.appListen(DBOS.#port);
-    }
-  }
-
-  /**
-   * Retrieves the HTTP handlers callback for DBOS HTTP.
-   *  (This is the one that handles the @DBOS.getApi, etc., methods.)
-   *   Useful for testing purposes, or to combine the DBOS service with other
-   *   node.js HTTP server frameworks.
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static getHTTPHandlersCallback() {
-    if (!DBOSHttpServer.instance) {
-      return undefined;
-    }
-    return DBOSHttpServer.instance.app.callback();
-  }
-
   /** For unit testing of admin server (do not call) */
   static getAdminCallback() {
     if (!DBOSHttpServer.instance) {
@@ -461,24 +413,6 @@ export class DBOS {
   static get request(): HTTPRequest {
     const r = DBOS.getRequest();
     if (!r) throw new DBOSError('`DBOS.request` accessed from outside of HTTP requests');
-    return r;
-  }
-
-  /**
-   * Get the current Koa context (within `@DBOS.getApi` et al)
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static getKoaContext(): Koa.Context | undefined {
-    return getCurrentContextStore()?.koaContext;
-  }
-
-  /**
-   * Get the current Koa context (within `@DBOS.getApi` et al)
-   * @deprecated - use `@dbos-inc/koa-serve`
-   */
-  static get koaContext(): Koa.Context {
-    const r = DBOS.getKoaContext();
-    if (!r) throw new DBOSError('`DBOS.koaContext` accessed from outside koa request');
     return r;
   }
 
@@ -663,20 +597,6 @@ export class DBOS {
       return new RetrievedHandle(DBOSExecutor.globalInstance!.systemDatabase, workflowID);
     }
     return DBOS.#executor.retrieveWorkflow(workflowID);
-  }
-
-  /**
-   * Query the system database for all workflows matching the provided predicate
-   * @param input - `GetWorkflowsInput` predicate for filtering returned workflows
-   * @returns `GetWorkflowsOutput` listing the workflow IDs of matching workflows
-   * @deprecated Use `DBOS.listWorkflows` instead
-   */
-  static async getWorkflows(input: GetWorkflowsInput): Promise<GetWorkflowsOutput> {
-    ensureDBOSIsLaunched('getWorkflows');
-    return await runInternalStep(async () => {
-      const wfs = await DBOS.#executor.listWorkflows(input);
-      return { workflowUUIDs: wfs.map((wf) => wf.workflowID) };
-    }, 'DBOS.getWorkflows');
   }
 
   /**
@@ -893,18 +813,6 @@ export class DBOS {
   static async withNamedContext<R>(callerName: string, callback: () => Promise<R>): Promise<R> {
     ensureDBOSIsLaunched('tracing');
     return DBOS.#withTopContext({ operationCaller: callerName }, callback);
-  }
-
-  /**
-   * @deprecated
-   * Use queue named `queueName` for any workflows started within the `callback`.
-   * @param queueName - Name of queue upon which all workflows called or started within `callback` will be run
-   * @param callback - Function to run, which would call or start workflows
-   * @returns - Return value from `callback`
-   */
-  static async withWorkflowQueue<R>(queueName: string, callback: () => Promise<R>): Promise<R> {
-    ensureDBOSIsLaunched('workflows');
-    return DBOS.#withTopContext({ queueAssignedForWorkflows: queueName }, callback);
   }
 
   /**
