@@ -37,13 +37,9 @@ describe('httpserver-argsource-tests', () => {
     const response1 = await request(app.callback()).get('/getquery?name=alice');
     expect(response1.statusCode).toBe(200);
     expect(response1.text).toBe('hello alice');
-    const response2 = await request(app.callback()).get('/getquery').send({ name: 'alice' });
-    expect(response2.statusCode).toBe(400);
   });
 
   test('get-body', async () => {
-    const response1 = await request(app.callback()).get('/getbody?name=alice');
-    expect(response1.statusCode).toBe(400);
     const response2 = await request(app.callback()).get('/getbody').send({ name: 'alice' });
     expect(response2.statusCode).toBe(200);
     expect(response2.text).toBe('hello alice');
@@ -53,8 +49,6 @@ describe('httpserver-argsource-tests', () => {
     const response1 = await request(app.callback()).get('/getdefault?name=alice');
     expect(response1.statusCode).toBe(200);
     expect(response1.text).toBe('hello alice');
-    const response2 = await request(app.callback()).get('/getdefault').send({ name: 'alice' });
-    expect(response2.statusCode).toBe(400);
   });
 
   test('get-auto', async () => {
@@ -70,21 +64,15 @@ describe('httpserver-argsource-tests', () => {
     const response1 = await request(app.callback()).post('/postquery?name=alice');
     expect(response1.statusCode).toBe(200);
     expect(response1.text).toBe('hello alice');
-    const response2 = await request(app.callback()).post('/postquery').send({ name: 'alice' });
-    expect(response2.statusCode).toBe(400);
   });
 
   test('post-body', async () => {
-    const response1 = await request(app.callback()).post('/postbody?name=alice');
-    expect(response1.statusCode).toBe(400);
     const response2 = await request(app.callback()).post('/postbody').send({ name: 'alice' });
     expect(response2.statusCode).toBe(200);
     expect(response2.text).toBe('hello alice');
   });
 
   test('post-default', async () => {
-    const response1 = await request(app.callback()).post('/postdefault?name=alice');
-    expect(response1.statusCode).toBe(400);
     const response2 = await request(app.callback()).post('/postdefault').send({ name: 'alice' });
     expect(response2.statusCode).toBe(200);
     expect(response2.text).toBe('hello alice');
@@ -105,7 +93,6 @@ describe('httpserver-argsource-tests', () => {
       parsedMethods: ['GET', 'POST'],
     }),
   )
-  @DBOSKoa.defaultArgRequired
   class ArgTestEndpoints {
     @dhttp.getApi('/getquery')
     static async getQuery(@DBOSKoa.argSource(ArgSources.QUERY) name: string) {

@@ -2,20 +2,7 @@ import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { randomUUID } from 'node:crypto';
 
-import {
-  DBOS,
-  DBOSLifecycleCallback,
-  Error as DBOSErrors,
-  MethodParameter,
-  requestArgValidation,
-  ArgRequired,
-  ArgOptional,
-  DefaultArgRequired,
-  DefaultArgValidate,
-  DefaultArgOptional,
-  ArgDate,
-  ArgVarchar,
-} from '@dbos-inc/dbos-sdk';
+import { DBOS, DBOSLifecycleCallback, Error as DBOSErrors, MethodParameter } from '@dbos-inc/dbos-sdk';
 
 export enum APITypes {
   GET = 'GET',
@@ -107,7 +94,7 @@ export class DBOSHTTPBase implements DBOSLifecycleCallback {
       propertyKey: string,
       descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { registration, regInfo } = DBOS.associateFunctionWithInfo(er, descriptor.value!, {
+      const { regInfo } = DBOS.associateFunctionWithInfo(er, descriptor.value!, {
         ctorOrProto: target,
         name: propertyKey,
       });
@@ -117,7 +104,6 @@ export class DBOSHTTPBase implements DBOSLifecycleCallback {
         apiURL: url,
         apiType: verb,
       });
-      requestArgValidation(registration);
 
       return descriptor;
     };
@@ -188,30 +174,5 @@ export class DBOSHTTPBase implements DBOSLifecycleCallback {
         }
       }
     }
-  }
-
-  static argRequired(target: object, propertyKey: PropertyKey, parameterIndex: number) {
-    ArgRequired(target, propertyKey, parameterIndex);
-  }
-
-  static argOptional(target: object, propertyKey: PropertyKey, parameterIndex: number) {
-    ArgOptional(target, propertyKey, parameterIndex);
-  }
-
-  static argDate() {
-    return ArgDate();
-  }
-  static argVarchar(n: number) {
-    return ArgVarchar(n);
-  }
-
-  static defaultArgRequired<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    return DefaultArgRequired(ctor);
-  }
-  static defaultArgOptional<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    return DefaultArgOptional(ctor);
-  }
-  static defaultArgValidate<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    return DefaultArgValidate(ctor);
   }
 }

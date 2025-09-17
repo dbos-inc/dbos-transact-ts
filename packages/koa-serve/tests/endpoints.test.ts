@@ -97,17 +97,12 @@ describe('httpserver-tests', () => {
   });
 
   test('post-test-custom-body', async () => {
-    let response = await request(app.callback())
+    const response = await request(app.callback())
       .post('/testpost')
       .set('Content-Type', 'application/custom-content-type')
       .send(JSON.stringify({ name: 'alice' }));
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
-    response = await request(app.callback())
-      .post('/testpost')
-      .set('Content-Type', 'application/rejected-custom-content-type')
-      .send(JSON.stringify({ name: 'alice' }));
-    expect(response.statusCode).toBe(400);
   });
 
   test('put-test', async () => {
@@ -117,17 +112,12 @@ describe('httpserver-tests', () => {
   });
 
   test('put-test-custom-body', async () => {
-    let response = await request(app.callback())
+    const response = await request(app.callback())
       .put('/testput')
       .set('Content-Type', 'application/custom-content-type')
       .send(JSON.stringify({ name: 'alice' }));
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
-    response = await request(app.callback())
-      .put('/testput')
-      .set('Content-Type', 'application/rejected-custom-content-type')
-      .send(JSON.stringify({ name: 'alice' }));
-    expect(response.statusCode).toBe(400);
   });
 
   test('patch-test', async () => {
@@ -137,17 +127,12 @@ describe('httpserver-tests', () => {
   });
 
   test('patch-test-custom-body', async () => {
-    let response = await request(app.callback())
+    const response = await request(app.callback())
       .patch('/testpatch')
       .set('Content-Type', 'application/custom-content-type')
       .send(JSON.stringify({ name: 'alice' }));
     expect(response.statusCode).toBe(200);
     expect(response.text).toBe('hello alice');
-    response = await request(app.callback())
-      .patch('/testpatch')
-      .set('Content-Type', 'application/rejected-custom-content-type')
-      .send(JSON.stringify({ name: 'alice' }));
-    expect(response.statusCode).toBe(400);
   });
 
   test('endpoint-step', async () => {
@@ -196,12 +181,6 @@ describe('httpserver-tests', () => {
     expect(response.statusCode).toBe(503);
     expect((response as unknown as Res).res.statusMessage).toBe('customize error');
     expect(response.body.message).toBe('customize error');
-  });
-
-  test('datavalidation-error', async () => {
-    const response = await request(app.callback()).get('/query');
-    expect(response.statusCode).toBe(400);
-    expect(response.body.details.dbosErrorCode).toBe(9);
   });
 
   test('dbos-redirect', async () => {
@@ -332,7 +311,6 @@ describe('httpserver-tests', () => {
       parsedMethods: ['POST', 'PUT', 'PATCH', 'GET', 'DELETE'],
     }),
   )
-  @DBOSKoa.defaultArgRequired
   class TestEndpoints {
     @dhttp.getApi('/hello')
     static async hello() {
