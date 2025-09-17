@@ -1,26 +1,21 @@
 import { ArgOptional, DBOS, ConfiguredInstance } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb, TestKvTable } from './helpers';
-import { DatabaseError } from 'pg';
+import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError, DBOSUnexpectedStepError } from '../src/error';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 
-const testTableName = 'dbos_failure_test_kv';
-
 describe('failures-tests', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     await setUpDBOSTestDb(config);
     DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
     await DBOS.launch();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     FailureTestClass.cnt = 0;
     FailureTestClass.success = '';
   });
@@ -46,69 +41,6 @@ describe('failures-tests', () => {
 
     // Test without code.
     await expect(FailureTestClass.testStep()).rejects.toThrow(new DBOSError('test dbos error without code.'));
-  });
-
-  test('readonly-error', async () => {
-    const testUUID = randomUUID();
-    await DBOS.withNextWorkflowID(
-      testUUID,
-      async () => await expect(FailureTestClass.testReadonlyError()).rejects.toThrow(new Error('test error')),
-    );
-    expect(FailureTestClass.cnt).toBe(1);
-
-    // The error should be recorded in the database, so the function shouldn't run again.
-    await DBOS.withNextWorkflowID(
-      testUUID,
-      async () => await expect(FailureTestClass.testReadonlyError()).rejects.toThrow(new Error('test error')),
-    );
-    expect(FailureTestClass.cnt).toBe(1);
-
-    // A run with a generated UUID should fail normally
-    await expect(FailureTestClass.testReadonlyError()).rejects.toThrow(new Error('test error'));
-    expect(FailureTestClass.cnt).toBe(2);
-  });
-
-  test('simple-keyconflict', async () => {
-    const workflowUUID1 = randomUUID();
-    const workflowUUID2 = randomUUID();
-
-    // Start two concurrent transactions.
-    const results = await Promise.allSettled([
-      (
-        await DBOS.startWorkflow(FailureTestClass, { workflowID: workflowUUID1 }).testKeyConflict(10, workflowUUID1)
-      ).getResult(),
-      (
-        await DBOS.startWorkflow(FailureTestClass, { workflowID: workflowUUID2 }).testKeyConflict(10, workflowUUID2)
-      ).getResult(),
-    ]);
-    const errorResult = results.find((result) => result.status === 'rejected');
-    const err: DatabaseError = (errorResult as PromiseRejectedResult).reason as DatabaseError;
-    expect(err.code).toBe('23505');
-    expect(err.table?.toLowerCase()).toBe(testTableName.toLowerCase());
-
-    expect(FailureTestClass.cnt).toBe(1);
-
-    // Retry with the same failed UUID, should throw the same error.
-    const failUUID = FailureTestClass.success === workflowUUID1 ? workflowUUID2 : workflowUUID1;
-    try {
-      await DBOS.withNextWorkflowID(failUUID, async () => await FailureTestClass.testKeyConflict(10, failUUID));
-    } catch (error) {
-      const err: DatabaseError = error as DatabaseError;
-      expect(err.code).toBe('23505');
-      expect(err.table?.toLowerCase()).toBe(testTableName.toLowerCase());
-    }
-    // Retry with the succeed UUID, should return the expected result.
-    await DBOS.withNextWorkflowID(
-      FailureTestClass.success,
-      async () =>
-        await expect(FailureTestClass.testKeyConflict(10, FailureTestClass.success)).resolves.toStrictEqual({ id: 10 }),
-    );
-  });
-
-  test('serialization-error', async () => {
-    // Should succeed after retrying 10 times.
-    await expect(FailureTestClass.testSerialWorkflow(10)).resolves.toBe(10);
-    expect(FailureTestClass.cnt).toBe(10);
   });
 
   test('failing-step', async () => {
@@ -182,8 +114,8 @@ describe('failures-tests', () => {
       return Promise.resolve();
     }
 
-    @DBOS.transaction()
-    static async stepThreeTx() {
+    @DBOS.step()
+    static async stepThree() {
       expect(DBOS.stepID).toBe(2);
       return Promise.resolve();
     }
@@ -192,7 +124,7 @@ describe('failures-tests', () => {
     static async workflow() {
       await TestStepStatus.stepOne();
       await TestStepStatus.stepTwo();
-      await TestStepStatus.stepThreeTx();
+      await TestStepStatus.stepThree();
       return DBOS.workflowID;
     }
   }
@@ -268,39 +200,6 @@ class FailureTestClass extends ConfiguredInstance {
     return Promise.reject(err);
   }
 
-  @DBOS.transaction({ readOnly: true })
-  static async testReadonlyError() {
-    FailureTestClass.cnt++;
-    return Promise.reject(new Error('test error'));
-  }
-
-  @DBOS.transaction()
-  static async testKeyConflict(id: number, name: string) {
-    const { rows } = await DBOS.pgClient.query<TestKvTable>(
-      `INSERT INTO ${testTableName} (id, value) VALUES ($1, $2) RETURNING id`,
-      [id, name],
-    );
-    FailureTestClass.cnt += 1;
-    FailureTestClass.success = name;
-    return rows[0];
-  }
-
-  @DBOS.transaction()
-  static async testSerialError(maxRetry: number) {
-    if (FailureTestClass.cnt !== maxRetry) {
-      const err = new DatabaseError('serialization error', 10, 'error');
-      err.code = '40001';
-      FailureTestClass.cnt += 1;
-      return Promise.reject(err);
-    }
-    return Promise.resolve(maxRetry);
-  }
-
-  @DBOS.workflow()
-  static async testSerialWorkflow(maxRetry: number) {
-    return await FailureTestClass.testSerialError(maxRetry);
-  }
-
   @DBOS.step({ retriesAllowed: true, intervalSeconds: 1, maxAttempts: 2 })
   static async testFailStep() {
     FailureTestClass.cnt++;
@@ -348,19 +247,19 @@ class NDWFS {
 class NDWFT {
   static flag = true;
 
-  @DBOS.transaction()
-  static async txOne() {
+  @DBOS.step()
+  static async stepOne() {
     return Promise.resolve();
   }
 
-  @DBOS.transaction()
-  static async txTwo() {
+  @DBOS.step()
+  static async stepTwo() {
     return Promise.resolve();
   }
 
   @DBOS.workflow()
   static async nondetWorkflow() {
-    if (NDWFT.flag) return NDWFT.txOne();
-    return NDWFT.txTwo();
+    if (NDWFT.flag) return NDWFT.stepOne();
+    return NDWFT.stepTwo();
   }
 }

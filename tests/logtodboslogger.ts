@@ -8,21 +8,15 @@ class WF {
     return Promise.resolve(1);
   }
 
-  @DBOS.transaction()
-  static async loggingTransaction() {
-    DBOS.logger.info(`Info: Transaction should be logged`);
-    return Promise.resolve(2);
-  }
-
   @DBOS.workflow()
   static async loggingWorkflow() {
     DBOS.logger.info(`Info: WFID should be logged`);
-    return (await WF.loggingStep()) + (await WF.loggingTransaction());
+    return await WF.loggingStep();
   }
 }
 
 async function main() {
-  const config = generateDBOSTestConfig('pg-node');
+  const config = generateDBOSTestConfig();
   await setUpDBOSTestDb({ ...config, logLevel: 'debug', addContextMetadata: true });
 
   DBOS.setConfig({ ...config, addContextMetadata: true });
