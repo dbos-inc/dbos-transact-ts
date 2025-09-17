@@ -86,7 +86,7 @@ function configureTemplate() {
   if (process.env.PGPASSWORD === undefined) {
     process.env.PGPASSWORD = 'dbos';
   }
-  execSync('npx dbos migrate', { env: process.env, stdio: 'inherit' });
+  execSync(`npx dbos migrate`, { env: process.env, stdio: 'inherit' });
 }
 
 describe('runtime-tests-knex', () => {
@@ -130,7 +130,7 @@ describe('runtime-tests-typeorm', () => {
   });
 
   test('test hello-typeorm runtime', async () => {
-    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', 'start'], {
+    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/cli/cli.js', 'start'], {
       env: process.env,
     });
     await waitForMessageTest(command, '3000');
@@ -154,7 +154,7 @@ describe('runtime-tests-prisma', () => {
   });
 
   test('test hello-prisma runtime', async () => {
-    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', 'start'], {
+    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/cli/cli.js', 'start'], {
       env: process.env,
     });
     await waitForMessageTest(command, '3000');
@@ -178,7 +178,7 @@ describe('runtime-tests-drizzle', () => {
   });
 
   test('test hello-drizzle runtime', async () => {
-    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/dbos-runtime/cli.js', 'start'], {
+    const command = spawn('node', ['node_modules/@dbos-inc/dbos-sdk/dist/src/cli/cli.js', 'start'], {
       env: process.env,
     });
     await waitForMessageTest(command, '3000');
