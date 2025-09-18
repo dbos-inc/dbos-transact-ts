@@ -1,6 +1,6 @@
 import { Client } from 'pg';
 import { DBOSConfig } from '../src';
-import { startDockerPg, stopDockerPg } from '../src/dbos-runtime/docker_pg_helper';
+import { startDockerPg, stopDockerPg } from '../src/cli/docker_pg_helper';
 
 export class PostgresChaosMonkey {
   private stopEvent: boolean = false;
@@ -50,7 +50,7 @@ export class PostgresChaosMonkey {
 }
 
 export async function dropDatabases(config: DBOSConfig) {
-  const dbUrl = new URL(config.databaseUrl as string);
+  const dbUrl = new URL(config.systemDatabaseUrl as string);
   const baseConnectionConfig = {
     host: dbUrl.hostname,
     port: parseInt(dbUrl.port) || 5432,
@@ -64,9 +64,7 @@ export async function dropDatabases(config: DBOSConfig) {
   try {
     await adminClient.connect();
     const dbName = 'dbostest';
-    const dbNameSys = `${dbName}_dbos_sys`;
     await adminClient.query(`DROP DATABASE IF EXISTS "${dbName}" WITH (FORCE)`);
-    await adminClient.query(`DROP DATABASE IF EXISTS "${dbNameSys}" WITH (FORCE)`);
   } finally {
     await adminClient.end();
   }
