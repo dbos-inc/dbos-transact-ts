@@ -171,11 +171,6 @@ export class DBOS {
     DBOS.#dbosConfig = config;
   }
 
-  // Load files with DBOS classes (running their decorators)
-  static async loadClasses(dbosEntrypointFiles: string[]) {
-    return await DBOSExecutor.loadClasses(dbosEntrypointFiles);
-  }
-
   /**
    * Check if DBOS has been `launch`ed (and not `shutdown`)
    * @returns `true` if DBOS has been launched, or `false` otherwise

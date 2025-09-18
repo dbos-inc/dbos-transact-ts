@@ -1,4 +1,3 @@
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import { Span } from '@opentelemetry/sdk-trace-base';
 import {
   DBOSError,
@@ -11,7 +10,6 @@ import {
   DBOSUnexpectedStepError,
   DBOSInvalidQueuePriorityError,
   DBOSAwaitedWorkflowCancelledError,
-  DBOSFailLoadOperationsError,
   DBOSQueueDuplicatedError,
 } from './error';
 import {
@@ -44,9 +42,6 @@ import {
   getRegisteredFunctionClassName,
   getRegisteredFunctionName,
   getConfiguredInstance,
-  getNameForClass,
-  getClassRegistrationByName,
-  getAllRegisteredClassNames,
   getLifecycleListeners,
   UntypedAsyncFunction,
   TypedAsyncFunction,
@@ -73,9 +68,6 @@ import {
   INTERNAL_QUEUE_NAME,
   DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME,
 } from './utils';
-import path from 'node:path';
-import fs from 'node:fs';
-import { pathToFileURL } from 'url';
 import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -198,48 +190,12 @@ export class DBOSExecutor {
   readonly logger: GlobalLogger;
   readonly ctxLogger: DBOSContextualLogger;
   readonly tracer: Tracer;
-  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-  #typeormEntities: Function[] = [];
-  #drizzleEntities: { [key: string]: object } = {};
 
-  #scheduler = new ScheduledReceiver();
   #wfqEnded?: Promise<void> = undefined;
 
   readonly executorID: string = globalParams.executorID;
 
   static globalInstance: DBOSExecutor | undefined = undefined;
-
-  static async loadClasses(entrypoints: string[]): Promise<object[]> {
-    type ModuleExports = Record<string, unknown>;
-
-    const allClasses: object[] = [];
-    for (const entrypoint of entrypoints) {
-      const operations = path.isAbsolute(entrypoint) ? entrypoint : path.join(process.cwd(), entrypoint);
-      let exports: ModuleExports;
-      if (fs.existsSync(operations)) {
-        const operationsURL = pathToFileURL(operations).href;
-        exports = (await import(operationsURL)) as ModuleExports;
-      } else {
-        throw new DBOSFailLoadOperationsError(`Failed to load operations from the entrypoint ${entrypoint}`);
-      }
-      const classes: object[] = [];
-      for (const key in exports) {
-        const $export = exports[key];
-        if (isObject($export)) {
-          classes.push($export);
-        }
-      }
-      allClasses.push(...classes);
-    }
-    if (allClasses.length === 0) {
-      throw new DBOSFailLoadOperationsError('operations not found');
-    }
-    return allClasses;
-
-    function isObject(value: unknown): value is object {
-      return typeof value === 'function' || (typeof value === 'object' && value !== null);
-    }
-  }
 
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(
@@ -275,6 +231,8 @@ export class DBOSExecutor {
       );
     }
 
+    new ScheduledReceiver(); // Create the scheduler, which registers itself.
+
     this.initialized = false;
     DBOSExecutor.globalInstance = this;
   }
@@ -283,41 +241,12 @@ export class DBOSExecutor {
     return this.config.name;
   }
 
-  async init(classes?: object[]): Promise<void> {
+  async init(): Promise<void> {
     if (this.initialized) {
       this.logger.error('Workflow executor already initialized!');
       return;
     }
-
-    let classnames: string[] = [];
-    if (!classes || !classes.length) {
-      classnames = getAllRegisteredClassNames();
-    } else {
-      classnames = classes.map((c) => getNameForClass(c as AnyConstructor));
-    }
-
-    type AnyConstructor = new (...args: unknown[]) => object;
     try {
-      let length; // Track the length of the array (or number of keys of the object)
-      for (const clsname of classnames) {
-        const reg = getClassRegistrationByName(clsname);
-        /**
-         * With TSORM, we take an array of entities (Function[]) and add them to this.entities:
-         */
-        if (Array.isArray(reg.ormEntities)) {
-          this.#typeormEntities = this.#typeormEntities.concat(reg.ormEntities as any[]);
-          length = reg.ormEntities.length;
-        } else {
-          /**
-           * With Drizzle, we need to take an object of entities, since the object keys are used to access the entities from ctx.client.query:
-           */
-          this.#drizzleEntities = { ...this.#drizzleEntities, ...reg.ormEntities };
-          length = Object.keys(reg.ormEntities).length;
-        }
-        this.logger.debug(`Loaded ${length} ORM entities`);
-      }
-
-      // Debug mode doesn't initialize the sys db
       await this.systemDatabase.init(this.#debugMode);
     } catch (err) {
       if (err instanceof DBOSInitializationError) {
