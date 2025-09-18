@@ -6,7 +6,6 @@ import Ajv from 'ajv';
 import path from 'path';
 import dbosConfigSchema from '../dbos-config.schema.json';
 import assert from 'assert';
-import validator from 'validator';
 import { maskDatabaseUrl } from './database_utils';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
@@ -111,18 +110,6 @@ export function isValidDatabaseName(dbName: string): boolean {
     return false;
   }
   return true;
-}
-
-// A lot of other things are *legal* DB names, this would be a sane restriction in the UI though
-export function isReasonableDatabaseName(dbName: string): boolean {
-  if (dbName.length < 1 || dbName.length > 63) {
-    return false;
-  }
-  if (dbName.match(/^\d/)) {
-    // Cannot start with a digit
-    return false;
-  }
-  return validator.matches(dbName, '^[a-z0-9_]+$');
 }
 
 export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'system_database_url'>): string {
