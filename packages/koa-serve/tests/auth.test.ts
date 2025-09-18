@@ -9,16 +9,9 @@ import request from 'supertest';
 
 const dhttp = new DBOSKoa();
 
-interface TestKvTable {
-  id?: number;
-  value?: string;
-}
-
 describe('httpserver-defsec-tests', () => {
   let app: Koa;
   let appRouter: Router;
-
-  const testTableName = 'dbos_test_kv';
 
   beforeAll(async () => {
     DBOS.setConfig({
@@ -171,7 +164,7 @@ describe('httpserver-defsec-tests', () => {
     @DBOS.step()
     static async testStep(name: string) {
       void name;
-      return `hello 1`;
+      return Promise.resolve(`hello 1`);
     }
 
     @DBOS.workflow()

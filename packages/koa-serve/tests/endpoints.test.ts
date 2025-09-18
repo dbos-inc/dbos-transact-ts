@@ -10,11 +10,6 @@ import request from 'supertest';
 
 const dhttp = new DBOSKoa();
 
-interface TestKvTable {
-  id?: number;
-  value?: string;
-}
-
 import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'http';
 import { bodyParser } from '@koa/bodyparser';
@@ -28,8 +23,6 @@ function uuidValidate(uuid: string) {
 describe('httpserver-tests', () => {
   let app: Koa;
   let appRouter: Router;
-
-  const testTableName = 'dbos_test_kv';
 
   beforeAll(async () => {
     DBOS.setConfig({
@@ -471,7 +464,8 @@ describe('httpserver-tests', () => {
     static async testWorkflowError(name: string) {
       void name;
       // This workflow should encounter duplicate primary key error.
-      throw Error('fail');
+      throw new Error('fail');
+      return Promise.resolve('');
     }
 
     @dhttp.getApi('/requireduser')
