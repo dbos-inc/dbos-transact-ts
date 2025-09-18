@@ -344,7 +344,7 @@ export class DBOSKoa extends DBOSHTTPBase {
           } catch (e) {
             if (e instanceof Error) {
               span?.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
-              let st = 500;
+              let st = (e as DBOSErrors.DBOSResponseError)?.status || 500;
               if (isClientRequestError(e)) {
                 st = 400; // Set to 400: client-side error.
               }

@@ -9,9 +9,16 @@ import request from 'supertest';
 
 const dhttp = new DBOSKoa();
 
+interface TestKvTable {
+  id?: number;
+  value?: string;
+}
+
 describe('httpserver-defsec-tests', () => {
   let app: Koa;
   let appRouter: Router;
+
+  const testTableName = 'dbos_test_kv';
 
   beforeAll(async () => {
     DBOS.setConfig({
@@ -61,17 +68,17 @@ describe('httpserver-defsec-tests', () => {
 
   test('not-authenticated', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice');
-    expect(response.statusCode).toBe(500);
+    expect(response.statusCode).toBe(401);
   });
 
   test('not-you', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice&userid=go_away');
-    expect(response.statusCode).toBe(500);
+    expect(response.statusCode).toBe(401);
   });
 
   test('not-authorized', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice&userid=bob');
-    expect(response.statusCode).toBe(500);
+    expect(response.statusCode).toBe(403);
   });
 
   test('authorized', async () => {
@@ -83,6 +90,22 @@ describe('httpserver-defsec-tests', () => {
   test('cascade-authorized', async () => {
     const response = await request(app.callback()).get('/workflow?name=alice&userid=a_real_user');
     expect(response.statusCode).toBe(200);
+
+    const txnResponse = await request(app.callback()).get('/transaction?name=alice&userid=a_real_user');
+    expect(txnResponse.statusCode).toBe(200);
+  });
+
+  // We can directly test a transaction with passed in authorizedRoles.
+  test('direct-transaction-test', async () => {
+    await DBOS.withAuthedContext('user', ['user'], async () => {
+      const res = await TestEndpointDefSec.testStep('alice');
+      expect(res).toBe('hello 1');
+    });
+
+    // Unauthorized.
+    await expect(TestEndpointDefSec.testStep('alice')).rejects.toThrow(
+      new DBOSError.DBOSNotAuthorizedError('User does not have a role with permission to call testStep', 403),
+    );
   });
 
   async function authTestMiddleware(ctx: DBOSKoaAuthContext) {
@@ -147,7 +170,8 @@ describe('httpserver-defsec-tests', () => {
 
     @DBOS.step()
     static async testStep(name: string) {
-      return Promise.resolve(`hello ${name}`);
+      void name;
+      return `hello 1`;
     }
 
     @DBOS.workflow()
@@ -159,6 +183,11 @@ describe('httpserver-defsec-tests', () => {
     @dhttp.getApi('/workflow')
     static async testWfEndpoint(name: string) {
       return await TestEndpointDefSec.testWorkflow(name);
+    }
+
+    @dhttp.getApi('/transaction')
+    static async testTxnEndpoint(name: string) {
+      return await TestEndpointDefSec.testStep(name);
     }
   }
 

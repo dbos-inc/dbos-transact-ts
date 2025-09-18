@@ -69,6 +69,7 @@ import {
   ConfiguredInstance,
   DBOSMethodMiddlewareInstaller,
   DBOSLifecycleCallback,
+  associateParameterWithExternal,
 } from './decorators';
 import { DBOSJSON, globalParams, JSONValue, registerSerializationRecipe, SerializationRecipe, sleepms } from './utils';
 import { DBOSAdminServer } from './adminserver';
@@ -1595,6 +1596,26 @@ export class DBOS {
     target: FunctionName,
   ) {
     return associateMethodWithExternal(external, target.ctorOrProto, target.className, target.name ?? func.name, func);
+  }
+
+  /**
+   * Register information to be associated with a DBOS function
+   */
+  static associateParamWithInfo<This, Args extends unknown[], Return>(
+    external: AnyConstructor | object | string,
+    func: (this: This, ...args: Args) => Promise<Return>,
+    target: FunctionName & {
+      param: number | string;
+    },
+  ) {
+    return associateParameterWithExternal(
+      external,
+      target.ctorOrProto,
+      target.className,
+      target.name ?? func.name,
+      func,
+      target.param,
+    );
   }
 
   /** Get registrations */

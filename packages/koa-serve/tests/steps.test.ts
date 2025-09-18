@@ -56,9 +56,14 @@ describe('registerstep', () => {
     expect(response1.statusCode).toBe(200);
     const response2 = await request(app.callback()).get('/api/i2?user=jeremy');
     expect(response2.statusCode).toBe(200);
+    const response3 = await request(app.callback()).get('/api/i1');
+    expect(response3.statusCode).toBe(400);
+    const response4 = await request(app.callback()).get('/api/i2');
+    expect(response4.statusCode).toBe(400);
   });
 });
 
+@DBOSKoa.defaultArgValidate
 class KnexKoa {
   @customstep()
   @dhttp.getApi('/api/i2')
