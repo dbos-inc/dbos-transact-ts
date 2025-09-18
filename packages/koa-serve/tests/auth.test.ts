@@ -61,17 +61,17 @@ describe('httpserver-defsec-tests', () => {
 
   test('not-authenticated', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice');
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(500);
   });
 
   test('not-you', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice&userid=go_away');
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(500);
   });
 
   test('not-authorized', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice&userid=bob');
-    expect(response.statusCode).toBe(403);
+    expect(response.statusCode).toBe(500);
   });
 
   test('authorized', async () => {

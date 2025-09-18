@@ -39,7 +39,7 @@ describe('cf-scheduled-wf-tests-simple', () => {
   });
 });
 
-const q = new WorkflowQueue('schedQ', 1);
+const q = new WorkflowQueue('schedQ', { concurrency: 1 });
 
 class DBOSSchedTestClass {
   static nCalls = 0;

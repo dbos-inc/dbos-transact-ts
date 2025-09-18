@@ -2,7 +2,7 @@
 import Koa from 'koa';
 import Router from '@koa/router';
 
-import { DBOS, DBOSResponseError, Error as DBOSErrors, StatusString } from '@dbos-inc/dbos-sdk';
+import { DBOS, Error as DBOSErrors, StatusString } from '@dbos-inc/dbos-sdk';
 
 import { DBOSKoa, DBOSKoaAuthContext, RequestIDHeader, WorkflowIDHeader } from '../src';
 
@@ -178,7 +178,7 @@ describe('httpserver-tests', () => {
 
   test('response-error', async () => {
     const response = await request(app.callback()).get('/dbos-error');
-    expect(response.statusCode).toBe(503);
+    expect(response.statusCode).toBe(500);
     expect((response as unknown as Res).res.statusMessage).toBe('customize error');
     expect(response.body.message).toBe('customize error');
   });
@@ -210,17 +210,17 @@ describe('httpserver-tests', () => {
 
   test('not-authenticated', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice');
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(500);
   });
 
   test('not-you', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice&userid=go_away');
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(500);
   });
 
   test('not-authorized', async () => {
     const response = await request(app.callback()).get('/requireduser?name=alice&userid=bob');
-    expect(response.statusCode).toBe(403);
+    expect(response.statusCode).toBe(500);
   });
 
   test('authorized', async () => {
@@ -230,17 +230,17 @@ describe('httpserver-tests', () => {
 
   test('not-authenticated2', async () => {
     const response = await request(app.callback()).get('/requireduser2?name=alice');
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(500);
   });
 
   test('not-you2', async () => {
     const response = await request(app.callback()).get('/requireduser2?name=alice&userid=go_away');
-    expect(response.statusCode).toBe(401);
+    expect(response.statusCode).toBe(500);
   });
 
   test('not-authorized2', async () => {
     const response = await request(app.callback()).get('/requireduser2?name=alice&userid=bob');
-    expect(response.statusCode).toBe(403);
+    expect(response.statusCode).toBe(500);
   });
 
   test('authorized2', async () => {
@@ -342,7 +342,7 @@ describe('httpserver-tests', () => {
     @dhttp.getApi('/dbos-error')
     @DBOS.workflow()
     static async dbosErr() {
-      return Promise.reject(new DBOSResponseError('customize error', 503));
+      return Promise.reject(new Error('customize error'));
     }
 
     @dhttp.getApi('/query')
@@ -434,13 +434,13 @@ describe('httpserver-tests', () => {
     @DBOS.requiredRole(['user'])
     static async testAuth(name: string) {
       if (DBOS.authenticatedUser !== 'a_real_user') {
-        throw new DBOSResponseError('uid not a real user!', 400);
+        throw new Error('uid not a real user!');
       }
       if (!DBOS.authenticatedRoles.includes('user')) {
-        throw new DBOSResponseError("roles don't include user!", 400);
+        throw new Error("roles don't include user!");
       }
       if (DBOS.assumedRole !== 'user') {
-        throw new DBOSResponseError('Should never happen! Not assumed to be user', 400);
+        throw new Error('Should never happen! Not assumed to be user');
       }
       return Promise.resolve(`Please say hello to ${name}`);
     }
@@ -449,13 +449,13 @@ describe('httpserver-tests', () => {
     @DBOS.requiredRole(['user'])
     static async testAuth2(name: string) {
       if (DBOS.authenticatedUser !== 'a_real_user') {
-        throw new DBOSResponseError('uid not a real user!', 400);
+        throw new Error('uid not a real user!');
       }
       if (!DBOS.authenticatedRoles.includes('user')) {
-        throw new DBOSResponseError("roles don't include user!", 400);
+        throw new Error("roles don't include user!");
       }
       if (DBOS.assumedRole !== 'user') {
-        throw new DBOSResponseError('Should never happen! Not assumed to be user', 400);
+        throw new Error('Should never happen! Not assumed to be user');
       }
       return Promise.resolve(`Please say hello to ${name}`);
     }

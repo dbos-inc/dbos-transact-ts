@@ -10,7 +10,7 @@ export { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';
 
-export { DBOSResponseError, DBOSWorkflowConflictError } from './error';
+export { DBOSWorkflowConflictError } from './error';
 
 export {
   WorkflowConfig,
@@ -25,22 +25,6 @@ export { Debouncer, DebouncerClient } from './debouncer';
 
 export { StepConfig } from './step';
 
-export {
-  FunctionName,
+export { FunctionName, ConfiguredInstance, MethodParameter } from './decorators';
 
-  // Method Decorators
-  DBOSMethodMiddlewareInstaller,
-
-  // Class Instances
-  ConfiguredInstance,
-
-  // Parameter Decorators
-  MethodParameter,
-} from './decorators';
-
-export {
-  DBOSConfig,
-  DBOSRuntimeConfig,
-  DBOSExternalState,
-  DBOSExternalState as DBOSEventReceiverState,
-} from './dbos-executor';
+export { DBOSConfig, DBOSExternalState } from './dbos-executor';

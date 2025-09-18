@@ -18,6 +18,7 @@ import {
   RetrievedHandle,
   StepInfo,
   WorkflowConfig,
+  WorkflowHandle,
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
@@ -65,6 +66,9 @@ import {
   wrapDBOSFunctionAndRegisterByUniqueNameDec,
   wrapDBOSFunctionAndRegister,
   ensureDBOSIsLaunched,
+  ConfiguredInstance,
+  DBOSMethodMiddlewareInstaller,
+  DBOSLifecycleCallback,
 } from './decorators';
 import { DBOSJSON, globalParams, sleepms } from './utils';
 import { DBOSAdminServer } from './adminserver';
@@ -73,8 +77,6 @@ import { Server } from 'http';
 import { randomUUID } from 'node:crypto';
 
 import { StepConfig } from './step';
-import { DBOSLifecycleCallback, DBOSMethodMiddlewareInstaller, WorkflowHandle } from '.';
-import { ConfiguredInstance } from '.';
 import { Conductor } from './conductor/conductor';
 import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL } from './system_database';
 import { wfQueueRunner } from './wfqueue';
