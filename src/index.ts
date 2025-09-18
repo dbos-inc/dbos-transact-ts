@@ -23,6 +23,8 @@ export {
 
 export { Debouncer, DebouncerClient } from './debouncer';
 
+export { SerializationRecipe } from './utils';
+
 export { StepConfig } from './step';
 
 export { FunctionName, ConfiguredInstance, MethodParameter } from './decorators';

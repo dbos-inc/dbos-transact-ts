@@ -1,9 +1,10 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
-import { DBOSJSON } from './utils';
+import { DBOSJSON, registerSerializationRecipe } from './utils';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
+import { DBOSExecutor } from './dbos-executor';
 
 export interface WorkflowParams {
   workflowUUID?: string;
@@ -217,3 +218,14 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
     return DBOSJSON.parse(status.input) as T;
   }
 }
+
+registerSerializationRecipe<WorkflowHandle<unknown>, { wfid: string }>({
+  name: 'DBOS.WorkflowHandle',
+  isApplicable: (v: unknown): v is WorkflowHandle<unknown> => {
+    return v instanceof RetrievedHandle || v instanceof InvokedHandle;
+  },
+  serialize: (v: WorkflowHandle<unknown>) => {
+    return { wfid: v.workflowID };
+  },
+  deserialize: (s: { wfid: string }) => new RetrievedHandle(DBOSExecutor.globalInstance!.systemDatabase, s.wfid),
+});

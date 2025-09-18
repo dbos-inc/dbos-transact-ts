@@ -70,7 +70,7 @@ import {
   DBOSMethodMiddlewareInstaller,
   DBOSLifecycleCallback,
 } from './decorators';
-import { DBOSJSON, globalParams, sleepms } from './utils';
+import { DBOSJSON, globalParams, JSONValue, registerSerializationRecipe, SerializationRecipe, sleepms } from './utils';
 import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
 
@@ -1510,6 +1510,17 @@ export class DBOS {
     }
 
     return func();
+  }
+
+  /*
+   * Register serialization recipe; this is used to save/retrieve objects from the DBOS system
+   *  database.  This includes workflow inputs, function return values, messages, and events.
+   */
+  static registerSerialization<T, S extends JSONValue>(serReg: SerializationRecipe<T, S>) {
+    if (DBOS.isInitialized()) {
+      throw new TypeError(`Serializers/deserializers should not be registered after DBOS.launch()`);
+    }
+    registerSerializationRecipe(serReg);
   }
 
   /**
