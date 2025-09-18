@@ -93,6 +93,7 @@ import {
   globalParams,
   DBOSJSON,
   sleepms,
+  serializeFunctionInputOutput,
   INTERNAL_QUEUE_NAME,
   DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME,
 } from './utils';
@@ -655,6 +656,8 @@ export class DBOSExecutor {
     });
 
     const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname;
+    const funcArgs = serializeFunctionInputOutput(args, [wfname, '<arguments>']);
+    args = funcArgs.deserialized;
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
@@ -675,7 +678,7 @@ export class DBOSExecutor {
       createdAt: Date.now(), // Remember the start time of this workflow,
       timeoutMS: timeoutMS,
       deadlineEpochMS: deadlineEpochMS,
-      input: DBOSJSON.stringify(args),
+      input: funcArgs.stringified,
       deduplicationID: params.enqueueOptions?.deduplicationID,
       priority: priority ?? 0,
     };
@@ -697,9 +700,9 @@ export class DBOSExecutor {
       }
 
       // Make sure we use the same input.
-      if (DBOSJSON.stringify(args) !== wfStatus.input) {
+      if (funcArgs.stringified !== wfStatus.input) {
         throw new DBOSDebuggerError(
-          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${DBOSJSON.stringify(args)}\n Original: ${wfStatus.input}`,
+          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${funcArgs.stringified}\n Original: ${wfStatus.input}`,
         );
       }
       status = wfStatus.status;
@@ -807,6 +810,13 @@ export class DBOSExecutor {
         });
 
         if (this.#debugMode) {
+          function resultsMatch(recordedResult: Awaited<R>, callResult: Awaited<R>): boolean {
+            if (recordedResult === null) {
+              return callResult === undefined || callResult === null;
+            }
+            return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
+          }
+
           const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
             (await this.systemDatabase.awaitWorkflowResult(workflowID))!,
           );
@@ -820,14 +830,9 @@ export class DBOSExecutor {
           result = callResult!;
         }
 
-        function resultsMatch(recordedResult: Awaited<R>, callResult: Awaited<R>): boolean {
-          if (recordedResult === null) {
-            return callResult === undefined || callResult === null;
-          }
-          return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
-        }
-
-        internalStatus.output = DBOSJSON.stringify(result);
+        const funcResult = serializeFunctionInputOutput(result, [wfname, '<result>']);
+        result = funcResult.deserialized;
+        internalStatus.output = funcResult.stringified;
         internalStatus.status = StatusString.SUCCESS;
         if (!this.#debugMode) {
           await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
@@ -944,12 +949,12 @@ export class DBOSExecutor {
   /**
    * Write a operation's output to the database.
    */
-  async #recordOutput<R>(
+  async #recordOutput(
     query: QueryFunction,
     workflowUUID: string,
     funcID: number,
     txnSnapshot: string,
-    output: R,
+    serialOutput: string,
     isKeyConflict: (error: unknown) => boolean,
     function_name: string,
   ): Promise<string> {
@@ -957,7 +962,6 @@ export class DBOSExecutor {
       throw new DBOSDebuggerError('Cannot record output in debug mode.');
     }
     try {
-      const serialOutput = DBOSJSON.stringify(output);
       const rows = await query<transaction_outputs>(
         'INSERT INTO dbos.transaction_outputs (workflow_uuid, function_id, output, txn_id, txn_snapshot, created_at, function_name) VALUES ($1, $2, $3, (select pg_current_xact_id_if_assigned()::text), $4, $5, $6) RETURNING txn_id;',
         [workflowUUID, funcID, serialOutput, txnSnapshot, Date.now(), function_name],
@@ -1172,6 +1176,7 @@ export class DBOSExecutor {
         }
 
         // Record the execution, commit, and return.
+        const funcOutput = serializeFunctionInputOutput(result, [txn.name, '<result>']);
 
         try {
           // Synchronously record the output of write transactions and obtain the transaction ID.
@@ -1180,7 +1185,7 @@ export class DBOSExecutor {
             wfid,
             funcId,
             txn_snapshot,
-            result,
+            funcOutput.stringified,
             (error) => userDB.isKeyConflictError(error),
             txn.name,
           );
@@ -1196,7 +1201,7 @@ export class DBOSExecutor {
           }
         }
 
-        return result;
+        return funcOutput.deserialized;
       };
 
       try {
@@ -1405,12 +1410,13 @@ export class DBOSExecutor {
 
         // Synchronously record the output of write transactions and obtain the transaction ID.
         const func = <T>(sql: string, args: unknown[]) => client.query(sql, args).then((v) => v.rows as T[]);
+        const funcResult = serializeFunctionInputOutput(result, [proc.name, '<result>']);
         const pg_txn_id = await this.#recordOutput(
           func,
           wfid,
           funcId,
           txn_snapshot,
-          result,
+          funcResult.stringified,
           pgNodeIsKeyConflictError,
           proc.name,
         );
@@ -1418,7 +1424,7 @@ export class DBOSExecutor {
         // const pg_txn_id = await wfCtx.recordOutputProc<R>(client, funcId, txn_snapshot, result);
         span.setAttribute('pg_txn_id', pg_txn_id);
 
-        return result;
+        return funcResult.deserialized;
       };
 
       try {
@@ -1735,12 +1741,13 @@ export class DBOSExecutor {
       throw err as Error;
     } else {
       // Record the execution and return.
+      const funcResult = serializeFunctionInputOutput(result, [stepFnName, '<result>']);
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, {
-        output: DBOSJSON.stringify(result),
+        output: funcResult.stringified,
       });
       span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(span);
-      return result as R;
+      return funcResult.deserialized as R;
     }
   }
 
@@ -1814,11 +1821,12 @@ export class DBOSExecutor {
     }
     try {
       const output: T = await callback();
+      const funcOutput = serializeFunctionInputOutput(output, [functionName, '<result>']);
       await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, {
-        output: DBOSJSON.stringify(output),
+        output: funcOutput.stringified,
         childWorkflowID: childWfId,
       });
-      return output;
+      return funcOutput.deserialized;
     } catch (e) {
       await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, {
         error: DBOSJSON.stringify(serializeError(e)),

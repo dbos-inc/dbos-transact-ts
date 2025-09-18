@@ -1,7 +1,11 @@
-import { ConfiguredInstance, DBOS, DBOSClient, WorkflowQueue } from '../src/';
+import { Client } from 'pg';
+import { ConfiguredInstance, DBOS, DBOSClient, WorkflowHandle, WorkflowQueue } from '../src/';
 import { DBOSConflictingRegistrationError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
+import { promises as fsp } from 'node:fs';
+import { DBOSExecutor } from '../src/dbos-executor';
+import axios from 'axios';
 
 const queue = new WorkflowQueue('example_queue');
 
@@ -38,6 +42,13 @@ function wfRegRetry(value: number) {
 const regWFRegStep = DBOS.registerWorkflow(wfRegStep, { name: 'wfRegStep' });
 const regWFRunStep = DBOS.registerWorkflow(wfRunStep, { name: 'wfRunStep' });
 const regWFRunRetry = DBOS.registerWorkflow(wfRegRetry);
+
+const wfReturningString = DBOS.registerWorkflow(async (x: string) => Promise.resolve(`${x}${x}`), {
+  name: 'wfReturningString',
+});
+const wfReturningHandle = DBOS.registerWorkflow(async (x: string) => await DBOS.startWorkflow(wfReturningString)(x), {
+  name: 'wfReturningHandle',
+});
 
 class TestClass extends ConfiguredInstance {
   @DBOS.workflow()
@@ -571,5 +582,225 @@ describe('registerWorkflow-tests', () => {
 
     DBOS.registerWorkflow(workflow1);
     expect(() => DBOS.registerWorkflow(workflow2, { name: 'workflow1' })).toThrow(DBOSConflictingRegistrationError);
+  });
+});
+
+const wfDoesSomethingNasty1 = DBOS.registerWorkflow(
+  async () => {
+    return (
+      await DBOS.runStep(
+        async () => {
+          return Promise.resolve({
+            getResult: () => 'Hello',
+          });
+        },
+        { name: 'step1' },
+      )
+    ).getResult();
+  },
+  { name: 'wfDoesSomethingNasty1' },
+);
+
+const wfDoesSomethingNasty2 = DBOS.registerWorkflow(
+  async () => {
+    const sr = await DBOS.runStep(
+      async () => {
+        return Promise.resolve('Hello');
+      },
+      { name: 'step1' },
+    );
+    return {
+      getResult: () => sr,
+    };
+  },
+  { name: 'wfDoesSomethingNasty2' },
+);
+
+const wfDoesSomethingNasty3 = DBOS.registerWorkflow(
+  async (input: { getResult: () => string }) => {
+    const sr = await DBOS.runStep(
+      async () => {
+        return Promise.resolve(input.getResult());
+      },
+      { name: 'step1' },
+    );
+    return sr;
+  },
+  { name: 'wfDoesSomethingNasty3' },
+);
+
+const wfReturnsAPromise = DBOS.registerWorkflow(
+  async (input: string) => {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    const stepPromise = await DBOS.runStep(async () => {
+      const p = Promise.resolve(input);
+      return { p };
+    });
+    return await stepPromise.p;
+  },
+  { name: 'wfReturnsAPromise' },
+);
+
+const wfReturnsAFileHandle = DBOS.registerWorkflow(
+  async () => {
+    const path = __filename; // current file
+    const flags = 'r';
+
+    const fh = await fsp.open(path, flags);
+    try {
+      const retFH = await DBOS.runStep(async () => Promise.resolve(fh), { name: 'returnFH' });
+      await retFH.readFile();
+    } finally {
+      await fh.close();
+    }
+  },
+  { name: 'wfReturnsAFileHandle' },
+);
+
+const wfReturnsAPGClient = DBOS.registerWorkflow(
+  async () => {
+    const systemDBClient = new Client({
+      connectionString: DBOSExecutor.globalInstance!.config.systemDatabaseUrl,
+    });
+    await systemDBClient.connect();
+    try {
+      const retConn = await DBOS.runStep(async () => Promise.resolve(systemDBClient), { name: 'returnClient' });
+      await retConn.query('SELECT 1');
+    } finally {
+      await systemDBClient.end();
+    }
+  },
+  { name: 'wfReturnsAPGClient' },
+);
+
+const returnsAFetchResponse = DBOS.registerWorkflow(
+  async () => {
+    const fetchRes = await DBOS.runStep(async () => await fetch('https://example.com'));
+    return fetchRes.status;
+  },
+  { name: 'wfReturnsAFetchResponse' },
+);
+
+const returnsAnAxiosResponse = DBOS.registerWorkflow(
+  async () => {
+    const fetchRes = await DBOS.runStep(async () => await axios.get('https://example.com'));
+    return fetchRes.status;
+  },
+  { name: 'wfReturnsAnAxiosResponse' },
+);
+
+class Frobnicator {
+  constructor(
+    readonly frobni: string,
+    readonly cator: string,
+  ) {}
+  frobnicate() {
+    return this.frobni + this.cator;
+  }
+}
+
+const frobnicateWorkflow = DBOS.registerWorkflow(
+  async (f: string, c: string) => Promise.resolve(new Frobnicator(f, c)),
+  { name: 'frobnicate' },
+);
+
+describe('unserializable-negative-tests', () => {
+  test('nonserializable-step-return', async () => {
+    await DBOS.launch();
+    try {
+      // We want a clear error from this case.  We don't want it to only fail in recovery.
+      const wfid = randomUUID();
+      await expect(
+        DBOS.withNextWorkflowID(wfid, async () => {
+          return await wfDoesSomethingNasty1();
+        }),
+      ).rejects.toThrow(
+        `Attempted to call 'getResult' at path step1.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
+      );
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('nonserializable-wf-return', async () => {
+    await DBOS.launch();
+    try {
+      // We want a clear error from this case, because the code will not work if
+      //  queued or restarted in recovery
+      const wfid = randomUUID();
+      await expect(
+        DBOS.withNextWorkflowID(wfid, async () => {
+          (await wfDoesSomethingNasty2()).getResult();
+        }),
+      ).rejects.toThrow(
+        `Attempted to call 'getResult' at path wfDoesSomethingNasty2.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
+      );
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('nonserializable-wf-input', async () => {
+    await DBOS.launch();
+    try {
+      // We want a clear error from this case, so that the code works in recovery
+      const wfid = randomUUID();
+      await expect(
+        DBOS.withNextWorkflowID(wfid, async () => {
+          await wfDoesSomethingNasty3({ getResult: () => 'TakeThis' });
+        }),
+      ).rejects.toThrow(
+        `Attempted to call 'getResult' at path wfDoesSomethingNasty3.<arguments>["0"] on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
+      );
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('nonserializable-randomstuff', async () => {
+    await DBOS.launch();
+    try {
+      await expect(wfReturnsAPromise('hello')).rejects.toThrow(
+        `Attempted to call 'then' at path [""].<result>.p on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
+      );
+      await expect(wfReturnsAFileHandle()).rejects.toThrow(
+        `Attempted to call 'readFile' at path returnFH.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
+      );
+      await expect(wfReturnsAPGClient()).rejects.toThrow(
+        `Attempted to call 'query' at path returnClient.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
+      );
+      await expect(returnsAFetchResponse()).resolves.toBe(undefined);
+      await expect(returnsAnAxiosResponse()).rejects.toThrow(`Converting circular structure to JSON`);
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('wf-returns-wfh', async () => {
+    await DBOS.launch();
+    try {
+      const wfh: WorkflowHandle<string> = await wfReturningHandle('hello');
+      await expect(wfh.getResult()).resolves.toBe('hellohello');
+    } finally {
+      await DBOS.shutdown();
+    }
+  });
+
+  test('custom-serialize', async () => {
+    DBOS.registerSerialization<Frobnicator, { f: string; c: string }>({
+      name: 'mycompany.Frobnicator',
+      serialize: (f: Frobnicator) => {
+        return { f: f.frobni, c: f.cator };
+      },
+      deserialize: (fc: { f: string; c: string }) => new Frobnicator(fc.f, fc.c),
+      isApplicable: (v: unknown): v is Frobnicator => v instanceof Frobnicator,
+    });
+    await DBOS.launch();
+    try {
+      const f = await frobnicateWorkflow('a', 'b');
+      expect(f.frobnicate()).toBe('ab');
+    } finally {
+      await DBOS.shutdown();
+    }
   });
 });
