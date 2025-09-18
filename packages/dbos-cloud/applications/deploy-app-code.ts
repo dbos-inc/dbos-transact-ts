@@ -230,6 +230,11 @@ export async function deployAppCode(
       );
       return 1;
     }
+    if (!content.includes('dbos[otel]')) {
+      logger.warn(
+        'Your requirements.txt file does not include dbos[otel]. If you are using DBOS Python >=2.0, you must include the [otel] optional dependencies to deploy to DBOS Cloud.',
+      );
+    }
   } else if (appLanguage === (AppLanguages.Go as string)) {
     // TODO: check main is compiled against amd64
     const mainExists = existsSync(path.join(process.cwd(), 'main'));
