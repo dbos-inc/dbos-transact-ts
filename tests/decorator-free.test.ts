@@ -2,6 +2,7 @@ import { ConfiguredInstance, DBOS, DBOSClient, WorkflowHandle, WorkflowQueue } f
 import { DBOSConflictingRegistrationError } from '../src/error';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
+import { promises as fsp } from 'node:fs';
 
 const queue = new WorkflowQueue('example_queue');
 
@@ -637,6 +638,22 @@ const wfReturnsAPromise = DBOS.registerWorkflow(
   { name: 'wfReturnsAPromise' },
 );
 
+const wfReturnsAFileHandle = DBOS.registerWorkflow(
+  async () => {
+    const path = __filename; // current file
+    const flags = 'r';
+
+    const fh = await fsp.open(path, flags);
+    try {
+      const retFH = await DBOS.runStep(async () => Promise.resolve(fh), { name: 'returnFH' });
+      await retFH.readFile();
+    } finally {
+      await fh.close();
+    }
+  },
+  { name: 'wfReturnsAFileHandle' },
+);
+
 class Frobnicator {
   constructor(
     readonly frobni: string,
@@ -705,11 +722,14 @@ describe('unserializable-negative-tests', () => {
     }
   });
 
-  test('nonserializable-promise', async () => {
+  test('nonserializable-randomstuff', async () => {
     await DBOS.launch();
     try {
       await expect(wfReturnsAPromise('hello')).rejects.toThrow(
         `Attempted to call 'then' at path [""].<result>.p on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
+      );
+      await expect(wfReturnsAFileHandle()).rejects.toThrow(
+        `Attempted to call 'readFile' at path returnFH.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
       );
     } finally {
       await DBOS.shutdown();
