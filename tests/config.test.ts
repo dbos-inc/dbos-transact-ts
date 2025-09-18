@@ -8,8 +8,7 @@ import {
   translateDbosConfig,
 } from '../src/config';
 import { AssertionError } from 'assert';
-import { DBOSConfigInternal } from '../src/dbos-executor';
-import { DBOSRuntimeConfig } from '../src';
+import { DBOSConfigInternal, DBOSRuntimeConfig } from '../src/dbos-executor';
 
 describe('dbos-config', () => {
   beforeEach(() => {
