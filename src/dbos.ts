@@ -158,7 +158,6 @@ export class DBOS {
   // Lifecycle
   ///////
   static adminServer: Server | undefined = undefined;
-  static appServer: Server | undefined = undefined;
   static conductor: Conductor | undefined = undefined;
 
   /**
@@ -301,12 +300,6 @@ export class DBOS {
    *   Stops workflow processing and disconnects from databases
    */
   static async shutdown() {
-    // Stop the app server
-    if (DBOS.appServer) {
-      DBOS.appServer.close();
-      DBOS.appServer = undefined;
-    }
-
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
