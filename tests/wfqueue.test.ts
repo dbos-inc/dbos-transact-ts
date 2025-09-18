@@ -36,17 +36,17 @@ import {
 import assert from 'node:assert';
 
 const queue = new WorkflowQueue('testQ');
-const serialqueue = new WorkflowQueue('serialQ', 1);
+const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1 });
 const serialqueueLimited = new WorkflowQueue('serialQL', {
   concurrency: 1,
   rateLimit: { limitPerPeriod: 10, periodSec: 1 },
 });
-const childqueue = new WorkflowQueue('childQ', 3);
+const childqueue = new WorkflowQueue('childQ', { concurrency: 3 });
 const workerConcurrencyQueue = new WorkflowQueue('workerQ', { workerConcurrency: 1 });
 
 const qlimit = 5;
 const qperiod = 2;
-const rlqueue = new WorkflowQueue('limited_queue', undefined, { limitPerPeriod: qlimit, periodSec: qperiod });
+const rlqueue = new WorkflowQueue('limited_queue', { rateLimit: { limitPerPeriod: qlimit, periodSec: qperiod } });
 
 describe('queued-wf-tests-simple', () => {
   let config: DBOSConfig;
