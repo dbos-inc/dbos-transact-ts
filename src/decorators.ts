@@ -1064,21 +1064,6 @@ export function ArgName(name: string) {
 
 // #endregion
 
-// #region Class decorators
-/**
- * @deprecated Use ORM data source extension packages such as `@dbos-inc/typeorm-datasource`
- */
-// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-export function OrmEntities(entities: Function[] | { [key: string]: object } = []) {
-  function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor);
-    clsreg.ormEntities = entities;
-  }
-  return clsdec;
-}
-
-// #endregion
-
 // #region Method decorators
 /** @deprecated Do initialization prior to launch() */
 export function DBOSInitializer() {
