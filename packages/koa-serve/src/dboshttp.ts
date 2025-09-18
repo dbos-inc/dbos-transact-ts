@@ -1,3 +1,4 @@
+import 'reflect-metadata';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { randomUUID } from 'node:crypto';

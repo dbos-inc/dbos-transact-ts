@@ -1,5 +1,3 @@
-import 'reflect-metadata';
-
 import { WorkflowConfig } from './workflow';
 import { StepConfig } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
@@ -633,9 +631,20 @@ export function getOrCreateMethodArgsRegistration(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     let designParamTypes: Function[] | undefined = undefined;
     if (target) {
-      designParamTypes = Reflect.getMetadata('design:paramtypes', target, funcName as string | symbol) as  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-        | Function[]
-        | undefined;
+      function getDesignType(target: object, key: string | symbol) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+        const getMetadata = (Reflect as any)?.getMetadata as
+          | ((k: unknown, t: unknown, p?: unknown) => unknown)
+          | undefined;
+
+        if (!getMetadata) return undefined; // polyfill not present
+        return getMetadata('design:paramtypes', target, key); // safe to use
+      }
+      designParamTypes = getDesignType(
+        target,
+        funcName as string | symbol,
+      ) as // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      Function[] | undefined;
     }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
