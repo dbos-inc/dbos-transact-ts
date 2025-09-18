@@ -5,6 +5,7 @@ import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import { DBOSExecutor } from '../src/dbos-executor';
+import axios from 'axios';
 
 const queue = new WorkflowQueue('example_queue');
 
@@ -672,6 +673,22 @@ const wfReturnsAPGClient = DBOS.registerWorkflow(
   { name: 'wfReturnsAPGClient' },
 );
 
+const returnsAFetchResponse = DBOS.registerWorkflow(
+  async () => {
+    const fetchRes = await DBOS.runStep(async () => await fetch('https://example.com'));
+    return fetchRes.status;
+  },
+  { name: 'wfReturnsAFetchResponse' },
+);
+
+const returnsAnAxiosResponse = DBOS.registerWorkflow(
+  async () => {
+    const fetchRes = await DBOS.runStep(async () => await axios.get('https://example.com'));
+    return fetchRes.status;
+  },
+  { name: 'wfReturnsAnAxiosResponse' },
+);
+
 class Frobnicator {
   constructor(
     readonly frobni: string,
@@ -752,6 +769,8 @@ describe('unserializable-negative-tests', () => {
       await expect(wfReturnsAPGClient()).rejects.toThrow(
         `Attempted to call 'query' at path returnClient.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
       );
+      await expect(returnsAFetchResponse()).resolves.toBe(undefined);
+      await expect(returnsAnAxiosResponse()).rejects.toThrow(`Converting circular structure to JSON`);
     } finally {
       await DBOS.shutdown();
     }
