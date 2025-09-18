@@ -625,6 +625,18 @@ const wfDoesSomethingNasty3 = DBOS.registerWorkflow(
   { name: 'wfDoesSomethingNasty3' },
 );
 
+const wfReturnsAPromise = DBOS.registerWorkflow(
+  async (input: string) => {
+    // eslint-disable-next-line @typescript-eslint/require-await
+    const stepPromise = await DBOS.runStep(async () => {
+      const p = Promise.resolve(input);
+      return { p };
+    });
+    return await stepPromise.p;
+  },
+  { name: 'wfReturnsAPromise' },
+);
+
 class Frobnicator {
   constructor(
     readonly frobni: string,
@@ -693,11 +705,12 @@ describe('unserializable-negative-tests', () => {
     }
   });
 
-  test('wf-returns-wfh', async () => {
+  test('nonserializable-promise', async () => {
     await DBOS.launch();
     try {
-      const wfh: WorkflowHandle<string> = await wfReturningHandle('hello');
-      await expect(wfh.getResult()).resolves.toBe('hellohello');
+      await expect(wfReturnsAPromise('hello')).rejects.toThrow(
+        `Attempted to call 'then' at path [""].<result>.p on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
+      );
     } finally {
       await DBOS.shutdown();
     }
