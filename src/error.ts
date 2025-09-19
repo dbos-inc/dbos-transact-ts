@@ -51,20 +51,6 @@ export class DBOSDataValidationError extends DBOSError {
   }
 }
 
-const ResponseError = 11;
-/**
- * This error can be thrown by DBOS applications to indicate
- *  the HTTP response code, in addition to the message.
- */
-export class DBOSResponseError extends DBOSError {
-  constructor(
-    msg: string,
-    readonly status: number = 500,
-  ) {
-    super(msg, ResponseError);
-  }
-}
-
 const NotAuthorizedError = 12;
 export class DBOSNotAuthorizedError extends DBOSError {
   constructor(

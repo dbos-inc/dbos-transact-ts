@@ -1603,7 +1603,7 @@ export class DBOS {
    */
   static associateParamWithInfo<This, Args extends unknown[], Return>(
     external: AnyConstructor | object | string,
-    func: (this: This, ...args: Args) => Promise<Return>,
+    func: ((this: This, ...args: Args) => Promise<Return>) | undefined,
     target: FunctionName & {
       param: number | string;
     },
@@ -1612,7 +1612,7 @@ export class DBOS {
       external,
       target.ctorOrProto,
       target.className,
-      target.name ?? func.name,
+      target.name ?? func?.name ?? '<unknown>',
       func,
       target.param,
     );

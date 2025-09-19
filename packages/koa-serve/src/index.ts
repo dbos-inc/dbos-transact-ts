@@ -9,6 +9,7 @@ export {
   DBOSHTTPMethodInfo,
   DBOSHTTPReg,
   DBOSHTTPRequest,
+  DBOSResponseError,
   RequestIDHeader,
   WorkflowIDHeader,
 } from './dboshttp';

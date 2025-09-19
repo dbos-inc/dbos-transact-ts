@@ -4,13 +4,20 @@ export { DBOSClient } from './client';
 
 export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler';
 
-export { DBOSLifecycleCallback, ExternalRegistration } from './decorators';
+export {
+  ArgDataType,
+  DBOSDataType,
+  DBOSLifecycleCallback,
+  DBOSMethodMiddlewareInstaller,
+  ExternalRegistration,
+  MethodRegistrationBase,
+} from './decorators';
 
 export { WorkflowQueue } from './wfqueue';
 
 export * as Error from './error';
 
-export { DBOSWorkflowConflictError, DBOSResponseError } from './error';
+export { DBOSWorkflowConflictError } from './error';
 
 export {
   WorkflowConfig,
@@ -20,20 +27,6 @@ export {
   GetQueuedWorkflowsInput,
   WorkflowStatus,
 } from './workflow';
-
-export {
-  ArgRequired,
-  ArgOptional,
-  ArgDate,
-  ArgVarchar,
-  DefaultArgRequired,
-  DefaultArgOptional,
-  DefaultArgValidate,
-  LogMask,
-  LogMasks,
-  SkipLogging,
-  requestArgValidation,
-} from './paramdecorators';
 
 export { Debouncer, DebouncerClient } from './debouncer';
 

@@ -2,9 +2,9 @@
 import Koa from 'koa';
 import Router from '@koa/router';
 
-import { DBOS, DBOSResponseError, Error as DBOSErrors, StatusString } from '@dbos-inc/dbos-sdk';
+import { DBOS, Error as DBOSErrors, StatusString } from '@dbos-inc/dbos-sdk';
 
-import { DBOSKoa, DBOSKoaAuthContext, RequestIDHeader, WorkflowIDHeader } from '../src';
+import { DBOSKoa, DBOSKoaAuthContext, RequestIDHeader, WorkflowIDHeader, DBOSResponseError } from '../src';
 
 import request from 'supertest';
 
