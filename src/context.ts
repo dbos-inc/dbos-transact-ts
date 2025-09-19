@@ -1,7 +1,6 @@
 import { DBOSContextualLogger } from './telemetry/logs';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
-import { UserDatabaseClient } from './user_database';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import Koa from 'koa';
@@ -36,8 +35,6 @@ export interface DBOSLocalCtx extends DBOSContextOptions {
   curStepFunctionId?: number; // If currently in a step, its function ID
   stepStatus?: StepStatus; // If currently in a step, its public status object
   curTxFunctionId?: number; // If currently in a tx, its function ID
-  isInStoredProc?: boolean;
-  sqlClient?: UserDatabaseClient;
   koaContext?: Koa.Context;
 }
 

@@ -17,7 +17,6 @@ describe('httpserver-argsource-tests', () => {
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'dbos-koa-test',
-      userDatabaseClient: 'pg-node',
     });
     return Promise.resolve();
   });

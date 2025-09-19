@@ -1,7 +1,7 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 
 export class BadDecoratorClass {
-  @DBOS.transaction()
+  @DBOS.workflow()
   @DBOS.step()
   static async cantBeBoth() {
     return Promise.resolve();

@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { DBOS, DBOSConfig, WorkflowQueue } from '../src/';
-import { startDockerPg, stopDockerPg } from '../src/dbos-runtime/docker_pg_helper';
+import { startDockerPg, stopDockerPg } from '../src/cli/docker_pg_helper';
 import { dropDatabases, PostgresChaosMonkey } from './helpers';
 import { sleepms } from '../src/utils';
 
@@ -13,7 +13,7 @@ describe('chaos-tests', () => {
   beforeAll(() => {
     config = {
       name: 'test-app',
-      databaseUrl: `postgresql://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?sslmode=disable`,
+      systemDatabaseUrl: `postgresql://postgres:${process.env.PGPASSWORD || 'dbos'}@localhost:5432/dbostest?sslmode=disable`,
     };
     DBOS.setConfig(config);
   });

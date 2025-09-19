@@ -1,14 +1,12 @@
-import { DBOS } from '../src';
+import { DBOS, DBOSConfig } from '../src';
 import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
 import { KnexDataSource } from '../packages/knex-datasource';
 import { StepInfo } from '../src/workflow';
 
-const testTableName = 'dbos_concurrency_test_kv';
-
-const config = generateDBOSTestConfig('pg-node');
-const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest' } };
+const config = generateDBOSTestConfig();
+const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest_dbos_sys' } };
 const knexds = new KnexDataSource('app-db', dbConfig);
 
 const simpleWF = DBOS.registerWorkflow(
@@ -34,12 +32,12 @@ const regStepRetry = DBOS.registerStep(
 );
 
 const cleanDB = knexds.registerTransaction(async () => {
-  await knexds.client.raw(`DELETE FROM ${testTableName}`);
+  await Promise.resolve();
 });
 
 const regDSTx = knexds.registerTransaction(
-  async (id) => {
-    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
+  async (_) => {
+    await knexds.client.raw(`SELECT 1;`);
     return 'tx done';
   },
   { name: 'regDSTx' },
@@ -47,7 +45,7 @@ const regDSTx = knexds.registerTransaction(
 
 let retryCnt = 0;
 const regDSTxRetry = knexds.registerTransaction(
-  async (id) => {
+  async (_) => {
     if (retryCnt <= 2) {
       ++retryCnt;
       const e = new Error('Not yet') as Error & { code: string };
@@ -55,7 +53,7 @@ const regDSTxRetry = knexds.registerTransaction(
       throw e;
     }
     retryCnt = 0;
-    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
+    await knexds.client.raw(`SELECT 1;`);
     return 'txr done';
   },
   { name: 'regDSTxRetry' },
@@ -383,7 +381,7 @@ const runALotOfTransactionsAtOnce = DBOS.registerWorkflow(
           return (
             await knexds.runTransaction(
               async () => {
-                await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [5, 1]);
+                await knexds.client.raw(`SELECT 1;`);
                 return Promise.resolve('5');
               },
               { name: 'runTx5' },
@@ -407,8 +405,6 @@ describe('concurrency-tests', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
     ConcurrTestClass.cnt = 0;
     ConcurrTestClass.wfCnt = 0;
   });
@@ -598,11 +594,10 @@ class ConcurrTestClass {
     ConcurrTestClass.resolve3 = r;
   });
 
-  @DBOS.transaction()
+  @DBOS.step()
   static async testReadWriteFunction(id: number) {
-    await DBOS.pgClient.query(`INSERT INTO ${testTableName}(id, value) VALUES ($1, $2)`, [id, 1]);
     ConcurrTestClass.cnt++;
-    return id;
+    return Promise.resolve(id);
   }
 
   @DBOS.workflow()
@@ -612,7 +607,7 @@ class ConcurrTestClass {
 
   @knexds.transaction()
   static async testDSReadWrite(id: number) {
-    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
+    await knexds.client.raw(`SELECT 1;`);
     ConcurrTestClass.cnt++;
     return id;
   }
@@ -693,5 +688,48 @@ async function runThingsSerialOrConc(conc: boolean, things: { func: () => Promis
       const res = await t.func();
       expect(res).toBe(t.expected);
     }
+  }
+}
+
+describe('concurrent-events', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('concurrent-workflow-events', async () => {
+    const wfid = randomUUID();
+    const promises: Promise<string | null>[] = [];
+    for (let i = 0; i < 10; ++i) {
+      promises.push(DBOS.getEvent(wfid, 'key1'));
+    }
+
+    const st = Date.now();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await DBOSTestClassWFS.setEventWorkflow();
+    });
+    const et = Date.now();
+    expect(et - st).toBeLessThan(1000);
+
+    await Promise.allSettled(promises);
+  });
+});
+
+class DBOSTestClassWFS {
+  @DBOS.workflow()
+  static async setEventWorkflow() {
+    await DBOS.setEvent('key1', 'value1');
+    return 0;
   }
 }

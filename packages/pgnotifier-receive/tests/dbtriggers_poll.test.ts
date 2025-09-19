@@ -271,12 +271,13 @@ describe('test-db-trigger-polling', () => {
     expect(DBOSTriggerTestClassSN.snRecordMap.get(999)?.status).toBeUndefined();
     expect(DBOSTriggerTestClassSN.tsRecordMap.get(999)?.status).toBeUndefined();
 
-    const wfs = await DBOS.getWorkflows({
+    const wfs = await DBOS.listWorkflows({
       workflowName: 'pollWFBySeq',
     });
 
     let foundQ = false;
-    for (const wfid of wfs.workflowUUIDs) {
+    for (const wf of wfs) {
+      const wfid = wf.workflowID;
       const stat = await DBOS.retrieveWorkflow(wfid).getStatus();
       if (stat?.queueName === q.name) foundQ = true;
     }

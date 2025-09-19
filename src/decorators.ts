@@ -1,10 +1,6 @@
-import 'reflect-metadata';
-
-import { TransactionConfig } from './transaction';
 import { WorkflowConfig } from './workflow';
 import { StepConfig } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
-import { InitContext } from './dbos';
 import { DataSourceTransactionHandler } from './datasource';
 
 // #region Interfaces and supporting types
@@ -292,9 +288,7 @@ export interface MethodRegistrationBase {
   getRequiredRoles(): string[];
 
   workflowConfig?: WorkflowConfig;
-  txnConfig?: TransactionConfig;
   stepConfig?: StepConfig;
-  procConfig?: TransactionConfig;
   isInstance: boolean;
 
   // This is for any class or object to keep stuff associated with a class
@@ -341,9 +335,7 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
   registeredFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined;
   wrappedFunction: ((this: This, ...args: Args) => Promise<Return>) | undefined = undefined;
   workflowConfig?: WorkflowConfig;
-  txnConfig?: TransactionConfig;
   stepConfig?: StepConfig;
-  procConfig?: TransactionConfig;
   regLocation?: string[];
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
@@ -354,11 +346,9 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
     return this.externalRegInfo.get(reg)!;
   }
 
-  getAssignedType(): 'Transaction' | 'Workflow' | 'Step' | 'Procedure' | undefined {
-    if (this.txnConfig) return 'Transaction';
+  getAssignedType(): 'Workflow' | 'Step' | undefined {
     if (this.workflowConfig) return 'Workflow';
     if (this.stepConfig) return 'Step';
-    if (this.procConfig) return 'Procedure';
     return undefined;
   }
 
@@ -380,19 +370,9 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
     }
   }
 
-  setTxnConfig(txCfg: TransactionConfig): void {
-    this.checkFuncTypeUnassigned('Transaction');
-    this.txnConfig = txCfg;
-  }
-
   setStepConfig(stepCfg: StepConfig): void {
     this.checkFuncTypeUnassigned('Step');
     this.stepConfig = stepCfg;
-  }
-
-  setProcConfig(procCfg: TransactionConfig): void {
-    this.checkFuncTypeUnassigned('Procedure');
-    this.procConfig = procCfg;
   }
 
   setWorkflowConfig(wfCfg: WorkflowConfig): void {
@@ -429,13 +409,6 @@ export abstract class ConfiguredInstance {
     }
     this.name = name;
     registerClassInstance(this, name);
-  }
-  /**
-   * Override this method to perform async initialization.
-   * @param _ctx - @deprecated This parameter is unnecessary, use `DBOS` instead.
-   */
-  initialize(_ctx: InitContext): Promise<void> {
-    return Promise.resolve();
   }
 }
 
@@ -658,9 +631,20 @@ export function getOrCreateMethodArgsRegistration(
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     let designParamTypes: Function[] | undefined = undefined;
     if (target) {
-      designParamTypes = Reflect.getMetadata('design:paramtypes', target, funcName as string | symbol) as  // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-        | Function[]
-        | undefined;
+      function getDesignType(target: object, key: string | symbol) {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/no-unsafe-member-access
+        const getMetadata = (Reflect as any)?.getMetadata as
+          | ((k: unknown, t: unknown, p?: unknown) => unknown)
+          | undefined;
+
+        if (!getMetadata) return undefined; // polyfill not present
+        return getMetadata('design:paramtypes', target, key); // safe to use
+      }
+      designParamTypes = getDesignType(
+        target,
+        funcName as string | symbol,
+      ) as // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      Function[] | undefined;
     }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
@@ -1085,21 +1069,6 @@ export function ArgName(name: string) {
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
   };
-}
-
-// #endregion
-
-// #region Class decorators
-/**
- * @deprecated Use ORM data source extension packages such as `@dbos-inc/typeorm-datasource`
- */
-// eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-export function OrmEntities(entities: Function[] | { [key: string]: object } = []) {
-  function clsdec<T extends { new (...args: unknown[]): object }>(ctor: T) {
-    const clsreg = getOrCreateClassRegistration(ctor);
-    clsreg.ormEntities = entities;
-  }
-  return clsdec;
 }
 
 // #endregion

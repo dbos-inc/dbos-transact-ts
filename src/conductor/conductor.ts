@@ -6,7 +6,7 @@ import { GetWorkflowsInput, StatusString } from '..';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { hostname } from 'node:os';
 import { json as streamJSON } from 'stream/consumers';
-import { globalTimeout } from '../dbos-runtime/workflow_management';
+import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
 
 export class Conductor {

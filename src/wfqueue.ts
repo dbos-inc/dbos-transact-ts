@@ -46,9 +46,6 @@ export class WorkflowQueue {
 
   constructor(name: string);
 
-  /** @deprecated @see QueueParameters */
-  constructor(name: string, concurrency?: number, rateLimit?: QueueRateLimit);
-
   /**
    *
    * @param name - Name to give the `WorkflowQueue`, accepted by `DBOS.startWorkflow`

@@ -1,7 +1,7 @@
 import { DBOS, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig } from './helpers';
 
-const q = new WorkflowQueue('testq', 1, { limitPerPeriod: 1, periodSec: 1 });
+const q = new WorkflowQueue('testq', { concurrency: 1, rateLimit: { limitPerPeriod: 1, periodSec: 1 } });
 
 export class WF {
   @DBOS.workflow()

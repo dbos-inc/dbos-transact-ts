@@ -1,102 +1,119 @@
-import { TRACE_PARENT_HEADER, TRACE_STATE_HEADER } from '@opentelemetry/core';
-import { DBOSExecutor, DBOSConfig } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
-import request from 'supertest';
+import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { NodeTracerProvider } from './nodetraceprovider';
 import { DBOS } from '../src';
-import { context, trace } from '@opentelemetry/api';
-import type { Span as SDKSpan } from '@opentelemetry/sdk-trace-base';
-import { translateDbosConfig } from '../src/dbos-runtime/config';
 
-export class TestClass {
-  @DBOS.step({})
-  static async test_function(name: string): Promise<string> {
-    expect(trace.getSpan(context.active())).toBeDefined();
-    expect((trace.getSpan(context.active()) as SDKSpan).name).toBe('test_function');
-    return Promise.resolve(`hello ${name}`);
+const provider = new NodeTracerProvider();
+const memoryExporter = new InMemorySpanExporter();
+provider.addSpanProcessor(new SimpleSpanProcessor(memoryExporter));
+provider.register();
+
+import Koa from 'koa';
+import Router from '@koa/router';
+import { context, trace, SpanStatusCode } from '@opentelemetry/api';
+import { isTraceContextWorking } from '../src/telemetry/traces';
+import { AddressInfo } from 'net';
+
+async function doSomethingTraced_internal() {
+  const span = trace.getSpan(context.active());
+  console.log('Current span:', span?.spanContext());
+  if (span) {
+    span.setAttribute('my-lib.didSomething', true);
   }
-
-  @DBOS.workflow()
-  static async test_workflow(name: string): Promise<string> {
-    expect(trace.getSpan(context.active())).toBeDefined();
-    expect((trace.getSpan(context.active()) as SDKSpan).name).toBe('test_workflow');
-
-    const funcResult = await TestClass.test_function(name);
-    return funcResult;
-  }
-
-  @DBOS.getApi('/hello')
-  static async hello() {
-    expect(trace.getSpan(context.active())).toBeDefined();
-    expect((trace.getSpan(context.active()) as SDKSpan).name).toBe('/hello');
-    return Promise.resolve({ message: await TestClass.test_workflow('joe') });
-  }
+  expect(DBOS.span).toBe(trace.getSpan(context.active()));
+  return Promise.resolve('Done');
 }
 
-describe('dbos-telemetry', () => {
-  afterEach(() => {
-    jest.restoreAllMocks();
+const doSomethingTraced = DBOS.registerWorkflow(doSomethingTraced_internal);
+
+export function createApp() {
+  const app = new Koa();
+  const router = new Router();
+
+  // Tracing middleware (emulates instrumentation or full middleware, which is not working...)
+  app.use(async (ctx, next) => {
+    const current = trace.getSpan(context.active());
+    if (current) {
+      return next() as Promise<unknown>;
+    }
+
+    const tracer = trace.getTracer('manual');
+    const span = tracer.startSpan(`manual-span-for-${ctx.method} ${ctx.path}`);
+
+    try {
+      await context.with(trace.setSpan(context.active(), span), async () => {
+        await next();
+        if (ctx.status >= 400) {
+          span.setStatus({ code: SpanStatusCode.ERROR, message: ctx.message });
+        } else {
+          span.setStatus({ code: SpanStatusCode.OK });
+        }
+      });
+    } catch (err) {
+      span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
+      throw err;
+    } finally {
+      span.end();
+    }
   });
 
-  test('DBOS init works with exporters', async () => {
-    const dbosConfig = generateDBOSTestConfig('pg-node');
-    dbosConfig.otlpLogsEndpoints = ['http://localhost:4317/v1/logs'];
-    dbosConfig.otlpTracesEndpoints = ['http://localhost:4317/v1/traces'];
-
-    const internalConfig = translateDbosConfig(dbosConfig);
-    expect(internalConfig.telemetry).not.toBeUndefined();
-    expect(internalConfig.telemetry?.OTLPExporter?.logsEndpoint).toEqual(dbosConfig.otlpLogsEndpoints);
-    expect(internalConfig.telemetry?.OTLPExporter?.tracesEndpoint).toEqual(dbosConfig.otlpTracesEndpoints);
-
-    await setUpDBOSTestDb(dbosConfig);
-    const dbosExec = new DBOSExecutor(internalConfig);
-    expect(dbosExec.telemetryCollector).not.toBeUndefined();
-    expect(dbosExec.telemetryCollector.exporter).not.toBeUndefined();
-    await dbosExec.init();
-    await dbosExec.destroy();
+  // Route
+  router.get('/test', async (ctx) => {
+    await doSomethingTraced();
+    ctx.body = 'OK';
   });
 
-  // TODO write a test intercepting OTLP over HTTP requests and test span/logs payloads
+  app.use(router.routes());
+  app.use(router.allowedMethods());
 
-  describe('http Tracer', () => {
-    let config: DBOSConfig;
+  return app;
+}
 
-    beforeAll(async () => {
-      config = generateDBOSTestConfig('pg-node');
-      await setUpDBOSTestDb(config);
-      DBOS.setConfig(config);
-    });
+describe('trace spans propagate ', () => {
+  beforeAll(async () => {
+    DBOS.setConfig({ name: 'trace-span-propagage' });
+    await DBOS.launch();
+  });
 
-    beforeEach(async () => {
-      await DBOS.launch();
-      DBOS.setUpHandlerCallback();
-    });
+  afterAll(async () => {
+    await DBOS.shutdown();
+  });
 
-    afterEach(async () => {
-      await DBOS.shutdown();
-    });
+  test('from-outside-into-DBOS-calls', async () => {
+    expect(isTraceContextWorking()).toBe(true);
 
-    test('Trace context is propagated in and out of workflow execution', async () => {
-      const headers = {
-        [TRACE_PARENT_HEADER]: '00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01',
-        [TRACE_STATE_HEADER]: 'some_state=some_value',
-      };
+    const app = createApp();
+    const server = app.listen(0); // Koa uses native HTTP
 
-      const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello').set(headers);
-      expect(response.statusCode).toBe(200);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(response.body.message).toBe('hello joe');
-      // traceId should be the same, spanId should be different (ID of the last operation's span)
-      expect(response.headers.traceparent).toContain('00-4bf92f3577b34da6a3ce929d0e0e4736');
-      expect(response.headers.tracestate).toBe(headers[TRACE_STATE_HEADER]);
-    });
+    const { port } = server.address() as AddressInfo;
 
-    test('New trace context is propagated out of workflow', async () => {
-      const response = await request(DBOS.getHTTPHandlersCallback()!).get('/hello');
-      expect(response.statusCode).toBe(200);
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(response.body.message).toBe('hello joe');
-      // traceId should be the same, spanId should be different (ID of the last operation's span)
-      expect(response.headers.traceparent).not.toBe(null);
-    });
+    const res = await fetch(`http://localhost:${port}/test`);
+
+    expect(res.status).toBe(200);
+    server.close();
+
+    const spans = memoryExporter.getFinishedSpans();
+    expect(spans.length).toBeGreaterThan(0);
+
+    console.debug(
+      spans.map((span) => ({
+        name: span.name,
+        traceId: span.spanContext().traceId,
+        spanId: span.spanContext().spanId,
+        parentSpanId: span.parentSpanId,
+        attributes: span.attributes,
+      })),
+    );
+
+    const httpSpan = spans.find((s) => s.name.includes('/test'));
+    const libSpan = spans.find((s) => s.attributes['my-lib.didSomething'] === true);
+    const dbosSpan = spans.find((s) => s.name.includes('doSomethingTraced'));
+
+    expect(httpSpan).toBeDefined();
+    expect(libSpan).toBeDefined();
+    expect(dbosSpan).toBeDefined();
+    expect(dbosSpan).toBe(libSpan);
+    expect(httpSpan).not.toBe(libSpan);
+    expect(dbosSpan?.parentSpanId).toBe(httpSpan?.spanContext().spanId);
+    expect(dbosSpan?.spanContext().traceId).toBe(httpSpan?.spanContext().traceId);
   });
 });

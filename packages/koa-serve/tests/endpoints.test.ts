@@ -2,18 +2,13 @@
 import Koa from 'koa';
 import Router from '@koa/router';
 
-import { DBOS, DBOSResponseError, Error as DBOSErrors, StatusString } from '@dbos-inc/dbos-sdk';
+import { DBOS, Error as DBOSErrors, StatusString } from '@dbos-inc/dbos-sdk';
 
-import { DBOSKoa, DBOSKoaAuthContext, RequestIDHeader, WorkflowIDHeader } from '../src';
+import { DBOSKoa, DBOSKoaAuthContext, RequestIDHeader, WorkflowIDHeader, DBOSResponseError } from '../src';
 
 import request from 'supertest';
 
 const dhttp = new DBOSKoa();
-
-interface TestKvTable {
-  id?: number;
-  value?: string;
-}
 
 import { randomUUID } from 'node:crypto';
 import { IncomingMessage } from 'http';
@@ -29,12 +24,9 @@ describe('httpserver-tests', () => {
   let app: Koa;
   let appRouter: Router;
 
-  const testTableName = 'dbos_test_kv';
-
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'dbos-koa-test',
-      userDatabaseClient: 'pg-node',
     });
     return Promise.resolve();
   });
@@ -42,8 +34,6 @@ describe('httpserver-tests', () => {
   beforeEach(async () => {
     const _classes = [TestEndpoints];
     await DBOS.launch();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
     app = new Koa();
     appRouter = new Router();
     dhttp.registerWithApp(app, appRouter);
@@ -181,7 +171,6 @@ describe('httpserver-tests', () => {
   test('endpoint-error', async () => {
     const response = await request(app.callback()).post('/error').send({ name: 'alice' });
     expect(response.statusCode).toBe(500);
-    expect(response.body.details.code).toBe('23505'); // Should be the expected error.
   });
 
   test('endpoint-handler', async () => {
@@ -424,7 +413,7 @@ describe('httpserver-tests', () => {
     }
 
     @dhttp.getApi('/dbos-error')
-    @DBOS.transaction()
+    @DBOS.step()
     static async dbosErr() {
       return Promise.reject(new DBOSResponseError('customize error', 503));
     }
@@ -451,13 +440,10 @@ describe('httpserver-tests', () => {
     }
 
     @dhttp.postApi('/transaction/:name')
-    @DBOS.transaction()
+    @DBOS.step()
     static async testTransaction(name: string) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(
-        `INSERT INTO ${testTableName}(id, value) VALUES (1, $1) RETURNING id`,
-        [name],
-      );
-      return `hello ${rows[0].id}`;
+      void name;
+      return Promise.resolve(`hello 1`);
     }
 
     @dhttp.getApi('/step/:input')
@@ -476,10 +462,10 @@ describe('httpserver-tests', () => {
     @dhttp.postApi('/error')
     @DBOS.workflow()
     static async testWorkflowError(name: string) {
+      void name;
       // This workflow should encounter duplicate primary key error.
-      let res = await TestEndpoints.testTransaction(name);
-      res = await TestEndpoints.testTransaction(name);
-      return res;
+      throw new Error('fail');
+      return Promise.resolve('');
     }
 
     @dhttp.getApi('/requireduser')

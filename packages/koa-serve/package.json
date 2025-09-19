@@ -31,7 +31,8 @@
   },
   "peerDependencies": {
     "@dbos-inc/dbos-sdk": "*",
-    "@dbos-inc/knex-datasource": "*"
+    "@dbos-inc/knex-datasource": "*",
+    "reflect-metadata": "^0.1.14 || ^0.2.0"
   },
   "dependencies": {
     "@koa/bodyparser": "5.0.0",
