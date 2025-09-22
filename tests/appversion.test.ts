@@ -1,6 +1,5 @@
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { globalParams } from '../src/utils';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
 
 describe('test-app-version', () => {
@@ -32,15 +31,15 @@ describe('test-app-version', () => {
     // Verify the app version is correctly set to a hex string
     await DBOS.launch();
     await expect(TestAppVersionStability.testWorkflow()).resolves.toEqual(0);
-    const appVersion = globalParams.appVersion;
+    const appVersion = DBOS.applicationVersion;
     expect(appVersion.length).toBeGreaterThan(0);
     expect(isHex(appVersion)).toBe(true);
     await DBOS.shutdown();
 
     // Verify stability -- the same source produces the same app version
-    expect(globalParams.appVersion.length).toBe(0);
+    expect(DBOS.applicationVersion.length).toBe(0);
     await DBOS.launch();
-    expect(globalParams.appVersion).toEqual(appVersion);
+    expect(DBOS.applicationVersion).toEqual(appVersion);
     await expect(TestAppVersionStability.testWorkflow()).resolves.toEqual(0);
 
     // Verify that changing the workflow source changes the app version
@@ -53,10 +52,10 @@ describe('test-app-version', () => {
       }
     }
 
-    expect(globalParams.appVersion.length).toBe(0);
+    expect(DBOS.applicationVersion.length).toBe(0);
     await DBOS.launch();
-    expect(globalParams.appVersion.length).toBeGreaterThan(0);
-    expect(globalParams.appVersion).not.toEqual(appVersion);
+    expect(DBOS.applicationVersion.length).toBeGreaterThan(0);
+    expect(DBOS.applicationVersion).not.toEqual(appVersion);
     await expect(AnotherWorkflow.anotherWorkflow()).resolves.toEqual(1);
 
     // Verify that app version can be set
@@ -65,9 +64,9 @@ describe('test-app-version', () => {
     const test_version = 'test_version';
     config.applicationVersion = test_version;
     DBOS.setConfig(config);
-    expect(globalParams.appVersion.length).toBe(0);
+    expect(DBOS.applicationVersion.length).toBe(0);
     await DBOS.launch();
-    expect(globalParams.appVersion).toBe(test_version);
+    expect(DBOS.applicationVersion).toBe(test_version);
   });
 
   test('test-app-version-recovery', async () => {
