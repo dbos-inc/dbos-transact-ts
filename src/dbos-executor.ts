@@ -621,7 +621,7 @@ export class DBOSExecutor {
     if (params.queueName) {
       const wfqueue = this.#getQueueByName(params.queueName);
       if (!wfqueue.priorityEnabled && priority !== undefined) {
-        this.logger.warn(
+        throw Error(
           `Priority is not enabled for queue ${params.queueName}. Setting priority will not have any effect.`,
         );
       }
