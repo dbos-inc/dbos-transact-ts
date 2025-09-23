@@ -1,6 +1,6 @@
 import { DBOS, Debouncer, DBOSConfig, WorkflowQueue, StatusString, DBOSClient, DebouncerClient } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import assert from 'node:assert';
 
 describe('debouncer-tests', () => {
@@ -12,7 +12,7 @@ describe('debouncer-tests', () => {
   });
 
   beforeEach(async () => {
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
   });
 

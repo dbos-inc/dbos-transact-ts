@@ -1,5 +1,5 @@
 import { DBOS } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { KnexDataSource } from '../packages/knex-datasource';
 
 DBOS.logger.info('This should not cause a kaboom.');
@@ -126,7 +126,7 @@ class TransitionTests {
 }
 
 async function main9() {
-  await setUpDBOSTestDb(config);
+  await setUpDBOSTestSysDb(config);
   DBOS.setConfig(config);
   await DBOS.launch();
   try {

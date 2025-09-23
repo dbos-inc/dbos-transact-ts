@@ -2,7 +2,7 @@ import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } fr
 import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
-  setUpDBOSTestDb,
+  setUpDBOSTestSysDb,
   Event,
   queueEntriesAreCleanedUp,
   recoverPendingWorkflows,
@@ -53,7 +53,7 @@ describe('queued-wf-tests-simple', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -823,7 +823,7 @@ describe('queued-wf-tests-concurrent-workers', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -967,7 +967,7 @@ describe('enqueue-options', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -1220,7 +1220,7 @@ describe('queue-time-outs', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

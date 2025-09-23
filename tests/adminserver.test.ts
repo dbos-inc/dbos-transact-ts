@@ -1,7 +1,7 @@
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { WorkflowQueue } from '../src';
-import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, queueEntriesAreCleanedUp, setUpDBOSTestSysDb } from './helpers';
 import { QueueMetadataResponse } from '../src/adminserver';
 import { HealthUrl, WorkflowQueuesMetadataUrl, WorkflowRecoveryUrl } from '../src/adminserver';
 import { globalParams, sleepms } from '../src/utils';
@@ -25,7 +25,7 @@ describe('not-running-admin-server', () => {
   test('test-admin-server-not-running', async () => {
     config = generateDBOSTestConfig();
     DBOS.setConfig({ ...config, runAdminServer: false });
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
 
     await expect(async () => {
@@ -40,7 +40,7 @@ describe('not-running-admin-server', () => {
   test('test-admin-server-set-port', async () => {
     config = generateDBOSTestConfig();
     DBOS.setConfig({ ...config, adminPort: 4444 });
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
 
     const healthzResponse = await fetch(`http://localhost:4444${HealthUrl}`, {
@@ -58,7 +58,7 @@ describe('not-running-admin-server', () => {
     try {
       config = generateDBOSTestConfig();
       DBOS.setConfig({ ...config, runAdminServer: true });
-      await setUpDBOSTestDb(config);
+      await setUpDBOSTestSysDb(config);
       await DBOS.launch();
       await DBOS.shutdown();
     } finally {
@@ -76,7 +76,7 @@ describe('running-admin-server-tests', () => {
     await DBOS.shutdown();
     config = generateDBOSTestConfig();
     DBOS.setConfig({ ...config, runAdminServer: true, adminPort: 3001 });
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
     systemDBClient = new Client({
       connectionString: config.systemDatabaseUrl,

@@ -1,6 +1,6 @@
 import { GetWorkflowsInput, StatusString, DBOS, WorkflowQueue } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, recoverPendingWorkflows } from './helpers';
 import { Client } from 'pg';
 import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
@@ -26,7 +26,7 @@ describe('workflow-management-tests', () => {
 
   beforeEach(async () => {
     process.env.DBOS__APPVERSION = 'v0';
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
 
     systemDBClient = new Client({
@@ -378,7 +378,7 @@ describe('test-list-queues', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -649,7 +649,7 @@ describe('test-list-steps', () => {
     DBOS.setConfig(config);
   });
   beforeEach(async () => {
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
   });
   afterEach(async () => {
@@ -1124,7 +1124,7 @@ describe('test-fork', () => {
     ExampleWorkflow.transactionTwoCount = 0;
     ExampleWorkflow.transactionThreeCount = 0;
     ExampleWorkflow.childWorkflowCount = 0;
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
   });
   afterEach(async () => {
@@ -1355,7 +1355,7 @@ describe('wf-cancel-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

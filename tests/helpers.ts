@@ -23,7 +23,7 @@ export function generateDBOSTestConfig(): DBOSConfig {
   };
 }
 
-export async function setUpDBOSTestDb(config: DBOSConfig) {
+export async function setUpDBOSTestSysDb(config: DBOSConfig) {
   config.name ??= 'dbostest';
   const internalConfig = translateDbosConfig(config);
 

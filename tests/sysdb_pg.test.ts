@@ -7,7 +7,7 @@ import { DBOSExecutor } from '../src/dbos-executor';
 import { DBOSWorkflowCancelledError } from '../src/error';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 import { randomUUID } from 'node:crypto';
 
@@ -201,7 +201,7 @@ describe('queued-wf-tests-simple', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

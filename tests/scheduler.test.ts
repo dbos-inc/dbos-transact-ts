@@ -2,7 +2,7 @@ import EventEmitter from 'node:events';
 import { DBOS, SchedulerMode, WorkflowQueue } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { INTERNAL_QUEUE_NAME, sleepms } from '../src/utils';
-import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 describe('cf-scheduled-wf-tests-simple', () => {
   let config: DBOSConfig;
@@ -10,7 +10,7 @@ describe('cf-scheduled-wf-tests-simple', () => {
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
     await dropDatabase(config.systemDatabaseUrl!);
@@ -131,7 +131,7 @@ describe('cf-scheduled-wf-tests-oaoo', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
     await dropDatabase(config.systemDatabaseUrl!);
@@ -173,7 +173,7 @@ describe('cf-scheduled-wf-tests-when-active', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -257,7 +257,7 @@ describe('decorator-free-scheduled', () => {
   beforeAll(async () => {
     DBOSSchedTestClass.reset(true);
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
     await dropDatabase(config.systemDatabaseUrl!);

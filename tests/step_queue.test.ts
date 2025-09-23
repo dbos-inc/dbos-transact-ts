@@ -3,7 +3,7 @@ import { DBOSConfig } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
   queueEntriesAreCleanedUp,
-  setUpDBOSTestDb,
+  setUpDBOSTestSysDb,
   Event,
   recoverPendingWorkflows,
 } from './helpers';
@@ -106,7 +106,7 @@ describe('queued-wf-tests-simple', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

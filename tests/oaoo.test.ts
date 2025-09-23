@@ -1,6 +1,6 @@
 import { DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { dropDatabase, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
 describe('oaoo-tests', () => {
@@ -12,7 +12,7 @@ describe('oaoo-tests', () => {
     expect(config.systemDatabaseUrl).toBeDefined();
     const url = new URL(config.systemDatabaseUrl!);
     username = url.username;
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

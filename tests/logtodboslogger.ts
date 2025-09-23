@@ -1,5 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 class WF {
   @DBOS.step()
@@ -17,7 +17,7 @@ class WF {
 
 async function main() {
   const config = generateDBOSTestConfig();
-  await setUpDBOSTestDb({ ...config, logLevel: 'debug', addContextMetadata: true });
+  await setUpDBOSTestSysDb({ ...config, logLevel: 'debug', addContextMetadata: true });
 
   DBOS.setConfig({ ...config, addContextMetadata: true });
   await DBOS.launch();

@@ -1,7 +1,7 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS, DBOSClient, WorkflowQueue, StatusString } from '../src';
 import { globalParams, sleepms } from '../src/utils';
-import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
@@ -82,7 +82,7 @@ describe('DBOSClient', () => {
     expect(config.systemDatabaseUrl).toBeDefined();
     systemDatabaseUrl = config.systemDatabaseUrl!;
     poolConfig = { connectionString: config.systemDatabaseUrl };
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
   });
 
   beforeEach(() => {

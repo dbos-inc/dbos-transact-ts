@@ -1,7 +1,7 @@
 import { execSync, spawn } from 'child_process';
 import { existsSync, readFileSync, statSync } from 'fs';
 import path from 'path';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { DBOS } from '../src';
 import { Client } from 'pg';
 
@@ -12,7 +12,7 @@ describe('DBOS Bundler Tests', () => {
   beforeAll(async () => {
     execSync('npm run build', { cwd: path.join(__dirname, '..'), stdio: 'inherit' });
     const config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
   }, 120000);
 
   afterAll(async () => {

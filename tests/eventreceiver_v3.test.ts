@@ -1,5 +1,5 @@
 import { DBOS, DBOSConfig, DBOSLifecycleCallback } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 export interface ERDefaults {
   classval?: string;
@@ -106,7 +106,7 @@ describe('event-receiver-tests-v3', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

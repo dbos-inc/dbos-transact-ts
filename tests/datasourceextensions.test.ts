@@ -17,7 +17,7 @@ import {
   DBOSDataSource,
   registerDataSource,
 } from '../src/datasource';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import {
   DBOSNotAuthorizedError,
@@ -425,7 +425,7 @@ const txFuncNoWF = dsa.registerTransaction(txFunctionGutsNoWF, {});
 
 describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await dsa.initializeDBOSSchema();
     DBOS.setConfig(config);
   });

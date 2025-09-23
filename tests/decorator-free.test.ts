@@ -1,7 +1,7 @@
 import { Client } from 'pg';
 import { ConfiguredInstance, DBOS, DBOSClient, WorkflowHandle, WorkflowQueue } from '../src/';
 import { DBOSConflictingRegistrationError } from '../src/error';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { promises as fsp } from 'node:fs';
 import { DBOSExecutor } from '../src/dbos-executor';
@@ -142,7 +142,7 @@ describe('decorator-free-tests', () => {
   const config = generateDBOSTestConfig();
 
   beforeAll(async () => {
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

@@ -1,13 +1,19 @@
 import { DBOS, DBOSConfig } from '../src';
 import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { KnexDataSource } from '../packages/knex-datasource';
 import { StepInfo } from '../src/workflow';
+import { ensurePGDatabase } from '../src/database_utils';
 
 const config = generateDBOSTestConfig();
-const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest_dbos_sys' } };
-const knexds = new KnexDataSource('app-db', dbConfig);
+
+const dbname = 'conc_test_userdb';
+const dbConfig = { user: process.env.PGUSER || 'postgres', database: dbname };
+const knexConfig = { client: 'pg', connection: dbConfig };
+const knexds = new KnexDataSource('app-db', knexConfig);
+
+const testTableName = 'dbos_concurrency_test_kv';
 
 const simpleWF = DBOS.registerWorkflow(
   async () => {
@@ -32,12 +38,12 @@ const regStepRetry = DBOS.registerStep(
 );
 
 const cleanDB = knexds.registerTransaction(async () => {
-  await Promise.resolve();
+  await knexds.client.raw(`DELETE FROM ${testTableName}`);
 });
 
 const regDSTx = knexds.registerTransaction(
-  async (_) => {
-    await knexds.client.raw(`SELECT 1;`);
+  async (id) => {
+    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
     return 'tx done';
   },
   { name: 'regDSTx' },
@@ -45,7 +51,7 @@ const regDSTx = knexds.registerTransaction(
 
 let retryCnt = 0;
 const regDSTxRetry = knexds.registerTransaction(
-  async (_) => {
+  async (id) => {
     if (retryCnt <= 2) {
       ++retryCnt;
       const e = new Error('Not yet') as Error & { code: string };
@@ -53,7 +59,7 @@ const regDSTxRetry = knexds.registerTransaction(
       throw e;
     }
     retryCnt = 0;
-    await knexds.client.raw(`SELECT 1;`);
+    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
     return 'txr done';
   },
   { name: 'regDSTxRetry' },
@@ -381,7 +387,7 @@ const runALotOfTransactionsAtOnce = DBOS.registerWorkflow(
           return (
             await knexds.runTransaction(
               async () => {
-                await knexds.client.raw(`SELECT 1;`);
+                await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [5, 1]);
                 return Promise.resolve('5');
               },
               { name: 'runTx5' },
@@ -399,12 +405,23 @@ const runALotOfTransactionsAtOnce = DBOS.registerWorkflow(
 
 describe('concurrency-tests', () => {
   beforeAll(async () => {
-    await setUpDBOSTestDb(config);
+    await ensurePGDatabase({
+      dbToEnsure: dbname,
+      adminUrl: `postgresql://${dbConfig.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/postgres`,
+    });
+
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
     await DBOS.launch();
+
+    await knexds.runTransaction(async () => {
+      await knexds.client.raw(`DROP TABLE IF EXISTS ${testTableName};`);
+      await knexds.client.raw(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
+    });
+
     ConcurrTestClass.cnt = 0;
     ConcurrTestClass.wfCnt = 0;
   });
@@ -607,7 +624,7 @@ class ConcurrTestClass {
 
   @knexds.transaction()
   static async testDSReadWrite(id: number) {
-    await knexds.client.raw(`SELECT 1;`);
+    await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
     ConcurrTestClass.cnt++;
     return id;
   }
@@ -696,7 +713,7 @@ describe('concurrent-events', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

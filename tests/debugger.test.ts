@@ -1,5 +1,5 @@
 import { ConfiguredInstance, DBOS } from '../src/';
-import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { executeWorkflowById, generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
@@ -16,7 +16,7 @@ describe('debugger-test', () => {
     expect(config.systemDatabaseUrl).toBeDefined();
     const url = new URL(config.systemDatabaseUrl!);
     username = url.username ?? 'postgres';
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
   });
 
   beforeEach(async () => {
@@ -414,7 +414,7 @@ describe('dbos-debug-v2-library', () => {
     const wfUUID = `wf-${Date.now()}`;
 
     const config = generateDBOSTestConfig(); // Optional.  If you don't, it'll open the YAML file...
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
 
     await DBOS.launch();
@@ -482,7 +482,7 @@ describe('debugger-test', () => {
   beforeAll(async () => {
     config = generateDBOSTestConfig();
     debugConfig = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
   });
 
   test('debug-workflow', async () => {

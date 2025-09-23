@@ -1,6 +1,6 @@
 const { randomUUID } = require('node:crypto');
 const { ConfiguredInstance, DBOS } = require('../src');
-const { generateDBOSTestConfig, setUpDBOSTestDb } = require('./helpers');
+const { generateDBOSTestConfig, setUpDBOSTestSysDb } = require('./helpers');
 const { DBOSInvalidWorkflowTransitionError } = require('../src/error');
 
 async function stepFunctionInternal() {
@@ -28,7 +28,7 @@ describe('decoratorless-api-basic-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -95,7 +95,7 @@ describe('decoratorless-api-class-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -169,7 +169,7 @@ describe('decoratorless-api-class-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -237,7 +237,7 @@ describe('start-workflow-function', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

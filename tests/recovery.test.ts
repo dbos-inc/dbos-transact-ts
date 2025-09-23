@@ -1,5 +1,5 @@
 import { WorkflowQueue, DBOS } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, recoverPendingWorkflows } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
@@ -14,7 +14,7 @@ describe('recovery-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

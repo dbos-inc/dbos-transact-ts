@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto';
 import { ConfiguredInstance, DBOS, DBOSConfig } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { DBOSInvalidWorkflowTransitionError } from '../src/error';
 
 // Step variant 1: Let DBOS provide the step wrapper making
@@ -45,7 +45,7 @@ describe('decoratorless-api-basic-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -117,7 +117,7 @@ describe('decoratorless-api-class-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -198,7 +198,7 @@ describe('decoratorless-api-class-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -278,7 +278,7 @@ describe('start-workflow-function', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

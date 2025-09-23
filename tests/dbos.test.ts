@@ -1,5 +1,5 @@
 import { WorkflowHandle, DBOS } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
@@ -15,7 +15,7 @@ describe('dbos-tests', () => {
     expect(config.systemDatabaseUrl).toBeDefined();
     const url = new URL(config.systemDatabaseUrl!);
     username = url.username;
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
