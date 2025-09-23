@@ -150,12 +150,6 @@ describe('httpserver-tests', () => {
     expect(response.statusCode).toBe(400);
   });
 
-  test('endpoint-transaction', async () => {
-    const response = await request(app.callback()).post('/transaction/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
-  });
-
   test('endpoint-step', async () => {
     const response = await request(app.callback()).get('/step/alice');
     expect(response.statusCode).toBe(200);
@@ -165,7 +159,7 @@ describe('httpserver-tests', () => {
   test('endpoint-workflow', async () => {
     const response = await request(app.callback()).post('/workflow?name=alice');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('hello alice');
   });
 
   test('endpoint-error', async () => {
@@ -176,19 +170,19 @@ describe('httpserver-tests', () => {
   test('endpoint-handler', async () => {
     const response = await request(app.callback()).get('/handler/alice');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('hello alice');
   });
 
   test('endpoint-testStartWorkflow', async () => {
     const response = await request(app.callback()).get('/testStartWorkflow/alice');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('hello alice');
   });
 
   test('endpoint-testInvokeWorkflow', async () => {
     const response = await request(app.callback()).get('/testInvokeWorkflow/alice');
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('hello alice');
   });
 
   // This feels unclean, but supertest doesn't expose the error message the people we want. See:
@@ -281,12 +275,12 @@ describe('httpserver-tests', () => {
       .post('/workflow?name=bob')
       .set({ 'dbos-idempotency-key': workflowID });
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('hello bob');
 
     // Retrieve the workflow with WFID.
     const retrievedHandle = DBOS.retrieveWorkflow(workflowID);
     expect(retrievedHandle).not.toBeNull();
-    await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
+    await expect(retrievedHandle.getResult()).resolves.toBe('hello bob');
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -296,12 +290,12 @@ describe('httpserver-tests', () => {
     const workflowID = randomUUID();
     const response = await request(app.callback()).get('/handler/bob').set({ 'dbos-idempotency-key': workflowID });
     expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('hello 1');
+    expect(response.text).toBe('hello bob');
 
     // Retrieve the workflow with WFID.
     const retrievedHandle = DBOS.retrieveWorkflow(workflowID);
     expect(retrievedHandle).not.toBeNull();
-    await expect(retrievedHandle.getResult()).resolves.toBe('hello 1');
+    await expect(retrievedHandle.getResult()).resolves.toBe('hello bob');
     await expect(retrievedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
     });
@@ -439,13 +433,6 @@ describe('httpserver-tests', () => {
       return await TestEndpoints.testWorkflow(name);
     }
 
-    @dhttp.postApi('/transaction/:name')
-    @DBOS.step()
-    static async testTransaction(name: string) {
-      void name;
-      return Promise.resolve(`hello 1`);
-    }
-
     @dhttp.getApi('/step/:input')
     @DBOS.step()
     static async testStep(input: string) {
@@ -455,8 +442,7 @@ describe('httpserver-tests', () => {
     @dhttp.postApi('/workflow')
     @DBOS.workflow()
     static async testWorkflow(name: string) {
-      const res = await TestEndpoints.testTransaction(name);
-      return TestEndpoints.testStep(res);
+      return TestEndpoints.testStep(`hello ${name}`);
     }
 
     @dhttp.postApi('/error')
