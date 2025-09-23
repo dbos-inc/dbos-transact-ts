@@ -99,13 +99,6 @@ export class DBOSMaxRecoveryAttemptsExceededError extends DBOSError {
   }
 }
 
-const FailedSqlTransactionError = 19;
-export class DBOSFailedSqlTransactionError extends DBOSError {
-  constructor(workflowID: string, txnName: string) {
-    super(`Postgres aborted the ${txnName} transaction of Workflow ${workflowID}.`, FailedSqlTransactionError);
-  }
-}
-
 const ExecutorNotInitializedError = 20;
 export class DBOSExecutorNotInitializedError extends DBOSError {
   constructor() {

@@ -19,11 +19,7 @@ import {
 } from '../src/datasource';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
-import {
-  DBOSNotAuthorizedError,
-  DBOSFailedSqlTransactionError,
-  DBOSInvalidWorkflowTransitionError,
-} from '../src/error';
+import { DBOSNotAuthorizedError, DBOSInvalidWorkflowTransitionError } from '../src/error';
 import { DBOSJSON, sleepms } from '../src/utils';
 
 /*
@@ -173,7 +169,7 @@ class KnexDSTH implements DataSourceTransactionHandler {
                     `In workflow ${wfid}, Postgres aborted a transaction but the function '${funcname}' did not raise an exception.  Please ensure that the transaction method raises an exception if the database transaction is aborted.`,
                   );
                   failedForRetriableReasons = false;
-                  throw new DBOSFailedSqlTransactionError(wfid, funcname);
+                  throw new Error(`Failed: ${wfid}, ${funcname}`);
                 } else if (isPGKeyConflictError(error)) {
                   // Expected.  There is probably a result to return
                   shouldCheckOutput = true;
