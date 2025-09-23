@@ -532,6 +532,11 @@ export class DBOS {
     return r;
   }
 
+  /** Get the current application version */
+  static get applicationVersion(): string {
+    return globalParams.appVersion;
+  }
+
   /** Get the current workflow ID */
   static get workflowID(): string | undefined {
     return getCurrentContextStore()?.workflowId;
