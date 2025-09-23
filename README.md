@@ -1,5 +1,10 @@
 <div align="center">
 
+[![GitHub Actions](https://img.shields.io/github/actions/workflow/status/dbos-inc/dbos-transact-ts/on_push.yml?query=branch%3Amain)](https://github.com/dbos-inc/dbos-transact-ts/actions/workflows/on_push.yml)
+[![NPM Version](https://img.shields.io/npm/v/%40dbos-inc%2Fdbos-sdk)](https://www.npmjs.com/package/@dbos-inc/dbos-sdk)
+[![License (MIT)](https://img.shields.io/github/license/dbos-inc/dbos-transact-ts.svg?v)](LICENSE)
+[![Join Discord](https://img.shields.io/badge/Discord-Join%20Chat-5865F2?logo=discord&logoColor=white)](https://discord.com/invite/jsmC6pXGgX)
+
 # DBOS Transact: Lightweight Durable Workflows
 
 #### [Documentation](https://docs.dbos.dev/) &nbsp;&nbsp;•&nbsp;&nbsp; [Examples](https://docs.dbos.dev/examples) &nbsp;&nbsp;•&nbsp;&nbsp; [Github](https://github.com/dbos-inc) &nbsp;&nbsp;•&nbsp;&nbsp; [Discord](https://discord.com/invite/jsmC6pXGgX)
