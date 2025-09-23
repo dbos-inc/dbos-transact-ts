@@ -1,6 +1,6 @@
 import { spawnSync } from 'child_process';
 
-describe('v2api-temp-wf', () => {
+describe('bad-code-loads', () => {
   test('loadCodeTwice', async () => {
     // Run the TypeScript test script under ts-node
     const result = spawnSync('npx', ['ts-node', './tests/codereloader.ts'], {

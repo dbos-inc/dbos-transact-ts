@@ -210,7 +210,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
 
     if (DBOS.isInTransaction() || DBOS.isInStep()) {
       throw new DBOSInvalidWorkflowTransitionError(
-        'Invalid call to a `trasaction` function from within a `step` or `transaction`',
+        'Invalid call to a `transaction` function from within a `step` or `transaction`',
       );
     }
 
