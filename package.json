@@ -8,6 +8,29 @@
     "url": "https://github.com/dbos-inc/dbos-transact-ts"
   },
   "homepage": "https://docs.dbos.dev/",
+  "engines": {
+    "node": ">=20"
+  },
+  "keywords": [
+    "dbos",
+    "task manager",
+    "workflow engine",
+    "workflows",
+    "orchestration",
+    "scheduled jobs",
+    "cron jobs",
+    "queue",
+    "background jobs",
+    "step function",
+    "durable execution",
+    "long-running",
+    "durable workflow",
+    "reliability",
+    "parallel processing",
+    "flow control",
+    "agentic workflow",
+    "postgresql"
+  ],
   "main": "dist/src/index.js",
   "types": "dist/src/index.d.ts",
   "exports": {
