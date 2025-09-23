@@ -339,7 +339,9 @@ describe('dbos-config', () => {
       const databaseUrl = getSystemDatabaseUrl({
         name: 'Test App',
       });
-      expect(databaseUrl).toBe('postgresql://postgres:dbos@localhost:5432/test_app?connect_timeout=10&sslmode=disable');
+      expect(databaseUrl).toBe(
+        'postgresql://postgres:dbos@localhost:5432/test_app_dbos_sys?connect_timeout=10&sslmode=disable',
+      );
     });
 
     test('throws when db url not set and app name is missing', () => {
@@ -355,7 +357,9 @@ describe('dbos-config', () => {
       const databaseUrl = getSystemDatabaseUrl({
         name: 'Test App',
       });
-      expect(databaseUrl).toBe('postgresql://envuser:envpass@envhost:7777/test_app?connect_timeout=10&sslmode=allow');
+      expect(databaseUrl).toBe(
+        'postgresql://envuser:envpass@envhost:7777/test_app_dbos_sys?connect_timeout=10&sslmode=allow',
+      );
     });
 
     test('uses environment variable overrides with connection string input', () => {
@@ -376,7 +380,7 @@ describe('dbos-config', () => {
         name: 'app name with spaces',
       });
       expect(url).toBe(
-        'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces?connect_timeout=10&sslmode=disable',
+        'postgresql://postgres:dbos@localhost:5432/app_name_with_spaces_dbos_sys?connect_timeout=10&sslmode=disable',
       );
     });
 
@@ -413,7 +417,8 @@ describe('dbos-config', () => {
       });
       expect(internalConfig).toEqual({
         name: 'dbostest',
-        systemDatabaseUrl: 'postgresql://postgres:dbos@localhost:5432/dbostest?connect_timeout=10&sslmode=disable',
+        systemDatabaseUrl:
+          'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
         sysDbPoolSize: undefined,
         userDbClient: undefined,
         telemetry: {
@@ -439,7 +444,8 @@ describe('dbos-config', () => {
       );
       expect(internalConfig).toEqual({
         name: 'dbostest',
-        systemDatabaseUrl: 'postgresql://postgres:dbos@localhost:5432/dbostest?connect_timeout=10&sslmode=disable',
+        systemDatabaseUrl:
+          'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
         sysDbPoolSize: undefined,
         userDbClient: undefined,
         telemetry: {
