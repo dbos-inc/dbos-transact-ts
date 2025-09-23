@@ -180,8 +180,10 @@ async function main5() {
   DBOS.setConfig(config);
   await DBOS.launch();
 
-  const handle = await DBOS.startWorkflow(instA, { queueName: wfq.name }).doWorkflow();
-  await expect(handle.getResult()).resolves.toBe('done A');
+  const res = await DBOS.withWorkflowQueue(wfq.name, async () => {
+    return await instA.doWorkflow();
+  });
+  expect(res).toBe('done A');
 
   const wfs = await DBOS.listWorkflows({ workflowName: 'doWorkflow' });
   expect(wfs.length).toBeGreaterThanOrEqual(1);
@@ -341,12 +343,16 @@ class CCRecovery extends ConfiguredInstance {
     super(name);
   }
 
+  initialized: boolean = false;
+
   initialize(): Promise<void> {
+    this.initialized = true;
     return Promise.resolve();
   }
 
   @DBOS.workflow()
   async testRecoveryWorkflow(input: number) {
+    expect(this.initialized).toBeTruthy();
     this.config.count += input;
 
     // Signal the workflow has been executed more than once.

@@ -406,6 +406,11 @@ export class DBOS {
     return r;
   }
 
+  /** Get the current application version */
+  static get applicationVersion(): string {
+    return globalParams.appVersion;
+  }
+
   /** Get the current workflow ID */
   static get workflowID(): string | undefined {
     return getCurrentContextStore()?.workflowId;
@@ -803,6 +808,17 @@ export class DBOS {
   static async withNamedContext<R>(callerName: string, callback: () => Promise<R>): Promise<R> {
     ensureDBOSIsLaunched('tracing');
     return DBOS.#withTopContext({ operationCaller: callerName }, callback);
+  }
+
+  /**
+   * Use queue named `queueName` for any workflows started within the `callback`.
+   * @param queueName - Name of queue upon which all workflows called or started within `callback` will be run
+   * @param callback - Function to run, which would call or start workflows
+   * @returns - Return value from `callback`
+   */
+  static async withWorkflowQueue<R>(queueName: string, callback: () => Promise<R>): Promise<R> {
+    ensureDBOSIsLaunched('workflows');
+    return DBOS.#withTopContext({ queueAssignedForWorkflows: queueName }, callback);
   }
 
   /**
@@ -1513,7 +1529,7 @@ export class DBOS {
     return func();
   }
 
-  /*
+  /**
    * Register serialization recipe; this is used to save/retrieve objects from the DBOS system
    *  database.  This includes workflow inputs, function return values, messages, and events.
    */

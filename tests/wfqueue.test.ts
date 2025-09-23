@@ -1084,7 +1084,7 @@ describe('enqueue-options', () => {
     static wfPriorityList: number[] = [];
 
     static queue = new WorkflowQueue('test_queue_prority', { concurrency: 1, priorityEnabled: true });
-    static childqueue = new WorkflowQueue('child_queue', { concurrency: 1 });
+    static childqueue = new WorkflowQueue('child_queue', { concurrency: 1, priorityEnabled: true });
 
     @DBOS.workflow()
     static async parentWorkflow(input: number): Promise<number> {
@@ -1092,7 +1092,7 @@ describe('enqueue-options', () => {
       TestPriority.wfPriorityList.push(input);
 
       const wfh1 = await DBOS.startWorkflow(TestPriority, {
-        queueName: childqueue.name,
+        queueName: TestPriority.childqueue.name,
         enqueueOptions: input !== 0 ? { priority: input } : undefined,
       }).childWorkflow(input);
 

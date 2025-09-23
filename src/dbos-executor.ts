@@ -48,6 +48,8 @@ import {
   getFunctionRegistrationByName,
   getAllRegisteredFunctions,
   getFunctionRegistration,
+  getAllRegisteredClassNames,
+  getClassRegistrationByName,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import { context, SpanStatusCode, trace } from '@opentelemetry/api';
@@ -275,6 +277,17 @@ export class DBOSExecutor {
         globalParams.appVersion = this.computeAppVersion();
         globalParams.wasComputed = true;
       }
+
+      // Any initialization hooks
+      const classnames = getAllRegisteredClassNames();
+      for (const cls of classnames) {
+        // Init its configurations
+        const creg = getClassRegistrationByName(cls);
+        for (const [_cfgname, cfg] of creg.configuredInstances) {
+          await cfg.initialize();
+        }
+      }
+
       this.logger.info(`Initializing DBOS (v${globalParams.dbosVersion})`);
       this.logger.info(`System Database URL: ${maskDatabaseUrl(this.config.systemDatabaseUrl)}`);
       this.logger.info(`Executor ID: ${this.executorID}`);
@@ -353,7 +366,7 @@ export class DBOSExecutor {
     if (params.queueName) {
       const wfqueue = this.#getQueueByName(params.queueName);
       if (!wfqueue.priorityEnabled && priority !== undefined) {
-        this.logger.warn(
+        throw Error(
           `Priority is not enabled for queue ${params.queueName}. Setting priority will not have any effect.`,
         );
       }

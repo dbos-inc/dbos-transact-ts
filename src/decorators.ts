@@ -410,6 +410,13 @@ export abstract class ConfiguredInstance {
     this.name = name;
     registerClassInstance(this, name);
   }
+
+  /**
+   * Override this method to perform async initialization between construction and `DBOS.launch()`.
+   */
+  initialize(): Promise<void> {
+    return Promise.resolve();
+  }
 }
 
 export class ClassRegistration implements RegistrationDefaults {
@@ -640,11 +647,7 @@ export function getOrCreateMethodArgsRegistration(
         if (!getMetadata) return undefined; // polyfill not present
         return getMetadata('design:paramtypes', target, key); // safe to use
       }
-      designParamTypes = getDesignType(
-        target,
-        funcName as string | symbol,
-      ) as // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
-      Function[] | undefined;
+      designParamTypes = getDesignType(target, funcName as string | symbol) as Function[] | undefined; // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
@@ -1069,23 +1072,6 @@ export function ArgName(name: string) {
     const curParam = existingParameters[parameterIndex];
     curParam.name = name;
   };
-}
-
-// #endregion
-
-// #region Method decorators
-/** @deprecated Do initialization prior to launch() */
-export function DBOSInitializer() {
-  function decorator<This, Args extends unknown[], Return>(
-    target: object,
-    propertyKey: string,
-    inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
-  ) {
-    const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(target, propertyKey, inDescriptor);
-    registration.init = true;
-    return descriptor;
-  }
-  return decorator;
 }
 
 // #endregion
