@@ -56,7 +56,7 @@ async function waitForMessageTest(
   }
 }
 
-async function resetTemplateDatabases() {
+async function resetTemplateDatabases(exceptKnexApp: boolean = false) {
   const config = generateDBOSTestConfig();
   expect(config.systemDatabaseUrl).toBeDefined();
   const url = new URL(config.systemDatabaseUrl!);
@@ -73,7 +73,9 @@ async function resetTemplateDatabases() {
   await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_prisma WITH (FORCE);`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_drizzle WITH (FORCE);`);
   await pgSystemClient.query(`DROP DATABASE IF EXISTS dbos_knex WITH (FORCE);`);
-  await pgSystemClient.query(`CREATE DATABASE dbos_knex;`);
+  if (!exceptKnexApp) {
+    await pgSystemClient.query(`CREATE DATABASE dbos_knex;`);
+  }
   await pgSystemClient.query(`CREATE DATABASE dbos_prisma;`);
   await pgSystemClient.query(`CREATE DATABASE dbos_drizzle;`);
   await pgSystemClient.query(`CREATE DATABASE dbos_typeorm;`);
@@ -111,6 +113,49 @@ describe('runtime-tests-knex', () => {
     });
     await waitForMessageTest(command, '3000');
   });
+
+  test('test hello-knex if db does not exist', async () => {
+    await resetTemplateDatabases(true);
+    const command = spawn('node', ['dist/main.js'], {
+      env: process.env,
+    });
+
+    function runProcess(command: ChildProcess, timeoutMs = 15000) {
+      return new Promise<void>((resolve, reject) => {
+        let finished = false;
+
+        const timer = setTimeout(() => {
+          if (!finished) {
+            command.kill('SIGKILL');
+            reject(new Error(`Process timed out after ${timeoutMs} ms`));
+          }
+        }, timeoutMs);
+
+        command.on('exit', (code, signal) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+
+          if (signal) reject(new Error(`Killed with signal ${signal}`));
+          else if (code !== 0) reject(new Error(`Exited with code ${code}`));
+          else resolve();
+        });
+
+        command.on('error', (err) => {
+          if (finished) return;
+          finished = true;
+          clearTimeout(timer);
+          reject(err);
+        });
+      });
+    }
+
+    // Note the process should abort because we didn't create any DBs,
+    //  this is not configured with a user database (so no auto create)
+    //  and we expect a clear error message on launch if the DB is not
+    //  in a good condition
+    await expect(runProcess(command)).rejects.toThrow('Exited with code 1');
+  }, 20000);
 });
 
 describe('runtime-tests-typeorm', () => {

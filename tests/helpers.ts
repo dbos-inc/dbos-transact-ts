@@ -1,12 +1,23 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { getSysDatabaseUrlFromUserDb, translateDbosConfig } from '../src/config';
+import { isValidDatabaseName, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
 
 /* DB management helpers */
+function getSysDatabaseUrlFromUserDb(userDB: string) {
+  const url = new URL(userDB);
+  const dbName = url.pathname.slice(1);
+  if (!isValidDatabaseName(dbName)) {
+    throw new Error(`Database name in ${maskDatabaseUrl(userDB)} is invalid.`);
+  }
+  const sysDbName = `${dbName}_dbos_sys`;
+  url.pathname = `/${sysDbName}`;
+  return url.toString();
+}
+
 export function generateDBOSTestConfig(): DBOSConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {

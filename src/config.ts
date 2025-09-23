@@ -94,17 +94,6 @@ export function writeConfigFile(configFile: ConfigFile, configFilePath: string) 
   }
 }
 
-export function getSysDatabaseUrlFromUserDb(userDB: string) {
-  const url = new URL(userDB);
-  const dbName = url.pathname.slice(1);
-  if (!isValidDatabaseName(dbName)) {
-    throw new Error(`Database name in ${maskDatabaseUrl(userDB)} is invalid.`);
-  }
-  const sysDbName = `${dbName}_dbos_sys`;
-  url.pathname = `/${sysDbName}`;
-  return url.toString();
-}
-
 export function isValidDatabaseName(dbName: string): boolean {
   if (dbName.length < 1 || dbName.length > 63) {
     return false;
@@ -113,7 +102,7 @@ export function isValidDatabaseName(dbName: string): boolean {
 }
 
 export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'system_database_url'>): string {
-  const databaseUrl = configFile.system_database_url || defaultDatabaseUrl(configFile.name);
+  const databaseUrl = configFile.system_database_url || defaultSysDatabaseUrl(configFile.name);
 
   const url = new URL(databaseUrl);
   const dbName = url.pathname.slice(1);
@@ -141,14 +130,14 @@ export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'syst
     return databaseUrl;
   }
 
-  function defaultDatabaseUrl(appName?: string): string {
+  function defaultSysDatabaseUrl(appName?: string): string {
     assert(appName, 'Application name must be defined to construct a valid database URL.');
 
     const host = process.env.PGHOST || 'localhost';
     const port = process.env.PGPORT || '5432';
     const username = process.env.PGUSER || 'postgres';
     const password = process.env.PGPASSWORD || 'dbos';
-    const database = toDbName(appName);
+    const database = toDbName(appName) + '_dbos_sys';
     const timeout = process.env.PGCONNECT_TIMEOUT || '10';
     const sslmode = process.env.PGSSLMODE || (host === 'localhost' ? 'disable' : 'allow');
 
