@@ -10,6 +10,8 @@ on:
       - opened
       - reopened
       - synchronize
+    paths-ignore:
+      - 'README.md'
 
 jobs:
   test:
