@@ -647,7 +647,8 @@ export function getOrCreateMethodArgsRegistration(
         if (!getMetadata) return undefined; // polyfill not present
         return getMetadata('design:paramtypes', target, key); // safe to use
       }
-      designParamTypes = getDesignType(target, funcName as string | symbol) as Function[] | undefined; // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
+      designParamTypes = getDesignType(target, funcName as string | symbol) as Function[] | undefined;
     }
     if (designParamTypes) {
       mParameters = designParamTypes.map((value, index) => new MethodParameter(index, value));
