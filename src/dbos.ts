@@ -257,7 +257,7 @@ export class DBOS {
     // Start the DBOS admin server
     const logger = DBOS.logger;
     if (runtimeConfig.runAdminServer) {
-      const adminApp = DBOSAdminServer.setupAdminApp(executor);
+      const adminApp = DBOSAdminServer.setupAdminAppSimple(executor);
       try {
         await DBOSAdminServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
         // Wrap the listen call in a promise to properly catch errors
@@ -346,14 +346,6 @@ export class DBOS {
   // Global DBOS executor instance
   static get #executor() {
     return getExecutor();
-  }
-
-  /** For unit testing of admin server (do not call) */
-  static getAdminCallback() {
-    if (!DBOSAdminServer.instance) {
-      return undefined;
-    }
-    return DBOSAdminServer.instance.adminApp.callback();
   }
 
   //////
