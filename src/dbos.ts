@@ -218,8 +218,6 @@ export class DBOS {
       [internalConfig, runtimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, configFile);
     }
 
-    DBOS.#port = runtimeConfig.port;
-
     DBOSExecutor.createDebouncerWorkflow();
     DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig, { debugMode });
@@ -352,7 +350,6 @@ export class DBOS {
   // Globals
   //////
   static #dbosConfig?: DBOSConfig;
-  static #port?: number;
 
   //////
   // Context
