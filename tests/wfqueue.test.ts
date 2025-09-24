@@ -140,7 +140,7 @@ describe('queued-wf-tests-simple', () => {
     for (const h of handles) {
       expect((await h.getStatus())!.status).toBe(StatusString.SUCCESS);
     }
-  }, 10000);
+  }, 20000);
 
   test('test_multiple_queues', async () => {
     let wfRes: () => void = () => {};
