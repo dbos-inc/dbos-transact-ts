@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import superjson from 'superjson';
-import type { JSONValue } from 'superjson/dist/types';
+import type { SuperJSONResult, JSONValue } from 'superjson/dist/types';
 export { type JSONValue };
 
 export type SerializationRecipe<T, S extends JSONValue> = {
@@ -111,19 +111,177 @@ export function cancellableSleep(ms: number) {
 
 export type ValuesOf<T> = T[keyof T];
 
-// Serialization
+/**
+ * Reviver and Replacer
+ * --------------------
+ * These can be passed to JSON.stringify and JSON.parse, respectively, to support more types.
+ *
+ * Additional types supported:
+ * - Buffer
+ * - Dates
+ *
+ * Currently, these are only used for operation inputs.
+ * TODO: Use in other contexts where we perform serialization and deserialization.
+ */
 
-export const DBOSJSON = {
-  parse: (text: string | null | undefined): unknown => {
-    if (text === null || text === undefined) {
-      return null;
-    } else {
-      return superjson.parse(text);
-    }
+interface SerializedBuffer {
+  type: 'Buffer';
+  data: number[];
+}
+
+type DBOSSerializeType = 'dbos_Date' | 'dbos_BigInt';
+
+interface DBOSSerialized {
+  dbos_type: DBOSSerializeType;
+}
+
+interface DBOSSerializedDate extends DBOSSerialized {
+  dbos_type: 'dbos_Date';
+  dbos_data: string;
+}
+
+interface DBOSSerializedBigInt extends DBOSSerialized {
+  dbos_type: 'dbos_BigInt';
+  dbos_data: string;
+}
+
+//https://www.typescriptlang.org/docs/handbook/2/functions.html#declaring-this-in-a-function
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export function DBOSReplacer(this: any, key: string, value: unknown) {
+  // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-assignment
+  const actualValue = this[key];
+  if (actualValue instanceof Date) {
+    const res: DBOSSerializedDate = {
+      dbos_type: 'dbos_Date',
+      dbos_data: actualValue.toISOString(),
+    };
+    return res;
+  }
+
+  if (typeof actualValue === 'bigint') {
+    const res: DBOSSerializedBigInt = {
+      dbos_type: 'dbos_BigInt',
+      dbos_data: actualValue.toString(),
+    };
+    return res;
+  }
+  return value;
+}
+
+function isSerializedBuffer(value: unknown): value is SerializedBuffer {
+  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).type === 'Buffer';
+}
+
+function isSerializedDate(value: unknown): value is DBOSSerializedDate {
+  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).dbos_type === 'dbos_Date';
+}
+
+function isSerializedBigInt(value: unknown): value is DBOSSerializedBigInt {
+  return typeof value === 'object' && value !== null && (value as Record<string, unknown>).dbos_type === 'dbos_BigInt';
+}
+
+export function DBOSReviver(_key: string, value: unknown): unknown {
+  switch (true) {
+    case isSerializedBuffer(value):
+      return Buffer.from(value.data);
+    case isSerializedDate(value):
+      return new Date(Date.parse(value.dbos_data));
+    case isSerializedBigInt(value):
+      return BigInt(value.dbos_data);
+    default:
+      return value;
+  }
+}
+
+// Keep the old DBOSJSON implementation for reference/testing
+export const DBOSJSONLegacy = {
+  parse: (text: string | null) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return text === null ? null : JSON.parse(text, DBOSReviver);
   },
-  stringify: superjson.stringify,
+  stringify: (value: unknown): string | undefined => {
+    return JSON.stringify(value, DBOSReplacer);
+  },
 };
 
+// Constants for SuperJSON serialization marker
+export const SERIALIZER_MARKER_KEY = '__dbos_serializer';
+export const SERIALIZER_MARKER_VALUE = 'superjson';
+const SERIALIZER_MARKER_STRING = `"${SERIALIZER_MARKER_KEY}":"${SERIALIZER_MARKER_VALUE}"`;
+
+// Type for our branded SuperJSON record with the marker
+type DBOSBrandedSuperjsonRecord = SuperJSONResult & {
+  [SERIALIZER_MARKER_KEY]: typeof SERIALIZER_MARKER_VALUE;
+};
+
+/**
+ * Detects if a parsed object was serialized by our DBOSJSON with SuperJSON.
+ * We check for our explicit marker to avoid ANY ambiguity with user data.
+ * Also validates the object has the shape expected by superjson.deserialize().
+ */
+function isDBOSBrandedSuperjsonRecord(obj: unknown): obj is DBOSBrandedSuperjsonRecord {
+  return (
+    typeof obj === 'object' &&
+    obj !== null &&
+    SERIALIZER_MARKER_KEY in obj &&
+    obj[SERIALIZER_MARKER_KEY] === SERIALIZER_MARKER_VALUE &&
+    'json' in obj
+  );
+}
+
+function sjstringify(value: unknown) {
+  // Use SuperJSON for all new serialization
+  const serialized = superjson.serialize(value);
+
+  // Add our explicit marker to make detection unambiguous
+  return JSON.stringify({
+    ...serialized,
+    [SERIALIZER_MARKER_KEY]: SERIALIZER_MARKER_VALUE,
+  });
+}
+
+/**
+ * DBOSJSON with SuperJSON support for richer type serialization.
+ *
+ * Backwards compatible - can deserialize both old DBOSJSON format and new SuperJSON format.
+ * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
+ */
+export const DBOSJSON = {
+  parse: (text: string | null | undefined): unknown => {
+    if (text === null || text === undefined) return null; // This is from legacy; SuperJSON can do it.
+
+    /**
+     * Performance optimization: String check before JSON parsing.
+     *
+     * Why not just parse once and check the resulting object?
+     * - Legacy DBOSJSON data needs the DBOSReviver function during parsing
+     * - SuperJSON data must be parsed WITHOUT the reviver (it would corrupt the structure)
+     * - We can't know which parser to use without inspecting the data first
+     *
+     * This string check lets us:
+     * 1. Parse legacy data correctly with DBOSReviver in one pass (99% of cases)
+     * 2. Only double-parse when we detect new SuperJSON format (rare for now)
+     * 3. Avoid corrupting SuperJSON's meta structure with the wrong reviver
+     */
+    const hasSuperJSONMarker = text.includes(SERIALIZER_MARKER_STRING);
+
+    if (hasSuperJSONMarker) {
+      // Parse without reviver first to check if it's really our SuperJSON format
+      const vanillaParsed: unknown = JSON.parse(text);
+      if (isDBOSBrandedSuperjsonRecord(vanillaParsed)) {
+        return superjson.deserialize(vanillaParsed);
+      }
+      // False positive - user data happened to contain our marker string
+      // Fall through to parse with reviver
+    }
+
+    // Legacy DBOSJSON format
+    return DBOSJSONLegacy.parse(text);
+  },
+  stringify: sjstringify,
+};
+
+//#region Serialization Protection
 // Serialization protection - for a serialized object, provide a replacement that gives clear errors
 //  from called functions that will not be there after deserialization.
 
