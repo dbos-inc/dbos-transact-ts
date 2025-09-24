@@ -1,5 +1,5 @@
 import { DBOS, StatusString } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
@@ -9,7 +9,7 @@ describe('dbos-streaming-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -488,9 +488,9 @@ describe('dbos-client-streaming-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
-    client = await DBOSClient.create({ databaseUrl: config.databaseUrl });
+    client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
   });
 
   beforeEach(async () => {});

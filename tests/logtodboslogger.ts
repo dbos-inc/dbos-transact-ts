@@ -1,5 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 class WF {
   @DBOS.step()
@@ -8,22 +8,16 @@ class WF {
     return Promise.resolve(1);
   }
 
-  @DBOS.transaction()
-  static async loggingTransaction() {
-    DBOS.logger.info(`Info: Transaction should be logged`);
-    return Promise.resolve(2);
-  }
-
   @DBOS.workflow()
   static async loggingWorkflow() {
     DBOS.logger.info(`Info: WFID should be logged`);
-    return (await WF.loggingStep()) + (await WF.loggingTransaction());
+    return await WF.loggingStep();
   }
 }
 
 async function main() {
-  const config = generateDBOSTestConfig('pg-node');
-  await setUpDBOSTestDb({ ...config, logLevel: 'debug', addContextMetadata: true });
+  const config = generateDBOSTestConfig();
+  await setUpDBOSTestSysDb({ ...config, logLevel: 'debug', addContextMetadata: true });
 
   DBOS.setConfig({ ...config, addContextMetadata: true });
   await DBOS.launch();

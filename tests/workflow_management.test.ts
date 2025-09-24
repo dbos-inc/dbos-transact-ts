@@ -1,39 +1,33 @@
-import { GetWorkflowsInput, StatusString, Authentication, MiddlewareContext, DBOS, WorkflowQueue } from '../src';
-import request from 'supertest';
+import { GetWorkflowsInput, StatusString, DBOS, WorkflowQueue } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb, Event, recoverPendingWorkflows } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, recoverPendingWorkflows } from './helpers';
 import { Client } from 'pg';
 import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
+import { getWorkflow, globalTimeout, listQueuedWorkflows, listWorkflows } from '../src/workflow_management';
 import {
-  getWorkflow,
-  globalTimeout,
-  listQueuedWorkflows,
-  listWorkflows,
-} from '../src/dbos-runtime/workflow_management';
-import { DBOSNonExistentWorkflowError, DBOSWorkflowCancelledError } from '../src/error';
+  DBOSAwaitedWorkflowCancelledError,
+  DBOSNonExistentWorkflowError,
+  DBOSWorkflowCancelledError,
+} from '../src/error';
+import assert from 'node:assert';
 
 describe('workflow-management-tests', () => {
-  const testTableName = 'dbos_test_kv';
-
   let config: DBOSConfig;
   let systemDBClient: Client;
 
   beforeAll(() => {
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
     process.env.DBOS__APPVERSION = 'v0';
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
-    DBOS.setUpHandlerCallback();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INT PRIMARY KEY, value TEXT);`);
 
     systemDBClient = new Client({
       connectionString: config.systemDatabaseUrl,
@@ -48,189 +42,135 @@ describe('workflow-management-tests', () => {
   });
 
   test('simple-getworkflows', async () => {
-    let response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
 
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input: {} });
-    expect(response.statusCode).toBe(200);
-    const workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(1);
+    const workflows = await DBOS.listWorkflows({});
+    expect(workflows.length).toBe(1);
   });
 
   test('getworkflows-with-dates', async () => {
-    let response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
 
     const input: GetWorkflowsInput = {
       startTime: new Date(Date.now() - 10000).toISOString(),
       endTime: new Date(Date.now()).toISOString(),
     };
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    let workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(1);
+    let workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(1);
 
     input.endTime = new Date(Date.now() - 10000).toISOString();
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(0);
+    workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(0);
   });
 
   test('getworkflows-with-status', async () => {
-    let response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
 
     const input: GetWorkflowsInput = {
       status: StatusString.SUCCESS,
     };
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    let workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(1);
+    let workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(1);
 
     input.status = StatusString.PENDING;
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(0);
+    workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(0);
   });
 
   test('getworkflows-with-wfname', async () => {
-    let response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
 
     const input: GetWorkflowsInput = {
       workflowName: 'testWorkflow',
     };
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    const workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(1);
+    const workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(1);
   });
 
-  test('getworkflows-with-authentication', async () => {
-    let response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
-
-    const input: GetWorkflowsInput = {
-      authenticatedUser: 'alice',
-    };
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    const workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(1);
-  });
-
-  test('getworkflows-with-authentication', async () => {
-    let response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
+  test('getworkflows-with-applicationVersion', async () => {
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
 
     const input: GetWorkflowsInput = {
       applicationVersion: globalParams.appVersion,
     };
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    let workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(1);
+    let workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(1);
 
     input.applicationVersion = 'v1';
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(0);
+    workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(0);
   });
 
   test('getworkflows-with-limit', async () => {
     const workflowIDs: string[] = [];
-    let response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow_get_id');
-    expect(response.statusCode).toBe(200);
-    expect(response.text.length).toBeGreaterThan(0);
-    workflowIDs.push(response.text);
+    let wfid = await TestEndpoints.testWorkflowGetID();
+    assert.ok(wfid);
+    expect(wfid).toBeTruthy();
+    expect(wfid.length).toBeGreaterThan(0);
+    workflowIDs.push(wfid);
 
     const input: GetWorkflowsInput = {
       limit: 10,
     };
 
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    let workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(1);
-    expect(workflowUUIDs[0].workflowID).toBe(workflowIDs[0]);
+    let workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].workflowID).toBe(workflowIDs[0]);
 
     for (let i = 0; i < 10; i++) {
-      response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow_get_id');
-      expect(response.statusCode).toBe(200);
-      expect(response.text.length).toBeGreaterThan(0);
-      workflowIDs.push(response.text);
+      wfid = await TestEndpoints.testWorkflowGetID();
+      assert.ok(wfid);
+      expect(wfid.length).toBeGreaterThan(0);
+      workflowIDs.push(wfid);
     }
 
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(10);
+    workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(10);
     for (let i = 0; i < 10; i++) {
       // The order should be ascending by default
-      expect(workflowUUIDs[i].workflowID).toBe(workflowIDs[i]);
+      expect(workflows[i].workflowID).toBe(workflowIDs[i]);
     }
 
     // Test sort_desc inverts the order
     input.sortDesc = true;
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(10);
+    workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(10);
     for (let i = 0; i < 10; i++) {
-      expect(workflowUUIDs[i].workflowID).toBe(workflowIDs[10 - i]);
+      expect(workflows[i].workflowID).toBe(workflowIDs[10 - i]);
     }
 
     // Test LIMIT 2 OFFSET 2 returns the third and fourth workflows
     input.limit = 2;
     input.offset = 2;
     input.sortDesc = false;
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(2);
-    for (let i = 0; i < workflowUUIDs.length; i++) {
-      expect(workflowUUIDs[i].workflowID).toBe(workflowIDs[i + 2]);
+    workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(2);
+    for (let i = 0; i < workflows.length; i++) {
+      expect(workflows[i].workflowID).toBe(workflowIDs[i + 2]);
     }
 
     // Test OFFSET 10 returns the last workflow
     input.offset = 10;
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input });
-    expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(1);
-    for (let i = 0; i < workflowUUIDs.length; i++) {
-      expect(workflowUUIDs[i].workflowID).toBe(workflowIDs[i + 10]);
+    workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(1);
+    for (let i = 0; i < workflows.length; i++) {
+      expect(workflows[i].workflowID).toBe(workflowIDs[i + 10]);
     }
 
     // Test search by workflow ID.
     const wfidInput: GetWorkflowsInput = {
       workflowIDs: [workflowIDs[5], workflowIDs[7]],
     };
-    response = await request(DBOS.getHTTPHandlersCallback()!).post('/getWorkflows').send({ input: wfidInput });
-    expect(response.statusCode).toBe(200);
-    workflowUUIDs = JSON.parse(response.text) as WorkflowStatus[];
-    expect(workflowUUIDs.length).toBe(2);
-    expect(workflowUUIDs[0].workflowID).toBe(workflowIDs[5]);
-    expect(workflowUUIDs[1].workflowID).toBe(workflowIDs[7]);
+    workflows = await DBOS.listWorkflows(wfidInput);
+    expect(workflows.length).toBe(2);
+    expect(workflows[0].workflowID).toBe(workflowIDs[5]);
+    expect(workflows[1].workflowID).toBe(workflowIDs[7]);
   });
 
   test('getworkflows-cli', async () => {
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
 
-    const failResponse = await request(DBOS.getHTTPHandlersCallback()!).post('/fail/alice');
-    expect(failResponse.statusCode).toBe(500);
+    await expect(TestEndpoints.failWorkflow('alice')).rejects.toThrow();
 
     const logger = new GlobalLogger();
     expect(config.systemDatabaseUrl).toBeDefined();
@@ -240,7 +180,6 @@ describe('workflow-management-tests', () => {
       const infos = await listWorkflows(sysdb, input);
       expect(infos.length).toBe(2);
       let info = infos[0];
-      expect(info.authenticatedUser).toBe('alice');
       expect(info.workflowName).toBe('testWorkflow');
       expect(info.status).toBe(StatusString.SUCCESS);
       expect(info.workflowClassName).toBe('TestEndpoints');
@@ -255,7 +194,6 @@ describe('workflow-management-tests', () => {
       expect(info.executorId).toBe(globalParams.executorID);
 
       info = infos[1];
-      expect(info.authenticatedUser).toBe('alice');
       expect(info.workflowName).toBe('failWorkflow');
       expect(info.status).toBe(StatusString.ERROR);
       expect(info.workflowClassName).toBe('TestEndpoints');
@@ -381,39 +319,6 @@ describe('workflow-management-tests', () => {
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
   }, 30000);
 
-  test('test-restart-transaction', async () => {
-    TestEndpoints.tries = 0;
-
-    await TestEndpoints.testTransaction();
-    expect(TestEndpoints.tries).toBe(1);
-
-    let result = await systemDBClient.query<{ status: string; workflow_uuid: string; name: string }>(
-      `SELECT status, workflow_uuid, name FROM dbos.workflow_status`,
-      [],
-    );
-    expect(result.rows.length).toBe(1);
-    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
-    expect(result.rows[0].name).toBe('temp_workflow-transaction-testTransaction');
-    const workflowUUID = result.rows[0].workflow_uuid;
-
-    let wfh = await DBOS.forkWorkflow(workflowUUID, 0);
-    await wfh.getResult();
-    expect(TestEndpoints.tries).toBe(2);
-
-    result = await systemDBClient.query<{ status: string; workflow_uuid: string; name: string }>(
-      `SELECT status, workflow_uuid, name FROM dbos.workflow_status WHERE workflow_uuid!=$1`,
-      [workflowUUID],
-    );
-    expect(result.rows.length).toBe(1);
-    expect(result.rows[0].status).toBe(StatusString.SUCCESS);
-    expect(result.rows[0].name).toBe('temp_workflow-transaction-testTransaction');
-    const restartedWorkflowUUID = result.rows[0].workflow_uuid;
-
-    wfh = await DBOS.forkWorkflow(restartedWorkflowUUID, 0);
-    await wfh.getResult();
-    expect(TestEndpoints.tries).toBe(3);
-  });
-
   test('systemdb-migration-backward-compatible', async () => {
     // Make sure the system DB migration failure is handled correctly.
     // If there is a migration failure, the system DB should still be able to start.
@@ -421,52 +326,30 @@ describe('workflow-management-tests', () => {
     await DBOS.shutdown();
     await systemDBClient.query(`UPDATE "dbos"."dbos_migrations" SET "version" = 10000;`);
     await DBOS.launch();
-    DBOS.setUpHandlerCallback();
-    const response = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
-    expect(response.statusCode).toBe(200);
-    expect(response.text).toBe('alice');
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
 
     // Test schema install idempotence
     await DBOS.shutdown();
     await systemDBClient.query(`UPDATE "dbos"."dbos_migrations" SET "version" = 0;`);
     await DBOS.launch();
-    DBOS.setUpHandlerCallback();
-    const response2 = await request(DBOS.getHTTPHandlersCallback()!).post('/workflow/alice');
-    expect(response2.statusCode).toBe(200);
-    expect(response2.text).toBe('alice');
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
   });
 
-  async function testAuthMiddleware(_ctx: MiddlewareContext) {
-    return Promise.resolve({
-      authenticatedUser: 'alice',
-      authenticatedRoles: ['aliceRole'],
-    });
-  }
-
-  @Authentication(testAuthMiddleware)
   class TestEndpoints {
-    @DBOS.postApi('/workflow/:name')
     @DBOS.workflow()
     static async testWorkflow(name: string) {
       return Promise.resolve(name);
     }
 
-    @DBOS.postApi('/workflow_get_id')
     @DBOS.workflow()
     static async testWorkflowGetID() {
       return Promise.resolve(DBOS.workflowID);
     }
 
-    @DBOS.postApi('/fail/:name')
     @DBOS.workflow()
     static async failWorkflow(name: string) {
       await Promise.resolve(name);
       throw new Error(name);
-    }
-
-    @DBOS.postApi('/getWorkflows')
-    static async getWorkflows(input: GetWorkflowsInput) {
-      return await DBOS.listWorkflows(input);
     }
 
     static tries = 0;
@@ -487,12 +370,6 @@ describe('workflow-management-tests', () => {
     static async stepOne() {
       return Promise.resolve();
     }
-
-    @DBOS.transaction()
-    static async testTransaction() {
-      TestEndpoints.tries += 1;
-      return Promise.resolve();
-    }
   }
 });
 
@@ -501,7 +378,7 @@ describe('test-list-queues', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -768,11 +645,11 @@ describe('test-list-steps', () => {
   let config: DBOSConfig;
   const queue = new WorkflowQueue('child_queue');
   beforeAll(() => {
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     DBOS.setConfig(config);
   });
   beforeEach(async () => {
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
   });
   afterEach(async () => {
@@ -795,17 +672,6 @@ describe('test-list-steps', () => {
     @DBOS.step()
     static async stepTwo() {
       return Promise.resolve(DBOS.workflowID);
-    }
-
-    @DBOS.transaction()
-    static async transaction() {
-      return Promise.resolve(DBOS.workflowID);
-    }
-
-    @DBOS.transaction()
-    static async transactionWithError() {
-      await Promise.resolve();
-      throw Error('transaction error');
     }
 
     @DBOS.workflow()
@@ -925,27 +791,6 @@ describe('test-list-steps', () => {
         childwfid,
       );
       return await handle.getResult();
-    }
-
-    @DBOS.workflow()
-    static async workflowWithTransaction() {
-      await TestListSteps.transaction();
-    }
-
-    @DBOS.workflow()
-    static async workflowWithTransactionError() {
-      try {
-        await TestListSteps.transactionWithError();
-      } catch (e) {
-        console.log('transaction error', e);
-      }
-    }
-
-    @DBOS.workflow()
-    static async workflowWithTransactionAndSteps() {
-      await TestListSteps.stepOne();
-      await TestListSteps.transaction();
-      await TestListSteps.stepTwo();
     }
   }
 
@@ -1243,48 +1088,6 @@ describe('test-list-steps', () => {
     }
   });
 
-  test('test-transaction', async () => {
-    const wfid = randomUUID();
-    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransaction();
-    await handle.getResult();
-    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    if (!wfsteps) {
-      throw new Error('wfsteps is undefined');
-    }
-    expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].name).toBe('transaction');
-    expect(wfsteps[0].output).toBe(wfid);
-    expect(wfsteps[0].error).toBe(null);
-  });
-
-  test('test-transaction-error', async () => {
-    const wfid = randomUUID();
-    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransactionError();
-    await handle.getResult();
-    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    if (!wfsteps) {
-      throw new Error('wfsteps is undefined');
-    }
-    expect(wfsteps.length).toBe(1);
-    expect(wfsteps[0].name).toBe('transactionWithError');
-    expect(wfsteps[0].error).toBeInstanceOf(Error);
-    expect(wfsteps[0].output).toBe(null);
-  });
-
-  test('test-transaction-steps', async () => {
-    const wfid = randomUUID();
-    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).workflowWithTransactionAndSteps();
-    await handle.getResult();
-    const wfsteps = await DBOSExecutor.globalInstance!.listWorkflowSteps(wfid);
-    if (!wfsteps) {
-      throw new Error('wfsteps is undefined');
-    }
-    expect(wfsteps.length).toBe(3);
-    expect(wfsteps[0].name).toBe('stepOne');
-    expect(wfsteps[1].name).toBe('transaction');
-    expect(wfsteps[2].name).toBe('stepTwo');
-  });
-
   test('test-list-workflows-as-step', async () => {
     const wfid = randomUUID();
     const c1 = await DBOS.withNextWorkflowID(wfid, async () => {
@@ -1308,7 +1111,7 @@ describe('test-list-steps', () => {
 describe('test-fork', () => {
   let config: DBOSConfig;
   beforeAll(() => {
-    config = generateDBOSTestConfig('pg-node');
+    config = generateDBOSTestConfig();
     DBOS.setConfig(config);
   });
   beforeEach(async () => {
@@ -1321,7 +1124,7 @@ describe('test-fork', () => {
     ExampleWorkflow.transactionTwoCount = 0;
     ExampleWorkflow.transactionThreeCount = 0;
     ExampleWorkflow.childWorkflowCount = 0;
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
   });
   afterEach(async () => {
@@ -1347,15 +1150,6 @@ describe('test-fork', () => {
       result += await ExampleWorkflow.stepFour(4);
       result += await ExampleWorkflow.stepFive(5);
       return result * input;
-    }
-
-    @DBOS.workflow()
-    static async stepsAndTransactionWorkflow() {
-      await ExampleWorkflow.stepOne(1);
-      await ExampleWorkflow.transactionOne();
-      await ExampleWorkflow.stepTwo(1);
-      await ExampleWorkflow.transactionTwo();
-      await ExampleWorkflow.transactionThree();
     }
 
     @DBOS.step()
@@ -1386,22 +1180,6 @@ describe('test-fork', () => {
     static async stepFive(input: number): Promise<number> {
       ExampleWorkflow.stepFiveCount += 1;
       return Promise.resolve(5 * input);
-    }
-
-    @DBOS.transaction()
-    static async transactionOne() {
-      ExampleWorkflow.transactionOneCount += 1;
-      return Promise.resolve();
-    }
-    @DBOS.transaction()
-    static async transactionTwo() {
-      ExampleWorkflow.transactionTwoCount += 1;
-      return Promise.resolve();
-    }
-    @DBOS.transaction()
-    static async transactionThree() {
-      ExampleWorkflow.transactionThreeCount += 1;
-      return Promise.resolve();
     }
 
     @DBOS.workflow()
@@ -1467,45 +1245,6 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepThreeCount).toBe(3);
     expect(ExampleWorkflow.stepFourCount).toBe(3);
     expect(ExampleWorkflow.stepFiveCount).toBe(4);
-  }, 10000);
-
-  test('test-fork-steps-transactions', async () => {
-    const wfid = randomUUID();
-    const handle = await DBOS.startWorkflow(ExampleWorkflow, { workflowID: wfid }).stepsAndTransactionWorkflow();
-    await handle.getResult();
-
-    expect(ExampleWorkflow.stepOneCount).toBe(1);
-    expect(ExampleWorkflow.transactionOneCount).toBe(1);
-    expect(ExampleWorkflow.stepTwoCount).toBe(1);
-    expect(ExampleWorkflow.transactionTwoCount).toBe(1);
-    expect(ExampleWorkflow.transactionThreeCount).toBe(1);
-
-    const forkedHandle = await DBOS.forkWorkflow(wfid, 0);
-    await forkedHandle.getResult();
-
-    expect(ExampleWorkflow.stepOneCount).toBe(2);
-    expect(ExampleWorkflow.transactionOneCount).toBe(2);
-    expect(ExampleWorkflow.stepTwoCount).toBe(2);
-    expect(ExampleWorkflow.transactionTwoCount).toBe(2);
-    expect(ExampleWorkflow.transactionThreeCount).toBe(2);
-
-    const forkedHandle2 = await DBOS.forkWorkflow(wfid, 1);
-    await forkedHandle2.getResult();
-
-    expect(ExampleWorkflow.stepOneCount).toBe(2);
-    expect(ExampleWorkflow.transactionOneCount).toBe(3);
-    expect(ExampleWorkflow.stepTwoCount).toBe(3);
-    expect(ExampleWorkflow.transactionTwoCount).toBe(3);
-    expect(ExampleWorkflow.transactionThreeCount).toBe(3);
-
-    const forkedHandle3 = await DBOS.forkWorkflow(wfid, 4);
-    await forkedHandle3.getResult();
-
-    expect(ExampleWorkflow.stepOneCount).toBe(2);
-    expect(ExampleWorkflow.transactionOneCount).toBe(3);
-    expect(ExampleWorkflow.stepTwoCount).toBe(3);
-    expect(ExampleWorkflow.transactionTwoCount).toBe(3);
-    expect(ExampleWorkflow.transactionThreeCount).toBe(4);
   }, 10000);
 
   test('test-fork-childwf', async () => {
@@ -1609,4 +1348,185 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFourCount).toBe(2);
     expect(ExampleWorkflow.stepFiveCount).toBe(2);
   });
+});
+
+describe('wf-cancel-tests', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    WFwith2Steps.stepsExecuted = 0;
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  }, 10000);
+
+  test('test-two-steps-base', async () => {
+    const wfid = randomUUID();
+    const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
+
+    await wfh.getResult();
+
+    expect(WFwith2Steps.stepsExecuted).toBe(2);
+  });
+
+  test('test-two-steps-cancel', async () => {
+    const wfid = randomUUID();
+
+    try {
+      const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
+
+      await DBOS.cancelWorkflow(wfid);
+      await wfh.getResult();
+    } catch (e) {
+      console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
+
+      expect(WFwith2Steps.stepsExecuted).toBe(1);
+
+      const wfstatus = await DBOS.getWorkflowStatus(wfid);
+
+      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+    }
+  });
+
+  test('test-two-steps-cancel-resume', async () => {
+    const wfid = randomUUID();
+
+    const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
+
+    try {
+      await DBOS.cancelWorkflow(wfid);
+
+      await wfh.getResult();
+    } catch (e) {
+      console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
+
+      expect(WFwith2Steps.stepsExecuted).toBe(1);
+
+      const wfstatus = await DBOS.getWorkflowStatus(wfid);
+
+      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
+    }
+
+    const wfh2 = await DBOS.resumeWorkflow(wfid);
+    await wfh2.getResult();
+    const resstatus = await DBOS.getWorkflowStatus(wfid);
+    expect(resstatus?.status).toBe(StatusString.SUCCESS);
+  });
+
+  test('test-resume-on-a-completed-ws', async () => {
+    const wfid = randomUUID();
+    const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
+
+    await wfh.getResult();
+
+    expect(WFwith2Steps.stepsExecuted).toBe(2);
+
+    await DBOS.resumeWorkflow(wfid);
+    await DBOS.getWorkflowStatus(wfid);
+
+    expect(WFwith2Steps.stepsExecuted).toBe(2);
+  });
+
+  test('test-preempt-sleepms', async () => {
+    const wfid = randomUUID();
+    const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).sleepTooLong();
+
+    await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
+    await DBOS.cancelWorkflow(wfid);
+
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  test('test-preempt-getresult', async () => {
+    const wfid = randomUUID();
+    const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).getResultTooLong();
+
+    await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
+    await DBOS.cancelWorkflow(wfid);
+
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  test('test-preempt-getevent', async () => {
+    const wfid = randomUUID();
+    const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).getEventTooLong();
+
+    await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
+    await DBOS.cancelWorkflow(wfid);
+
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  test('test-preempt-recv', async () => {
+    const wfid = randomUUID();
+    const wfh = await DBOS.startWorkflow(DeepSleep, { workflowID: wfid }).recvTooLong();
+
+    await expect(DBOS.getResult(wfh.workflowID, 0.2)).resolves.toBeNull();
+    await DBOS.cancelWorkflow(wfid);
+
+    await expect(DBOS.getResult(wfh.workflowID)).rejects.toThrow(DBOSAwaitedWorkflowCancelledError);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+  });
+
+  class WFwith2Steps {
+    static stepsExecuted = 0 as number;
+
+    @DBOS.step()
+    static async step1() {
+      WFwith2Steps.stepsExecuted++;
+      console.log(`Step 1  ${WFwith2Steps.stepsExecuted}`);
+      await DBOS.sleepSeconds(1);
+    }
+
+    @DBOS.step()
+    // eslint-disable-next-line @typescript-eslint/require-await
+    static async step2() {
+      WFwith2Steps.stepsExecuted++;
+      console.log(`Step 1  ${WFwith2Steps.stepsExecuted}`);
+    }
+
+    @DBOS.workflow()
+    static async workflowWithSteps() {
+      await WFwith2Steps.step1();
+      await WFwith2Steps.step2();
+      return Promise.resolve();
+    }
+  }
+
+  class DeepSleep {
+    @DBOS.workflow()
+    static async sleepTooLong() {
+      await DBOS.sleepms(1000 * 1000);
+      return 'Done';
+    }
+
+    @DBOS.workflow()
+    static async getResultTooLong() {
+      await DBOS.getResult('bogusbogusbogus', 1000);
+      return 'Done';
+    }
+
+    @DBOS.workflow()
+    static async recvTooLong() {
+      await DBOS.recv('bogusbogusbogus', 1000);
+      return 'Done';
+    }
+
+    @DBOS.workflow()
+    static async getEventTooLong() {
+      await DBOS.getEvent('bogusbogusbogus', 'notopic', 1000);
+      return 'Done';
+    }
+  }
 });

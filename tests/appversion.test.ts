@@ -1,13 +1,13 @@
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 
 describe('test-app-version', () => {
   let config: DBOSConfig;
 
   beforeEach(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

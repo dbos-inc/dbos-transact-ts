@@ -2,7 +2,7 @@ import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } fr
 import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
-  setUpDBOSTestDb,
+  setUpDBOSTestSysDb,
   Event,
   queueEntriesAreCleanedUp,
   recoverPendingWorkflows,
@@ -36,24 +36,24 @@ import {
 import assert from 'node:assert';
 
 const queue = new WorkflowQueue('testQ');
-const serialqueue = new WorkflowQueue('serialQ', 1);
+const serialqueue = new WorkflowQueue('serialQ', { concurrency: 1 });
 const serialqueueLimited = new WorkflowQueue('serialQL', {
   concurrency: 1,
   rateLimit: { limitPerPeriod: 10, periodSec: 1 },
 });
-const childqueue = new WorkflowQueue('childQ', 3);
+const childqueue = new WorkflowQueue('childQ', { concurrency: 3 });
 const workerConcurrencyQueue = new WorkflowQueue('workerQ', { workerConcurrency: 1 });
 
 const qlimit = 5;
 const qperiod = 2;
-const rlqueue = new WorkflowQueue('limited_queue', undefined, { limitPerPeriod: qlimit, periodSec: qperiod });
+const rlqueue = new WorkflowQueue('limited_queue', { rateLimit: { limitPerPeriod: qlimit, periodSec: qperiod } });
 
 describe('queued-wf-tests-simple', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -636,8 +636,8 @@ describe('queued-wf-tests-simple', () => {
   }
 
   test('test-concurrency-across-versions', async () => {
-    expect(config.databaseUrl).toBeDefined();
-    const client = await DBOSClient.create({ databaseUrl: config.databaseUrl! });
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
 
     const other_version = 'other_version';
     const other_version_handle = await client.enqueue({
@@ -823,7 +823,7 @@ describe('queued-wf-tests-concurrent-workers', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -967,7 +967,7 @@ describe('enqueue-options', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
@@ -1220,7 +1220,7 @@ describe('queue-time-outs', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 

@@ -15,7 +15,6 @@ describe('dbos-logger', () => {
     //console.error('STDERR:', result.stderr);
 
     // Check if the expected error appears in stderr
-    let foundTx = false;
     let foundStep = false;
     let foundWf = false;
     const lines = result.stdout.split('\n');
@@ -43,27 +42,14 @@ describe('dbos-logger', () => {
       ) {
         foundStep = true;
       }
-
-      if (
-        /Info: Transaction should be logged/.test(l) &&
-        /"operationType":"transaction"/.test(l) &&
-        /"operationName":"loggingTransaction"/ &&
-        /"operationUUID":"loggerWorkflowId"/.test(l) &&
-        /"authenticatedUser":""/.test(l) &&
-        /"authenticatedRoles":\[\]/.test(l) &&
-        /"assumedRole":""/.test(l)
-      ) {
-        foundTx = true;
-      }
     }
 
-    if (!foundWf || !foundStep || !foundTx) {
+    if (!foundWf || !foundStep) {
       console.warn(
         `
 *** This test is about to fail, something was not found. ***
   Found workflow: ${foundWf}.
   Found step: ${foundStep}.
-  Found transaction: ${foundTx}.
 The log was:\n${result.stdout}
 `,
       );
@@ -71,7 +57,6 @@ The log was:\n${result.stdout}
 
     expect(foundWf).toBeTruthy();
     expect(foundStep).toBeTruthy();
-    expect(foundTx).toBeTruthy();
 
     return Promise.resolve();
   });

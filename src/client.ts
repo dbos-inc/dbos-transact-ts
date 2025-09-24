@@ -16,7 +16,7 @@ import {
   type WorkflowHandle,
   type WorkflowStatus,
 } from './workflow';
-import { DBOSJSON, getClientConfig, sleepms } from './utils';
+import { DBOSJSON, sleepms } from './utils';
 import {
   forkWorkflow,
   getWorkflow,
@@ -24,10 +24,7 @@ import {
   listWorkflows,
   listWorkflowSteps,
   toWorkflowStatus,
-} from './dbos-runtime/workflow_management';
-import { PGNodeUserDatabase, type UserDatabase } from './user_database';
-import { getSysDatabaseUrlFromUserDb } from './dbos-runtime/config';
-import assert from 'node:assert';
+} from './workflow_management';
 import { DBOSExecutor } from './dbos-executor';
 import { DBOSAwaitedWorkflowCancelledError } from './error';
 
@@ -122,18 +119,10 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
 export class DBOSClient {
   private readonly logger: GlobalLogger;
   private readonly systemDatabase: SystemDatabase;
-  private readonly userDatabase: UserDatabase | undefined;
 
-  private constructor(databaseUrl: string | undefined, systemDatabaseUrl: string | undefined) {
-    if (!systemDatabaseUrl) {
-      assert(databaseUrl, 'At least one of databaseUrl or systemDatabaseUrl must be provided');
-      systemDatabaseUrl = getSysDatabaseUrlFromUserDb(databaseUrl);
-    }
-
+  private constructor(systemDatabaseUrl: string) {
     this.logger = new GlobalLogger();
     this.systemDatabase = new PostgresSystemDatabase(systemDatabaseUrl, this.logger);
-
-    this.userDatabase = databaseUrl ? new PGNodeUserDatabase(getClientConfig(databaseUrl)) : undefined;
   }
 
   /**
@@ -142,14 +131,8 @@ export class DBOSClient {
    * @param systemDatabase - An optional name for the system database. If not provided, it defaults to the application database name with a `_dbos_sys` suffix.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
-  static async create({
-    databaseUrl,
-    systemDatabaseUrl,
-  }: {
-    databaseUrl?: string;
-    systemDatabaseUrl?: string;
-  }): Promise<DBOSClient> {
-    const client = new DBOSClient(databaseUrl, systemDatabaseUrl);
+  static async create({ systemDatabaseUrl }: { systemDatabaseUrl: string }): Promise<DBOSClient> {
+    const client = new DBOSClient(systemDatabaseUrl);
     return Promise.resolve(client);
   }
 
@@ -160,7 +143,6 @@ export class DBOSClient {
    */
   async destroy() {
     await this.systemDatabase.destroy();
-    await this.userDatabase?.destroy();
   }
 
   /**
@@ -272,7 +254,7 @@ export class DBOSClient {
     startStep: number,
     options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
   ): Promise<string> {
-    return forkWorkflow(this.systemDatabase, this.userDatabase, workflowID, startStep, options);
+    return forkWorkflow(this.systemDatabase, workflowID, startStep, options);
   }
 
   getWorkflow(workflowID: string): Promise<WorkflowStatus | undefined> {
@@ -288,7 +270,7 @@ export class DBOSClient {
   }
 
   listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
-    return listWorkflowSteps(this.systemDatabase, this.userDatabase, workflowID);
+    return listWorkflowSteps(this.systemDatabase, workflowID);
   }
 
   /**

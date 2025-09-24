@@ -9,21 +9,13 @@ import request from 'supertest';
 
 const dhttp = new DBOSKoa();
 
-interface TestKvTable {
-  id?: number;
-  value?: string;
-}
-
 describe('httpserver-defsec-tests', () => {
   let app: Koa;
   let appRouter: Router;
 
-  const testTableName = 'dbos_test_kv';
-
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'dbos-koa-test',
-      userDatabaseClient: 'pg-node',
     });
     return Promise.resolve();
   });
@@ -31,8 +23,6 @@ describe('httpserver-defsec-tests', () => {
   beforeEach(async () => {
     const _classes = [TestEndpointDefSec, SecondClass];
     await DBOS.launch();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id SERIAL PRIMARY KEY, value TEXT);`);
     middlewareCounter = 0;
     middlewareCounter2 = 0;
     middlewareCounterG = 0;
@@ -101,13 +91,13 @@ describe('httpserver-defsec-tests', () => {
   // We can directly test a transaction with passed in authorizedRoles.
   test('direct-transaction-test', async () => {
     await DBOS.withAuthedContext('user', ['user'], async () => {
-      const res = await TestEndpointDefSec.testTranscation('alice');
+      const res = await TestEndpointDefSec.testStep('alice');
       expect(res).toBe('hello 1');
     });
 
     // Unauthorized.
-    await expect(TestEndpointDefSec.testTranscation('alice')).rejects.toThrow(
-      new DBOSError.DBOSNotAuthorizedError('User does not have a role with permission to call testTranscation', 403),
+    await expect(TestEndpointDefSec.testStep('alice')).rejects.toThrow(
+      new DBOSError.DBOSNotAuthorizedError('User does not have a role with permission to call testStep', 403),
     );
   });
 
@@ -171,18 +161,15 @@ describe('httpserver-defsec-tests', () => {
       return Promise.resolve(`Please say hello to ${name}`);
     }
 
-    @DBOS.transaction()
-    static async testTranscation(name: string) {
-      const { rows } = await DBOS.pgClient.query<TestKvTable>(
-        `INSERT INTO ${testTableName}(value) VALUES ($1) RETURNING id`,
-        [name],
-      );
-      return `hello ${rows[0].id}`;
+    @DBOS.step()
+    static async testStep(name: string) {
+      void name;
+      return Promise.resolve(`hello 1`);
     }
 
     @DBOS.workflow()
     static async testWorkflow(name: string) {
-      const res = await TestEndpointDefSec.testTranscation(name);
+      const res = await TestEndpointDefSec.testStep(name);
       return res;
     }
 
@@ -193,7 +180,7 @@ describe('httpserver-defsec-tests', () => {
 
     @dhttp.getApi('/transaction')
     static async testTxnEndpoint(name: string) {
-      return await TestEndpointDefSec.testTranscation(name);
+      return await TestEndpointDefSec.testStep(name);
     }
   }
 

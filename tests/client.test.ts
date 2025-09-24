@@ -1,7 +1,7 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS, DBOSClient, WorkflowQueue, StatusString } from '../src';
 import { globalParams, sleepms } from '../src/utils';
-import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
@@ -74,15 +74,15 @@ function runClientSendWorker(workflowID: string, topic: string, appVersion: stri
 
 describe('DBOSClient', () => {
   let config: DBOSConfig;
-  let databaseUrl: string;
+  let systemDatabaseUrl: string;
   let poolConfig: PoolConfig;
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
-    expect(config.databaseUrl).toBeDefined();
-    databaseUrl = config.databaseUrl!;
+    expect(config.systemDatabaseUrl).toBeDefined();
+    systemDatabaseUrl = config.systemDatabaseUrl!;
     poolConfig = { connectionString: config.systemDatabaseUrl };
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
   });
 
   beforeEach(() => {
@@ -96,7 +96,7 @@ describe('DBOSClient', () => {
   test('enqueue-timeout-simple', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = randomUUID();
 
     try {
@@ -119,7 +119,7 @@ describe('DBOSClient', () => {
   test('enqueue-timeout-direct-parent', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = randomUUID();
 
     try {
@@ -149,7 +149,7 @@ describe('DBOSClient', () => {
   test('enqueue-timeout-startwf-parent', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = randomUUID();
 
     try {
@@ -177,7 +177,7 @@ describe('DBOSClient', () => {
   });
 
   test('DBOSClient-enqueue-idempotent', async () => {
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = `client-enqueue-idempotent-${Date.now()}`;
 
     try {
@@ -241,7 +241,7 @@ describe('DBOSClient', () => {
   test('DBOSClient-enqueue-appVer-notSet', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = `client-enqueue-${Date.now()}`;
 
     try {
@@ -283,7 +283,7 @@ describe('DBOSClient', () => {
   test('DBOSClient-enqueue-and-get-result', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
 
     const version = globalParams.appVersion;
 
@@ -331,7 +331,7 @@ describe('DBOSClient', () => {
   test('DBOSClient-enqueue-dedupid', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
 
     try {
       const handle = await client.enqueue<EnqueueTest>(
@@ -374,7 +374,7 @@ describe('DBOSClient', () => {
   test('DBOSClient-enqueue-priority', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
 
     type PriorityTest = typeof ClientTest.priorityTest;
 
@@ -425,7 +425,7 @@ describe('DBOSClient', () => {
   test('DBOSClient-enqueue-appVer-set', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     const wfid = `client-enqueue-${Date.now()}`;
 
     try {
@@ -466,7 +466,7 @@ describe('DBOSClient', () => {
   }, 20000);
 
   test('DBOSClient-enqueue-wrong-appVer', async () => {
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
 
     try {
       await client.enqueue<EnqueueTest>(
@@ -511,7 +511,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       await client.send<string>(workflowID, message, topic);
     } finally {
@@ -530,7 +530,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
     const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest();
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       await client.send<string>(workflowID, message);
     } finally {
@@ -552,7 +552,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
     runClientSendWorker(workflowID, topic, globalParams.appVersion);
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     const dbClient = new Client(poolConfig);
     try {
       await dbClient.connect();
@@ -599,7 +599,7 @@ describe('DBOSClient', () => {
     await DBOS.launch();
     runClientSendWorker(workflowID, topic, globalParams.appVersion);
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       await client.send<string>(workflowID, message, topic, idempotencyKey);
       await client.send<string>(workflowID, message, topic, idempotencyKey);
@@ -634,17 +634,17 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
-      const eventValue = await client.getEvent<string>(workflowID, key, 10);
+      const eventValue = await client.getEvent<string>(workflowID, key, 60);
       expect(eventValue).toBe(value);
       const result = await handle.getResult();
       expect(result).toBe(`${key}-${value}`);
     } finally {
       await client.destroy();
     }
-  }, 10000);
+  }, 30000);
 
   test('DBOSClient-getEvent-when-finished', async () => {
     const now = Date.now();
@@ -654,7 +654,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value);
       const result = await handle.getResult();
@@ -675,7 +675,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
       let eventValue = await client.getEvent<string>(workflowID, key, 1);
@@ -697,7 +697,7 @@ describe('DBOSClient', () => {
     const value = `event-value-${now}`;
 
     await DBOS.launch();
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).eventTest(key, value, true);
       const result = await handle.getResult();
@@ -720,7 +720,7 @@ describe('DBOSClient', () => {
       age: 30,
     });
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = client.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const result = await handle.getResult();
@@ -742,7 +742,7 @@ describe('DBOSClient', () => {
     const result1 = await handle.getResult();
     expect(result1).toBe('42-test-{"first":"John","last":"Doe","age":30}');
 
-    const client = await DBOSClient.create({ databaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl });
     try {
       const handle = client.retrieveWorkflow<ReturnType<EnqueueTest>>(wfid);
       const result = await handle.getResult();

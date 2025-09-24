@@ -83,10 +83,6 @@ export interface GetQueuedWorkflowsInput {
   loadInput?: boolean; // Load the input of the workflow (default true)
 }
 
-export interface GetWorkflowsOutput {
-  workflowUUIDs: string[];
-}
-
 export interface GetPendingWorkflowsOutput {
   workflowUUID: string;
   queueName?: string;
@@ -138,11 +134,6 @@ export interface WorkflowHandle<R> {
    * Await workflow completion and return its result.
    */
   getResult(): Promise<R>;
-  /**
-   * @deprecated use `.workflowID` instead of `.getWorkflowUUID()`
-   * Return the workflow's ID, which may be a UUID (but not necessarily).
-   */
-  getWorkflowUUID(): string;
   /**
    * Return the workflow's ID
    */

@@ -1,15 +1,19 @@
-import { DBOS } from '../src';
+import { DBOS, DBOSConfig } from '../src';
 import { randomUUID } from 'node:crypto';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { KnexDataSource } from '../packages/knex-datasource';
 import { StepInfo } from '../src/workflow';
+import { ensurePGDatabase } from '../src/database_utils';
+
+const config = generateDBOSTestConfig();
+
+const dbname = 'conc_test_userdb';
+const dbConfig = { user: process.env.PGUSER || 'postgres', database: dbname };
+const knexConfig = { client: 'pg', connection: dbConfig };
+const knexds = new KnexDataSource('app-db', knexConfig);
 
 const testTableName = 'dbos_concurrency_test_kv';
-
-const config = generateDBOSTestConfig('pg-node');
-const dbConfig = { client: 'pg', connection: { user: 'postgres', database: 'dbostest' } };
-const knexds = new KnexDataSource('app-db', dbConfig);
 
 const simpleWF = DBOS.registerWorkflow(
   async () => {
@@ -401,14 +405,23 @@ const runALotOfTransactionsAtOnce = DBOS.registerWorkflow(
 
 describe('concurrency-tests', () => {
   beforeAll(async () => {
-    await setUpDBOSTestDb(config);
+    await ensurePGDatabase({
+      dbToEnsure: dbname,
+      adminUrl: `postgresql://${dbConfig.user}:${process.env['PGPASSWORD'] || 'dbos'}@${process.env['PGHOST'] || 'localhost'}:${process.env['PGPORT'] || '5432'}/postgres`,
+    });
+
+    await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
   });
 
   beforeEach(async () => {
     await DBOS.launch();
-    await DBOS.queryUserDB(`DROP TABLE IF EXISTS ${testTableName};`);
-    await DBOS.queryUserDB(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
+
+    await knexds.runTransaction(async () => {
+      await knexds.client.raw(`DROP TABLE IF EXISTS ${testTableName};`);
+      await knexds.client.raw(`CREATE TABLE IF NOT EXISTS ${testTableName} (id INTEGER PRIMARY KEY, value TEXT);`);
+    });
+
     ConcurrTestClass.cnt = 0;
     ConcurrTestClass.wfCnt = 0;
   });
@@ -598,11 +611,10 @@ class ConcurrTestClass {
     ConcurrTestClass.resolve3 = r;
   });
 
-  @DBOS.transaction()
+  @DBOS.step()
   static async testReadWriteFunction(id: number) {
-    await DBOS.pgClient.query(`INSERT INTO ${testTableName}(id, value) VALUES ($1, $2)`, [id, 1]);
     ConcurrTestClass.cnt++;
-    return id;
+    return Promise.resolve(id);
   }
 
   @DBOS.workflow()
@@ -693,5 +705,48 @@ async function runThingsSerialOrConc(conc: boolean, things: { func: () => Promis
       const res = await t.func();
       expect(res).toBe(t.expected);
     }
+  }
+}
+
+describe('concurrent-events', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('concurrent-workflow-events', async () => {
+    const wfid = randomUUID();
+    const promises: Promise<string | null>[] = [];
+    for (let i = 0; i < 10; ++i) {
+      promises.push(DBOS.getEvent(wfid, 'key1'));
+    }
+
+    const st = Date.now();
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await DBOSTestClassWFS.setEventWorkflow();
+    });
+    const et = Date.now();
+    expect(et - st).toBeLessThan(1000);
+
+    await Promise.allSettled(promises);
+  });
+});
+
+class DBOSTestClassWFS {
+  @DBOS.workflow()
+  static async setEventWorkflow() {
+    await DBOS.setEvent('key1', 'value1');
+    return 0;
   }
 }

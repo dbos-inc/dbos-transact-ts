@@ -1,6 +1,6 @@
 import { DBOS, Debouncer, DBOSConfig, WorkflowQueue, StatusString, DBOSClient, DebouncerClient } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import assert from 'node:assert';
 
 describe('debouncer-tests', () => {
@@ -12,7 +12,7 @@ describe('debouncer-tests', () => {
   });
 
   beforeEach(async () => {
-    await setUpDBOSTestDb(config);
+    await setUpDBOSTestSysDb(config);
     await DBOS.launch();
   });
 
@@ -207,7 +207,7 @@ describe('debouncer-tests', () => {
     const shortDebouncePeriodMs = 1000;
 
     // Set a huge period but small timeout, verify workflows start after the timeout
-    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
     const debouncer1 = new DebouncerClient(client, {
       workflowName: 'debouncerWorkflow',
       debounceTimeoutMs: 2000,
@@ -278,7 +278,7 @@ describe('debouncer-tests', () => {
     assert.equal(await thirdHandle.getResult(), fourthValue);
     assert.equal(await fourthHandle.getResult(), fourthValue);
 
-    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl });
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
     const clientDebouncer = new DebouncerClient(client, {
       workflowClassName: 'TestClass',
       workflowName: 'exampleWorkflow',

@@ -51,20 +51,6 @@ export class DBOSDataValidationError extends DBOSError {
   }
 }
 
-const ResponseError = 11;
-/**
- * This error can be thrown by DBOS applications to indicate
- *  the HTTP response code, in addition to the message.
- */
-export class DBOSResponseError extends DBOSError {
-  constructor(
-    msg: string,
-    readonly status: number = 500,
-  ) {
-    super(msg, ResponseError);
-  }
-}
-
 const NotAuthorizedError = 12;
 export class DBOSNotAuthorizedError extends DBOSError {
   constructor(
@@ -110,13 +96,6 @@ export class DBOSMaxRecoveryAttemptsExceededError extends DBOSError {
       `Workflow ${workflowID} has exceeded its maximum of ${maxRetries} execution or recovery attempts. Further attempts to execute or recover it will fail.`,
       MaxRecoveryAttemptsExceededError,
     );
-  }
-}
-
-const FailedSqlTransactionError = 19;
-export class DBOSFailedSqlTransactionError extends DBOSError {
-  constructor(workflowID: string, txnName: string) {
-    super(`Postgres aborted the ${txnName} transaction of Workflow ${workflowID}.`, FailedSqlTransactionError);
   }
 }
 

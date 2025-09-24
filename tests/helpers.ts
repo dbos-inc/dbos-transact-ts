@@ -1,14 +1,24 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { UserDatabaseName } from '../src/user_database';
 import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
-import { getSysDatabaseUrlFromUserDb, translateDbosConfig } from '../src/dbos-runtime/config';
+import { isValidDatabaseName, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
-import { dropPGDatabase, ensurePGDatabase, maskDatabaseUrl } from '../src/datasource';
+import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
 
 /* DB management helpers */
-export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig {
+function getSysDatabaseUrlFromUserDb(userDB: string) {
+  const url = new URL(userDB);
+  const dbName = url.pathname.slice(1);
+  if (!isValidDatabaseName(dbName)) {
+    throw new Error(`Database name in ${maskDatabaseUrl(userDB)} is invalid.`);
+  }
+  const sysDbName = `${dbName}_dbos_sys`;
+  url.pathname = `/${sysDbName}`;
+  return url.toString();
+}
+
+export function generateDBOSTestConfig(): DBOSConfig {
   const dbPassword: string | undefined = process.env.DB_PASSWORD || process.env.PGPASSWORD;
   if (!dbPassword) {
     throw new Error('DB_PASSWORD or PGPASSWORD environment variable not set');
@@ -20,37 +30,19 @@ export function generateDBOSTestConfig(dbClient?: UserDatabaseName): DBOSConfig 
 
   return {
     name: 'dbostest',
-    databaseUrl,
     systemDatabaseUrl,
-    userDatabaseClient: dbClient,
   };
 }
 
-export async function setUpDBOSTestDb(config: DBOSConfig) {
+export async function setUpDBOSTestSysDb(config: DBOSConfig) {
   config.name ??= 'dbostest';
   const internalConfig = translateDbosConfig(config);
 
-  if (internalConfig.databaseUrl) {
-    const r = await dropPGDatabase({ urlToDrop: internalConfig.databaseUrl, logger: () => {} });
-    if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
-      throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.databaseUrl)}`);
-    }
-    const rc = await ensurePGDatabase({ urlToEnsure: internalConfig.databaseUrl, logger: () => {} });
-    if (rc.status !== 'already_exists' && rc.status !== 'created') {
-      throw new Error(`Unable to create ${maskDatabaseUrl(internalConfig.databaseUrl)}`);
-    }
-  }
   const r = await dropPGDatabase({ urlToDrop: internalConfig.systemDatabaseUrl, logger: () => {} });
   if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
     throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.systemDatabaseUrl)}`);
   }
   await ensureSystemDatabase(internalConfig.systemDatabaseUrl, new GlobalLogger());
-}
-
-/* Common test types */
-export interface TestKvTable {
-  id?: number;
-  value?: string;
 }
 
 // A helper class for testing concurrency. Behaves similarly to threading.Event in Python.

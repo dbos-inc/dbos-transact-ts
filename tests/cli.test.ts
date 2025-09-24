@@ -98,7 +98,6 @@ describe('schema-command-tests', () => {
     await DBOS.shutdown();
     const roleConfig: DBOSConfig = {
       name: 'schema-migrate-test',
-      databaseUrl: testDbUrl.toString(),
       systemDatabaseUrl: testDbUrl.toString(),
     };
     DBOS.setConfig(roleConfig);
