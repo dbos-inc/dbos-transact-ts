@@ -13,6 +13,7 @@ export class Conductor {
   url: string;
   websocket: WebSocket | undefined = undefined;
   isShuttingDown = false; // Is in the process of shutting down the connection
+  isClosed = false; // Has the connection been fully closed
   pingPeriodMs = 20000; // Time in milliseconds to wait before sending a ping message to the conductor
   pingTimeoutMs = 15000; // Time in milliseconds to wait for a response to a ping message before considering the connection dead
   pingInterval: NodeJS.Timeout | undefined = undefined; // Interval for sending ping messages to the conductor
@@ -375,5 +376,6 @@ export class Conductor {
     if (this.websocket) {
       this.websocket.close();
     }
+    this.isClosed = true;
   }
 }
