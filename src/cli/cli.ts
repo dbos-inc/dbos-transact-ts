@@ -12,8 +12,9 @@ import { DBOSConfigInternal } from '../dbos-executor';
 import { migrate } from './migrate';
 import { GlobalLogger } from '../telemetry/logs';
 import { TelemetryCollector } from '../telemetry/collector';
-import { confirm } from '@inquirer/prompts';
 import { TelemetryExporter } from '../telemetry/exporters';
+import * as readline from 'node:readline/promises';
+import { stdin as input, stdout as output } from 'node:process';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
 import { ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_database';
 import { exit } from 'node:process';
@@ -143,16 +144,20 @@ program
   .option('-y, --yes', 'Skip confirmation prompt', false)
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (options: { yes: boolean; sysDbUrl?: string }) => {
-    if (options.yes) {
-      const userConfirmed = await confirm({
-        message:
-          'This command resets your DBOS system database, deleting metadata about past workflows and steps. Are you sure you want to proceed?',
-        default: false, // Default value for confirmation
-      });
+    if (!options.yes) {
+      const rl = readline.createInterface({ input, output });
+      try {
+        const answer = await rl.question(
+          'This command resets your DBOS system database, deleting metadata about past workflows and steps. Are you sure you want to proceed? (y/N) ',
+        );
+        const userConfirmed = answer.toLowerCase() === 'y' || answer.toLowerCase() === 'yes';
 
-      if (!userConfirmed) {
-        console.log('Operation cancelled.');
-        process.exit(0); // Exit the process if the user cancels
+        if (!userConfirmed) {
+          console.log('Operation cancelled.');
+          process.exit(0); // Exit the process if the user cancels
+        }
+      } finally {
+        rl.close();
       }
     }
     const urls = getDatabaseURLs(options.sysDbUrl);
