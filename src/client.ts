@@ -5,7 +5,7 @@ import {
   DBOS_STREAM_CLOSED_SENTINEL,
 } from './system_database';
 
-import { GlobalLogger } from './telemetry';
+import { GlobalLogger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
 import {
   type GetQueuedWorkflowsInput,

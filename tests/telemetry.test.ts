@@ -10,7 +10,7 @@ provider.register();
 import Koa from 'koa';
 import Router from '@koa/router';
 import { context, trace, SpanStatusCode } from '@opentelemetry/api';
-import { isTraceContextWorking } from '../src/telemetry';
+import { isTraceContextWorking } from '../src/telemetry/traces';
 import { AddressInfo } from 'net';
 
 async function tracedStep() {

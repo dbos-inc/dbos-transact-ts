@@ -3,7 +3,7 @@ import * as url from 'url';
 import { GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from './workflow';
 import { DBOSError } from './error';
 import { DBOSExecutor } from './dbos-executor';
-import { GlobalLogger } from './telemetry';
+import { GlobalLogger } from './telemetry/logs';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
 import { DBOSJSON, globalParams } from './utils';

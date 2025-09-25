@@ -1,5 +1,5 @@
 import { spawn } from 'child_process';
-import { GlobalLogger } from '../telemetry';
+import { GlobalLogger } from '../telemetry/logs';
 
 // Run the "start" command provided by users in their dbos-config.yaml
 export function runCommand(command: string, logger: GlobalLogger): Promise<number> {

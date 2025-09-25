@@ -3,7 +3,7 @@ import { createLogger, Logger, transports } from 'winston';
 import { sleepms } from '../utils';
 import { promisify } from 'util';
 import { exec } from 'child_process';
-import { consoleFormat } from '../telemetry';
+import { consoleFormat } from '../telemetry/logs';
 
 export type CLILogger = ReturnType<typeof createLogger>;
 let curLogger: Logger | undefined = undefined;

@@ -1,5 +1,5 @@
 import { execSync, SpawnSyncReturns } from 'child_process';
-import { GlobalLogger } from '../telemetry';
+import { GlobalLogger } from '../telemetry/logs';
 import { ensureSystemDatabase } from '../system_database';
 
 export async function migrate(migrationCommands: string[], systemDatabaseUrl: string, logger: GlobalLogger) {

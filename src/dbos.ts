@@ -9,7 +9,7 @@ import {
   functionIDGetIncrement,
 } from './context';
 import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
-import { installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry';
+import { installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
 import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
@@ -22,7 +22,7 @@ import {
   WorkflowParams,
   WorkflowStatus,
 } from './workflow';
-import { DLogger, GlobalLogger } from './telemetry';
+import { DLogger, GlobalLogger } from './telemetry/logs';
 import {
   DBOSError,
   DBOSExecutorNotInitializedError,
