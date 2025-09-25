@@ -12,6 +12,7 @@ import Router from '@koa/router';
 import { context, trace, SpanStatusCode } from '@opentelemetry/api';
 import { isTraceContextWorking } from '../src/telemetry/traces';
 import { AddressInfo } from 'net';
+import { globalParams } from '../src/utils';
 
 async function tracedStep() {
   return Promise.resolve();
@@ -22,7 +23,9 @@ async function doSomethingTraced_internal() {
   if (span) {
     span.setAttribute('my-lib.didSomething', true);
   }
-  expect(DBOS.span).toBe(trace.getSpan(context.active()));
+  if (globalParams.enableOTLP) {
+    expect(DBOS.span).toBe(trace.getSpan(context.active()));
+  }
   await DBOS.runStep(tracedStep, { name: 'tracedStep' });
   return Promise.resolve('Done');
 }
@@ -74,7 +77,8 @@ export function createApp() {
 
 describe('trace spans propagate ', () => {
   beforeAll(async () => {
-    DBOS.setConfig({ name: 'trace-span-propagate' });
+    memoryExporter.reset();
+    DBOS.setConfig({ name: 'trace-span-propagate', enableOTLP: true });
     await DBOS.launch();
   });
 
@@ -117,5 +121,35 @@ describe('trace spans propagate ', () => {
     expect(workflowspan?.parentSpanId).toBe(httpSpan?.spanContext().spanId);
     expect(workflowspan?.spanContext().traceId).toBe(httpSpan?.spanContext().traceId);
     expect(workflowspan.attributes['my-lib.didSomething']).toBeTruthy();
+  });
+});
+
+describe('disable-otlp', () => {
+  beforeAll(async () => {
+    memoryExporter.reset();
+    DBOS.setConfig({ name: 'trace-span-propagate' });
+    await DBOS.launch();
+  });
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('disable-otlp', async () => {
+    expect(isTraceContextWorking()).toBe(false);
+
+    const app = createApp();
+    const server = app.listen(0); // Koa uses native HTTP
+
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://localhost:${port}/test`);
+
+    expect(res.status).toBe(200);
+    server.close();
+
+    // With OTLP disabled, only the HTTP span is present
+    const spans = memoryExporter.getFinishedSpans();
+    expect(spans.length).toBe(1);
   });
 });

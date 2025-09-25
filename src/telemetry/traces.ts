@@ -56,15 +56,40 @@ export type DBOSSpan = {
   addEvent(name: string, attributesOrStartTime?: Attributes, timeStamp?: number): DBOSSpan;
 };
 
+export class StubSpan implements DBOSSpan {
+  attributes: Attributes = {};
+
+  setStatus(_status: SpanStatus): DBOSSpan {
+    return this;
+  }
+
+  setAttribute(_key: string, _attribute: AttributeValue): DBOSSpan {
+    return this;
+  }
+
+  addEvent(_name: string, _attributesOrStartTime?: Attributes, _timeStamp?: number): DBOSSpan {
+    return this;
+  }
+}
+
 export function runWithTrace<R>(span: DBOSSpan, func: () => Promise<R>): Promise<R> {
+  if (!globalParams.enableOTLP) {
+    return func();
+  }
   return context.with(trace.setSpan(context.active(), span as Span), func);
 }
 
 export function getActiveSpan() {
+  if (!globalParams.enableOTLP) {
+    return undefined;
+  }
   return trace.getActiveSpan() as DBOSSpan | undefined;
 }
 
 export function isTraceContextWorking(): boolean {
+  if (!globalParams.enableOTLP) {
+    return false;
+  }
   const span = trace.getTracer('otel-bootstrap-check').startSpan('probe');
   const testContext = trace.setSpan(context.active(), span);
 
@@ -78,6 +103,9 @@ export function isTraceContextWorking(): boolean {
 }
 
 export function installTraceContextManager() {
+  if (!globalParams.enableOTLP) {
+    return;
+  }
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
@@ -90,23 +118,32 @@ export class Tracer {
   readonly applicationID: string;
   readonly executorID: string;
   constructor(private readonly telemetryCollector: TelemetryCollector) {
+    this.applicationID = globalParams.appID;
+    this.executorID = globalParams.executorID; // for consistency with src/context.ts
+    if (!globalParams.enableOTLP) {
+      return;
+    }
     const tracer = new BasicTracerProvider({
       resource: new Resource({
         'service.name': 'dbos',
       }),
     });
     tracer.register(); // this is a no-op if another tracer provider was already registered
-    this.applicationID = globalParams.appID;
-    this.executorID = globalParams.executorID; // for consistency with src/context.ts
   }
 
   startSpanWithContext(spanContext: unknown, name: string, attributes?: Attributes): DBOSSpan {
+    if (!globalParams.enableOTLP) {
+      return new StubSpan();
+    }
     const tracer = opentelemetry.trace.getTracer('dbos-tracer');
     const ctx = opentelemetry.trace.setSpanContext(opentelemetry.context.active(), spanContext as SpanContext);
     return tracer.startSpan(name, { startTime: performance.now(), attributes: attributes }, ctx) as Span;
   }
 
   startSpan(name: string, attributes?: Attributes, inputSpan?: DBOSSpan): DBOSSpan {
+    if (!globalParams.enableOTLP) {
+      return new StubSpan();
+    }
     const parentSpan = inputSpan as Span;
     const tracer = opentelemetry.trace.getTracer('dbos-tracer');
     const startTime = hrTime(performance.now());
@@ -119,6 +156,9 @@ export class Tracer {
   }
 
   endSpan(inputSpan: DBOSSpan) {
+    if (!globalParams.enableOTLP) {
+      return;
+    }
     const span = inputSpan as Span;
     span.setAttributes({
       applicationID: this.applicationID,
