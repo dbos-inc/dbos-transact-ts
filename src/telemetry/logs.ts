@@ -75,14 +75,14 @@ export class GlobalLogger {
       }),
     );
     // Only enable the OTLP transport if we have a telemetry collector and an exporter
-    if (this.telemetryCollector?.exporter) {
+    if (globalParams.enableOTLP && this.telemetryCollector?.exporter) {
       this.otlpTransport = new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info');
       winstonTransports.push(this.otlpTransport);
     }
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
 
-    if (process.env.DBOS__CAPTURE_STD !== 'false' && this.telemetryCollector?.exporter) {
+    if (globalParams.enableOTLP && process.env.DBOS__CAPTURE_STD !== 'false' && this.telemetryCollector?.exporter) {
       interceptStreams((msg, stream) => {
         if (stream === 'stdout') {
           if (!this.isLogging) {
