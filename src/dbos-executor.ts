@@ -26,7 +26,7 @@ import {
 
 import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
-import { SpanStatusCode, Tracer } from './telemetry/traces';
+import { runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import {
@@ -50,7 +50,6 @@ import {
   getClassRegistrationByName,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
-import { context, trace } from '@opentelemetry/api';
 import {
   runInStepContext,
   getNextWFID,
@@ -85,6 +84,7 @@ import {
 import { maskDatabaseUrl } from './database_utils';
 import { debouncerWorkflowFunction } from './debouncer';
 import { Span } from '@opentelemetry/sdk-trace-base';
+import { trace } from '@opentelemetry/api';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -546,7 +546,7 @@ export class DBOSExecutor {
 
       // Execute the workflow.
       try {
-        const callResult = await context.with(trace.setSpan(context.active(), span), async () => {
+        const callResult = await runWithTrace(span, async () => {
           return await runWithParentContext(
             pctx,
             {
@@ -791,7 +791,7 @@ export class DBOSExecutor {
     } else {
       try {
         let cresult: R | undefined;
-        await context.with(trace.setSpan(context.active(), span), async () => {
+        await runWithTrace(span, async () => {
           await runInStepContext(lctx, funcID, maxAttempts, undefined, async () => {
             const sf = stepFn as unknown as (...args: T) => Promise<R>;
             cresult = await sf.call(clsInst, ...args);

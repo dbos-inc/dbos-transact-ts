@@ -1,4 +1,3 @@
-import { context, trace } from '@opentelemetry/api';
 import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
@@ -11,7 +10,7 @@ import {
   wrapDBOSFunctionAndRegister,
 } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
-import { SpanStatusCode } from './telemetry/traces';
+import { runWithTrace, SpanStatusCode } from './telemetry/traces';
 
 /**
  * This interface is to be used for implementers of transactional data sources
@@ -155,7 +154,7 @@ export async function runTransaction<T>(
   );
 
   try {
-    const res = await context.with(trace.setSpan(context.active(), span), async () => {
+    const res = await runWithTrace(span, async () => {
       return await DBOSExecutor.globalInstance!.runInternalStep<T>(
         async () => {
           return await runWithDataSourceContext(callnum, async () => {
@@ -230,7 +229,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
 
     const callnum = functionIDGetIncrement();
     try {
-      const res = await context.with(trace.setSpan(context.active(), span), async () => {
+      const res = await runWithTrace(span, async () => {
         return await DBOSExecutor.globalInstance!.runInternalStep<Return>(
           async () => {
             return await runWithDataSourceContext(callnum, async () => {
