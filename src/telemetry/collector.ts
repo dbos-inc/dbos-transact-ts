@@ -1,17 +1,13 @@
 import { ITelemetryExporter } from './exporters';
-import { Span } from '@opentelemetry/sdk-trace-base';
-import { LogRecord } from '@opentelemetry/api-logs';
-
-export type TelemetrySignal = LogRecord | Span;
 
 class SignalsQueue {
-  data: TelemetrySignal[] = [];
+  data: object[] = [];
 
-  push(signal: TelemetrySignal): void {
+  push(signal: object): void {
     this.data.push(signal);
   }
 
-  pop(): TelemetrySignal | undefined {
+  pop(): object | undefined {
     return this.data.shift();
   }
 
@@ -41,16 +37,16 @@ export class TelemetryCollector {
     await this.exporter?.flush();
   }
 
-  push(signal: TelemetrySignal) {
+  push(signal: object) {
     this.signals.push(signal);
   }
 
-  private pop(): TelemetrySignal | undefined {
+  private pop(): object | undefined {
     return this.signals.pop();
   }
 
   async processAndExportSignals(): Promise<void> {
-    const batch: TelemetrySignal[] = [];
+    const batch: object[] = [];
     while (this.signals.size() > 0) {
       const signal = this.pop();
       if (!signal) {

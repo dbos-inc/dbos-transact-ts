@@ -1,4 +1,3 @@
-import { TelemetrySignal } from './collector';
 import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
 import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
@@ -9,16 +8,16 @@ import { LogRecord } from '@opentelemetry/api-logs';
 import { OTLPExporterConfig } from '../dbos-executor';
 
 export interface ITelemetryExporter {
-  export(signal: TelemetrySignal[]): Promise<void>;
+  export(signal: object[]): Promise<void>;
   flush(): Promise<void>;
 }
 
-export function isTraceSignal(signal: TelemetrySignal): signal is Span {
+export function isTraceSignal(signal: object): signal is Span {
   // Span is an interface that has a property 'kind'
   return 'kind' in signal;
 }
 
-export function isLogSignal(signal: TelemetrySignal): signal is LogRecord {
+export function isLogSignal(signal: object): signal is LogRecord {
   // LogRecord is an interface that has a property 'severityText' and 'severityNumber'
   return 'severityText' in signal && 'severityNumber' in signal;
 }
@@ -49,7 +48,7 @@ export class TelemetryExporter implements ITelemetryExporter {
     }
   }
 
-  async export(signals: TelemetrySignal[]): Promise<void> {
+  async export(signals: object[]): Promise<void> {
     // Sort out traces and logs
     const exportSpans: ReadableSpan[] = [];
     const exportLogs: ReadableLogRecord[] = [];
