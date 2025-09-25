@@ -83,7 +83,7 @@ import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
-import { context, trace } from '@opentelemetry/api';
+import { trace } from '@opentelemetry/api';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -727,44 +727,6 @@ export class DBOS {
   static async withNextWorkflowID<R>(workflowID: string, callback: () => Promise<R>): Promise<R> {
     ensureDBOSIsLaunched('workflows');
     return DBOS.#withTopContext({ idAssignedForNextWorkflow: workflowID }, callback);
-  }
-
-  /**
-   * Use the provided `callerName`, `span`, and `request` as context for any
-   *   DBOS functions called within the `callback` function.
-   * @param callerName - Tracing caller name
-   * @param span - Tracing span
-   * @param request - event context (such as HTTP request) that initiated the call
-   * @param callback - Function to run with tracing context in place
-   * @returns - Return value from `callback`
-   */
-  static async withTracedContext<R>(
-    callerName: string,
-    span: Span,
-    request: object,
-    callback: () => Promise<R>,
-  ): Promise<R> {
-    ensureDBOSIsLaunched('tracing');
-    const parentCtx = context.active();
-    return await context.with(trace.setSpan(parentCtx, span), async () => {
-      return DBOS.#withTopContext(
-        {
-          operationCaller: callerName,
-          request,
-        },
-        async () => {
-          try {
-            return await callback();
-          } catch (err) {
-            span.recordException(err as Error);
-            span.setStatus({ code: 2 }); // ERROR
-            throw err;
-          } finally {
-            span.end();
-          }
-        },
-      );
-    });
   }
 
   /**
