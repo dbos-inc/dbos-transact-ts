@@ -1,6 +1,8 @@
-import { BasicTracerProvider, ReadableSpan, Span } from '@opentelemetry/sdk-trace-base';
+import type { Span } from '@opentelemetry/sdk-trace-base';
+import { BasicTracerProvider } from '@opentelemetry/sdk-trace-base';
 import { Resource } from '@opentelemetry/resources';
-import opentelemetry, { Attributes, SpanContext } from '@opentelemetry/api';
+import type { Attributes, SpanContext } from '@opentelemetry/api';
+import opentelemetry from '@opentelemetry/api';
 import { TelemetryCollector } from './collector';
 import { hrTime } from '@opentelemetry/core';
 import { globalParams } from '../utils';
@@ -51,16 +53,15 @@ export function installTraceContextManager() {
 }
 
 export class Tracer {
-  private readonly tracer: BasicTracerProvider;
   readonly applicationID: string;
   readonly executorID: string;
   constructor(private readonly telemetryCollector: TelemetryCollector) {
-    this.tracer = new BasicTracerProvider({
+    const tracer = new BasicTracerProvider({
       resource: new Resource({
         'service.name': 'dbos',
       }),
     });
-    this.tracer.register(); // this is a no-op if another tracer provider was already registered
+    tracer.register(); // this is a no-op if another tracer provider was already registered
     this.applicationID = globalParams.appID;
     this.executorID = globalParams.executorID; // for consistency with src/context.ts
   }
@@ -91,6 +92,6 @@ export class Tracer {
       span.setAttribute('executorID', this.executorID);
     }
     span.end(hrTime(performance.now()));
-    this.telemetryCollector.push(span as ReadableSpan);
+    this.telemetryCollector.push(span);
   }
 }
