@@ -1,14 +1,13 @@
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-require-imports */
 import type { Span } from '@opentelemetry/sdk-trace-base';
-import { BasicTracerProvider } from '@opentelemetry/sdk-trace-base';
-import { Resource } from '@opentelemetry/resources';
 import type { SpanContext } from '@opentelemetry/api';
-import opentelemetry from '@opentelemetry/api';
 import { TelemetryCollector } from './collector';
-import { hrTime } from '@opentelemetry/core';
 import { globalParams } from '../utils';
-
-import { context, trace } from '@opentelemetry/api';
-import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 
 interface Attributes {
   [attributeKey: string]: AttributeValue | undefined;
@@ -76,6 +75,7 @@ export function runWithTrace<R>(span: DBOSSpan, func: () => Promise<R>): Promise
   if (!globalParams.enableOTLP) {
     return func();
   }
+  const { context, trace } = require('@opentelemetry/api');
   return context.with(trace.setSpan(context.active(), span as Span), func);
 }
 
@@ -83,6 +83,7 @@ export function getActiveSpan() {
   if (!globalParams.enableOTLP) {
     return undefined;
   }
+  const { trace } = require('@opentelemetry/api');
   return trace.getActiveSpan() as DBOSSpan | undefined;
 }
 
@@ -90,6 +91,7 @@ export function isTraceContextWorking(): boolean {
   if (!globalParams.enableOTLP) {
     return false;
   }
+  const { context, trace } = require('@opentelemetry/api');
   const span = trace.getTracer('otel-bootstrap-check').startSpan('probe');
   const testContext = trace.setSpan(context.active(), span);
 
@@ -106,6 +108,10 @@ export function installTraceContextManager() {
   if (!globalParams.enableOTLP) {
     return;
   }
+  const { AsyncLocalStorageContextManager } = require('@opentelemetry/context-async-hooks');
+  const { context } = require('@opentelemetry/api');
+  const { BasicTracerProvider } = require('@opentelemetry/sdk-trace-base');
+
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
@@ -123,6 +129,9 @@ export class Tracer {
     if (!globalParams.enableOTLP) {
       return;
     }
+    const { BasicTracerProvider } = require('@opentelemetry/sdk-trace-base');
+    const { Resource } = require('@opentelemetry/resources');
+
     const tracer = new BasicTracerProvider({
       resource: new Resource({
         'service.name': 'dbos',
@@ -135,6 +144,7 @@ export class Tracer {
     if (!globalParams.enableOTLP) {
       return new StubSpan();
     }
+    const opentelemetry = require('@opentelemetry/api');
     const tracer = opentelemetry.trace.getTracer('dbos-tracer');
     const ctx = opentelemetry.trace.setSpanContext(opentelemetry.context.active(), spanContext as SpanContext);
     return tracer.startSpan(name, { startTime: performance.now(), attributes: attributes }, ctx) as Span;
@@ -145,6 +155,8 @@ export class Tracer {
       return new StubSpan();
     }
     const parentSpan = inputSpan as Span;
+    const opentelemetry = require('@opentelemetry/api');
+    const { hrTime } = require('@opentelemetry/core');
     const tracer = opentelemetry.trace.getTracer('dbos-tracer');
     const startTime = hrTime(performance.now());
     if (parentSpan) {
@@ -159,6 +171,7 @@ export class Tracer {
     if (!globalParams.enableOTLP) {
       return;
     }
+    const { hrTime } = require('@opentelemetry/core');
     const span = inputSpan as Span;
     span.setAttributes({
       applicationID: this.applicationID,
