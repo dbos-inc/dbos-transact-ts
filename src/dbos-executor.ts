@@ -26,10 +26,7 @@ import {
 } from './workflow';
 
 import { type StepConfig } from './step';
-import { TelemetryCollector } from './telemetry/collector';
-import { Tracer } from './telemetry/traces';
-import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
-import { TelemetryExporter } from './telemetry/exporters';
+import { TelemetryCollector, Tracer, DBOSContextualLogger, GlobalLogger, TelemetryExporter } from './telemetry';
 import {
   type SystemDatabase,
   PostgresSystemDatabase,

@@ -3,7 +3,7 @@ import { DBOS } from '../src';
 import { sleepms } from '../src/utils';
 import { isValidDatabaseName, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
-import { GlobalLogger } from '../src/telemetry/logs';
+import { GlobalLogger } from '../src/telemetry';
 import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
 
 /* DB management helpers */

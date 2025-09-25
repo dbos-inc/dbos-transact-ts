@@ -6,7 +6,7 @@ import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
-import { GlobalLogger } from '../src/telemetry/logs';
+import { GlobalLogger } from '../src/telemetry';
 import { getWorkflow, globalTimeout, listQueuedWorkflows, listWorkflows } from '../src/workflow_management';
 import {
   DBOSAwaitedWorkflowCancelledError,

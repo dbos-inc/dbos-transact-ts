@@ -10,9 +10,7 @@ import {
 import { Command } from 'commander';
 import { DBOSConfigInternal } from '../dbos-executor';
 import { migrate } from './migrate';
-import { GlobalLogger } from '../telemetry/logs';
-import { TelemetryCollector } from '../telemetry/collector';
-import { TelemetryExporter } from '../telemetry/exporters';
+import { GlobalLogger, TelemetryCollector, TelemetryExporter } from '../telemetry';
 import * as readline from 'node:readline/promises';
 import { stdin as input, stdout as output } from 'node:process';
 import { DBOSClient, GetWorkflowsInput, StatusString } from '..';

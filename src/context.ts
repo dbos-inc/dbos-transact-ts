@@ -1,4 +1,4 @@
-import { DBOSContextualLogger } from './telemetry/logs';
+import { DBOSContextualLogger } from './telemetry';
 import { IncomingHttpHeaders } from 'http';
 import { ParsedUrlQuery } from 'querystring';
 import { AsyncLocalStorage } from 'async_hooks';

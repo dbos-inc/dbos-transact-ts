@@ -19,7 +19,7 @@ import {
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
-import { GlobalLogger } from './telemetry/logs';
+import { GlobalLogger } from './telemetry';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
