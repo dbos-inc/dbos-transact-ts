@@ -1,6 +1,6 @@
 /* eslint-disable @typescript-eslint/no-unsafe-member-access */
 /* eslint-disable @typescript-eslint/no-unsafe-call */
-/* eslint-disable @typescript-eslint/no-unsafe-argument */
+
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { transports, createLogger, format, Logger as IWinstonLogger } from 'winston';
@@ -260,7 +260,6 @@ class OTLPLogQueueTransport extends TransportStream {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   log(info: any, callback: () => void): void {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { level, message, stack, span } = info;
 
     const levelToSeverityNumber: { [key: string]: SeverityNumber } = {
@@ -281,13 +280,9 @@ class OTLPLogQueueTransport extends TransportStream {
       timestamp: performance.now(), // So far I don't see a major difference between this and observedTimestamp
       observedTimestamp: performance.now(),
       attributes: {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         ...span?.attributes,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         traceId: span?.spanContext()?.traceId,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         spanId: span?.spanContext()?.spanId,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stack,
         applicationID: this.applicationID,
         applicationVersion: globalParams.appVersion,
