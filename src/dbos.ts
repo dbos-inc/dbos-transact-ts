@@ -70,7 +70,15 @@ import {
   DBOSLifecycleCallback,
   associateParameterWithExternal,
 } from './decorators';
-import { DBOSJSON, globalParams, JSONValue, registerSerializationRecipe, SerializationRecipe, sleepms } from './utils';
+import {
+  DBOSJSON,
+  defaultEnableOTLP,
+  globalParams,
+  JSONValue,
+  registerSerializationRecipe,
+  SerializationRecipe,
+  sleepms,
+} from './utils';
 import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
 
@@ -183,6 +191,8 @@ export class DBOS {
    * @param options - Launch options for connecting to DBOS Conductor
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
+    globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? defaultEnableOTLP();
+
     if (!isTraceContextWorking()) installTraceContextManager();
 
     // Do nothing is DBOS is already initialized

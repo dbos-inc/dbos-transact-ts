@@ -98,12 +98,15 @@ export interface DBOSConfig {
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
 
+  enableOTLP?: boolean;
   logLevel?: string;
   addContextMetadata?: boolean;
   otlpTracesEndpoints?: string[];
   otlpLogsEndpoints?: string[];
+
   adminPort?: number;
   runAdminServer?: boolean;
+
   applicationVersion?: string;
 }
 
