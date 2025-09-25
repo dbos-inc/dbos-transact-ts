@@ -19,7 +19,7 @@ async function main() {
   const config = generateDBOSTestConfig();
   await setUpDBOSTestSysDb({ ...config, logLevel: 'debug', addContextMetadata: true });
 
-  DBOS.setConfig({ ...config, addContextMetadata: true });
+  DBOS.setConfig({ ...config, addContextMetadata: true, enableOTLP: true });
   await DBOS.launch();
   await DBOS.withNextWorkflowID('loggerWorkflowId', async () => {
     DBOS.logger.info(`The computed answer is ${await WF.loggingWorkflow()}`);
