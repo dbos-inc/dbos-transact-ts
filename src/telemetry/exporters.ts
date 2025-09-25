@@ -6,11 +6,7 @@ import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
 import { ExportResult, ExportResultCode } from '@opentelemetry/core';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { LogRecord } from '@opentelemetry/api-logs';
-
-export interface OTLPExporterConfig {
-  logsEndpoint?: string[];
-  tracesEndpoint?: string[];
-}
+import { OTLPExporterConfig } from '../dbos-executor';
 
 export interface ITelemetryExporter {
   export(signal: TelemetrySignal[]): Promise<void>;

@@ -5,17 +5,11 @@ import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON, globalParams, interceptStreams } from '../utils';
+import { LoggerConfig } from '../dbos-executor';
 
 /*****************/
 /* GLOBAL LOGGER */
 /*****************/
-
-export interface LoggerConfig {
-  logLevel?: string;
-  silent?: boolean;
-  addContextMetadata?: boolean;
-  forceConsole?: boolean;
-}
 
 type ContextualMetadata = {
   includeContextMetadata: boolean; // Should the console transport formatter include the context metadata?

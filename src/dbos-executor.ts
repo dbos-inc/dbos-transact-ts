@@ -30,7 +30,6 @@ import { TelemetryCollector } from './telemetry/collector';
 import { Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
-import type { TelemetryConfig } from './telemetry';
 import {
   type SystemDatabase,
   PostgresSystemDatabase,
@@ -115,6 +114,23 @@ export interface DBOSRuntimeConfig {
   runAdminServer: boolean;
   start: string[];
   setup: string[];
+}
+
+export interface TelemetryConfig {
+  logs?: LoggerConfig;
+  OTLPExporter?: OTLPExporterConfig;
+}
+
+export interface OTLPExporterConfig {
+  logsEndpoint?: string[];
+  tracesEndpoint?: string[];
+}
+
+export interface LoggerConfig {
+  logLevel?: string;
+  silent?: boolean;
+  addContextMetadata?: boolean;
+  forceConsole?: boolean;
 }
 
 export type DBOSConfigInternal = {
