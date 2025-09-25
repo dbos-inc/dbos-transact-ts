@@ -1,7 +1,12 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { transports, createLogger, format, Logger as IWinstonLogger } from 'winston';
-import TransportStream = require('winston-transport'); // eslint-disable-line @typescript-eslint/no-require-imports
+import TransportStream = require('winston-transport');
 import type { Logger as OTelLogger, LogAttributes } from '@opentelemetry/api-logs';
-import { LoggerProvider, type LogRecord } from '@opentelemetry/sdk-logs';
+import type { LogRecord } from '@opentelemetry/sdk-logs';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON, globalParams, interceptStreams } from '../utils';
 import { LoggerConfig } from '../dbos-executor';
@@ -234,6 +239,7 @@ class OTLPLogQueueTransport extends TransportStream {
     super();
     this.level = logLevel;
     // not sure if we need a more explicit name here
+    const { LoggerProvider } = require('@opentelemetry/sdk-logs');
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger('default');
     this.applicationID = globalParams.appID;
