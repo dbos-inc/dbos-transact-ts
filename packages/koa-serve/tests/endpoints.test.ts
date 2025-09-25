@@ -27,6 +27,7 @@ describe('httpserver-tests', () => {
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'dbos-koa-test',
+      enableOTLP: true,
     });
     return Promise.resolve();
   });

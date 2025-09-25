@@ -44,6 +44,7 @@ describe('decoratorless-api-tests', () => {
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'dbos-koa-test',
+      enableOTLP: true,
     });
     return Promise.resolve();
   });

@@ -56,7 +56,7 @@ describe('KnexDataSource', () => {
   });
 
   beforeEach(async () => {
-    DBOS.setConfig({ name: 'koa-knex-ds-test' });
+    DBOS.setConfig({ name: 'koa-knex-ds-test', enableOTLP: true });
     await DBOS.launch();
     app = new Koa();
     appRouter = new Router();

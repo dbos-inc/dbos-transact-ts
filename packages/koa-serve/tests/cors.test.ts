@@ -15,7 +15,7 @@ describe('http-cors-tests', () => {
   let appRouter: Router;
 
   beforeAll(async () => {
-    DBOS.setConfig({ name: 'koa-cors' });
+    DBOS.setConfig({ name: 'koa-cors', enableOTLP: true });
     return Promise.resolve();
   });
 
