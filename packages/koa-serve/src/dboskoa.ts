@@ -303,10 +303,10 @@ export class DBOSKoa extends DBOSHTTPBase {
               requestMethod: koaCtxt.request.method,
             };
             if (extractedSpanContext === undefined) {
-              span = DBOS.tracer?.startSpan(koaCtxt.url, spanAttributes);
+              span = DBOS.tracer?.startSpan(koaCtxt.url, spanAttributes) as Span;
             } else {
               extractedSpanContext.isRemote = true;
-              span = DBOS.tracer?.startSpanWithContext(extractedSpanContext, koaCtxt.url, spanAttributes);
+              span = DBOS.tracer?.startSpanWithContext(extractedSpanContext, koaCtxt.url, spanAttributes) as Span;
             }
 
             // Finally, invoke the function and properly set HTTP response.

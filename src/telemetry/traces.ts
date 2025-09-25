@@ -1,6 +1,7 @@
 import type { Span } from '@opentelemetry/sdk-trace-base';
 import { BasicTracerProvider } from '@opentelemetry/sdk-trace-base';
 import { Resource } from '@opentelemetry/resources';
+import type { SpanContext } from '@opentelemetry/api';
 import opentelemetry from '@opentelemetry/api';
 import { TelemetryCollector } from './collector';
 import { hrTime } from '@opentelemetry/core';
@@ -97,6 +98,12 @@ export class Tracer {
     tracer.register(); // this is a no-op if another tracer provider was already registered
     this.applicationID = globalParams.appID;
     this.executorID = globalParams.executorID; // for consistency with src/context.ts
+  }
+
+  startSpanWithContext(spanContext: unknown, name: string, attributes?: Attributes): DBOSSpan {
+    const tracer = opentelemetry.trace.getTracer('dbos-tracer');
+    const ctx = opentelemetry.trace.setSpanContext(opentelemetry.context.active(), spanContext as SpanContext);
+    return tracer.startSpan(name, { startTime: performance.now(), attributes: attributes }, ctx) as Span;
   }
 
   startSpan(name: string, attributes?: Attributes, inputSpan?: DBOSSpan): DBOSSpan {
