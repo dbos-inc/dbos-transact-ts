@@ -255,7 +255,7 @@ export class DBOS {
     // Start the DBOS admin server
     const logger = DBOS.logger;
     if (runtimeConfig.runAdminServer) {
-      const adminApp = DBOSAdminServer.setupAdminAppSimple(executor);
+      const adminApp = DBOSAdminServer.setupAdminApp(executor);
       try {
         await DBOSAdminServer.checkPortAvailabilityIPv4Ipv6(runtimeConfig.admin_port, logger as GlobalLogger);
         // Wrap the listen call in a promise to properly catch errors

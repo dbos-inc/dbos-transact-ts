@@ -103,28 +103,8 @@ function matchPath(pattern: string, pathname: string): Record<string, string> | 
 }
 
 export class DBOSAdminServer {
-  readonly adminApp: http.Server;
-  readonly logger: GlobalLogger;
-  private readonly routes: Route[] = [];
-  static nRegisteredEndpoints: number = 0;
-  static instance?: DBOSAdminServer = undefined;
-
-  /**
-   * Create a Node.js HTTP server.
-   * @param dbosExec User pass in an DBOS workflow executor instance.
-   */
-  constructor(readonly dbosExec: DBOSExecutor) {
-    this.logger = dbosExec.logger;
-    this.adminApp = DBOSAdminServer.setupAdminApp(this.dbosExec, this.routes);
-    DBOSAdminServer.instance = this;
-  }
-
-  static setupAdminAppSimple(dbosExec: DBOSExecutor): http.Server {
+  static setupAdminApp(dbosExec: DBOSExecutor): http.Server {
     const routes: Route[] = [];
-    return DBOSAdminServer.setupAdminApp(dbosExec, routes);
-  }
-
-  static setupAdminApp(dbosExec: DBOSExecutor, routes: Route[]): http.Server {
     // Register HTTP endpoints.
     DBOSAdminServer.registerHealthEndpoint(dbosExec, routes);
     DBOSAdminServer.registerRecoveryEndpoint(dbosExec, routes);
