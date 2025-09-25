@@ -26,7 +26,7 @@ import {
 
 import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
-import { runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
+import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import {
@@ -83,8 +83,6 @@ import {
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
 import { debouncerWorkflowFunction } from './debouncer';
-import { Span } from '@opentelemetry/sdk-trace-base';
-import { trace } from '@opentelemetry/api';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -230,7 +228,7 @@ export class DBOSExecutor {
       this.telemetryCollector = new TelemetryCollector();
     }
     this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs);
-    this.ctxLogger = new DBOSContextualLogger(this.logger, () => trace.getActiveSpan() as Span);
+    this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
     this.tracer = new Tracer(this.telemetryCollector);
 
     if (this.#debugMode) {

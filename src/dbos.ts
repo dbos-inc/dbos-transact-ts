@@ -9,7 +9,7 @@ import {
   functionIDGetIncrement,
 } from './context';
 import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
-import { installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
+import { getActiveSpan, installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
 import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
@@ -83,7 +83,6 @@ import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
-import { trace } from '@opentelemetry/api';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -371,7 +370,7 @@ export class DBOS {
 
   /** Get the current DBOS tracing span, appropriate to the current context */
   static get span(): Span | undefined {
-    return trace.getActiveSpan() as Span | undefined;
+    return getActiveSpan();
   }
 
   /**

@@ -45,6 +45,10 @@ export function runWithTrace<R>(span: Span, func: () => Promise<R>): Promise<R> 
   return context.with(trace.setSpan(context.active(), span), func);
 }
 
+export function getActiveSpan() {
+  return trace.getActiveSpan() as Span | undefined;
+}
+
 export function isTraceContextWorking(): boolean {
   const span = trace.getTracer('otel-bootstrap-check').startSpan('probe');
   const testContext = trace.setSpan(context.active(), span);

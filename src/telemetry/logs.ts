@@ -13,7 +13,7 @@ import { LoggerConfig } from '../dbos-executor';
 
 type ContextualMetadata = {
   includeContextMetadata: boolean; // Should the console transport formatter include the context metadata?
-  span: Span; // All context metadata should be attributes of the context's span
+  span?: Span; // All context metadata should be attributes of the context's span
 };
 
 interface StackTrace {
@@ -133,7 +133,7 @@ export class DBOSContextualLogger implements DLogger {
   readonly includeContextMetadata: boolean;
   constructor(
     private readonly globalLogger: GlobalLogger,
-    readonly ctx: () => Span,
+    readonly ctx: () => Span | undefined,
   ) {
     this.includeContextMetadata = this.globalLogger.addContextMetadata;
   }
