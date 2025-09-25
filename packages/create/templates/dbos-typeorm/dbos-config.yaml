@@ -8,8 +8,6 @@ language: node
 database:
   migrate:
     - npx typeorm migration:run -d dist/datasource.js
-  rollback:
-    - npx typeorm migration:revert -d dist/datasource.js
 runtimeConfig:
   start:
     - node dist/src/main.js

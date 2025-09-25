@@ -111,7 +111,6 @@ export interface DBOSConfig {
 }
 
 export interface DBOSRuntimeConfig {
-  port: number;
   admin_port: number;
   runAdminServer: boolean;
   start: string[];

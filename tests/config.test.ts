@@ -22,7 +22,7 @@ describe('dbos-config', () => {
 
   describe('readConfigFile', () => {
     test('reads package name if not specified in config file', () => {
-      const mockConfigFile = `database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable'`;
+      const mockConfigFile = `system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable'`;
       jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockConfigFile);
       const mockPackageJson = `{ "name": "test-app-from-package-json" }`;
       jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockPackageJson);
@@ -30,7 +30,7 @@ describe('dbos-config', () => {
       const cfg: ConfigFile = readConfigFile();
       expect(cfg).toEqual({
         name: 'test-app-from-package-json',
-        database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable',
+        system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable',
       });
     });
 
@@ -40,13 +40,13 @@ describe('dbos-config', () => {
 
       const mockConfigFile = `
         name: 'test-app'
-        database_url: \${MY_DATABASE_URL}`;
+        system_database_url: \${MY_DATABASE_URL}`;
       jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
 
       const cfg: ConfigFile = readConfigFile();
       expect(cfg).toEqual({
         name: 'test-app',
-        database_url,
+        system_database_url: database_url,
       });
     });
 
@@ -55,13 +55,13 @@ describe('dbos-config', () => {
 
       const mockConfigFile = `
         name: 'test-app'
-        database_url: \${MY_DATABASE_URL}`;
+        system_database_url: \${MY_DATABASE_URL}`;
       jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
 
       const cfg: ConfigFile = readConfigFile();
       expect(cfg).toEqual({
         name: 'test-app',
-        database_url: '',
+        system_database_url: '',
       });
     });
 
@@ -159,12 +159,14 @@ describe('dbos-config', () => {
     test('package file not found', () => {
       jest
         .spyOn(utils, 'readFileSync')
-        .mockReturnValueOnce(`database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable'`);
+        .mockReturnValueOnce(`system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable'`);
       jest.spyOn(utils, 'readFileSync').mockImplementationOnce(() => {
         throw new FakeNotFoundError('not found');
       });
       const configFile = readConfigFile();
-      expect(configFile).toEqual({ database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable' });
+      expect(configFile).toEqual({
+        system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable',
+      });
     });
 
     test('does not read package if config file has name', () => {
@@ -529,7 +531,6 @@ describe('dbos-config', () => {
       },
     };
     const runtimeConfig: DBOSRuntimeConfig = {
-      port: 0,
       admin_port: 0,
       runAdminServer: false,
       start: [],

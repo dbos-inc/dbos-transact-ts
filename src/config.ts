@@ -31,11 +31,6 @@ export interface ConfigFile {
     };
   };
   runtimeConfig?: Partial<DBOSRuntimeConfig>; // naming nit: runtime_config
-  http?: {
-    cors_middleware?: boolean;
-    credentials?: boolean;
-    allowed_origins?: string[];
-  };
 }
 
 /*
@@ -221,11 +216,9 @@ export function getRuntimeConfig(config: ConfigFile): DBOSRuntimeConfig {
 export function translateRuntimeConfig(
   config: Partial<DBOSRuntimeConfig & DBOSConfig> /*eww*/ = {},
 ): DBOSRuntimeConfig {
-  const port = config.port ?? 3000;
   return {
-    port: port,
     runAdminServer: config.runAdminServer ?? true,
-    admin_port: config.admin_port ?? config.adminPort ?? port + 1,
+    admin_port: config.admin_port ?? config.adminPort ?? 3001,
     start: config.start ?? [],
     setup: config.setup ?? [],
   };

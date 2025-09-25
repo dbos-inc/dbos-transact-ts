@@ -20,7 +20,6 @@ import {
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
-import knex, { Knex } from 'knex';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
 import { getClientConfig } from './utils';
@@ -733,8 +732,6 @@ function dbRetry(
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
   readonly systemPoolConfig: PoolConfig;
-  // TODO: remove Knex connection in favor of just using Pool
-  readonly knexDB: Knex;
 
   /*
    * Generally, notifications are asynchronous.  One should:
@@ -785,15 +782,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
         this.logger.warn(`Unexpected error in idle client: ${err}`);
       });
     });
-    const knexConfig = {
-      client: 'pg',
-      connection: this.systemPoolConfig,
-      pool: {
-        min: 0,
-        max: this.sysDbPoolSize,
-      },
-    } as Knex.Config;
-    this.knexDB = knex(knexConfig);
   }
 
   async init(debugMode: boolean = false) {
@@ -805,7 +793,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async destroy() {
-    await this.knexDB.destroy();
     if (this.reconnectTimeout) {
       clearTimeout(this.reconnectTimeout);
     }
@@ -1831,41 +1818,70 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
-      .select(...selectColumns)
-      .orderBy(`${schemaName}.workflow_status.created_at`, input.sortDesc ? 'desc' : 'asc');
+
+    // Build WHERE clauses
+    const whereClauses: string[] = [];
+    const params: unknown[] = [];
+    let paramCounter = 1;
+
     if (input.workflowName) {
-      query = query.where(`${schemaName}.workflow_status.name`, input.workflowName);
+      whereClauses.push(`name = $${paramCounter}`);
+      params.push(input.workflowName);
+      paramCounter++;
     }
     if (input.workflow_id_prefix) {
-      query = query.whereLike(`${schemaName}.workflow_status.workflow_uuid`, `${input.workflow_id_prefix}%`);
+      whereClauses.push(`workflow_uuid LIKE $${paramCounter}`);
+      params.push(`${input.workflow_id_prefix}%`);
+      paramCounter++;
     }
     if (input.workflowIDs) {
-      query = query.whereIn(`${schemaName}.workflow_status.workflow_uuid`, input.workflowIDs);
+      const placeholders = input.workflowIDs.map((_, i) => `$${paramCounter + i}`).join(', ');
+      whereClauses.push(`workflow_uuid IN (${placeholders})`);
+      params.push(...input.workflowIDs);
+      paramCounter += input.workflowIDs.length;
     }
     if (input.authenticatedUser) {
-      query = query.where(`${schemaName}.workflow_status.authenticated_user`, input.authenticatedUser);
+      whereClauses.push(`authenticated_user = $${paramCounter}`);
+      params.push(input.authenticatedUser);
+      paramCounter++;
     }
     if (input.startTime) {
-      query = query.where(`${schemaName}.workflow_status.created_at`, '>=', new Date(input.startTime).getTime());
+      whereClauses.push(`created_at >= $${paramCounter}`);
+      params.push(new Date(input.startTime).getTime());
+      paramCounter++;
     }
     if (input.endTime) {
-      query = query.where(`${schemaName}.workflow_status.created_at`, '<=', new Date(input.endTime).getTime());
+      whereClauses.push(`created_at <= $${paramCounter}`);
+      params.push(new Date(input.endTime).getTime());
+      paramCounter++;
     }
     if (input.status) {
-      query = query.where(`${schemaName}.workflow_status.status`, input.status);
+      whereClauses.push(`status = $${paramCounter}`);
+      params.push(input.status);
+      paramCounter++;
     }
     if (input.applicationVersion) {
-      query = query.where(`${schemaName}.workflow_status.application_version`, input.applicationVersion);
+      whereClauses.push(`application_version = $${paramCounter}`);
+      params.push(input.applicationVersion);
+      paramCounter++;
     }
-    if (input.limit) {
-      query = query.limit(input.limit);
-    }
-    if (input.offset) {
-      query = query.offset(input.offset);
-    }
-    const rows = await query;
-    return rows.map(mapWorkflowStatus);
+
+    const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
+    const orderClause = `ORDER BY created_at ${input.sortDesc ? 'DESC' : 'ASC'}`;
+    const limitClause = input.limit ? `LIMIT ${input.limit}` : '';
+    const offsetClause = input.offset ? `OFFSET ${input.offset}` : '';
+
+    const query = `
+      SELECT ${selectColumns.join(', ')}
+      FROM ${schemaName}.workflow_status
+      ${whereClause}
+      ${orderClause}
+      ${limitClause}
+      ${offsetClause}
+    `;
+
+    const result = await this.pool.query<workflow_status>(query, params);
+    return result.rows.map(mapWorkflowStatus);
   }
 
   async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
@@ -1896,36 +1912,60 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-    let query = this.knexDB<workflow_status>(`${schemaName}.workflow_status`)
-      .select(...selectColumns)
-      .whereNotNull(`${schemaName}.workflow_status.queue_name`)
-      .whereIn(`${schemaName}.workflow_status.status`, [StatusString.ENQUEUED, StatusString.PENDING])
-      .orderBy(`${schemaName}.workflow_status.created_at`, sortDesc ? 'desc' : 'asc');
+
+    // Build WHERE clauses
+    const whereClauses: string[] = [];
+    const params: unknown[] = [];
+    let paramCounter = 1;
+
+    // Always filter for queued workflows
+    whereClauses.push(`queue_name IS NOT NULL`);
+    whereClauses.push(`status IN ($${paramCounter}, $${paramCounter + 1})`);
+    params.push(StatusString.ENQUEUED, StatusString.PENDING);
+    paramCounter += 2;
 
     if (input.workflowName) {
-      query = query.where(`${schemaName}.workflow_status.name`, input.workflowName);
+      whereClauses.push(`name = $${paramCounter}`);
+      params.push(input.workflowName);
+      paramCounter++;
     }
     if (input.queueName) {
-      query = query.where(`${schemaName}.workflow_status.queue_name`, input.queueName);
+      whereClauses.push(`queue_name = $${paramCounter}`);
+      params.push(input.queueName);
+      paramCounter++;
     }
     if (input.startTime) {
-      query = query.where(`${schemaName}.workflow_status.created_at`, '>=', new Date(input.startTime).getTime());
+      whereClauses.push(`created_at >= $${paramCounter}`);
+      params.push(new Date(input.startTime).getTime());
+      paramCounter++;
     }
     if (input.endTime) {
-      query = query.where(`${schemaName}.workflow_status.created_at`, '<=', new Date(input.endTime).getTime());
+      whereClauses.push(`created_at <= $${paramCounter}`);
+      params.push(new Date(input.endTime).getTime());
+      paramCounter++;
     }
     if (input.status) {
-      query = query.where(`${schemaName}.workflow_status.status`, input.status);
-    }
-    if (input.limit) {
-      query = query.limit(input.limit);
-    }
-    if (input.offset) {
-      query = query.offset(input.offset);
+      whereClauses.push(`status = $${paramCounter}`);
+      params.push(input.status);
+      paramCounter++;
     }
 
-    const rows = await query;
-    return rows.map(mapWorkflowStatus);
+    const whereClause = `WHERE ${whereClauses.join(' AND ')}`;
+    const orderClause = `ORDER BY created_at ${sortDesc ? 'DESC' : 'ASC'}`;
+    const limitClause = input.limit ? `LIMIT ${input.limit}` : '';
+    const offsetClause = input.offset ? `OFFSET ${input.offset}` : '';
+
+    const query = `
+      SELECT ${selectColumns.join(', ')}
+      FROM ${schemaName}.workflow_status
+      ${whereClause}
+      ${orderClause}
+      ${limitClause}
+      ${offsetClause}
+    `;
+
+    const result = await this.pool.query<workflow_status>(query, params);
+    return result.rows.map(mapWorkflowStatus);
   }
 
   async clearQueueAssignment(workflowID: string): Promise<boolean> {
@@ -1960,118 +2000,127 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
 
-    await this.knexDB.transaction(
-      async (trx: Knex.Transaction) => {
-        // If there is a rate limit, compute how many functions have started in its period.
-        let numRecentQueries = 0;
-        if (queue.rateLimit) {
-          const numRecentQueriesS = (await trx(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
-            .count()
-            .where('queue_name', queue.name)
-            .andWhere('status', '<>', StatusString.ENQUEUED)
-            .andWhere('started_at_epoch_ms', '>', startTimeMs - limiterPeriodMS)
-            .first())!.count;
-          numRecentQueries = parseInt(`${numRecentQueriesS}`);
-          if (numRecentQueries >= queue.rateLimit.limitPerPeriod) {
-            return;
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+
+      // If there is a rate limit, compute how many functions have started in its period.
+      let numRecentQueries = 0;
+      if (queue.rateLimit) {
+        const countResult = await client.query<{ count: string }>(
+          `SELECT COUNT(*) FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
+           WHERE queue_name = $1
+             AND status <> $2
+             AND started_at_epoch_ms > $3`,
+          [queue.name, StatusString.ENQUEUED, startTimeMs - limiterPeriodMS],
+        );
+        numRecentQueries = Number(countResult.rows[0].count);
+        if (numRecentQueries >= queue.rateLimit.limitPerPeriod) {
+          await client.query('COMMIT');
+          return claimedIDs;
+        }
+      }
+
+      // Dequeue functions eligible for this worker and ordered by the time at which they were enqueued.
+      // If there is a global or local concurrency limit N, select only the N oldest enqueued
+      // functions, else select all of them.
+
+      let maxTasks = Infinity;
+
+      if (queue.workerConcurrency !== undefined || queue.concurrency !== undefined) {
+        // Count how many workflows on this queue are currently PENDING both locally and globally.
+        const runningTasksResult = await client.query(
+          `SELECT executor_id, COUNT(*) as task_count
+           FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
+           WHERE queue_name = $1 AND status = $2
+           GROUP BY executor_id`,
+          [queue.name, StatusString.PENDING],
+        );
+        const runningTasksResultDict: Record<string, number> = {};
+        runningTasksResult.rows.forEach((row: { executor_id: string; task_count: string }) => {
+          runningTasksResultDict[row.executor_id] = Number(row.task_count);
+        });
+        const runningTasksForThisWorker = runningTasksResultDict[executorID] || 0;
+
+        if (queue.workerConcurrency !== undefined) {
+          maxTasks = Math.max(0, queue.workerConcurrency - runningTasksForThisWorker);
+        }
+
+        if (queue.concurrency !== undefined) {
+          const totalRunningTasks = Object.values(runningTasksResultDict).reduce((acc, val) => acc + val, 0);
+          if (totalRunningTasks > queue.concurrency) {
+            this.logger.warn(
+              `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${queue.concurrency})`,
+            );
           }
+          const availableTasks = Math.max(0, queue.concurrency - totalRunningTasks);
+          maxTasks = Math.min(maxTasks, availableTasks);
+        }
+      }
+
+      // Return immediately if there are no available tasks due to flow control limits
+      if (maxTasks <= 0) {
+        await client.query('COMMIT');
+        return claimedIDs;
+      }
+
+      // Retrieve the first max_tasks workflows in the queue.
+      // Only retrieve workflows of the local version (or without version set)
+      const lockMode = queue.concurrency ? 'FOR UPDATE NOWAIT' : 'FOR UPDATE SKIP LOCKED';
+      const orderClause = queue.priorityEnabled ? 'ORDER BY priority ASC, created_at ASC' : 'ORDER BY created_at ASC';
+      const limitClause = maxTasks !== Infinity ? `LIMIT ${maxTasks}` : '';
+
+      const selectQuery = `
+        SELECT workflow_uuid
+        FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
+        WHERE status = $1
+          AND queue_name = $2
+          AND (application_version IS NULL OR application_version = $3)
+        ${orderClause}
+        ${limitClause}
+        ${lockMode}
+      `;
+
+      const { rows } = await client.query<{ workflow_uuid: string }>(selectQuery, [
+        StatusString.ENQUEUED,
+        queue.name,
+        appVersion,
+      ]);
+
+      // Start the workflows
+      const workflowIDs = rows.map((row) => row.workflow_uuid);
+      for (const id of workflowIDs) {
+        // If we have a rate limit, stop starting functions when the number
+        //   of functions started this period exceeds the limit.
+        if (queue.rateLimit && claimedIDs.length + numRecentQueries >= queue.rateLimit.limitPerPeriod) {
+          break;
         }
 
-        // Dequeue functions eligible for this worker and ordered by the time at which they were enqueued.
-        // If there is a global or local concurrency limit N, select only the N oldest enqueued
-        // functions, else select all of them.
+        // Start the functions by marking them as pending and updating their executor IDs
+        await client.query(
+          `UPDATE ${DBOSExecutor.systemDBSchemaName}.workflow_status
+           SET status = $1,
+               executor_id = $2,
+               application_version = $3,
+               started_at_epoch_ms = $4,
+               workflow_deadline_epoch_ms = CASE
+                 WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL
+                 THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms
+                 ELSE workflow_deadline_epoch_ms
+               END
+           WHERE workflow_uuid = $5`,
+          [StatusString.PENDING, executorID, appVersion, startTimeMs, id],
+        );
+        claimedIDs.push(id);
+      }
 
-        let maxTasks = Infinity;
-
-        if (queue.workerConcurrency !== undefined || queue.concurrency !== undefined) {
-          // Count how many workflows on this queue are currently PENDING both locally and globally.
-          const runningTasksSubquery = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
-            .select('executor_id')
-            .count('* as task_count')
-            .where('queue_name', queue.name)
-            .andWhere('status', StatusString.PENDING)
-            .groupBy('executor_id');
-          const runningTasksResult = await runningTasksSubquery;
-          const runningTasksResultDict: Record<string, number> = {};
-          runningTasksResult.forEach((row) => {
-            runningTasksResultDict[row.executor_id] = Number(row.task_count);
-          });
-          const runningTasksForThisWorker = runningTasksResultDict[executorID] || 0;
-
-          if (queue.workerConcurrency !== undefined) {
-            maxTasks = Math.max(0, queue.workerConcurrency - runningTasksForThisWorker);
-          }
-
-          if (queue.concurrency !== undefined) {
-            const totalRunningTasks = Object.values(runningTasksResultDict).reduce((acc, val) => acc + val, 0);
-            if (totalRunningTasks > queue.concurrency) {
-              this.logger.warn(
-                `Total running tasks (${totalRunningTasks}) exceeds the global concurrency limit (${queue.concurrency})`,
-              );
-            }
-            const availableTasks = Math.max(0, queue.concurrency - totalRunningTasks);
-            maxTasks = Math.min(maxTasks, availableTasks);
-          }
-        }
-
-        // Return immediately if there are no available tasks due to flow control limits
-        if (maxTasks <= 0) {
-          return;
-        }
-
-        // Retrieve the first max_tasks workflows in the queue.
-        // Only retrieve workflows of the local version (or without version set)
-        let query = trx(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
-          .where('status', StatusString.ENQUEUED)
-          .andWhere('queue_name', queue.name)
-          .andWhere((b) => {
-            b.whereNull('application_version').orWhere('application_version', appVersion);
-          })
-          .forUpdate();
-        // Unless global concurrency is set, use skipLocked to only select
-        // rows that can be locked. If global concurrency is set, use noWait
-        // to ensure all processes have a consistent view of the table.
-        if (queue.concurrency) {
-          query = query.noWait();
-        } else {
-          query = query.skipLocked();
-        }
-        if (queue.priorityEnabled) {
-          query = query.orderBy('priority', 'asc').orderBy('created_at', 'asc');
-        } else {
-          query = query.orderBy('created_at', 'asc');
-        }
-        if (maxTasks !== Infinity) {
-          query = query.limit(maxTasks);
-        }
-        const rows = (await query.select(['workflow_uuid'])) as { workflow_uuid: string }[];
-
-        // Start the workflows
-        const workflowIDs = rows.map((row) => row.workflow_uuid);
-        for (const id of workflowIDs) {
-          // If we have a rate limit, stop starting functions when the number
-          //   of functions started this period exceeds the limit.
-          if (queue.rateLimit && claimedIDs.length + numRecentQueries >= queue.rateLimit.limitPerPeriod) {
-            break;
-          }
-
-          // Start the functions by marking them as pending and updating their executor IDs
-          await trx<workflow_status>(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
-            .where('workflow_uuid', id)
-            .update({
-              status: StatusString.PENDING,
-              executor_id: executorID,
-              application_version: appVersion,
-              started_at_epoch_ms: startTimeMs,
-              workflow_deadline_epoch_ms: trx.raw(
-                'CASE WHEN workflow_timeout_ms IS NOT NULL AND workflow_deadline_epoch_ms IS NULL THEN (EXTRACT(epoch FROM now()) * 1000)::bigint + workflow_timeout_ms ELSE workflow_deadline_epoch_ms END',
-              ),
-            });
-          claimedIDs.push(id);
-        }
-      },
-      { isolationLevel: 'repeatable read' },
-    );
+      await client.query('COMMIT');
+    } catch (error) {
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
 
     // Return the IDs of all functions we marked started
     return claimedIDs;
@@ -2187,15 +2236,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void> {
     if (rowsThreshold !== undefined) {
       // Get the created_at timestamp of the rows_threshold newest row
-      const result = (await this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
-        .select('created_at')
-        .orderBy('created_at', 'desc')
-        .limit(1)
-        .offset(rowsThreshold - 1)
-        .first()) as { created_at: number } | undefined;
+      const result = await this.pool.query<{ created_at: number }>(
+        `SELECT created_at
+         FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
+         ORDER BY created_at DESC
+         LIMIT 1 OFFSET $1`,
+        [rowsThreshold - 1],
+      );
 
-      if (result !== undefined) {
-        const rowsBasedCutoff = result.created_at;
+      if (result.rows.length > 0) {
+        const rowsBasedCutoff = result.rows[0].created_at;
         // Use the more restrictive cutoff (higher timestamp = more recent = more deletion)
         if (cutoffEpochTimestampMs === undefined || rowsBasedCutoff > cutoffEpochTimestampMs) {
           cutoffEpochTimestampMs = rowsBasedCutoff;
@@ -2208,10 +2258,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     // Delete all workflows older than cutoff that are NOT PENDING or ENQUEUED
-    await this.knexDB(`${DBOSExecutor.systemDBSchemaName}.workflow_status`)
-      .where('created_at', '<', cutoffEpochTimestampMs)
-      .whereNotIn('status', [StatusString.PENDING, StatusString.ENQUEUED])
-      .del();
+    await this.pool.query(
+      `DELETE FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
+       WHERE created_at < $1
+         AND status NOT IN ($2, $3)`,
+      [cutoffEpochTimestampMs, StatusString.PENDING, StatusString.ENQUEUED],
+    );
 
     return;
   }

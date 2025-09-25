@@ -8,8 +8,6 @@ language: node
 database:
   migrate:
     - npx knex migrate:latest
-  rollback:
-    - npx knex migrate:rollback
 runtimeConfig:
   start:
     - node dist/main.js

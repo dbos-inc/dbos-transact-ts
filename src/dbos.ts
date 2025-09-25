@@ -218,8 +218,6 @@ export class DBOS {
       [internalConfig, runtimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, configFile);
     }
 
-    DBOS.#port = runtimeConfig.port;
-
     DBOSExecutor.createDebouncerWorkflow();
     DBOSExecutor.createInternalQueue();
     DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig, { debugMode });
@@ -348,19 +346,10 @@ export class DBOS {
     return getExecutor();
   }
 
-  /** For unit testing of admin server (do not call) */
-  static getAdminCallback() {
-    if (!DBOSAdminServer.instance) {
-      return undefined;
-    }
-    return DBOSAdminServer.instance.adminApp.callback();
-  }
-
   //////
   // Globals
   //////
   static #dbosConfig?: DBOSConfig;
-  static #port?: number;
 
   //////
   // Context
