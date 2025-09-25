@@ -1,4 +1,3 @@
-import { Span } from '@opentelemetry/sdk-trace-base';
 import {
   DBOSError,
   DBOSInitializationError,
@@ -27,7 +26,7 @@ import {
 
 import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
-import { Tracer } from './telemetry/traces';
+import { SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
 import {
@@ -51,7 +50,7 @@ import {
   getClassRegistrationByName,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
-import { context, SpanStatusCode, trace } from '@opentelemetry/api';
+import { context, trace } from '@opentelemetry/api';
 import {
   runInStepContext,
   getNextWFID,
@@ -85,6 +84,7 @@ import {
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
 import { debouncerWorkflowFunction } from './debouncer';
+import { Span } from '@opentelemetry/sdk-trace-base';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -711,7 +711,7 @@ export class DBOSExecutor {
 
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
-    const span: Span = this.tracer.startSpan(stepFnName, {
+    const span = this.tracer.startSpan(stepFnName, {
       operationUUID: wfid,
       operationType: OperationType.STEP,
       operationName: stepFnName,

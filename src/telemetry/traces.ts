@@ -8,6 +8,22 @@ import { globalParams } from '../utils';
 import { context, trace } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 
+export enum SpanStatusCode {
+  /**
+   * The default status.
+   */
+  UNSET = 0,
+  /**
+   * The operation has been validated by an Application developer or
+   * Operator to have completed successfully.
+   */
+  OK = 1,
+  /**
+   * The operation contains an error.
+   */
+  ERROR = 2,
+}
+
 export function isTraceContextWorking(): boolean {
   const span = trace.getTracer('otel-bootstrap-check').startSpan('probe');
   const testContext = trace.setSpan(context.active(), span);

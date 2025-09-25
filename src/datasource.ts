@@ -1,5 +1,4 @@
-import { context, SpanStatusCode, trace } from '@opentelemetry/api';
-import { Span } from '@opentelemetry/sdk-trace-base';
+import { context, trace } from '@opentelemetry/api';
 import { functionIDGetIncrement, getNextWFID, runWithDataSourceContext } from './context';
 import { DBOS } from './dbos';
 import { DBOSExecutor, OperationType } from './dbos-executor';
@@ -12,6 +11,7 @@ import {
   wrapDBOSFunctionAndRegister,
 } from './decorators';
 import { DBOSInvalidWorkflowTransitionError } from './error';
+import { SpanStatusCode } from './telemetry/traces';
 
 /**
  * This interface is to be used for implementers of transactional data sources
@@ -140,7 +140,7 @@ export async function runTransaction<T>(
 
   const callnum = functionIDGetIncrement();
 
-  const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
+  const span = DBOSExecutor.globalInstance!.tracer.startSpan(
     funcName,
     {
       operationUUID: DBOS.workflowID,
@@ -214,7 +214,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
       );
     }
 
-    const span: Span = DBOSExecutor.globalInstance!.tracer.startSpan(
+    const span = DBOSExecutor.globalInstance!.tracer.startSpan(
       funcName,
       {
         operationUUID: DBOS.workflowID,
