@@ -6,6 +6,7 @@ import { ExportResult, ExportResultCode } from '@opentelemetry/core';
 import { Span } from '@opentelemetry/sdk-trace-base';
 import { LogRecord } from '@opentelemetry/api-logs';
 import { OTLPExporterConfig } from '../dbos-executor';
+import { globalParams } from '../utils';
 
 export interface ITelemetryExporter {
   export(signal: object[]): Promise<void>;
@@ -27,6 +28,9 @@ export class TelemetryExporter implements ITelemetryExporter {
   private readonly logsExporters: OTLPLogExporter[] = [];
 
   constructor(config: OTLPExporterConfig) {
+    if (!globalParams.enableOTLP) {
+      return;
+    }
     const tracesSet = new Set<string>(config.tracesEndpoint);
     for (const endpoint of tracesSet) {
       this.tracesExporters.push(
@@ -49,6 +53,9 @@ export class TelemetryExporter implements ITelemetryExporter {
   }
 
   async export(signals: object[]): Promise<void> {
+    if (!globalParams.enableOTLP) {
+      return;
+    }
     // Sort out traces and logs
     const exportSpans: ReadableSpan[] = [];
     const exportLogs: ReadableLogRecord[] = [];
@@ -97,6 +104,9 @@ export class TelemetryExporter implements ITelemetryExporter {
   }
 
   async flush() {
+    if (!globalParams.enableOTLP) {
+      return;
+    }
     for (const exporter of this.tracesExporters) {
       await exporter.forceFlush();
     }
