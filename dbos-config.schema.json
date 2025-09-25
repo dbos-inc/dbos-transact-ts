@@ -116,6 +116,9 @@
           "description": "Commands to setup the application execution environment"
         }
       }
+    },
+    "env": {
+      "deprecated": true
     }
   }
 }
