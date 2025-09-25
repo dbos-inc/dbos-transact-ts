@@ -1,4 +1,3 @@
-import { Span } from '@opentelemetry/sdk-trace-base';
 import {
   getCurrentContextStore,
   HTTPRequest,
@@ -9,7 +8,7 @@ import {
   functionIDGetIncrement,
 } from './context';
 import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
-import { getActiveSpan, installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
+import { DBOSSpan, getActiveSpan, installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
 import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
@@ -369,7 +368,7 @@ export class DBOS {
   }
 
   /** Get the current DBOS tracing span, appropriate to the current context */
-  static get span(): Span | undefined {
+  static get span(): DBOSSpan | undefined {
     return getActiveSpan();
   }
 

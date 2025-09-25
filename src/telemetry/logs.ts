@@ -2,10 +2,10 @@ import { transports, createLogger, format, Logger as IWinstonLogger } from 'wins
 import TransportStream = require('winston-transport'); // eslint-disable-line @typescript-eslint/no-require-imports
 import { Logger as OTelLogger, LogAttributes, SeverityNumber } from '@opentelemetry/api-logs';
 import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
-import { Span } from '@opentelemetry/sdk-trace-base';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON, globalParams, interceptStreams } from '../utils';
 import { LoggerConfig } from '../dbos-executor';
+import { DBOSSpan } from './traces';
 
 /*****************/
 /* GLOBAL LOGGER */
@@ -13,7 +13,7 @@ import { LoggerConfig } from '../dbos-executor';
 
 type ContextualMetadata = {
   includeContextMetadata: boolean; // Should the console transport formatter include the context metadata?
-  span?: Span; // All context metadata should be attributes of the context's span
+  span?: DBOSSpan; // All context metadata should be attributes of the context's span
 };
 
 interface StackTrace {
@@ -133,7 +133,7 @@ export class DBOSContextualLogger implements DLogger {
   readonly includeContextMetadata: boolean;
   constructor(
     private readonly globalLogger: GlobalLogger,
-    readonly ctx: () => Span | undefined,
+    readonly ctx: () => DBOSSpan | undefined,
   ) {
     this.includeContextMetadata = this.globalLogger.addContextMetadata;
   }
@@ -186,7 +186,7 @@ export const consoleFormat = format.combine(
     const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
 
     const messageString: string = typeof message === 'string' ? message : DBOSJSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as Span)?.attributes)}` : ''}`;
+    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as DBOSSpan)?.attributes)}` : ''}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : '';
     return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? '\n' + formattedStack : ''}`;

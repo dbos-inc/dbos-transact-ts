@@ -9,7 +9,7 @@ import { globalParams } from '../utils';
 import { context, trace } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
 
-export interface Attributes {
+interface Attributes {
   [attributeKey: string]: AttributeValue | undefined;
 }
 /**
@@ -17,7 +17,7 @@ export interface Attributes {
  *
  * null or undefined attribute values are invalid and will result in undefined behavior.
  */
-export declare type AttributeValue =
+declare type AttributeValue =
   | string
   | number
   | boolean
@@ -41,12 +41,26 @@ export enum SpanStatusCode {
   ERROR = 2,
 }
 
-export function runWithTrace<R>(span: Span, func: () => Promise<R>): Promise<R> {
-  return context.with(trace.setSpan(context.active(), span), func);
+interface SpanStatus {
+  /** The status code of this message. */
+  code: SpanStatusCode;
+  /** A developer-facing error message. */
+  message?: string;
+}
+
+export type DBOSSpan = {
+  setStatus(status: SpanStatus): DBOSSpan;
+  attributes: Attributes;
+  setAttribute(key: string, attribute: AttributeValue): DBOSSpan;
+  addEvent(name: string, attributesOrStartTime?: Attributes, timeStamp?: number): DBOSSpan;
+};
+
+export function runWithTrace<R>(span: DBOSSpan, func: () => Promise<R>): Promise<R> {
+  return context.with(trace.setSpan(context.active(), span as Span), func);
 }
 
 export function getActiveSpan() {
-  return trace.getActiveSpan() as Span | undefined;
+  return trace.getActiveSpan() as DBOSSpan | undefined;
 }
 
 export function isTraceContextWorking(): boolean {
@@ -85,7 +99,8 @@ export class Tracer {
     this.executorID = globalParams.executorID; // for consistency with src/context.ts
   }
 
-  startSpan(name: string, attributes?: Attributes, parentSpan?: Span): Span {
+  startSpan(name: string, attributes?: Attributes, inputSpan?: DBOSSpan): DBOSSpan {
+    const parentSpan = inputSpan as Span;
     const tracer = opentelemetry.trace.getTracer('dbos-tracer');
     const startTime = hrTime(performance.now());
     if (parentSpan) {
@@ -96,7 +111,8 @@ export class Tracer {
     }
   }
 
-  endSpan(span: Span) {
+  endSpan(inputSpan: DBOSSpan) {
+    const span = inputSpan as Span;
     span.setAttributes({
       applicationID: this.applicationID,
       applicationVersion: globalParams.appVersion,
