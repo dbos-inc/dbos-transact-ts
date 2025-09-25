@@ -1,7 +1,6 @@
 import type { Span } from '@opentelemetry/sdk-trace-base';
 import { BasicTracerProvider } from '@opentelemetry/sdk-trace-base';
 import { Resource } from '@opentelemetry/resources';
-import type { Attributes } from '@opentelemetry/api';
 import opentelemetry from '@opentelemetry/api';
 import { TelemetryCollector } from './collector';
 import { hrTime } from '@opentelemetry/core';
@@ -9,6 +8,22 @@ import { globalParams } from '../utils';
 
 import { context, trace } from '@opentelemetry/api';
 import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
+
+export interface Attributes {
+  [attributeKey: string]: AttributeValue | undefined;
+}
+/**
+ * Attribute values may be any non-nullish primitive value except an object.
+ *
+ * null or undefined attribute values are invalid and will result in undefined behavior.
+ */
+export declare type AttributeValue =
+  | string
+  | number
+  | boolean
+  | Array<null | undefined | string>
+  | Array<null | undefined | number>
+  | Array<null | undefined | boolean>;
 
 export enum SpanStatusCode {
   /**

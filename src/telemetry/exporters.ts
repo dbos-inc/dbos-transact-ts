@@ -12,12 +12,12 @@ export interface ITelemetryExporter {
   flush(): Promise<void>;
 }
 
-export function isTraceSignal(signal: object): signal is Span {
+function isTraceSignal(signal: object): signal is Span {
   // Span is an interface that has a property 'kind'
   return 'kind' in signal;
 }
 
-export function isLogSignal(signal: object): signal is LogRecord {
+function isLogSignal(signal: object): signal is LogRecord {
   // LogRecord is an interface that has a property 'severityText' and 'severityNumber'
   return 'severityText' in signal && 'severityNumber' in signal;
 }
