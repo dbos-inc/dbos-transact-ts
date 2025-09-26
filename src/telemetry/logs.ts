@@ -12,6 +12,10 @@ import { DBOSJSON, globalParams, interceptStreams } from '../utils';
 import { LoggerConfig } from '../dbos-executor';
 import { DBOSSpan } from './traces';
 
+// As DBOS OTLP is optional, OTLP objects must only be dynamically imported
+// and only when OTLP is enabled. Importing OTLP types is fine as long
+// as signatures using those types are not exported.
+
 export enum SeverityNumber {
   UNSPECIFIED = 0,
   TRACE = 1,

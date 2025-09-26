@@ -9,6 +9,10 @@ import type { SpanContext } from '@opentelemetry/api';
 import { TelemetryCollector } from './collector';
 import { globalParams } from '../utils';
 
+// As DBOS OTLP is optional, OTLP objects must only be dynamically imported
+// and only when OTLP is enabled. Importing OTLP types is fine as long
+// as signatures using those types are not exported.
+
 interface Attributes {
   [attributeKey: string]: AttributeValue | undefined;
 }

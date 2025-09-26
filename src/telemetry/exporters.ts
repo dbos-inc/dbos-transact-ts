@@ -13,6 +13,10 @@ import type { LogRecord } from '@opentelemetry/api-logs';
 import { OTLPExporterConfig } from '../dbos-executor';
 import { globalParams } from '../utils';
 
+// As DBOS OTLP is optional, OTLP objects must only be dynamically imported
+// and only when OTLP is enabled. Importing OTLP types is fine as long
+// as signatures using those types are not exported.
+
 export interface ITelemetryExporter {
   export(signal: object[]): Promise<void>;
   flush(): Promise<void>;
