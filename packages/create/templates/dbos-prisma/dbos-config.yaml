@@ -10,4 +10,4 @@ database:
     - npx prisma migrate deploy
 runtimeConfig:
   start:
-    - node dist/main.js
+    - npm run start

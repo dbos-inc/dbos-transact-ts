@@ -7,7 +7,7 @@
     "lint": "eslint src",
     "lint-fix": "eslint --fix src",
     "dev": "nodemon",
-    "start": "npx dbos start"
+    "start": "node dist/main.js"
   },
   "devDependencies": {
     "@dbos-inc/eslint-plugin": "^3.3.4",
