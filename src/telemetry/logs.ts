@@ -3,7 +3,7 @@
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { transports, createLogger, format, Logger as IWinstonLogger } from 'winston';
+import { transports, createLogger, format } from 'winston';
 import TransportStream = require('winston-transport');
 import type { Logger as OTelLogger, LogAttributes } from '@opentelemetry/api-logs';
 import type { LogRecord } from '@opentelemetry/sdk-logs';
@@ -49,7 +49,7 @@ enum SeverityNumber {
 /*****************/
 
 type ContextualMetadata = {
-  includeContextMetadata: boolean; // Should the console transport formatter include the context metadata?
+  includeContextMetadata?: boolean; // Should the console transport formatter include the context metadata?
   span?: DBOSSpan; // All context metadata should be attributes of the context's span
 };
 
@@ -58,7 +58,7 @@ interface StackTrace {
 }
 
 export class GlobalLogger {
-  private readonly logger: IWinstonLogger;
+  private readonly logger: DLogger;
   readonly addContextMetadata: boolean;
   private isLogging = false; // Prevent recursive logging
   private readonly otlpTransport?: OTLPLogQueueTransport;
