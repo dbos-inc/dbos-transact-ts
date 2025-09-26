@@ -2,14 +2,11 @@ import { readFileSync } from './utils';
 import { DBOSConfig, DBOSRuntimeConfig, DBOSConfigInternal } from './dbos-executor';
 import YAML from 'yaml';
 import { writeFileSync } from 'fs';
-import Ajv from 'ajv';
 import path from 'path';
-import dbosConfigSchema from '../dbos-config.schema.json';
 import assert from 'assert';
 import { maskDatabaseUrl } from './database_utils';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
-const ajv = new Ajv({ allErrors: true, verbose: true, allowUnionTypes: true });
 
 export interface ConfigFile {
   name?: string;
@@ -58,10 +55,6 @@ export function readConfigFile(dirPath?: string): ConfigFile {
     config.name = $package.name;
   }
 
-  const schemaValidator = ajv.compile(dbosConfigSchema);
-  if (!schemaValidator(config)) {
-    throw new Error(`Config file validation failed: ${JSON.stringify(schemaValidator.errors, null, 2)}`);
-  }
   return config;
 
   function readFile(filePath: string): string | undefined {

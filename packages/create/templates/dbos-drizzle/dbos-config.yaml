@@ -10,4 +10,4 @@ database:
     - npx drizzle-kit migrate
 runtimeConfig:
   start:
-    - node dist/main.js
+    - npm run start

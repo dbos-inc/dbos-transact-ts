@@ -10,4 +10,4 @@ database:
     - npx typeorm migration:run -d dist/datasource.js
 runtimeConfig:
   start:
-    - node dist/src/main.js
+    - npm run start

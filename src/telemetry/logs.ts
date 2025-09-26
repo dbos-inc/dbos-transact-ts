@@ -3,14 +3,13 @@
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { transports, createLogger, format, Logger as IWinstonLogger } from 'winston';
-import TransportStream = require('winston-transport');
 import type { Logger as OTelLogger, LogAttributes } from '@opentelemetry/api-logs';
 import type { LogRecord } from '@opentelemetry/sdk-logs';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON, globalParams, interceptStreams } from '../utils';
 import { LoggerConfig } from '../dbos-executor';
 import { DBOSSpan } from './traces';
+import type { format as formatT } from 'winston';
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
@@ -49,7 +48,7 @@ enum SeverityNumber {
 /*****************/
 
 type ContextualMetadata = {
-  includeContextMetadata: boolean; // Should the console transport formatter include the context metadata?
+  includeContextMetadata?: boolean; // Should the console transport formatter include the context metadata?
   span?: DBOSSpan; // All context metadata should be attributes of the context's span
 };
 
@@ -58,41 +57,118 @@ interface StackTrace {
 }
 
 export class GlobalLogger {
-  private readonly logger: IWinstonLogger;
+  private readonly logger: DLogger;
   readonly addContextMetadata: boolean;
   private isLogging = false; // Prevent recursive logging
-  private readonly otlpTransport?: OTLPLogQueueTransport;
 
   constructor(
     private readonly telemetryCollector?: TelemetryCollector,
     config?: LoggerConfig,
   ) {
-    const winstonTransports: TransportStream[] = [];
+    this.addContextMetadata = config?.addContextMetadata || false;
+    if (!globalParams.enableOTLP) {
+      this.logger = new DBOSConsoleLogger(config ?? {});
+      return;
+    }
+
+    const TransportStream = require('winston-transport');
+
+    class OTLPLogQueueTransport extends TransportStream {
+      readonly name = 'OTLPLogQueueTransport';
+      readonly otelLogger: OTelLogger;
+      readonly applicationID: string;
+      readonly executorID: string;
+
+      constructor(
+        readonly telemetryCollector: TelemetryCollector,
+        logLevel: string,
+      ) {
+        super();
+        this.level = logLevel;
+        // not sure if we need a more explicit name here
+        const { LoggerProvider } = require('@opentelemetry/sdk-logs');
+        const loggerProvider = new LoggerProvider();
+        this.otelLogger = loggerProvider.getLogger('default');
+        this.applicationID = globalParams.appID;
+        this.executorID = globalParams.executorID;
+        const logRecordProcessor = {
+          forceFlush: async () => {
+            // no-op
+          },
+          onEmit(logRecord: LogRecord) {
+            telemetryCollector.push(logRecord);
+          },
+          shutdown: async () => {
+            // no-op
+          },
+        };
+        loggerProvider.addLogRecordProcessor(logRecordProcessor);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      log(info: any, callback: () => void): void {
+        const { level, message, stack, span } = info;
+
+        const levelToSeverityNumber: { [key: string]: SeverityNumber } = {
+          error: SeverityNumber.ERROR,
+          warn: SeverityNumber.WARN,
+          info: SeverityNumber.INFO,
+          debug: SeverityNumber.DEBUG,
+        };
+
+        // Ideally we want to give the spanContext to the logRecord,
+        // But there seems to some dependency bugs in opentelemetry-js
+        // (span.getValue(SPAN_KEY) undefined when we pass the context, as commented bellow)
+        // So for now we get the traceId and spanId directly from the context and pass them through the logRecord attributes
+        this.otelLogger.emit({
+          severityNumber: levelToSeverityNumber[level as string],
+          severityText: level as string,
+          body: message as string,
+          timestamp: performance.now(), // So far I don't see a major difference between this and observedTimestamp
+          observedTimestamp: performance.now(),
+          attributes: {
+            ...span?.attributes,
+            traceId: span?.spanContext()?.traceId,
+            spanId: span?.spanContext()?.spanId,
+            stack,
+            applicationID: this.applicationID,
+            applicationVersion: globalParams.appVersion,
+            executorID: this.executorID,
+          } as LogAttributes,
+        });
+
+        callback();
+      }
+    }
+
+    // Import Winston dependencies only when OTLP is enabled
+    const { transports, createLogger } = require('winston');
+    const winstonTransports: unknown[] = [];
     winstonTransports.push(
       new transports.Console({
-        format: consoleFormat,
+        format: getConsoleFormat(),
         level: config?.logLevel || 'info',
         silent: config?.silent || false,
         forceConsole: config?.forceConsole || false,
       }),
     );
+    let otlpTransport: OTLPLogQueueTransport | undefined = undefined;
     // Only enable the OTLP transport if we have a telemetry collector and an exporter
     if (globalParams.enableOTLP && this.telemetryCollector?.exporter) {
-      this.otlpTransport = new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info');
-      winstonTransports.push(this.otlpTransport);
+      otlpTransport = new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info');
+      winstonTransports.push(otlpTransport);
     }
     this.logger = createLogger({ transports: winstonTransports });
-    this.addContextMetadata = config?.addContextMetadata || false;
 
     if (globalParams.enableOTLP && process.env.DBOS__CAPTURE_STD !== 'false' && this.telemetryCollector?.exporter) {
       interceptStreams((msg, stream) => {
         if (stream === 'stdout') {
           if (!this.isLogging) {
-            this.otlpTransport?.log({ level: 'info', message: msg.trim() }, () => {});
+            otlpTransport?.log({ level: 'info', message: msg.trim() }, () => {});
           }
         } else {
           if (!this.isLogging) {
-            this.otlpTransport?.log({ level: 'error', message: msg.trim(), stack: new Error().stack }, () => {});
+            otlpTransport?.log({ level: 'error', message: msg.trim(), stack: new Error().stack }, () => {});
           }
         }
       });
@@ -201,92 +277,56 @@ export class DBOSContextualLogger implements DLogger {
   }
 }
 
+export class DBOSConsoleLogger implements DLogger {
+  constructor(readonly config: LoggerConfig) {}
+
+  info(logEntry: unknown, _metadata?: ContextualMetadata): void {
+    console.log(logEntry);
+  }
+
+  debug(logEntry: unknown, _metadata?: ContextualMetadata): void {
+    if (this.config.logLevel === 'debug') {
+      console.debug(logEntry);
+    }
+  }
+
+  warn(logEntry: unknown, _metadata?: ContextualMetadata): void {
+    console.warn(logEntry);
+  }
+
+  error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
+    if (inputError instanceof Error) {
+      console.error(inputError);
+    } else if (metadata?.stack) {
+      console.error(inputError, '\n', metadata.stack);
+    } else {
+      console.error(inputError);
+    }
+  }
+}
+
 /***********************/
 /* FORMAT & TRANSPORTS */
 /***********************/
 
-export const consoleFormat = format.combine(
-  format.errors({ stack: true }),
-  format.timestamp(),
-  format.colorize(),
-  format.printf((info) => {
-    const { timestamp, level, message, stack } = info;
-    const applicationVersion = globalParams.appVersion;
-    const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
-    const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
+// Lazily create the console format only when Winston is used
+function getConsoleFormat() {
+  const { format } = require('winston') as { format: typeof formatT };
+  return format.combine(
+    format.errors({ stack: true }),
+    format.timestamp(),
+    format.colorize(),
+    format.printf((info) => {
+      const { timestamp, level, message, stack } = info;
+      const applicationVersion = globalParams.appVersion;
+      const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
+      const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
 
-    const messageString: string = typeof message === 'string' ? message : DBOSJSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as DBOSSpan)?.attributes)}` : ''}`;
+      const messageString: string = typeof message === 'string' ? message : DBOSJSON.stringify(message);
+      const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as DBOSSpan)?.attributes)}` : ''}`;
 
-    const versionString = applicationVersion ? ` [version ${applicationVersion}]` : '';
-    return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? '\n' + formattedStack : ''}`;
-  }),
-);
-
-class OTLPLogQueueTransport extends TransportStream {
-  readonly name = 'OTLPLogQueueTransport';
-  readonly otelLogger: OTelLogger;
-  readonly applicationID: string;
-  readonly executorID: string;
-
-  constructor(
-    readonly telemetryCollector: TelemetryCollector,
-    logLevel: string,
-  ) {
-    super();
-    this.level = logLevel;
-    // not sure if we need a more explicit name here
-    const { LoggerProvider } = require('@opentelemetry/sdk-logs');
-    const loggerProvider = new LoggerProvider();
-    this.otelLogger = loggerProvider.getLogger('default');
-    this.applicationID = globalParams.appID;
-    this.executorID = globalParams.executorID;
-    const logRecordProcessor = {
-      forceFlush: async () => {
-        // no-op
-      },
-      onEmit(logRecord: LogRecord) {
-        telemetryCollector.push(logRecord);
-      },
-      shutdown: async () => {
-        // no-op
-      },
-    };
-    loggerProvider.addLogRecordProcessor(logRecordProcessor);
-  }
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  log(info: any, callback: () => void): void {
-    const { level, message, stack, span } = info;
-
-    const levelToSeverityNumber: { [key: string]: SeverityNumber } = {
-      error: SeverityNumber.ERROR,
-      warn: SeverityNumber.WARN,
-      info: SeverityNumber.INFO,
-      debug: SeverityNumber.DEBUG,
-    };
-
-    // Ideally we want to give the spanContext to the logRecord,
-    // But there seems to some dependency bugs in opentelemetry-js
-    // (span.getValue(SPAN_KEY) undefined when we pass the context, as commented bellow)
-    // So for now we get the traceId and spanId directly from the context and pass them through the logRecord attributes
-    this.otelLogger.emit({
-      severityNumber: levelToSeverityNumber[level as string],
-      severityText: level as string,
-      body: message as string,
-      timestamp: performance.now(), // So far I don't see a major difference between this and observedTimestamp
-      observedTimestamp: performance.now(),
-      attributes: {
-        ...span?.attributes,
-        traceId: span?.spanContext()?.traceId,
-        spanId: span?.spanContext()?.spanId,
-        stack,
-        applicationID: this.applicationID,
-        applicationVersion: globalParams.appVersion,
-        executorID: this.executorID,
-      } as LogAttributes,
-    });
-
-    callback();
-  }
+      const versionString = applicationVersion ? ` [version ${applicationVersion}]` : '';
+      return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? '\n' + formattedStack : ''}`;
+    }),
+  );
 }

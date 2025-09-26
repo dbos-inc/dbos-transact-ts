@@ -25,10 +25,3 @@ dist/packages/
 
 # ignore any packed packages in the repo
 *.tgz
-
-# Include only the code from the examples directory
-!examples/**
-examples/hello/.dbos
-examples/hello/dbos_deploy
-examples/hello/dist
-examples/hello/node_modules
