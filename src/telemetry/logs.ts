@@ -205,7 +205,7 @@ export class DBOSContextualLogger implements DLogger {
 /* FORMAT & TRANSPORTS */
 /***********************/
 
-export const consoleFormat = format.combine(
+const consoleFormat = format.combine(
   format.errors({ stack: true }),
   format.timestamp(),
   format.colorize(),
