@@ -60,9 +60,9 @@
     "dbos-sdk": "./dist/src/cli/cli.js"
   },
   "devDependencies": {
-    "@eslint/js": "^9.22.0",
     "@dbos-inc/otel": "packages/otel",
-    "@testcontainers/postgresql": "^11.5.1",
+    "@eslint/js": "^9.22.0",
+    "@testcontainers/postgresql": "^11.6.0",
     "@types/node": "^20.19.1",
     "@types/pg": "^8.11.2",
     "@types/supertest": "^6.0.2",
@@ -73,7 +73,7 @@
     "lint-staged": "^15.4.3",
     "prettier": "^3.4.2",
     "supertest": "^7.0.0",
-    "testcontainers": "^11.5.1",
+    "testcontainers": "^11.6.0",
     "ts-jest": "^29.2.4",
     "typescript": "^5.4.5",
     "typescript-eslint": "^8.26.1"
