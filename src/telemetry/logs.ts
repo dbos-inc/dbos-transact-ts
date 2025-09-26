@@ -67,7 +67,7 @@ export class GlobalLogger {
   ) {
     this.addContextMetadata = config?.addContextMetadata || false;
     if (!globalParams.enableOTLP) {
-      this.logger = new DBOSConsoleLogger();
+      this.logger = new DBOSConsoleLogger(config ?? {});
       return;
     }
 
@@ -278,12 +278,16 @@ export class DBOSContextualLogger implements DLogger {
 }
 
 export class DBOSConsoleLogger implements DLogger {
+  constructor(readonly config: LoggerConfig) {}
+
   info(logEntry: unknown, _metadata?: ContextualMetadata): void {
     console.log(logEntry);
   }
 
   debug(logEntry: unknown, _metadata?: ContextualMetadata): void {
-    console.debug(logEntry);
+    if (this.config.logLevel === 'debug') {
+      console.debug(logEntry);
+    }
   }
 
   warn(logEntry: unknown, _metadata?: ContextualMetadata): void {
