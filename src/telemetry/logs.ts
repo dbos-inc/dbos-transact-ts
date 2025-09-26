@@ -67,6 +67,11 @@ export class GlobalLogger {
     private readonly telemetryCollector?: TelemetryCollector,
     config?: LoggerConfig,
   ) {
+    this.addContextMetadata = config?.addContextMetadata || false;
+    if (!globalParams.enableOTLP) {
+      this.logger = new DBOSConsoleLogger();
+      return;
+    }
     const winstonTransports: TransportStream[] = [];
     winstonTransports.push(
       new transports.Console({
@@ -82,7 +87,6 @@ export class GlobalLogger {
       winstonTransports.push(this.otlpTransport);
     }
     this.logger = createLogger({ transports: winstonTransports });
-    this.addContextMetadata = config?.addContextMetadata || false;
 
     if (globalParams.enableOTLP && process.env.DBOS__CAPTURE_STD !== 'false' && this.telemetryCollector?.exporter) {
       interceptStreams((msg, stream) => {
@@ -198,6 +202,30 @@ export class DBOSContextualLogger implements DLogger {
       span: this.ctx(),
       ...metadata,
     });
+  }
+}
+
+export class DBOSConsoleLogger implements DLogger {
+  info(logEntry: unknown, _metadata?: ContextualMetadata): void {
+    console.log(logEntry);
+  }
+
+  debug(logEntry: unknown, _metadata?: ContextualMetadata): void {
+    console.debug(logEntry);
+  }
+
+  warn(logEntry: unknown, _metadata?: ContextualMetadata): void {
+    console.warn(logEntry);
+  }
+
+  error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
+    if (inputError instanceof Error) {
+      console.error(inputError);
+    } else if (metadata?.stack) {
+      console.error(inputError, '\n', metadata.stack);
+    } else {
+      console.error(inputError);
+    }
   }
 }
 
