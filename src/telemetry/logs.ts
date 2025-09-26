@@ -1,36 +1,60 @@
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { transports, createLogger, format, Logger as IWinstonLogger } from 'winston';
-import TransportStream = require('winston-transport'); // eslint-disable-line @typescript-eslint/no-require-imports
-import { Logger as OTelLogger, LogAttributes, SeverityNumber } from '@opentelemetry/api-logs';
-import { LogRecord, LoggerProvider } from '@opentelemetry/sdk-logs';
-import { Span } from '@opentelemetry/sdk-trace-base';
+import TransportStream = require('winston-transport');
+import type { Logger as OTelLogger, LogAttributes } from '@opentelemetry/api-logs';
+import type { LogRecord } from '@opentelemetry/sdk-logs';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON, globalParams, interceptStreams } from '../utils';
+import { LoggerConfig } from '../dbos-executor';
+import { DBOSSpan } from './traces';
+
+// As DBOS OTLP is optional, OTLP objects must only be dynamically imported
+// and only when OTLP is enabled. Importing OTLP types is fine as long
+// as signatures using those types are not exported from this file.
+
+enum SeverityNumber {
+  UNSPECIFIED = 0,
+  TRACE = 1,
+  TRACE2 = 2,
+  TRACE3 = 3,
+  TRACE4 = 4,
+  DEBUG = 5,
+  DEBUG2 = 6,
+  DEBUG3 = 7,
+  DEBUG4 = 8,
+  INFO = 9,
+  INFO2 = 10,
+  INFO3 = 11,
+  INFO4 = 12,
+  WARN = 13,
+  WARN2 = 14,
+  WARN3 = 15,
+  WARN4 = 16,
+  ERROR = 17,
+  ERROR2 = 18,
+  ERROR3 = 19,
+  ERROR4 = 20,
+  FATAL = 21,
+  FATAL2 = 22,
+  FATAL3 = 23,
+  FATAL4 = 24,
+}
 
 /*****************/
 /* GLOBAL LOGGER */
 /*****************/
 
-export interface LoggerConfig {
-  logLevel?: string;
-  silent?: boolean;
-  addContextMetadata?: boolean;
-  forceConsole?: boolean;
-}
-
 type ContextualMetadata = {
   includeContextMetadata: boolean; // Should the console transport formatter include the context metadata?
-  span: Span; // All context metadata should be attributes of the context's span
+  span?: DBOSSpan; // All context metadata should be attributes of the context's span
 };
 
 interface StackTrace {
   stack?: string;
-}
-
-// Wrap around the winston logger to support configuration and access to our telemetry collector
-export interface IGlobalLogger extends IWinstonLogger {
-  readonly addContextMetadata: boolean;
-  readonly logger: IWinstonLogger;
-  readonly telemetryCollector: TelemetryCollector;
 }
 
 export class GlobalLogger {
@@ -53,14 +77,14 @@ export class GlobalLogger {
       }),
     );
     // Only enable the OTLP transport if we have a telemetry collector and an exporter
-    if (this.telemetryCollector?.exporter) {
+    if (globalParams.enableOTLP && this.telemetryCollector?.exporter) {
       this.otlpTransport = new OTLPLogQueueTransport(this.telemetryCollector, config?.logLevel || 'info');
       winstonTransports.push(this.otlpTransport);
     }
     this.logger = createLogger({ transports: winstonTransports });
     this.addContextMetadata = config?.addContextMetadata || false;
 
-    if (process.env.DBOS__CAPTURE_STD !== 'false' && this.telemetryCollector?.exporter) {
+    if (globalParams.enableOTLP && process.env.DBOS__CAPTURE_STD !== 'false' && this.telemetryCollector?.exporter) {
       interceptStreams((msg, stream) => {
         if (stream === 'stdout') {
           if (!this.isLogging) {
@@ -139,7 +163,7 @@ export class DBOSContextualLogger implements DLogger {
   readonly includeContextMetadata: boolean;
   constructor(
     private readonly globalLogger: GlobalLogger,
-    readonly ctx: () => Span,
+    readonly ctx: () => DBOSSpan | undefined,
   ) {
     this.includeContextMetadata = this.globalLogger.addContextMetadata;
   }
@@ -192,7 +216,7 @@ export const consoleFormat = format.combine(
     const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
 
     const messageString: string = typeof message === 'string' ? message : DBOSJSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as Span)?.attributes)}` : ''}`;
+    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as DBOSSpan)?.attributes)}` : ''}`;
 
     const versionString = applicationVersion ? ` [version ${applicationVersion}]` : '';
     return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? '\n' + formattedStack : ''}`;
@@ -212,6 +236,7 @@ class OTLPLogQueueTransport extends TransportStream {
     super();
     this.level = logLevel;
     // not sure if we need a more explicit name here
+    const { LoggerProvider } = require('@opentelemetry/sdk-logs');
     const loggerProvider = new LoggerProvider();
     this.otelLogger = loggerProvider.getLogger('default');
     this.applicationID = globalParams.appID;
@@ -232,7 +257,6 @@ class OTLPLogQueueTransport extends TransportStream {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   log(info: any, callback: () => void): void {
-    // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const { level, message, stack, span } = info;
 
     const levelToSeverityNumber: { [key: string]: SeverityNumber } = {
@@ -253,13 +277,9 @@ class OTLPLogQueueTransport extends TransportStream {
       timestamp: performance.now(), // So far I don't see a major difference between this and observedTimestamp
       observedTimestamp: performance.now(),
       attributes: {
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
         ...span?.attributes,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         traceId: span?.spanContext()?.traceId,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-call
         spanId: span?.spanContext()?.spanId,
-        // eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
         stack,
         applicationID: this.applicationID,
         applicationVersion: globalParams.appVersion,

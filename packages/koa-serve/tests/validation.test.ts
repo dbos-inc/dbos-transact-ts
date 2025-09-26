@@ -17,6 +17,7 @@ describe('httpserver-datavalidation-tests', () => {
   beforeAll(async () => {
     DBOS.setConfig({
       name: 'koa-validation',
+      enableOTLP: true,
     });
     const _classes = [
       TestEndpointDataVal,

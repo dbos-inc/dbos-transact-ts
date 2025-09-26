@@ -1,14 +1,101 @@
-import { BasicTracerProvider, ReadableSpan, Span } from '@opentelemetry/sdk-trace-base';
-import { Resource } from '@opentelemetry/resources';
-import opentelemetry, { Attributes, SpanContext } from '@opentelemetry/api';
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-return */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+/* eslint-disable @typescript-eslint/no-require-imports */
+import type { Span } from '@opentelemetry/sdk-trace-base';
+import type { SpanContext } from '@opentelemetry/api';
 import { TelemetryCollector } from './collector';
-import { hrTime } from '@opentelemetry/core';
 import { globalParams } from '../utils';
 
-import { context, trace } from '@opentelemetry/api';
-import { AsyncLocalStorageContextManager } from '@opentelemetry/context-async-hooks';
+// As DBOS OTLP is optional, OTLP objects must only be dynamically imported
+// and only when OTLP is enabled. Importing OTLP types is fine as long
+// as signatures using those types are not exported from this file.
+
+interface Attributes {
+  [attributeKey: string]: AttributeValue | undefined;
+}
+/**
+ * Attribute values may be any non-nullish primitive value except an object.
+ *
+ * null or undefined attribute values are invalid and will result in undefined behavior.
+ */
+declare type AttributeValue =
+  | string
+  | number
+  | boolean
+  | Array<null | undefined | string>
+  | Array<null | undefined | number>
+  | Array<null | undefined | boolean>;
+
+export enum SpanStatusCode {
+  /**
+   * The default status.
+   */
+  UNSET = 0,
+  /**
+   * The operation has been validated by an Application developer or
+   * Operator to have completed successfully.
+   */
+  OK = 1,
+  /**
+   * The operation contains an error.
+   */
+  ERROR = 2,
+}
+
+interface SpanStatus {
+  /** The status code of this message. */
+  code: SpanStatusCode;
+  /** A developer-facing error message. */
+  message?: string;
+}
+
+export type DBOSSpan = {
+  setStatus(status: SpanStatus): DBOSSpan;
+  attributes: Attributes;
+  setAttribute(key: string, attribute: AttributeValue): DBOSSpan;
+  addEvent(name: string, attributesOrStartTime?: Attributes, timeStamp?: number): DBOSSpan;
+};
+
+class StubSpan implements DBOSSpan {
+  attributes: Attributes = {};
+
+  setStatus(_status: SpanStatus): DBOSSpan {
+    return this;
+  }
+
+  setAttribute(_key: string, _attribute: AttributeValue): DBOSSpan {
+    return this;
+  }
+
+  addEvent(_name: string, _attributesOrStartTime?: Attributes, _timeStamp?: number): DBOSSpan {
+    return this;
+  }
+}
+
+export function runWithTrace<R>(span: DBOSSpan, func: () => Promise<R>): Promise<R> {
+  if (!globalParams.enableOTLP) {
+    return func();
+  }
+  const { context, trace } = require('@opentelemetry/api');
+  return context.with(trace.setSpan(context.active(), span as Span), func);
+}
+
+export function getActiveSpan() {
+  if (!globalParams.enableOTLP) {
+    return undefined;
+  }
+  const { trace } = require('@opentelemetry/api');
+  return trace.getActiveSpan() as DBOSSpan | undefined;
+}
 
 export function isTraceContextWorking(): boolean {
+  if (!globalParams.enableOTLP) {
+    return false;
+  }
+  const { context, trace } = require('@opentelemetry/api');
   const span = trace.getTracer('otel-bootstrap-check').startSpan('probe');
   const testContext = trace.setSpan(context.active(), span);
 
@@ -22,6 +109,13 @@ export function isTraceContextWorking(): boolean {
 }
 
 export function installTraceContextManager() {
+  if (!globalParams.enableOTLP) {
+    return;
+  }
+  const { AsyncLocalStorageContextManager } = require('@opentelemetry/context-async-hooks');
+  const { context } = require('@opentelemetry/api');
+  const { BasicTracerProvider } = require('@opentelemetry/sdk-trace-base');
+
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
@@ -31,27 +125,42 @@ export function installTraceContextManager() {
 }
 
 export class Tracer {
-  private readonly tracer: BasicTracerProvider;
   readonly applicationID: string;
   readonly executorID: string;
   constructor(private readonly telemetryCollector: TelemetryCollector) {
-    this.tracer = new BasicTracerProvider({
+    this.applicationID = globalParams.appID;
+    this.executorID = globalParams.executorID; // for consistency with src/context.ts
+    if (!globalParams.enableOTLP) {
+      return;
+    }
+    const { BasicTracerProvider } = require('@opentelemetry/sdk-trace-base');
+    const { Resource } = require('@opentelemetry/resources');
+
+    const tracer = new BasicTracerProvider({
       resource: new Resource({
         'service.name': 'dbos',
       }),
     });
-    this.tracer.register(); // this is a no-op if another tracer provider was already registered
-    this.applicationID = globalParams.appID;
-    this.executorID = globalParams.executorID; // for consistency with src/context.ts
+    tracer.register(); // this is a no-op if another tracer provider was already registered
   }
 
-  startSpanWithContext(spanContext: SpanContext, name: string, attributes?: Attributes): Span {
+  startSpanWithContext(spanContext: unknown, name: string, attributes?: Attributes): DBOSSpan {
+    if (!globalParams.enableOTLP) {
+      return new StubSpan();
+    }
+    const opentelemetry = require('@opentelemetry/api');
     const tracer = opentelemetry.trace.getTracer('dbos-tracer');
-    const ctx = opentelemetry.trace.setSpanContext(opentelemetry.context.active(), spanContext);
+    const ctx = opentelemetry.trace.setSpanContext(opentelemetry.context.active(), spanContext as SpanContext);
     return tracer.startSpan(name, { startTime: performance.now(), attributes: attributes }, ctx) as Span;
   }
 
-  startSpan(name: string, attributes?: Attributes, parentSpan?: Span): Span {
+  startSpan(name: string, attributes?: Attributes, inputSpan?: DBOSSpan): DBOSSpan {
+    if (!globalParams.enableOTLP) {
+      return new StubSpan();
+    }
+    const parentSpan = inputSpan as Span;
+    const opentelemetry = require('@opentelemetry/api');
+    const { hrTime } = require('@opentelemetry/core');
     const tracer = opentelemetry.trace.getTracer('dbos-tracer');
     const startTime = hrTime(performance.now());
     if (parentSpan) {
@@ -62,7 +171,12 @@ export class Tracer {
     }
   }
 
-  endSpan(span: Span) {
+  endSpan(inputSpan: DBOSSpan) {
+    if (!globalParams.enableOTLP) {
+      return;
+    }
+    const { hrTime } = require('@opentelemetry/core');
+    const span = inputSpan as Span;
     span.setAttributes({
       applicationID: this.applicationID,
       applicationVersion: globalParams.appVersion,
@@ -71,6 +185,6 @@ export class Tracer {
       span.setAttribute('executorID', this.executorID);
     }
     span.end(hrTime(performance.now()));
-    this.telemetryCollector.push(span as ReadableSpan);
+    this.telemetryCollector.push(span);
   }
 }

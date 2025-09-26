@@ -1,19 +1,35 @@
-import { TelemetrySignal } from './collector';
-import { isLogSignal, isTraceSignal } from './';
-import { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
-import { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
+/* eslint-disable @typescript-eslint/no-unsafe-member-access */
+/* eslint-disable @typescript-eslint/no-unsafe-call */
+/* eslint-disable @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-require-imports */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
+import type { OTLPTraceExporter } from '@opentelemetry/exporter-trace-otlp-proto';
+import type { OTLPLogExporter } from '@opentelemetry/exporter-logs-otlp-proto';
 import type { ReadableSpan } from '@opentelemetry/sdk-trace-base';
 import type { ReadableLogRecord } from '@opentelemetry/sdk-logs';
-import { ExportResult, ExportResultCode } from '@opentelemetry/core';
+import type { ExportResult } from '@opentelemetry/core';
+import type { Span } from '@opentelemetry/sdk-trace-base';
+import type { LogRecord } from '@opentelemetry/api-logs';
+import { OTLPExporterConfig } from '../dbos-executor';
+import { globalParams } from '../utils';
 
-export interface OTLPExporterConfig {
-  logsEndpoint?: string[];
-  tracesEndpoint?: string[];
-}
+// As DBOS OTLP is optional, OTLP objects must only be dynamically imported
+// and only when OTLP is enabled. Importing OTLP types is fine as long
+// as signatures using those types are not exported from this file.
 
 export interface ITelemetryExporter {
-  export(signal: TelemetrySignal[]): Promise<void>;
+  export(signal: object[]): Promise<void>;
   flush(): Promise<void>;
+}
+
+function isTraceSignal(signal: object): signal is Span {
+  // Span is an interface that has a property 'kind'
+  return 'kind' in signal;
+}
+
+function isLogSignal(signal: object): signal is LogRecord {
+  // LogRecord is an interface that has a property 'severityText' and 'severityNumber'
+  return 'severityText' in signal && 'severityNumber' in signal;
 }
 
 export class TelemetryExporter implements ITelemetryExporter {
@@ -21,6 +37,12 @@ export class TelemetryExporter implements ITelemetryExporter {
   private readonly logsExporters: OTLPLogExporter[] = [];
 
   constructor(config: OTLPExporterConfig) {
+    if (!globalParams.enableOTLP) {
+      return;
+    }
+    const { OTLPTraceExporter } = require('@opentelemetry/exporter-trace-otlp-proto');
+    const { OTLPLogExporter } = require('@opentelemetry/exporter-logs-otlp-proto');
+
     const tracesSet = new Set<string>(config.tracesEndpoint);
     for (const endpoint of tracesSet) {
       this.tracesExporters.push(
@@ -42,7 +64,12 @@ export class TelemetryExporter implements ITelemetryExporter {
     }
   }
 
-  async export(signals: TelemetrySignal[]): Promise<void> {
+  async export(signals: object[]): Promise<void> {
+    if (!globalParams.enableOTLP) {
+      return;
+    }
+    const { ExportResultCode } = require('@opentelemetry/core');
+
     // Sort out traces and logs
     const exportSpans: ReadableSpan[] = [];
     const exportLogs: ReadableLogRecord[] = [];
@@ -91,6 +118,9 @@ export class TelemetryExporter implements ITelemetryExporter {
   }
 
   async flush() {
+    if (!globalParams.enableOTLP) {
+      return;
+    }
     for (const exporter of this.tracesExporters) {
       await exporter.forceFlush();
     }

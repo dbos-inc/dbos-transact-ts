@@ -1,4 +1,3 @@
-import { Span } from '@opentelemetry/sdk-trace-base';
 import {
   getCurrentContextStore,
   HTTPRequest,
@@ -9,7 +8,7 @@ import {
   functionIDGetIncrement,
 } from './context';
 import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
-import { installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
+import { DBOSSpan, getActiveSpan, installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
 import {
   GetQueuedWorkflowsInput,
   GetWorkflowsInput,
@@ -71,7 +70,15 @@ import {
   DBOSLifecycleCallback,
   associateParameterWithExternal,
 } from './decorators';
-import { DBOSJSON, globalParams, JSONValue, registerSerializationRecipe, SerializationRecipe, sleepms } from './utils';
+import {
+  DBOSJSON,
+  defaultEnableOTLP,
+  globalParams,
+  JSONValue,
+  registerSerializationRecipe,
+  SerializationRecipe,
+  sleepms,
+} from './utils';
 import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
 
@@ -83,7 +90,6 @@ import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
-import { context, trace } from '@opentelemetry/api';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -185,6 +191,8 @@ export class DBOS {
    * @param options - Launch options for connecting to DBOS Conductor
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
+    globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? defaultEnableOTLP();
+
     if (!isTraceContextWorking()) installTraceContextManager();
 
     // Do nothing is DBOS is already initialized
@@ -370,8 +378,8 @@ export class DBOS {
   }
 
   /** Get the current DBOS tracing span, appropriate to the current context */
-  static get span(): Span | undefined {
-    return trace.getActiveSpan() as Span | undefined;
+  static get span(): DBOSSpan | undefined {
+    return getActiveSpan();
   }
 
   /**
@@ -727,44 +735,6 @@ export class DBOS {
   static async withNextWorkflowID<R>(workflowID: string, callback: () => Promise<R>): Promise<R> {
     ensureDBOSIsLaunched('workflows');
     return DBOS.#withTopContext({ idAssignedForNextWorkflow: workflowID }, callback);
-  }
-
-  /**
-   * Use the provided `callerName`, `span`, and `request` as context for any
-   *   DBOS functions called within the `callback` function.
-   * @param callerName - Tracing caller name
-   * @param span - Tracing span
-   * @param request - event context (such as HTTP request) that initiated the call
-   * @param callback - Function to run with tracing context in place
-   * @returns - Return value from `callback`
-   */
-  static async withTracedContext<R>(
-    callerName: string,
-    span: Span,
-    request: object,
-    callback: () => Promise<R>,
-  ): Promise<R> {
-    ensureDBOSIsLaunched('tracing');
-    const parentCtx = context.active();
-    return await context.with(trace.setSpan(parentCtx, span), async () => {
-      return DBOS.#withTopContext(
-        {
-          operationCaller: callerName,
-          request,
-        },
-        async () => {
-          try {
-            return await callback();
-          } catch (err) {
-            span.recordException(err as Error);
-            span.setStatus({ code: 2 }); // ERROR
-            throw err;
-          } finally {
-            span.end();
-          }
-        },
-      );
-    });
   }
 
   /**

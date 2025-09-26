@@ -1,4 +1,3 @@
-import { Span } from '@opentelemetry/sdk-trace-base';
 import {
   DBOSError,
   DBOSInitializationError,
@@ -27,10 +26,9 @@ import {
 
 import { type StepConfig } from './step';
 import { TelemetryCollector } from './telemetry/collector';
-import { Tracer } from './telemetry/traces';
+import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
-import type { TelemetryConfig } from './telemetry';
 import {
   type SystemDatabase,
   PostgresSystemDatabase,
@@ -52,7 +50,6 @@ import {
   getClassRegistrationByName,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
-import { context, SpanStatusCode, trace } from '@opentelemetry/api';
 import {
   runInStepContext,
   getNextWFID,
@@ -101,12 +98,15 @@ export interface DBOSConfig {
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
 
+  enableOTLP?: boolean;
   logLevel?: string;
   addContextMetadata?: boolean;
   otlpTracesEndpoints?: string[];
   otlpLogsEndpoints?: string[];
+
   adminPort?: number;
   runAdminServer?: boolean;
+
   applicationVersion?: string;
 }
 
@@ -115,6 +115,23 @@ export interface DBOSRuntimeConfig {
   runAdminServer: boolean;
   start: string[];
   setup: string[];
+}
+
+export interface TelemetryConfig {
+  logs?: LoggerConfig;
+  OTLPExporter?: OTLPExporterConfig;
+}
+
+export interface OTLPExporterConfig {
+  logsEndpoint?: string[];
+  tracesEndpoint?: string[];
+}
+
+export interface LoggerConfig {
+  logLevel?: string;
+  silent?: boolean;
+  addContextMetadata?: boolean;
+  forceConsole?: boolean;
 }
 
 export type DBOSConfigInternal = {
@@ -214,7 +231,7 @@ export class DBOSExecutor {
       this.telemetryCollector = new TelemetryCollector();
     }
     this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs);
-    this.ctxLogger = new DBOSContextualLogger(this.logger, () => trace.getActiveSpan() as Span);
+    this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
     this.tracer = new Tracer(this.telemetryCollector);
 
     if (this.#debugMode) {
@@ -530,7 +547,7 @@ export class DBOSExecutor {
 
       // Execute the workflow.
       try {
-        const callResult = await context.with(trace.setSpan(context.active(), span), async () => {
+        const callResult = await runWithTrace(span, async () => {
           return await runWithParentContext(
             pctx,
             {
@@ -695,7 +712,7 @@ export class DBOSExecutor {
 
     const maxRetryIntervalSec = 3600; // Maximum retry interval: 1 hour
 
-    const span: Span = this.tracer.startSpan(stepFnName, {
+    const span = this.tracer.startSpan(stepFnName, {
       operationUUID: wfid,
       operationType: OperationType.STEP,
       operationName: stepFnName,
@@ -775,7 +792,7 @@ export class DBOSExecutor {
     } else {
       try {
         let cresult: R | undefined;
-        await context.with(trace.setSpan(context.active(), span), async () => {
+        await runWithTrace(span, async () => {
           await runInStepContext(lctx, funcID, maxAttempts, undefined, async () => {
             const sf = stepFn as unknown as (...args: T) => Promise<R>;
             cresult = await sf.call(clsInst, ...args);

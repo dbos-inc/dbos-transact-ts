@@ -35,7 +35,7 @@ describe('registerstep', () => {
   afterAll(async () => {});
 
   beforeEach(async () => {
-    DBOS.setConfig({ name: 'koa-step-test' });
+    DBOS.setConfig({ name: 'koa-step-test', enableOTLP: true });
     await DBOS.launch();
     app = new Koa();
     appRouter = new Router();

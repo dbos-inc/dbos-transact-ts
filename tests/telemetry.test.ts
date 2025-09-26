@@ -12,14 +12,21 @@ import Router from '@koa/router';
 import { context, trace, SpanStatusCode } from '@opentelemetry/api';
 import { isTraceContextWorking } from '../src/telemetry/traces';
 import { AddressInfo } from 'net';
+import { globalParams } from '../src/utils';
+
+async function tracedStep() {
+  return Promise.resolve();
+}
 
 async function doSomethingTraced_internal() {
   const span = trace.getSpan(context.active());
-  console.log('Current span:', span?.spanContext());
   if (span) {
     span.setAttribute('my-lib.didSomething', true);
   }
-  expect(DBOS.span).toBe(trace.getSpan(context.active()));
+  if (globalParams.enableOTLP) {
+    expect(DBOS.span).toBe(trace.getSpan(context.active()));
+  }
+  await DBOS.runStep(tracedStep, { name: 'tracedStep' });
   return Promise.resolve('Done');
 }
 
@@ -70,7 +77,8 @@ export function createApp() {
 
 describe('trace spans propagate ', () => {
   beforeAll(async () => {
-    DBOS.setConfig({ name: 'trace-span-propagage' });
+    memoryExporter.reset();
+    DBOS.setConfig({ name: 'trace-span-propagate', enableOTLP: true });
     await DBOS.launch();
   });
 
@@ -92,7 +100,7 @@ describe('trace spans propagate ', () => {
     server.close();
 
     const spans = memoryExporter.getFinishedSpans();
-    expect(spans.length).toBeGreaterThan(0);
+    expect(spans.length).toBe(5);
 
     console.debug(
       spans.map((span) => ({
@@ -104,16 +112,44 @@ describe('trace spans propagate ', () => {
       })),
     );
 
-    const httpSpan = spans.find((s) => s.name.includes('/test'));
-    const libSpan = spans.find((s) => s.attributes['my-lib.didSomething'] === true);
-    const dbosSpan = spans.find((s) => s.name.includes('doSomethingTraced'));
+    // First two spans are probes, ignore them
+    const stepSpan = spans[2];
+    const workflowspan = spans[3];
+    const httpSpan = spans[4];
+    expect(stepSpan?.parentSpanId).toBe(workflowspan?.spanContext().spanId);
+    expect(stepSpan?.spanContext().traceId).toBe(workflowspan?.spanContext().traceId);
+    expect(workflowspan?.parentSpanId).toBe(httpSpan?.spanContext().spanId);
+    expect(workflowspan?.spanContext().traceId).toBe(httpSpan?.spanContext().traceId);
+    expect(workflowspan.attributes['my-lib.didSomething']).toBeTruthy();
+  });
+});
 
-    expect(httpSpan).toBeDefined();
-    expect(libSpan).toBeDefined();
-    expect(dbosSpan).toBeDefined();
-    expect(dbosSpan).toBe(libSpan);
-    expect(httpSpan).not.toBe(libSpan);
-    expect(dbosSpan?.parentSpanId).toBe(httpSpan?.spanContext().spanId);
-    expect(dbosSpan?.spanContext().traceId).toBe(httpSpan?.spanContext().traceId);
+describe('disable-otlp', () => {
+  beforeAll(async () => {
+    memoryExporter.reset();
+    DBOS.setConfig({ name: 'trace-span-propagate' });
+    await DBOS.launch();
+  });
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('disable-otlp', async () => {
+    expect(isTraceContextWorking()).toBe(false);
+
+    const app = createApp();
+    const server = app.listen(0); // Koa uses native HTTP
+
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://localhost:${port}/test`);
+
+    expect(res.status).toBe(200);
+    server.close();
+
+    // With OTLP disabled, only the HTTP span is present
+    const spans = memoryExporter.getFinishedSpans();
+    expect(spans.length).toBe(1);
   });
 });
