@@ -3,14 +3,14 @@
 
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
-import { transports, createLogger, format } from 'winston';
-import TransportStream = require('winston-transport');
 import type { Logger as OTelLogger, LogAttributes } from '@opentelemetry/api-logs';
 import type { LogRecord } from '@opentelemetry/sdk-logs';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON, globalParams, interceptStreams } from '../utils';
 import { LoggerConfig } from '../dbos-executor';
 import { DBOSSpan } from './traces';
+import type { format as formatT } from 'winston';
+import TransportStream from 'winston-transport';
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
@@ -72,10 +72,13 @@ export class GlobalLogger {
       this.logger = new DBOSConsoleLogger();
       return;
     }
-    const winstonTransports: TransportStream[] = [];
+
+    // Import Winston dependencies only when OTLP is enabled
+    const { transports, createLogger } = require('winston');
+    const winstonTransports: unknown[] = [];
     winstonTransports.push(
       new transports.Console({
-        format: consoleFormat,
+        format: getConsoleFormat(),
         level: config?.logLevel || 'info',
         silent: config?.silent || false,
         forceConsole: config?.forceConsole || false,
@@ -233,23 +236,27 @@ export class DBOSConsoleLogger implements DLogger {
 /* FORMAT & TRANSPORTS */
 /***********************/
 
-const consoleFormat = format.combine(
-  format.errors({ stack: true }),
-  format.timestamp(),
-  format.colorize(),
-  format.printf((info) => {
-    const { timestamp, level, message, stack } = info;
-    const applicationVersion = globalParams.appVersion;
-    const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
-    const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
+// Lazily create the console format only when Winston is used
+function getConsoleFormat() {
+  const { format } = require('winston') as { format: typeof formatT };
+  return format.combine(
+    format.errors({ stack: true }),
+    format.timestamp(),
+    format.colorize(),
+    format.printf((info) => {
+      const { timestamp, level, message, stack } = info;
+      const applicationVersion = globalParams.appVersion;
+      const ts = typeof timestamp === 'string' ? timestamp.slice(0, 19).replace('T', ' ') : undefined;
+      const formattedStack = typeof stack === 'string' ? stack?.split('\n').slice(1).join('\n') : undefined;
 
-    const messageString: string = typeof message === 'string' ? message : DBOSJSON.stringify(message);
-    const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as DBOSSpan)?.attributes)}` : ''}`;
+      const messageString: string = typeof message === 'string' ? message : DBOSJSON.stringify(message);
+      const fullMessageString = `${messageString}${info.includeContextMetadata ? ` ${DBOSJSON.stringify((info.span as DBOSSpan)?.attributes)}` : ''}`;
 
-    const versionString = applicationVersion ? ` [version ${applicationVersion}]` : '';
-    return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? '\n' + formattedStack : ''}`;
-  }),
-);
+      const versionString = applicationVersion ? ` [version ${applicationVersion}]` : '';
+      return `${ts}${versionString} [${level}]: ${fullMessageString} ${stack ? '\n' + formattedStack : ''}`;
+    }),
+  );
+}
 
 class OTLPLogQueueTransport extends TransportStream {
   readonly name = 'OTLPLogQueueTransport';
