@@ -14,9 +14,9 @@ import { DBOSSpan } from './traces';
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
-// as signatures using those types are not exported.
+// as signatures using those types are not exported from this file.
 
-export enum SeverityNumber {
+enum SeverityNumber {
   UNSPECIFIED = 0,
   TRACE = 1,
   TRACE2 = 2,
@@ -55,13 +55,6 @@ type ContextualMetadata = {
 
 interface StackTrace {
   stack?: string;
-}
-
-// Wrap around the winston logger to support configuration and access to our telemetry collector
-export interface IGlobalLogger extends IWinstonLogger {
-  readonly addContextMetadata: boolean;
-  readonly logger: IWinstonLogger;
-  readonly telemetryCollector: TelemetryCollector;
 }
 
 export class GlobalLogger {

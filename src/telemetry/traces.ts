@@ -11,7 +11,7 @@ import { globalParams } from '../utils';
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
-// as signatures using those types are not exported.
+// as signatures using those types are not exported from this file.
 
 interface Attributes {
   [attributeKey: string]: AttributeValue | undefined;
@@ -59,7 +59,7 @@ export type DBOSSpan = {
   addEvent(name: string, attributesOrStartTime?: Attributes, timeStamp?: number): DBOSSpan;
 };
 
-export class StubSpan implements DBOSSpan {
+class StubSpan implements DBOSSpan {
   attributes: Attributes = {};
 
   setStatus(_status: SpanStatus): DBOSSpan {

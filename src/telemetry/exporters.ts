@@ -15,7 +15,7 @@ import { globalParams } from '../utils';
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
-// as signatures using those types are not exported.
+// as signatures using those types are not exported from this file.
 
 export interface ITelemetryExporter {
   export(signal: object[]): Promise<void>;
