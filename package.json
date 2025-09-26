@@ -84,8 +84,6 @@
     "pg": "8.11.3",
     "serialize-error": "8.1.0",
     "superjson": "^1.13.3",
-    "winston": "3.17.0",
-    "winston-transport": "4.7.0",
     "ws": "^8.18.1",
     "yaml": "2.4.1"
   },
