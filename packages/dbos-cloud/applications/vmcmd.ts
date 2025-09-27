@@ -38,8 +38,12 @@ export async function vmCmd(
   try {
     const res = await axios.post(url, body, { headers: headers });
     const response = res.data as CmdResponse;
-    console.log(response.stdout.trimEnd());
-    console.error(response.stderr.trimEnd());
+    if (response.stdout.length > 0) {
+      console.log(response.stdout.trimEnd());
+    }
+    if (response.stderr.length > 0) {
+      console.error(response.stderr.trimEnd());
+    }
     return 0;
   } catch (e) {
     const errorLabel = `Failed to execute command`;
