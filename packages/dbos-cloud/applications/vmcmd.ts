@@ -7,10 +7,10 @@ import {
   retrieveApplicationName,
 } from '../cloudutils.js';
 
-type LogResponse = {
-  end: boolean;
-  next_timestamp: string;
-  body: string;
+type CmdResponse = {
+  stdout: string;
+  stderr: string;
+  exitCode: number;
 };
 
 export async function vmCmd(
@@ -27,22 +27,16 @@ export async function vmCmd(
     return 1;
   }
 
-  type CmdResponse = {
-    stdout: string;
-    stderr: string;
-    exitCode: number;
-  };
-
   const url = `https://${host}/vmsadmin/${userCredentials.organization}/applications/${appName}/vms/${executorId}/vmcmd`;
   const headers = {
     'Content-Type': 'application/json',
     Authorization: bearerToken,
   };
-  const params = {
+  const body = {
     command: command,
   };
   try {
-    const res = await axios.post(url, { headers: headers, params: params });
+    const res = await axios.post(url, body, { headers: headers });
     const response = res.data as CmdResponse;
     console.log(response.stdout.trimEnd());
     console.error(response.stderr.trimEnd());
