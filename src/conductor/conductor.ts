@@ -362,7 +362,7 @@ export class Conductor {
     } catch (e) {
       this.dbosExec.logger.warn(`Error in conductor loop. Reconnecting: ${(e as Error).message}`);
       if (this.reconnectTimeout === undefined) {
-        this.resetWebsocket();
+        this.resetWebsocket(this.websocket);
       }
     }
   }
