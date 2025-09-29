@@ -1,23 +1,7 @@
 import { Pool, PoolConfig } from 'pg';
-import { createLogger, Logger, transports } from 'winston';
 import { sleepms } from '../utils';
 import { promisify } from 'util';
 import { exec } from 'child_process';
-import { consoleFormat } from '../telemetry/logs';
-
-export type CLILogger = ReturnType<typeof createLogger>;
-let curLogger: Logger | undefined = undefined;
-export function getLogger(verbose?: boolean): CLILogger {
-  if (curLogger) return curLogger;
-  const winstonTransports = [];
-  winstonTransports.push(
-    new transports.Console({
-      format: consoleFormat,
-      level: verbose ? 'debug' : 'info',
-    }),
-  );
-  return (curLogger = createLogger({ transports: winstonTransports }));
-}
 
 /**
  * Starts a PostgreSQL database in a Docker container.
@@ -33,8 +17,7 @@ export function getLogger(verbose?: boolean): CLILogger {
  */
 
 export async function startDockerPg() {
-  const logger = getLogger();
-  logger.info('Attempting to create a Docker Postgres container...');
+  console.log('Attempting to create a Docker Postgres container...');
 
   const hasDocker = await checkDockerInstalled();
 
@@ -48,12 +31,12 @@ export async function startDockerPg() {
   };
 
   if (hasDocker) {
-    await startDockerPostgres(logger, poolConfig);
-    logger.info(
+    await startDockerPostgres(poolConfig);
+    console.log(
       `Postgres available at postgres://postgres:${poolConfig.password}@${poolConfig.host}:${poolConfig.port}`,
     );
   } else {
-    logger.warn('Docker not detected locally');
+    console.warn('Docker not detected locally');
   }
 }
 
@@ -80,8 +63,8 @@ async function checkDbConnectivity(config: PoolConfig): Promise<Error | null> {
 
 const execAsync = promisify(exec);
 
-async function startDockerPostgres(logger: Logger, poolConfig: PoolConfig): Promise<boolean> {
-  logger.info('Starting a Postgres Docker container...');
+async function startDockerPostgres(poolConfig: PoolConfig): Promise<boolean> {
+  console.log('Starting a Postgres Docker container...');
   const containerName = 'dbos-db';
   const pgData = '/var/lib/postgresql/data';
 
@@ -101,7 +84,7 @@ async function startDockerPostgres(logger: Logger, poolConfig: PoolConfig): Prom
   let attempts = 30;
   while (attempts > 0) {
     if (attempts % 5 === 0) {
-      logger.info('Waiting for Postgres Docker container to start...');
+      console.log('Waiting for Postgres Docker container to start...');
     }
 
     if ((await checkDbConnectivity(poolConfig)) === null) {
@@ -131,34 +114,33 @@ async function checkDockerInstalled(): Promise<boolean> {
  * @throws {Error} If there was an error stopping the container
  */
 export async function stopDockerPg(): Promise<boolean> {
-  const logger = getLogger();
   const containerName = 'dbos-db';
 
   try {
-    logger.info(`Stopping Docker Postgres container ${containerName}...`);
+    console.log(`Stopping Docker Postgres container ${containerName}...`);
 
     // Check if container exists and is running
     const { stdout: containerStatus } = await execAsync(`docker ps -a -f name=${containerName} --format "{{.Status}}"`);
 
     if (!containerStatus) {
-      logger.info(`Container ${containerName} does not exist.`);
+      console.log(`Container ${containerName} does not exist.`);
       return false;
     }
 
     const isRunning = containerStatus.toLowerCase().includes('up');
 
     if (!isRunning) {
-      logger.info(`Container ${containerName} exists but is not running.`);
+      console.log(`Container ${containerName} exists but is not running.`);
       return false;
     }
 
     // Stop the container
     await execAsync(`docker stop ${containerName}`);
-    logger.info(`Successfully stopped Docker Postgres container ${containerName}.`);
+    console.log(`Successfully stopped Docker Postgres container ${containerName}.`);
     return true;
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
-    logger.error(`Failed to stop Docker Postgres container: ${errorMessage}`);
+    console.error(`Failed to stop Docker Postgres container: ${errorMessage}`);
     throw error;
   }
 }

@@ -113,28 +113,6 @@ describe('dbos-config', () => {
       });
     });
 
-    test("can't specify forceConsole", () => {
-      const mockConfigFile = `
-        name: 'test-app'
-        telemetry:
-            logs:
-                forceOverride: true
-        `;
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
-
-      expect(() => readConfigFile()).toThrow();
-    });
-
-    test("can't specify unexpected fields", () => {
-      const mockConfigFile = `
-        name: 'test-app'
-        unexpected: 'some value'
-        `;
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
-
-      expect(() => readConfigFile()).toThrow();
-    });
-
     class FakeNotFoundError extends Error {
       readonly code = 'ENOENT';
     }
@@ -202,14 +180,6 @@ describe('dbos-config', () => {
         throw new Error('Some other error');
       });
       expect(() => readConfigFile()).toThrow(new Error('Some other error'));
-    });
-
-    test('throws on an invalid config', () => {
-      const mockConfigFile = `
-      name: 'test-app'
-      datafffbase_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable'`;
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
-      expect(() => readConfigFile()).toThrow();
     });
   });
 

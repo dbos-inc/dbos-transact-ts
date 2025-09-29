@@ -7,7 +7,7 @@
     "lint": "eslint src",
     "lint-fix": "eslint --fix src",
     "dev": "nodemon",
-    "start": "npx dbos start"
+    "start": "node dist/src/main.js"
   },
   "author": "",
   "license": "ISC",
