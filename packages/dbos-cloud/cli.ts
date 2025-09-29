@@ -38,6 +38,7 @@ import updateNotifier, { Package } from 'update-notifier';
 import { profile } from './users/profile.js';
 import { revokeRefreshToken } from './users/authentication.js';
 import { listAppVersions } from './applications/list-app-versions.js';
+import { vmCmd } from './applications/vmcmd.js';
 import {
   orgInvite,
   orgListUsers,
@@ -325,6 +326,17 @@ applicationCommands
   .option('-g, --group-by <string>', "Time interval for grouping data: 'minute', 'hour', or 'day', defaults to minute")
   .action(async (options: { since: string; upto: string; groupBy: string }) => {
     const exitCode = await getResourceUsage(DBOSCloudHost, options.since, options.upto, options.groupBy);
+    process.exit(exitCode);
+  });
+
+applicationCommands
+  .command('cmd')
+  .description('Execute a shell command on one of the executors for the application')
+  .argument('<name>', 'application name (Default: name from package.json)')
+  .requiredOption('-e, --executor-id <string>', 'The ID of the executor to use')
+  .requiredOption('-c, --command <string>', 'The command to run')
+  .action(async (appName: string | undefined, options: { executorId: string; command: string }) => {
+    const exitCode = await vmCmd(DBOSCloudHost, options.executorId, options.command, appName);
     process.exit(exitCode);
   });
 
