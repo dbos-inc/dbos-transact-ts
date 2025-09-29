@@ -32,7 +32,7 @@ export class Conductor {
     this.url = `${cleanConductorURL}/websocket/${appName}/${conductorKey}`;
   }
 
-  resetWebsocket() {
+  resetWebsocket(currWebsocket?: WebSocket) {
     if (this.pingInterval) {
       clearInterval(this.pingInterval);
       this.pingInterval = undefined;
@@ -41,9 +41,8 @@ export class Conductor {
       clearTimeout(this.pingTimeout);
       this.pingTimeout = undefined;
     }
-    if (this.websocket) {
-      this.websocket.terminate(); // Terminate the existing connection
-      this.websocket = undefined; // Set the websocket to undefined to indicate it's closed
+    if (currWebsocket) {
+      currWebsocket.terminate(); // Terminate the existing connection
     }
 
     if (this.reconnectTimeout || this.isShuttingDown) {
@@ -75,7 +74,7 @@ export class Conductor {
         } else if (this.reconnectTimeout === undefined) {
           // Otherwise, try to reconnect if we haven't already
           this.dbosExec.logger.warn('Connection to conductor lost. Reconnecting...');
-          this.resetWebsocket();
+          this.resetWebsocket(currWebsocket);
         }
       }, this.pingTimeoutMs);
     }, this.pingPeriodMs);
@@ -340,7 +339,7 @@ export class Conductor {
           return;
         } else if (this.reconnectTimeout === undefined) {
           this.dbosExec.logger.warn('Connection to conductor lost. Reconnecting.');
-          this.resetWebsocket();
+          this.resetWebsocket(currWebsocket);
         }
       });
 
@@ -350,14 +349,14 @@ export class Conductor {
           `Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}. Details: ${JSON.stringify(resBody)}`,
         );
         if (this.reconnectTimeout === undefined) {
-          this.resetWebsocket();
+          this.resetWebsocket(currWebsocket);
         }
       });
 
       currWebsocket.on('error', (err) => {
         this.dbosExec.logger.warn(`Unexpected exception in connection to conductor. Reconnecting: ${err.message}`);
         if (this.reconnectTimeout === undefined) {
-          this.resetWebsocket();
+          this.resetWebsocket(currWebsocket);
         }
       });
     } catch (e) {
