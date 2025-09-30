@@ -44,6 +44,7 @@ export const DBOS_FUNCNAME_SLEEP = 'DBOS.sleep';
 export const DBOS_FUNCNAME_GETSTATUS = 'getStatus';
 export const DBOS_FUNCNAME_WRITESTREAM = 'DBOS.writeStream';
 export const DBOS_FUNCNAME_CLOSESTREAM = 'DBOS.closeStream';
+export const DEFAULT_POOL_SIZE = 10;
 
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 
@@ -765,7 +766,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
-    sysDbPoolSize: number = 10,
+    sysDbPoolSize: number = DEFAULT_POOL_SIZE,
     systemDatabasePool?: Pool,
   ) {
     if (systemDatabasePool) {

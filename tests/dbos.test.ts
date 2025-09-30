@@ -6,6 +6,7 @@ import { DBOSConfig } from '../src/dbos-executor';
 import { Client, Pool } from 'pg';
 import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import assert from 'node:assert';
+import { DBOSClient } from '../dist/src';
 
 describe('dbos-tests', () => {
   let username: string;
@@ -530,5 +531,12 @@ describe('custom-pool-test', () => {
     const handle = await DBOS.startWorkflow(workflow)();
     await DBOS.send(handle.workflowID, message);
     assert.equal(await handle.getResult(), message);
+
+    const client = DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      systemDatabasePool: config.systemDatabasePool,
+    });
+    const clientHandle = (await client).retrieveWorkflow(handle.workflowID);
+    assert.equal(await clientHandle.getResult(), message);
   });
 });
