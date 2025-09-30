@@ -3,8 +3,9 @@ import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
-import { Client } from 'pg';
+import { Client, Pool } from 'pg';
 import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
+import assert from 'node:assert';
 
 describe('dbos-tests', () => {
   let username: string;
@@ -500,3 +501,34 @@ class DBOSTestClass {
     return Promise.resolve();
   }
 }
+
+describe('custom-pool-test', () => {
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('custom-pool-test', async () => {
+    const baseConfig = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(baseConfig);
+    const systemDatabaseURL = baseConfig.systemDatabaseUrl;
+    assert(systemDatabaseURL);
+    const pool = new Pool({ connectionString: systemDatabaseURL });
+    const config: DBOSConfig = {
+      systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
+      systemDatabasePool: pool,
+    };
+    DBOS.setConfig(config);
+    const workflow = DBOS.registerWorkflow(
+      () => {
+        return DBOS.recv();
+      },
+      { name: 'workflow' },
+    );
+    await DBOS.launch();
+
+    const message = 'message';
+    const handle = await DBOS.startWorkflow(workflow)();
+    await DBOS.send(handle.workflowID, message);
+    assert.equal(await handle.getResult(), message);
+  });
+});
