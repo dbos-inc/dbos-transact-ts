@@ -1718,15 +1718,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
         client.on('notification', handler);
         client.on('error', (err: Error) => {
           this.logger.warn(`Error in notifications client: ${err}`);
-          client!.removeAllListeners();
-          client!.release(true);
+          if (client) {
+            client.removeAllListeners();
+            client.release(true);
+          }
           reconnect();
         });
         this.notificationsClient = client;
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
-        client!.removeAllListeners();
-        client!.release(true);
+        if (client) {
+          client.removeAllListeners();
+          client.release(true);
+        }
         reconnect();
       }
     };
