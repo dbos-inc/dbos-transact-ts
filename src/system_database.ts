@@ -1,5 +1,5 @@
 import { DBOSExecutor, DBOSExternalState } from './dbos-executor';
-import { DatabaseError, Pool, PoolClient, Notification, Client, PoolConfig } from 'pg';
+import { DatabaseError, Pool, PoolClient, Notification, Client, PoolConfig, ClientBase } from 'pg';
 import {
   DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
@@ -266,8 +266,23 @@ export async function grantDbosSchemaPermissions(
   }
 }
 
-export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogger, debugMode: boolean = false) {
-  if (!debugMode) {
+export async function ensureSystemDatabase(
+  sysDbUrl: string,
+  logger: GlobalLogger,
+  debugMode: boolean = false,
+  customPool?: Pool,
+) {
+  if (debugMode) {
+    // Don't create anything in debug mode
+    return;
+  }
+  let client: ClientBase | null = null;
+  if (customPool) {
+    // If a custom pool is passed in, assume the database already exists and create
+    // a client to run migrations.
+    client = await customPool.connect();
+  } else {
+    // Otherwise, create the system database if it does not exist.
     const res = await ensurePGDatabase({
       urlToEnsure: sysDbUrl,
       logger: (msg: string) => logger.debug(msg),
@@ -277,29 +292,28 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
         `Database could not be verified / created: ${maskDatabaseUrl(sysDbUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
       );
     }
-  }
-
-  const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
-  if (cconnect.result !== 'ok') {
-    logger.warn(
-      `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}${debugMode ? ' (debug mode)' : ''}
-      ${cconnect.message}: (${cconnect.code ? cconnect.code : 'connectivity problem'})`,
-    );
-    throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
+    const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
+    if (cconnect.result !== 'ok') {
+      logger.warn(
+        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}${debugMode ? ' (debug mode)' : ''}
+        ${cconnect.message}: (${cconnect.code ? cconnect.code : 'connectivity problem'})`,
+      );
+      throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
+    }
+    client = cconnect.client;
   }
 
   try {
-    if (debugMode) {
-      logger.info(`Skipping system database migration in debug mode.`);
-      return;
-    }
-
-    await runSysMigrationsPg(cconnect.client, allMigrations, {
+    await runSysMigrationsPg(client, allMigrations, {
       onWarn: (e: string) => logger.info(e),
     });
   } finally {
     try {
-      await cconnect.client.end();
+      if (customPool) {
+        (client as PoolClient).release();
+      } else {
+        await (client as Client).end();
+      }
     } catch (e) {}
   }
 }
@@ -793,9 +807,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async init(debugMode: boolean = false) {
-    if (!this.customPool) {
-      await ensureSystemDatabase(this.systemDatabaseUrl, this.logger, debugMode);
-    }
+    await ensureSystemDatabase(this.systemDatabaseUrl, this.logger, debugMode, this.customPool ? this.pool : undefined);
 
     if (this.shouldUseDBNotifications) {
       await this.#listenForNotifications();

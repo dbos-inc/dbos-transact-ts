@@ -7,6 +7,7 @@ import { Client, Pool } from 'pg';
 import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
+import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
 
 describe('dbos-tests', () => {
   let username: string;
@@ -510,6 +511,8 @@ describe('custom-pool-test', () => {
 
   test('custom-pool-test', async () => {
     const baseConfig = generateDBOSTestConfig();
+    await dropPGDatabase({ urlToDrop: baseConfig.systemDatabaseUrl, logger: () => {} });
+    await ensurePGDatabase({ urlToEnsure: baseConfig.systemDatabaseUrl, logger: () => {} });
     await setUpDBOSTestSysDb(baseConfig);
     const systemDatabaseURL = baseConfig.systemDatabaseUrl;
     assert(systemDatabaseURL);
