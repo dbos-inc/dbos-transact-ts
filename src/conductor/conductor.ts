@@ -43,6 +43,10 @@ export class Conductor {
     }
     if (currWebsocket) {
       currWebsocket.terminate(); // Terminate the existing connection
+      if (this.websocket === currWebsocket) {
+        // Only clear if it's the same websocket
+        this.websocket = undefined;
+      }
     }
 
     if (this.reconnectTimeout || this.isShuttingDown) {
