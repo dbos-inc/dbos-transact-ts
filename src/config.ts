@@ -188,6 +188,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     name: options.name,
     systemDatabaseUrl,
     sysDbPoolSize: options.systemDatabasePoolSize,
+    systemDatabasePool: options.systemDatabasePool,
     telemetry: {
       logs: {
         logLevel: options.logLevel || 'info',

@@ -1,5 +1,5 @@
 import { DBOSExecutor, DBOSExternalState } from './dbos-executor';
-import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
+import { DatabaseError, Pool, PoolClient, Notification, Client, PoolConfig } from 'pg';
 import {
   DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
@@ -731,7 +731,6 @@ function dbRetry(
 
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
-  readonly systemPoolConfig: PoolConfig;
 
   /*
    * Generally, notifications are asynchronous.  One should:
@@ -758,6 +757,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
   readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
+  customPool: boolean = false;
 
   readonly runningWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
@@ -765,14 +765,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
-    readonly sysDbPoolSize: number = 20,
+    sysDbPoolSize: number = 10,
+    systemDatabasePool?: Pool,
   ) {
-    this.systemPoolConfig = {
-      ...getClientConfig(systemDatabaseUrl),
-      // This sets the application_name column in pg_stat_activity
-      application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
-    };
-    this.pool = new Pool(this.systemPoolConfig);
+    if (systemDatabasePool) {
+      this.pool = systemDatabasePool;
+      this.customPool = true;
+    } else {
+      const systemPoolConfig: PoolConfig = {
+        ...getClientConfig(systemDatabaseUrl),
+        // This sets the application_name column in pg_stat_activity
+        application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
+        max: sysDbPoolSize,
+      };
+      this.pool = new Pool(systemPoolConfig);
+    }
 
     this.pool.on('error', (err: Error) => {
       this.logger.warn(`Unexpected error in pool: ${err}`);
@@ -785,7 +792,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async init(debugMode: boolean = false) {
-    await ensureSystemDatabase(this.systemDatabaseUrl, this.logger, debugMode);
+    if (!this.customPool) {
+      await ensureSystemDatabase(this.systemDatabaseUrl, this.logger, debugMode);
+    }
 
     if (this.shouldUseDBNotifications) {
       await this.#listenForNotifications();

@@ -83,6 +83,7 @@ import {
 } from './workflow_management';
 import { maskDatabaseUrl } from './database_utils';
 import { debouncerWorkflowFunction } from './debouncer';
+import { Pool } from 'pg';
 
 // eslint-disable-next-line @typescript-eslint/no-empty-object-type
 interface DBOSNull {}
@@ -97,6 +98,7 @@ export interface DBOSConfig {
 
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
+  systemDatabasePool?: Pool;
 
   enableOTLP?: boolean;
   logLevel?: string;
@@ -139,6 +141,7 @@ export type DBOSConfigInternal = {
 
   systemDatabaseUrl: string;
   sysDbPoolSize?: number;
+  systemDatabasePool?: Pool;
 
   telemetry: TelemetryConfig;
 
@@ -247,6 +250,7 @@ export class DBOSExecutor {
         this.config.systemDatabaseUrl,
         this.logger,
         this.config.sysDbPoolSize,
+        this.config.systemDatabasePool,
       );
     }
 
