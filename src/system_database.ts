@@ -751,7 +751,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
    *   The real problem is, if the pipes out of the server are full... then notifications can be
    *     dropped, and only the PG server log may note it.  For those reasons, we do occasional polling
    */
-  notificationsClient: Client | null = null;
+  notificationsClient: PoolClient | null = null;
   dbPollingIntervalResultMs: number = 1000;
   dbPollingIntervalEventMs: number = 10000;
   shouldUseDBNotifications: boolean = true;
@@ -798,7 +798,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     if (this.notificationsClient) {
       try {
-        await this.notificationsClient.end();
+        this.notificationsClient.release(true);
       } catch (e) {
         this.logger.warn(`Error ending notifications client: ${String(e)}`);
       }
@@ -1691,10 +1691,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }, 1000);
       };
 
-      let client: Client | null = null;
+      let client: PoolClient | null = null;
       try {
-        client = new Client(this.systemPoolConfig);
-        await client.connect();
+        client = await this.pool.connect();
         await client.query('LISTEN dbos_notifications_channel;');
         await client.query('LISTEN dbos_workflow_events_channel;');
 
@@ -1708,17 +1707,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
         };
 
         client.on('notification', handler);
-        client.on('error', async (err: Error) => {
+        client.on('error', (err: Error) => {
           this.logger.warn(`Error in notifications client: ${err}`);
           client!.removeAllListeners();
-          await client!.end();
+          client!.release(true);
           reconnect();
         });
         this.notificationsClient = client;
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
         client!.removeAllListeners();
-        await client!.end();
+        client!.release(true);
         reconnect();
       }
     };
