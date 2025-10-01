@@ -3,6 +3,7 @@ import {
   type SystemDatabase,
   type WorkflowStatusInternal,
   DBOS_STREAM_CLOSED_SENTINEL,
+  DEFAULT_POOL_SIZE,
 } from './system_database';
 
 import { GlobalLogger } from './telemetry/logs';
@@ -27,6 +28,7 @@ import {
 } from './workflow_management';
 import { DBOSExecutor } from './dbos-executor';
 import { DBOSAwaitedWorkflowCancelledError } from './error';
+import { Pool } from 'pg';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -120,9 +122,14 @@ export class DBOSClient {
   private readonly logger: GlobalLogger;
   private readonly systemDatabase: SystemDatabase;
 
-  private constructor(systemDatabaseUrl: string) {
+  private constructor(systemDatabaseUrl: string, systemDatabasePool?: Pool) {
     this.logger = new GlobalLogger();
-    this.systemDatabase = new PostgresSystemDatabase(systemDatabaseUrl, this.logger);
+    this.systemDatabase = new PostgresSystemDatabase(
+      systemDatabaseUrl,
+      this.logger,
+      DEFAULT_POOL_SIZE,
+      systemDatabasePool,
+    );
   }
 
   /**
@@ -131,8 +138,14 @@ export class DBOSClient {
    * @param systemDatabase - An optional name for the system database. If not provided, it defaults to the application database name with a `_dbos_sys` suffix.
    * @returns A Promise that resolves with the DBOSClient instance.
    */
-  static async create({ systemDatabaseUrl }: { systemDatabaseUrl: string }): Promise<DBOSClient> {
-    const client = new DBOSClient(systemDatabaseUrl);
+  static async create({
+    systemDatabaseUrl,
+    systemDatabasePool,
+  }: {
+    systemDatabaseUrl: string;
+    systemDatabasePool?: Pool;
+  }): Promise<DBOSClient> {
+    const client = new DBOSClient(systemDatabaseUrl, systemDatabasePool);
     return Promise.resolve(client);
   }
 
