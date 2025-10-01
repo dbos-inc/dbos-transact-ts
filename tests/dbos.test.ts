@@ -4,7 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
 import { Client, Pool } from 'pg';
-import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
+import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
 import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
@@ -511,13 +511,12 @@ describe('custom-pool-test', () => {
 
   test('custom-pool-test', async () => {
     const baseConfig = generateDBOSTestConfig();
+    // Destroy the system database
     await dropPGDatabase({ urlToDrop: baseConfig.systemDatabaseUrl, logger: () => {} });
-    await ensurePGDatabase({ urlToEnsure: baseConfig.systemDatabaseUrl, logger: () => {} });
-    await setUpDBOSTestSysDb(baseConfig);
     const systemDatabaseURL = baseConfig.systemDatabaseUrl;
     assert(systemDatabaseURL);
-    const pool = new Pool({ connectionString: systemDatabaseURL });
-    const config: DBOSConfig = {
+    let pool = new Pool({ connectionString: systemDatabaseURL });
+    let config: DBOSConfig = {
       systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
       systemDatabasePool: pool,
     };
@@ -528,6 +527,17 @@ describe('custom-pool-test', () => {
       },
       { name: 'workflow' },
     );
+    // Launching with a custom pool but nonexistent database should fail
+    await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
+    await DBOS.shutdown();
+    // Create the system database, launch should succeed with a custom pool but fake URL
+    await ensurePGDatabase({ urlToEnsure: baseConfig.systemDatabaseUrl, logger: () => {} });
+    pool = new Pool({ connectionString: systemDatabaseURL });
+    config = {
+      systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
+      systemDatabasePool: pool,
+    };
+    DBOS.setConfig(config);
     await DBOS.launch();
 
     const message = 'message';
