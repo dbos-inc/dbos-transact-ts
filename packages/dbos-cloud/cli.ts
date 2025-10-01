@@ -332,7 +332,7 @@ applicationCommands
 applicationCommands
   .command('cmd')
   .description('Execute a shell command on one of the executors for the application')
-  .argument('<name>', 'application name (Default: name from package.json)')
+  .argument('[string]', 'application name (Default: name from package.json)')
   .requiredOption('-e, --executor-id <string>', 'The ID of the executor to use')
   .requiredOption('-c, --command <string>', 'The command to run')
   .action(async (appName: string | undefined, options: { executorId: string; command: string }) => {
