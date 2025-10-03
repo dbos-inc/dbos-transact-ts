@@ -13,6 +13,7 @@ export async function updateApp(
   appName?: string,
   executorsMemoryMib?: number,
   minVms?: number,
+  maxVms?: number,
   userCredentials?: DBOSCloudCredentials,
 ): Promise<number> {
   const logger = getLogger();
@@ -33,6 +34,7 @@ export async function updateApp(
       {
         executors_memory_mib: executorsMemoryMib,
         min_vms: minVms,
+        max_vms: maxVms,
       },
       {
         headers: {
