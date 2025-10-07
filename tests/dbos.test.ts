@@ -3,8 +3,11 @@ import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
-import { Client } from 'pg';
-import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
+import { Client, Pool } from 'pg';
+import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
+import assert from 'node:assert';
+import { DBOSClient } from '../dist/src';
+import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
 
 describe('dbos-tests', () => {
   let username: string;
@@ -500,3 +503,53 @@ class DBOSTestClass {
     return Promise.resolve();
   }
 }
+
+describe('custom-pool-test', () => {
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('custom-pool-test', async () => {
+    const baseConfig = generateDBOSTestConfig();
+    // Destroy the system database
+    await dropPGDatabase({ urlToDrop: baseConfig.systemDatabaseUrl, logger: () => {} });
+    const systemDatabaseURL = baseConfig.systemDatabaseUrl;
+    assert(systemDatabaseURL);
+    let pool = new Pool({ connectionString: systemDatabaseURL });
+    let config: DBOSConfig = {
+      systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
+      systemDatabasePool: pool,
+    };
+    DBOS.setConfig(config);
+    const workflow = DBOS.registerWorkflow(
+      () => {
+        return DBOS.recv();
+      },
+      { name: 'workflow' },
+    );
+    // Launching with a custom pool but nonexistent database should fail
+    await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
+    await DBOS.shutdown();
+    // Create the system database, launch should succeed with a custom pool but fake URL
+    await ensurePGDatabase({ urlToEnsure: baseConfig.systemDatabaseUrl, logger: () => {} });
+    pool = new Pool({ connectionString: systemDatabaseURL });
+    config = {
+      systemDatabaseUrl: 'postgres://fake:nonsense@badhost:1111/no_database',
+      systemDatabasePool: pool,
+    };
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    const message = 'message';
+    const handle = await DBOS.startWorkflow(workflow)();
+    await DBOS.send(handle.workflowID, message);
+    assert.equal(await handle.getResult(), message);
+
+    const client = DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      systemDatabasePool: config.systemDatabasePool,
+    });
+    const clientHandle = (await client).retrieveWorkflow(handle.workflowID);
+    assert.equal(await clientHandle.getResult(), message);
+  });
+});

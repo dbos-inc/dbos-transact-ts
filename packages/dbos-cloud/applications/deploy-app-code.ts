@@ -212,6 +212,13 @@ export async function deployAppCode(
       logger.error('No package.json found.');
       return 1;
     }
+    const packageJsonPath = path.join(process.cwd(), 'package.json');
+    const content = fs.readFileSync(packageJsonPath, 'utf8');
+    if (!content.includes('@dbos-inc/otel')) {
+      logger.warn(
+        'Your package.json does not include @dbos-inc/otel. If you are using DBOS TS >=4.0.0, you must include the @dbos-inc/otel dependency to deploy to DBOS Cloud.',
+      );
+    }
   } else if (appLanguage === (AppLanguages.Python as string)) {
     logger.debug('Checking for requirements.txt...');
     const requirementsPath = path.join(process.cwd(), 'requirements.txt');

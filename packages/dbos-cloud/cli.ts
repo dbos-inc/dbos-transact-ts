@@ -183,10 +183,22 @@ applicationCommands
   .argument('[string]', 'application name (Default: name from package.json)')
   .option('--executors-memory-mib <number>', 'Specify the memory in MiB for the executors of this application')
   .option('--min-executors <number>', 'Specify the minimum number of executors the app should scale to')
-  .action(async (appName: string | undefined, options: { executorsMemoryMib?: number; minExecutors?: number }) => {
-    const exitCode = await updateApp(DBOSCloudHost, appName, options.executorsMemoryMib, options.minExecutors);
-    process.exit(exitCode);
-  });
+  .option('--max-executors <number>', 'Specify the maxium number of executors the app should scale to')
+  .action(
+    async (
+      appName: string | undefined,
+      options: { executorsMemoryMib?: number; minExecutors?: number; maxExecutors?: number },
+    ) => {
+      const exitCode = await updateApp(
+        DBOSCloudHost,
+        appName,
+        options.executorsMemoryMib,
+        options.minExecutors,
+        options.maxExecutors,
+      );
+      process.exit(exitCode);
+    },
+  );
 
 applicationCommands
   .command('deploy')
@@ -332,7 +344,7 @@ applicationCommands
 applicationCommands
   .command('cmd')
   .description('Execute a shell command on one of the executors for the application')
-  .argument('<name>', 'application name (Default: name from package.json)')
+  .argument('[string]', 'application name (Default: name from package.json)')
   .requiredOption('-e, --executor-id <string>', 'The ID of the executor to use')
   .requiredOption('-c, --command <string>', 'The command to run')
   .action(async (appName: string | undefined, options: { executorId: string; command: string }) => {

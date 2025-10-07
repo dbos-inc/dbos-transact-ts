@@ -1,5 +1,5 @@
 import { DBOSExecutor, DBOSExternalState } from './dbos-executor';
-import { DatabaseError, Pool, PoolClient, Notification, PoolConfig, Client } from 'pg';
+import { DatabaseError, Pool, PoolClient, Notification, Client, PoolConfig, ClientBase } from 'pg';
 import {
   DBOSWorkflowConflictError,
   DBOSNonExistentWorkflowError,
@@ -44,6 +44,7 @@ export const DBOS_FUNCNAME_SLEEP = 'DBOS.sleep';
 export const DBOS_FUNCNAME_GETSTATUS = 'getStatus';
 export const DBOS_FUNCNAME_WRITESTREAM = 'DBOS.writeStream';
 export const DBOS_FUNCNAME_CLOSESTREAM = 'DBOS.closeStream';
+export const DEFAULT_POOL_SIZE = 10;
 
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 
@@ -265,8 +266,23 @@ export async function grantDbosSchemaPermissions(
   }
 }
 
-export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogger, debugMode: boolean = false) {
-  if (!debugMode) {
+export async function ensureSystemDatabase(
+  sysDbUrl: string,
+  logger: GlobalLogger,
+  debugMode: boolean = false,
+  customPool?: Pool,
+) {
+  if (debugMode) {
+    // Don't create anything in debug mode
+    return;
+  }
+  let client: ClientBase | null = null;
+  if (customPool) {
+    // If a custom pool is passed in, assume the database already exists and create
+    // a client to run migrations.
+    client = await customPool.connect();
+  } else {
+    // Otherwise, create the system database if it does not exist.
     const res = await ensurePGDatabase({
       urlToEnsure: sysDbUrl,
       logger: (msg: string) => logger.debug(msg),
@@ -276,29 +292,28 @@ export async function ensureSystemDatabase(sysDbUrl: string, logger: GlobalLogge
         `Database could not be verified / created: ${maskDatabaseUrl(sysDbUrl)}: ${res.message} ${res.hint ?? ''}\n  ${res.notes.join('\n')}`,
       );
     }
-  }
-
-  const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
-  if (cconnect.result !== 'ok') {
-    logger.warn(
-      `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}${debugMode ? ' (debug mode)' : ''}
-      ${cconnect.message}: (${cconnect.code ? cconnect.code : 'connectivity problem'})`,
-    );
-    throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
+    const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
+    if (cconnect.result !== 'ok') {
+      logger.warn(
+        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}${debugMode ? ' (debug mode)' : ''}
+        ${cconnect.message}: (${cconnect.code ? cconnect.code : 'connectivity problem'})`,
+      );
+      throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
+    }
+    client = cconnect.client;
   }
 
   try {
-    if (debugMode) {
-      logger.info(`Skipping system database migration in debug mode.`);
-      return;
-    }
-
-    await runSysMigrationsPg(cconnect.client, allMigrations, {
+    await runSysMigrationsPg(client, allMigrations, {
       onWarn: (e: string) => logger.info(e),
     });
   } finally {
     try {
-      await cconnect.client.end();
+      if (customPool) {
+        (client as PoolClient).release();
+      } else {
+        await (client as Client).end();
+      }
     } catch (e) {}
   }
 }
@@ -731,7 +746,6 @@ function dbRetry(
 
 export class PostgresSystemDatabase implements SystemDatabase {
   readonly pool: Pool;
-  readonly systemPoolConfig: PoolConfig;
 
   /*
    * Generally, notifications are asynchronous.  One should:
@@ -751,13 +765,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
    *   The real problem is, if the pipes out of the server are full... then notifications can be
    *     dropped, and only the PG server log may note it.  For those reasons, we do occasional polling
    */
-  notificationsClient: Client | null = null;
+  notificationsClient: PoolClient | null = null;
   dbPollingIntervalResultMs: number = 1000;
   dbPollingIntervalEventMs: number = 10000;
   shouldUseDBNotifications: boolean = true;
   readonly notificationsMap: NotificationMap<void> = new NotificationMap();
   readonly workflowEventsMap: NotificationMap<void> = new NotificationMap();
   readonly cancelWakeupMap: NotificationMap<void> = new NotificationMap();
+  customPool: boolean = false;
 
   readonly runningWorkflowMap: Map<string, Promise<unknown>> = new Map(); // Map from workflowID to workflow promise
   readonly workflowCancellationMap: Map<string, boolean> = new Map(); // Map from workflowID to its cancellation status.
@@ -765,14 +780,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
-    readonly sysDbPoolSize: number = 20,
+    sysDbPoolSize: number = DEFAULT_POOL_SIZE,
+    systemDatabasePool?: Pool,
   ) {
-    this.systemPoolConfig = {
-      ...getClientConfig(systemDatabaseUrl),
-      // This sets the application_name column in pg_stat_activity
-      application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
-    };
-    this.pool = new Pool(this.systemPoolConfig);
+    if (systemDatabasePool) {
+      this.pool = systemDatabasePool;
+      this.customPool = true;
+    } else {
+      const systemPoolConfig: PoolConfig = {
+        ...getClientConfig(systemDatabaseUrl),
+        // This sets the application_name column in pg_stat_activity
+        application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
+        max: sysDbPoolSize,
+      };
+      this.pool = new Pool(systemPoolConfig);
+    }
 
     this.pool.on('error', (err: Error) => {
       this.logger.warn(`Unexpected error in pool: ${err}`);
@@ -785,7 +807,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async init(debugMode: boolean = false) {
-    await ensureSystemDatabase(this.systemDatabaseUrl, this.logger, debugMode);
+    await ensureSystemDatabase(this.systemDatabaseUrl, this.logger, debugMode, this.customPool ? this.pool : undefined);
 
     if (this.shouldUseDBNotifications) {
       await this.#listenForNotifications();
@@ -798,7 +820,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
     if (this.notificationsClient) {
       try {
-        await this.notificationsClient.end();
+        this.notificationsClient.release(true);
       } catch (e) {
         this.logger.warn(`Error ending notifications client: ${String(e)}`);
       }
@@ -1691,10 +1713,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }, 1000);
       };
 
-      let client: Client | null = null;
+      let client: PoolClient | null = null;
       try {
-        client = new Client(this.systemPoolConfig);
-        await client.connect();
+        client = await this.pool.connect();
         await client.query('LISTEN dbos_notifications_channel;');
         await client.query('LISTEN dbos_workflow_events_channel;');
 
@@ -1708,17 +1729,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
         };
 
         client.on('notification', handler);
-        client.on('error', async (err: Error) => {
+        client.on('error', (err: Error) => {
           this.logger.warn(`Error in notifications client: ${err}`);
-          client!.removeAllListeners();
-          await client!.end();
+          if (client) {
+            client.removeAllListeners();
+            client.release(true);
+          }
           reconnect();
         });
         this.notificationsClient = client;
       } catch (error) {
         this.logger.warn(`Error in notifications listener: ${String(error)}`);
-        client!.removeAllListeners();
-        await client!.end();
+        if (client) {
+          client.removeAllListeners();
+          client.release(true);
+        }
         reconnect();
       }
     };

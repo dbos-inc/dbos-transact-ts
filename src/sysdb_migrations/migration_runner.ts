@@ -1,4 +1,4 @@
-import type { Client } from 'pg';
+import type { ClientBase } from 'pg';
 
 export type DBMigration = {
   name?: string;
@@ -7,7 +7,7 @@ export type DBMigration = {
 };
 
 /** Get the current DB version, or 0 if table is missing/empty. */
-export async function getCurrentSysDBVersion(client: Client): Promise<number> {
+export async function getCurrentSysDBVersion(client: ClientBase): Promise<number> {
   // Does table exist?
   const regRes = await client.query<{ table_name: string | null }>(
     "SELECT table_name FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'dbos_migrations'",
@@ -55,7 +55,7 @@ function isDDLAlreadyAppliedPgError(err: unknown, ignoreCodes: ReadonlySet<strin
 
 /** Run a list of statements, ignoring “already applied” errors. */
 async function runStatementsIgnoring(
-  client: Client,
+  client: ClientBase,
   stmts: ReadonlyArray<string>,
   ignoreCodes: ReadonlySet<string>,
   warn: (m: string, e?: unknown) => void,
@@ -81,7 +81,7 @@ async function runStatementsIgnoring(
  * - Warns if current version > max known (likely newer software concurrently)
  */
 export async function runSysMigrationsPg(
-  client: Client,
+  client: ClientBase,
   allMigrations: ReadonlyArray<DBMigration>,
   opts: PgMigratorOptions = {},
 ): Promise<{
