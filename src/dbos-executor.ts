@@ -384,7 +384,7 @@ export class DBOSExecutor {
 
     // If the workflow is called on a queue with a priority but the queue is not configured with a priority, print a warning.
     if (params.queueName) {
-      const wfqueue = this.#getQueueByName(params.queueName);
+      const wfqueue = this.getQueueByName(params.queueName);
       if (!wfqueue.priorityEnabled && priority !== undefined) {
         throw Error(
           `Priority is not enabled for queue ${params.queueName}. Setting priority will not have any effect.`,
@@ -446,6 +446,7 @@ export class DBOSExecutor {
       input: funcArgs.stringified,
       deduplicationID: params.enqueueOptions?.deduplicationID,
       priority: priority ?? 0,
+      queuePartitionKey: params.enqueueOptions?.queuePartitionKey,
     };
 
     if (isTempWorkflow) {
@@ -646,7 +647,7 @@ export class DBOSExecutor {
     }
   }
 
-  #getQueueByName(name: string): WorkflowQueue {
+  getQueueByName(name: string): WorkflowQueue {
     const q = wfQueueRunner.wfQueuesByName.get(name);
     if (!q) throw new DBOSNotRegisteredError(name, `Workflow queue '${name}' is not defined.`);
     return q;

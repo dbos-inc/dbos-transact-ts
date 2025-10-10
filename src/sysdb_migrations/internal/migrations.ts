@@ -169,4 +169,8 @@ export const allMigrations: ReadonlyArray<DBMigration> = [
       `alter table "dbos"."streams" add constraint "streams_workflow_uuid_foreign" foreign key ("workflow_uuid") references "dbos"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
     ],
   },
+  {
+    name: '20252810000000_partitioned_queues',
+    pg: [`alter table "dbos"."workflow_status" add column "queue_partition_key" text`],
+  },
 ];
