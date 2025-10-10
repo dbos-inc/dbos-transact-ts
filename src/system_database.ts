@@ -121,7 +121,12 @@ export interface SystemDatabase {
   getDeduplicatedWorkflow(queueName: string, deduplicationID: string): Promise<string | null>;
   getQueuePartitions(queueName: string): Promise<string[]>;
 
-  findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
+  findAndMarkStartableWorkflows(
+    queue: WorkflowQueue,
+    executorID: string,
+    appVersion: string,
+    queuePartitionKey?: string | null,
+  ): Promise<string[]>;
 
   // Actions w/ durable records and notifications
   durableSleepms(workflowID: string, functionID: number, duration: number): Promise<void>;
@@ -2034,10 +2039,25 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return rows.map((row) => row.queue_partition_key);
   }
 
-  async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]> {
+  async findAndMarkStartableWorkflows(
+    queue: WorkflowQueue,
+    executorID: string,
+    appVersion: string,
+    queuePartitionKey?: string | null,
+  ): Promise<string[]> {
     const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
     const claimedIDs: string[] = [];
+
+    // Build partition key filter
+    let partitionFilter = '';
+    const partitionParams: string[] = [];
+    if (queuePartitionKey === null) {
+      partitionFilter = 'AND queue_partition_key IS NULL';
+    } else if (queuePartitionKey !== undefined) {
+      partitionFilter = `AND queue_partition_key = $PARTITION`;
+      partitionParams.push(queuePartitionKey);
+    }
 
     const client = await this.pool.connect();
     try {
@@ -2046,12 +2066,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // If there is a rate limit, compute how many functions have started in its period.
       let numRecentQueries = 0;
       if (queue.rateLimit) {
+        const params = [queue.name, StatusString.ENQUEUED, startTimeMs - limiterPeriodMS, ...partitionParams];
         const countResult = await client.query<{ count: string }>(
           `SELECT COUNT(*) FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
            WHERE queue_name = $1
              AND status <> $2
-             AND started_at_epoch_ms > $3`,
-          [queue.name, StatusString.ENQUEUED, startTimeMs - limiterPeriodMS],
+             AND started_at_epoch_ms > $3
+             ${partitionFilter.replace('$PARTITION', '$4')}`,
+          params,
         );
         numRecentQueries = Number(countResult.rows[0].count);
         if (numRecentQueries >= queue.rateLimit.limitPerPeriod) {
@@ -2068,12 +2090,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       if (queue.workerConcurrency !== undefined || queue.concurrency !== undefined) {
         // Count how many workflows on this queue are currently PENDING both locally and globally.
+        const params = [queue.name, StatusString.PENDING, ...partitionParams];
         const runningTasksResult = await client.query(
           `SELECT executor_id, COUNT(*) as task_count
            FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
            WHERE queue_name = $1 AND status = $2
+             ${partitionFilter.replace('$PARTITION', '$3')}
            GROUP BY executor_id`,
-          [queue.name, StatusString.PENDING],
+          params,
         );
         const runningTasksResultDict: Record<string, number> = {};
         runningTasksResult.rows.forEach((row: { executor_id: string; task_count: string }) => {
@@ -2109,22 +2133,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const orderClause = queue.priorityEnabled ? 'ORDER BY priority ASC, created_at ASC' : 'ORDER BY created_at ASC';
       const limitClause = maxTasks !== Infinity ? `LIMIT ${maxTasks}` : '';
 
+      const selectParams = [StatusString.ENQUEUED, queue.name, appVersion, ...partitionParams];
       const selectQuery = `
         SELECT workflow_uuid
         FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
         WHERE status = $1
           AND queue_name = $2
           AND (application_version IS NULL OR application_version = $3)
+          ${partitionFilter.replace('$PARTITION', '$4')}
         ${orderClause}
         ${limitClause}
         ${lockMode}
       `;
 
-      const { rows } = await client.query<{ workflow_uuid: string }>(selectQuery, [
-        StatusString.ENQUEUED,
-        queue.name,
-        appVersion,
-      ]);
+      const { rows } = await client.query<{ workflow_uuid: string }>(selectQuery, selectParams);
 
       // Start the workflows
       const workflowIDs = rows.map((row) => row.workflow_uuid);
