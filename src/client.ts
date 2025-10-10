@@ -80,6 +80,11 @@ interface ClientEnqueueOptions {
    * Workflows with higher priority will be dequeued first.
    */
   priority?: number;
+  /**
+   * Partition key for partitioned queues.
+   * Required when enqueueing on a partitioned queue.
+   */
+  queuePartitionKey?: string;
 }
 
 export class ClientHandle<R> implements WorkflowHandle<R> {
@@ -194,6 +199,7 @@ export class DBOSClient {
       input: DBOSJSON.stringify(args),
       deduplicationID: options.deduplicationID,
       priority: options.priority ?? 0,
+      queuePartitionKey: options.queuePartitionKey,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus);
@@ -229,6 +235,7 @@ export class DBOSClient {
       input: DBOSJSON.stringify([destinationID, message, topic]),
       deduplicationID: undefined,
       priority: 0,
+      queuePartitionKey: undefined,
     };
     await this.systemDatabase.initWorkflowStatus(internalStatus);
     await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, DBOSJSON.stringify(message), topic);

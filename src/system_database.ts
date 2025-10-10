@@ -208,6 +208,7 @@ export interface WorkflowStatusInternal {
   deadlineEpochMS?: number;
   deduplicationID?: string;
   priority: number;
+  queuePartitionKey?: string;
 }
 
 export interface EnqueueOptions {
@@ -215,6 +216,8 @@ export interface EnqueueOptions {
   deduplicationID?: string;
   // Priority of the workflow on the queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
   priority?: number;
+  // Partition key for partitioned queues
+  queuePartitionKey?: string;
 }
 
 export interface ExistenceCheck {
@@ -393,20 +396,21 @@ async function insertWorkflowStatus(
         workflow_deadline_epoch_ms,
         inputs,
         deduplication_id,
-        priority
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21)
+        priority,
+        queue_partition_key
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
       ON CONFLICT (workflow_uuid)
         DO UPDATE SET
-          recovery_attempts = CASE 
-            WHEN workflow_status.status != '${StatusString.ENQUEUED}' 
-            THEN workflow_status.recovery_attempts + 1 
-            ELSE workflow_status.recovery_attempts 
+          recovery_attempts = CASE
+            WHEN workflow_status.status != '${StatusString.ENQUEUED}'
+            THEN workflow_status.recovery_attempts + 1
+            ELSE workflow_status.recovery_attempts
           END,
           updated_at = EXCLUDED.updated_at,
-          executor_id = CASE 
-            WHEN EXCLUDED.status != '${StatusString.ENQUEUED}' 
-            THEN EXCLUDED.executor_id 
-            ELSE workflow_status.executor_id 
+          executor_id = CASE
+            WHEN EXCLUDED.status != '${StatusString.ENQUEUED}'
+            THEN EXCLUDED.executor_id
+            ELSE workflow_status.executor_id
           END
         RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms`,
       [
@@ -431,6 +435,7 @@ async function insertWorkflowStatus(
         initStatus.input ?? null,
         initStatus.deduplicationID ?? null,
         initStatus.priority,
+        initStatus.queuePartitionKey ?? null,
       ],
     );
     if (rows.length === 0) {
@@ -594,6 +599,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     deadlineEpochMS: row.workflow_deadline_epoch_ms ? Number(row.workflow_deadline_epoch_ms) : undefined,
     deduplicationID: row.deduplication_id ?? undefined,
     priority: row.priority ?? 0,
+    queuePartitionKey: row.queue_partition_key ?? undefined,
   };
 }
 
@@ -1035,6 +1041,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         input: workflowStatus.input,
         deduplicationID: undefined,
         priority: 0,
+        queuePartitionKey: undefined,
       });
 
       if (startStep > 0) {

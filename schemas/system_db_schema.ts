@@ -23,6 +23,7 @@ export interface workflow_status {
   started_at_epoch_ms?: number;
   deduplication_id?: string; // ID used to identify enqueued workflows for de-duplication.
   priority?: number; // Optional priority for the workflow.
+  queue_partition_key?: string; // Partition key for partitioned queues.
 }
 
 export interface notifications {

@@ -446,6 +446,7 @@ export class DBOSExecutor {
       input: funcArgs.stringified,
       deduplicationID: params.enqueueOptions?.deduplicationID,
       priority: priority ?? 0,
+      queuePartitionKey: params.enqueueOptions?.queuePartitionKey,
     };
 
     if (isTempWorkflow) {
