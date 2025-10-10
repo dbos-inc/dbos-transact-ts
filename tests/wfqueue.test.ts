@@ -1444,7 +1444,7 @@ describe('queue-time-outs', () => {
 
   const partitionBlockingEvent = new Event();
   const partitionWaitingEvent = new Event();
-  const partitionQueue = new WorkflowQueue('partition-queue', { partitionQueue: true, workerConcurrency: 1 });
+  const partitionQueue = new WorkflowQueue('partition-queue', { partitionQueue: true, concurrency: 1 });
 
   const partitionBlockedWorkflow = DBOS.registerWorkflow(
     async () => {
