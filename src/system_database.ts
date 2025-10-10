@@ -119,6 +119,7 @@ export interface SystemDatabase {
   // Queues
   clearQueueAssignment(workflowID: string): Promise<boolean>;
   getDeduplicatedWorkflow(queueName: string, deduplicationID: string): Promise<string | null>;
+  getQueuePartitions(queueName: string): Promise<string[]>;
 
   findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]>;
 
@@ -2018,6 +2019,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     return rows[0].workflow_uuid;
+  }
+
+  @dbRetry()
+  async getQueuePartitions(queueName: string): Promise<string[]> {
+    const { rows } = await this.pool.query<{ queue_partition_key: string }>(
+      `SELECT DISTINCT queue_partition_key FROM ${DBOSExecutor.systemDBSchemaName}.workflow_status
+       WHERE queue_name = $1
+         AND status = $2
+         AND queue_partition_key IS NOT NULL`,
+      [queueName, StatusString.ENQUEUED],
+    );
+
+    return rows.map((row) => row.queue_partition_key);
   }
 
   async findAndMarkStartableWorkflows(queue: WorkflowQueue, executorID: string, appVersion: string): Promise<string[]> {
