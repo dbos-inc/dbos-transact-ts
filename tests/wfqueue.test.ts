@@ -1511,28 +1511,28 @@ describe('queue-time-outs', () => {
       await client.destroy();
     }
 
-    // // You can only enqueue on a partitioned queue with a partition key
-    // await assert.rejects(async () => {
-    //   await DBOS.startWorkflow(partitionNormalWorkflow, {
-    //     queueName: partitionQueue.name,
-    //   })();
-    // }, Error);
+    // You can only enqueue on a partitioned queue with a partition key
+    await assert.rejects(async () => {
+      await DBOS.startWorkflow(partitionNormalWorkflow, {
+        queueName: partitionQueue.name,
+      })();
+    }, Error);
 
-    // // Deduplication is not supported for partitioned queues
-    // await assert.rejects(async () => {
-    //   await DBOS.startWorkflow(partitionNormalWorkflow, {
-    //     queueName: partitionQueue.name,
-    //     enqueueOptions: { queuePartitionKey: normalPartitionKey, deduplicationID: 'key' },
-    //   })();
-    // }, Error);
+    // Deduplication is not supported for partitioned queues
+    await assert.rejects(async () => {
+      await DBOS.startWorkflow(partitionNormalWorkflow, {
+        queueName: partitionQueue.name,
+        enqueueOptions: { queuePartitionKey: normalPartitionKey, deduplicationID: 'key' },
+      })();
+    }, Error);
 
-    // // You can only enqueue with a partition key on a partitioned queue
-    // const partitionlessQueue = new WorkflowQueue('partitionless-queue');
-    // await assert.rejects(async () => {
-    //   await DBOS.startWorkflow(partitionNormalWorkflow, {
-    //     queueName: partitionlessQueue.name,
-    //     enqueueOptions: { queuePartitionKey: 'test' },
-    //   })();
-    // }, Error);
+    // You can only enqueue with a partition key on a partitioned queue
+    const partitionlessQueue = new WorkflowQueue('partitionless-queue');
+    await assert.rejects(async () => {
+      await DBOS.startWorkflow(partitionNormalWorkflow, {
+        queueName: partitionlessQueue.name,
+        enqueueOptions: { queuePartitionKey: 'test' },
+      })();
+    }, Error);
   }, 20000);
 });
