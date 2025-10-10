@@ -146,7 +146,7 @@ class WFQueueRunner {
               q,
               exec.executorID,
               globalParams.appVersion,
-              null,
+              undefined,
             );
           }
         } catch (e) {

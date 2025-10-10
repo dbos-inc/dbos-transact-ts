@@ -2050,7 +2050,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     queue: WorkflowQueue,
     executorID: string,
     appVersion: string,
-    queuePartitionKey?: string | null,
+    queuePartitionKey?: string,
   ): Promise<string[]> {
     const startTimeMs = Date.now();
     const limiterPeriodMS = queue.rateLimit ? queue.rateLimit.periodSec * 1000 : 0;
@@ -2059,9 +2059,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Build partition key filter
     let partitionFilter = '';
     const partitionParams: string[] = [];
-    if (queuePartitionKey === null) {
+    if (queuePartitionKey === undefined) {
       partitionFilter = 'AND queue_partition_key IS NULL';
-    } else if (queuePartitionKey !== undefined) {
+    } else {
       partitionFilter = `AND queue_partition_key = $PARTITION`;
       partitionParams.push(queuePartitionKey);
     }
