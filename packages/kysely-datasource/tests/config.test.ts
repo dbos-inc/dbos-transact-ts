@@ -2,10 +2,10 @@ import { Client } from 'pg';
 import { KyselyDataSource } from '..';
 import { dropDB, ensureDB, getKyselyDB } from './test-helpers';
 
-describe('KyselyDataSource.initializeDBOSSchema', () => {
-  const config = { user: 'postgres', database: 'kysely_ds_config_test' };
-  const db = getKyselyDB('kysely_ds_config_test');
+const config = { user: 'postgres', database: 'kysely_ds_config_test' };
+const db = getKyselyDB(config);
 
+describe('KyselyDataSource.initializeDBOSSchema', () => {
   beforeEach(async () => {
     const client = new Client({ ...config, database: 'postgres' });
     try {

@@ -1,10 +1,14 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
 import { KyselyDataSource } from '..';
-import { dropDB, ensureDB, getKyselyDB, GreetingsTable } from './test-helpers';
+import { dropDB, ensureDB, getKyselyDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import SuperJSON from 'superjson';
 import { sql } from 'kysely';
+
+const config = { client: 'pg', connection: { user: 'postgres', database: 'kysely_ds_test_userdb' } };
+const db = getKyselyDB(config.connection);
+const dataSource = new KyselyDataSource('app-db', db);
 
 interface transaction_completion {
   workflow_id: string;
@@ -13,15 +17,11 @@ interface transaction_completion {
   error: string | null;
 }
 
-const pgConfig = { user: 'postgres', database: 'kysely_ds_test_userdb' };
-const db = getKyselyDB('kysely_ds_test_userdb');
-const dataSource = new KyselyDataSource('app-db', db);
-
-describe.only('KyselyDataSource', () => {
-  const userDB = new Pool(pgConfig);
+describe('KyselyDataSource', () => {
+  const userDB = new Pool(config.connection);
 
   beforeAll(async () => {
-    await createDatabases(true);
+    await createDatabases(userDB, true);
   });
 
   afterAll(async () => {
@@ -127,7 +127,7 @@ describe.only('KyselyDataSource', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(/^test error \d+$/);
 
-    const { rows } = await userDB.query<GreetingsTable>('SELECT * FROM greetings WHERE name = $1', [user]);
+    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
     expect(rows.length).toBe(1);
     expect(rows[0].greet_count).toBe(10);
 
@@ -135,8 +135,6 @@ describe.only('KyselyDataSource', () => {
       'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
       [workflowID],
     );
-
-    console.log({ txOutput });
     expect(txOutput.length).toBe(1);
     expect(txOutput[0].workflow_id).toBe(workflowID);
     expect(txOutput[0].function_num).toBe(0);
@@ -174,7 +172,7 @@ describe.only('KyselyDataSource', () => {
     expect(error).toBeInstanceOf(Error);
     expect((error as Error).message).toMatch(/^test error \d+$/);
 
-    const { rows } = await userDB.query<GreetingsTable>('SELECT * FROM greetings WHERE name = $1', [user]);
+    const { rows } = await userDB.query<greetings>('SELECT * FROM greetings WHERE name = $1', [user]);
     expect(rows.length).toBe(1);
     expect(rows[0].greet_count).toBe(10);
 
@@ -303,28 +301,33 @@ describe.only('KyselyDataSource', () => {
   });
 });
 
-async function createDatabases(createTxCompletion: boolean) {
+export interface greetings {
+  name: string;
+  greet_count: number;
+}
+
+async function createDatabases(userDB: Pool, createTxCompletion: boolean) {
   {
-    const client = new Client({ ...pgConfig, database: 'postgres' });
+    const client = new Client({ ...config.connection, database: 'postgres' });
     try {
       await client.connect();
-      await dropDB(client, pgConfig.database, true);
-      await ensureDB(client, pgConfig.database);
+      await dropDB(client, 'kysely_ds_test', true);
+      await dropDB(client, 'kysely_ds_test_dbos_sys', true);
+      await dropDB(client, config.connection.database, true);
+      await ensureDB(client, config.connection.database);
     } finally {
       await client.end();
     }
   }
 
   {
-    const pool = new Pool(pgConfig);
-    const client = await pool.connect();
+    const client = await userDB.connect();
     try {
       await client.query(
-        'CREATE TABLE greetings(name text NOT NULL PRIMARY KEY, greet_count integer DEFAULT 0 NOT NULL)',
+        'CREATE TABLE greetings(name text NOT NULL, greet_count integer DEFAULT 0, PRIMARY KEY(name))',
       );
     } finally {
       client.release();
-      await pool.end();
     }
   }
 
@@ -442,10 +445,10 @@ const regStaticWorkflow = DBOS.registerWorkflow(staticWorkflow);
 const regInstanceWorkflow = DBOS.registerWorkflow(instanceWorkflow);
 
 describe('KyselyDataSourceCreateTxCompletion', () => {
-  const userDB = new Pool(pgConfig);
+  const userDB = new Pool(config.connection);
 
   beforeAll(async () => {
-    await createDatabases(false);
+    await createDatabases(userDB, false);
   });
 
   afterAll(async () => {
