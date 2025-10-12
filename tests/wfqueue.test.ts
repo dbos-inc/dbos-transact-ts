@@ -1441,4 +1441,98 @@ describe('queue-time-outs', () => {
     const recoveredHandle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow, { workflowID: handle.workflowID })();
     await recoveredHandle.getResult();
   });
+
+  const partitionBlockingEvent = new Event();
+  const partitionWaitingEvent = new Event();
+  const partitionQueue = new WorkflowQueue('partition-queue', { partitionQueue: true, concurrency: 1 });
+
+  const partitionBlockedWorkflow = DBOS.registerWorkflow(
+    async () => {
+      partitionWaitingEvent.set();
+      await partitionBlockingEvent.wait();
+      return DBOS.workflowID;
+    },
+    { name: 'partitionBlockedWorkflow' },
+  );
+
+  const partitionNormalWorkflow = DBOS.registerWorkflow(
+    async () => {
+      return Promise.resolve(DBOS.workflowID);
+    },
+    { name: 'partitionNormalWorkflow' },
+  );
+
+  test('partitioned-queues', async () => {
+    const blockedPartitionKey = 'blocked';
+    const normalPartitionKey = 'normal';
+
+    // Enqueue a blocked workflow and a normal workflow on the blocked partition
+    // Verify the blocked workflow starts but the normal workflow is stuck behind it
+    const blockedBlockedHandle = await DBOS.startWorkflow(partitionBlockedWorkflow, {
+      queueName: partitionQueue.name,
+      enqueueOptions: { queuePartitionKey: blockedPartitionKey },
+    })();
+    const blockedNormalHandle = await DBOS.startWorkflow(partitionNormalWorkflow, {
+      queueName: partitionQueue.name,
+      enqueueOptions: { queuePartitionKey: blockedPartitionKey },
+    })();
+
+    await partitionWaitingEvent.wait();
+    await expect(blockedBlockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+    });
+    await expect(blockedNormalHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+
+    // Enqueue a normal workflow on the other partition and verify it runs normally
+    const normalHandle = await DBOS.startWorkflow(partitionNormalWorkflow, {
+      queueName: partitionQueue.name,
+      enqueueOptions: { queuePartitionKey: normalPartitionKey },
+    })();
+    await normalHandle.getResult();
+
+    // Unblock the blocked partition and verify its workflows complete
+    partitionBlockingEvent.set();
+    await blockedBlockedHandle.getResult();
+    await blockedNormalHandle.getResult();
+
+    // Confirm client enqueue works with partitions
+    expect(config.systemDatabaseUrl).toBeDefined();
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      const clientHandle = await client.enqueue({
+        queueName: partitionQueue.name,
+        workflowName: 'partitionNormalWorkflow',
+        queuePartitionKey: blockedPartitionKey,
+      });
+      await clientHandle.getResult();
+    } finally {
+      await client.destroy();
+    }
+
+    // You can only enqueue on a partitioned queue with a partition key
+    await assert.rejects(async () => {
+      await DBOS.startWorkflow(partitionNormalWorkflow, {
+        queueName: partitionQueue.name,
+      })();
+    }, Error);
+
+    // Deduplication is not supported for partitioned queues
+    await assert.rejects(async () => {
+      await DBOS.startWorkflow(partitionNormalWorkflow, {
+        queueName: partitionQueue.name,
+        enqueueOptions: { queuePartitionKey: normalPartitionKey, deduplicationID: 'key' },
+      })();
+    }, Error);
+
+    // You can only enqueue with a partition key on a partitioned queue
+    const partitionlessQueue = new WorkflowQueue('partitionless-queue');
+    await assert.rejects(async () => {
+      await DBOS.startWorkflow(partitionNormalWorkflow, {
+        queueName: partitionlessQueue.name,
+        enqueueOptions: { queuePartitionKey: 'test' },
+      })();
+    }, Error);
+  }, 20000);
 });

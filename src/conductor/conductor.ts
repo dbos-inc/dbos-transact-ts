@@ -9,15 +9,19 @@ import { json as streamJSON } from 'stream/consumers';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
 
+interface IntervalTimeout {
+  interval: NodeJS.Timeout | undefined;
+  timeout: NodeJS.Timeout | undefined;
+}
+
 export class Conductor {
   url: string;
   websocket: WebSocket | undefined = undefined;
   isShuttingDown = false; // Is in the process of shutting down the connection
-  isClosed = false; // Is closed after the connection has been terminated
+  isClosed = false; // Has the connection been fully closed
   pingPeriodMs = 20000; // Time in milliseconds to wait before sending a ping message to the conductor
   pingTimeoutMs = 15000; // Time in milliseconds to wait for a response to a ping message before considering the connection dead
-  pingInterval: NodeJS.Timeout | undefined = undefined; // Interval for sending ping messages to the conductor
-  pingTimeout: NodeJS.Timeout | undefined = undefined; // Timeout for waiting for a response to a ping message
+  pingIntervalTimeout: IntervalTimeout | undefined = undefined; // Combined interval and timeout for pinging Conductor
   reconnectDelayMs = 1000;
   reconnectTimeout: NodeJS.Timeout | undefined = undefined;
 
@@ -32,18 +36,15 @@ export class Conductor {
     this.url = `${cleanConductorURL}/websocket/${appName}/${conductorKey}`;
   }
 
-  resetWebsocket() {
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = undefined;
-    }
-    if (this.pingTimeout) {
-      clearTimeout(this.pingTimeout);
-      this.pingTimeout = undefined;
-    }
-    if (this.websocket) {
-      this.websocket.terminate(); // Terminate the existing connection
-      this.websocket = undefined; // Set the websocket to undefined to indicate it's closed
+  resetWebsocket(currWebsocket?: WebSocket, currPing?: IntervalTimeout) {
+    clearInterval(currPing?.interval);
+    clearTimeout(currPing?.timeout);
+    if (currWebsocket) {
+      currWebsocket.terminate(); // Terminate the existing connection
+      if (this.websocket === currWebsocket) {
+        // Only clear if it's the same websocket
+        this.websocket = undefined;
+      }
     }
 
     if (this.reconnectTimeout || this.isShuttingDown) {
@@ -51,42 +52,45 @@ export class Conductor {
     }
     this.dbosExec.logger.debug(`Reconnecting in ${this.reconnectDelayMs / 1000} second`);
     this.reconnectTimeout = setTimeout(() => {
-      this.reconnectTimeout = undefined;
       this.dispatchLoop();
     }, this.reconnectDelayMs);
   }
 
-  setPingInterval() {
+  setPingInterval(currWebsocket: WebSocket, currPing: IntervalTimeout) {
     // Clear any existing ping interval to avoid multiple intervals being set
-    if (this.pingInterval) {
-      clearInterval(this.pingInterval);
-      this.pingInterval = undefined;
-    }
-    this.pingInterval = setInterval(() => {
-      if (this.websocket?.readyState !== WebSocket.OPEN) {
-        return;
-      }
-      this.dbosExec.logger.debug('Sending ping to conductor');
-      this.websocket.ping();
-      // Set ping timeout.
-      this.pingTimeout = setTimeout(() => {
+    clearInterval(currPing.interval);
+    clearTimeout(currPing.timeout);
+    currPing.interval = setInterval(() => {
+      // Set ping timeout before sending ping. This prevents the socket from hanging at a non-open state indefinitely
+      currPing.timeout = setTimeout(() => {
         if (this.isShuttingDown) {
-          this.isClosed = true;
           return;
         } else if (this.reconnectTimeout === undefined) {
           // Otherwise, try to reconnect if we haven't already
           this.dbosExec.logger.warn('Connection to conductor lost. Reconnecting...');
-          this.resetWebsocket();
+          this.resetWebsocket(currWebsocket, currPing);
         }
       }, this.pingTimeoutMs);
+      // Only ping if the connection is open
+      if (currWebsocket.readyState === WebSocket.OPEN) {
+        this.dbosExec.logger.debug('Sending ping to conductor');
+        currWebsocket.ping();
+      }
     }, this.pingPeriodMs);
   }
 
   dispatchLoop() {
-    if (this.websocket) {
+    if (
+      this.websocket &&
+      (this.websocket.readyState === WebSocket.OPEN || this.websocket.readyState === WebSocket.CONNECTING)
+    ) {
       this.dbosExec.logger.warn('Conductor websocket already exists');
       return;
     }
+    clearTimeout(this.pingIntervalTimeout?.timeout);
+    clearInterval(this.pingIntervalTimeout?.interval);
+    clearTimeout(this.reconnectTimeout);
+    this.reconnectTimeout = undefined;
 
     if (this.isShuttingDown) {
       this.dbosExec.logger.debug('Not starting dispatch loop as conductor is shutting down');
@@ -96,25 +100,29 @@ export class Conductor {
     try {
       this.dbosExec.logger.debug(`Connecting to conductor at ${this.url}`);
       // Start a new websocket connection
-      this.websocket = new WebSocket(this.url, { handshakeTimeout: 5000 });
-      this.websocket.on('open', () => {
+      const currWebsocket = new WebSocket(this.url, { handshakeTimeout: 5000 });
+      this.websocket = currWebsocket;
+
+      // Start ping interval
+      const currPing: IntervalTimeout = { interval: undefined, timeout: undefined };
+      this.setPingInterval(currWebsocket, currPing);
+      this.pingIntervalTimeout = currPing;
+      currWebsocket.on('open', () => {
         this.dbosExec.logger.debug('Opened connection to DBOS conductor');
-        this.setPingInterval();
+        clearTimeout(currPing.timeout);
       });
 
-      this.websocket.on('pong', () => {
+      currWebsocket.on('pong', () => {
         this.dbosExec.logger.debug('Received pong from conductor');
-        if (this.pingTimeout) {
-          clearTimeout(this.pingTimeout);
-          this.pingTimeout = undefined;
-        }
+        clearTimeout(currPing.timeout);
       });
 
-      this.websocket.on('message', async (data: string) => {
+      currWebsocket.on('message', async (data: string) => {
         this.dbosExec.logger.debug(`Received message from conductor: ${data}`);
         const baseMsg = JSON.parse(data) as protocol.BaseMessage;
         const msgType = baseMsg.type;
         let errorMsg: string | undefined = undefined;
+        clearTimeout(currPing.timeout);
         switch (msgType) {
           case protocol.MessageType.EXECUTOR_INFO:
             const infoResp = new protocol.ExecutorInfoResponse(
@@ -123,7 +131,7 @@ export class Conductor {
               globalParams.appVersion,
               hostname(),
             );
-            this.websocket!.send(JSON.stringify(infoResp));
+            currWebsocket.send(JSON.stringify(infoResp));
             this.dbosExec.logger.info('Connected to DBOS conductor');
             break;
           case protocol.MessageType.RECOVERY:
@@ -137,7 +145,7 @@ export class Conductor {
               success = false;
             }
             const recoveryResp = new protocol.RecoveryResponse(baseMsg.request_id, success, errorMsg);
-            this.websocket!.send(JSON.stringify(recoveryResp));
+            currWebsocket.send(JSON.stringify(recoveryResp));
             break;
           case protocol.MessageType.CANCEL:
             const cancelMsg = baseMsg as protocol.CancelRequest;
@@ -150,7 +158,7 @@ export class Conductor {
               cancelSuccess = false;
             }
             const cancelResp = new protocol.CancelResponse(baseMsg.request_id, cancelSuccess, errorMsg);
-            this.websocket!.send(JSON.stringify(cancelResp));
+            currWebsocket.send(JSON.stringify(cancelResp));
             break;
           case protocol.MessageType.RESUME:
             const resumeMsg = baseMsg as protocol.ResumeRequest;
@@ -163,7 +171,7 @@ export class Conductor {
               resumeSuccess = false;
             }
             const resumeResp = new protocol.ResumeResponse(baseMsg.request_id, resumeSuccess, errorMsg);
-            this.websocket!.send(JSON.stringify(resumeResp));
+            currWebsocket.send(JSON.stringify(resumeResp));
             break;
           case protocol.MessageType.RESTART:
             const restartMsg = baseMsg as protocol.RestartRequest;
@@ -176,7 +184,7 @@ export class Conductor {
               restartSuccess = false;
             }
             const restartResp = new protocol.RestartResponse(baseMsg.request_id, restartSuccess, errorMsg);
-            this.websocket!.send(JSON.stringify(restartResp));
+            currWebsocket.send(JSON.stringify(restartResp));
             break;
           case protocol.MessageType.FORK_WORKFLOW:
             const forkMsg = baseMsg as protocol.ForkWorkflowRequest;
@@ -192,7 +200,7 @@ export class Conductor {
               newWorkflowID = undefined;
             }
             const forkResp = new protocol.ForkWorkflowResponse(baseMsg.request_id, newWorkflowID, errorMsg);
-            this.websocket!.send(JSON.stringify(forkResp));
+            currWebsocket.send(JSON.stringify(forkResp));
             break;
           case protocol.MessageType.LIST_WORKFLOWS:
             const listWFMsg = baseMsg as protocol.ListWorkflowsRequest;
@@ -220,7 +228,7 @@ export class Conductor {
               this.dbosExec.logger.error(errorMsg);
             }
             const wfsResp = new protocol.ListWorkflowsResponse(listWFMsg.request_id, workflowsOutput, errorMsg);
-            this.websocket!.send(JSON.stringify(wfsResp));
+            currWebsocket.send(JSON.stringify(wfsResp));
             break;
           case protocol.MessageType.LIST_QUEUED_WORKFLOWS:
             const listQueuedWFMsg = baseMsg as protocol.ListQueuedWorkflowsRequest;
@@ -249,7 +257,7 @@ export class Conductor {
               queuedWFOutput,
               errorMsg,
             );
-            this.websocket!.send(JSON.stringify(queuedWfsResp));
+            currWebsocket.send(JSON.stringify(queuedWfsResp));
             break;
           case protocol.MessageType.GET_WORKFLOW:
             const getWFMsg = baseMsg as protocol.GetWorkflowRequest;
@@ -264,7 +272,7 @@ export class Conductor {
               this.dbosExec.logger.error(errorMsg);
             }
             const getWFResp = new protocol.GetWorkflowResponse(getWFMsg.request_id, wfOutput, errorMsg);
-            this.websocket!.send(JSON.stringify(getWFResp));
+            currWebsocket.send(JSON.stringify(getWFResp));
             break;
           case protocol.MessageType.EXIST_PENDING_WORKFLOWS:
             const existPendingMsg = baseMsg as protocol.ExistPendingWorkflowsRequest;
@@ -284,7 +292,7 @@ export class Conductor {
               hasPendingWFs,
               errorMsg,
             );
-            this.websocket!.send(JSON.stringify(existPendingResp));
+            currWebsocket.send(JSON.stringify(existPendingResp));
             break;
           case protocol.MessageType.LIST_STEPS:
             const listStepsMessage = baseMsg as protocol.ListStepsRequest;
@@ -301,7 +309,7 @@ export class Conductor {
               workflowSteps,
               errorMsg,
             );
-            this.websocket!.send(JSON.stringify(listStepsResponse));
+            currWebsocket.send(JSON.stringify(listStepsResponse));
             break;
           case protocol.MessageType.RETENTION:
             const retentionMessage = baseMsg as protocol.RetentionRequest;
@@ -324,52 +332,58 @@ export class Conductor {
               retentionSuccess,
               errorMsg,
             );
-            this.websocket!.send(JSON.stringify(retentionResponse));
+            currWebsocket.send(JSON.stringify(retentionResponse));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
             // Still need to send a response to the conductor
             const unknownResp = new protocol.BaseResponse(baseMsg.type, baseMsg.request_id, 'Unknown message type');
-            this.websocket!.send(JSON.stringify(unknownResp));
+            currWebsocket.send(JSON.stringify(unknownResp));
         }
       });
 
-      this.websocket.on('close', () => {
+      currWebsocket.on('close', () => {
         if (this.isShuttingDown) {
           this.dbosExec.logger.info('Shutdown Conductor connection');
-          this.isClosed = true;
           return;
         } else if (this.reconnectTimeout === undefined) {
           this.dbosExec.logger.warn('Connection to conductor lost. Reconnecting.');
-          this.resetWebsocket();
+          this.resetWebsocket(currWebsocket, currPing);
         }
       });
 
-      this.websocket.on('unexpected-response', async (_, res) => {
+      currWebsocket.on('unexpected-response', async (_, res) => {
         const resBody = await streamJSON(res);
         this.dbosExec.logger.warn(
           `Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}. Details: ${JSON.stringify(resBody)}`,
         );
-        this.resetWebsocket();
+        if (this.reconnectTimeout === undefined) {
+          this.resetWebsocket(currWebsocket, currPing);
+        }
       });
 
-      this.websocket.on('error', (err) => {
+      currWebsocket.on('error', (err) => {
         this.dbosExec.logger.warn(`Unexpected exception in connection to conductor. Reconnecting: ${err.message}`);
-        this.resetWebsocket();
+        if (this.reconnectTimeout === undefined) {
+          this.resetWebsocket(currWebsocket, currPing);
+        }
       });
     } catch (e) {
       this.dbosExec.logger.warn(`Error in conductor loop. Reconnecting: ${(e as Error).message}`);
-      this.resetWebsocket();
+      if (this.reconnectTimeout === undefined) {
+        this.resetWebsocket(this.websocket, this.pingIntervalTimeout);
+      }
     }
   }
 
   stop() {
     this.isShuttingDown = true;
-    clearInterval(this.pingInterval);
-    clearTimeout(this.pingTimeout);
+    clearInterval(this.pingIntervalTimeout?.interval);
+    clearTimeout(this.pingIntervalTimeout?.timeout);
     clearTimeout(this.reconnectTimeout);
     if (this.websocket) {
       this.websocket.close();
     }
+    this.isClosed = true;
   }
 }

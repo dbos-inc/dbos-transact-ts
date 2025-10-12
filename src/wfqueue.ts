@@ -29,6 +29,8 @@ export interface QueueParameters {
   rateLimit?: QueueRateLimit;
   /** If set, this queue supports priority */
   priorityEnabled?: boolean;
+  /** If set, this queue supports partitioning */
+  partitionQueue?: boolean;
 }
 
 /**
@@ -43,6 +45,7 @@ export class WorkflowQueue {
   readonly rateLimit?: QueueRateLimit;
   readonly workerConcurrency?: number;
   readonly priorityEnabled: boolean = false;
+  readonly partitionQueue: boolean = false;
 
   constructor(name: string);
 
@@ -68,6 +71,7 @@ export class WorkflowQueue {
       this.rateLimit = arg2.rateLimit;
       this.workerConcurrency = arg2.workerConcurrency;
       this.priorityEnabled = arg2.priorityEnabled ?? false;
+      this.partitionQueue = arg2.partitionQueue ?? false;
     } else {
       // Handle the case where the second argument is a number
       this.concurrency = arg2;
@@ -122,9 +126,29 @@ class WFQueueRunner {
 
       // Check queues
       for (const [_qn, q] of this.wfQueuesByName) {
-        let wfids: string[];
+        let wfids: string[] = [];
         try {
-          wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(q, exec.executorID, globalParams.appVersion);
+          if (q.partitionQueue) {
+            // For partitioned queues, get all partition keys and dequeue from each partition separately
+            const partitionKeys = await exec.systemDatabase.getQueuePartitions(q.name);
+            for (const partitionKey of partitionKeys) {
+              const partitionWfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+                q,
+                exec.executorID,
+                globalParams.appVersion,
+                partitionKey,
+              );
+              wfids.push(...partitionWfids);
+            }
+          } else {
+            // For non-partitioned queues, pass null to match workflows with queue_partition_key IS NULL
+            wfids = await exec.systemDatabase.findAndMarkStartableWorkflows(
+              q,
+              exec.executorID,
+              globalParams.appVersion,
+              undefined,
+            );
+          }
         } catch (e) {
           const err = e as Error;
           // Handle serialization errors and lock contention with backoff
