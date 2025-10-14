@@ -46,23 +46,23 @@ jobs:
           stamp: ${{ matrix.package }}/package.json
       - run: cd ${{ matrix.package }}; npm run build
       - name: Publish release to npm
-        uses: JS-DevTools/npm-publish@v3
+        uses: JS-DevTools/npm-publish@v4
         id: npmrelease
         # boolean properties from NBGV step appears to be converted into *capitalized* strings
         # so explicitly string compare PublicRelease output value
         if: ${{ steps.nbgv.outputs.PublicRelease == 'True'}}
         with:
-          token: ${{ secrets.NPM_PUBLISH }}
+          token: ${{ secrets.NPM_PUBLISH_GRANULAR }}
           registry: https://registry.npmjs.org/
           tag: ${{ steps.nbgv.outputs.PrereleaseVersion == '' && 'latest' || 'preview' }} # Assign a 'preview' tag to versions end with '-preview'. Otherwise, assign a 'latest' tag to the latest release.
           access: public
           package: ${{ matrix.package }}
       - name: Publish test package to npm
-        uses: JS-DevTools/npm-publish@v3
+        uses: JS-DevTools/npm-publish@v4
         id: npmtest
         if: ${{ steps.nbgv.outputs.PublicRelease == 'False'}}
         with:
-          token: ${{ secrets.NPM_PUBLISH }}
+          token: ${{ secrets.NPM_PUBLISH_GRANULAR }}
           registry: https://registry.npmjs.org/
           tag: 'test'
           access: public
