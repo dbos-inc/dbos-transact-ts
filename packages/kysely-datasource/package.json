@@ -1,0 +1,32 @@
+{
+  "name": "@dbos-inc/kysely-datasource",
+  "version": "0.0.0-placeholder",
+  "description": "DBOS DataSource library for Kysely Query Builder with PostgreSQL support",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "homepage": "https://docs.dbos.dev/",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/dbos-inc/dbos-transact-ts",
+    "directory": "packages/kysely-datasource"
+  },
+  "scripts": {
+    "build": "tsc --project tsconfig.json",
+    "test": "jest --detectOpenHandles"
+  },
+  "dependencies": {
+    "kysely": "^0.28.8",
+    "pg": "^8.11.3",
+    "superjson": "^1.13.3"
+  },
+  "peerDependencies": {
+    "@dbos-inc/dbos-sdk": "*"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.5.14",
+    "@types/pg": "^8.15.2",
+    "jest": "^29.7.0",
+    "typescript": "^5.4.5"
+  }
+}
