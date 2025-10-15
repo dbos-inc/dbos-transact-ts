@@ -1,5 +1,5 @@
-import { ColumnType, Kysely, PostgresDialect } from 'kysely';
-import { Client, Pool, PoolConfig } from 'pg';
+import { ColumnType } from 'kysely';
+import { Client } from 'pg';
 
 export async function ensureDB(client: Client, name: string) {
   const results = await client.query('SELECT 1 FROM pg_database WHERE datname = $1', [name]);
@@ -22,10 +22,3 @@ export interface GreetingsTable {
 export interface Database {
   greetings: GreetingsTable;
 }
-
-export const getKyselyDB = (poolConfig: PoolConfig) =>
-  new Kysely<Database>({
-    dialect: new PostgresDialect({
-      pool: new Pool(poolConfig),
-    }),
-  });

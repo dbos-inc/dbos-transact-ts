@@ -1,14 +1,13 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { Client, Pool } from 'pg';
 import { KyselyDataSource } from '..';
-import { dropDB, ensureDB, getKyselyDB } from './test-helpers';
+import { Database, dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import SuperJSON from 'superjson';
 import { sql } from 'kysely';
 
 const config = { client: 'pg', connection: { user: 'postgres', database: 'kysely_ds_test_userdb' } };
-const db = getKyselyDB(config.connection);
-const dataSource = new KyselyDataSource('app-db', db);
+const dataSource = new KyselyDataSource<Database>('app-db', config.connection);
 
 interface transaction_completion {
   workflow_id: string;
@@ -332,7 +331,7 @@ async function createDatabases(userDB: Pool, createTxCompletion: boolean) {
   }
 
   if (createTxCompletion) {
-    await KyselyDataSource.initializeDBOSSchema(db);
+    await KyselyDataSource.initializeDBOSSchema(userDB);
   }
 }
 

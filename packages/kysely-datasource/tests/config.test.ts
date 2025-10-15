@@ -1,9 +1,8 @@
-import { Client } from 'pg';
+import { Client, Pool, PoolClient } from 'pg';
 import { KyselyDataSource } from '..';
-import { dropDB, ensureDB, getKyselyDB } from './test-helpers';
+import { dropDB, ensureDB } from './test-helpers';
 
 const config = { user: 'postgres', database: 'kysely_ds_config_test' };
-const db = getKyselyDB(config);
 
 describe('KyselyDataSource.initializeDBOSSchema', () => {
   beforeEach(async () => {
@@ -17,14 +16,14 @@ describe('KyselyDataSource.initializeDBOSSchema', () => {
     }
   });
 
-  async function queryTxCompletionTable(client: Client) {
+  async function queryTxCompletionTable(client: PoolClient) {
     const result = await client.query(
       'SELECT workflow_id, function_num, output, error FROM dbos.transaction_completion',
     );
     return result.rowCount;
   }
 
-  async function txCompletionTableExists(client: Client) {
+  async function txCompletionTableExists(client: PoolClient) {
     const result = await client.query<{ exists: boolean }>(
       "SELECT EXISTS (SELECT 1 FROM information_schema.tables  WHERE table_schema = 'dbos' AND table_name = 'transaction_completion');",
     );
@@ -33,19 +32,20 @@ describe('KyselyDataSource.initializeDBOSSchema', () => {
   }
 
   test('initializeDBOSSchema', async () => {
+    const db = new Pool(config);
     await KyselyDataSource.initializeDBOSSchema(db);
 
-    const client = new Client(config);
     try {
-      await client.connect();
+      const client = await db.connect();
       await expect(txCompletionTableExists(client)).resolves.toBe(true);
       await expect(queryTxCompletionTable(client)).resolves.toEqual(0);
 
       await KyselyDataSource.uninitializeDBOSSchema(db);
 
       await expect(txCompletionTableExists(client)).resolves.toBe(false);
+      client.release();
     } finally {
-      await client.end();
+      await db.end();
     }
   });
 });

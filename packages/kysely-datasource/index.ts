@@ -14,7 +14,8 @@ import {
   checkSchemaInstallationPG,
 } from '@dbos-inc/dbos-sdk/datasource';
 import { AsyncLocalStorage } from 'async_hooks';
-import { Kysely, sql, Transaction, IsolationLevel } from 'kysely';
+import { Kysely, sql, Transaction, IsolationLevel, PostgresDialect } from 'kysely';
+import { Pool, PoolConfig } from 'pg';
 import { SuperJSON } from 'superjson';
 
 export interface transaction_completion {
@@ -48,12 +49,24 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
 
   constructor(
     readonly name: string,
-    kyselyDB: Kysely<DBOSKyselyTables>,
+    private readonly poolConfig: PoolConfig,
   ) {
-    this.#kyselyDBField = kyselyDB;
+    this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
+      dialect: new PostgresDialect({
+        pool: new Pool(poolConfig),
+      }),
+    });
   }
 
   async initialize(): Promise<void> {
+    const kyselyDB = this.#kyselyDBField;
+    this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
+      dialect: new PostgresDialect({
+        pool: new Pool(this.poolConfig),
+      }),
+    });
+    await kyselyDB?.destroy();
+
     // Check for connectivity & the schema
     let installed = false;
     try {
@@ -82,7 +95,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
   }
 
   async destroy(): Promise<void> {
-    return Promise.resolve();
+    await this.#kyselyDBField.destroy();
   }
 
   get #kyselyDB() {
@@ -245,22 +258,26 @@ export class KyselyDataSource<DB> implements DBOSDataSource<TransactionConfig> {
     return KyselyDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema<DB>(db: Kysely<DB>) {
-    await sql.raw(createTransactionCompletionSchemaPG).execute(db);
-    await sql.raw(createTransactionCompletionTablePG).execute(db);
+  static async initializeDBOSSchema(pool: Pool) {
+    const client = await pool.connect();
+    await client.query(createTransactionCompletionSchemaPG);
+    await client.query(createTransactionCompletionTablePG);
+    client.release();
   }
 
-  static async uninitializeDBOSSchema<DB>(db: Kysely<DB>) {
-    await sql`DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos CASCADE;`.execute(db);
+  static async uninitializeDBOSSchema(pool: Pool) {
+    const client = await pool.connect();
+    await client.query('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos CASCADE;');
+    client.release();
   }
 
   #provider: KyselyTransactionHandler;
 
   constructor(
     readonly name: string,
-    db: Kysely<DB>,
+    poolConfig: PoolConfig,
   ) {
-    this.#provider = new KyselyTransactionHandler(name, db as unknown as Kysely<DBOSKyselyTables>);
+    this.#provider = new KyselyTransactionHandler(name, poolConfig);
     registerDataSource(this.#provider);
   }
 
