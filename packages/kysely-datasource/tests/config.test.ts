@@ -33,14 +33,14 @@ describe('KyselyDataSource.initializeDBOSSchema', () => {
 
   test('initializeDBOSSchema', async () => {
     const db = new Pool(config);
-    await KyselyDataSource.initializeDBOSSchema(db);
+    await KyselyDataSource.initializeDBOSSchema(config);
 
     try {
       const client = await db.connect();
       await expect(txCompletionTableExists(client)).resolves.toBe(true);
       await expect(queryTxCompletionTable(client)).resolves.toEqual(0);
 
-      await KyselyDataSource.uninitializeDBOSSchema(db);
+      await KyselyDataSource.uninitializeDBOSSchema(config);
 
       await expect(txCompletionTableExists(client)).resolves.toBe(false);
       client.release();

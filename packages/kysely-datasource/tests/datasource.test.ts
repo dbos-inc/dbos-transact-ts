@@ -331,7 +331,7 @@ async function createDatabases(userDB: Pool, createTxCompletion: boolean) {
   }
 
   if (createTxCompletion) {
-    await KyselyDataSource.initializeDBOSSchema(userDB);
+    await KyselyDataSource.initializeDBOSSchema(config.connection);
   }
 }
 

@@ -258,17 +258,27 @@ export class KyselyDataSource<DB> implements DBOSDataSource<TransactionConfig> {
     return KyselyDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(pool: Pool) {
-    const client = await pool.connect();
-    await client.query(createTransactionCompletionSchemaPG);
-    await client.query(createTransactionCompletionTablePG);
-    client.release();
+  static async initializeDBOSSchema(poolConfig: PoolConfig) {
+    const client = new Kysely({
+      dialect: new PostgresDialect({
+        pool: new Pool(poolConfig),
+      }),
+    });
+    await sql.raw(createTransactionCompletionSchemaPG).execute(client);
+    await sql.raw(createTransactionCompletionTablePG).execute(client);
+    await client.destroy();
   }
 
-  static async uninitializeDBOSSchema(pool: Pool) {
-    const client = await pool.connect();
-    await client.query('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos CASCADE;');
-    client.release();
+  static async uninitializeDBOSSchema(poolConfig: PoolConfig) {
+    const client = new Kysely({
+      dialect: new PostgresDialect({
+        pool: new Pool(poolConfig),
+      }),
+    });
+    await sql
+      .raw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos CASCADE;')
+      .execute(client);
+    await client.destroy();
   }
 
   #provider: KyselyTransactionHandler;
