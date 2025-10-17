@@ -233,9 +233,9 @@ export class DBOSExecutor {
       // We always setup a collector to drain the signals queue, even if we don't have an exporter.
       this.telemetryCollector = new TelemetryCollector();
     }
-    this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs);
+    this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs, this.appName);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
-    this.tracer = new Tracer(this.telemetryCollector);
+    this.tracer = new Tracer(this.telemetryCollector, this.appName);
 
     if (this.#debugMode) {
       this.logger.info('Running in debug mode!');

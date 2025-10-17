@@ -191,9 +191,21 @@ export class DBOS {
    * @param options - Launch options for connecting to DBOS Conductor
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
+    const debugMode = options?.debugMode ?? process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
+    const configFile = readConfigFile();
+
+    let internalConfig = DBOS.#dbosConfig
+      ? translateDbosConfig(DBOS.#dbosConfig, debugMode)
+      : getDbosConfig(configFile);
+    let runtimeConfig = DBOS.#dbosConfig ? translateRuntimeConfig(DBOS.#dbosConfig) : getRuntimeConfig(configFile);
+
+    if (process.env.DBOS__CLOUD === 'true') {
+      [internalConfig, runtimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, configFile);
+    }
+
     globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? defaultEnableOTLP();
 
-    if (!isTraceContextWorking()) installTraceContextManager();
+    if (!isTraceContextWorking()) installTraceContextManager(internalConfig.name);
 
     // Do nothing is DBOS is already initialized
     insertAllMiddleware();
@@ -212,18 +224,6 @@ export class DBOS {
       if (DBOS.#dbosConfig?.applicationVersion) {
         globalParams.appVersion = DBOS.#dbosConfig.applicationVersion;
       }
-    }
-
-    const debugMode = options?.debugMode ?? process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
-    const configFile = readConfigFile();
-
-    let internalConfig = DBOS.#dbosConfig
-      ? translateDbosConfig(DBOS.#dbosConfig, debugMode)
-      : getDbosConfig(configFile);
-    let runtimeConfig = DBOS.#dbosConfig ? translateRuntimeConfig(DBOS.#dbosConfig) : getRuntimeConfig(configFile);
-
-    if (process.env.DBOS__CLOUD === 'true') {
-      [internalConfig, runtimeConfig] = overwriteConfigForDBOSCloud(internalConfig, runtimeConfig, configFile);
     }
 
     DBOSExecutor.createDebouncerWorkflow();
