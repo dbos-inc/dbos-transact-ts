@@ -64,6 +64,7 @@ export class GlobalLogger {
   constructor(
     private readonly telemetryCollector?: TelemetryCollector,
     config?: LoggerConfig,
+    appName: string = 'dbos',
   ) {
     this.addContextMetadata = config?.addContextMetadata || false;
     if (!globalParams.enableOTLP) {
@@ -87,8 +88,15 @@ export class GlobalLogger {
         this.level = logLevel;
         // not sure if we need a more explicit name here
         const { LoggerProvider } = require('@opentelemetry/sdk-logs');
-        const loggerProvider = new LoggerProvider();
-        this.otelLogger = loggerProvider.getLogger('default');
+
+        const loggerProvider = new LoggerProvider({
+          resource: {
+            attributes: {
+              'service.name': appName,
+            },
+          },
+        });
+        this.otelLogger = loggerProvider.getLogger('dbos-logger');
         this.applicationID = globalParams.appID;
         this.executorID = globalParams.executorID;
         const logRecordProcessor = {

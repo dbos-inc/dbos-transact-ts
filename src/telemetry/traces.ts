@@ -108,7 +108,7 @@ export function isTraceContextWorking(): boolean {
   return visible === true;
 }
 
-export function installTraceContextManager() {
+export function installTraceContextManager(appName: string = 'dbos'): void {
   if (!globalParams.enableOTLP) {
     return;
   }
@@ -120,26 +120,36 @@ export function installTraceContextManager() {
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
 
-  const provider = new BasicTracerProvider();
+  const provider = new BasicTracerProvider({
+    resource: {
+      attributes: {
+        'service.name': appName,
+      },
+    },
+  });
   provider.register();
 }
 
 export class Tracer {
   readonly applicationID: string;
   readonly executorID: string;
-  constructor(private readonly telemetryCollector: TelemetryCollector) {
+  constructor(
+    private readonly telemetryCollector: TelemetryCollector,
+    appName: string = 'dbos',
+  ) {
     this.applicationID = globalParams.appID;
     this.executorID = globalParams.executorID; // for consistency with src/context.ts
     if (!globalParams.enableOTLP) {
       return;
     }
     const { BasicTracerProvider } = require('@opentelemetry/sdk-trace-base');
-    const { Resource } = require('@opentelemetry/resources');
 
     const tracer = new BasicTracerProvider({
-      resource: new Resource({
-        'service.name': 'dbos',
-      }),
+      resource: {
+        attributes: {
+          'service.name': appName,
+        },
+      },
     });
     tracer.register(); // this is a no-op if another tracer provider was already registered
   }
