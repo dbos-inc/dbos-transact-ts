@@ -21,6 +21,7 @@ jobs:
             packages/kafkajs-receive,
             packages/knex-datasource,
             packages/koa-serve,
+            packages/kysely-datasource,
             packages/nodepg-datasource,
             packages/pgnotifier-receive,
             packages/postgres-datasource,
