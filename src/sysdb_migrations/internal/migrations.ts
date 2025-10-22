@@ -173,4 +173,14 @@ export const allMigrations: ReadonlyArray<DBMigration> = [
     name: '20252810000000_partitioned_queues',
     pg: [`alter table "dbos"."workflow_status" add column "queue_partition_key" text`],
   },
+  /** 
+   * Supports the rate-limit COUNT at src/system_database.ts:2078 by aligning the
+   * query with a queue_name/status/started_at index so the planner can choose it
+   * instead of falling back to the uq_workflow_status_queue_name_dedup_id unique
+   * index, which forces a scan across all statuses.
+   */
+  {
+    name: '20252950000000_workflow_status_queue_status_started_index',
+    pg: [`create index "idx_workflow_status_queue_status_started" on "dbos"."workflow_status" ("queue_name", "status", "started_at_epoch_ms")`],
+  },
 ];
