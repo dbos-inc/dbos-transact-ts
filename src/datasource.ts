@@ -299,25 +299,30 @@ export interface CheckSchemaInstallationReturn {
   table_exists: number;
 }
 
-export const checkSchemaInstallationPG = `
+export function checkSchemaInstallationPG(schemaName: string = 'dbos'): string {
+  return `
 SELECT
   EXISTS (
     SELECT 1
     FROM information_schema.schemata
-    WHERE schema_name = 'dbos'
+    WHERE schema_name = '${schemaName}'
   ) AS schema_exists,
   EXISTS (
     SELECT 1
     FROM information_schema.tables
-    WHERE table_schema = 'dbos'
+    WHERE table_schema = '${schemaName}'
       AND table_name = 'transaction_completion'
   ) AS table_exists;
 `;
+}
 
-export const createTransactionCompletionSchemaPG = `CREATE SCHEMA IF NOT EXISTS dbos;`;
+export function createTransactionCompletionSchemaPG(schemaName: string = 'dbos'): string {
+  return `CREATE SCHEMA IF NOT EXISTS ${schemaName};`;
+}
 
-export const createTransactionCompletionTablePG = `
-  CREATE TABLE IF NOT EXISTS dbos.transaction_completion (
+export function createTransactionCompletionTablePG(schemaName: string = 'dbos'): string {
+  return `
+  CREATE TABLE IF NOT EXISTS ${schemaName}.transaction_completion (
     workflow_id TEXT NOT NULL,
     function_num INT NOT NULL,
     output TEXT,
@@ -326,6 +331,7 @@ export const createTransactionCompletionTablePG = `
     PRIMARY KEY (workflow_id, function_num)
   );
 `;
+}
 
 function getPGErrorCode(error: unknown): string | undefined {
   return error && typeof error === 'object' && 'code' in error ? (error.code as string) : undefined;

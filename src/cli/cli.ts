@@ -108,14 +108,25 @@ program
     const databaseURLs = getDatabaseURLs(systemDatabaseUrl);
     systemDatabaseUrl = databaseURLs.systemDatabaseURL;
 
+    // Get schema name from config
+    let schemaName = 'dbos';
+    try {
+      if (existsSync(dbosConfigFilePath)) {
+        const configFile = readConfigFile(dbosConfigFilePath);
+        schemaName = configFile.system_database_schema_name ?? 'dbos';
+      }
+    } catch (e) {
+      // If config file doesn't exist or can't be read, use default
+    }
+
     try {
       // Load the DBOS system schema.
-      logger.info('Creating DBOS system database and schema');
-      await ensureSystemDatabase(systemDatabaseUrl, logger);
+      logger.info(`Creating DBOS system database and schema: ${schemaName}`);
+      await ensureSystemDatabase(systemDatabaseUrl, logger, false, undefined, schemaName);
 
       // Grant permissions to application role if specified
       if (options.appRole) {
-        await grantDbosSchemaPermissions(systemDatabaseUrl, options.appRole, logger);
+        await grantDbosSchemaPermissions(systemDatabaseUrl, options.appRole, logger, schemaName);
       }
     } catch (e) {
       logger.error(e);

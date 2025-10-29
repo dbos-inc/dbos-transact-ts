@@ -34,8 +34,12 @@ interface ExistenceCheck {
   exists: boolean;
 }
 
-export const schemaExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`;
-export const txnOutputTableExistsQuery = `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'transaction_completion')`;
+export function schemaExistsQuery(schemaName: string = 'dbos'): string {
+  return `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = '${schemaName}')`;
+}
+export function txnOutputTableExistsQuery(schemaName: string = 'dbos'): string {
+  return `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = '${schemaName}' AND table_name = 'transaction_completion')`;
+}
 
 export interface transaction_outputs {
   workflow_id: string;
@@ -281,14 +285,15 @@ export class DBOSKnexDS implements DBOSDataSource<KnexTransactionConfig> {
   // initializeDBOSSchema - this is up to the user to call.  It's not part of DBOS lifecycle
   async initializeDBOSSchema(): Promise<void> {
     const knex = this.#provider.createInstance();
+    const schemaName = 'dbos'; // Use default schema name for tests
     try {
-      const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery);
+      const schemaExists = await knex.raw<{ rows: ExistenceCheck[] }>(schemaExistsQuery(schemaName));
       if (!schemaExists.rows[0].exists) {
-        await knex.raw(createTransactionCompletionSchemaPG);
+        await knex.raw(createTransactionCompletionSchemaPG(schemaName));
       }
-      const txnOutputTableExists = await knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery);
+      const txnOutputTableExists = await knex.raw<{ rows: ExistenceCheck[] }>(txnOutputTableExistsQuery(schemaName));
       if (!txnOutputTableExists.rows[0].exists) {
-        await knex.raw(createTransactionCompletionTablePG);
+        await knex.raw(createTransactionCompletionTablePG(schemaName));
       }
     } finally {
       try {

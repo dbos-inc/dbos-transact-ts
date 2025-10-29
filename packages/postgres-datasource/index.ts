@@ -39,11 +39,15 @@ const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 class PostgresTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'PostgresDataSource';
   #dbField: Sql | undefined;
+  readonly schemaName: string;
 
   constructor(
     readonly name: string,
     private readonly options: Options = {},
-  ) {}
+    schemaName: string = 'dbos',
+  ) {
+    this.schemaName = schemaName;
+  }
 
   async initialize(): Promise<void> {
     const db = this.#dbField;
@@ -52,7 +56,9 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 
     let installed = false;
     try {
-      const rows = (await this.#dbField.unsafe(checkSchemaInstallationPG)) as CheckSchemaInstallationReturn[];
+      const rows = (await this.#dbField.unsafe(
+        checkSchemaInstallationPG(this.schemaName),
+      )) as CheckSchemaInstallationReturn[];
       installed = !!rows[0]?.schema_exists && !!rows[0]?.table_exists;
     } catch (e) {
       throw new Error(
@@ -63,8 +69,8 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     // Install
     if (!installed) {
       try {
-        await this.#dbField.unsafe(createTransactionCompletionSchemaPG);
-        await this.#dbField.unsafe(createTransactionCompletionTablePG);
+        await this.#dbField.unsafe(createTransactionCompletionSchemaPG(this.schemaName));
+        await this.#dbField.unsafe(createTransactionCompletionTablePG(this.schemaName));
       } catch (err) {
         throw new Error(
           `In initialization of 'PostgresDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
@@ -227,11 +233,11 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     return PostgresDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(options: Options = {}): Promise<void> {
+  static async initializeDBOSSchema(options: Options = {}, schemaName: string = 'dbos'): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
-      await pg.unsafe(createTransactionCompletionSchemaPG);
-      await pg.unsafe(createTransactionCompletionTablePG);
+      await pg.unsafe(createTransactionCompletionSchemaPG(schemaName));
+      await pg.unsafe(createTransactionCompletionTablePG(schemaName));
     } finally {
       await pg.end();
     }
@@ -242,8 +248,9 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
   constructor(
     readonly name: string,
     options: Options = {},
+    schemaName: string = 'dbos',
   ) {
-    this.#provider = new PostgresTransactionHandler(name, options);
+    this.#provider = new PostgresTransactionHandler(name, options, schemaName);
     registerDataSource(this.#provider);
   }
 

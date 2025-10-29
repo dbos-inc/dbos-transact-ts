@@ -35,11 +35,15 @@ const asyncLocalCtx = new AsyncLocalStorage<NodePostgresDataSourceContext>();
 class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'NodePostgresDataSource';
   #poolField: Pool | undefined;
+  readonly schemaName: string;
 
   constructor(
     readonly name: string,
     private readonly config: PoolConfig,
-  ) {}
+    schemaName: string = 'dbos',
+  ) {
+    this.schemaName = schemaName;
+  }
 
   async initialize(): Promise<void> {
     const pool = this.#poolField;
@@ -51,7 +55,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     try {
       let installed = false;
       try {
-        const res = (await client.query(checkSchemaInstallationPG)) as { rows: CheckSchemaInstallationReturn[] };
+        const res = await client.query<CheckSchemaInstallationReturn>(checkSchemaInstallationPG(this.schemaName));
         installed = !!res.rows[0].schema_exists && !!res.rows[0].table_exists;
       } catch (e) {
         throw new Error(
@@ -62,8 +66,8 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
       // Install
       if (!installed) {
         try {
-          await client.query(createTransactionCompletionSchemaPG);
-          await client.query(createTransactionCompletionTablePG);
+          await client.query(createTransactionCompletionSchemaPG(this.schemaName));
+          await client.query(createTransactionCompletionTablePG(this.schemaName));
         } catch (err) {
           throw new Error(
             `In initialization of 'NodePostgresDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
@@ -264,12 +268,12 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
     return NodePostgresDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(config: ClientConfig): Promise<void> {
+  static async initializeDBOSSchema(config: ClientConfig, schemaName: string = 'dbos'): Promise<void> {
     const client = new Client(config);
     try {
       await client.connect();
-      await client.query(createTransactionCompletionSchemaPG);
-      await client.query(createTransactionCompletionTablePG);
+      await client.query(createTransactionCompletionSchemaPG(schemaName));
+      await client.query(createTransactionCompletionTablePG(schemaName));
     } finally {
       await client.end();
     }
@@ -280,8 +284,9 @@ export class NodePostgresDataSource implements DBOSDataSource<NodePostgresTransa
   constructor(
     readonly name: string,
     config: PoolConfig,
+    schemaName: string = 'dbos',
   ) {
-    this.#provider = new NodePostgresTransactionHandler(name, config);
+    this.#provider = new NodePostgresTransactionHandler(name, config, schemaName);
     registerDataSource(this.#provider);
   }
 
