@@ -197,4 +197,89 @@ describe('custom-schema-tests', () => {
       await cleanupClient.end();
     }
   });
+
+  test('test custom schema with special characters', async () => {
+    const config = generateDBOSTestConfig();
+    const baseUrl = new URL(config.systemDatabaseUrl!);
+    const specialSchemaDbName = 'special_schema_test_db';
+    const specialSchemaName = 'F8nny_sCHem@-n@m3';
+    const dbUrl = new URL(baseUrl.toString());
+    dbUrl.pathname = `/${specialSchemaDbName}`;
+
+    // Clean up any existing test database
+    const pgClient = new Client({
+      connectionString: baseUrl.toString(),
+    });
+    await pgClient.connect();
+    await pgClient.query(`DROP DATABASE IF EXISTS ${specialSchemaDbName} WITH (FORCE);`);
+    await pgClient.end();
+
+    try {
+      // Set up DBOS with special character schema name
+      DBOS.setConfig({
+        name: 'special-schema-test',
+        systemDatabaseUrl: dbUrl.toString(),
+        systemDatabaseSchemaName: specialSchemaName,
+      });
+      await DBOS.launch();
+
+      // Verify the special character schema was created
+      const pgSystemClient = new Client({
+        connectionString: dbUrl.toString(),
+      });
+      await pgSystemClient.connect();
+
+      // Check that the special character schema exists (using parameterized query)
+      const schemaExists = await pgSystemClient.query<ExistenceCheck>(
+        `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = $1)`,
+        [specialSchemaName],
+      );
+      expect(schemaExists.rows[0].exists).toBe(true);
+
+      // Check that tables were created in the special character schema
+      const tableExists = await pgSystemClient.query<ExistenceCheck>(
+        `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'workflow_status')`,
+        [specialSchemaName],
+      );
+      expect(tableExists.rows[0].exists).toBe(true);
+
+      // Check that the default 'dbos' schema was NOT created
+      const defaultSchemaExists = await pgSystemClient.query<ExistenceCheck>(
+        `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`,
+      );
+      expect(defaultSchemaExists.rows[0].exists).toBe(false);
+
+      // Define and execute a simple workflow to ensure full functionality
+      async function testStepFunction() {
+        return Promise.resolve('special schema step completed');
+      }
+
+      async function testWorkflowFunction() {
+        const result = await DBOS.runStep(() => testStepFunction(), { name: 'specialSchemaStep' });
+        return result;
+      }
+      const testWorkflow = DBOS.registerWorkflow(testWorkflowFunction);
+
+      // Execute the workflow
+      const result = await testWorkflow();
+      expect(result).toBe('special schema step completed');
+
+      // Verify workflow status was recorded in the special character schema
+      const workflowCount = await pgSystemClient.query<{ count: string }>(
+        `SELECT COUNT(*) as count FROM "${specialSchemaName}".workflow_status`,
+      );
+      expect(parseInt(workflowCount.rows[0].count)).toBeGreaterThan(0);
+
+      await pgSystemClient.end();
+      await DBOS.shutdown();
+    } finally {
+      // Clean up test database
+      const cleanupClient = new Client({
+        connectionString: baseUrl.toString(),
+      });
+      await cleanupClient.connect();
+      await cleanupClient.query(`DROP DATABASE IF EXISTS ${specialSchemaDbName} WITH (FORCE);`);
+      await cleanupClient.end();
+    }
+  });
 });
