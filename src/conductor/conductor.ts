@@ -5,7 +5,6 @@ import * as protocol from './protocol';
 import { GetWorkflowsInput, StatusString } from '..';
 import { GetQueuedWorkflowsInput } from '../workflow';
 import { hostname } from 'node:os';
-import { json as streamJSON } from 'stream/consumers';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
 
@@ -352,11 +351,8 @@ export class Conductor {
         }
       });
 
-      currWebsocket.on('unexpected-response', async (_, res) => {
-        const resBody = await streamJSON(res);
-        this.dbosExec.logger.warn(
-          `Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}. Details: ${JSON.stringify(resBody)}`,
-        );
+      currWebsocket.on('unexpected-response', (_, res) => {
+        this.dbosExec.logger.warn(`Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}}`);
         if (this.reconnectTimeout === undefined) {
           this.resetWebsocket(currWebsocket, currPing);
         }
