@@ -101,22 +101,25 @@ program
   .description('Create the DBOS system database and its internal tables')
   .argument('[systemDatabaseUrl]', 'System database URL')
   .option('-r, --app-role <string>', 'The role with which you will run your DBOS application')
-  .action(async (systemDatabaseUrl: string | undefined, options: { appRole?: string }) => {
+  .option('-s, --schema <string>', 'The schema name for DBOS system tables (default: dbos)')
+  .action(async (systemDatabaseUrl: string | undefined, options: { appRole?: string; schema?: string }) => {
     const logger = new GlobalLogger();
 
     // Determine system database URL from argument or config
     const databaseURLs = getDatabaseURLs(systemDatabaseUrl);
     systemDatabaseUrl = databaseURLs.systemDatabaseURL;
 
-    // Get schema name from config
-    let schemaName = 'dbos';
-    try {
-      if (existsSync(dbosConfigFilePath)) {
-        const configFile = readConfigFile(dbosConfigFilePath);
-        schemaName = configFile.system_database_schema_name ?? 'dbos';
+    // Get schema name from CLI option first, then config, then default
+    let schemaName = options.schema ?? 'dbos';
+    if (!options.schema) {
+      try {
+        if (existsSync(dbosConfigFilePath)) {
+          const configFile = readConfigFile(dbosConfigFilePath);
+          schemaName = configFile.system_database_schema_name ?? 'dbos';
+        }
+      } catch (e) {
+        // If config file doesn't exist or can't be read, use default
       }
-    } catch (e) {
-      // If config file doesn't exist or can't be read, use default
     }
 
     try {
