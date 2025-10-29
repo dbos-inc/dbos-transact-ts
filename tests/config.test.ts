@@ -489,6 +489,7 @@ describe('dbos-config', () => {
     const internalConfig: DBOSConfigInternal = {
       name: 'my-app',
       systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
+      systemDatabaseSchemaName: 'dbos',
       telemetry: {
         logs: {
           logLevel: 'info',
