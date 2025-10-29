@@ -45,11 +45,15 @@ const asyncLocalCtx = new AsyncLocalStorage<PrismaDataSourceContext>();
 
 class PrismaTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'PrismaDataSource';
+  readonly schemaName: string;
 
   constructor(
     readonly name: string,
     private readonly prismaAccess: PrismaLike | (() => PrismaLike),
-  ) {}
+    schemaName: string = 'dbos',
+  ) {
+    this.schemaName = schemaName;
+  }
 
   get #prismaDB() {
     if (!this.prismaAccess) {
@@ -68,7 +72,9 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   async initialize(): Promise<void> {
     let installed = false;
     try {
-      const res = await this.#prismaDB.$queryRawUnsafe<CheckSchemaInstallationReturn[]>(checkSchemaInstallationPG);
+      const res = await this.#prismaDB.$queryRawUnsafe<CheckSchemaInstallationReturn[]>(
+        checkSchemaInstallationPG(this.schemaName),
+      );
       installed = !!res[0]?.schema_exists && !!res[0]?.table_exists;
     } catch (e) {
       throw new Error(
@@ -79,11 +85,11 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     // Install
     if (!installed) {
       try {
-        await this.#prismaDB.$executeRawUnsafe(createTransactionCompletionSchemaPG);
-        await this.#prismaDB.$executeRawUnsafe(createTransactionCompletionTablePG);
+        await this.#prismaDB.$executeRawUnsafe(createTransactionCompletionSchemaPG(this.schemaName));
+        await this.#prismaDB.$executeRawUnsafe(createTransactionCompletionTablePG(this.schemaName));
       } catch (err) {
         throw new Error(
-          `In initialization of 'PrismaDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'PrismaDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -101,7 +107,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
     const result = await client.$queryRawUnsafe<Result[]>(
-      `SELECT output, error FROM dbos.transaction_completion
+      `SELECT output, error FROM ${this.schemaName}.transaction_completion
       WHERE workflow_id = $1 AND function_num = $2`,
       workflowID,
       stepID,
@@ -116,7 +122,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.#prismaDB.$executeRawUnsafe(
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
+        `INSERT INTO ${this.schemaName}.transaction_completion (workflow_id, function_num, error) 
         VALUES ($1, $2, $3)`,
         workflowID,
         stepID,
@@ -136,10 +142,11 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
     workflowID: string,
     stepID: number,
     output: string | null,
+    schemaName: string,
   ): Promise<void> {
     try {
       await client.$executeRawUnsafe(
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
+        `INSERT INTO ${schemaName}.transaction_completion (workflow_id, function_num, output) 
          VALUES ($1, $2, $3)`,
         workflowID,
         stepID,
@@ -196,7 +203,13 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
 
             // save the output of read/write transactions
             if (saveResults) {
-              await PrismaTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
+              await PrismaTransactionHandler.#recordOutput(
+                client,
+                workflowID,
+                stepID!,
+                SuperJSON.stringify(result),
+                this.schemaName,
+              );
             }
 
             return result;
@@ -241,14 +254,14 @@ export class PrismaDataSource<PrismaClient> implements DBOSDataSource<Transactio
     return PrismaDataSource.#getClient(this.#provider) as PrismaClient;
   }
 
-  static async initializeDBOSSchema(prisma: PrismaLike) {
-    await prisma.$queryRawUnsafe(createTransactionCompletionSchemaPG);
-    await prisma.$queryRawUnsafe(createTransactionCompletionTablePG);
+  static async initializeDBOSSchema(prisma: PrismaLike, schemaName: string = 'dbos') {
+    await prisma.$queryRawUnsafe(createTransactionCompletionSchemaPG(schemaName));
+    await prisma.$queryRawUnsafe(createTransactionCompletionTablePG(schemaName));
   }
 
-  static async uninitializeDBOSSchema(prisma: PrismaLike) {
-    await prisma.$executeRawUnsafe('DROP TABLE IF EXISTS dbos.transaction_completion;');
-    await prisma.$executeRawUnsafe('DROP SCHEMA IF EXISTS dbos CASCADE;');
+  static async uninitializeDBOSSchema(prisma: PrismaLike, schemaName: string = 'dbos') {
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS ${schemaName}.transaction_completion;`);
+    await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE;`);
   }
 
   #provider: PrismaTransactionHandler;
@@ -256,8 +269,9 @@ export class PrismaDataSource<PrismaClient> implements DBOSDataSource<Transactio
   constructor(
     readonly name: string,
     prismaAccess: PrismaLike | (() => PrismaLike),
+    schemaName: string = 'dbos',
   ) {
-    this.#provider = new PrismaTransactionHandler(name, prismaAccess);
+    this.#provider = new PrismaTransactionHandler(name, prismaAccess, schemaName);
     registerDataSource(this.#provider);
   }
 
