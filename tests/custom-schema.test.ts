@@ -1,5 +1,5 @@
 import { DBOS } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig } from './helpers';
 import { Client } from 'pg';
 
 interface ExistenceCheck {
@@ -108,7 +108,7 @@ describe('custom-schema-tests', () => {
 
       // Define a simple workflow
       async function testStepFunction() {
-        return 'step completed';
+        return Promise.resolve('step completed');
       }
 
       async function testWorkflowFunction() {
