@@ -531,6 +531,12 @@ describe('running-admin-server-tests', () => {
     expect(workflows[0].AuthenticatedUser).toBeUndefined();
     expect(workflows[0].AssumedRole).toBeUndefined();
     expect(workflows[0].AuthenticatedRoles).toBeUndefined();
+    expect(workflows[0].WorkflowTimeoutMS).toBeUndefined();
+    expect(workflows[0].WorkflowDeadlineEpochMS).toBeUndefined();
+    expect(workflows[0].DeduplicationID).toBeUndefined();
+    expect(workflows[0].Priority).toBe('0');
+    expect(workflows[0].QueuePartitionKey).toBeUndefined();
+    expect(workflows[0].ForkedFrom).toBeUndefined();
     // By default, input and output are not loaded
     expect(workflows[0].Output).toBeUndefined();
     expect(workflows[0].Error).toBeUndefined();

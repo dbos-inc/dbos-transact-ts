@@ -155,6 +155,12 @@ export class WorkflowsOutput {
   QueueName?: string;
   ApplicationVersion?: string;
   ExecutorID?: string;
+  WorkflowTimeoutMS?: string;
+  WorkflowDeadlineEpochMS?: string;
+  DeduplicationID?: string;
+  Priority?: string;
+  QueuePartitionKey?: string;
+  ForkedFrom?: string;
 
   constructor(info: WorkflowStatus) {
     // Mark empty fields as undefined
@@ -176,6 +182,12 @@ export class WorkflowsOutput {
     this.QueueName = info.queueName ? info.queueName : undefined;
     this.ApplicationVersion = info.applicationVersion;
     this.ExecutorID = info.executorId;
+    this.WorkflowTimeoutMS = info.timeoutMS ? String(info.timeoutMS) : undefined;
+    this.WorkflowDeadlineEpochMS = info.deadlineEpochMS ? String(info.deadlineEpochMS) : undefined;
+    this.DeduplicationID = info.deduplicationID;
+    this.Priority = String(info.priority);
+    this.QueuePartitionKey = info.queuePartitionKey;
+    this.ForkedFrom = info.forkedFrom;
   }
 }
 
