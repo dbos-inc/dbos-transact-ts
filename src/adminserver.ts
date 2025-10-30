@@ -486,15 +486,7 @@ export class DBOSAdminServer {
       handler: async (req, res, params) => {
         const workflowId = params!.workflow_id;
         const steps = await dbosExec.listWorkflowSteps(workflowId);
-        const result = steps?.map((step) => ({
-          function_name: step.name,
-          function_id: step.functionID,
-          output: step.output ? DBOSJSON.stringify(step.output) : undefined,
-          error: step.error ? DBOSJSON.stringify(serializeError(step.error)) : undefined,
-          child_workflow_id: step.childWorkflowID,
-          started_at_epoch_ms: step.startedAtEpochMs,
-          completed_at_epoch_ms: step.completedAtEpochMs,
-        }));
+        const result = steps?.map((step) => new protocol.WorkflowSteps(step));
         sendJson(res, 200, result);
       },
     });

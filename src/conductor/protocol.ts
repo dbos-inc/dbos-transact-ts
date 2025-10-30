@@ -197,6 +197,8 @@ export class WorkflowSteps {
   output?: string;
   error?: string;
   child_workflow_id?: string;
+  started_at_epoch_ms?: string;
+  completed_at_epoch_ms?: string;
 
   constructor(info: StepInfo) {
     this.function_id = info.functionID;
@@ -204,6 +206,8 @@ export class WorkflowSteps {
     this.output = info.output ? JSON.stringify(info.output) : undefined;
     this.error = info.error ? JSON.stringify(serializeError(info.error)) : undefined;
     this.child_workflow_id = info.childWorkflowID ?? undefined;
+    this.started_at_epoch_ms = info.startedAtEpochMs !== undefined ? String(info.startedAtEpochMs) : undefined;
+    this.completed_at_epoch_ms = info.completedAtEpochMs !== undefined ? String(info.completedAtEpochMs) : undefined;
   }
 }
 
