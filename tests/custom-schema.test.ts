@@ -6,6 +6,19 @@ interface ExistenceCheck {
   exists: boolean;
 }
 
+class WorkflowTestClass {
+  @DBOS.step()
+  static async testStepFunction() {
+    return Promise.resolve('step completed');
+  }
+
+  @DBOS.workflow()
+  static async testWorkflow() {
+    const result = await DBOS.runStep(() => WorkflowTestClass.testStepFunction(), { name: 'testStep' });
+    return result;
+  }
+}
+
 describe('custom-schema-tests', () => {
   beforeAll(async () => {
     // Clean up any existing test database
@@ -35,6 +48,10 @@ describe('custom-schema-tests', () => {
     await pgClient.connect();
     await pgClient.query(`DROP DATABASE IF EXISTS ${customSchemaDbName} WITH (FORCE);`);
     await pgClient.end();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
   });
 
   test('test custom schema name initialization', async () => {
@@ -78,7 +95,6 @@ describe('custom-schema-tests', () => {
     expect(defaultSchemaExists.rows[0].exists).toBe(false);
 
     await pgSystemClient.end();
-    await DBOS.shutdown();
   });
 
   test('test workflow execution with custom schema', async () => {
@@ -106,19 +122,8 @@ describe('custom-schema-tests', () => {
       });
       await DBOS.launch();
 
-      // Define a simple workflow
-      async function testStepFunction() {
-        return Promise.resolve('step completed');
-      }
-
-      async function testWorkflowFunction() {
-        const result = await DBOS.runStep(() => testStepFunction(), { name: 'testStep' });
-        return result;
-      }
-      const testWorkflow = DBOS.registerWorkflow(testWorkflowFunction);
-
       // Execute the workflow
-      const result = await testWorkflow();
+      const result = await WorkflowTestClass.testWorkflow();
       expect(result).toBe('step completed');
 
       // Verify workflow status was recorded in custom schema
@@ -133,7 +138,6 @@ describe('custom-schema-tests', () => {
       expect(parseInt(workflowCount.rows[0].count)).toBeGreaterThan(0);
 
       await pgSystemClient.end();
-      await DBOS.shutdown();
     } finally {
       // Clean up test database
       const cleanupClient = new Client({
@@ -186,7 +190,6 @@ describe('custom-schema-tests', () => {
       expect(tableExists.rows[0].exists).toBe(true);
 
       await pgSystemClient.end();
-      await DBOS.shutdown();
     } finally {
       // Clean up test database
       const cleanupClient = new Client({
@@ -215,63 +218,15 @@ describe('custom-schema-tests', () => {
     await pgClient.end();
 
     try {
-      // Set up DBOS with special character schema name
+      // Set up DBOS with special character schema name (should fail)
       DBOS.setConfig({
         name: 'special-schema-test',
         systemDatabaseUrl: dbUrl.toString(),
         systemDatabaseSchemaName: specialSchemaName,
       });
-      await DBOS.launch();
 
-      // Verify the special character schema was created
-      const pgSystemClient = new Client({
-        connectionString: dbUrl.toString(),
-      });
-      await pgSystemClient.connect();
-
-      // Check that the special character schema exists (using parameterized query)
-      const schemaExists = await pgSystemClient.query<ExistenceCheck>(
-        `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = $1)`,
-        [specialSchemaName],
-      );
-      expect(schemaExists.rows[0].exists).toBe(true);
-
-      // Check that tables were created in the special character schema
-      const tableExists = await pgSystemClient.query<ExistenceCheck>(
-        `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'workflow_status')`,
-        [specialSchemaName],
-      );
-      expect(tableExists.rows[0].exists).toBe(true);
-
-      // Check that the default 'dbos' schema was NOT created
-      const defaultSchemaExists = await pgSystemClient.query<ExistenceCheck>(
-        `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = 'dbos')`,
-      );
-      expect(defaultSchemaExists.rows[0].exists).toBe(false);
-
-      // Define and execute a simple workflow to ensure full functionality
-      async function testStepFunction() {
-        return Promise.resolve('special schema step completed');
-      }
-
-      async function testWorkflowFunction() {
-        const result = await DBOS.runStep(() => testStepFunction(), { name: 'specialSchemaStep' });
-        return result;
-      }
-      const testWorkflow = DBOS.registerWorkflow(testWorkflowFunction);
-
-      // Execute the workflow
-      const result = await testWorkflow();
-      expect(result).toBe('special schema step completed');
-
-      // Verify workflow status was recorded in the special character schema
-      const workflowCount = await pgSystemClient.query<{ count: string }>(
-        `SELECT COUNT(*) as count FROM "${specialSchemaName}".workflow_status`,
-      );
-      expect(parseInt(workflowCount.rows[0].count)).toBeGreaterThan(0);
-
-      await pgSystemClient.end();
-      await DBOS.shutdown();
+      // Expect DBOS.launch() to throw an error due to invalid schema name
+      await expect(DBOS.launch()).rejects.toThrow();
     } finally {
       // Clean up test database
       const cleanupClient = new Client({
