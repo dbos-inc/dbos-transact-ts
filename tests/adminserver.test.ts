@@ -652,6 +652,19 @@ describe('running-admin-server-tests', () => {
         'Content-Type': 'application/json',
       },
       body: JSON.stringify({
+        fork_from: 'fake-id',
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(0);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
         workflow_name: 'exampleWorkflow',
       }),
     });
