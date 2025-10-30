@@ -315,7 +315,7 @@ export async function ensureSystemDatabase(
   }
 
   try {
-    await runSysMigrationsPg(client, allMigrations(schemaName), {
+    await runSysMigrationsPg(client, allMigrations(schemaName), schemaName, {
       onWarn: (e: string) => logger.info(e),
     });
   } finally {

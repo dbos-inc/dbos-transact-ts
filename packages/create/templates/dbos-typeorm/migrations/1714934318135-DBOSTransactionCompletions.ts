@@ -6,8 +6,8 @@ export class DBOSTransactionCompletions1714934318135 implements MigrationInterfa
   name = 'DBOSTransactionCompletions1714934318135';
 
   public async up(queryRunner: QueryRunner): Promise<void> {
-    await queryRunner.query(createTransactionCompletionSchemaPG);
-    await queryRunner.query(createTransactionCompletionTablePG);
+    await queryRunner.query(createTransactionCompletionSchemaPG());
+    await queryRunner.query(createTransactionCompletionTablePG());
   }
 
   public async down(queryRunner: QueryRunner): Promise<void> {
