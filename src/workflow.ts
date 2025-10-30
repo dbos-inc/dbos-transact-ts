@@ -67,14 +67,14 @@ export interface WorkflowStatus {
 }
 
 export interface GetWorkflowsInput {
-  workflowIDs?: string[]; // The workflow IDs to retrieve
-  workflowName?: string; // The name of the workflow function
-  authenticatedUser?: string; // The user who ran the workflow.
-  startTime?: string; // Timestamp in ISO 8601 format
-  endTime?: string; // Timestamp in ISO 8601 format
-  status?: 'PENDING' | 'SUCCESS' | 'ERROR' | 'MAX_RECOVERY_ATTEMPTS_EXCEEDED' | 'CANCELLED' | 'ENQUEUED'; // The status of the workflow.
-  applicationVersion?: string; // The application version that ran this workflow.
-  workflow_id_prefix?: string;
+  workflowIDs?: string[]; // Retrieve workflows with these IDs.
+  workflowName?: string; // Retrieve workflows with this name.
+  status?: 'PENDING' | 'SUCCESS' | 'ERROR' | 'MAX_RECOVERY_ATTEMPTS_EXCEEDED' | 'CANCELLED' | 'ENQUEUED'; // Retrieve workflows with this status (Must be `ENQUEUED`, `PENDING`, `SUCCESS`, `ERROR`, `CANCELLED`, or `RETRIES_EXCEEDED`)
+  startTime?: string; // Retrieve workflows started after this (RFC 3339-compliant) timestamp.
+  endTime?: string; // Retrieve workflows started before this (RFC 3339-compliant) timestamp.
+  authenticatedUser?: string; // Retrieve workflows run by this authenticated user.
+  applicationVersion?: string; // Retrieve workflows started on this application version.
+  workflow_id_prefix?: string; // Retrieve workflows whose ID have this prefix
   queueName?: string; // If this workflow is enqueued, on which queue
   queuesOnly?: boolean; // Return only workflows that are actively enqueued
   forkedFrom?: string; // Get workflows forked from this workflow ID.
