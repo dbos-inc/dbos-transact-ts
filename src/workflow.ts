@@ -63,24 +63,14 @@ export interface GetWorkflowsInput {
   endTime?: string; // Timestamp in ISO 8601 format
   status?: 'PENDING' | 'SUCCESS' | 'ERROR' | 'MAX_RECOVERY_ATTEMPTS_EXCEEDED' | 'CANCELLED' | 'ENQUEUED'; // The status of the workflow.
   applicationVersion?: string; // The application version that ran this workflow.
+  workflow_id_prefix?: string;
+  queueName?: string; // If this workflow is enqueued, on which queue
+  queuesOnly?: boolean; // Return only workflows that are actively enqueued
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
-  workflow_id_prefix?: string;
   loadInput?: boolean; // Load the input of the workflow (default true)
   loadOutput?: boolean; // Load the output of the workflow (default true)
-}
-
-export interface GetQueuedWorkflowsInput {
-  workflowName?: string; // The name of the workflow function
-  startTime?: string; // Timestamp in ISO 8601 format
-  endTime?: string; // Timestamp in ISO 8601 format
-  status?: 'PENDING' | 'SUCCESS' | 'ERROR' | 'MAX_RECOVERY_ATTEMPTS_EXCEEDED' | 'CANCELLED' | 'ENQUEUED'; // The status of the workflow.
-  limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
-  queueName?: string; // The queue
-  offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
-  sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
-  loadInput?: boolean; // Load the input of the workflow (default true)
 }
 
 export interface GetPendingWorkflowsOutput {

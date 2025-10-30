@@ -1,5 +1,5 @@
 import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
-import type { GetQueuedWorkflowsInput, StepInfo, WorkflowStatus, GetWorkflowsInput } from './workflow';
+import type { StepInfo, WorkflowStatus, GetWorkflowsInput } from './workflow';
 import { DBOSJSON } from './utils';
 import { deserializeError } from 'serialize-error';
 import { randomUUID } from 'node:crypto';
@@ -9,8 +9,10 @@ export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsIn
   return workflows.map((wf) => toWorkflowStatus(wf));
 }
 
-export async function listQueuedWorkflows(sysdb: SystemDatabase, input: GetQueuedWorkflowsInput) {
-  const workflows = await sysdb.listQueuedWorkflows(input);
+export async function listQueuedWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput) {
+  input.queuesOnly = true;
+  input.loadOutput = false;
+  const workflows = await sysdb.listWorkflows(input);
   return workflows.map((wf) => toWorkflowStatus(wf));
 }
 

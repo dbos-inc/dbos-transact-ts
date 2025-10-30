@@ -2,7 +2,7 @@ import { GetWorkflowsInput, StatusString, DBOS, WorkflowQueue } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, recoverPendingWorkflows } from './helpers';
 import { Client } from 'pg';
-import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
+import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
@@ -427,7 +427,7 @@ describe('test-list-queues', () => {
     expect(config.systemDatabaseUrl).toBeDefined();
     const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger);
     try {
-      let input: GetQueuedWorkflowsInput = {};
+      let input: GetWorkflowsInput = {};
       let output: WorkflowStatus[] = [];
       output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(TestListQueues.queuedSteps);

@@ -24,7 +24,7 @@ export {
   WorkflowHandle,
   StatusString,
   GetWorkflowsInput,
-  GetQueuedWorkflowsInput,
+  GetWorkflowsInput as GetQueuedWorkflowsInput,
   WorkflowStatus,
 } from './workflow';
 

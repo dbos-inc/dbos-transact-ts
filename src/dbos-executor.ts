@@ -18,7 +18,6 @@ import {
   RetrievedHandle,
   StatusString,
   type WorkflowStatus,
-  type GetQueuedWorkflowsInput,
   type StepInfo,
   WorkflowConfig,
   DEFAULT_MAX_RECOVERY_ATTEMPTS,
@@ -927,7 +926,7 @@ export class DBOSExecutor {
     return listWorkflows(this.systemDatabase, input);
   }
 
-  async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
+  async listQueuedWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
     return listQueuedWorkflows(this.systemDatabase, input);
   }
 

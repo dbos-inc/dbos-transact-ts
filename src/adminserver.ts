@@ -1,6 +1,6 @@
 import * as http from 'http';
 import * as url from 'url';
-import { GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from './workflow';
+import { GetWorkflowsInput, StatusString } from './workflow';
 import { DBOSError } from './error';
 import { DBOSExecutor } from './dbos-executor';
 import { GlobalLogger } from './telemetry/logs';
@@ -575,7 +575,7 @@ export class DBOSAdminServer {
         };
 
         // Map request body keys to GetQueuedWorkflowsInput properties
-        const input: GetQueuedWorkflowsInput = {
+        const input: GetWorkflowsInput = {
           workflowName: body.workflow_name,
           startTime: body.start_time,
           endTime: body.end_time,

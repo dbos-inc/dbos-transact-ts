@@ -9,7 +9,6 @@ import {
 import { GlobalLogger } from './telemetry/logs';
 import { randomUUID } from 'node:crypto';
 import {
-  type GetQueuedWorkflowsInput,
   type GetWorkflowsInput,
   isWorkflowActive,
   StatusString,
@@ -285,7 +284,7 @@ export class DBOSClient {
     return listWorkflows(this.systemDatabase, input);
   }
 
-  listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
+  listQueuedWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
     return listQueuedWorkflows(this.systemDatabase, input);
   }
 

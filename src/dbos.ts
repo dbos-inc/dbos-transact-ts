@@ -10,7 +10,6 @@ import {
 import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
 import { DBOSSpan, getActiveSpan, installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
 import {
-  GetQueuedWorkflowsInput,
   GetWorkflowsInput,
   InternalWFHandle,
   isWorkflowActive,
@@ -608,7 +607,7 @@ export class DBOS {
    * @param input - `GetQueuedWorkflowsInput` predicate for filtering returned workflows
    * @returns `WorkflowStatus` array containing details of the matching workflows
    */
-  static async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatus[]> {
+  static async listQueuedWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
     ensureDBOSIsLaunched('listQueuedWorkflows');
     return await runInternalStep(async () => {
       return await DBOS.#executor.listQueuedWorkflows(input);

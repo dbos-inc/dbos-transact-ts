@@ -10,7 +10,7 @@ import {
   DBOSQueueDuplicatedError,
   DBOSInitializationError,
 } from './error';
-import { GetPendingWorkflowsOutput, GetQueuedWorkflowsInput, GetWorkflowsInput, StatusString } from './workflow';
+import { GetPendingWorkflowsOutput, GetWorkflowsInput, StatusString } from './workflow';
 import {
   notifications,
   operation_outputs,
@@ -179,7 +179,6 @@ export interface SystemDatabase {
 
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
-  listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]>;
   garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void>;
 }
 
@@ -1862,9 +1861,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const params: unknown[] = [];
     let paramCounter = 1;
 
+    // If queuesOnly, filter for queued workflows
+    if (input.queuesOnly) {
+      whereClauses.push(`queue_name IS NOT NULL`);
+      whereClauses.push(`status IN ($${paramCounter}, $${paramCounter + 1})`);
+      params.push(StatusString.ENQUEUED, StatusString.PENDING);
+      paramCounter += 2;
+    }
+
     if (input.workflowName) {
       whereClauses.push(`name = $${paramCounter}`);
       params.push(input.workflowName);
+      paramCounter++;
+    }
+    if (input.queueName) {
+      whereClauses.push(`queue_name = $${paramCounter}`);
+      params.push(input.queueName);
       paramCounter++;
     }
     if (input.workflow_id_prefix) {
@@ -1906,90 +1918,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const orderClause = `ORDER BY created_at ${input.sortDesc ? 'DESC' : 'ASC'}`;
-    const limitClause = input.limit ? `LIMIT ${input.limit}` : '';
-    const offsetClause = input.offset ? `OFFSET ${input.offset}` : '';
-
-    const query = `
-      SELECT ${selectColumns.join(', ')}
-      FROM ${schemaName}.workflow_status
-      ${whereClause}
-      ${orderClause}
-      ${limitClause}
-      ${offsetClause}
-    `;
-
-    const result = await this.pool.query<workflow_status>(query, params);
-    return result.rows.map(mapWorkflowStatus);
-  }
-
-  async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
-    const schemaName = DBOSExecutor.systemDBSchemaName;
-    const selectColumns = [
-      'workflow_uuid',
-      'status',
-      'name',
-      'recovery_attempts',
-      'config_name',
-      'class_name',
-      'authenticated_user',
-      'authenticated_roles',
-      'assumed_role',
-      'queue_name',
-      'executor_id',
-      'created_at',
-      'updated_at',
-      'application_version',
-      'application_id',
-      'workflow_deadline_epoch_ms',
-      'workflow_timeout_ms',
-    ];
-
-    input.loadInput = input.loadInput ?? true;
-    if (input.loadInput) {
-      selectColumns.push('inputs', 'request');
-    }
-
-    const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-
-    // Build WHERE clauses
-    const whereClauses: string[] = [];
-    const params: unknown[] = [];
-    let paramCounter = 1;
-
-    // Always filter for queued workflows
-    whereClauses.push(`queue_name IS NOT NULL`);
-    whereClauses.push(`status IN ($${paramCounter}, $${paramCounter + 1})`);
-    params.push(StatusString.ENQUEUED, StatusString.PENDING);
-    paramCounter += 2;
-
-    if (input.workflowName) {
-      whereClauses.push(`name = $${paramCounter}`);
-      params.push(input.workflowName);
-      paramCounter++;
-    }
-    if (input.queueName) {
-      whereClauses.push(`queue_name = $${paramCounter}`);
-      params.push(input.queueName);
-      paramCounter++;
-    }
-    if (input.startTime) {
-      whereClauses.push(`created_at >= $${paramCounter}`);
-      params.push(new Date(input.startTime).getTime());
-      paramCounter++;
-    }
-    if (input.endTime) {
-      whereClauses.push(`created_at <= $${paramCounter}`);
-      params.push(new Date(input.endTime).getTime());
-      paramCounter++;
-    }
-    if (input.status) {
-      whereClauses.push(`status = $${paramCounter}`);
-      params.push(input.status);
-      paramCounter++;
-    }
-
-    const whereClause = `WHERE ${whereClauses.join(' AND ')}`;
-    const orderClause = `ORDER BY created_at ${sortDesc ? 'DESC' : 'ASC'}`;
     const limitClause = input.limit ? `LIMIT ${input.limit}` : '';
     const offsetClause = input.offset ? `OFFSET ${input.offset}` : '';
 
