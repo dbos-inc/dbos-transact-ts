@@ -96,6 +96,8 @@ export interface StepInfo {
   readonly output: unknown;
   readonly error: Error | null;
   readonly childWorkflowID: string | null;
+  readonly startedAtEpochMs?: number;
+  readonly completedAtEpochMs?: number;
 }
 
 export interface PgTransactionId {

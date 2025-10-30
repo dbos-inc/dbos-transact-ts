@@ -35,6 +35,8 @@ export async function listWorkflowSteps(sysdb: SystemDatabase, workflowID: strin
     output: step.output ? DBOSJSON.parse(step.output) : null,
     error: step.error ? deserializeError(DBOSJSON.parse(step.error)) : null,
     childWorkflowID: step.child_workflow_id,
+    startedAtEpochMs: step.started_at_epoch_ms,
+    completedAtEpochMs: step.completed_at_epoch_ms,
   }));
 
   return steps.toSorted((a, b) => a.functionID - b.functionID);

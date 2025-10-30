@@ -47,6 +47,8 @@ export interface operation_outputs {
   error: string;
   child_workflow_id: string;
   function_name?: string;
+  started_at_epoch_ms?: number;
+  completed_at_epoch_ms?: number;
 }
 
 export interface event_dispatch_kv {

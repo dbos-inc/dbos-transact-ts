@@ -810,6 +810,37 @@ describe('test-list-steps', () => {
     }
   }
 
+  const numStepTimingSteps = 5;
+  async function stepTimingStep() {
+    await sleepms(100);
+  }
+
+  const stepTimingWorkflow = DBOS.registerWorkflow(async () => {
+    for (let i = 0; i < numStepTimingSteps; i++) {
+      await DBOS.runStep(() => stepTimingStep());
+    }
+    await DBOS.setEvent('key', 'value');
+    await DBOS.listWorkflows({});
+    await DBOS.recv(undefined, 0);
+  });
+
+  test('test-step-timing', async () => {
+    const startTime = Date.now();
+    const handle = await DBOS.startWorkflow(stepTimingWorkflow)();
+
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    assert(steps);
+    for (const s of steps) {
+      assert(s.startedAtEpochMs);
+      assert(s.completedAtEpochMs);
+      assert(s.startedAtEpochMs >= startTime);
+      assert(s.completedAtEpochMs >= s.startedAtEpochMs);
+      if (s.functionID < numStepTimingSteps) {
+        assert(s.completedAtEpochMs - s.startedAtEpochMs >= 100);
+      }
+    }
+  });
+
   test('test-list-steps', async () => {
     const wfid = randomUUID();
     const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: wfid }).testWorkflow();
