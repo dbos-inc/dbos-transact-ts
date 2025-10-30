@@ -192,6 +192,11 @@ describe('workflow-management-tests', () => {
       expect(info.createdAt).toBeGreaterThan(0);
       expect(info.updatedAt).toBeGreaterThan(0);
       expect(info.executorId).toBe(globalParams.executorID);
+      expect(info.deduplicationID).toBeUndefined();
+      expect(info.priority).toBe(0);
+      expect(info.queuePartitionKey).toBeUndefined();
+      expect(info.forkedFrom).toBeUndefined();
+      expect(info.forkedTo).toBeUndefined();
 
       info = infos[1];
       expect(info.workflowName).toBe('failWorkflow');

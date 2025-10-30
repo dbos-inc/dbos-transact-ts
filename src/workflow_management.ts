@@ -77,6 +77,9 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal): WorkflowStat
     updatedAt: internal.updatedAt,
     timeoutMS: internal.timeoutMS,
     deadlineEpochMS: internal.deadlineEpochMS,
+    deduplicationID: internal.deduplicationID,
+    priority: internal.priority,
+    queuePartitionKey: internal.queuePartitionKey,
     forkedFrom: internal.forkedFrom,
     forkedTo: internal.forkedTo,
   };

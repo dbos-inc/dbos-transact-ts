@@ -51,8 +51,16 @@ export interface WorkflowStatus {
   readonly createdAt: number;
   readonly updatedAt?: number;
 
+  // The start-to-close timeout of the workflow in ms
   readonly timeoutMS?: number | null;
+  // The deadline of a workflow, computed by adding its timeout to its start time.
   readonly deadlineEpochMS?: number;
+  // Unique ID for deduplication on a queue
+  readonly deduplicationID?: string;
+  // Priority of the workflow on the queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
+  readonly priority: number;
+  // If this workflow is enqueued on a partitioned queue, its partition key
+  readonly queuePartitionKey?: string;
 
   // If this workflow was forked from another, that workflow's ID.
   readonly forkedFrom?: string;
