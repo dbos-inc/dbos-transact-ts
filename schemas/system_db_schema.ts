@@ -77,4 +77,6 @@ export interface step_info {
   output: unknown;
   error: Error | null;
   child_workflow_id: string | null;
+  started_at_epoch_ms?: number;
+  completed_at_epoch_ms?: number;
 }

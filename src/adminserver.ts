@@ -492,6 +492,8 @@ export class DBOSAdminServer {
           output: step.output ? DBOSJSON.stringify(step.output) : undefined,
           error: step.error ? DBOSJSON.stringify(serializeError(step.error)) : undefined,
           child_workflow_id: step.childWorkflowID,
+          started_at_epoch_ms: step.startedAtEpochMs,
+          completed_at_epoch_ms: step.completedAtEpochMs,
         }));
         sendJson(res, 200, result);
       },

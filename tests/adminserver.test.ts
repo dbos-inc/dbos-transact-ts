@@ -241,6 +241,7 @@ describe('running-admin-server-tests', () => {
   });
 
   test('test-admin-list-workflow-steps', async () => {
+    const startTime = Date.now();
     const handle = await DBOS.startWorkflow(TestAdminWorkflow).workflowWithSteps();
     await handle.getResult();
     await expect(handle.getStatus()).resolves.toMatchObject({
@@ -257,6 +258,9 @@ describe('running-admin-server-tests', () => {
     //eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const steps: step_info[] = await response.json();
     expect(steps.length).toBe(3);
+    expect(steps[0].function_name).toBe('stepOne');
+    expect(Number(steps[0].started_at_epoch_ms)).toBeGreaterThan(startTime);
+    expect(Number(steps[0].completed_at_epoch_ms)).toBeGreaterThan(Number(steps[0].started_at_epoch_ms));
     expect(steps[0].function_name).toBe('stepOne');
     expect(steps[1].function_name).toBe('DBOS.sleep');
     expect(steps[2].function_name).toBe('stepTwo');
