@@ -209,7 +209,6 @@ export interface WorkflowStatusInternal {
   priority: number;
   queuePartitionKey?: string;
   forkedFrom?: string;
-  forkedTo?: string[];
 }
 
 export interface EnqueueOptions {
@@ -604,7 +603,6 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
     forkedFrom: row.forked_from ?? undefined,
-    forkedTo: row.forked_to ?? undefined,
   };
 }
 
@@ -1901,6 +1899,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (input.authenticatedUser) {
       whereClauses.push(`authenticated_user = $${paramCounter}`);
       params.push(input.authenticatedUser);
+      paramCounter++;
+    }
+    if (input.forkedFrom) {
+      whereClauses.push(`forked_from = $${paramCounter}`);
+      params.push(input.forkedFrom);
       paramCounter++;
     }
     if (input.startTime) {

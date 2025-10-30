@@ -196,7 +196,6 @@ describe('workflow-management-tests', () => {
       expect(info.priority).toBe(0);
       expect(info.queuePartitionKey).toBeUndefined();
       expect(info.forkedFrom).toBeUndefined();
-      expect(info.forkedTo).toBeUndefined();
 
       info = infos[1];
       expect(info.workflowName).toBe('failWorkflow');
@@ -1253,6 +1252,12 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepThreeCount).toBe(3);
     expect(ExampleWorkflow.stepFourCount).toBe(3);
     expect(ExampleWorkflow.stepFiveCount).toBe(4);
+
+    const forkedWorkflows = await DBOS.listWorkflows({ forkedFrom: handle.workflowID });
+    expect(forkedWorkflows.length).toBe(3);
+    expect(forkedWorkflows[0].workflowID).toBe(forkedHandle.workflowID);
+    expect(forkedWorkflows[1].workflowID).toBe(forkedHandle2.workflowID);
+    expect(forkedWorkflows[2].workflowID).toBe(forkedHandle3.workflowID);
   }, 10000);
 
   test('test-fork-childwf', async () => {

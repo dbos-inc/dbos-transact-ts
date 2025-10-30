@@ -81,7 +81,6 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal): WorkflowStat
     priority: internal.priority,
     queuePartitionKey: internal.queuePartitionKey,
     forkedFrom: internal.forkedFrom,
-    forkedTo: internal.forkedTo,
   };
 }
 
