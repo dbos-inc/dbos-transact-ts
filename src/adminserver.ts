@@ -6,9 +6,8 @@ import { DBOSExecutor } from './dbos-executor';
 import { GlobalLogger } from './telemetry/logs';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
-import { DBOSJSON, globalParams } from './utils';
+import { globalParams } from './utils';
 import { QueueParameters, wfQueueRunner } from './wfqueue';
-import { serializeError } from 'serialize-error';
 import { globalTimeout } from './workflow_management';
 import * as protocol from './conductor/protocol';
 
