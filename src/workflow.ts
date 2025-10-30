@@ -27,43 +27,64 @@ export interface WorkflowConfig {
 }
 
 export interface WorkflowStatus {
+  // The workflow ID
   readonly workflowID: string;
-  readonly status: string; // The status of the workflow.  One of PENDING, SUCCESS, ERROR, ENQUEUED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED.
-  readonly workflowName: string; // The name of the workflow function.
-  readonly workflowClassName: string; // The class name holding the workflow function.
-  readonly workflowConfigName?: string; // The name of the configuration, if the class needs configuration
-  readonly queueName?: string; // The name of the queue, if workflow was queued
+  // The status of the workflow.  One of PENDING, SUCCESS, ERROR, ENQUEUED, CANCELLED, or MAX_RECOVERY_ATTEMPTS_EXCEEDED.
+  readonly status: string;
+  // The name of the workflow function.
+  readonly workflowName: string;
+  // The name of the workflow's class, if any.
+  readonly workflowClassName: string;
+  // The name with which the workflow's class instance was configured, if any.
+  readonly workflowConfigName?: string;
+  // If the workflow was enqueued, the name of the queue.
+  readonly queueName?: string;
 
-  readonly authenticatedUser?: string; // The user who ran the workflow. Empty string if not set.
-  readonly assumedRole?: string; // The role used to run this workflow.  Empty string if authorization is not required.
-  readonly authenticatedRoles?: string[]; // All roles the authenticated user has, if any.
+  // The user who ran the workflow, if set.
+  readonly authenticatedUser?: string;
+  // The role used to run the workflow, if set.
+  readonly assumedRole?: string;
+  // All roles the authenticated user has, if set.
+  readonly authenticatedRoles?: string[];
 
+  // The deserialized workflow inputs.
+  readonly input?: unknown[];
+  // The workflow's deserialized output, if any.
   readonly output?: unknown;
-  readonly error?: unknown; // The error thrown by the workflow, if any.
-  readonly input?: unknown[]; // The input to the workflow, if any.
+  // The error thrown by the workflow, if any.
+  readonly error?: unknown;
 
-  readonly request?: object; // The parent request for this workflow, if any.
-  readonly executorId?: string; // The ID of the workflow executor
+  // The ID of the executor (process) that most recently executed this workflow.
+  readonly executorId?: string;
+  // The application version on which this workflow started.
   readonly applicationVersion?: string;
-  readonly applicationID: string;
-  readonly recoveryAttempts?: number;
 
+  // Workflow start time, as a UNIX epoch timestamp in milliseconds
   readonly createdAt: number;
+  // Last time the workflow status was updated, as a UNIX epoch timestamp in milliseconds. For a completed workflow, this is the workflow completion timestamp.
   readonly updatedAt?: number;
 
-  // The start-to-close timeout of the workflow in ms
+  // The timeout specified for this workflow, if any. Timeouts are start-to-close.
   readonly timeoutMS?: number;
-  // The deadline of a workflow, computed by adding its timeout to its start time.
+  // The deadline at which this workflow times out, if any. Not set until the workflow begins execution.
   readonly deadlineEpochMS?: number;
-  // Unique ID for deduplication on a queue
+  // Unique queue deduplication ID, if any. Deduplication IDs are unset when the workflow completes.
   readonly deduplicationID?: string;
-  // Priority of the workflow on the queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
+  // Priority of the workflow on a queue, starting from 1 ~ 2,147,483,647. Default 0 (highest priority).
   readonly priority: number;
   // If this workflow is enqueued on a partitioned queue, its partition key
   readonly queuePartitionKey?: string;
 
   // If this workflow was forked from another, that workflow's ID.
   readonly forkedFrom?: string;
+
+  // INTERNAL
+  // Deprecated field
+  readonly applicationID: string;
+  // Deprecated field
+  readonly request?: object;
+  // The number of times this workflow has been started.
+  readonly recoveryAttempts?: number;
 }
 
 export interface GetWorkflowsInput {
