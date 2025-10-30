@@ -160,7 +160,10 @@ export const allMigrations: ReadonlyArray<DBMigration> = [
     ],
   },
   {
-    pg: [`ALTER TABLE dbos.workflow_status ADD COLUMN forked_from TEXT;`],
+    pg: [
+      `ALTER TABLE dbos.workflow_status ADD COLUMN forked_from TEXT;`,
+      `create index "idx_workflow_status_forked_from" on "dbos"."workflow_status" ("forked_from")`,
+    ],
   },
   {
     pg: [
