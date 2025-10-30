@@ -130,6 +130,7 @@ export interface ListWorkflowsBody {
   end_time?: string;
   status?: string;
   application_version?: string;
+  fork_from?: string;
   limit?: number;
   offset?: number;
   sort_desc: boolean;
@@ -234,6 +235,7 @@ export interface ListQueuedWorkflowsBody {
   start_time?: string;
   end_time?: string;
   status?: string;
+  fork_from?: string;
   queue_name?: string;
   limit?: number;
   offset?: number;

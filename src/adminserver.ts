@@ -510,6 +510,7 @@ export class DBOSAdminServer {
           end_time?: string;
           status?: (typeof StatusString)[keyof typeof StatusString];
           application_version?: string;
+          fork_from?: string;
           limit?: number;
           offset?: number;
           sort_desc?: boolean;
@@ -527,6 +528,7 @@ export class DBOSAdminServer {
           endTime: body.end_time,
           status: body.status,
           applicationVersion: body.application_version,
+          forkedFrom: body.fork_from,
           limit: body.limit,
           offset: body.offset,
           sortDesc: body.sort_desc,
@@ -560,6 +562,7 @@ export class DBOSAdminServer {
           start_time?: string;
           end_time?: string;
           status?: (typeof StatusString)[keyof typeof StatusString];
+          fork_from?: string;
           queue_name?: string;
           limit?: number;
           offset?: number;
@@ -573,6 +576,7 @@ export class DBOSAdminServer {
           startTime: body.start_time,
           endTime: body.end_time,
           status: body.status,
+          forkedFrom: body.fork_from,
           queueName: body.queue_name,
           limit: body.limit,
           offset: body.offset,
