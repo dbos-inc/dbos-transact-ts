@@ -484,7 +484,9 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-list-workflows', async () => {
     // Run first workflow
-    const handle1 = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(456);
+    const startTime = Date.now();
+    const timeoutMS = 10000;
+    const handle1 = await DBOS.startWorkflow(TestAdminWorkflow, { timeoutMS }).exampleWorkflow(456);
     await handle1.getResult();
     await expect(handle1.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -531,8 +533,8 @@ describe('running-admin-server-tests', () => {
     expect(workflows[0].AuthenticatedUser).toBeUndefined();
     expect(workflows[0].AssumedRole).toBeUndefined();
     expect(workflows[0].AuthenticatedRoles).toBeUndefined();
-    expect(workflows[0].WorkflowTimeoutMS).toBeUndefined();
-    expect(workflows[0].WorkflowDeadlineEpochMS).toBeUndefined();
+    expect(workflows[0].WorkflowTimeoutMS).toBe(String(timeoutMS));
+    expect(Number(workflows[0].WorkflowDeadlineEpochMS)).toBeGreaterThanOrEqual(startTime + timeoutMS);
     expect(workflows[0].DeduplicationID).toBeUndefined();
     expect(workflows[0].Priority).toBe('0');
     expect(workflows[0].QueuePartitionKey).toBeUndefined();

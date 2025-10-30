@@ -366,7 +366,7 @@ export class DBOSExecutor {
   ): Promise<WorkflowHandle<R>> {
     const workflowID: string = params.workflowUUID ? params.workflowUUID : randomUUID();
     const presetID: boolean = params.workflowUUID ? true : false;
-    const timeoutMS = params.timeoutMS;
+    const timeoutMS = params.timeoutMS ?? undefined;
     // If a timeout is explicitly specified, use it over any propagated deadline
     const deadlineEpochMS = params.timeoutMS
       ? // Queued workflows are assigned a deadline on dequeue. Otherwise, compute the deadline immediately

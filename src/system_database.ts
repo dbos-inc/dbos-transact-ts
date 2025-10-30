@@ -204,7 +204,7 @@ export interface WorkflowStatusInternal {
   createdAt: number;
   updatedAt?: number;
   recoveryAttempts?: number;
-  timeoutMS?: number | null;
+  timeoutMS?: number;
   deadlineEpochMS?: number;
   deduplicationID?: string;
   priority: number;

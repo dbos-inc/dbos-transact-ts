@@ -52,7 +52,7 @@ export interface WorkflowStatus {
   readonly updatedAt?: number;
 
   // The start-to-close timeout of the workflow in ms
-  readonly timeoutMS?: number | null;
+  readonly timeoutMS?: number;
   // The deadline of a workflow, computed by adding its timeout to its start time.
   readonly deadlineEpochMS?: number;
   // Unique ID for deduplication on a queue
