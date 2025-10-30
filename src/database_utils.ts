@@ -378,7 +378,7 @@ export async function connectToPGDatabase(url: string, log: (m: string) => void)
   log(`Connecting: ${maskDatabaseUrl(url)}`);
   const client = new Client(getPGClientConfig(url));
   client.on('error', (err: Error) => {
-    log(`Unexpected error in admin client: ${err}`);
+    log(`Unexpected error in startup client: ${err}`);
   });
   try {
     await client.connect();
@@ -401,7 +401,7 @@ export async function connectToPGAndReportOutcome(
   log(`Connecting to ${label}: ${maskDatabaseUrl(url)}`);
   const client = new Client(getPGClientConfig(url));
   client.on('error', (err: Error) => {
-    log(`Unexpected error in admin client: ${err}`);
+    log(`Unexpected error in startup client: ${err}`);
   });
   try {
     await client.connect();
