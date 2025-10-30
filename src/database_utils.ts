@@ -377,6 +377,9 @@ export function maskDatabaseUrl(urlStr: string): string {
 export async function connectToPGDatabase(url: string, log: (m: string) => void): Promise<Client | null> {
   log(`Connecting: ${maskDatabaseUrl(url)}`);
   const client = new Client(getPGClientConfig(url));
+  client.on('error', (err: Error) => {
+    log(`Unexpected error in startup client: ${err}`);
+  });
   try {
     await client.connect();
     return client;
@@ -397,6 +400,9 @@ export async function connectToPGAndReportOutcome(
 ): Promise<{ result: 'ok'; client: Client } | { result: 'error'; code?: string; message: string }> {
   log(`Connecting to ${label}: ${maskDatabaseUrl(url)}`);
   const client = new Client(getPGClientConfig(url));
+  client.on('error', (err: Error) => {
+    log(`Unexpected error in startup client: ${err}`);
+  });
   try {
     await client.connect();
     return { result: 'ok', client };
