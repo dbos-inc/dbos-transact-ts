@@ -491,6 +491,7 @@ export class DBOSExecutor {
             callerFunctionID,
             internalStatus.workflowName,
             true,
+            Date.now(),
             { error: DBOSJSON.stringify(serializeError(e)) },
           );
         }
@@ -498,9 +499,16 @@ export class DBOSExecutor {
       }
 
       if (callerFunctionID !== undefined && callerID !== undefined) {
-        await this.systemDatabase.recordOperationResult(callerID, callerFunctionID, internalStatus.workflowName, true, {
-          childWorkflowID: workflowID,
-        });
+        await this.systemDatabase.recordOperationResult(
+          callerID,
+          callerFunctionID,
+          internalStatus.workflowName,
+          true,
+          Date.now(),
+          {
+            childWorkflowID: workflowID,
+          },
+        );
       }
 
       status = ires.status;
@@ -699,6 +707,7 @@ export class DBOSExecutor {
     ...args: T
   ): Promise<R> {
     stepFnName = stepFnName ?? stepFn.name ?? '<unnamed>';
+    const startTime = Date.now();
     if (!stepConfig) {
       const stepReg = getFunctionRegistration(stepFn);
       stepConfig = stepReg?.stepConfig;
@@ -812,7 +821,7 @@ export class DBOSExecutor {
     if (result === dbosNull) {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, maxAttempts, errors) : err;
-      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, {
+      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
         error: DBOSJSON.stringify(serializeError(err)),
       });
       span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
@@ -821,7 +830,7 @@ export class DBOSExecutor {
     } else {
       // Record the execution and return.
       const funcResult = serializeFunctionInputOutput(result, [stepFnName, '<result>']);
-      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, {
+      await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
         output: funcResult.stringified,
       });
       span.setStatus({ code: SpanStatusCode.OK });
@@ -891,6 +900,7 @@ export class DBOSExecutor {
     functionID: number,
     childWfId?: string,
   ): Promise<T> {
+    const startTime = Date.now();
     const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(workflowID, functionID);
     if (result) {
       if (result.functionName !== functionName) {
@@ -901,13 +911,13 @@ export class DBOSExecutor {
     try {
       const output: T = await callback();
       const funcOutput = serializeFunctionInputOutput(output, [functionName, '<result>']);
-      await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, {
+      await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, startTime, {
         output: funcOutput.stringified,
         childWorkflowID: childWfId,
       });
       return funcOutput.deserialized;
     } catch (e) {
-      await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, {
+      await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, startTime, {
         error: DBOSJSON.stringify(serializeError(e)),
         childWorkflowID: childWfId,
       });

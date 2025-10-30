@@ -84,6 +84,7 @@ export interface SystemDatabase {
     functionID: number,
     functionName: string,
     checkConflict: boolean,
+    startTimeEpochMs: number,
     options?: {
       childWorkflowID?: string | null;
       output?: string | null;
@@ -544,6 +545,7 @@ async function recordOperationResult(
   functionID: number,
   functionName: string,
   checkConflict: boolean,
+  startTimeEpochMs: number,
   options: {
     childWorkflowID?: string | null;
     output?: string | null;
@@ -553,8 +555,8 @@ async function recordOperationResult(
   try {
     await client.query<operation_outputs>(
       `INSERT INTO ${DBOSExecutor.systemDBSchemaName}.operation_outputs
-       (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'};`,
       [
         workflowID,
@@ -563,6 +565,8 @@ async function recordOperationResult(
         options.error ?? null,
         functionName,
         options.childWorkflowID ?? null,
+        startTimeEpochMs,
+        Date.now(),
       ],
     );
   } catch (error) {
@@ -985,6 +989,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     functionName: string,
     checkConflict: boolean,
+    startTimeEpochMs: number,
     options: {
       childWorkflowID?: string | null;
       output?: string | null;
@@ -993,7 +998,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await recordOperationResult(client, workflowID, functionID, functionName, checkConflict, options);
+      await recordOperationResult(
+        client,
+        workflowID,
+        functionID,
+        functionName,
+        checkConflict,
+        startTimeEpochMs,
+        options,
+      );
     } finally {
       client.release();
     }
@@ -1074,6 +1087,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     func: () => Promise<string | null | undefined>,
   ): Promise<string | null | undefined> {
+    const startTime = Date.now();
     const result = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
     if (result !== undefined) {
       if (result.functionName !== functionName) {
@@ -1082,7 +1096,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return result.output;
     }
     const output = await func();
-    await recordOperationResult(client, workflowID, functionID, functionName, true, { output });
+    await recordOperationResult(client, workflowID, functionID, functionName, true, startTime, { output });
     return output;
   }
 
@@ -1131,7 +1145,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
         endTimeMs = JSON.parse(res.output!) as number;
       } else {
-        await recordOperationResult(client, workflowID, functionID, DBOS_FUNCNAME_SLEEP, false, {
+        await recordOperationResult(client, workflowID, functionID, DBOS_FUNCNAME_SLEEP, false, Date.now(), {
           output: JSON.stringify(endTimeMs),
         });
       }
@@ -1190,6 +1204,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<string | null> {
     topic = topic ?? this.nullTopic;
+    const startTime = Date.now();
     // First, check for previous executions.
     const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID);
     if (res) {
@@ -1290,7 +1305,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (finalRecvRows.length > 0) {
         message = finalRecvRows[0].message;
       }
-      await recordOperationResult(client, workflowID, functionID, DBOS_FUNCNAME_RECV, true, { output: message });
+      await recordOperationResult(client, workflowID, functionID, DBOS_FUNCNAME_RECV, true, startTime, {
+        output: message,
+      });
       await client.query(`COMMIT`);
     } catch (e) {
       this.logger.error(e);
@@ -1355,6 +1372,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       timeoutFunctionID: number;
     },
   ): Promise<string | null> {
+    const startTime = Date.now();
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerWorkflow) {
       const res = await this.getOperationResultAndThrowIfCancelled(
@@ -1453,6 +1471,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         callerWorkflow.functionID,
         DBOS_FUNCNAME_GETEVENT,
         true,
+        startTime,
         { output: value },
       );
     }
