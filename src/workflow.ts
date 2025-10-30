@@ -77,7 +77,7 @@ export interface GetWorkflowsInput {
   workflow_id_prefix?: string;
   queueName?: string; // If this workflow is enqueued, on which queue
   queuesOnly?: boolean; // Return only workflows that are actively enqueued
-  forkedFrom?: string; // Was this workflow forked from this other workflow ID?
+  forkedFrom?: string; // Get workflows forked from this workflow ID.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
