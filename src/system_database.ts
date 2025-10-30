@@ -398,8 +398,9 @@ async function insertWorkflowStatus(
         inputs,
         deduplication_id,
         priority,
-        queue_partition_key
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+        queue_partition_key,
+        forked_from
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE
@@ -437,6 +438,7 @@ async function insertWorkflowStatus(
         initStatus.deduplicationID ?? null,
         initStatus.priority,
         initStatus.queuePartitionKey ?? null,
+        initStatus.forkedFrom ?? null,
       ],
     );
     if (rows.length === 0) {
@@ -601,8 +603,8 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     deduplicationID: row.deduplication_id ?? undefined,
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
-    forkedFrom: row.forkedFrom ?? undefined,
-    forkedTo: row.forkedTo ?? undefined,
+    forkedFrom: row.forked_from ?? undefined,
+    forkedTo: row.forked_to ?? undefined,
   };
 }
 
@@ -1045,6 +1047,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         deduplicationID: undefined,
         priority: 0,
         queuePartitionKey: undefined,
+        forkedFrom: workflowID,
       });
 
       if (startStep > 0) {
@@ -1846,6 +1849,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'application_id',
       'workflow_deadline_epoch_ms',
       'workflow_timeout_ms',
+      'forked_from',
     ];
 
     input.loadInput = input.loadInput ?? true;
