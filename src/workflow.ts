@@ -53,6 +53,11 @@ export interface WorkflowStatus {
 
   readonly timeoutMS?: number | null;
   readonly deadlineEpochMS?: number;
+
+  // If this workflow was forked from another, that workflow's ID.
+  readonly forkedFrom?: string;
+  // If this workflow was forked to others, those workflows' IDs
+  readonly forkedTo?: string[];
 }
 
 export interface GetWorkflowsInput {

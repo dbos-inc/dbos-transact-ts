@@ -208,6 +208,8 @@ export interface WorkflowStatusInternal {
   deduplicationID?: string;
   priority: number;
   queuePartitionKey?: string;
+  forkedFrom?: string;
+  forkedTo?: string[];
 }
 
 export interface EnqueueOptions {
@@ -599,6 +601,8 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     deduplicationID: row.deduplication_id ?? undefined,
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
+    forkedFrom: row.forkedFrom ?? undefined,
+    forkedTo: row.forkedTo ?? undefined,
   };
 }
 

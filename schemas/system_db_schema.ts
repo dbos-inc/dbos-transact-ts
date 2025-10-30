@@ -24,6 +24,8 @@ export interface workflow_status {
   deduplication_id?: string; // ID used to identify enqueued workflows for de-duplication.
   priority?: number; // Optional priority for the workflow.
   queue_partition_key?: string; // Partition key for partitioned queues.
+  forkedFrom?: string;
+  forkedTo?: string[];
 }
 
 export interface notifications {

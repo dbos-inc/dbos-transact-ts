@@ -77,6 +77,8 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal): WorkflowStat
     updatedAt: internal.updatedAt,
     timeoutMS: internal.timeoutMS,
     deadlineEpochMS: internal.deadlineEpochMS,
+    forkedFrom: internal.forkedFrom,
+    forkedTo: internal.forkedTo,
   };
 }
 
