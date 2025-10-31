@@ -82,7 +82,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
         await db.execute(sql.raw(createTransactionCompletionTablePG(this.schemaName)));
       } catch (err) {
         throw new Error(
-          `In initialization of 'DrizzleDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'DrizzleDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -111,7 +111,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     type Result = { output: string | null; error: string | null };
 
     const statement = sql`
-        SELECT output, error FROM dbos.transaction_completion
+        SELECT output, error FROM "${this.schemaName}".transaction_completion
         WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
     const result = await this.#drizzle.execute<Result>(statement);
 
@@ -128,10 +128,11 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     workflowID: string,
     stepID: number,
     output: string,
+    schemaName: string,
   ): Promise<void> {
     try {
       const statement = sql`
-        INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
+        INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output) 
         VALUES (${workflowID}, ${stepID}, ${output})`;
       await client.execute(statement);
     } catch (error) {
@@ -146,7 +147,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       const statement = sql`
-        INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
+        INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error) 
         VALUES (${workflowID}, ${stepID}, ${error})`;
       await this.#drizzle.execute(statement);
     } catch (error) {
@@ -201,7 +202,13 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
             // save the output of read/write transactions
             if (saveResults) {
-              await DrizzleTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
+              await DrizzleTransactionHandler.#recordOutput(
+                client,
+                workflowID,
+                stepID!,
+                SuperJSON.stringify(result),
+                this.schemaName,
+              );
             }
 
             return result;

@@ -4,7 +4,7 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
   return [
     {
       name: '20240123182943_schema',
-      pg: [`CREATE SCHEMA IF NOT EXISTS ${schemaName}`],
+      pg: [`CREATE SCHEMA IF NOT EXISTS "${schemaName}"`],
     },
     {
       name: '20240123182944_dbos_migrations',
@@ -30,7 +30,7 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
       name: '20240123183030_triggers',
       pg: [
         `
-    CREATE OR REPLACE FUNCTION ${schemaName}.notifications_function() RETURNS TRIGGER AS $$
+    CREATE OR REPLACE FUNCTION "${schemaName}".notifications_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.destination_uuid || '::' || NEW.topic;
     BEGIN
@@ -41,9 +41,9 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
 
     CREATE TRIGGER dbos_notifications_trigger
     AFTER INSERT ON "${schemaName}".notifications
-    FOR EACH ROW EXECUTE FUNCTION ${schemaName}.notifications_function();
+    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".notifications_function();
 
-    CREATE OR REPLACE FUNCTION ${schemaName}.workflow_events_function() RETURNS TRIGGER AS $$
+    CREATE OR REPLACE FUNCTION "${schemaName}".workflow_events_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.workflow_uuid || '::' || NEW.key;
     BEGIN
@@ -54,7 +54,7 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
 
     CREATE TRIGGER dbos_workflow_events_trigger
     AFTER INSERT ON "${schemaName}".workflow_events
-    FOR EACH ROW EXECUTE FUNCTION ${schemaName}.workflow_events_function();
+    FOR EACH ROW EXECUTE FUNCTION "${schemaName}".workflow_events_function();
   `,
       ],
     },

@@ -237,35 +237,35 @@ export async function grantDbosSchemaPermissions(
 
   try {
     // Grant usage on the schema
-    const grantUsageSql = `GRANT USAGE ON SCHEMA ${schemaName} TO "${roleName}"`;
+    const grantUsageSql = `GRANT USAGE ON SCHEMA "${schemaName}" TO "${roleName}"`;
     logger.info(grantUsageSql);
     await client.query(grantUsageSql);
 
     // Grant all privileges on all existing tables in schema (includes views)
-    const grantTablesSql = `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA ${schemaName} TO "${roleName}"`;
+    const grantTablesSql = `GRANT ALL PRIVILEGES ON ALL TABLES IN SCHEMA "${schemaName}" TO "${roleName}"`;
     logger.info(grantTablesSql);
     await client.query(grantTablesSql);
 
     // Grant all privileges on all sequences in schema
-    const grantSequencesSql = `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA ${schemaName} TO "${roleName}"`;
+    const grantSequencesSql = `GRANT ALL PRIVILEGES ON ALL SEQUENCES IN SCHEMA "${schemaName}" TO "${roleName}"`;
     logger.info(grantSequencesSql);
     await client.query(grantSequencesSql);
 
     // Grant execute on all functions and procedures in schema
-    const grantFunctionsSql = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA ${schemaName} TO "${roleName}"`;
+    const grantFunctionsSql = `GRANT EXECUTE ON ALL FUNCTIONS IN SCHEMA "${schemaName}" TO "${roleName}"`;
     logger.info(grantFunctionsSql);
     await client.query(grantFunctionsSql);
 
     // Grant default privileges for future objects in schema
-    const alterTablesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA ${schemaName} GRANT ALL ON TABLES TO "${roleName}"`;
+    const alterTablesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT ALL ON TABLES TO "${roleName}"`;
     logger.info(alterTablesSql);
     await client.query(alterTablesSql);
 
-    const alterSequencesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA ${schemaName} GRANT ALL ON SEQUENCES TO "${roleName}"`;
+    const alterSequencesSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT ALL ON SEQUENCES TO "${roleName}"`;
     logger.info(alterSequencesSql);
     await client.query(alterSequencesSql);
 
-    const alterFunctionsSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA ${schemaName} GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`;
+    const alterFunctionsSql = `ALTER DEFAULT PRIVILEGES IN SCHEMA "${schemaName}" GRANT EXECUTE ON FUNCTIONS TO "${roleName}"`;
     logger.info(alterFunctionsSql);
     await client.query(alterFunctionsSql);
   } catch (e) {
@@ -378,7 +378,7 @@ async function insertWorkflowStatus(
 ): Promise<InsertWorkflowResult> {
   try {
     const { rows } = await client.query<InsertWorkflowResult>(
-      `INSERT INTO ${schemaName}.workflow_status (
+      `INSERT INTO "${schemaName}".workflow_status (
         workflow_uuid,
         status,
         name,
@@ -464,7 +464,7 @@ async function getWorkflowStatusValue(
   schemaName: string,
 ): Promise<string | undefined> {
   const { rows } = await client.query<{ status: string }>(
-    `SELECT status FROM ${schemaName}.workflow_status WHERE workflow_uuid=$1`,
+    `SELECT status FROM "${schemaName}".workflow_status WHERE workflow_uuid=$1`,
     [workflowID],
   );
   return rows.length === 0 ? undefined : rows[0].status;
@@ -534,7 +534,7 @@ async function updateWorkflowStatus(
   }
 
   const result = await client.query<workflow_status>(
-    `UPDATE ${schemaName}.workflow_status ${setClause} ${whereClause}`,
+    `UPDATE "${schemaName}".workflow_status ${setClause} ${whereClause}`,
     args,
   );
 
@@ -559,7 +559,7 @@ async function recordOperationResult(
 ): Promise<void> {
   try {
     await client.query<operation_outputs>(
-      `INSERT INTO ${schemaName}.operation_outputs
+      `INSERT INTO "${schemaName}".operation_outputs
        (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
        VALUES ($1, $2, $3, $4, $5, $6)
        ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'};`,
@@ -941,7 +941,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]> {
     const getWorkflows = await this.pool.query<workflow_status>(
       `SELECT workflow_uuid, queue_name 
-       FROM ${this.schemaName}.workflow_status 
+       FROM "${this.schemaName}".workflow_status 
        WHERE status=$1 AND executor_id=$2 AND application_version=$3`,
       [StatusString.PENDING, executorID, appVersion],
     );
@@ -963,7 +963,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     const { rows } = await client.query<operation_outputs>(
       `SELECT output, error, child_workflow_id, function_name
-       FROM ${this.schemaName}.operation_outputs
+       FROM "${this.schemaName}".operation_outputs
       WHERE workflow_uuid=$1 AND function_id=$2`,
       [workflowID, functionID],
     );
@@ -994,7 +994,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
   async getAllOperationResults(workflowID: string): Promise<operation_outputs[]> {
     const { rows } = await this.pool.query<operation_outputs>(
-      `SELECT * FROM ${this.schemaName}.operation_outputs WHERE workflow_uuid=$1`,
+      `SELECT * FROM "${this.schemaName}".operation_outputs WHERE workflow_uuid=$1`,
       [workflowID],
     );
     return rows;
@@ -1081,10 +1081,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       );
 
       if (startStep > 0) {
-        const query = `INSERT INTO ${this.schemaName}.operation_outputs 
+        const query = `INSERT INTO "${this.schemaName}".operation_outputs 
           (workflow_uuid, function_id, output, error, function_name, child_workflow_id )
           SELECT $1 AS workflow_uuid, function_id, output, error, function_name, child_workflow_id
-          FROM ${this.schemaName}.operation_outputs
+          FROM "${this.schemaName}".operation_outputs
           WHERE workflow_uuid = $2 AND function_id < $3`;
         await client.query(query, [newWorkflowID, workflowID, startStep]);
       }
@@ -1193,7 +1193,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
         await client.query(
-          `INSERT INTO ${this.schemaName}.notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
+          `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
           [destinationID, topic, message],
         );
         return undefined;
@@ -1252,7 +1252,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
           await this.pool.query<notifications>(
-            `SELECT topic FROM ${this.schemaName}.notifications WHERE destination_uuid=$1 AND topic=$2;`,
+            `SELECT topic FROM "${this.schemaName}".notifications WHERE destination_uuid=$1 AND topic=$2;`,
             [workflowID, topic],
           )
         ).rows;
@@ -1303,14 +1303,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await client.query<notifications>(
           `WITH oldest_entry AS (
         SELECT destination_uuid, topic, message, created_at_epoch_ms
-        FROM ${this.schemaName}.notifications
+        FROM "${this.schemaName}".notifications
         WHERE destination_uuid = $1
           AND topic = $2
         ORDER BY created_at_epoch_ms ASC
         LIMIT 1
        )
 
-        DELETE FROM ${this.schemaName}.notifications
+        DELETE FROM "${this.schemaName}".notifications
         USING oldest_entry
         WHERE notifications.destination_uuid = oldest_entry.destination_uuid
           AND notifications.topic = oldest_entry.topic
@@ -1359,7 +1359,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SETEVENT, workflowID, functionID, async () => {
         await client.query(
-          `INSERT INTO ${this.schemaName}.workflow_events (workflow_uuid, key, value)
+          `INSERT INTO "${this.schemaName}".workflow_events (workflow_uuid, key, value)
              VALUES ($1, $2, $3)
              ON CONFLICT (workflow_uuid, key)
              DO UPDATE SET value = $3
@@ -1434,7 +1434,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const initRecvRows = (
           await this.pool.query<workflow_events>(
             `SELECT key, value
-             FROM ${this.schemaName}.workflow_events
+             FROM "${this.schemaName}".workflow_events
              WHERE workflow_uuid=$1 AND key=$2;`,
             [workflowID, key],
           )
@@ -1688,7 +1688,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         if (callerID) await this.checkIfCanceled(callerID);
         try {
           const { rows } = await this.pool.query<workflow_status>(
-            `SELECT status, output, error FROM ${this.schemaName}.workflow_status 
+            `SELECT status, output, error FROM "${this.schemaName}".workflow_status 
              WHERE workflow_uuid=$1`,
             [workflowID],
           );
@@ -1810,7 +1810,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     key: string,
   ): Promise<DBOSExternalState | undefined> {
     const res = await this.pool.query<event_dispatch_kv>(
-      `SELECT * FROM ${this.schemaName}.event_dispatch_kv
+      `SELECT * FROM "${this.schemaName}".event_dispatch_kv
        WHERE workflow_fn_name = $1 AND service_name = $2 AND key = $3;`,
       [workflowName, service, key],
     );
@@ -1833,7 +1833,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   @dbRetry()
   async upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState> {
     const res = await this.pool.query<event_dispatch_kv>(
-      `INSERT INTO ${this.schemaName}.event_dispatch_kv (
+      `INSERT INTO "${this.schemaName}".event_dispatch_kv (
         service_name, workflow_fn_name, key, value, update_time, update_seq)
        VALUES ($1, $2, $3, $4, $5, $6)
        ON CONFLICT (service_name, workflow_fn_name, key)
@@ -1949,7 +1949,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     const query = `
       SELECT ${selectColumns.join(', ')}
-      FROM ${schemaName}.workflow_status
+      FROM "${schemaName}".workflow_status
       ${whereClause}
       ${orderClause}
       ${limitClause}
@@ -2033,7 +2033,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     const query = `
       SELECT ${selectColumns.join(', ')}
-      FROM ${schemaName}.workflow_status
+      FROM "${schemaName}".workflow_status
       ${whereClause}
       ${orderClause}
       ${limitClause}
@@ -2047,7 +2047,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async clearQueueAssignment(workflowID: string): Promise<boolean> {
     // Reset the status of the task from "PENDING" to "ENQUEUED"
     const wqRes = await this.pool.query<workflow_status>(
-      `UPDATE ${this.schemaName}.workflow_status
+      `UPDATE "${this.schemaName}".workflow_status
         SET started_at_epoch_ms = NULL, status = $2
         WHERE workflow_uuid = $1 AND queue_name is NOT NULL AND status = $3`,
       [workflowID, StatusString.ENQUEUED, StatusString.PENDING],
@@ -2059,7 +2059,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   @dbRetry()
   async getDeduplicatedWorkflow(queueName: string, deduplicationID: string): Promise<string | null> {
     const { rows } = await this.pool.query<workflow_status>(
-      `SELECT workflow_uuid FROM ${this.schemaName}.workflow_status
+      `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
        WHERE queue_name = $1 AND deduplication_id = $2`,
       [queueName, deduplicationID],
     );
@@ -2074,7 +2074,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   @dbRetry()
   async getQueuePartitions(queueName: string): Promise<string[]> {
     const { rows } = await this.pool.query<{ queue_partition_key: string }>(
-      `SELECT DISTINCT queue_partition_key FROM ${this.schemaName}.workflow_status
+      `SELECT DISTINCT queue_partition_key FROM "${this.schemaName}".workflow_status
        WHERE queue_name = $1
          AND status = $2
          AND queue_partition_key IS NOT NULL`,
@@ -2113,7 +2113,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (queue.rateLimit) {
         const params = [queue.name, StatusString.ENQUEUED, startTimeMs - limiterPeriodMS, ...partitionParams];
         const countResult = await client.query<{ count: string }>(
-          `SELECT COUNT(*) FROM ${this.schemaName}.workflow_status
+          `SELECT COUNT(*) FROM "${this.schemaName}".workflow_status
            WHERE queue_name = $1
              AND status <> $2
              AND started_at_epoch_ms > $3
@@ -2138,7 +2138,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const params = [queue.name, StatusString.PENDING, ...partitionParams];
         const runningTasksResult = await client.query(
           `SELECT executor_id, COUNT(*) as task_count
-           FROM ${this.schemaName}.workflow_status
+           FROM "${this.schemaName}".workflow_status
            WHERE queue_name = $1 AND status = $2
              ${partitionFilter.replace('$PARTITION', '$3')}
            GROUP BY executor_id`,
@@ -2181,7 +2181,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const selectParams = [StatusString.ENQUEUED, queue.name, appVersion, ...partitionParams];
       const selectQuery = `
         SELECT workflow_uuid
-        FROM ${this.schemaName}.workflow_status
+        FROM "${this.schemaName}".workflow_status
         WHERE status = $1
           AND queue_name = $2
           AND (application_version IS NULL OR application_version = $3)
@@ -2204,7 +2204,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Start the functions by marking them as pending and updating their executor IDs
         await client.query(
-          `UPDATE ${this.schemaName}.workflow_status
+          `UPDATE "${this.schemaName}".workflow_status
            SET status = $1,
                executor_id = $2,
                application_version = $3,
@@ -2240,7 +2240,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       // Find the maximum offset for this workflow_uuid and key combination
       const maxOffsetResult = await client.query(
-        `SELECT MAX("offset") FROM ${this.schemaName}.streams 
+        `SELECT MAX("offset") FROM "${this.schemaName}".streams 
          WHERE workflow_uuid = $1 AND key = $2`,
         [workflowID, key],
       );
@@ -2254,7 +2254,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       // Insert the new stream entry
       await client.query(
-        `INSERT INTO ${this.schemaName}.streams (workflow_uuid, key, value, "offset")
+        `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset")
          VALUES ($1, $2, $3, $4)`,
         [workflowID, key, serializedValue, nextOffset],
       );
@@ -2281,7 +2281,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
         // Find the maximum offset for this workflow_uuid and key combination
         const maxOffsetResult = await client.query(
-          `SELECT MAX("offset") FROM ${this.schemaName}.streams 
+          `SELECT MAX("offset") FROM "${this.schemaName}".streams 
            WHERE workflow_uuid = $1 AND key = $2`,
           [workflowID, key],
         );
@@ -2295,7 +2295,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Insert the new stream entry
         await client.query(
-          `INSERT INTO ${this.schemaName}.streams (workflow_uuid, key, value, "offset")
+          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset")
            VALUES ($1, $2, $3, $4)`,
           [workflowID, key, serializedValue, nextOffset],
         );
@@ -2322,7 +2322,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client: PoolClient = await this.pool.connect();
     try {
       const result = await client.query(
-        `SELECT value FROM ${this.schemaName}.streams 
+        `SELECT value FROM "${this.schemaName}".streams 
          WHERE workflow_uuid = $1 AND key = $2 AND "offset" = $3`,
         [workflowID, key, offset],
       );
@@ -2344,7 +2344,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Get the created_at timestamp of the rows_threshold newest row
       const result = await this.pool.query<{ created_at: number }>(
         `SELECT created_at
-         FROM ${this.schemaName}.workflow_status
+         FROM "${this.schemaName}".workflow_status
          ORDER BY created_at DESC
          LIMIT 1 OFFSET $1`,
         [rowsThreshold - 1],
@@ -2365,7 +2365,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Delete all workflows older than cutoff that are NOT PENDING or ENQUEUED
     await this.pool.query(
-      `DELETE FROM ${this.schemaName}.workflow_status
+      `DELETE FROM "${this.schemaName}".workflow_status
        WHERE created_at < $1
          AND status NOT IN ($2, $3)`,
       [cutoffEpochTimestampMs, StatusString.PENDING, StatusString.ENQUEUED],

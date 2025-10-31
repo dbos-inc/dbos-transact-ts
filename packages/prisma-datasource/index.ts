@@ -107,7 +107,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
     const result = await client.$queryRawUnsafe<Result[]>(
-      `SELECT output, error FROM ${this.schemaName}.transaction_completion
+      `SELECT output, error FROM "${this.schemaName}".transaction_completion
       WHERE workflow_id = $1 AND function_num = $2`,
       workflowID,
       stepID,
@@ -122,7 +122,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.#prismaDB.$executeRawUnsafe(
-        `INSERT INTO ${this.schemaName}.transaction_completion (workflow_id, function_num, error) 
+        `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error) 
         VALUES ($1, $2, $3)`,
         workflowID,
         stepID,
@@ -146,7 +146,7 @@ class PrismaTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<void> {
     try {
       await client.$executeRawUnsafe(
-        `INSERT INTO ${schemaName}.transaction_completion (workflow_id, function_num, output) 
+        `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output) 
          VALUES ($1, $2, $3)`,
         workflowID,
         stepID,
@@ -260,8 +260,8 @@ export class PrismaDataSource<PrismaClient> implements DBOSDataSource<Transactio
   }
 
   static async uninitializeDBOSSchema(prisma: PrismaLike, schemaName: string = 'dbos') {
-    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS ${schemaName}.transaction_completion;`);
-    await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS ${schemaName} CASCADE;`);
+    await prisma.$executeRawUnsafe(`DROP TABLE IF EXISTS "${schemaName}".transaction_completion;`);
+    await prisma.$executeRawUnsafe(`DROP SCHEMA IF EXISTS "${schemaName}" CASCADE;`);
   }
 
   #provider: PrismaTransactionHandler;

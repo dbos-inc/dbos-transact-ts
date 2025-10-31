@@ -73,7 +73,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
         await this.#dbField.unsafe(createTransactionCompletionTablePG(this.schemaName));
       } catch (err) {
         throw new Error(
-          `In initialization of 'PostgresDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'PostgresDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -99,7 +99,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
     const result = await this.#db<Result[]>/*sql*/ `
-      SELECT output, error FROM dbos.transaction_completion
+      SELECT output, error FROM "${this.schemaName}".transaction_completion
       WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
     if (result.length === 0) {
       return undefined;
@@ -113,10 +113,11 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     workflowID: string,
     stepID: number,
     output: string | null,
+    schemaName: string,
   ): Promise<void> {
     try {
       await client/*sql*/ `
-        INSERT INTO dbos.transaction_completion (workflow_id, function_num, output)
+        INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output)
         VALUES (${workflowID}, ${stepID}, ${output})`;
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -130,7 +131,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.#db/*sql*/ `
-        INSERT INTO dbos.transaction_completion (workflow_id, function_num, error)
+        INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error)
         VALUES (${workflowID}, ${stepID}, ${error})`;
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -184,7 +185,13 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 
           // save the output of read/write transactions
           if (saveResults) {
-            await PostgresTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
+            await PostgresTransactionHandler.#recordOutput(
+              client,
+              workflowID,
+              stepID!,
+              SuperJSON.stringify(result),
+              this.schemaName,
+            );
           }
 
           return result;

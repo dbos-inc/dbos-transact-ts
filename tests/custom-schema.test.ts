@@ -218,15 +218,34 @@ describe('custom-schema-tests', () => {
     await pgClient.end();
 
     try {
-      // Set up DBOS with special character schema name (should fail)
       DBOS.setConfig({
         name: 'special-schema-test',
         systemDatabaseUrl: dbUrl.toString(),
         systemDatabaseSchemaName: specialSchemaName,
       });
 
-      // Expect DBOS.launch() to throw an error due to invalid schema name
-      await expect(DBOS.launch()).rejects.toThrow();
+      // This should now succeed with proper schema name escaping
+      await DBOS.launch();
+
+      // Verify the custom schema was created
+      const pgSystemClient = new Client({
+        connectionString: dbUrl.toString(),
+      });
+      await pgSystemClient.connect();
+
+      // Check that the custom schema exists
+      const schemaExists = await pgSystemClient.query<ExistenceCheck>(
+        `SELECT EXISTS (SELECT FROM information_schema.schemata WHERE schema_name = '${specialSchemaName}')`,
+      );
+      expect(schemaExists.rows[0].exists).toBe(true);
+
+      // Check that tables were created in the custom schema
+      const tableExists = await pgSystemClient.query<ExistenceCheck>(
+        `SELECT EXISTS (SELECT FROM information_schema.tables WHERE table_schema = '${specialSchemaName}' AND table_name = 'workflow_status')`,
+      );
+      expect(tableExists.rows[0].exists).toBe(true);
+
+      await pgSystemClient.end();
     } finally {
       // Clean up test database
       const cleanupClient = new Client({

@@ -317,12 +317,12 @@ SELECT
 }
 
 export function createTransactionCompletionSchemaPG(schemaName: string = 'dbos'): string {
-  return `CREATE SCHEMA IF NOT EXISTS ${schemaName};`;
+  return `CREATE SCHEMA IF NOT EXISTS "${schemaName}";`;
 }
 
 export function createTransactionCompletionTablePG(schemaName: string = 'dbos'): string {
   return `
-  CREATE TABLE IF NOT EXISTS ${schemaName}.transaction_completion (
+  CREATE TABLE IF NOT EXISTS "${schemaName}".transaction_completion (
     workflow_id TEXT NOT NULL,
     function_num INT NOT NULL,
     output TEXT,

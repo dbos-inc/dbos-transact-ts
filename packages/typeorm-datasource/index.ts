@@ -108,7 +108,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
         await this.dataSource.query(createTransactionCompletionTablePG(this.schemaName));
       } catch (err) {
         throw new Error(
-          `In initialization of 'TypeOrmDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'TypeOrmDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -127,7 +127,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type TxOutputRow = Pick<transaction_completion, 'output' | 'error'>;
     const rows = await this.dataSource.query<TxOutputRow[]>(
-      `SELECT output, error FROM dbos.transaction_completion
+      `SELECT output, error FROM "${this.schemaName}".transaction_completion
        WHERE workflow_id=$1 AND function_num=$2;`,
       [workflowID, stepID],
     );
@@ -149,10 +149,11 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     workflowID: string,
     stepID: number,
     output: string,
+    schemaName: string,
   ): Promise<void> {
     try {
       await entityManager.query(
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output)
+        `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output)
          VALUES ($1, $2, $3)`,
         [workflowID, stepID, output],
       );
@@ -168,7 +169,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.dataSource.query(
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error)
+        `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error)
          VALUES ($1, $2, $3)`,
         [workflowID, stepID, error],
       );
@@ -232,6 +233,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
               workflowID,
               stepID!,
               SuperJSON.stringify(result),
+              this.schemaName,
             );
           }
 

@@ -73,7 +73,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
         await this.#knexDBField.raw(createTransactionCompletionTablePG(this.schemaName));
       } catch (err) {
         throw new Error(
-          `In initialization of 'KnexDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'KnexDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
             See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -276,7 +276,7 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
 
     async function $uninitSchema(knexDB: Knex) {
       await knexDB.raw(
-        `DROP TABLE IF EXISTS ${schemaName}.transaction_completion; DROP SCHEMA IF EXISTS ${schemaName} CASCADE;`,
+        `DROP TABLE IF EXISTS "${schemaName}".transaction_completion; DROP SCHEMA IF EXISTS "${schemaName}" CASCADE;`,
       );
     }
   }

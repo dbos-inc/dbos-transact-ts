@@ -70,7 +70,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
           await client.query(createTransactionCompletionTablePG(this.schemaName));
         } catch (err) {
           throw new Error(
-            `In initialization of 'NodePostgresDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+            `In initialization of 'NodePostgresDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
             See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
           );
         }
@@ -100,7 +100,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     type Result = { output: string | null; error: string | null };
     const { rows } = await this.#pool.query<Result>(
       /*sql*/
-      `SELECT output, error FROM dbos.transaction_completion
+      `SELECT output, error FROM "${this.schemaName}".transaction_completion
        WHERE workflow_id = $1 AND function_num = $2`,
       [workflowID, stepID],
     );
@@ -116,11 +116,12 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     workflowID: string,
     stepID: number,
     output: string | null,
+    schemaName: string,
   ): Promise<void> {
     try {
       await client.query(
         /*sql*/
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
+        `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output) 
          VALUES ($1, $2, $3)`,
         [workflowID, stepID, output],
       );
@@ -137,7 +138,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
     try {
       await this.#pool.query(
         /*sql*/
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
+        `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error) 
          VALUES ($1, $2, $3)`,
         [workflowID, stepID, error],
       );
@@ -219,6 +220,7 @@ class NodePostgresTransactionHandler implements DataSourceTransactionHandler {
               workflowID,
               stepID!,
               SuperJSON.stringify(result),
+              this.schemaName,
             );
           }
 

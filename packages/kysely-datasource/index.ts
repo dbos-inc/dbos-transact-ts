@@ -90,7 +90,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
         await sql.raw(createTransactionCompletionTablePG(this.schemaName)).execute(this.#kyselyDBField);
       } catch (err) {
         throw new Error(
-          `In initialization of 'KyselyDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'KyselyDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
             See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -279,7 +279,9 @@ export class KyselyDataSource<DB> implements DBOSDataSource<TransactionConfig> {
       }),
     });
     await sql
-      .raw(`DROP TABLE IF EXISTS ${schemaName}.transaction_completion; DROP SCHEMA IF EXISTS ${schemaName} CASCADE;`)
+      .raw(
+        `DROP TABLE IF EXISTS "${schemaName}".transaction_completion; DROP SCHEMA IF EXISTS "${schemaName}" CASCADE;`,
+      )
       .execute(client);
     await client.destroy();
   }
