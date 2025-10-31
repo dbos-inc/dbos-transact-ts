@@ -111,7 +111,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     type Result = { output: string | null; error: string | null };
 
     const statement = sql`
-        SELECT output, error FROM "${this.schemaName}".transaction_completion
+        SELECT output, error FROM ${sql.identifier(this.schemaName)}.transaction_completion
         WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
     const result = await this.#drizzle.execute<Result>(statement);
 
@@ -132,7 +132,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<void> {
     try {
       const statement = sql`
-        INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output) 
+        INSERT INTO ${sql.identifier(schemaName)}.transaction_completion (workflow_id, function_num, output) 
         VALUES (${workflowID}, ${stepID}, ${output})`;
       await client.execute(statement);
     } catch (error) {
@@ -147,7 +147,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       const statement = sql`
-        INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error) 
+        INSERT INTO ${sql.identifier(this.schemaName)}.transaction_completion (workflow_id, function_num, error) 
         VALUES (${workflowID}, ${stepID}, ${error})`;
       await this.#drizzle.execute(statement);
     } catch (error) {
