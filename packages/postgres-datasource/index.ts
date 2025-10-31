@@ -99,7 +99,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
     const result = await this.#db<Result[]>/*sql*/ `
-      SELECT output, error FROM "${this.schemaName}".transaction_completion
+      SELECT output, error FROM ${this.#db(this.schemaName)}.transaction_completion
       WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
     if (result.length === 0) {
       return undefined;
@@ -117,7 +117,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<void> {
     try {
       await client/*sql*/ `
-        INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output)
+        INSERT INTO ${client(schemaName)}.transaction_completion (workflow_id, function_num, output)
         VALUES (${workflowID}, ${stepID}, ${output})`;
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -131,7 +131,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.#db/*sql*/ `
-        INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error)
+        INSERT INTO ${this.#db(this.schemaName)}.transaction_completion (workflow_id, function_num, error)
         VALUES (${workflowID}, ${stepID}, ${error})`;
     } catch (error) {
       if (isPGKeyConflictError(error)) {
