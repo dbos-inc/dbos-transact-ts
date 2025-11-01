@@ -39,11 +39,15 @@ const asyncLocalCtx = new AsyncLocalStorage<KnexDataSourceContext>();
 class KnexTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'KnexDataSource';
   #knexDBField: Knex | undefined;
+  readonly schemaName: string;
 
   constructor(
     readonly name: string,
     private readonly config: Knex.Config,
-  ) {}
+    schemaName: string = 'dbos',
+  ) {
+    this.schemaName = schemaName;
+  }
 
   async initialize(): Promise<void> {
     const knexDB = this.#knexDBField;
@@ -54,7 +58,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
     let installed = false;
     try {
       const { rows } = await this.#knexDBField.raw<{ rows: CheckSchemaInstallationReturn[] }>(
-        checkSchemaInstallationPG,
+        checkSchemaInstallationPG(this.schemaName),
       );
       installed = !!rows[0].schema_exists && !!rows[0].table_exists;
     } catch (e) {
@@ -65,11 +69,11 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
 
     if (!installed) {
       try {
-        await this.#knexDBField.raw(createTransactionCompletionSchemaPG);
-        await this.#knexDBField.raw(createTransactionCompletionTablePG);
+        await this.#knexDBField.raw(createTransactionCompletionSchemaPG(this.schemaName));
+        await this.#knexDBField.raw(createTransactionCompletionTablePG(this.schemaName));
       } catch (err) {
         throw new Error(
-          `In initialization of 'KnexDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'KnexDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
             See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -240,7 +244,7 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     return KnexDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(knexOrConfig: Knex.Config) {
+  static async initializeDBOSSchema(knexOrConfig: Knex.Config, schemaName: string = 'dbos') {
     if (isKnex(knexOrConfig)) {
       await $initSchema(knexOrConfig);
     } else {
@@ -253,12 +257,12 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
 
     async function $initSchema(knexDB: Knex) {
-      await knexDB.raw(createTransactionCompletionSchemaPG);
-      await knexDB.raw(createTransactionCompletionTablePG);
+      await knexDB.raw(createTransactionCompletionSchemaPG(schemaName));
+      await knexDB.raw(createTransactionCompletionTablePG(schemaName));
     }
   }
 
-  static async uninitializeDBOSSchema(knexOrConfig: Knex.Config) {
+  static async uninitializeDBOSSchema(knexOrConfig: Knex.Config, schemaName: string = 'dbos') {
     if (isKnex(knexOrConfig)) {
       await $uninitSchema(knexOrConfig);
     } else {
@@ -271,7 +275,9 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
     }
 
     async function $uninitSchema(knexDB: Knex) {
-      await knexDB.raw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos CASCADE;');
+      await knexDB.raw(
+        `DROP TABLE IF EXISTS "${schemaName}".transaction_completion; DROP SCHEMA IF EXISTS "${schemaName}" CASCADE;`,
+      );
     }
   }
 
@@ -280,8 +286,9 @@ export class KnexDataSource implements DBOSDataSource<TransactionConfig> {
   constructor(
     readonly name: string,
     config: Knex.Config,
+    schemaName: string = 'dbos',
   ) {
-    this.#provider = new KnexTransactionHandler(name, config);
+    this.#provider = new KnexTransactionHandler(name, config, schemaName);
     registerDataSource(this.#provider);
   }
 

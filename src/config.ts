@@ -12,6 +12,7 @@ export interface ConfigFile {
   name?: string;
   language?: string;
   system_database_url?: string;
+  system_database_schema_name?: string;
   database?: {
     migrate?: string[];
   };
@@ -163,6 +164,7 @@ export function getDbosConfig(
     {
       name: config.name,
       systemDatabaseUrl: config.system_database_url,
+      systemDatabaseSchemaName: config.system_database_schema_name,
       logLevel: options.logLevel ?? config.telemetry?.logs?.logLevel,
       addContextMetadata: config.telemetry?.logs?.addContextMetadata,
       otlpTracesEndpoints: toArray(config.telemetry?.OTLPExporter?.tracesEndpoint),
@@ -189,6 +191,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     systemDatabaseUrl,
     sysDbPoolSize: options.systemDatabasePoolSize,
     systemDatabasePool: options.systemDatabasePool,
+    systemDatabaseSchemaName: options.systemDatabaseSchemaName ?? 'dbos',
     telemetry: {
       logs: {
         logLevel: options.logLevel || 'info',
@@ -258,6 +261,7 @@ export function overwriteConfigForDBOSCloud(
     ...providedDBOSConfig,
     name: appName,
     systemDatabaseUrl,
+    systemDatabaseSchemaName: configFile.system_database_schema_name ?? providedDBOSConfig.systemDatabaseSchemaName,
     telemetry: {
       logs: {
         ...providedDBOSConfig.telemetry.logs,

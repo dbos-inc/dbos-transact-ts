@@ -39,11 +39,15 @@ const asyncLocalCtx = new AsyncLocalStorage<PostgresDataSourceContext>();
 class PostgresTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'PostgresDataSource';
   #dbField: Sql | undefined;
+  readonly schemaName: string;
 
   constructor(
     readonly name: string,
     private readonly options: Options = {},
-  ) {}
+    schemaName: string = 'dbos',
+  ) {
+    this.schemaName = schemaName;
+  }
 
   async initialize(): Promise<void> {
     const db = this.#dbField;
@@ -52,7 +56,9 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 
     let installed = false;
     try {
-      const rows = (await this.#dbField.unsafe(checkSchemaInstallationPG)) as CheckSchemaInstallationReturn[];
+      const rows = (await this.#dbField.unsafe(
+        checkSchemaInstallationPG(this.schemaName),
+      )) as CheckSchemaInstallationReturn[];
       installed = !!rows[0]?.schema_exists && !!rows[0]?.table_exists;
     } catch (e) {
       throw new Error(
@@ -63,11 +69,11 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     // Install
     if (!installed) {
       try {
-        await this.#dbField.unsafe(createTransactionCompletionSchemaPG);
-        await this.#dbField.unsafe(createTransactionCompletionTablePG);
+        await this.#dbField.unsafe(createTransactionCompletionSchemaPG(this.schemaName));
+        await this.#dbField.unsafe(createTransactionCompletionTablePG(this.schemaName));
       } catch (err) {
         throw new Error(
-          `In initialization of 'PostgresDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'PostgresDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -93,7 +99,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type Result = { output: string | null; error: string | null };
     const result = await this.#db<Result[]>/*sql*/ `
-      SELECT output, error FROM dbos.transaction_completion
+      SELECT output, error FROM ${this.#db(this.schemaName)}.transaction_completion
       WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
     if (result.length === 0) {
       return undefined;
@@ -107,10 +113,11 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
     workflowID: string,
     stepID: number,
     output: string | null,
+    schemaName: string,
   ): Promise<void> {
     try {
       await client/*sql*/ `
-        INSERT INTO dbos.transaction_completion (workflow_id, function_num, output)
+        INSERT INTO ${client(schemaName)}.transaction_completion (workflow_id, function_num, output)
         VALUES (${workflowID}, ${stepID}, ${output})`;
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -124,7 +131,7 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.#db/*sql*/ `
-        INSERT INTO dbos.transaction_completion (workflow_id, function_num, error)
+        INSERT INTO ${this.#db(this.schemaName)}.transaction_completion (workflow_id, function_num, error)
         VALUES (${workflowID}, ${stepID}, ${error})`;
     } catch (error) {
       if (isPGKeyConflictError(error)) {
@@ -178,7 +185,13 @@ class PostgresTransactionHandler implements DataSourceTransactionHandler {
 
           // save the output of read/write transactions
           if (saveResults) {
-            await PostgresTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
+            await PostgresTransactionHandler.#recordOutput(
+              client,
+              workflowID,
+              stepID!,
+              SuperJSON.stringify(result),
+              this.schemaName,
+            );
           }
 
           return result;
@@ -227,11 +240,11 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
     return PostgresDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(options: Options = {}): Promise<void> {
+  static async initializeDBOSSchema(options: Options = {}, schemaName: string = 'dbos'): Promise<void> {
     const pg = postgres({ ...options, onnotice: () => {} });
     try {
-      await pg.unsafe(createTransactionCompletionSchemaPG);
-      await pg.unsafe(createTransactionCompletionTablePG);
+      await pg.unsafe(createTransactionCompletionSchemaPG(schemaName));
+      await pg.unsafe(createTransactionCompletionTablePG(schemaName));
     } finally {
       await pg.end();
     }
@@ -242,8 +255,9 @@ export class PostgresDataSource implements DBOSDataSource<PostgresTransactionOpt
   constructor(
     readonly name: string,
     options: Options = {},
+    schemaName: string = 'dbos',
   ) {
-    this.#provider = new PostgresTransactionHandler(name, options);
+    this.#provider = new PostgresTransactionHandler(name, options, schemaName);
     registerDataSource(this.#provider);
   }
 

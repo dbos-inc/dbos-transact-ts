@@ -43,12 +43,16 @@ interface DrizzleConnection {
 class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'drizzle';
   #connection: DrizzleConnection | undefined;
+  readonly schemaName: string;
 
   constructor(
     readonly name: string,
     private readonly config: PoolConfig,
     private readonly entities: { [key: string]: object } = {},
-  ) {}
+    schemaName: string = 'dbos',
+  ) {
+    this.schemaName = schemaName;
+  }
 
   async initialize(): Promise<void> {
     const conn = this.#connection;
@@ -60,7 +64,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
     let installed = false;
     try {
-      const res = (await db.execute(sql.raw(checkSchemaInstallationPG))) as unknown;
+      const res = (await db.execute(sql.raw(checkSchemaInstallationPG(this.schemaName)))) as unknown;
       const row = Array.isArray(res)
         ? (res as CheckSchemaInstallationReturn[])[0]
         : ((res as { rows?: CheckSchemaInstallationReturn[] }).rows?.[0] ??
@@ -74,11 +78,11 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
     if (!installed) {
       try {
-        await db.execute(sql.raw(createTransactionCompletionSchemaPG));
-        await db.execute(sql.raw(createTransactionCompletionTablePG));
+        await db.execute(sql.raw(createTransactionCompletionSchemaPG(this.schemaName)));
+        await db.execute(sql.raw(createTransactionCompletionTablePG(this.schemaName)));
       } catch (err) {
         throw new Error(
-          `In initialization of 'DrizzleDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'DrizzleDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -107,7 +111,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     type Result = { output: string | null; error: string | null };
 
     const statement = sql`
-        SELECT output, error FROM dbos.transaction_completion
+        SELECT output, error FROM ${sql.identifier(this.schemaName)}.transaction_completion
         WHERE workflow_id = ${workflowID} AND function_num = ${stepID}`;
     const result = await this.#drizzle.execute<Result>(statement);
 
@@ -124,10 +128,11 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
     workflowID: string,
     stepID: number,
     output: string,
+    schemaName: string,
   ): Promise<void> {
     try {
       const statement = sql`
-        INSERT INTO dbos.transaction_completion (workflow_id, function_num, output) 
+        INSERT INTO ${sql.identifier(schemaName)}.transaction_completion (workflow_id, function_num, output) 
         VALUES (${workflowID}, ${stepID}, ${output})`;
       await client.execute(statement);
     } catch (error) {
@@ -142,7 +147,7 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       const statement = sql`
-        INSERT INTO dbos.transaction_completion (workflow_id, function_num, error) 
+        INSERT INTO ${sql.identifier(this.schemaName)}.transaction_completion (workflow_id, function_num, error) 
         VALUES (${workflowID}, ${stepID}, ${error})`;
       await this.#drizzle.execute(statement);
     } catch (error) {
@@ -197,7 +202,13 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
 
             // save the output of read/write transactions
             if (saveResults) {
-              await DrizzleTransactionHandler.#recordOutput(client, workflowID, stepID!, SuperJSON.stringify(result));
+              await DrizzleTransactionHandler.#recordOutput(
+                client,
+                workflowID,
+                stepID!,
+                SuperJSON.stringify(result),
+                this.schemaName,
+              );
             }
 
             return result;
@@ -252,12 +263,12 @@ export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
     return DrizzleDataSource.#getClient(this.#provider) as CT;
   }
 
-  static async initializeDBOSSchema(config: ClientConfig): Promise<void> {
+  static async initializeDBOSSchema(config: ClientConfig, schemaName: string = 'dbos'): Promise<void> {
     const client = new Client(config);
     try {
       await client.connect();
-      await client.query(createTransactionCompletionSchemaPG);
-      await client.query(createTransactionCompletionTablePG);
+      await client.query(createTransactionCompletionSchemaPG(schemaName));
+      await client.query(createTransactionCompletionTablePG(schemaName));
     } finally {
       await client.end();
     }
@@ -269,8 +280,9 @@ export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
     readonly name: string,
     config: PoolConfig,
     entities: { [key: string]: object } = {},
+    schemaName: string = 'dbos',
   ) {
-    this.#provider = new DrizzleTransactionHandler(name, config, entities);
+    this.#provider = new DrizzleTransactionHandler(name, config, entities, schemaName);
     registerDataSource(this.#provider);
   }
 
