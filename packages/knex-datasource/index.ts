@@ -62,7 +62,7 @@ class KnexTransactionHandler implements DataSourceTransactionHandler {
       );
       installed = !!rows[0].schema_exists && !!rows[0].table_exists;
     } catch (e) {
-      console.error(e);
+      DBOS.logger.error(e);
       throw new Error(
         `In initialization of 'KnexDataSource' ${this.name}: Database could not be reached: ${(e as Error).message}`,
       );
