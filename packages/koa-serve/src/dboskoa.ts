@@ -369,10 +369,11 @@ export class DBOSKoa extends DBOSHTTPBase {
             // We cannot use the defaultTextMapSetter to set headers through Koa
             // So we provide a custom setter that sets headers through Koa's context.
             // See https://github.com/open-telemetry/opentelemetry-js/blob/868f75e448c7c3a0efd75d72c448269f1375a996/packages/opentelemetry-core/src/trace/W3CTraceContextPropagator.ts#L74
-            interface Carrier {
-              context: Koa.Context;
-            }
             if (span) {
+              /*
+              interface Carrier {
+                context: Koa.Context;
+              }
               httpTracer.inject(
                 trace.setSpanContext(ROOT_CONTEXT, span.spanContext()),
                 {
@@ -384,6 +385,7 @@ export class DBOSKoa extends DBOSHTTPBase {
                   },
                 },
               );
+              */
               DBOS.tracer?.endSpan(span);
             }
             await koaNext();
