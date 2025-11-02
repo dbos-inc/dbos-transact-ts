@@ -11,6 +11,7 @@ export {
   DBOSMethodMiddlewareInstaller,
   ExternalRegistration,
   MethodRegistrationBase,
+  ArgName,
 } from './decorators';
 
 export { WorkflowQueue } from './wfqueue';
