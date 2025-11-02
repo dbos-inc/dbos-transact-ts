@@ -1,6 +1,7 @@
 import { DBOSKoa } from './dboskoa';
 
 export {
+  ArgRequiredOptions,
   ArgSources,
   DBOSHTTP,
   DBOSHTTPArgInfo,
@@ -10,7 +11,10 @@ export {
   DBOSHTTPReg,
   DBOSHTTPRequest,
   DBOSResponseError,
+  LogMask,
+  LogMasks,
   RequestIDHeader,
+  SkipLogging,
   WorkflowIDHeader,
 } from './dboshttp';
 
