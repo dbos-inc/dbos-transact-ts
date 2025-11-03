@@ -217,7 +217,7 @@ export class DBOSKoa extends DBOSHTTPBase {
           });
         }
 
-        const wrappedHandler = async (koaCtxt: Koa.Context, _koaNext: Koa.Next) => {
+        const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
           let authenticatedUser: string | undefined = undefined;
           let authenticatedRoles: string[] | undefined = undefined;
           let span: Span | undefined;
@@ -320,32 +320,17 @@ export class DBOSKoa extends DBOSHTTPBase {
               span ? trace.setSpan(context.active(), span) : context.active(),
               async () => {
                 return await asyncLocalCtx.run({ koaCtxt }, async () => {
-                  try {
-                    return await DBOS.runWithContext(
-                      {
-                        authenticatedUser,
-                        authenticatedRoles,
-                        idAssignedForNextWorkflow: headerWorkflowID,
-                        request: koaCtxt.request,
-                      },
-                      async () => {
-                        return await methodReg.invoke(undefined, args);
-                      },
-                    );
-                  } finally {
-                    if (span) {
-                      // Inject trace context into *response* headers, after done
-                      httpTracer.inject(
-                        trace.setSpan(context.active(), span),
-                        { context: koaCtxt },
-                        {
-                          set: (carrier: { context: Koa.Context }, key: string, value: string) => {
-                            carrier.context.set(key, value);
-                          },
-                        },
-                      );
-                    }
-                  }
+                  return await DBOS.runWithContext(
+                    {
+                      authenticatedUser,
+                      authenticatedRoles,
+                      idAssignedForNextWorkflow: headerWorkflowID,
+                      request: koaCtxt.request,
+                    },
+                    async () => {
+                      return await methodReg.invoke(undefined, args);
+                    },
+                  );
                 });
               },
             );
@@ -380,9 +365,28 @@ export class DBOSKoa extends DBOSHTTPBase {
               koaCtxt.status = 500;
             }
           } finally {
+            // Inject trace context into response headers.
+            // We cannot use the defaultTextMapSetter to set headers through Koa
+            // So we provide a custom setter that sets headers through Koa's context.
+            // See https://github.com/open-telemetry/opentelemetry-js/blob/868f75e448c7c3a0efd75d72c448269f1375a996/packages/opentelemetry-core/src/trace/W3CTraceContextPropagator.ts#L74
+            interface Carrier {
+              context: Koa.Context;
+            }
             if (span) {
+              httpTracer.inject(
+                trace.setSpan(ROOT_CONTEXT, span),
+                {
+                  context: koaCtxt,
+                },
+                {
+                  set: (carrier: Carrier, key: string, value: string) => {
+                    carrier.context.set(key, value);
+                  },
+                },
+              );
               DBOS.tracer?.endSpan(span);
             }
+            await koaNext();
           }
         };
 
