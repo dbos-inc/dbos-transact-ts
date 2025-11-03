@@ -237,7 +237,7 @@ export class Conductor {
               startTime: bodyQueued.start_time,
               endTime: bodyQueued.end_time,
               status: bodyQueued.status as (typeof StatusString)[keyof typeof StatusString],
-              forkedFrom: bodyQueued.fork_from,
+              forkedFrom: bodyQueued.forked_from,
               limit: bodyQueued.limit,
               queueName: bodyQueued.queue_name,
               offset: bodyQueued.offset,

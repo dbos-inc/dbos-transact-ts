@@ -235,7 +235,7 @@ export interface ListQueuedWorkflowsBody {
   start_time?: string;
   end_time?: string;
   status?: string;
-  fork_from?: string;
+  forked_from?: string;
   queue_name?: string;
   limit?: number;
   offset?: number;
