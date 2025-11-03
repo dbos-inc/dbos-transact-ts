@@ -25,7 +25,6 @@ export interface workflow_status {
   priority?: number; // Optional priority for the workflow.
   queue_partition_key?: string; // Partition key for partitioned queues.
   forked_from?: string;
-  forked_to?: string[];
 }
 
 export interface notifications {
