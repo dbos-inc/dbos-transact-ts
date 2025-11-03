@@ -46,11 +46,14 @@ const asyncLocalCtx = new AsyncLocalStorage();
 class KyselyTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'KyselyDataSource';
   #kyselyDBField: Kysely<DBOSKyselyTables>;
+  readonly schemaName: string;
 
   constructor(
     readonly name: string,
     private readonly poolConfig: PoolConfig,
+    schemaName: string = 'dbos',
   ) {
+    this.schemaName = schemaName;
     this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
       dialect: new PostgresDialect({
         pool: new Pool(poolConfig),
@@ -71,7 +74,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
     let installed = false;
     try {
       const { rows } = await sql
-        .raw<CheckSchemaInstallationReturn>(checkSchemaInstallationPG)
+        .raw<CheckSchemaInstallationReturn>(checkSchemaInstallationPG(this.schemaName))
         .execute(this.#kyselyDBField);
       const { schema_exists, table_exists } = rows[0];
       installed = !!schema_exists && !!table_exists;
@@ -83,11 +86,11 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
 
     if (!installed) {
       try {
-        await sql.raw(createTransactionCompletionSchemaPG).execute(this.#kyselyDBField);
-        await sql.raw(createTransactionCompletionTablePG).execute(this.#kyselyDBField);
+        await sql.raw(createTransactionCompletionSchemaPG(this.schemaName)).execute(this.#kyselyDBField);
+        await sql.raw(createTransactionCompletionTablePG(this.schemaName)).execute(this.#kyselyDBField);
       } catch (err) {
         throw new Error(
-          `In initialization of 'KyselyDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'KyselyDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
             See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -258,25 +261,27 @@ export class KyselyDataSource<DB> implements DBOSDataSource<TransactionConfig> {
     return KyselyDataSource.#getClient(this.#provider);
   }
 
-  static async initializeDBOSSchema(poolConfig: PoolConfig) {
+  static async initializeDBOSSchema(poolConfig: PoolConfig, schemaName: string = 'dbos') {
     const client = new Kysely({
       dialect: new PostgresDialect({
         pool: new Pool(poolConfig),
       }),
     });
-    await sql.raw(createTransactionCompletionSchemaPG).execute(client);
-    await sql.raw(createTransactionCompletionTablePG).execute(client);
+    await sql.raw(createTransactionCompletionSchemaPG(schemaName)).execute(client);
+    await sql.raw(createTransactionCompletionTablePG(schemaName)).execute(client);
     await client.destroy();
   }
 
-  static async uninitializeDBOSSchema(poolConfig: PoolConfig) {
+  static async uninitializeDBOSSchema(poolConfig: PoolConfig, schemaName: string = 'dbos') {
     const client = new Kysely({
       dialect: new PostgresDialect({
         pool: new Pool(poolConfig),
       }),
     });
     await sql
-      .raw('DROP TABLE IF EXISTS dbos.transaction_completion; DROP SCHEMA IF EXISTS dbos CASCADE;')
+      .raw(
+        `DROP TABLE IF EXISTS "${schemaName}".transaction_completion; DROP SCHEMA IF EXISTS "${schemaName}" CASCADE;`,
+      )
       .execute(client);
     await client.destroy();
   }
@@ -286,8 +291,9 @@ export class KyselyDataSource<DB> implements DBOSDataSource<TransactionConfig> {
   constructor(
     readonly name: string,
     poolConfig: PoolConfig,
+    schemaName: string = 'dbos',
   ) {
-    this.#provider = new KyselyTransactionHandler(name, poolConfig);
+    this.#provider = new KyselyTransactionHandler(name, poolConfig, schemaName);
     registerDataSource(this.#provider);
   }
 

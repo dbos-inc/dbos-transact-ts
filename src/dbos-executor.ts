@@ -98,6 +98,7 @@ export interface DBOSConfig {
   systemDatabaseUrl?: string;
   systemDatabasePoolSize?: number;
   systemDatabasePool?: Pool;
+  systemDatabaseSchemaName?: string;
 
   enableOTLP?: boolean;
   logLevel?: string;
@@ -141,6 +142,7 @@ export type DBOSConfigInternal = {
   systemDatabaseUrl: string;
   sysDbPoolSize?: number;
   systemDatabasePool?: Pool;
+  systemDatabaseSchemaName: string;
 
   telemetry: TelemetryConfig;
 
@@ -206,7 +208,7 @@ export class DBOSExecutor {
 
   readonly #debugMode: boolean;
 
-  static systemDBSchemaName = 'dbos';
+  readonly systemDBSchemaName: string;
 
   readonly logger: GlobalLogger;
   readonly ctxLogger: DBOSContextualLogger;
@@ -224,6 +226,7 @@ export class DBOSExecutor {
     { systemDatabase, debugMode }: DBOSExecutorOptions = {},
   ) {
     this.#debugMode = debugMode ?? false;
+    this.systemDBSchemaName = config.systemDatabaseSchemaName;
 
     if (config.telemetry.OTLPExporter) {
       const OTLPExporter = new TelemetryExporter(config.telemetry.OTLPExporter);
@@ -250,6 +253,7 @@ export class DBOSExecutor {
         this.logger,
         this.config.sysDbPoolSize,
         this.config.systemDatabasePool,
+        this.systemDBSchemaName,
       );
     }
 

@@ -21,6 +21,10 @@
       "type": "string",
       "description": "The URL of the system database"
     },
+    "system_database_schema_name": {
+      "type": "string",
+      "description": "The schema name for DBOS system tables (default: 'dbos')"
+    },
     "database": {
       "type": "object",
       "additionalProperties": false,

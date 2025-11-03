@@ -39,6 +39,7 @@ interface transaction_completion {
 class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'TypeOrm';
   #createdDataSource: DataSource | undefined;
+  readonly schemaName: string;
 
   constructor(
     readonly name: string,
@@ -46,7 +47,10 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     private readonly entities?: Function[],
     private readonly providedDataSource?: DataSource,
-  ) {}
+    schemaName: string = 'dbos',
+  ) {
+    this.schemaName = schemaName;
+  }
 
   static async createDataSource(
     config: PoolConfig,
@@ -87,7 +91,9 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
 
     let installed = false;
     try {
-      const res = await this.dataSource.query<CheckSchemaInstallationReturn[]>(checkSchemaInstallationPG);
+      const res = await this.dataSource.query<CheckSchemaInstallationReturn[]>(
+        checkSchemaInstallationPG(this.schemaName),
+      );
       installed = !!res[0]?.schema_exists && !!res[0]?.table_exists;
     } catch (e) {
       throw new Error(
@@ -98,11 +104,11 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     // Install
     if (!installed) {
       try {
-        await this.dataSource.query(createTransactionCompletionSchemaPG);
-        await this.dataSource.query(createTransactionCompletionTablePG);
+        await this.dataSource.query(createTransactionCompletionSchemaPG(this.schemaName));
+        await this.dataSource.query(createTransactionCompletionTablePG(this.schemaName));
       } catch (err) {
         throw new Error(
-          `In initialization of 'TypeOrmDataSource' ${this.name}: The 'dbos.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
+          `In initialization of 'TypeOrmDataSource' ${this.name}: The '${this.schemaName}.transaction_completion' table does not exist, and could not be created.  This should be added to your database migrations.
           See: https://docs.dbos.dev/typescript/tutorials/transaction-tutorial#installing-the-dbos-schema`,
         );
       }
@@ -121,7 +127,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   ): Promise<{ output: string | null } | { error: string } | undefined> {
     type TxOutputRow = Pick<transaction_completion, 'output' | 'error'>;
     const rows = await this.dataSource.query<TxOutputRow[]>(
-      `SELECT output, error FROM dbos.transaction_completion
+      `SELECT output, error FROM "${this.schemaName}".transaction_completion
        WHERE workflow_id=$1 AND function_num=$2;`,
       [workflowID, stepID],
     );
@@ -143,10 +149,11 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
     workflowID: string,
     stepID: number,
     output: string,
+    schemaName: string,
   ): Promise<void> {
     try {
       await entityManager.query(
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, output)
+        `INSERT INTO "${schemaName}".transaction_completion (workflow_id, function_num, output)
          VALUES ($1, $2, $3)`,
         [workflowID, stepID, output],
       );
@@ -162,7 +169,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
   async #recordError(workflowID: string, stepID: number, error: string): Promise<void> {
     try {
       await this.dataSource.query(
-        `INSERT INTO dbos.transaction_completion (workflow_id, function_num, error)
+        `INSERT INTO "${this.schemaName}".transaction_completion (workflow_id, function_num, error)
          VALUES ($1, $2, $3)`,
         [workflowID, stepID, error],
       );
@@ -226,6 +233,7 @@ class TypeOrmTransactionHandler implements DataSourceTransactionHandler {
               workflowID,
               stepID!,
               SuperJSON.stringify(result),
+              this.schemaName,
             );
           }
 
@@ -278,11 +286,11 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     return TypeOrmDataSource.#getEntityManager(this.#provider);
   }
 
-  static async initializeDBOSSchema(config: PoolConfig): Promise<void> {
+  static async initializeDBOSSchema(config: PoolConfig, schemaName: string = 'dbos'): Promise<void> {
     const ds = await TypeOrmTransactionHandler.createDataSource(config, []);
     try {
-      await ds.query(createTransactionCompletionSchemaPG);
-      await ds.query(createTransactionCompletionTablePG);
+      await ds.query(createTransactionCompletionSchemaPG(schemaName));
+      await ds.query(createTransactionCompletionTablePG(schemaName));
     } finally {
       await ds.destroy();
     }
@@ -299,12 +307,13 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     entities?: Function[],
     dataSource?: DataSource,
+    schemaName: string = 'dbos',
   ) {
     if (config && entities) {
-      this.#provider = new TypeOrmTransactionHandler(name, config, entities, undefined);
+      this.#provider = new TypeOrmTransactionHandler(name, config, entities, undefined, schemaName);
       registerDataSource(this.#provider);
     } else if (dataSource) {
-      this.#provider = new TypeOrmTransactionHandler(name, undefined, undefined, dataSource);
+      this.#provider = new TypeOrmTransactionHandler(name, undefined, undefined, dataSource, schemaName);
       registerDataSource(this.#provider);
     } else {
       throw new TypeError(
@@ -318,12 +327,13 @@ export class TypeOrmDataSource implements DBOSDataSource<TypeORMTransactionConfi
     config: PoolConfig,
     // eslint-disable-next-line @typescript-eslint/no-unsafe-function-type
     entities: Function[],
+    schemaName: string = 'dbos',
   ) {
-    return new TypeOrmDataSource(name, config, entities);
+    return new TypeOrmDataSource(name, config, entities, undefined, schemaName);
   }
 
-  static createFromDataSource(name: string, ds: DataSource) {
-    return new TypeOrmDataSource(name, undefined, undefined, ds);
+  static createFromDataSource(name: string, ds: DataSource, schemaName: string = 'dbos') {
+    return new TypeOrmDataSource(name, undefined, undefined, ds, schemaName);
   }
 
   /**

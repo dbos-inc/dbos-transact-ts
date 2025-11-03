@@ -130,6 +130,7 @@ export interface ListWorkflowsBody {
   end_time?: string;
   status?: string;
   application_version?: string;
+  forked_from?: string;
   fork_from?: string;
   limit?: number;
   offset?: number;

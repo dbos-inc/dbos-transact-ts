@@ -392,7 +392,8 @@ describe('dbos-config', () => {
         systemDatabaseUrl:
           'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
         sysDbPoolSize: undefined,
-        userDbClient: undefined,
+        systemDatabasePool: undefined,
+        systemDatabaseSchemaName: 'dbos',
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -419,7 +420,8 @@ describe('dbos-config', () => {
         systemDatabaseUrl:
           'postgresql://postgres:dbos@localhost:5432/dbostest_dbos_sys?connect_timeout=10&sslmode=disable',
         sysDbPoolSize: undefined,
-        userDbClient: undefined,
+        systemDatabasePool: undefined,
+        systemDatabaseSchemaName: 'dbos',
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -441,11 +443,11 @@ describe('dbos-config', () => {
       });
       expect(internalConfig).toEqual({
         name: undefined,
-        userDbPoolSize: undefined,
         systemDatabaseUrl:
           'postgres://jon:doe@mother:2345/dbostest?sslmode=require&sslrootcert=my_cert&connect_timeout=7',
         sysDbPoolSize: undefined,
-        userDbClient: undefined,
+        systemDatabasePool: undefined,
+        systemDatabaseSchemaName: 'dbos',
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -466,10 +468,10 @@ describe('dbos-config', () => {
       });
       expect(internalConfig).toEqual({
         name: undefined,
-        userDbPoolSize: undefined,
         systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
         sysDbPoolSize: undefined,
-        userDbClient: undefined,
+        systemDatabasePool: undefined,
+        systemDatabaseSchemaName: 'dbos',
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -489,6 +491,7 @@ describe('dbos-config', () => {
     const internalConfig: DBOSConfigInternal = {
       name: 'my-app',
       systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
+      systemDatabaseSchemaName: 'dbos',
       telemetry: {
         logs: {
           logLevel: 'info',

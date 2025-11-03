@@ -7,16 +7,16 @@ export type DBMigration = {
 };
 
 /** Get the current DB version, or 0 if table is missing/empty. */
-export async function getCurrentSysDBVersion(client: ClientBase): Promise<number> {
+export async function getCurrentSysDBVersion(client: ClientBase, schemaName: string = 'dbos'): Promise<number> {
   // Does table exist?
   const regRes = await client.query<{ table_name: string | null }>(
-    "SELECT table_name FROM information_schema.tables WHERE table_schema = 'dbos' AND table_name = 'dbos_migrations'",
-    [],
+    "SELECT table_name FROM information_schema.tables WHERE table_schema = $1 AND table_name = 'dbos_migrations'",
+    [schemaName],
   );
   if (!regRes.rows[0]?.table_name) return 0;
 
   const verRes = await client.query<{ version: string | number }>(
-    `select version from "dbos"."dbos_migrations" order by version desc limit 1`,
+    `select version from "${schemaName}"."dbos_migrations" order by version desc limit 1`,
   );
   if (verRes.rowCount === 0) return 0;
 
@@ -83,6 +83,7 @@ async function runStatementsIgnoring(
 export async function runSysMigrationsPg(
   client: ClientBase,
   allMigrations: ReadonlyArray<DBMigration>,
+  schemaName: string = 'dbos',
   opts: PgMigratorOptions = {},
 ): Promise<{
   fromVersion: number;
@@ -93,7 +94,7 @@ export async function runSysMigrationsPg(
 }> {
   const { ignoreErrorCodes = DEFAULT_IGNORABLE_CODES, onWarn = (m) => console.info(m) } = opts;
 
-  const current = await getCurrentSysDBVersion(client);
+  const current = await getCurrentSysDBVersion(client, schemaName);
   const maxKnown = allMigrations.length;
 
   if (current > maxKnown) {
@@ -142,9 +143,11 @@ export async function runSysMigrationsPg(
   }
 
   // Update version at the end (insert or update)
-  const updateRes = await client.query(`UPDATE "dbos"."dbos_migrations" SET "version" = $1`, [lastAppliedVersion]);
+  const updateRes = await client.query(`UPDATE "${schemaName}"."dbos_migrations" SET "version" = $1`, [
+    lastAppliedVersion,
+  ]);
   if (updateRes.rowCount === 0) {
-    await client.query(`INSERT into "dbos"."dbos_migrations" ("version") values ($1)`, [lastAppliedVersion]);
+    await client.query(`INSERT into "${schemaName}"."dbos_migrations" ("version") values ($1)`, [lastAppliedVersion]);
   }
 
   return {
