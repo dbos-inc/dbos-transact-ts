@@ -131,7 +131,6 @@ export interface ListWorkflowsBody {
   status?: string;
   application_version?: string;
   forked_from?: string;
-  fork_from?: string;
   limit?: number;
   offset?: number;
   sort_desc: boolean;

@@ -211,7 +211,7 @@ export class Conductor {
               endTime: body.end_time,
               status: body.status as (typeof StatusString)[keyof typeof StatusString],
               applicationVersion: body.application_version,
-              forkedFrom: body.fork_from,
+              forkedFrom: body.forked_from,
               limit: body.limit,
               offset: body.offset,
               sortDesc: body.sort_desc,
