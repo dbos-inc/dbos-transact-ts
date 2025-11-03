@@ -33,3 +33,4 @@ export const ArgOptional = DBOSKoa.argOptional;
 export const ArgRequired = DBOSKoa.argRequired;
 export const ArgSource = DBOSKoa.argSource;
 export const ArgVarchar = DBOSKoa.argVarchar;
+export { ArgName } from '@dbos-inc/dbos-sdk';
