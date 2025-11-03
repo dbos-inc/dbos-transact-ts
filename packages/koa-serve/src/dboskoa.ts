@@ -372,9 +372,9 @@ export class DBOSKoa extends DBOSHTTPBase {
             interface Carrier {
               context: Koa.Context;
             }
-            if (span) {
+            if (span && Object.hasOwn(span, 'spanContext') && typeof span.spanContext === 'function') {
               httpTracer.inject(
-                trace.setSpan(ROOT_CONTEXT, span),
+                trace.setSpanContext(ROOT_CONTEXT, span.spanContext()),
                 {
                   context: koaCtxt,
                 },
