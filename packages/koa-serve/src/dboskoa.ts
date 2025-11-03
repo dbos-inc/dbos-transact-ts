@@ -217,7 +217,7 @@ export class DBOSKoa extends DBOSHTTPBase {
           });
         }
 
-        const wrappedHandler = async (koaCtxt: Koa.Context, koaNext: Koa.Next) => {
+        const wrappedHandler = async (koaCtxt: Koa.Context, _koaNext: Koa.Next) => {
           let authenticatedUser: string | undefined = undefined;
           let authenticatedRoles: string[] | undefined = undefined;
           let span: Span | undefined;
@@ -365,30 +365,20 @@ export class DBOSKoa extends DBOSHTTPBase {
               koaCtxt.status = 500;
             }
           } finally {
-            // Inject trace context into response headers.
-            // We cannot use the defaultTextMapSetter to set headers through Koa
-            // So we provide a custom setter that sets headers through Koa's context.
-            // See https://github.com/open-telemetry/opentelemetry-js/blob/868f75e448c7c3a0efd75d72c448269f1375a996/packages/opentelemetry-core/src/trace/W3CTraceContextPropagator.ts#L74
             if (span) {
-              /*
-              interface Carrier {
-                context: Koa.Context;
-              }
+              // Inject trace context into *response* headers, after all middleware is done
               httpTracer.inject(
-                trace.setSpanContext(ROOT_CONTEXT, span.spanContext()),
+                trace.setSpan(context.active(), span),
+                { context: koaCtxt },
                 {
-                  context: koaCtxt,
-                },
-                {
-                  set: (carrier: Carrier, key: string, value: string) => {
+                  set: (carrier: { context: Koa.Context }, key: string, value: string) => {
                     carrier.context.set(key, value);
                   },
                 },
               );
-              */
+
               DBOS.tracer?.endSpan(span);
             }
-            await koaNext();
           }
         };
 
