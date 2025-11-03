@@ -320,17 +320,32 @@ export class DBOSKoa extends DBOSHTTPBase {
               span ? trace.setSpan(context.active(), span) : context.active(),
               async () => {
                 return await asyncLocalCtx.run({ koaCtxt }, async () => {
-                  return await DBOS.runWithContext(
-                    {
-                      authenticatedUser,
-                      authenticatedRoles,
-                      idAssignedForNextWorkflow: headerWorkflowID,
-                      request: koaCtxt.request,
-                    },
-                    async () => {
-                      return await methodReg.invoke(undefined, args);
-                    },
-                  );
+                  try {
+                    return await DBOS.runWithContext(
+                      {
+                        authenticatedUser,
+                        authenticatedRoles,
+                        idAssignedForNextWorkflow: headerWorkflowID,
+                        request: koaCtxt.request,
+                      },
+                      async () => {
+                        return await methodReg.invoke(undefined, args);
+                      },
+                    );
+                  } finally {
+                    if (span) {
+                      // Inject trace context into *response* headers, after done
+                      httpTracer.inject(
+                        trace.setSpan(context.active(), span),
+                        { context: koaCtxt },
+                        {
+                          set: (carrier: { context: Koa.Context }, key: string, value: string) => {
+                            carrier.context.set(key, value);
+                          },
+                        },
+                      );
+                    }
+                  }
                 });
               },
             );
@@ -366,17 +381,6 @@ export class DBOSKoa extends DBOSHTTPBase {
             }
           } finally {
             if (span) {
-              // Inject trace context into *response* headers, after all middleware is done
-              httpTracer.inject(
-                trace.setSpan(context.active(), span),
-                { context: koaCtxt },
-                {
-                  set: (carrier: { context: Koa.Context }, key: string, value: string) => {
-                    carrier.context.set(key, value);
-                  },
-                },
-              );
-
               DBOS.tracer?.endSpan(span);
             }
           }
