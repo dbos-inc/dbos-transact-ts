@@ -214,7 +214,6 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
   }
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
-    // CB this is wrong
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
     return DBOSJSON.parse(status.input) as T;
   }
