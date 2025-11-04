@@ -10,7 +10,7 @@ import {
   DBOSQueueDuplicatedError,
   DBOSInitializationError,
 } from './error';
-import { GetPendingWorkflowsOutput, GetQueuedWorkflowsInput, GetWorkflowsInput, StatusString } from './workflow';
+import { GetPendingWorkflowsOutput, GetWorkflowsInput, StatusString } from './workflow';
 import {
   notifications,
   operation_outputs,
@@ -84,6 +84,7 @@ export interface SystemDatabase {
     functionID: number,
     functionName: string,
     checkConflict: boolean,
+    startTimeEpochMs: number,
     options?: {
       childWorkflowID?: string | null;
       output?: string | null;
@@ -179,7 +180,6 @@ export interface SystemDatabase {
 
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
-  listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]>;
   garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void>;
 }
 
@@ -204,11 +204,12 @@ export interface WorkflowStatusInternal {
   createdAt: number;
   updatedAt?: number;
   recoveryAttempts?: number;
-  timeoutMS?: number | null;
+  timeoutMS?: number;
   deadlineEpochMS?: number;
   deduplicationID?: string;
   priority: number;
   queuePartitionKey?: string;
+  forkedFrom?: string;
 }
 
 export interface EnqueueOptions {
@@ -400,8 +401,9 @@ async function insertWorkflowStatus(
         inputs,
         deduplication_id,
         priority,
-        queue_partition_key
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22)
+        queue_partition_key,
+        forked_from
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
       ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE
@@ -439,6 +441,7 @@ async function insertWorkflowStatus(
         initStatus.deduplicationID ?? null,
         initStatus.priority,
         initStatus.queuePartitionKey ?? null,
+        initStatus.forkedFrom ?? null,
       ],
     );
     if (rows.length === 0) {
@@ -551,6 +554,7 @@ async function recordOperationResult(
   functionName: string,
   checkConflict: boolean,
   schemaName: string,
+  startTimeEpochMs: number,
   options: {
     childWorkflowID?: string | null;
     output?: string | null;
@@ -559,9 +563,9 @@ async function recordOperationResult(
 ): Promise<void> {
   try {
     await client.query<operation_outputs>(
-      `INSERT INTO "${schemaName}".operation_outputs
-       (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO ${schemaName}.operation_outputs
+       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
        ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'};`,
       [
         workflowID,
@@ -570,6 +574,8 @@ async function recordOperationResult(
         options.error ?? null,
         functionName,
         options.childWorkflowID ?? null,
+        startTimeEpochMs,
+        Date.now(),
       ],
     );
   } catch (error) {
@@ -609,6 +615,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     deduplicationID: row.deduplication_id ?? undefined,
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
+    forkedFrom: row.forked_from ?? undefined,
   };
 }
 
@@ -1006,6 +1013,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     functionName: string,
     checkConflict: boolean,
+    startTimeEpochMs: number,
     options: {
       childWorkflowID?: string | null;
       output?: string | null;
@@ -1021,6 +1029,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         functionName,
         checkConflict,
         this.schemaName,
+        startTimeEpochMs,
         options,
       );
     } finally {
@@ -1076,6 +1085,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           deduplicationID: undefined,
           priority: 0,
           queuePartitionKey: undefined,
+          forkedFrom: workflowID,
         },
         this.schemaName,
       );
@@ -1106,6 +1116,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     func: () => Promise<string | null | undefined>,
   ): Promise<string | null | undefined> {
+    const startTime = Date.now();
     const result = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
     if (result !== undefined) {
       if (result.functionName !== functionName) {
@@ -1114,7 +1125,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return result.output;
     }
     const output = await func();
-    await recordOperationResult(client, workflowID, functionID, functionName, true, this.schemaName, { output });
+    await recordOperationResult(client, workflowID, functionID, functionName, true, this.schemaName, startTime, {
+      output,
+    });
     return output;
   }
 
@@ -1163,9 +1176,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
         }
         endTimeMs = JSON.parse(res.output!) as number;
       } else {
-        await recordOperationResult(client, workflowID, functionID, DBOS_FUNCNAME_SLEEP, false, this.schemaName, {
-          output: JSON.stringify(endTimeMs),
-        });
+        await recordOperationResult(
+          client,
+          workflowID,
+          functionID,
+          DBOS_FUNCNAME_SLEEP,
+          false,
+          this.schemaName,
+          Date.now(),
+          {
+            output: JSON.stringify(endTimeMs),
+          },
+        );
       }
       return {
         ...cancellableSleep(Math.max(Math.min(maxSleepPerIteration, endTimeMs - curTime), 0)),
@@ -1222,6 +1244,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<string | null> {
     topic = topic ?? this.nullTopic;
+    const startTime = Date.now();
     // First, check for previous executions.
     const res = await this.getOperationResultAndThrowIfCancelled(workflowID, functionID);
     if (res) {
@@ -1322,9 +1345,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (finalRecvRows.length > 0) {
         message = finalRecvRows[0].message;
       }
-      await recordOperationResult(client, workflowID, functionID, DBOS_FUNCNAME_RECV, true, this.schemaName, {
-        output: message,
-      });
+      await recordOperationResult(
+        client,
+        workflowID,
+        functionID,
+        DBOS_FUNCNAME_RECV,
+        true,
+        this.schemaName,
+        startTime,
+        {
+          output: message,
+        },
+      );
       await client.query(`COMMIT`);
     } catch (e) {
       this.logger.error(e);
@@ -1389,6 +1421,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       timeoutFunctionID: number;
     },
   ): Promise<string | null> {
+    const startTime = Date.now();
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerWorkflow) {
       const res = await this.getOperationResultAndThrowIfCancelled(
@@ -1487,6 +1520,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         callerWorkflow.functionID,
         DBOS_FUNCNAME_GETEVENT,
         true,
+        startTime,
         { output: value },
       );
     }
@@ -1881,6 +1915,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'application_id',
       'workflow_deadline_epoch_ms',
       'workflow_timeout_ms',
+      'forked_from',
     ];
 
     input.loadInput = input.loadInput ?? true;
@@ -1900,9 +1935,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const params: unknown[] = [];
     let paramCounter = 1;
 
+    // If queuesOnly, filter for queued workflows
+    if (input.queuesOnly) {
+      whereClauses.push(`queue_name IS NOT NULL`);
+      whereClauses.push(`status IN ($${paramCounter}, $${paramCounter + 1})`);
+      params.push(StatusString.ENQUEUED, StatusString.PENDING);
+      paramCounter += 2;
+    }
+
     if (input.workflowName) {
       whereClauses.push(`name = $${paramCounter}`);
       params.push(input.workflowName);
+      paramCounter++;
+    }
+    if (input.queueName) {
+      whereClauses.push(`queue_name = $${paramCounter}`);
+      params.push(input.queueName);
       paramCounter++;
     }
     if (input.workflow_id_prefix) {
@@ -1919,6 +1967,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (input.authenticatedUser) {
       whereClauses.push(`authenticated_user = $${paramCounter}`);
       params.push(input.authenticatedUser);
+      paramCounter++;
+    }
+    if (input.forkedFrom) {
+      whereClauses.push(`forked_from = $${paramCounter}`);
+      params.push(input.forkedFrom);
       paramCounter++;
     }
     if (input.startTime) {
@@ -1944,90 +1997,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const orderClause = `ORDER BY created_at ${input.sortDesc ? 'DESC' : 'ASC'}`;
-    const limitClause = input.limit ? `LIMIT ${input.limit}` : '';
-    const offsetClause = input.offset ? `OFFSET ${input.offset}` : '';
-
-    const query = `
-      SELECT ${selectColumns.join(', ')}
-      FROM "${schemaName}".workflow_status
-      ${whereClause}
-      ${orderClause}
-      ${limitClause}
-      ${offsetClause}
-    `;
-
-    const result = await this.pool.query<workflow_status>(query, params);
-    return result.rows.map(mapWorkflowStatus);
-  }
-
-  async listQueuedWorkflows(input: GetQueuedWorkflowsInput): Promise<WorkflowStatusInternal[]> {
-    const schemaName = this.schemaName;
-    const selectColumns = [
-      'workflow_uuid',
-      'status',
-      'name',
-      'recovery_attempts',
-      'config_name',
-      'class_name',
-      'authenticated_user',
-      'authenticated_roles',
-      'assumed_role',
-      'queue_name',
-      'executor_id',
-      'created_at',
-      'updated_at',
-      'application_version',
-      'application_id',
-      'workflow_deadline_epoch_ms',
-      'workflow_timeout_ms',
-    ];
-
-    input.loadInput = input.loadInput ?? true;
-    if (input.loadInput) {
-      selectColumns.push('inputs', 'request');
-    }
-
-    const sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
-
-    // Build WHERE clauses
-    const whereClauses: string[] = [];
-    const params: unknown[] = [];
-    let paramCounter = 1;
-
-    // Always filter for queued workflows
-    whereClauses.push(`queue_name IS NOT NULL`);
-    whereClauses.push(`status IN ($${paramCounter}, $${paramCounter + 1})`);
-    params.push(StatusString.ENQUEUED, StatusString.PENDING);
-    paramCounter += 2;
-
-    if (input.workflowName) {
-      whereClauses.push(`name = $${paramCounter}`);
-      params.push(input.workflowName);
-      paramCounter++;
-    }
-    if (input.queueName) {
-      whereClauses.push(`queue_name = $${paramCounter}`);
-      params.push(input.queueName);
-      paramCounter++;
-    }
-    if (input.startTime) {
-      whereClauses.push(`created_at >= $${paramCounter}`);
-      params.push(new Date(input.startTime).getTime());
-      paramCounter++;
-    }
-    if (input.endTime) {
-      whereClauses.push(`created_at <= $${paramCounter}`);
-      params.push(new Date(input.endTime).getTime());
-      paramCounter++;
-    }
-    if (input.status) {
-      whereClauses.push(`status = $${paramCounter}`);
-      params.push(input.status);
-      paramCounter++;
-    }
-
-    const whereClause = `WHERE ${whereClauses.join(' AND ')}`;
-    const orderClause = `ORDER BY created_at ${sortDesc ? 'DESC' : 'ASC'}`;
     const limitClause = input.limit ? `LIMIT ${input.limit}` : '';
     const offsetClause = input.offset ? `OFFSET ${input.offset}` : '';
 

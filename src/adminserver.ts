@@ -1,14 +1,13 @@
 import * as http from 'http';
 import * as url from 'url';
-import { GetWorkflowsInput, GetQueuedWorkflowsInput, StatusString } from './workflow';
+import { GetWorkflowsInput, StatusString } from './workflow';
 import { DBOSError } from './error';
 import { DBOSExecutor } from './dbos-executor';
 import { GlobalLogger } from './telemetry/logs';
 import * as net from 'net';
 import { performance } from 'perf_hooks';
-import { DBOSJSON, globalParams } from './utils';
+import { globalParams } from './utils';
 import { QueueParameters, wfQueueRunner } from './wfqueue';
-import { serializeError } from 'serialize-error';
 import { globalTimeout } from './workflow_management';
 import * as protocol from './conductor/protocol';
 
@@ -486,13 +485,7 @@ export class DBOSAdminServer {
       handler: async (req, res, params) => {
         const workflowId = params!.workflow_id;
         const steps = await dbosExec.listWorkflowSteps(workflowId);
-        const result = steps?.map((step) => ({
-          function_name: step.name,
-          function_id: step.functionID,
-          output: step.output ? DBOSJSON.stringify(step.output) : undefined,
-          error: step.error ? DBOSJSON.stringify(serializeError(step.error)) : undefined,
-          child_workflow_id: step.childWorkflowID,
-        }));
+        const result = steps?.map((step) => new protocol.WorkflowSteps(step));
         sendJson(res, 200, result);
       },
     });
@@ -517,6 +510,7 @@ export class DBOSAdminServer {
           end_time?: string;
           status?: (typeof StatusString)[keyof typeof StatusString];
           application_version?: string;
+          fork_from?: string;
           limit?: number;
           offset?: number;
           sort_desc?: boolean;
@@ -534,6 +528,7 @@ export class DBOSAdminServer {
           endTime: body.end_time,
           status: body.status,
           applicationVersion: body.application_version,
+          forkedFrom: body.fork_from,
           limit: body.limit,
           offset: body.offset,
           sortDesc: body.sort_desc,
@@ -567,6 +562,7 @@ export class DBOSAdminServer {
           start_time?: string;
           end_time?: string;
           status?: (typeof StatusString)[keyof typeof StatusString];
+          fork_from?: string;
           queue_name?: string;
           limit?: number;
           offset?: number;
@@ -575,11 +571,12 @@ export class DBOSAdminServer {
         };
 
         // Map request body keys to GetQueuedWorkflowsInput properties
-        const input: GetQueuedWorkflowsInput = {
+        const input: GetWorkflowsInput = {
           workflowName: body.workflow_name,
           startTime: body.start_time,
           endTime: body.end_time,
           status: body.status,
+          forkedFrom: body.fork_from,
           queueName: body.queue_name,
           limit: body.limit,
           offset: body.offset,

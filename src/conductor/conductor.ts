@@ -3,7 +3,6 @@ import { globalParams } from '../utils';
 import WebSocket from 'ws';
 import * as protocol from './protocol';
 import { GetWorkflowsInput, StatusString } from '..';
-import { GetQueuedWorkflowsInput } from '../workflow';
 import { hostname } from 'node:os';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
@@ -212,6 +211,7 @@ export class Conductor {
               endTime: body.end_time,
               status: body.status as (typeof StatusString)[keyof typeof StatusString],
               applicationVersion: body.application_version,
+              forkedFrom: body.forked_from,
               limit: body.limit,
               offset: body.offset,
               sortDesc: body.sort_desc,
@@ -232,11 +232,12 @@ export class Conductor {
           case protocol.MessageType.LIST_QUEUED_WORKFLOWS:
             const listQueuedWFMsg = baseMsg as protocol.ListQueuedWorkflowsRequest;
             const bodyQueued = listQueuedWFMsg.body;
-            const listQueuedWFReq: GetQueuedWorkflowsInput = {
+            const listQueuedWFReq: GetWorkflowsInput = {
               workflowName: bodyQueued.workflow_name,
               startTime: bodyQueued.start_time,
               endTime: bodyQueued.end_time,
               status: bodyQueued.status as (typeof StatusString)[keyof typeof StatusString],
+              forkedFrom: bodyQueued.forked_from,
               limit: bodyQueued.limit,
               queueName: bodyQueued.queue_name,
               offset: bodyQueued.offset,
