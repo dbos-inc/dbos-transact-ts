@@ -241,6 +241,7 @@ describe('running-admin-server-tests', () => {
   });
 
   test('test-admin-list-workflow-steps', async () => {
+    const startTime = Date.now();
     const handle = await DBOS.startWorkflow(TestAdminWorkflow).workflowWithSteps();
     await handle.getResult();
     await expect(handle.getStatus()).resolves.toMatchObject({
@@ -257,6 +258,9 @@ describe('running-admin-server-tests', () => {
     //eslint-disable-next-line @typescript-eslint/no-unsafe-assignment
     const steps: step_info[] = await response.json();
     expect(steps.length).toBe(3);
+    expect(steps[0].function_name).toBe('stepOne');
+    expect(Number(steps[0].started_at_epoch_ms)).toBeGreaterThan(startTime);
+    expect(Number(steps[0].completed_at_epoch_ms)).toBeGreaterThan(Number(steps[0].started_at_epoch_ms));
     expect(steps[0].function_name).toBe('stepOne');
     expect(steps[1].function_name).toBe('DBOS.sleep');
     expect(steps[2].function_name).toBe('stepTwo');
@@ -480,7 +484,9 @@ describe('running-admin-server-tests', () => {
 
   test('test-admin-list-workflows', async () => {
     // Run first workflow
-    const handle1 = await DBOS.startWorkflow(TestAdminWorkflow).exampleWorkflow(456);
+    const startTime = Date.now();
+    const timeoutMS = 10000;
+    const handle1 = await DBOS.startWorkflow(TestAdminWorkflow, { timeoutMS }).exampleWorkflow(456);
     await handle1.getResult();
     await expect(handle1.getStatus()).resolves.toMatchObject({
       status: StatusString.SUCCESS,
@@ -527,6 +533,12 @@ describe('running-admin-server-tests', () => {
     expect(workflows[0].AuthenticatedUser).toBeUndefined();
     expect(workflows[0].AssumedRole).toBeUndefined();
     expect(workflows[0].AuthenticatedRoles).toBeUndefined();
+    expect(workflows[0].WorkflowTimeoutMS).toBe(String(timeoutMS));
+    expect(Number(workflows[0].WorkflowDeadlineEpochMS)).toBeGreaterThanOrEqual(startTime + timeoutMS);
+    expect(workflows[0].DeduplicationID).toBeUndefined();
+    expect(workflows[0].Priority).toBe('0');
+    expect(workflows[0].QueuePartitionKey).toBeUndefined();
+    expect(workflows[0].ForkedFrom).toBeUndefined();
     // By default, input and output are not loaded
     expect(workflows[0].Output).toBeUndefined();
     expect(workflows[0].Error).toBeUndefined();
@@ -628,6 +640,19 @@ describe('running-admin-server-tests', () => {
       },
       body: JSON.stringify({
         authenticated_user: 'no-user',
+      }),
+    });
+    expect(response.status).toBe(200);
+    workflows = (await response.json()) as protocol.WorkflowsOutput[];
+    expect(workflows.length).toBe(0);
+
+    response = await fetch(`http://localhost:3001/workflows`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        fork_from: 'fake-id',
       }),
     });
     expect(response.status).toBe(200);

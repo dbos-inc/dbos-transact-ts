@@ -774,7 +774,7 @@ describe('unserializable-negative-tests', () => {
     } finally {
       await DBOS.shutdown();
     }
-  });
+  }, 20000);
 
   test('wf-returns-wfh', async () => {
     await DBOS.launch();

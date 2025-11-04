@@ -2,7 +2,7 @@ import { GetWorkflowsInput, StatusString, DBOS, WorkflowQueue } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, recoverPendingWorkflows } from './helpers';
 import { Client } from 'pg';
-import { GetQueuedWorkflowsInput, WorkflowHandle, WorkflowStatus } from '../src/workflow';
+import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
 import { PostgresSystemDatabase } from '../src/system_database';
@@ -192,6 +192,10 @@ describe('workflow-management-tests', () => {
       expect(info.createdAt).toBeGreaterThan(0);
       expect(info.updatedAt).toBeGreaterThan(0);
       expect(info.executorId).toBe(globalParams.executorID);
+      expect(info.deduplicationID).toBeUndefined();
+      expect(info.priority).toBe(0);
+      expect(info.queuePartitionKey).toBeUndefined();
+      expect(info.forkedFrom).toBeUndefined();
 
       info = infos[1];
       expect(info.workflowName).toBe('failWorkflow');
@@ -427,7 +431,7 @@ describe('test-list-queues', () => {
     expect(config.systemDatabaseUrl).toBeDefined();
     const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger);
     try {
-      let input: GetQueuedWorkflowsInput = {};
+      let input: GetWorkflowsInput = {};
       let output: WorkflowStatus[] = [];
       output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(TestListQueues.queuedSteps);
@@ -805,6 +809,37 @@ describe('test-list-steps', () => {
       return Promise.resolve();
     }
   }
+
+  const numStepTimingSteps = 5;
+  async function stepTimingStep() {
+    await sleepms(100);
+  }
+
+  const stepTimingWorkflow = DBOS.registerWorkflow(async () => {
+    for (let i = 0; i < numStepTimingSteps; i++) {
+      await DBOS.runStep(() => stepTimingStep());
+    }
+    await DBOS.setEvent('key', 'value');
+    await DBOS.listWorkflows({});
+    await DBOS.recv(undefined, 0);
+  });
+
+  test('test-step-timing', async () => {
+    const startTime = Date.now();
+    const handle = await DBOS.startWorkflow(stepTimingWorkflow)();
+
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    assert(steps);
+    for (const s of steps) {
+      assert(s.startedAtEpochMs);
+      assert(s.completedAtEpochMs);
+      assert(s.startedAtEpochMs >= startTime);
+      assert(s.completedAtEpochMs >= s.startedAtEpochMs);
+      if (s.functionID < numStepTimingSteps) {
+        assert(s.completedAtEpochMs - s.startedAtEpochMs >= 100);
+      }
+    }
+  });
 
   test('test-list-steps', async () => {
     const wfid = randomUUID();
@@ -1217,6 +1252,7 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFiveCount).toBe(1);
 
     const forkedHandle = await DBOS.forkWorkflow(wfid, 0);
+    expect((await forkedHandle.getStatus())?.forkedFrom).toBe(wfid);
     let forkresult = await forkedHandle.getResult();
     expect(forkresult).toBe(550);
 
@@ -1227,6 +1263,7 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFiveCount).toBe(2);
 
     const forkedHandle2 = await DBOS.forkWorkflow(wfid, 2);
+    expect((await forkedHandle2.getStatus())?.forkedFrom).toBe(wfid);
     forkresult = await forkedHandle2.getResult();
     expect(result).toBe(550);
 
@@ -1237,6 +1274,7 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFiveCount).toBe(3);
 
     const forkedHandle3 = await DBOS.forkWorkflow(wfid, 4);
+    expect((await forkedHandle3.getStatus())?.forkedFrom).toBe(wfid);
     forkresult = await forkedHandle3.getResult();
     expect(forkresult).toBe(550);
 
@@ -1245,6 +1283,12 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepThreeCount).toBe(3);
     expect(ExampleWorkflow.stepFourCount).toBe(3);
     expect(ExampleWorkflow.stepFiveCount).toBe(4);
+
+    const forkedWorkflows = await DBOS.listWorkflows({ forkedFrom: handle.workflowID });
+    expect(forkedWorkflows.length).toBe(3);
+    expect(forkedWorkflows[0].workflowID).toBe(forkedHandle.workflowID);
+    expect(forkedWorkflows[1].workflowID).toBe(forkedHandle2.workflowID);
+    expect(forkedWorkflows[2].workflowID).toBe(forkedHandle3.workflowID);
   }, 10000);
 
   test('test-fork-childwf', async () => {
@@ -1257,6 +1301,7 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepTwoCount).toBe(1);
 
     const forkedHandle = await DBOS.forkWorkflow(wfid, 2);
+    expect((await forkedHandle.getStatus())?.forkedFrom).toBe(wfid);
     await forkedHandle.getResult();
     expect(ExampleWorkflow.stepOneCount).toBe(1);
     expect(ExampleWorkflow.childWorkflowCount).toBe(1);
@@ -1306,6 +1351,7 @@ describe('test-fork', () => {
 
     await DBOS.withNextWorkflowID(forkedWfid, async () => {
       const forkedHandle = await DBOS.forkWorkflow(wfid, 0);
+      expect((await forkedHandle.getStatus())?.forkedFrom).toBe(wfid);
       const forkresult = await forkedHandle.getResult();
       expect(forkresult).toBe(550);
       expect(forkedHandle.workflowID).toBe(forkedWfid);

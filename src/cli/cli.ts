@@ -19,7 +19,6 @@ import { DBOSClient, GetWorkflowsInput, StatusString } from '..';
 import { ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_database';
 import { exit } from 'node:process';
 import { runCommand } from './commands';
-import { GetQueuedWorkflowsInput } from '../workflow';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
 import { readFileSync } from '../utils';
 import { dropPGDatabase, getDatabaseNameFromUrl } from '../database_utils';
@@ -388,11 +387,11 @@ queueCommands
         exit(1);
       }
 
-      const input: GetQueuedWorkflowsInput = {
+      const input: GetWorkflowsInput = {
         limit: Number(options.limit),
         startTime: options.startTime,
         endTime: options.endTime,
-        status: options.status as GetQueuedWorkflowsInput['status'],
+        status: options.status as GetWorkflowsInput['status'],
         workflowName: options.name,
         queueName: options.queue,
       };

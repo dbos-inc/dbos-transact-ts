@@ -130,6 +130,7 @@ export interface ListWorkflowsBody {
   end_time?: string;
   status?: string;
   application_version?: string;
+  forked_from?: string;
   limit?: number;
   offset?: number;
   sort_desc: boolean;
@@ -155,6 +156,12 @@ export class WorkflowsOutput {
   QueueName?: string;
   ApplicationVersion?: string;
   ExecutorID?: string;
+  WorkflowTimeoutMS?: string;
+  WorkflowDeadlineEpochMS?: string;
+  DeduplicationID?: string;
+  Priority?: string;
+  QueuePartitionKey?: string;
+  ForkedFrom?: string;
 
   constructor(info: WorkflowStatus) {
     // Mark empty fields as undefined
@@ -176,6 +183,12 @@ export class WorkflowsOutput {
     this.QueueName = info.queueName ? info.queueName : undefined;
     this.ApplicationVersion = info.applicationVersion;
     this.ExecutorID = info.executorId;
+    this.WorkflowTimeoutMS = info.timeoutMS !== undefined ? String(info.timeoutMS) : undefined;
+    this.WorkflowDeadlineEpochMS = info.deadlineEpochMS !== undefined ? String(info.deadlineEpochMS) : undefined;
+    this.DeduplicationID = info.deduplicationID;
+    this.Priority = String(info.priority);
+    this.QueuePartitionKey = info.queuePartitionKey;
+    this.ForkedFrom = info.forkedFrom;
   }
 }
 
@@ -185,6 +198,8 @@ export class WorkflowSteps {
   output?: string;
   error?: string;
   child_workflow_id?: string;
+  started_at_epoch_ms?: string;
+  completed_at_epoch_ms?: string;
 
   constructor(info: StepInfo) {
     this.function_id = info.functionID;
@@ -192,6 +207,8 @@ export class WorkflowSteps {
     this.output = info.output ? JSON.stringify(info.output) : undefined;
     this.error = info.error ? JSON.stringify(serializeError(info.error)) : undefined;
     this.child_workflow_id = info.childWorkflowID ?? undefined;
+    this.started_at_epoch_ms = info.startedAtEpochMs !== undefined ? String(info.startedAtEpochMs) : undefined;
+    this.completed_at_epoch_ms = info.completedAtEpochMs !== undefined ? String(info.completedAtEpochMs) : undefined;
   }
 }
 
@@ -218,6 +235,7 @@ export interface ListQueuedWorkflowsBody {
   start_time?: string;
   end_time?: string;
   status?: string;
+  forked_from?: string;
   queue_name?: string;
   limit?: number;
   offset?: number;

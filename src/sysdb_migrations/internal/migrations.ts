@@ -186,5 +186,16 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
         `create index "idx_workflow_status_queue_status_started" on "${schemaName}"."workflow_status" ("queue_name", "status", "started_at_epoch_ms")`,
       ],
     },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}".workflow_status ADD COLUMN forked_from TEXT;`,
+        `create index "idx_workflow_status_forked_from" on "${schemaName}"."workflow_status" ("forked_from")`,
+      ],
+    },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}".operation_outputs ADD COLUMN started_at_epoch_ms BIGINT, ADD COLUMN completed_at_epoch_ms BIGINT;`,
+      ],
+    },
   ];
 }

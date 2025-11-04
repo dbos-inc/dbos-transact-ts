@@ -24,6 +24,7 @@ export interface workflow_status {
   deduplication_id?: string; // ID used to identify enqueued workflows for de-duplication.
   priority?: number; // Optional priority for the workflow.
   queue_partition_key?: string; // Partition key for partitioned queues.
+  forked_from?: string;
 }
 
 export interface notifications {
@@ -45,6 +46,8 @@ export interface operation_outputs {
   error: string;
   child_workflow_id: string;
   function_name?: string;
+  started_at_epoch_ms?: number;
+  completed_at_epoch_ms?: number;
 }
 
 export interface event_dispatch_kv {
@@ -73,4 +76,6 @@ export interface step_info {
   output: unknown;
   error: Error | null;
   child_workflow_id: string | null;
+  started_at_epoch_ms?: number;
+  completed_at_epoch_ms?: number;
 }
