@@ -781,9 +781,11 @@ export class DBOSExecutor {
           await this.systemDatabase.checkIfCanceled(wfid);
 
           let cresult: R | undefined;
-          await runInStepContext(lctx, funcID, maxAttempts, attemptNum, async () => {
-            const sf = stepFn as unknown as (...args: T) => Promise<R>;
-            cresult = await sf.call(clsInst, ...args);
+          await runWithTrace(span, async () => {
+            await runInStepContext(lctx, funcID, maxAttempts, attemptNum, async () => {
+              const sf = stepFn as unknown as (...args: T) => Promise<R>;
+              cresult = await sf.call(clsInst, ...args);
+            });
           });
           result = cresult!;
         } catch (error) {
