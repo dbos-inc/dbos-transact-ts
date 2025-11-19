@@ -23,7 +23,7 @@ describe('oaoo-tests', () => {
   });
 
   ///
-  /// That the behavior is not transparent, that's the first red flag.
+  /// Check against concurrent execution
   ///
   class TryConcExec {
     static concExec = 0;
@@ -46,9 +46,6 @@ describe('oaoo-tests', () => {
   test('step-conc', async () => {
     const workflowUUID: string = randomUUID();
 
-    // I am a user who expects the workflow deduplication by ID to protect me!
-    //  You said OAOO was a feature.  Also queue deduplication possibly has the same issue?
-    // And these sleep calls are expensive!
     const wfh1 = await DBOS.startWorkflow(TryConcExec, { workflowID: workflowUUID }).testConcWorkflow();
     const wfh2 = await DBOS.startWorkflow(TryConcExec, { workflowID: workflowUUID }).testConcWorkflow();
 
@@ -57,13 +54,8 @@ describe('oaoo-tests', () => {
     expect(TryConcExec.maxConc).toBe(1);
   });
 
-  /*
-  //
-  // That you have to be so careful with exception handling, that's the second red flag.
-  //   (But will anyone actually see it?)
-  //
-  class BadErrorHandling1 {
-    static execNum  = 0;
+  class CatchPlainException1 {
+    static execNum = 0;
     static started = false;
     static completed = false;
     static aborted = false;
@@ -72,24 +64,24 @@ describe('oaoo-tests', () => {
     @DBOS.step()
     static async testStartAction() {
       await sleepms(1000);
-      BadErrorHandling1.started = true;
+      CatchPlainException1.started = true;
     }
 
     @DBOS.step()
     static async testCompleteAction() {
-      expect(BadErrorHandling1.started).toBeTruthy();
+      expect(CatchPlainException1.started).toBeTruthy();
       await sleepms(1000);
-      BadErrorHandling1.completed = true;
+      CatchPlainException1.completed = true;
     }
 
     @DBOS.step()
     static async testCancelAction() {
-      BadErrorHandling1.aborted = true;
-      BadErrorHandling1.started = false;
+      CatchPlainException1.aborted = true;
+      CatchPlainException1.started = false;
     }
 
     static async reportTrouble() {
-      BadErrorHandling1.trouble = true;
+      CatchPlainException1.trouble = true;
       expect('Trouble?').toBe('None!');
     }
 
@@ -97,50 +89,46 @@ describe('oaoo-tests', () => {
     static async testConcWorkflow() {
       try {
         // Step 1, tell external system to start processing
-        await BadErrorHandling1.testStartAction();
-      }
-      catch (e) {
+        await CatchPlainException1.testStartAction();
+      } catch (e) {
         // If we fail for any reason, try to abort
         // (We don't know if the external system even heard us)
         // I have been careful, my undo action in the other system
         //  is idempotent, and will be fine if it never heard the start
         try {
-          await BadErrorHandling1.testCancelAction();
-        }
-        catch (e2) {
+          await CatchPlainException1.testCancelAction();
+        } catch (e2) {
           // We have no idea if we managed to get to the external system at any point above
           // We may be leaving system in inconsistent state
           // Take some other notification action (sysadmin!)
-          await BadErrorHandling1.reportTrouble();
+          await CatchPlainException1.reportTrouble();
         }
       }
       // Step 2, finish the process
-      await BadErrorHandling1.testCompleteAction();
+      await CatchPlainException1.testCompleteAction();
     }
   }
 
   test('step-undoredo', async () => {
     const workflowUUID: string = randomUUID();
 
-    const wfh1 = await DBOS.startWorkflow(BadErrorHandling1, {workflowID: workflowUUID}).testConcWorkflow();
-    const wfh2 = await DBOS.startWorkflow(BadErrorHandling1, {workflowID: workflowUUID}).testConcWorkflow();
+    const wfh1 = await DBOS.startWorkflow(CatchPlainException1, { workflowID: workflowUUID }).testConcWorkflow();
+    const wfh2 = await DBOS.startWorkflow(CatchPlainException1, { workflowID: workflowUUID }).testConcWorkflow();
 
     await wfh1.getResult();
     await wfh2.getResult();
 
     // In our invocations above, there are no errors
-    console.log(`Started: ${BadErrorHandling1.started}; Completed: ${BadErrorHandling1.completed}; Aborted: ${BadErrorHandling1.aborted}; Trouble: ${BadErrorHandling1.trouble}`);
-    expect(BadErrorHandling1.started).toBeTruthy();
-    expect(BadErrorHandling1.completed).toBeTruthy();
-    expect(BadErrorHandling1.trouble).toBeFalsy();
+    console.log(
+      `Started: ${CatchPlainException1.started}; Completed: ${CatchPlainException1.completed}; Aborted: ${CatchPlainException1.aborted}; Trouble: ${CatchPlainException1.trouble}`,
+    );
+    expect(CatchPlainException1.started).toBeTruthy();
+    expect(CatchPlainException1.completed).toBeTruthy();
+    expect(CatchPlainException1.trouble).toBeFalsy();
   });
 
-  //
-  // That you have to be so careful with exception handling, that's the second red flag.
-  //   (But will anyone actually see it?)
-  //
-  class BadErrorHandling2 {
-    static execNum  = 0;
+  class UsingFinallyClause {
+    static execNum = 0;
     static started = false;
     static completed = false;
     static aborted = false;
@@ -149,24 +137,24 @@ describe('oaoo-tests', () => {
     @DBOS.step()
     static async testStartAction() {
       await sleepms(1000);
-      BadErrorHandling2.started = true;
+      UsingFinallyClause.started = true;
     }
 
     @DBOS.step()
     static async testCompleteAction() {
-      expect(BadErrorHandling2.started).toBeTruthy();
+      expect(UsingFinallyClause.started).toBeTruthy();
       await sleepms(1000);
-      BadErrorHandling2.completed = true;
+      UsingFinallyClause.completed = true;
     }
 
     @DBOS.step()
     static async testCancelAction() {
-      BadErrorHandling2.aborted = true;
-      BadErrorHandling2.started = false;
+      UsingFinallyClause.aborted = true;
+      UsingFinallyClause.started = false;
     }
 
     static async reportTrouble() {
-      BadErrorHandling2.trouble = true;
+      UsingFinallyClause.trouble = true;
       expect('Trouble?').toBe('None!');
     }
 
@@ -175,26 +163,24 @@ describe('oaoo-tests', () => {
       let finished = false;
       try {
         // Step 1, tell external system to start processing
-        await BadErrorHandling2.testStartAction();
+        await UsingFinallyClause.testStartAction();
 
         // Step 2, finish the process
-        await BadErrorHandling2.testCompleteAction();
+        await UsingFinallyClause.testCompleteAction();
 
         finished = true;
-      }
-      finally {
+      } finally {
         if (!finished) {
           // If we fail for any reason, try to abort
           // (We don't know if the external system even heard us)
           // I have been careful, my undo action in the other system
           try {
-            await BadErrorHandling2.testCancelAction();
-          }
-          catch (e2) {
+            await UsingFinallyClause.testCancelAction();
+          } catch (e2) {
             // We have no idea if we managed to get to the external system at any point above
             // We may be leaving system in inconsistent state
             // Take some other notification action (sysadmin!)
-            await BadErrorHandling2.reportTrouble();
+            await UsingFinallyClause.reportTrouble();
           }
         }
       }
@@ -204,29 +190,28 @@ describe('oaoo-tests', () => {
   test('step-undoredo2', async () => {
     const workflowUUID: string = randomUUID();
 
-    const wfh1 = await DBOS.startWorkflow(BadErrorHandling2, {workflowID: workflowUUID}).testConcWorkflow();
-    //const wfh2 = await DBOS.startWorkflow(BadErrorHandling2, {workflowID: workflowUUID}).testConcWorkflow();
+    const wfh1 = await DBOS.startWorkflow(UsingFinallyClause, { workflowID: workflowUUID }).testConcWorkflow();
+    const wfh2 = await DBOS.startWorkflow(UsingFinallyClause, { workflowID: workflowUUID }).testConcWorkflow();
 
     await wfh1.getResult();
-    //await wfh2.getResult();
+    await wfh2.getResult();
 
     // In our invocations above, there are no errors
-    console.log(`Started: ${BadErrorHandling2.started}; Completed: ${BadErrorHandling2.completed}; Aborted: ${BadErrorHandling2.aborted}; Trouble: ${BadErrorHandling2.trouble}`);
-    expect(BadErrorHandling2.started).toBeTruthy();
-    expect(BadErrorHandling2.completed).toBeTruthy();
-    expect(BadErrorHandling2.trouble).toBeFalsy();
+    console.log(
+      `Started: ${UsingFinallyClause.started}; Completed: ${UsingFinallyClause.completed}; Aborted: ${UsingFinallyClause.aborted}; Trouble: ${UsingFinallyClause.trouble}`,
+    );
+    expect(UsingFinallyClause.started).toBeTruthy();
+    expect(UsingFinallyClause.completed).toBeTruthy();
+    expect(UsingFinallyClause.trouble).toBeFalsy();
   });
 
-  ///
-  /// It is worse than just exception handling model
-  ///
   class TryConcExec2 {
     static curExec = 0;
     static curStep = 0;
 
     @DBOS.step()
     static async step1() {
-      // Ignore the foreshadowing!
+      // This makes the step take a while ... sometimes.
       if (TryConcExec2.curExec++ % 2 === 0) {
         await sleepms(1000);
       }
@@ -248,18 +233,16 @@ describe('oaoo-tests', () => {
   test('step-sequence', async () => {
     const workflowUUID: string = randomUUID();
 
-    const wfh1 = await DBOS.startWorkflow(TryConcExec2, {workflowID: workflowUUID}).testConcWorkflow();
-    const wfh2 = await DBOS.startWorkflow(TryConcExec2, {workflowID: workflowUUID}).testConcWorkflow();
+    const wfh1 = await DBOS.startWorkflow(TryConcExec2, { workflowID: workflowUUID }).testConcWorkflow();
+    const wfh2 = await DBOS.startWorkflow(TryConcExec2, { workflowID: workflowUUID }).testConcWorkflow();
 
     await wfh1.getResult();
     await wfh2.getResult();
     expect(TryConcExec2.curStep).toBe(2);
   });
 
-  ///
-  /// Self-abort
-  /// This is a bit tricky... but will be simulated with a simulated database glitch
-  ///
+  /*
+  // Self-abort test, for another round of testing...
   class TryDbGlitch {
     @DBOS.step()
     static async step1() {
