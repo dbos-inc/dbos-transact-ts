@@ -66,7 +66,8 @@ export interface SystemDatabase {
   initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     maxRetries?: number,
-  ): Promise<{ status: string; deadlineEpochMS?: number }>;
+    isRecoveryRequest?: boolean,
+  ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
@@ -370,6 +371,7 @@ interface InsertWorkflowResult {
   config_name: string;
   queue_name: string | null;
   workflow_deadline_epoch_ms: number | null;
+  executor_id: string | null;
 }
 
 async function insertWorkflowStatus(
@@ -417,7 +419,7 @@ async function insertWorkflowStatus(
             THEN EXCLUDED.executor_id
             ELSE workflow_status.executor_id
           END
-        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms`,
+        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -487,6 +489,7 @@ async function updateWorkflowStatus(
       resetDeadline?: boolean;
       resetDeduplicationID?: boolean;
       resetStartedAtEpochMs?: boolean;
+      executorId?: string;
     };
     where?: {
       status?: (typeof StatusString)[keyof typeof StatusString];
@@ -528,6 +531,11 @@ async function updateWorkflowStatus(
 
   if (update.resetStartedAtEpochMs) {
     setClause += `, started_at_epoch_ms = NULL`;
+  }
+
+  if (update.executorId !== undefined) {
+    const param = args.push(update.executorId ?? undefined);
+    setClause += `, executor_id=$${param}`;
   }
 
   const where = options.where ?? {};
@@ -869,9 +877,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
     maxRetries?: number,
-  ): Promise<{ status: string; deadlineEpochMS?: number }> {
+    isRecoveryRequest?: boolean,
+  ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }> {
     const client = await this.pool.connect();
+    let shouldCommit = false;
     try {
+      let shouldExecuteOnThisExecutor = true;
+
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
       const resRow = await insertWorkflowStatus(client, initStatus, this.schemaName);
@@ -890,6 +902,29 @@ export class PostgresSystemDatabase implements SystemDatabase {
           `Workflow (${initStatus.workflowUUID}) already exists in queue: ${resRow.queue_name}, but the provided queue name is: ${initStatus.queueName}. The queue is not updated. ${new Error().stack}`,
         );
       }
+
+      if (resRow.status === StatusString.PENDING) {
+        if (!isRecoveryRequest) {
+          // Someone else is executing this, or will be told to recover it
+          shouldExecuteOnThisExecutor = false;
+        } else if (initStatus.executorId !== resRow.executor_id) {
+          // This is a recovery request, make sure we're assigned
+          this.logger.debug(
+            `Workflow ${initStatus.workflowUUID} being reassigned to this executor for recovery: ${initStatus.executorId}.`,
+          );
+
+          await updateWorkflowStatus(client, initStatus.workflowUUID, StatusString.PENDING, this.schemaName, {
+            where: { status: StatusString.PENDING },
+            update: { executorId: initStatus.executorId },
+          });
+        }
+      } else if (
+        ([StatusString.CANCELLED, StatusString.ERROR, StatusString.SUCCESS] as string[]).includes(resRow.status)
+      ) {
+        shouldExecuteOnThisExecutor = false;
+      }
+
+      shouldCommit = true;
 
       // recovery_attempt means "attempts" (we kept the name for backward compatibility). It's default value is 1.
       // Every time we init the status, we increment `recovery_attempts` by 1.
@@ -911,10 +946,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       const status = resRow.status;
       const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
-      return { status, deadlineEpochMS };
+      return { status, deadlineEpochMS, shouldExecuteOnThisExecutor };
     } finally {
       try {
-        await client.query('COMMIT');
+        if (shouldCommit) {
+          await client.query('COMMIT');
+        } else {
+          await client.query('ROLLBACK');
+        }
       } finally {
         client.release();
       }

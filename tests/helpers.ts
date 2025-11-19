@@ -106,7 +106,7 @@ export function recoverPendingWorkflows(executorIDs: string[] = ['local']) {
 
 export function executeWorkflowById(workflowId: string) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
-  return DBOSExecutor.globalInstance!.executeWorkflowUUID(workflowId);
+  return DBOSExecutor.globalInstance!.executeWorkflowId(workflowId);
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {
