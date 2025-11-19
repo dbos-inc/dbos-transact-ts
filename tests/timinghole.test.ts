@@ -54,7 +54,7 @@ describe('oaoo-tests', () => {
 
     await wfh1.getResult();
     await wfh2.getResult();
-    //expect(TryConcExec.maxConc).toBe(1);
+    expect(TryConcExec.maxConc).toBe(1);
   });
 
   /*

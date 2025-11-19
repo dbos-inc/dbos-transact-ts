@@ -372,12 +372,14 @@ interface InsertWorkflowResult {
   queue_name: string | null;
   workflow_deadline_epoch_ms: number | null;
   executor_id: string | null;
+  inserted: boolean;
 }
 
 async function insertWorkflowStatus(
   client: PoolClient,
   initStatus: WorkflowStatusInternal,
   schemaName: string,
+  isRecoveryRequest: boolean = false,
 ): Promise<InsertWorkflowResult> {
   try {
     const { rows } = await client.query<InsertWorkflowResult>(
@@ -410,7 +412,7 @@ async function insertWorkflowStatus(
         DO UPDATE SET
           recovery_attempts = CASE
             WHEN workflow_status.status != '${StatusString.ENQUEUED}'
-            THEN workflow_status.recovery_attempts + 1
+            THEN workflow_status.recovery_attempts + $24
             ELSE workflow_status.recovery_attempts
           END,
           updated_at = EXCLUDED.updated_at,
@@ -418,8 +420,7 @@ async function insertWorkflowStatus(
             WHEN EXCLUDED.status != '${StatusString.ENQUEUED}'
             THEN EXCLUDED.executor_id
             ELSE workflow_status.executor_id
-          END
-        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id`,
+          END        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, (xmax = 0) AS inserted`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -444,6 +445,7 @@ async function insertWorkflowStatus(
         initStatus.priority,
         initStatus.queuePartitionKey ?? null,
         initStatus.forkedFrom ?? null,
+        (isRecoveryRequest ?? false) ? 1 : 0,
       ],
     );
     if (rows.length === 0) {
@@ -882,11 +884,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const client = await this.pool.connect();
     let shouldCommit = false;
     try {
-      let shouldExecuteOnThisExecutor = true;
-
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
-      const resRow = await insertWorkflowStatus(client, initStatus, this.schemaName);
+      const resRow = await insertWorkflowStatus(client, initStatus, this.schemaName, isRecoveryRequest);
       if (resRow.name !== initStatus.workflowName) {
         const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
@@ -903,27 +903,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
         );
       }
 
-      if (resRow.status === StatusString.PENDING) {
-        if (!isRecoveryRequest) {
-          // Someone else is executing this, or will be told to recover it
-          shouldExecuteOnThisExecutor = false;
-        } else if (initStatus.executorId !== resRow.executor_id) {
-          // This is a recovery request, make sure we're assigned
-          this.logger.debug(
-            `Workflow ${initStatus.workflowUUID} being reassigned to this executor for recovery: ${initStatus.executorId}.`,
-          );
+      const status = resRow.status;
+      const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
 
-          await updateWorkflowStatus(client, initStatus.workflowUUID, StatusString.PENDING, this.schemaName, {
-            where: { status: StatusString.PENDING },
-            update: { executorId: initStatus.executorId },
-          });
-        }
-      } else if (
-        ([StatusString.CANCELLED, StatusString.ERROR, StatusString.SUCCESS] as string[]).includes(resRow.status)
-      ) {
-        shouldExecuteOnThisExecutor = false;
+      // If there is an existing DB record and we aren't here to recover it,
+      //  leave it be.  Roll back the change to max recovery attempts.
+      if (!resRow.inserted && !isRecoveryRequest) {
+        return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false };
       }
 
+      // Upsert above already set executor assignment and incremented the recovery attempt
       shouldCommit = true;
 
       // recovery_attempt means "attempts" (we kept the name for backward compatibility). It's default value is 1.
@@ -944,9 +933,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
-      const status = resRow.status;
-      const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
-      return { status, deadlineEpochMS, shouldExecuteOnThisExecutor };
+      return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: true };
     } finally {
       try {
         if (shouldCommit) {
@@ -1779,7 +1766,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           }
         } catch (e) {
           const err = e as Error;
-          this.logger.error(`Exception from system database: ${err}`);
+          this.logger.error(`Exception from system database: ${err}`, err);
           throw err;
         }
 
