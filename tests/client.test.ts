@@ -1,7 +1,7 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS, DBOSClient, WorkflowQueue, StatusString } from '../src';
 import { globalParams, sleepms } from '../src/utils';
-import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, recoverPendingWorkflows, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
@@ -570,7 +570,7 @@ describe('DBOSClient', () => {
       expect(res3.rows).toHaveLength(1);
       expect(res3.rows[0].recovery_attempts).toBe('1');
 
-      await client.send<string>(workflowID, message, topic, idempotencyKey);
+      await (await reexecuteWorkflowById(sendWFID))!.getResult();
       const res4 = await dbClient.query<{ recovery_attempts: string }>(
         'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [sendWFID],

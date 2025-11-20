@@ -47,6 +47,7 @@ import {
   getFunctionRegistration,
   getAllRegisteredClassNames,
   getClassRegistrationByName,
+  getRegisteredFunctionFullName,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import {
@@ -400,19 +401,24 @@ export class DBOSExecutor {
 
     let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
+    let wfname = getRegisteredFunctionFullName(wf).name; // TODO: Should be what was registered in wfInfo...
+    let wfclassname = getRegisteredFunctionClassName(wf);
 
-    if (wf.name !== DBOSExecutor.#tempWorkflowName) {
+    const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname || !!params.tempWfType;
+
+    if (!isTempWorkflow) {
       if (!wInfo || !wInfo.workflowConfig) {
         throw new DBOSNotRegisteredError(wf.name);
       }
       wConfig = wInfo.workflowConfig;
+    } else if (params.tempWfName) {
+      wfname = params.tempWfName;
+      wfclassname = params.tempWfClass ?? '';
     }
 
     const maxRecoveryAttempts = wConfig.maxRecoveryAttempts
       ? wConfig.maxRecoveryAttempts
       : DEFAULT_MAX_RECOVERY_ATTEMPTS;
-
-    const wfname = wf.name; // TODO: Should be what was registered in wfInfo...
 
     const span = this.tracer.startSpan(wfname, {
       status: StatusString.PENDING,
@@ -424,15 +430,14 @@ export class DBOSExecutor {
       assumedRole: pctx?.assumedRole ?? '',
     });
 
-    const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname;
     const funcArgs = serializeFunctionInputOutput(args, [wfname, '<arguments>']);
     args = funcArgs.deserialized;
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
       status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
-      workflowName: getRegisteredFunctionName(wf),
-      workflowClassName: isTempWorkflow ? '' : getRegisteredFunctionClassName(wf),
+      workflowName: wfname,
+      workflowClassName: wfclassname,
       workflowConfigName: params.configuredInstance?.name || '',
       queueName: params.queueName,
       output: null,
@@ -455,7 +460,6 @@ export class DBOSExecutor {
 
     if (isTempWorkflow) {
       internalStatus.workflowName = `${DBOSExecutor.#tempWorkflowName}-${params.tempWfType}-${params.tempWfName}`;
-      internalStatus.workflowClassName = params.tempWfClass ?? '';
     }
 
     let $deadlineEpochMS: number | undefined = undefined;
@@ -1109,8 +1113,9 @@ export class DBOSExecutor {
         return this.workflow(
           temp_workflow,
           {
-            workflowUUID: workflowStartID,
+            tempWfName: nameArr[2],
             tempWfType: TempWorkflowType.send,
+            workflowUUID: workflowStartID,
             queueName: wfStatus.queueName,
             executeWorkflow: true,
             isRecoveryOrQueueDispatch: isRecoveryOrQueueDispatch,
