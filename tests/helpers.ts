@@ -1,5 +1,5 @@
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { DBOS } from '../src';
+import { DBOS, StatusString } from '../src';
 import { sleepms } from '../src/utils';
 import { isValidDatabaseName, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
@@ -107,6 +107,12 @@ export function recoverPendingWorkflows(executorIDs: string[] = ['local']) {
 export function executeWorkflowById(workflowId: string) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   return DBOSExecutor.globalInstance!.executeWorkflowId(workflowId);
+}
+
+export async function reexecuteWorkflowById(workflowId: string) {
+  expect(DBOSExecutor.globalInstance).toBeDefined();
+  await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, true);
+  return await DBOSExecutor.globalInstance?.executeWorkflowId(workflowId, false, true);
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {
