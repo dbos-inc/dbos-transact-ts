@@ -26,6 +26,7 @@ import { getClientConfig } from './utils';
 import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
+import { DEBUG_TRIGGER_STEP_COMMIT, debugTriggerPoint } from './debugpoint';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -568,6 +569,7 @@ async function recordOperationResult(
   checkConflict: boolean,
   schemaName: string,
   startTimeEpochMs: number,
+  endTimeEpochMs: number,
   options: {
     childWorkflowID?: string | null;
     output?: string | null;
@@ -575,11 +577,11 @@ async function recordOperationResult(
   } = {},
 ): Promise<void> {
   try {
-    await client.query<operation_outputs>(
+    const out = await client.query<operation_outputs>(
       `INSERT INTO ${schemaName}.operation_outputs
        (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'};`,
+       ON CONFLICT DO NOTHING RETURNING completed_at_epoch_ms;`,
       [
         workflowID,
         functionID,
@@ -588,9 +590,19 @@ async function recordOperationResult(
         functionName,
         options.childWorkflowID ?? null,
         startTimeEpochMs,
-        Date.now(),
+        endTimeEpochMs,
       ],
     );
+    if (
+      checkConflict &&
+      (out?.rowCount ?? 0) > 0 &&
+      out?.rows?.[0]?.completed_at_epoch_ms?.toString() !== endTimeEpochMs.toString()
+    ) {
+      DBOSExecutor.globalInstance?.logger.warn(
+        `Step output for ${workflowID}(${functionID}):${functionName} already recorded`,
+      );
+      throw new DBOSWorkflowConflictError(workflowID);
+    }
   } catch (error) {
     const err: DatabaseError = error as DatabaseError;
     if (err.code === '40001' || err.code === '23505') {
@@ -1065,6 +1077,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } = {},
   ): Promise<void> {
     const client = await this.pool.connect();
+    const now = Date.now();
     try {
       await recordOperationResult(
         client,
@@ -1074,10 +1087,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         checkConflict,
         this.schemaName,
         startTimeEpochMs,
+        now,
         options,
       );
     } finally {
       client.release();
+      await debugTriggerPoint(DEBUG_TRIGGER_STEP_COMMIT);
     }
   }
 
@@ -1169,9 +1184,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return result.output;
     }
     const output = await func();
-    await recordOperationResult(client, workflowID, functionID, functionName, true, this.schemaName, startTime, {
-      output,
-    });
+    await recordOperationResult(
+      client,
+      workflowID,
+      functionID,
+      functionName,
+      true,
+      this.schemaName,
+      startTime,
+      Date.now(),
+      {
+        output,
+      },
+    );
     return output;
   }
 
@@ -1227,6 +1252,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           DBOS_FUNCNAME_SLEEP,
           false,
           this.schemaName,
+          Date.now(),
           Date.now(),
           {
             output: JSON.stringify(endTimeMs),
@@ -1397,6 +1423,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         true,
         this.schemaName,
         startTime,
+        Date.now(),
         {
           output: message,
         },

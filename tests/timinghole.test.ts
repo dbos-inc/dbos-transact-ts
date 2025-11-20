@@ -1,11 +1,12 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
+import { DEBUG_TRIGGER_STEP_COMMIT, setDebugTrigger } from '../src/debugpoint';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
-describe('oaoo-tests', () => {
+describe('run-workflow-once-tests', () => {
   let config: DBOSConfig;
 
   beforeAll(async () => {
@@ -241,13 +242,12 @@ describe('oaoo-tests', () => {
     expect(TryConcExec2.curStep).toBe(2);
   });
 
-  /*
   // Self-abort test, for another round of testing...
   class TryDbGlitch {
     @DBOS.step()
     static async step1() {
       await sleepms(1000);
-      return "Yay!";
+      return 'Yay!';
     }
 
     @DBOS.workflow()
@@ -256,10 +256,14 @@ describe('oaoo-tests', () => {
     }
   }
 
-  test('step-sequence', async () => {
+  test('step-commit-hiccup', async () => {
     expect(await TryDbGlitch.testWorkflow()).toBe('Yay!');
-    process.env.COMMIT_GLITCH='Hahaha'; // Targeted...
+    let forceRetries = 1;
+    setDebugTrigger(DEBUG_TRIGGER_STEP_COMMIT, {
+      asyncCallback: async () => {
+        if (forceRetries-- > 0) throw new Error('ECONNRESET');
+      },
+    });
     expect(await TryDbGlitch.testWorkflow()).toBe('Yay!');
   });
-  */
 });
