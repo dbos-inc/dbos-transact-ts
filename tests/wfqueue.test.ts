@@ -6,6 +6,7 @@ import {
   Event,
   queueEntriesAreCleanedUp,
   recoverPendingWorkflows,
+  reexecuteWorkflowById,
 } from './helpers';
 import { WorkflowQueue } from '../src';
 import { randomUUID } from 'node:crypto';
@@ -1437,9 +1438,8 @@ describe('queue-time-outs', () => {
     await childHandle.getResult();
 
     // Verify it still works on recovery
-    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(handle.workflowID, StatusString.PENDING, true);
-    const recoveredHandle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow, { workflowID: handle.workflowID })();
-    await recoveredHandle.getResult();
+    const recoveredHandle = await reexecuteWorkflowById(handle.workflowID);
+    await recoveredHandle!.getResult();
   });
 
   const partitionBlockingEvent = new Event();
