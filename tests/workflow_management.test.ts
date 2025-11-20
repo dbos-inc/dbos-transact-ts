@@ -1101,7 +1101,7 @@ describe('test-list-steps', () => {
     expect(wfsteps[1].output).toBe(null);
     expect(wfsteps[1].error).toBeInstanceOf(Error);
     expect(wfsteps[1].childWorkflowID).toBe(`${wfid}-0`);
-  }, 10000);
+  });
 
   test('test-child-rerun', async () => {
     const wfid = randomUUID();

@@ -157,7 +157,7 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
-  readonly isRecovery?: boolean;
+  readonly isRecoveryOrQueueDispatch?: boolean;
 }
 
 export const OperationType = {
@@ -488,7 +488,11 @@ export class DBOSExecutor {
       }
       let ires;
       try {
-        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts, params.isRecovery);
+        ires = await this.systemDatabase.initWorkflowStatus(
+          internalStatus,
+          maxRecoveryAttempts,
+          params.isRecoveryOrQueueDispatch,
+        );
       } catch (e) {
         if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
           await this.systemDatabase.recordOperationResult(
@@ -1057,7 +1061,7 @@ export class DBOSExecutor {
             queueName: wfStatus.queueName,
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
-            isRecovery: isRecoveryOrQueueDispatch,
+            isRecoveryOrQueueDispatch: isRecoveryOrQueueDispatch,
           },
           ...inputs,
         );
@@ -1087,6 +1091,7 @@ export class DBOSExecutor {
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName, // Probably null
             executeWorkflow: true,
+            isRecoveryOrQueueDispatch: isRecoveryOrQueueDispatch,
           },
           undefined,
           undefined,
@@ -1108,6 +1113,7 @@ export class DBOSExecutor {
             tempWfType: TempWorkflowType.send,
             queueName: wfStatus.queueName,
             executeWorkflow: true,
+            isRecoveryOrQueueDispatch: isRecoveryOrQueueDispatch,
           },
           ...inputs,
         );
