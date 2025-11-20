@@ -11,6 +11,7 @@ import assert from 'assert';
 describe('recovery-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
+  const queue = new WorkflowQueue('DLQQ', { concurrency: 1 });
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -139,8 +140,6 @@ describe('recovery-tests', () => {
 
   test('enqueued-dead-letter-queue', async () => {
     LocalRecovery.recoveryCount = 0;
-
-    const queue = new WorkflowQueue('DLQQ', { concurrency: 1 });
 
     const handle = await DBOS.startWorkflow(LocalRecovery, { queueName: queue.name }).fencedDeadLetterWorkflow();
 
