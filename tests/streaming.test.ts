@@ -1,6 +1,6 @@
-import { DBOS, StatusString } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOS } from '../src/';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+import { DBOSConfig } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
 import { DBOSClient } from '../src/client';
 
@@ -382,13 +382,9 @@ describe('dbos-streaming-tests', () => {
       await recoveryTestWorkflow();
     });
 
-    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(wfid, StatusString.PENDING, true);
-
     // Reset call count and run the same workflow ID again (should replay)
     callCount = 0;
-    await DBOS.withNextWorkflowID(wfid, async () => {
-      await recoveryTestWorkflow();
-    });
+    await (await reexecuteWorkflowById(wfid))?.getResult();
 
     // The counting step should not have been called again (replayed from recorded results)
     expect(callCount).toBe(0);
