@@ -382,7 +382,7 @@ async function insertWorkflowStatus(
   client: PoolClient,
   initStatus: WorkflowStatusInternal,
   schemaName: string,
-  isRecoveryRequest: boolean = false,
+  incrementAttempts: boolean = false,
 ): Promise<InsertWorkflowResult> {
   try {
     const { rows } = await client.query<InsertWorkflowResult>(
@@ -448,7 +448,7 @@ async function insertWorkflowStatus(
         initStatus.priority,
         initStatus.queuePartitionKey ?? null,
         initStatus.forkedFrom ?? null,
-        (isRecoveryRequest ?? false) ? 1 : 0,
+        (incrementAttempts ?? false) ? 1 : 0,
       ],
     );
     if (rows.length === 0) {
@@ -892,7 +892,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
-      const resRow = await insertWorkflowStatus(client, initStatus, this.schemaName, !!options?.isRecoveryRequest);
+      // Moving from enqueued to pending asks to increment recovery attempts... rather than in the recovery process
+      //  where it moves from pending back to enqueued.
+      const resRow = await insertWorkflowStatus(
+        client,
+        initStatus,
+        this.schemaName,
+        !!options?.isRecoveryRequest || !!options?.isEnqueueRequest,
+      );
       if (resRow.name !== initStatus.workflowName) {
         const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
