@@ -1027,7 +1027,7 @@ export class DBOSExecutor {
   async executeWorkflowId(
     workflowID: string,
     startNewWorkflow: boolean = false,
-    isRecovery: boolean = false,
+    isRecoveryOrQueueDispatch: boolean = false,
   ): Promise<WorkflowHandle<unknown>> {
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
     if (!wfStatus) {
@@ -1057,7 +1057,7 @@ export class DBOSExecutor {
             queueName: wfStatus.queueName,
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
-            isRecovery,
+            isRecovery: isRecoveryOrQueueDispatch,
           },
           ...inputs,
         );

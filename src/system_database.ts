@@ -909,6 +909,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // If there is an existing DB record and we aren't here to recover it,
       //  leave it be.  Roll back the change to max recovery attempts.
       if (!resRow.inserted && !isRecoveryRequest) {
+        // It is not clear if getting the handle should throw the error, or getting the result from the handle should error.
+        //  Current precedent is the former.
+        if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
+          throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, maxRetries ?? -1);
+        }
         return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false };
       }
 
