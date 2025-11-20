@@ -65,8 +65,11 @@ export interface SystemDatabase {
 
   initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    maxRetries?: number,
-    isRecoveryRequest?: boolean,
+    options?: {
+      isRecoveryRequest?: boolean;
+      isEnqueueRequest?: boolean;
+      maxRetries?: number;
+    },
   ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
@@ -878,15 +881,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
   @dbRetry()
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    maxRetries?: number,
-    isRecoveryRequest?: boolean,
+    options?: {
+      isRecoveryRequest?: boolean;
+      isEnqueueRequest?: boolean;
+      maxRetries?: number;
+    },
   ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }> {
     const client = await this.pool.connect();
     let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
-      const resRow = await insertWorkflowStatus(client, initStatus, this.schemaName, isRecoveryRequest);
+      const resRow = await insertWorkflowStatus(client, initStatus, this.schemaName, !!options?.isRecoveryRequest);
       if (resRow.name !== initStatus.workflowName) {
         const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
@@ -908,11 +914,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       // If there is an existing DB record and we aren't here to recover it,
       //  leave it be.  Roll back the change to max recovery attempts.
-      if (!resRow.inserted && !isRecoveryRequest) {
+      if (!resRow.inserted && !options?.isRecoveryRequest && !options?.isEnqueueRequest) {
         // It is not clear if getting the handle should throw the error, or getting the result from the handle should error.
         //  Current precedent is the former.
         if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
-          throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, maxRetries ?? -1);
+          throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries ?? -1);
         }
         return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false };
       }
@@ -924,7 +930,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       // Every time we init the status, we increment `recovery_attempts` by 1.
       // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `MAX_RECOVERY_ATTEMPTS_EXCEEDED`.
       const attempts = resRow.recovery_attempts;
-      if (maxRetries && attempts > maxRetries + 1) {
+      if (options?.maxRetries && attempts > options?.maxRetries + 1) {
         await updateWorkflowStatus(
           client,
           initStatus.workflowUUID,
@@ -935,7 +941,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             throwOnFailure: false,
           },
         );
-        throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, maxRetries);
+        throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options.maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
       return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: true };

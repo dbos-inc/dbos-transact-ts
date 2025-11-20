@@ -112,7 +112,7 @@ export function executeWorkflowById(workflowId: string) {
 export async function reexecuteWorkflowById(workflowId: string) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, true);
-  return await DBOSExecutor.globalInstance?.executeWorkflowId(workflowId, false, true);
+  return await DBOSExecutor.globalInstance?.executeWorkflowId(workflowId, false, true, false);
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {

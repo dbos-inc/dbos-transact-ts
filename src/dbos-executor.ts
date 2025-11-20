@@ -158,7 +158,8 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
-  readonly isRecoveryOrQueueDispatch?: boolean;
+  readonly isRecoveryDispatch?: boolean;
+  readonly isQueueDispatch?: boolean;
 }
 
 export const OperationType = {
@@ -491,11 +492,11 @@ export class DBOSExecutor {
       }
       let ires;
       try {
-        ires = await this.systemDatabase.initWorkflowStatus(
-          internalStatus,
-          maxRecoveryAttempts,
-          params.isRecoveryOrQueueDispatch,
-        );
+        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, {
+          maxRetries: maxRecoveryAttempts,
+          isEnqueueRequest: params.isQueueDispatch,
+          isRecoveryRequest: params.isRecoveryDispatch,
+        });
       } catch (e) {
         if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
           await this.systemDatabase.recordOperationResult(
@@ -987,10 +988,10 @@ export class DBOSExecutor {
             if (cleared) {
               handlerArray.push(this.retrieveWorkflow(pendingWorkflow.workflowUUID));
             } else {
-              handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, false, true));
+              handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, false, true, false));
             }
           } else {
-            handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, false, true));
+            handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, false, true, false));
           }
         } catch (e) {
           this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
@@ -1034,7 +1035,8 @@ export class DBOSExecutor {
   async executeWorkflowId(
     workflowID: string,
     startNewWorkflow: boolean = false,
-    isRecoveryOrQueueDispatch: boolean = false,
+    isRecoveryDispatch: boolean = false,
+    isQueueDispatch: boolean = false,
   ): Promise<WorkflowHandle<unknown>> {
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
     if (!wfStatus) {
@@ -1064,7 +1066,8 @@ export class DBOSExecutor {
             queueName: wfStatus.queueName,
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
-            isRecoveryOrQueueDispatch: isRecoveryOrQueueDispatch,
+            isRecoveryDispatch,
+            isQueueDispatch,
           },
           ...inputs,
         );
@@ -1094,7 +1097,8 @@ export class DBOSExecutor {
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName, // Probably null
             executeWorkflow: true,
-            isRecoveryOrQueueDispatch: isRecoveryOrQueueDispatch,
+            isRecoveryDispatch,
+            isQueueDispatch,
           },
           undefined,
           undefined,
@@ -1117,7 +1121,8 @@ export class DBOSExecutor {
             workflowUUID: workflowStartID,
             queueName: wfStatus.queueName,
             executeWorkflow: true,
-            isRecoveryOrQueueDispatch: isRecoveryOrQueueDispatch,
+            isRecoveryDispatch,
+            isQueueDispatch,
           },
           ...inputs,
         );
