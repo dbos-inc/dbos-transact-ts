@@ -109,9 +109,13 @@ export function executeWorkflowById(workflowId: string) {
   return DBOSExecutor.globalInstance!.executeWorkflowId(workflowId);
 }
 
-export async function reexecuteWorkflowById(workflowId: string) {
+export async function reexecuteWorkflowById(workflowId: string, resetRecoveryAttempts: boolean = true) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
-  await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(workflowId, StatusString.PENDING, true);
+  await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
+    workflowId,
+    StatusString.PENDING,
+    resetRecoveryAttempts,
+  );
   return await DBOSExecutor.globalInstance?.executeWorkflowId(workflowId, false, true, false);
 }
 

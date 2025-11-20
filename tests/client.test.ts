@@ -570,7 +570,7 @@ describe('DBOSClient', () => {
       expect(res3.rows).toHaveLength(1);
       expect(res3.rows[0].recovery_attempts).toBe('1');
 
-      await (await reexecuteWorkflowById(sendWFID))!.getResult();
+      await (await reexecuteWorkflowById(sendWFID, false))!.getResult();
       const res4 = await dbClient.query<{ recovery_attempts: string }>(
         'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [sendWFID],
