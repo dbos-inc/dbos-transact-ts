@@ -1,5 +1,11 @@
 import { WorkflowQueue, DBOS } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, recoverPendingWorkflows } from './helpers';
+import {
+  generateDBOSTestConfig,
+  setUpDBOSTestSysDb,
+  Event,
+  recoverPendingWorkflows,
+  setWfAndChildrenToPending,
+} from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
@@ -39,18 +45,12 @@ describe('recovery-tests', () => {
   class LocalRecovery {
     static cnt = 0;
 
-    static resolve1: () => void;
-    static promise1 = new Promise<void>((resolve) => {
-      LocalRecovery.resolve1 = resolve;
-    });
-
     static resolve2: () => void;
     static promise2 = new Promise<void>((resolve) => {
       LocalRecovery.resolve2 = resolve;
     });
 
     static startEvent = new Event();
-    static endEvent = new Event();
 
     @DBOS.workflow()
     static async testRecoveryWorkflow(input: number) {
@@ -63,8 +63,7 @@ describe('recovery-tests', () => {
         LocalRecovery.resolve2();
       }
 
-      await LocalRecovery.promise1;
-      return DBOS.authenticatedUser;
+      return Promise.resolve(DBOS.authenticatedUser);
     }
 
     static resolve3: () => void;
@@ -79,22 +78,18 @@ describe('recovery-tests', () => {
 
     static recoveryCount = 0;
     static readonly maxRecoveryAttempts = 5;
-    static deadLetterResolve: () => void;
-    static deadLetterPromise = new Promise<void>((resolve) => {
-      LocalRecovery.deadLetterResolve = resolve;
-    });
 
     @DBOS.workflow({ maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts })
     static async deadLetterWorkflow() {
       LocalRecovery.recoveryCount += 1;
-      await LocalRecovery.deadLetterPromise;
+      return Promise.resolve();
     }
 
     @DBOS.workflow({ maxRecoveryAttempts: LocalRecovery.maxRecoveryAttempts })
     static async fencedDeadLetterWorkflow() {
       LocalRecovery.startEvent.set();
       LocalRecovery.recoveryCount += 1;
-      await LocalRecovery.endEvent.wait();
+      return Promise.resolve();
     }
   }
 
@@ -102,13 +97,16 @@ describe('recovery-tests', () => {
     LocalRecovery.cnt = 0;
 
     const handle = await DBOS.startWorkflow(LocalRecovery).deadLetterWorkflow();
+    await handle.getResult();
 
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
-      await recoverPendingWorkflows();
+      await setWfAndChildrenToPending(handle.workflowID, false); // Simulate not finishing
+      await (await recoverPendingWorkflows())[0].getResult();
       expect(LocalRecovery.recoveryCount).toBe(i + 2);
     }
 
     // Send to DLQ and verify it enters the DLQ status.
+    await setWfAndChildrenToPending(handle.workflowID, false); // Simulate not finishing
     await recoverPendingWorkflows();
     let status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
@@ -125,9 +123,7 @@ describe('recovery-tests', () => {
     expect(status?.recoveryAttempts).toBe(0);
     expect(status?.status).toBe(StatusString.ENQUEUED);
 
-    // Complete the blocked workflow. Verify it succeeds.
-    LocalRecovery.deadLetterResolve();
-    await handle.getResult();
+    // Complete the resumed workflow. Verify it succeeds.
     await resumedHandle.getResult();
     status = await resumedHandle.getStatus();
     expect(status?.status).toBe(StatusString.SUCCESS);
@@ -142,6 +138,7 @@ describe('recovery-tests', () => {
     LocalRecovery.recoveryCount = 0;
 
     const handle = await DBOS.startWorkflow(LocalRecovery, { queueName: queue.name }).fencedDeadLetterWorkflow();
+    await handle.getResult();
 
     // Enqueue the workflow repeatedly, verify recovery attempts is not increased
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
@@ -160,24 +157,18 @@ describe('recovery-tests', () => {
     // Attempt to recover the workflow the maximum number of times
     for (let i = 0; i < LocalRecovery.maxRecoveryAttempts; i++) {
       LocalRecovery.startEvent.clear();
-      await recoverPendingWorkflows();
-      await LocalRecovery.startEvent.wait();
+      await setWfAndChildrenToPending(handle.workflowID, false);
+      await (await recoverPendingWorkflows())[0].getResult();
       expect(LocalRecovery.recoveryCount).toBe(i + 2);
     }
 
     // One more recovery attempt should move the workflow to the dead-letter queue.
+    await setWfAndChildrenToPending(handle.workflowID, false);
     await recoverPendingWorkflows();
     await sleepms(2000); // Can't wait() because the workflow will land in the DLQ
     status = await handle.getStatus();
     expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
     expect(status?.status).toBe(StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED);
-
-    LocalRecovery.endEvent.set();
-    await handle.getResult();
-
-    status = await handle.getStatus();
-    expect(status?.recoveryAttempts).toBe(LocalRecovery.maxRecoveryAttempts + 2);
-    expect(status?.status).toBe(StatusString.SUCCESS);
   }, 20000);
 
   test('local-recovery', async () => {
@@ -192,9 +183,10 @@ describe('recovery-tests', () => {
       async () => await DBOS.startWorkflow(LocalRecovery).testRecoveryWorkflow(5),
     );
 
+    await handle.getResult();
+    await setWfAndChildrenToPending(handle.workflowID);
     const recoverHandles = await recoverPendingWorkflows();
     await LocalRecovery.promise2; // Wait for the recovery to be done.
-    LocalRecovery.resolve1(); // Both can finish now.
 
     expect(recoverHandles.length).toBe(1);
     await expect(recoverHandles[0].getResult()).resolves.toBe('test_recovery_user');
