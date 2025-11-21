@@ -595,11 +595,7 @@ async function recordOperationResult(
         endTimeEpochMs,
       ],
     );
-    if (
-      checkConflict &&
-      (out?.rowCount ?? 0) > 0 &&
-      out?.rows?.[0]?.completed_at_epoch_ms?.toString() !== endTimeEpochMs.toString()
-    ) {
+    if (checkConflict && (out?.rowCount ?? 0) > 0 && Number(out?.rows?.[0]?.completed_at_epoch_ms) !== endTimeEpochMs) {
       DBOSExecutor.globalInstance?.logger.warn(
         `Step output for ${workflowID}(${functionID}):${functionName} already recorded`,
       );
