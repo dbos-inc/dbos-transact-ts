@@ -120,6 +120,7 @@ export interface SystemDatabase {
   ): Promise<string>;
   checkIfCanceled(workflowID: string): Promise<void>;
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
+  checkForRunningWorkflow(workflowID: string): boolean;
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
 
   // Queues
@@ -1718,6 +1719,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
         this.workflowCancellationMap.delete(workflowID);
       });
     this.runningWorkflowMap.set(workflowID, awaitWorkflowPromise);
+  }
+
+  checkForRunningWorkflow(workflowID: string): boolean {
+    return this.runningWorkflowMap.has(workflowID);
   }
 
   async awaitRunningWorkflows(): Promise<void> {

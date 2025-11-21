@@ -652,7 +652,12 @@ export class DBOSExecutor {
       return result;
     };
 
-    if (this.#debugMode || (shouldExecute && (params.queueName === undefined || params.executeWorkflow))) {
+    if (
+      this.#debugMode ||
+      (shouldExecute &&
+        (params.queueName === undefined || params.executeWorkflow) &&
+        !this.systemDatabase.checkForRunningWorkflow(workflowID))
+    ) {
       const workflowPromise: Promise<R> = runWorkflow();
 
       this.systemDatabase.registerRunningWorkflow(workflowID, workflowPromise);

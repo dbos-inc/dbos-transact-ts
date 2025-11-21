@@ -3,7 +3,7 @@ import { DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { DEBUG_TRIGGER_STEP_COMMIT, setDebugTrigger } from '../src/debugpoint';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 
 describe('run-workflow-once-tests', () => {
@@ -30,6 +30,9 @@ describe('run-workflow-once-tests', () => {
     static concExec = 0;
     static maxConc = 0;
 
+    static concWf = 0;
+    static maxWf = 0;
+
     @DBOS.step()
     static async testConcStep() {
       ++TryConcExec.concExec;
@@ -40,7 +43,12 @@ describe('run-workflow-once-tests', () => {
 
     @DBOS.workflow()
     static async testConcWorkflow() {
+      ++TryConcExec.concWf;
+      TryConcExec.maxWf = Math.max(TryConcExec.concWf, TryConcExec.maxWf);
+      await sleepms(500);
       await TryConcExec.testConcStep();
+      await sleepms(500);
+      --TryConcExec.concWf;
     }
   }
 
@@ -53,6 +61,14 @@ describe('run-workflow-once-tests', () => {
     await wfh1.getResult();
     await wfh2.getResult();
     expect(TryConcExec.maxConc).toBe(1);
+    expect(TryConcExec.maxWf).toBe(1);
+
+    const wfh1r = await reexecuteWorkflowById(workflowUUID);
+    const wfh2r = await reexecuteWorkflowById(workflowUUID);
+    await wfh1r!.getResult();
+    await wfh2r!.getResult();
+    expect(TryConcExec.maxConc).toBe(1);
+    expect(TryConcExec.maxWf).toBe(1);
   });
 
   class CatchPlainException1 {
