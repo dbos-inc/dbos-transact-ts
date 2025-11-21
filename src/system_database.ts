@@ -26,6 +26,7 @@ import { getClientConfig } from './utils';
 import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
+import { DEBUG_TRIGGER_STEP_COMMIT, debugTriggerPoint } from './debugpoint';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -65,8 +66,12 @@ export interface SystemDatabase {
 
   initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    maxRetries?: number,
-  ): Promise<{ status: string; deadlineEpochMS?: number }>;
+    options?: {
+      isRecoveryRequest?: boolean;
+      isEnqueueRequest?: boolean;
+      maxRetries?: number;
+    },
+  ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
@@ -115,6 +120,7 @@ export interface SystemDatabase {
   ): Promise<string>;
   checkIfCanceled(workflowID: string): Promise<void>;
   registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
+  checkForRunningWorkflow(workflowID: string): boolean;
   awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
 
   // Queues
@@ -370,12 +376,15 @@ interface InsertWorkflowResult {
   config_name: string;
   queue_name: string | null;
   workflow_deadline_epoch_ms: number | null;
+  executor_id: string | null;
+  inserted: boolean;
 }
 
 async function insertWorkflowStatus(
   client: PoolClient,
   initStatus: WorkflowStatusInternal,
   schemaName: string,
+  incrementAttempts: boolean = false,
 ): Promise<InsertWorkflowResult> {
   try {
     const { rows } = await client.query<InsertWorkflowResult>(
@@ -408,7 +417,7 @@ async function insertWorkflowStatus(
         DO UPDATE SET
           recovery_attempts = CASE
             WHEN workflow_status.status != '${StatusString.ENQUEUED}'
-            THEN workflow_status.recovery_attempts + 1
+            THEN workflow_status.recovery_attempts + $24
             ELSE workflow_status.recovery_attempts
           END,
           updated_at = EXCLUDED.updated_at,
@@ -417,7 +426,7 @@ async function insertWorkflowStatus(
             THEN EXCLUDED.executor_id
             ELSE workflow_status.executor_id
           END
-        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms`,
+        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, (xmax = 0) AS inserted`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -442,6 +451,7 @@ async function insertWorkflowStatus(
         initStatus.priority,
         initStatus.queuePartitionKey ?? null,
         initStatus.forkedFrom ?? null,
+        (incrementAttempts ?? false) ? 1 : 0,
       ],
     );
     if (rows.length === 0) {
@@ -487,6 +497,7 @@ async function updateWorkflowStatus(
       resetDeadline?: boolean;
       resetDeduplicationID?: boolean;
       resetStartedAtEpochMs?: boolean;
+      executorId?: string;
     };
     where?: {
       status?: (typeof StatusString)[keyof typeof StatusString];
@@ -530,6 +541,11 @@ async function updateWorkflowStatus(
     setClause += `, started_at_epoch_ms = NULL`;
   }
 
+  if (update.executorId !== undefined) {
+    const param = args.push(update.executorId ?? undefined);
+    setClause += `, executor_id=$${param}`;
+  }
+
   const where = options.where ?? {};
   if (where.status) {
     const param = args.push(where.status);
@@ -555,6 +571,7 @@ async function recordOperationResult(
   checkConflict: boolean,
   schemaName: string,
   startTimeEpochMs: number,
+  endTimeEpochMs: number,
   options: {
     childWorkflowID?: string | null;
     output?: string | null;
@@ -562,11 +579,11 @@ async function recordOperationResult(
   } = {},
 ): Promise<void> {
   try {
-    await client.query<operation_outputs>(
+    const out = await client.query<operation_outputs>(
       `INSERT INTO ${schemaName}.operation_outputs
        (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-       ${checkConflict ? '' : ' ON CONFLICT DO NOTHING'};`,
+       ON CONFLICT DO NOTHING RETURNING completed_at_epoch_ms;`,
       [
         workflowID,
         functionID,
@@ -575,9 +592,15 @@ async function recordOperationResult(
         functionName,
         options.childWorkflowID ?? null,
         startTimeEpochMs,
-        Date.now(),
+        endTimeEpochMs,
       ],
     );
+    if (checkConflict && (out?.rowCount ?? 0) > 0 && Number(out?.rows?.[0]?.completed_at_epoch_ms) !== endTimeEpochMs) {
+      DBOSExecutor.globalInstance?.logger.warn(
+        `Step output for ${workflowID}(${functionID}):${functionName} already recorded`,
+      );
+      throw new DBOSWorkflowConflictError(workflowID);
+    }
   } catch (error) {
     const err: DatabaseError = error as DatabaseError;
     if (err.code === '40001' || err.code === '23505') {
@@ -868,13 +891,25 @@ export class PostgresSystemDatabase implements SystemDatabase {
   @dbRetry()
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
-    maxRetries?: number,
-  ): Promise<{ status: string; deadlineEpochMS?: number }> {
+    options?: {
+      isRecoveryRequest?: boolean;
+      isEnqueueRequest?: boolean;
+      maxRetries?: number;
+    },
+  ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }> {
     const client = await this.pool.connect();
+    let shouldCommit = false;
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
-      const resRow = await insertWorkflowStatus(client, initStatus, this.schemaName);
+      // Moving from enqueued to pending asks to increment recovery attempts... rather than in the recovery process
+      //  where it moves from pending back to enqueued.
+      const resRow = await insertWorkflowStatus(
+        client,
+        initStatus,
+        this.schemaName,
+        !!options?.isRecoveryRequest || !!options?.isEnqueueRequest,
+      );
       if (resRow.name !== initStatus.workflowName) {
         const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
         throw new DBOSConflictingWorkflowError(initStatus.workflowUUID, msg);
@@ -891,11 +926,28 @@ export class PostgresSystemDatabase implements SystemDatabase {
         );
       }
 
+      const status = resRow.status;
+      const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
+
+      // If there is an existing DB record and we aren't here to recover it,
+      //  leave it be.  Roll back the change to max recovery attempts.
+      if (!resRow.inserted && !options?.isRecoveryRequest && !options?.isEnqueueRequest) {
+        // It is not clear if getting the handle should throw the error, or getting the result from the handle should error.
+        //  Current precedent is the former.
+        if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
+          throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries ?? -1);
+        }
+        return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false };
+      }
+
+      // Upsert above already set executor assignment and incremented the recovery attempt
+      shouldCommit = true;
+
       // recovery_attempt means "attempts" (we kept the name for backward compatibility). It's default value is 1.
       // Every time we init the status, we increment `recovery_attempts` by 1.
       // Thus, when this number becomes equal to `maxRetries + 1`, we should mark the workflow as `MAX_RECOVERY_ATTEMPTS_EXCEEDED`.
       const attempts = resRow.recovery_attempts;
-      if (maxRetries && attempts > maxRetries + 1) {
+      if (options?.maxRetries && attempts > options?.maxRetries + 1) {
         await updateWorkflowStatus(
           client,
           initStatus.workflowUUID,
@@ -906,15 +958,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
             throwOnFailure: false,
           },
         );
-        throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, maxRetries);
+        throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options.maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
-      const status = resRow.status;
-      const deadlineEpochMS = resRow.workflow_deadline_epoch_ms ?? undefined;
-      return { status, deadlineEpochMS };
+      return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: true };
     } finally {
       try {
-        await client.query('COMMIT');
+        if (shouldCommit) {
+          await client.query('COMMIT');
+        } else {
+          await client.query('ROLLBACK');
+        }
       } finally {
         client.release();
       }
@@ -1021,6 +1075,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     } = {},
   ): Promise<void> {
     const client = await this.pool.connect();
+    const now = Date.now();
     try {
       await recordOperationResult(
         client,
@@ -1030,10 +1085,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         checkConflict,
         this.schemaName,
         startTimeEpochMs,
+        now,
         options,
       );
     } finally {
       client.release();
+      await debugTriggerPoint(DEBUG_TRIGGER_STEP_COMMIT);
     }
   }
 
@@ -1125,9 +1182,19 @@ export class PostgresSystemDatabase implements SystemDatabase {
       return result.output;
     }
     const output = await func();
-    await recordOperationResult(client, workflowID, functionID, functionName, true, this.schemaName, startTime, {
-      output,
-    });
+    await recordOperationResult(
+      client,
+      workflowID,
+      functionID,
+      functionName,
+      true,
+      this.schemaName,
+      startTime,
+      Date.now(),
+      {
+        output,
+      },
+    );
     return output;
   }
 
@@ -1183,6 +1250,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           DBOS_FUNCNAME_SLEEP,
           false,
           this.schemaName,
+          Date.now(),
           Date.now(),
           {
             output: JSON.stringify(endTimeMs),
@@ -1353,6 +1421,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         true,
         this.schemaName,
         startTime,
+        Date.now(),
         {
           output: message,
         },
@@ -1649,6 +1718,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     this.runningWorkflowMap.set(workflowID, awaitWorkflowPromise);
   }
 
+  checkForRunningWorkflow(workflowID: string): boolean {
+    return this.runningWorkflowMap.has(workflowID);
+  }
+
   async awaitRunningWorkflows(): Promise<void> {
     if (this.runningWorkflowMap.size > 0) {
       this.logger.info('Waiting for pending workflows to finish.');
@@ -1740,7 +1813,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           }
         } catch (e) {
           const err = e as Error;
-          this.logger.error(`Exception from system database: ${err}`);
+          this.logger.error(`Exception from system database: ${err}`, err);
           throw err;
         }
 

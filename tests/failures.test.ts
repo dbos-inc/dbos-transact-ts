@@ -1,9 +1,9 @@
 import { DBOS, ConfiguredInstance } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSError, DBOSMaxStepRetriesError, DBOSNotRegisteredError, DBOSUnexpectedStepError } from '../src/error';
-import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { DBOSConfig } from '../src/dbos-executor';
 
 describe('failures-tests', () => {
   let config: DBOSConfig;
@@ -141,12 +141,8 @@ describe('failures-tests', () => {
     });
     NDWFS.flag = false;
 
-    await DBOSExecutor.globalInstance!.systemDatabase.setWorkflowStatus(wfidnds, StatusString.PENDING, true);
-
-    await DBOS.withNextWorkflowID(
-      wfidnds,
-      async () => await expect(NDWFS.nondetWorkflow()).rejects.toThrow(DBOSUnexpectedStepError),
-    );
+    const ndh = await reexecuteWorkflowById(wfidnds);
+    await expect(ndh!.getResult()).rejects.toThrow(DBOSUnexpectedStepError);
   });
 
   test('non-deterministic-workflow-tx', async () => {
@@ -157,12 +153,8 @@ describe('failures-tests', () => {
     });
     NDWFT.flag = false;
 
-    await DBOSExecutor.globalInstance!.systemDatabase.setWorkflowStatus(wfidndt, StatusString.PENDING, true);
-
-    await DBOS.withNextWorkflowID(
-      wfidndt,
-      async () => await expect(NDWFT.nondetWorkflow()).rejects.toThrow(DBOSUnexpectedStepError),
-    );
+    const ndh = await reexecuteWorkflowById(wfidndt);
+    await expect(ndh!.getResult()).rejects.toThrow(DBOSUnexpectedStepError);
   });
 
   test('not launched', async () => {

@@ -1,6 +1,5 @@
 import { DBOS, Debouncer, DBOSConfig, WorkflowQueue, StatusString, DBOSClient, DebouncerClient } from '../src';
-import { DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import assert from 'node:assert';
 
 describe('debouncer-tests', () => {
@@ -77,14 +76,9 @@ describe('debouncer-tests', () => {
     await originalHandle.getResult();
 
     // Rerun the workflow, verify it still works
-    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
-      originalHandle.workflowID,
-      StatusString.PENDING,
-      true,
-    );
-    const recoverHandle = await DBOS.startWorkflow(testWorkflow, { workflowID: originalHandle.workflowID })();
-    await recoverHandle.getResult();
-    const status = await recoverHandle.getStatus();
+    const recoverHandle = await reexecuteWorkflowById(originalHandle.workflowID);
+    await recoverHandle!.getResult();
+    const status = await recoverHandle!.getStatus();
     assert.equal(status?.status, StatusString.SUCCESS);
   }, 30000);
 

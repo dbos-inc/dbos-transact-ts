@@ -237,7 +237,7 @@ export class DBOS {
     const debugWorkflowId = process.env.DBOS_DEBUG_WORKFLOW_ID;
     if (debugWorkflowId) {
       DBOS.logger.info(`Debugging workflow "${debugWorkflowId}"`);
-      const handle = await executor.executeWorkflowUUID(debugWorkflowId);
+      const handle = await executor.executeWorkflowId(debugWorkflowId);
       await handle.getResult();
       DBOS.logger.info(`Workflow Debugging complete. Exiting process.`);
       await executor.destroy();
