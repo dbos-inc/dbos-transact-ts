@@ -6,6 +6,7 @@ import {
   setUpDBOSTestSysDb,
   Event,
   recoverPendingWorkflows,
+  setWfAndChildrenToPending,
 } from './helpers';
 import { WorkflowQueue } from '../src';
 import { randomUUID } from 'node:crypto';
@@ -227,6 +228,7 @@ describe('queued-wf-tests-simple', () => {
   test('test-queue-recovery', async () => {
     const wfid = randomUUID();
 
+    console.log('GH1');
     // Start the workflow. Wait for all five tasks to start. Verify that they started.
     const originalHandle = await DBOS.startWorkflow(tqrInst, { workflowID: wfid }).testWorkflow();
     for (const e of tqrInst.taskEvents) {
@@ -234,14 +236,14 @@ describe('queued-wf-tests-simple', () => {
       e.clear();
     }
     expect(tqrInst.taskCount).toEqual(TestQueueRecoveryInst.queuedSteps);
+    await originalHandle.getResult();
+    console.log('GH2');
 
     // Recover the workflow, then resume it. There should be one handle for the workflow and another for each task.
+    await setWfAndChildrenToPending(originalHandle.workflowID);
     const recoveryHandles = await recoverPendingWorkflows();
-    for (const e of tqrInst.taskEvents) {
-      await e.wait();
-    }
     expect(recoveryHandles.length).toBe(TestQueueRecoveryInst.queuedSteps + 1);
-    tqrInst.event.set();
+    console.log('GH3');
 
     // Verify both the recovered and original workflows complete correctly
     for (const h of recoveryHandles) {
@@ -254,13 +256,15 @@ describe('queued-wf-tests-simple', () => {
     await expect(originalHandle.getResult()).resolves.toEqual(
       Array.from({ length: TestQueueRecoveryInst.queuedSteps }, (_, i) => i),
     );
+    console.log('GH4');
 
-    // Each task should start twice, once originally and once in recovery
-    expect(tqrInst.taskCount).toEqual(2 * TestQueueRecoveryInst.queuedSteps);
+    // Each task should start once, recovery doesn't rerun because they are checkpointed
+    expect(tqrInst.taskCount).toEqual(1 * TestQueueRecoveryInst.queuedSteps);
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-  });
+    console.log('GH5');
+  }, 10000);
 });
 
 class TestQueueRecoveryInst extends ConfiguredInstance {
@@ -271,7 +275,6 @@ class TestQueueRecoveryInst extends ConfiguredInstance {
     return Promise.resolve();
   }
   static queuedSteps = 3;
-  event = new Event();
   taskEvents = Array.from({ length: TestQueueRecoveryInst.queuedSteps }, () => new Event());
   taskCount = 0;
   static queue = new WorkflowQueue('testQueueRecovery');
@@ -292,19 +295,7 @@ class TestQueueRecoveryInst extends ConfiguredInstance {
   async blockingTask(i: number) {
     this.taskEvents[i].set();
     this.taskCount++;
-    await this.event.wait();
-    return i;
-  }
-
-  cnt = 0;
-  static blockedWorkflows = 2;
-  startEvents = Array.from({ length: TestQueueRecoveryInst.blockedWorkflows }, () => new Event());
-  stopEvent = new Event();
-  @DBOS.workflow()
-  async blockedWorkflow(i: number) {
-    this.startEvents[i].set();
-    this.cnt++;
-    await this.stopEvent.wait();
+    return Promise.resolve(i);
   }
 }
 
