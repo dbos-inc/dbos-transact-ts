@@ -228,7 +228,6 @@ describe('queued-wf-tests-simple', () => {
   test('test-queue-recovery', async () => {
     const wfid = randomUUID();
 
-    console.log('GH1');
     // Start the workflow. Wait for all five tasks to start. Verify that they started.
     const originalHandle = await DBOS.startWorkflow(tqrInst, { workflowID: wfid }).testWorkflow();
     for (const e of tqrInst.taskEvents) {
@@ -237,13 +236,11 @@ describe('queued-wf-tests-simple', () => {
     }
     expect(tqrInst.taskCount).toEqual(TestQueueRecoveryInst.queuedSteps);
     await originalHandle.getResult();
-    console.log('GH2');
 
     // Recover the workflow, then resume it. There should be one handle for the workflow and another for each task.
     await setWfAndChildrenToPending(originalHandle.workflowID);
     const recoveryHandles = await recoverPendingWorkflows();
     expect(recoveryHandles.length).toBe(TestQueueRecoveryInst.queuedSteps + 1);
-    console.log('GH3');
 
     // Verify both the recovered and original workflows complete correctly
     for (const h of recoveryHandles) {
@@ -256,14 +253,12 @@ describe('queued-wf-tests-simple', () => {
     await expect(originalHandle.getResult()).resolves.toEqual(
       Array.from({ length: TestQueueRecoveryInst.queuedSteps }, (_, i) => i),
     );
-    console.log('GH4');
 
     // Each task should start once, recovery doesn't rerun because they are checkpointed
     expect(tqrInst.taskCount).toEqual(1 * TestQueueRecoveryInst.queuedSteps);
 
     // Verify all queue entries eventually get cleaned up
     expect(await queueEntriesAreCleanedUp()).toBe(true);
-    console.log('GH5');
   }, 10000);
 });
 
