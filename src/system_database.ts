@@ -425,7 +425,8 @@ async function insertWorkflowStatus(
             WHEN EXCLUDED.status != '${StatusString.ENQUEUED}'
             THEN EXCLUDED.executor_id
             ELSE workflow_status.executor_id
-          END        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, (xmax = 0) AS inserted`,
+          END
+        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, (xmax = 0) AS inserted`,
       [
         initStatus.workflowUUID,
         initStatus.status,
