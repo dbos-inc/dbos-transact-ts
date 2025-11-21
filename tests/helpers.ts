@@ -109,6 +109,17 @@ export function executeWorkflowById(workflowId: string) {
   return DBOSExecutor.globalInstance!.executeWorkflowId(workflowId);
 }
 
+export async function setWfAndChildrenToPending(workflowId: string, resetRecoveryAttempts: boolean = true) {
+  const wfl = await DBOS.listWorkflows({ workflow_id_prefix: workflowId });
+  for (const wf of wfl) {
+    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
+      wf.workflowID,
+      StatusString.PENDING,
+      resetRecoveryAttempts,
+    );
+  }
+}
+
 export async function reexecuteWorkflowById(workflowId: string, resetRecoveryAttempts: boolean = true) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
   await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
