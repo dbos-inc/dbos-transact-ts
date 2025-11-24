@@ -24,10 +24,10 @@ registerSerializationRecipe<Buffer, number[]>({
 });
 
 /*
- * A wrapper of readFileSync used for mocking in tests
+ * A wrapper of readFile used for mocking in tests
  **/
-export function readFileSync(path: string, encoding: BufferEncoding = 'utf8'): string {
-  return fs.readFileSync(path, { encoding });
+export async function readFile(path: string, encoding: BufferEncoding = 'utf8'): Promise<string> {
+  return await fs.promises.readFile(path, { encoding });
 }
 
 function loadDbosVersion(): string {

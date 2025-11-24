@@ -20,9 +20,9 @@ import { ensureSystemDatabase, grantDbosSchemaPermissions } from '../system_data
 import { exit } from 'node:process';
 import { runCommand } from './commands';
 import { startDockerPg, stopDockerPg } from './docker_pg_helper';
-import { readFileSync } from '../utils';
 import { dropPGDatabase, getDatabaseNameFromUrl } from '../database_utils';
 import { existsSync } from 'node:fs';
+import { globalParams } from '../utils';
 
 const program = new Command();
 
@@ -30,24 +30,14 @@ const program = new Command();
 /* LOCAL DEVELOPMENT  */
 ////////////////////////
 
-program.version(getDbosVersion());
-
-function getDbosVersion(): string {
-  try {
-    const contents = readFileSync('../../../package.json');
-    const pkg = JSON.parse(contents) as { version: string };
-    return pkg.version;
-  } catch {
-    return 'unknown';
-  }
-}
+program.version(globalParams.dbosVersion);
 
 program
   .command('start')
   .description('Start the server')
   .option('-l, --loglevel <string>', 'Specify log level')
   .action(async (options: { loglevel?: string }) => {
-    const config = readConfigFile();
+    const config = await readConfigFile();
     const dbosConfig = getDbosConfig(config, { logLevel: options.loglevel });
     const runtimeConfig = getRuntimeConfig(config);
 
@@ -85,7 +75,7 @@ program
   .command('migrate')
   .description('Perform a database migration')
   .action(async () => {
-    const configFile = readConfigFile();
+    const configFile = await readConfigFile();
     let config = getDbosConfig(configFile);
     const runtimeConfig = getRuntimeConfig(configFile);
     if (process.env.DBOS__CLOUD === 'true') {
@@ -105,7 +95,7 @@ program
     const logger = new GlobalLogger();
 
     // Determine system database URL from argument or config
-    const databaseURLs = getDatabaseURLs(systemDatabaseUrl);
+    const databaseURLs = await getDatabaseURLs(systemDatabaseUrl);
     systemDatabaseUrl = databaseURLs.systemDatabaseURL;
 
     // Get schema name from CLI option first, then config, then default
@@ -113,7 +103,7 @@ program
     if (!options.schema) {
       try {
         if (existsSync(dbosConfigFilePath)) {
-          const configFile = readConfigFile(dbosConfigFilePath);
+          const configFile = await readConfigFile(dbosConfigFilePath);
           schemaName = configFile.system_database_schema_name ?? 'dbos';
         }
       } catch (e) {
@@ -173,7 +163,7 @@ program
         rl.close();
       }
     }
-    const urls = getDatabaseURLs(options.sysDbUrl);
+    const urls = await getDatabaseURLs(options.sysDbUrl);
 
     const res = await dropPGDatabase({
       urlToDrop: urls.systemDatabaseURL,
@@ -246,7 +236,7 @@ workflowCommands
         status: options.status as GetWorkflowsInput['status'],
         applicationVersion: options.applicationVersion,
       };
-      const urls = getDatabaseURLs(options.sysDbUrl);
+      const urls = await getDatabaseURLs(options.sysDbUrl);
       const client = await DBOSClient.create({
         systemDatabaseUrl: urls.systemDatabaseURL,
       });
@@ -265,7 +255,7 @@ workflowCommands
   .argument('<workflowID>', 'Target workflow ID')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
-    const urls = getDatabaseURLs(options.sysDbUrl);
+    const urls = await getDatabaseURLs(options.sysDbUrl);
     const client = await DBOSClient.create({
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
@@ -283,7 +273,7 @@ workflowCommands
   .argument('<workflowID>', 'Target workflow ID')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
-    const urls = getDatabaseURLs(options.sysDbUrl);
+    const urls = await getDatabaseURLs(options.sysDbUrl);
     const client = await DBOSClient.create({
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
@@ -301,7 +291,7 @@ workflowCommands
   .argument('<workflowID>', 'Target workflow ID')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
-    const urls = getDatabaseURLs(options.sysDbUrl);
+    const urls = await getDatabaseURLs(options.sysDbUrl);
     const client = await DBOSClient.create({
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
@@ -318,7 +308,7 @@ workflowCommands
   .argument('<workflowID>', 'Target workflow ID')
   .option('-s, --sys-db-url <string>', 'Your DBOS system database URL')
   .action(async (workflowID: string, options: { sysDbUrl?: string }) => {
-    const urls = getDatabaseURLs(options.sysDbUrl);
+    const urls = await getDatabaseURLs(options.sysDbUrl);
     const client = await DBOSClient.create({
       systemDatabaseUrl: urls.systemDatabaseURL,
     });
@@ -342,7 +332,7 @@ workflowCommands
       workflowID: string,
       options: { step: number; forkedWorkflowId?: string; applicationVersion?: string; sysDbUrl?: string },
     ) => {
-      const urls = getDatabaseURLs(options.sysDbUrl);
+      const urls = await getDatabaseURLs(options.sysDbUrl);
       const client = await DBOSClient.create({
         systemDatabaseUrl: urls.systemDatabaseURL,
       });
@@ -395,7 +385,7 @@ queueCommands
         workflowName: options.name,
         queueName: options.queue,
       };
-      const urls = getDatabaseURLs(options.sysDbUrl);
+      const urls = await getDatabaseURLs(options.sysDbUrl);
       const client = await DBOSClient.create({
         systemDatabaseUrl: urls.systemDatabaseURL,
       });
@@ -420,9 +410,9 @@ if (!process.argv.slice(2).length) {
   program.outputHelp();
 }
 
-function getDatabaseURLs(systemDatabaseURL: string | undefined): {
+async function getDatabaseURLs(systemDatabaseURL: string | undefined): Promise<{
   systemDatabaseURL: string;
-} {
+}> {
   if (process.env.DBOS__CLOUD === 'true') {
     return {
       systemDatabaseURL: process.env.DBOS_SYSTEM_DATABASE_URL!,
@@ -432,7 +422,7 @@ function getDatabaseURLs(systemDatabaseURL: string | undefined): {
     return { systemDatabaseURL: systemDatabaseURL };
   }
   if (existsSync(dbosConfigFilePath)) {
-    const config = readConfigFile();
+    const config = await readConfigFile();
     return {
       systemDatabaseURL: getSystemDatabaseUrl(config),
     };

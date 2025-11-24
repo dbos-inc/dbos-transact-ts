@@ -21,51 +21,51 @@ describe('dbos-config', () => {
   });
 
   describe('readConfigFile', () => {
-    test('reads package name if not specified in config file', () => {
+    test('reads package name if not specified in config file', async () => {
       const mockConfigFile = `system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable'`;
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockConfigFile);
+      jest.spyOn(utils, 'readFile').mockResolvedValueOnce(mockConfigFile);
       const mockPackageJson = `{ "name": "test-app-from-package-json" }`;
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(mockPackageJson);
+      jest.spyOn(utils, 'readFile').mockResolvedValueOnce(mockPackageJson);
 
-      const cfg: ConfigFile = readConfigFile();
+      const cfg: ConfigFile = await readConfigFile();
       expect(cfg).toEqual({
         name: 'test-app-from-package-json',
         system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable',
       });
     });
 
-    test('handles env substitution', () => {
+    test('handles env substitution', async () => {
       const database_url = `test-value-${Date.now()}`;
       process.env.MY_DATABASE_URL = database_url;
 
       const mockConfigFile = `
         name: 'test-app'
         system_database_url: \${MY_DATABASE_URL}`;
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+      jest.spyOn(utils, 'readFile').mockResolvedValue(mockConfigFile);
 
-      const cfg: ConfigFile = readConfigFile();
+      const cfg: ConfigFile = await readConfigFile();
       expect(cfg).toEqual({
         name: 'test-app',
         system_database_url: database_url,
       });
     });
 
-    test('handles missing env substitution', () => {
+    test('handles missing env substitution', async () => {
       process.env = {};
 
       const mockConfigFile = `
         name: 'test-app'
         system_database_url: \${MY_DATABASE_URL}`;
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+      jest.spyOn(utils, 'readFile').mockResolvedValue(mockConfigFile);
 
-      const cfg: ConfigFile = readConfigFile();
+      const cfg: ConfigFile = await readConfigFile();
       expect(cfg).toEqual({
         name: 'test-app',
         system_database_url: '',
       });
     });
 
-    test('handles single string endpoints', () => {
+    test('handles single string endpoints', async () => {
       const mockConfigFile = `
         name: 'test-app'
         telemetry:
@@ -73,9 +73,9 @@ describe('dbos-config', () => {
                 tracesEndpoint: http://otel-collector:4317/from-file
                 logsEndpoint: http://otel-collector:4317/logs
         `;
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+      jest.spyOn(utils, 'readFile').mockResolvedValue(mockConfigFile);
 
-      const cfg: ConfigFile = readConfigFile();
+      const cfg: ConfigFile = await readConfigFile();
       expect(cfg).toEqual({
         name: 'test-app',
         telemetry: {
@@ -87,7 +87,7 @@ describe('dbos-config', () => {
       });
     });
 
-    test('handles string array endpoints', () => {
+    test('handles string array endpoints', async () => {
       const mockConfigFile = `
         name: 'test-app'
         telemetry:
@@ -99,9 +99,9 @@ describe('dbos-config', () => {
                   - http://otel-collector:4317/logs
                   - http://otel-collector:4317/logs2
         `;
-      jest.spyOn(utils, 'readFileSync').mockReturnValue(mockConfigFile);
+      jest.spyOn(utils, 'readFile').mockResolvedValue(mockConfigFile);
 
-      const cfg: ConfigFile = readConfigFile();
+      const cfg: ConfigFile = await readConfigFile();
       expect(cfg).toEqual({
         name: 'test-app',
         telemetry: {
@@ -117,69 +117,71 @@ describe('dbos-config', () => {
       readonly code = 'ENOENT';
     }
 
-    test('config and package files not found', () => {
-      jest.spyOn(utils, 'readFileSync').mockImplementation(() => {
+    test('config and package files not found', async () => {
+      jest.spyOn(utils, 'readFile').mockImplementation(() => {
         throw new FakeNotFoundError('not found');
       });
-      const configFile = readConfigFile();
+      const configFile = await readConfigFile();
       expect(configFile).toEqual({});
     });
 
-    test('config file not found', () => {
-      jest.spyOn(utils, 'readFileSync').mockImplementationOnce(() => {
+    test('config file not found', async () => {
+      jest.spyOn(utils, 'readFile').mockImplementationOnce(() => {
         throw new FakeNotFoundError('not found');
       });
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(`{ "name": "test-app-from-package-json" }`);
-      const configFile = readConfigFile();
+      jest.spyOn(utils, 'readFile').mockResolvedValueOnce(`{ "name": "test-app-from-package-json" }`);
+      const configFile = await readConfigFile();
       expect(configFile).toEqual({ name: 'test-app-from-package-json' });
     });
 
-    test('package file not found', () => {
+    test('package file not found', async () => {
       jest
-        .spyOn(utils, 'readFileSync')
-        .mockReturnValueOnce(`system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable'`);
-      jest.spyOn(utils, 'readFileSync').mockImplementationOnce(() => {
+        .spyOn(utils, 'readFile')
+        .mockResolvedValueOnce(
+          `system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable'`,
+        );
+      jest.spyOn(utils, 'readFile').mockImplementationOnce(() => {
         throw new FakeNotFoundError('not found');
       });
-      const configFile = readConfigFile();
+      const configFile = await readConfigFile();
       expect(configFile).toEqual({
         system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable',
       });
     });
 
-    test('does not read package if config file has name', () => {
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(`name: 'test-app'`);
-      jest.spyOn(utils, 'readFileSync').mockImplementationOnce(() => {
+    test('does not read package if config file has name', async () => {
+      jest.spyOn(utils, 'readFile').mockResolvedValueOnce(`name: 'test-app'`);
+      jest.spyOn(utils, 'readFile').mockImplementationOnce(() => {
         throw new Error('Should not be called');
       });
-      const configFile = readConfigFile();
+      const configFile = await readConfigFile();
       expect(configFile).toEqual({ name: 'test-app' });
     });
 
-    test('does not read package if config file has name', () => {
-      jest.spyOn(utils, 'readFileSync').mockReturnValueOnce(`name: 'test-app'`);
-      jest.spyOn(utils, 'readFileSync').mockImplementationOnce(() => {
+    test('does not read package if config file has name', async () => {
+      jest.spyOn(utils, 'readFile').mockResolvedValueOnce(`name: 'test-app'`);
+      jest.spyOn(utils, 'readFile').mockImplementationOnce(() => {
         throw new Error('Should not be called');
       });
-      const configFile = readConfigFile();
+      const configFile = await readConfigFile();
       expect(configFile).toEqual({ name: 'test-app' });
     });
 
-    test('throws on non-ENOENT config read error', () => {
-      jest.spyOn(utils, 'readFileSync').mockImplementation(() => {
+    test('throws on non-ENOENT config read error', async () => {
+      jest.spyOn(utils, 'readFile').mockImplementation(() => {
         throw new Error('Some other error');
       });
-      expect(() => readConfigFile()).toThrow(new Error('Some other error'));
+      await expect(readConfigFile()).rejects.toThrow(new Error('Some other error'));
     });
 
-    test('throws on non-ENOENT package read error', () => {
-      jest.spyOn(utils, 'readFileSync').mockImplementationOnce(() => {
+    test('throws on non-ENOENT package read error', async () => {
+      jest.spyOn(utils, 'readFile').mockImplementationOnce(() => {
         throw new FakeNotFoundError('not found');
       });
-      jest.spyOn(utils, 'readFileSync').mockImplementationOnce(() => {
+      jest.spyOn(utils, 'readFile').mockImplementationOnce(() => {
         throw new Error('Some other error');
       });
-      expect(() => readConfigFile()).toThrow(new Error('Some other error'));
+      await expect(readConfigFile()).rejects.toThrow(new Error('Some other error'));
     });
   });
 
