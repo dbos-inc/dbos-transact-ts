@@ -492,7 +492,7 @@ export class DBOSExecutor {
       }
       let ires;
       try {
-        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, {
+        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
           maxRetries: maxRecoveryAttempts,
           isDequeuedRequest: params.isQueueDispatch,
           isRecoveryRequest: params.isRecoveryDispatch,

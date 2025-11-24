@@ -26,7 +26,7 @@ import { getClientConfig } from './utils';
 import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from './database_utils';
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
-import { DEBUG_TRIGGER_STEP_COMMIT, debugTriggerPoint } from './debugpoint';
+import { DEBUG_TRIGGER_STEP_COMMIT, DEBUG_TRIGGER_INITWF_COMMIT, debugTriggerPoint } from './debugpoint';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -66,6 +66,7 @@ export interface SystemDatabase {
 
   initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
+    ownerXid: string | null,
     options?: {
       isRecoveryRequest?: boolean;
       isDequeuedRequest?: boolean;
@@ -377,13 +378,14 @@ interface InsertWorkflowResult {
   queue_name: string | null;
   workflow_deadline_epoch_ms: number | null;
   executor_id: string | null;
-  inserted: boolean;
+  owner_xid: string | null;
 }
 
 async function insertWorkflowStatus(
   client: PoolClient,
   initStatus: WorkflowStatusInternal,
   schemaName: string,
+  ownerXid: string | null,
   incrementAttempts: boolean = false,
 ): Promise<InsertWorkflowResult> {
   try {
@@ -411,8 +413,9 @@ async function insertWorkflowStatus(
         deduplication_id,
         priority,
         queue_partition_key,
-        forked_from
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)
+        forked_from,
+        owner_xid
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $25)
       ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE
@@ -426,7 +429,7 @@ async function insertWorkflowStatus(
             THEN EXCLUDED.executor_id
             ELSE workflow_status.executor_id
           END
-        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, (xmax = 0) AS inserted`,
+        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -452,6 +455,7 @@ async function insertWorkflowStatus(
         initStatus.queuePartitionKey ?? null,
         initStatus.forkedFrom ?? null,
         (incrementAttempts ?? false) ? 1 : 0,
+        ownerXid,
       ],
     );
     if (rows.length === 0) {
@@ -891,6 +895,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   @dbRetry()
   async initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
+    ownerXid: string | null,
     options?: {
       isRecoveryRequest?: boolean;
       isDequeuedRequest?: boolean;
@@ -908,6 +913,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         client,
         initStatus,
         this.schemaName,
+        ownerXid,
         !!options?.isRecoveryRequest || !!options?.isDequeuedRequest,
       );
       if (resRow.name !== initStatus.workflowName) {
@@ -931,7 +937,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       // If there is an existing DB record and we aren't here to recover it,
       //  leave it be.  Roll back the change to max recovery attempts.
-      if (!resRow.inserted && !options?.isRecoveryRequest && !options?.isDequeuedRequest) {
+      if (ownerXid !== resRow.owner_xid && !options?.isRecoveryRequest && !options?.isDequeuedRequest) {
         // It is not clear if getting the handle should throw the error, or getting the result from the handle should error.
         //  Current precedent is the former.
         if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
@@ -966,6 +972,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       try {
         if (shouldCommit) {
           await client.query('COMMIT');
+          await debugTriggerPoint(DEBUG_TRIGGER_INITWF_COMMIT);
         } else {
           await client.query('ROLLBACK');
         }
@@ -1145,6 +1152,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           forkedFrom: workflowID,
         },
         this.schemaName,
+        null,
       );
 
       if (startStep > 0) {

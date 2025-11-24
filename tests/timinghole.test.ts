@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/require-await */
 import { DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
-import { DEBUG_TRIGGER_STEP_COMMIT, setDebugTrigger } from '../src/debugpoint';
+import { DEBUG_TRIGGER_STEP_COMMIT, DEBUG_TRIGGER_INITWF_COMMIT, setDebugTrigger } from '../src/debugpoint';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
@@ -276,6 +276,14 @@ describe('run-workflow-once-tests', () => {
     expect(await TryDbGlitch.testWorkflow()).toBe('Yay!');
     let forceRetries = 1;
     setDebugTrigger(DEBUG_TRIGGER_STEP_COMMIT, {
+      asyncCallback: async () => {
+        if (forceRetries-- > 0) throw new Error('ECONNRESET');
+      },
+    });
+    expect(await TryDbGlitch.testWorkflow()).toBe('Yay!');
+
+    forceRetries = 1;
+    setDebugTrigger(DEBUG_TRIGGER_INITWF_COMMIT, {
       asyncCallback: async () => {
         if (forceRetries-- > 0) throw new Error('ECONNRESET');
       },
