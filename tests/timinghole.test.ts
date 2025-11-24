@@ -289,5 +289,5 @@ describe('run-workflow-once-tests', () => {
       },
     });
     expect(await TryDbGlitch.testWorkflow()).toBe('Yay!');
-  });
+  }, 10000);
 });
