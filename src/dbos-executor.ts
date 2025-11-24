@@ -993,10 +993,12 @@ export class DBOSExecutor {
             if (cleared) {
               handlerArray.push(this.retrieveWorkflow(pendingWorkflow.workflowUUID));
             } else {
-              handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, false, true, false));
+              handlerArray.push(
+                await this.executeWorkflowId(pendingWorkflow.workflowUUID, { isRecoveryDispatch: true }),
+              );
             }
           } else {
-            handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, false, true, false));
+            handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, { isRecoveryDispatch: true }));
           }
         } catch (e) {
           this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
@@ -1039,9 +1041,11 @@ export class DBOSExecutor {
 
   async executeWorkflowId(
     workflowID: string,
-    startNewWorkflow: boolean = false,
-    isRecoveryDispatch: boolean = false,
-    isQueueDispatch: boolean = false,
+    options?: {
+      startNewWorkflow?: boolean;
+      isRecoveryDispatch?: boolean;
+      isQueueDispatch?: boolean;
+    },
   ): Promise<WorkflowHandle<unknown>> {
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
     if (!wfStatus) {
@@ -1059,7 +1063,7 @@ export class DBOSExecutor {
     const { methReg, configuredInst } = this.#getFunctionInfoFromWFStatus(wfStatus);
 
     // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
-    const workflowStartID = startNewWorkflow ? undefined : workflowID;
+    const workflowStartID = !!options?.startNewWorkflow ? undefined : workflowID;
 
     if (methReg?.workflowConfig) {
       return await runWithTopContext(recoverCtx, async () => {
@@ -1071,8 +1075,8 @@ export class DBOSExecutor {
             queueName: wfStatus.queueName,
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
-            isRecoveryDispatch,
-            isQueueDispatch,
+            isRecoveryDispatch: !!options?.isRecoveryDispatch,
+            isQueueDispatch: !!options?.isQueueDispatch,
           },
           ...inputs,
         );
@@ -1102,8 +1106,8 @@ export class DBOSExecutor {
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName, // Probably null
             executeWorkflow: true,
-            isRecoveryDispatch,
-            isQueueDispatch,
+            isRecoveryDispatch: !!options?.isRecoveryDispatch,
+            isQueueDispatch: !!options?.isQueueDispatch,
           },
           undefined,
           undefined,
@@ -1126,8 +1130,8 @@ export class DBOSExecutor {
             workflowUUID: workflowStartID,
             queueName: wfStatus.queueName,
             executeWorkflow: true,
-            isRecoveryDispatch,
-            isQueueDispatch,
+            isRecoveryDispatch: !!options?.isRecoveryDispatch,
+            isQueueDispatch: !!options?.isQueueDispatch,
           },
           ...inputs,
         );

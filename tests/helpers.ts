@@ -127,7 +127,7 @@ export async function reexecuteWorkflowById(workflowId: string, resetRecoveryAtt
     StatusString.PENDING,
     resetRecoveryAttempts,
   );
-  return await DBOSExecutor.globalInstance?.executeWorkflowId(workflowId, false, true, false);
+  return await DBOSExecutor.globalInstance?.executeWorkflowId(workflowId, { isRecoveryDispatch: true });
 }
 
 export async function dropDatabase(connectionString: string, database?: string) {

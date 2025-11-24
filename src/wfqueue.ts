@@ -171,7 +171,7 @@ class WFQueueRunner {
 
         for (const wfid of wfids) {
           try {
-            const _wfh = await exec.executeWorkflowId(wfid, false, false, true);
+            const _wfh = await exec.executeWorkflowId(wfid, { isQueueDispatch: true });
           } catch (e) {
             exec.logger.warn(`Could not execute workflow with id ${wfid}: ${(e as Error).message}`);
           }
