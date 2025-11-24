@@ -1,4 +1,4 @@
-import { readFileSync } from './utils';
+import { readFile } from './utils';
 import { DBOSConfig, DBOSRuntimeConfig, DBOSConfigInternal } from './dbos-executor';
 import YAML from 'yaml';
 import { writeFileSync } from 'fs';
@@ -43,24 +43,24 @@ export function substituteEnvVars(content: string): string {
   });
 }
 
-export function readConfigFile(dirPath?: string): ConfigFile {
+export async function readConfigFile(dirPath?: string): Promise<ConfigFile> {
   dirPath ??= process.cwd();
   const dbosConfigPath = path.join(dirPath, dbosConfigFilePath);
-  const configContent = readFile(dbosConfigPath);
+  const configContent = await readFileHelper(dbosConfigPath);
 
   const config = configContent ? (YAML.parse(substituteEnvVars(configContent)) as ConfigFile) : {};
   if (!config.name) {
     const packageJsonPath = path.join(dirPath, 'package.json');
-    const packageContent = readFile(packageJsonPath);
+    const packageContent = await readFileHelper(packageJsonPath);
     const $package = packageContent ? (JSON.parse(packageContent) as { name?: string }) : {};
     config.name = $package.name;
   }
 
   return config;
 
-  function readFile(filePath: string): string | undefined {
+  async function readFileHelper(filePath: string): Promise<string | undefined> {
     try {
-      return readFileSync(filePath);
+      return await readFile(filePath);
     } catch (error) {
       if (error && typeof error === 'object' && 'code' in error && error.code === 'ENOENT') {
         return undefined; // File does not exist
