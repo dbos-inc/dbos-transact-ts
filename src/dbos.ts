@@ -191,7 +191,7 @@ export class DBOS {
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
     const debugMode = options?.debugMode ?? process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
-    const configFile = readConfigFile();
+    const configFile = await readConfigFile();
 
     let internalConfig = DBOS.#dbosConfig
       ? translateDbosConfig(DBOS.#dbosConfig, debugMode)
