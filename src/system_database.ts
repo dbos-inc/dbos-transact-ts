@@ -68,7 +68,7 @@ export interface SystemDatabase {
     initStatus: WorkflowStatusInternal,
     options?: {
       isRecoveryRequest?: boolean;
-      isEnqueueRequest?: boolean;
+      isDequeuedRequest?: boolean;
       maxRetries?: number;
     },
   ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }>;
@@ -893,7 +893,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     initStatus: WorkflowStatusInternal,
     options?: {
       isRecoveryRequest?: boolean;
-      isEnqueueRequest?: boolean;
+      isDequeuedRequest?: boolean;
       maxRetries?: number;
     },
   ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }> {
@@ -908,7 +908,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         client,
         initStatus,
         this.schemaName,
-        !!options?.isRecoveryRequest || !!options?.isEnqueueRequest,
+        !!options?.isRecoveryRequest || !!options?.isDequeuedRequest,
       );
       if (resRow.name !== initStatus.workflowName) {
         const msg = `Workflow already exists with a different function name: ${resRow.name}, but the provided function name is: ${initStatus.workflowName}`;
@@ -931,7 +931,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       // If there is an existing DB record and we aren't here to recover it,
       //  leave it be.  Roll back the change to max recovery attempts.
-      if (!resRow.inserted && !options?.isRecoveryRequest && !options?.isEnqueueRequest) {
+      if (!resRow.inserted && !options?.isRecoveryRequest && !options?.isDequeuedRequest) {
         // It is not clear if getting the handle should throw the error, or getting the result from the handle should error.
         //  Current precedent is the former.
         if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {

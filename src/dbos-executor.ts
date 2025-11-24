@@ -494,7 +494,7 @@ export class DBOSExecutor {
       try {
         ires = await this.systemDatabase.initWorkflowStatus(internalStatus, {
           maxRetries: maxRecoveryAttempts,
-          isEnqueueRequest: params.isQueueDispatch,
+          isDequeuedRequest: params.isQueueDispatch,
           isRecoveryRequest: params.isRecoveryDispatch,
         });
       } catch (e) {
