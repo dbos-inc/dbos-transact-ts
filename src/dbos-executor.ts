@@ -47,6 +47,7 @@ import {
   getFunctionRegistration,
   getAllRegisteredClassNames,
   getClassRegistrationByName,
+  getRegisteredFunctionFullName,
 } from './decorators';
 import type { step_info } from '../schemas/system_db_schema';
 import {
@@ -157,6 +158,8 @@ export interface InternalWorkflowParams extends WorkflowParams {
   readonly tempWfType?: string;
   readonly tempWfName?: string;
   readonly tempWfClass?: string;
+  readonly isRecoveryDispatch?: boolean;
+  readonly isQueueDispatch?: boolean;
 }
 
 export const OperationType = {
@@ -399,19 +402,24 @@ export class DBOSExecutor {
 
     let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
+    let wfname = getRegisteredFunctionFullName(wf).name; // TODO: Should be what was registered in wfInfo...
+    let wfclassname = getRegisteredFunctionClassName(wf);
 
-    if (wf.name !== DBOSExecutor.#tempWorkflowName) {
+    const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname || !!params.tempWfType;
+
+    if (!isTempWorkflow) {
       if (!wInfo || !wInfo.workflowConfig) {
         throw new DBOSNotRegisteredError(wf.name);
       }
       wConfig = wInfo.workflowConfig;
+    } else if (params.tempWfName) {
+      wfname = params.tempWfName;
+      wfclassname = params.tempWfClass ?? '';
     }
 
     const maxRecoveryAttempts = wConfig.maxRecoveryAttempts
       ? wConfig.maxRecoveryAttempts
       : DEFAULT_MAX_RECOVERY_ATTEMPTS;
-
-    const wfname = wf.name; // TODO: Should be what was registered in wfInfo...
 
     const span = this.tracer.startSpan(wfname, {
       status: StatusString.PENDING,
@@ -423,15 +431,14 @@ export class DBOSExecutor {
       assumedRole: pctx?.assumedRole ?? '',
     });
 
-    const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname;
     const funcArgs = serializeFunctionInputOutput(args, [wfname, '<arguments>']);
     args = funcArgs.deserialized;
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
       status: params.queueName !== undefined ? StatusString.ENQUEUED : StatusString.PENDING,
-      workflowName: getRegisteredFunctionName(wf),
-      workflowClassName: isTempWorkflow ? '' : getRegisteredFunctionClassName(wf),
+      workflowName: wfname,
+      workflowClassName: wfclassname,
       workflowConfigName: params.configuredInstance?.name || '',
       queueName: params.queueName,
       output: null,
@@ -454,11 +461,10 @@ export class DBOSExecutor {
 
     if (isTempWorkflow) {
       internalStatus.workflowName = `${DBOSExecutor.#tempWorkflowName}-${params.tempWfType}-${params.tempWfName}`;
-      internalStatus.workflowClassName = params.tempWfClass ?? '';
     }
 
-    let status: string | undefined = undefined;
     let $deadlineEpochMS: number | undefined = undefined;
+    let shouldExecute: boolean | undefined = undefined;
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
@@ -474,7 +480,6 @@ export class DBOSExecutor {
           `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${funcArgs.stringified}\n Original: ${wfStatus.input}`,
         );
       }
-      status = wfStatus.status;
     } else {
       if (callerFunctionID !== undefined && callerID !== undefined) {
         const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
@@ -487,7 +492,11 @@ export class DBOSExecutor {
       }
       let ires;
       try {
-        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, maxRecoveryAttempts);
+        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
+          maxRetries: maxRecoveryAttempts,
+          isDequeuedRequest: params.isQueueDispatch,
+          isRecoveryRequest: params.isRecoveryDispatch,
+        });
       } catch (e) {
         if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
           await this.systemDatabase.recordOperationResult(
@@ -515,8 +524,8 @@ export class DBOSExecutor {
         );
       }
 
-      status = ires.status;
       $deadlineEpochMS = ires.deadlineEpochMS;
+      shouldExecute = ires.shouldExecuteOnThisExecutor;
       await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
     }
 
@@ -645,7 +654,9 @@ export class DBOSExecutor {
 
     if (
       this.#debugMode ||
-      (status !== 'SUCCESS' && status !== 'ERROR' && (params.queueName === undefined || params.executeWorkflow))
+      (shouldExecute &&
+        (params.queueName === undefined || params.executeWorkflow) &&
+        !this.systemDatabase.checkForRunningWorkflow(workflowID))
     ) {
       const workflowPromise: Promise<R> = runWorkflow();
 
@@ -982,10 +993,12 @@ export class DBOSExecutor {
             if (cleared) {
               handlerArray.push(this.retrieveWorkflow(pendingWorkflow.workflowUUID));
             } else {
-              handlerArray.push(await this.executeWorkflowUUID(pendingWorkflow.workflowUUID));
+              handlerArray.push(
+                await this.executeWorkflowId(pendingWorkflow.workflowUUID, { isRecoveryDispatch: true }),
+              );
             }
           } else {
-            handlerArray.push(await this.executeWorkflowUUID(pendingWorkflow.workflowUUID));
+            handlerArray.push(await this.executeWorkflowId(pendingWorkflow.workflowUUID, { isRecoveryDispatch: true }));
           }
         } catch (e) {
           this.logger.warn(`Recovery of workflow ${pendingWorkflow.workflowUUID} failed: ${(e as Error).message}`);
@@ -1026,7 +1039,14 @@ export class DBOSExecutor {
     }
   }
 
-  async executeWorkflowUUID(workflowID: string, startNewWorkflow: boolean = false): Promise<WorkflowHandle<unknown>> {
+  async executeWorkflowId(
+    workflowID: string,
+    options?: {
+      startNewWorkflow?: boolean;
+      isRecoveryDispatch?: boolean;
+      isQueueDispatch?: boolean;
+    },
+  ): Promise<WorkflowHandle<unknown>> {
     const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
     if (!wfStatus) {
       this.logger.error(`Failed to find workflow status for workflowUUID: ${workflowID}`);
@@ -1043,7 +1063,7 @@ export class DBOSExecutor {
     const { methReg, configuredInst } = this.#getFunctionInfoFromWFStatus(wfStatus);
 
     // If starting a new workflow, assign a new UUID. Otherwise, use the workflow's original UUID.
-    const workflowStartID = startNewWorkflow ? undefined : workflowID;
+    const workflowStartID = !!options?.startNewWorkflow ? undefined : workflowID;
 
     if (methReg?.workflowConfig) {
       return await runWithTopContext(recoverCtx, async () => {
@@ -1055,6 +1075,8 @@ export class DBOSExecutor {
             queueName: wfStatus.queueName,
             executeWorkflow: true,
             deadlineEpochMS: wfStatus.deadlineEpochMS,
+            isRecoveryDispatch: !!options?.isRecoveryDispatch,
+            isQueueDispatch: !!options?.isQueueDispatch,
           },
           ...inputs,
         );
@@ -1084,6 +1106,8 @@ export class DBOSExecutor {
             configuredInstance: configuredInst,
             queueName: wfStatus.queueName, // Probably null
             executeWorkflow: true,
+            isRecoveryDispatch: !!options?.isRecoveryDispatch,
+            isQueueDispatch: !!options?.isQueueDispatch,
           },
           undefined,
           undefined,
@@ -1101,10 +1125,13 @@ export class DBOSExecutor {
         return this.workflow(
           temp_workflow,
           {
-            workflowUUID: workflowStartID,
+            tempWfName: nameArr[2],
             tempWfType: TempWorkflowType.send,
+            workflowUUID: workflowStartID,
             queueName: wfStatus.queueName,
             executeWorkflow: true,
+            isRecoveryDispatch: !!options?.isRecoveryDispatch,
+            isQueueDispatch: !!options?.isQueueDispatch,
           },
           ...inputs,
         );

@@ -1,6 +1,12 @@
 import { GetWorkflowsInput, StatusString, DBOS, WorkflowQueue } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event, recoverPendingWorkflows } from './helpers';
+import {
+  generateDBOSTestConfig,
+  setUpDBOSTestSysDb,
+  Event,
+  recoverPendingWorkflows,
+  reexecuteWorkflowById,
+} from './helpers';
 import { Client } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
@@ -1133,12 +1139,7 @@ describe('test-list-steps', () => {
     await ListWorkflows.simpleWorkflow();
 
     // Let this start over
-    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(wfid, StatusString.PENDING, true);
-
-    // This value was stored
-    const c2 = await DBOS.withNextWorkflowID(wfid, async () => {
-      return await ListWorkflows.listingWorkflow();
-    });
+    const c2 = await (await reexecuteWorkflowById(wfid))?.getResult();
     expect(c2).toBe(1);
   });
 });

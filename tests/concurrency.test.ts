@@ -460,23 +460,6 @@ describe('concurrency-tests', () => {
     expect(ConcurrTestClass.cnt).toBe(1);
   });
 
-  test('concurrent-workflow', async () => {
-    // Invoke testWorkflow twice with the same UUID and the first one completes right before the second transaction starts.
-    // The second transaction should get the correct recorded execution without being executed.
-    const uuid = randomUUID();
-    const handle1 = await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow();
-    const handle2 = await DBOS.startWorkflow(ConcurrTestClass, { workflowID: uuid }).testWorkflow();
-    await ConcurrTestClass.promise2;
-    ConcurrTestClass.resolve3();
-    await handle1.getResult();
-
-    ConcurrTestClass.resolve();
-    await handle2.getResult();
-
-    expect(ConcurrTestClass.cnt).toBe(1);
-    expect(ConcurrTestClass.wfCnt).toBe(2);
-  });
-
   test('duplicate-step', async () => {
     // Run two steps concurrently with the same UUID; both should succeed.
     // Since we only record the output after the function, it may cause more than once executions.
@@ -627,17 +610,6 @@ class ConcurrTestClass {
     await knexds.client.raw(`INSERT INTO ${testTableName}(id, value) VALUES (?, ?)`, [id, 1]);
     ConcurrTestClass.cnt++;
     return id;
-  }
-
-  @DBOS.workflow()
-  static async testWorkflow() {
-    if (ConcurrTestClass.wfCnt++ === 1) {
-      ConcurrTestClass.resolve2();
-      await ConcurrTestClass.promise;
-    } else {
-      await ConcurrTestClass.promise3;
-    }
-    await ConcurrTestClass.testReadWriteFunction(1);
   }
 
   @DBOS.step()

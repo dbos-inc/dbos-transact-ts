@@ -201,7 +201,7 @@ export class DBOSClient {
       queuePartitionKey: options.queuePartitionKey,
     };
 
-    await this.systemDatabase.initWorkflowStatus(internalStatus);
+    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
 
     return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
   }
@@ -236,7 +236,7 @@ export class DBOSClient {
       priority: 0,
       queuePartitionKey: undefined,
     };
-    await this.systemDatabase.initWorkflowStatus(internalStatus);
+    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
     await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, DBOSJSON.stringify(message), topic);
   }
 

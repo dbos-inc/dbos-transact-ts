@@ -50,7 +50,7 @@ describe('dbos-tests', () => {
           `SELECT status, recovery_attempts as attempts FROM dbos.workflow_status WHERE workflow_uuid=$1`,
           [handle.workflowID],
         );
-        expect(result.rows[0].attempts).toBe(String(i + 2));
+        expect(result.rows[0].attempts).toBe(String(1));
       }
     } finally {
       await systemDBClient.end();

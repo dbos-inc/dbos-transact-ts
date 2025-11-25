@@ -197,5 +197,8 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
         `ALTER TABLE "${schemaName}".operation_outputs ADD COLUMN started_at_epoch_ms BIGINT, ADD COLUMN completed_at_epoch_ms BIGINT;`,
       ],
     },
+    {
+      pg: [`ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "owner_xid" VARCHAR(40) DEFAULT NULL`],
+    },
   ];
 }

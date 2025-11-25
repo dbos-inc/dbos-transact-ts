@@ -6,6 +6,8 @@ import {
   Event,
   queueEntriesAreCleanedUp,
   recoverPendingWorkflows,
+  reexecuteWorkflowById,
+  setWfAndChildrenToPending,
 } from './helpers';
 import { WorkflowQueue } from '../src';
 import { randomUUID } from 'node:crypto';
@@ -345,7 +347,6 @@ describe('queued-wf-tests-simple', () => {
 
   class TestQueueRecovery {
     static queuedSteps = 5;
-    static event = new Event();
     static taskEvents = Array.from({ length: TestQueueRecovery.queuedSteps }, () => new Event());
     static taskCount = 0;
     static queue = new WorkflowQueue('testQueueRecovery');
@@ -379,8 +380,7 @@ describe('queued-wf-tests-simple', () => {
     static async blockingTask(i: number) {
       TestQueueRecovery.taskEvents[i].set();
       TestQueueRecovery.taskCount++;
-      await TestQueueRecovery.event.wait();
-      return i;
+      return Promise.resolve(i);
     }
 
     static cnt = 0;
@@ -405,14 +405,15 @@ describe('queued-wf-tests-simple', () => {
       e.clear();
     }
     expect(TestQueueRecovery.taskCount).toEqual(5);
+    await expect(originalHandle.getResult()).resolves.toEqual([0, 1, 2, 3, 4]);
 
-    // Recover the workflow, then resume it. There should be one handle for the workflow and another for each task.
+    // Recover the workflow, there should be one handle for the workflow and another for each task.
+    await setWfAndChildrenToPending(wfid);
     const recoveryHandles = await recoverPendingWorkflows();
     for (const e of TestQueueRecovery.taskEvents) {
       await e.wait();
     }
     expect(recoveryHandles.length).toBe(TestQueueRecovery.queuedSteps + 1);
-    TestQueueRecovery.event.set();
 
     // Verify both the recovered and original workflows complete correctly
     for (const h of recoveryHandles) {
@@ -485,26 +486,27 @@ describe('queued-wf-tests-simple', () => {
       expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
       expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
 
-      // Trigger workflow recovery for "local". The two first workflows should be re-enqueued then dequeued again
-      const recovered_handles_local = await recoverPendingWorkflows(['local']);
-      expect(recovered_handles_local.length).toBe(2);
-      for (const h of recovered_handles_local) {
-        expect([wfid1, wfid2]).toContain(h.workflowID);
-      }
-      for (const e of TestQueueRecovery.startEvents) {
-        await e.wait();
-      }
-      expect(TestQueueRecovery.cnt).toBe(4);
-      expect((await wfh1.getStatus())?.status).toBe(StatusString.PENDING);
-      expect((await wfh2.getStatus())?.status).toBe(StatusString.PENDING);
-      expect((await wfh3.getStatus())?.status).toBe(StatusString.ENQUEUED);
-
       // Unblock the two first workflows
       TestQueueRecovery.stopEvent.set();
       // Verify all queue entries eventually get cleaned up.
       expect(await wfh1.getResult()).toBeUndefined();
       expect(await wfh2.getResult()).toBeUndefined();
       expect(await wfh3.getResult()).toBeUndefined();
+      expect(TestQueueRecovery.cnt).toBe(2);
+
+      // Trigger workflow recovery for "local", by changing the record to indicate they did not finish.
+      //   The two first workflows should be re-enqueued then dequeued again
+      await setWfAndChildrenToPending(wfh1.workflowID);
+      await setWfAndChildrenToPending(wfh2.workflowID);
+      const recovered_handles_local = await recoverPendingWorkflows(['local']);
+      expect(recovered_handles_local.length).toBe(2);
+      for (const h of recovered_handles_local) {
+        expect([wfid1, wfid2]).toContain(h.workflowID);
+      }
+      expect(await wfh1.getResult()).toBeUndefined();
+      expect(await wfh2.getResult()).toBeUndefined();
+      expect(TestQueueRecovery.cnt).toBe(4);
+
       const result = await systemDBClient.query(
         'SELECT executor_id FROM dbos.workflow_status WHERE workflow_uuid = $1',
         [wfh3.workflowID],
@@ -1437,9 +1439,8 @@ describe('queue-time-outs', () => {
     await childHandle.getResult();
 
     // Verify it still works on recovery
-    await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(handle.workflowID, StatusString.PENDING, true);
-    const recoveredHandle = await DBOS.startWorkflow(dedupRecoveryParentWorkflow, { workflowID: handle.workflowID })();
-    await recoveredHandle.getResult();
+    const recoveredHandle = await reexecuteWorkflowById(handle.workflowID);
+    await recoveredHandle!.getResult();
   });
 
   const partitionBlockingEvent = new Event();
