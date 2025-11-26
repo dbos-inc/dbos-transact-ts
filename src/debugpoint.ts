@@ -40,10 +40,6 @@ export async function debugTriggerPoint(name: string): Promise<void> {
   if (!pointLocations.has(name)) {
     pointLocations.set(name, { name, ...cpi, hitCount: 0 });
   }
-  const p = pointLocations.get(name)!;
-  if (p.fileName !== cpi.fileName || cpi.lineNumber !== p.lineNumber) {
-    throw new Error(`Duplicate debug point name: ${name}`);
-  }
 
   if (pointTriggers.has(name)) {
     const pt = pointTriggers.get(name)!;
