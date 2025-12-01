@@ -14,18 +14,13 @@ type LogResponse = {
   body: string;
 };
 
-function parseDateTime(value: string): DateTimeMaybeValid {
-  const dt = DateTime.fromISO(value, { setZone: true });
-  return dt.isValid ? dt : DateTime.fromISO(value, { zone: 'local' });
-}
-
 export async function getAppLogs(
   host: string,
   appName: string | undefined,
   options: { last?: number; pagesize?: number; since?: string; upto?: string },
 ): Promise<number> {
-  const since = options.since ? parseDateTime(options.since) : undefined;
-  const upto = options.upto ? parseDateTime(options.upto) : undefined;
+  const since = options.since ? DateTime.fromISO(options.since) : undefined;
+  const upto = options.upto ? DateTime.fromISO(options.upto) : undefined;
   const last = options.last;
   const pagesize = options.pagesize ?? 1000;
 
