@@ -6,6 +6,7 @@ import {
   isCloudAPIErrorResponse,
   retrieveApplicationName,
 } from '../cloudutils.js';
+import { DateTime, DateTimeMaybeValid } from 'luxon';
 
 type LogResponse = {
   end: boolean;
@@ -13,24 +14,35 @@ type LogResponse = {
   body: string;
 };
 
+function parseDateTime(value: string): DateTimeMaybeValid {
+  const dt = DateTime.fromISO(value, { setZone: true });
+  return dt.isValid ? dt : DateTime.fromISO(value, { zone: 'local' });
+}
+
 export async function getAppLogs(
   host: string,
-  last: number,
-  pagesize: number,
   appName: string | undefined,
+  options: { last?: number; pagesize?: number; since?: string; upto?: string },
 ): Promise<number> {
+  const since = options.since ? parseDateTime(options.since) : undefined;
+  const upto = options.upto ? parseDateTime(options.upto) : undefined;
+  const last = options.last ? options.last : undefined;
+  const pagesize = options.pagesize ? options.pagesize : 1000;
+
   if (last !== undefined && (isNaN(last) || last <= 0)) {
     throw new Error('The --last parmameter must be an integer greater than 0');
   }
-  if (last === undefined) {
-    last = 3600; //the last hour
-  }
-
   if (pagesize !== undefined && (isNaN(pagesize) || pagesize <= 0)) {
     throw new Error('The --pagesize parmameter must be an integer greater than 0');
   }
-  if (pagesize === undefined) {
-    pagesize = 1000;
+  if (since && since.isValid === false) {
+    throw new Error('The --since parmameter must be an ISO 8601 format timestamp');
+  }
+  if (upto && upto.isValid === false) {
+    throw new Error('The --upto parmameter must be an ISO 8601 format timestamp');
+  }
+  if (since && last) {
+    throw new Error('The --last and --since parmameters cannot be used together');
   }
 
   const logger = getLogger();
@@ -46,10 +58,13 @@ export async function getAppLogs(
     'Content-Type': 'application/json',
     Authorization: bearerToken,
   };
+  const $upto = upto?.toUTC().toFormat('yyyy-MM-dd HH:mm:ss.SSS000');
   const params = {
-    last: last,
-    limit: pagesize,
     format: 'json',
+    last: last,
+    since: since?.toUTC().toFormat('yyyy-MM-dd HH:mm:ss.SSS000'),
+    upto: $upto,
+    limit: pagesize,
   };
   try {
     const res = await axios.get(url, { headers: headers, params: params });
@@ -65,6 +80,7 @@ export async function getAppLogs(
           limit: pagesize,
           format: 'json',
           since: nextTs,
+          upto: $upto,
         };
         const nextPage = await axios.get(url, { headers: headers, params: pageParams });
         const logResponse = nextPage.data as LogResponse;
