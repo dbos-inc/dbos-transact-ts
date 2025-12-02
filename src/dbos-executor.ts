@@ -111,6 +111,7 @@ export interface DBOSConfig {
   runAdminServer?: boolean;
 
   applicationVersion?: string;
+  executorID?: string;
 }
 
 export interface DBOSRuntimeConfig {
