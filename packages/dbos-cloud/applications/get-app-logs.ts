@@ -6,7 +6,7 @@ import {
   isCloudAPIErrorResponse,
   retrieveApplicationName,
 } from '../cloudutils.js';
-import { DateTime, DateTimeMaybeValid } from 'luxon';
+import { DateTime } from 'luxon';
 
 type LogResponse = {
   end: boolean;
