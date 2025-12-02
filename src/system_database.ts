@@ -2147,9 +2147,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Build partition key filter
     let partitionFilter = '';
     const partitionParams: string[] = [];
-    if (queuePartitionKey === undefined) {
-      partitionFilter = 'AND queue_partition_key IS NULL';
-    } else {
+    if (queuePartitionKey !== undefined) {
       partitionFilter = `AND queue_partition_key = $PARTITION`;
       partitionParams.push(queuePartitionKey);
     }
