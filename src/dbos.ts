@@ -213,16 +213,19 @@ export class DBOS {
       return;
     }
 
-    if (options?.conductorKey) {
-      // Always use a generated executor ID in Conductor.
-      globalParams.executorID = randomUUID();
-    }
-    // Globally set the application version.
+    // Globally set the application version and executor ID.
     // In DBOS Cloud, instead use the value supplied through environment variables.
     if (process.env.DBOS__CLOUD !== 'true') {
       if (DBOS.#dbosConfig?.applicationVersion) {
         globalParams.appVersion = DBOS.#dbosConfig.applicationVersion;
       }
+      if (DBOS.#dbosConfig?.executorID) {
+        globalParams.executorID = DBOS.#dbosConfig.executorID;
+      }
+    }
+    if (options?.conductorKey) {
+      // Always use a generated executor ID in Conductor.
+      globalParams.executorID = randomUUID();
     }
 
     DBOSExecutor.createDebouncerWorkflow();
