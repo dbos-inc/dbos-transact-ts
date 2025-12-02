@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { DBOS, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
@@ -106,5 +107,32 @@ describe('test-app-version', () => {
     handles = await recoverPendingWorkflows();
     expect(handles.length).toBe(0);
     await expect(YetAnotherWorkflow.anotherWorkflow()).resolves.toEqual(1);
+  });
+
+  test('test-setting-app-version', async () => {
+    class TestSettingAppVersion {
+      @DBOS.workflow()
+      static async testWorkflow() {
+        return Promise.resolve(0);
+      }
+    }
+
+    // Reset DBOS with a set version and executor ID
+    const testVersion = randomUUID();
+    const testExecutorID = randomUUID();
+    config.applicationVersion = testVersion;
+    config.executorID = testExecutorID;
+    await DBOS.shutdown();
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // Run a workflow
+    const handle = await DBOS.startWorkflow(TestSettingAppVersion).testWorkflow();
+    await expect(handle.getResult()).resolves.toEqual(0);
+    const status = await handle.getStatus();
+
+    // Verify those values are set on workflows
+    expect(status?.applicationVersion).toBe(testVersion);
+    expect(status?.executorId).toBe(testExecutorID);
   });
 });
