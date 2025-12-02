@@ -628,6 +628,68 @@ describe('queued-wf-tests-simple', () => {
     expect(await queueEntriesAreCleanedUp()).toBe(true);
   });
 
+  class TestResumeQueuesPartitioned {
+    static startEvent = new Event();
+    static blockingEvent = new Event();
+    static queue = new WorkflowQueue('TestResumeQueuesPartitioned', { concurrency: 1, partitionQueue: true });
+
+    @DBOS.workflow()
+    static async stuckWorkflow() {
+      TestResumeQueuesPartitioned.startEvent.set();
+      await TestResumeQueuesPartitioned.blockingEvent.wait();
+    }
+
+    @DBOS.workflow()
+    static async regularWorkflow() {
+      return Promise.resolve();
+    }
+  }
+
+  test('test-resume-partitioned-queues', async () => {
+    const wfid = randomUUID();
+    const key = 'key';
+
+    // Enqueue the blocked and regular workflow on a queue with concurrency 1
+    const blockedHandle = await DBOS.startWorkflow(TestResumeQueuesPartitioned, {
+      queueName: TestResumeQueuesPartitioned.queue.name,
+      enqueueOptions: { queuePartitionKey: key },
+    }).stuckWorkflow();
+    const regularHandle = await DBOS.startWorkflow(TestResumeQueuesPartitioned, {
+      workflowID: wfid,
+      queueName: TestResumeQueuesPartitioned.queue.name,
+      enqueueOptions: { queuePartitionKey: key },
+    }).regularWorkflow();
+    const regularHandleTwo = await DBOS.startWorkflow(TestResumeQueuesPartitioned, {
+      queueName: TestResumeQueuesPartitioned.queue.name,
+      enqueueOptions: { queuePartitionKey: key },
+    }).regularWorkflow();
+
+    // Verify the blocked workflow starts and is PENDING while the regular workflows remain ENQUEUED
+    await TestResumeQueuesPartitioned.startEvent.wait();
+    await expect(blockedHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.PENDING,
+    });
+    await expect(regularHandle.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+    await expect(regularHandleTwo.getStatus()).resolves.toMatchObject({
+      status: StatusString.ENQUEUED,
+    });
+
+    await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
+    console.log('RESUMED', wfid);
+
+    await expect(regularHandle.getResult()).resolves.toBeUndefined();
+
+    // Complete the blocked workflow. Verify the second regular workflow also completes.
+    TestResumeQueuesPartitioned.blockingEvent.set();
+    await expect(blockedHandle.getResult()).resolves.toBeUndefined();
+    await expect(regularHandleTwo.getResult()).resolves.toBeUndefined();
+
+    // Verify all queue entries eventually get cleaned up
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  });
+
   class TestConcurrencyAcrossVersions {
     static queue = new WorkflowQueue('TestAcrossVersions', { workerConcurrency: 1 });
 
