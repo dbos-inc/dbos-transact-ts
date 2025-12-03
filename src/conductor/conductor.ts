@@ -128,6 +128,8 @@ export class Conductor {
               globalParams.executorID,
               globalParams.appVersion,
               hostname(),
+              'typescript',
+              globalParams.dbosVersion,
             );
             currWebsocket.send(JSON.stringify(infoResp));
             this.dbosExec.logger.info('Connected to DBOS conductor');

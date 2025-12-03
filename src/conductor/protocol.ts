@@ -36,17 +36,23 @@ export class ExecutorInfoResponse extends BaseResponse {
   executor_id: string;
   application_version: string;
   hostname: string;
+  language: string;
+  dbos_version: string;
   constructor(
     request_id: string,
     executor_id: string,
     application_version: string,
     hostname: string,
+    language: string,
+    dbos_version: string,
     error_message?: string,
   ) {
     super(MessageType.EXECUTOR_INFO, request_id, error_message);
     this.executor_id = executor_id;
     this.application_version = application_version;
     this.hostname = hostname;
+    this.language = language;
+    this.dbos_version = dbos_version;
   }
 }
 
