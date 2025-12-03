@@ -5,6 +5,7 @@ import { isValidDatabaseName, translateDbosConfig } from '../src/config';
 import { ensureSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
+import { Client } from 'pg';
 
 /* DB management helpers */
 function getSysDatabaseUrlFromUserDb(userDB: string) {
@@ -134,5 +135,28 @@ export async function dropDatabase(connectionString: string, database?: string) 
   const r = await dropPGDatabase({ urlToDrop: connectionString, dbToDrop: database });
   if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
     throw new Error(`Unable to drop ${maskDatabaseUrl(connectionString)}`);
+  }
+}
+
+export async function causeChaos(db: string): Promise<void> {
+  const client = new Client({
+    connectionString: db, // or your config object
+  });
+
+  try {
+    await client.connect();
+
+    await client.query(`
+      SELECT pg_terminate_backend(pid)
+      FROM pg_stat_activity
+      WHERE pid <> pg_backend_pid()
+        AND datname = current_database();
+    `);
+  } catch (err) {
+    //throw new Error(`Could not cause chaos, credentials insufficient? ${err as Error}`);
+  } finally {
+    try {
+      await client.end();
+    } catch (err) {}
   }
 }
