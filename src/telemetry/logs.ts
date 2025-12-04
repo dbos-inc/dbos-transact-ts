@@ -4,7 +4,6 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import type { Logger as OTelLogger, LogAttributes } from '@opentelemetry/api-logs';
-import type { LogRecord } from '@opentelemetry/sdk-logs';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON, globalParams, interceptStreams } from '../utils';
 import { LoggerConfig } from '../dbos-executor';
@@ -103,7 +102,7 @@ export class GlobalLogger {
           forceFlush: async () => {
             // no-op
           },
-          onEmit(logRecord: LogRecord) {
+          onEmit(logRecord: object) {
             telemetryCollector.push(logRecord);
           },
           shutdown: async () => {
