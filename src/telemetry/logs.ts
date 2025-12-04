@@ -4,6 +4,7 @@
 /* eslint-disable @typescript-eslint/no-require-imports */
 /* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import type { Logger as OTelLogger, LogAttributes } from '@opentelemetry/api-logs';
+import type { LoggerProvider as LoggerProviderType } from '@opentelemetry/sdk-logs';
 import { TelemetryCollector } from './collector';
 import { DBOSJSON, globalParams, interceptStreams } from '../utils';
 import { LoggerConfig } from '../dbos-executor';
@@ -88,16 +89,6 @@ export class GlobalLogger {
         // not sure if we need a more explicit name here
         const { LoggerProvider } = require('@opentelemetry/sdk-logs');
 
-        const loggerProvider = new LoggerProvider({
-          resource: {
-            attributes: {
-              'service.name': appName,
-            },
-          },
-        });
-        this.otelLogger = loggerProvider.getLogger('dbos-logger');
-        this.applicationID = globalParams.appID;
-        this.executorID = globalParams.executorID;
         const logRecordProcessor = {
           forceFlush: async () => {
             // no-op
@@ -109,7 +100,17 @@ export class GlobalLogger {
             // no-op
           },
         };
-        loggerProvider.addLogRecordProcessor(logRecordProcessor);
+        const loggerProvider: LoggerProviderType = new LoggerProvider({
+          resource: {
+            attributes: {
+              'service.name': appName,
+            },
+          },
+          processors: [logRecordProcessor],
+        });
+        this.otelLogger = loggerProvider.getLogger('dbos-logger');
+        this.applicationID = globalParams.appID;
+        this.executorID = globalParams.executorID;
       }
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any

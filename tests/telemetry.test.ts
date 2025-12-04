@@ -2,9 +2,10 @@ import { InMemorySpanExporter, ReadableSpan, SimpleSpanProcessor } from '@opente
 import { NodeTracerProvider } from './nodetraceprovider';
 import { DBOS } from '../src';
 
-const provider = new NodeTracerProvider();
 const memoryExporter = new InMemorySpanExporter();
-provider.add(new SimpleSpanProcessor(memoryExporter));
+const provider = new NodeTracerProvider({
+  spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+});
 provider.register();
 
 import Koa from 'koa';
