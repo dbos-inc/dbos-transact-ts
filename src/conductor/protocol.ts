@@ -14,6 +14,7 @@ export enum MessageType {
   LIST_STEPS = 'list_steps',
   FORK_WORKFLOW = 'fork_workflow',
   RETENTION = 'retention',
+  GET_METRICS = 'get_metrics',
 }
 
 export interface BaseMessage {
@@ -369,5 +370,38 @@ export class RetentionResponse extends BaseResponse {
   constructor(request_id: string, success: boolean, error_message?: string) {
     super(MessageType.RETENTION, request_id, error_message);
     this.success = success;
+  }
+}
+
+export class GetMetricsRequest implements BaseMessage {
+  type = MessageType.GET_METRICS;
+  request_id: string;
+  start_time: string;
+  end_time: string;
+  metric_class: string;
+  constructor(request_id: string, start_time: string, end_time: string, metric_class: string) {
+    this.request_id = request_id;
+    this.start_time = start_time;
+    this.end_time = end_time;
+    this.metric_class = metric_class;
+  }
+}
+
+export class MetricDataOutput {
+  metric_type: string;
+  metric_name: string;
+  value: number;
+  constructor(metric_type: string, metric_name: string, value: number) {
+    this.metric_type = metric_type;
+    this.metric_name = metric_name;
+    this.value = value;
+  }
+}
+
+export class GetMetricsResponse extends BaseResponse {
+  metrics: MetricDataOutput[];
+  constructor(request_id: string, metrics: MetricDataOutput[], error_message?: string) {
+    super(MessageType.GET_METRICS, request_id, error_message);
+    this.metrics = metrics;
   }
 }
