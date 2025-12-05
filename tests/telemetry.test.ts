@@ -1,10 +1,11 @@
-import { InMemorySpanExporter, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
+import { InMemorySpanExporter, ReadableSpan, SimpleSpanProcessor } from '@opentelemetry/sdk-trace-base';
 import { NodeTracerProvider } from './nodetraceprovider';
 import { DBOS } from '../src';
 
-const provider = new NodeTracerProvider();
 const memoryExporter = new InMemorySpanExporter();
-provider.addSpanProcessor(new SimpleSpanProcessor(memoryExporter));
+const provider = new NodeTracerProvider({
+  spanProcessors: [new SimpleSpanProcessor(memoryExporter)],
+});
 provider.register();
 
 import Koa from 'koa';
@@ -75,6 +76,15 @@ export function createApp() {
   return app;
 }
 
+function getParentSpanID(span: ReadableSpan) {
+  const ctx = span.parentSpanContext;
+  if (ctx) {
+    return ctx.spanId;
+  } else {
+    return undefined;
+  }
+}
+
 describe('trace spans propagate ', () => {
   beforeAll(async () => {
     memoryExporter.reset();
@@ -107,7 +117,7 @@ describe('trace spans propagate ', () => {
         name: span.name,
         traceId: span.spanContext().traceId,
         spanId: span.spanContext().spanId,
-        parentSpanId: span.parentSpanId,
+        parentSpanId: getParentSpanID(span),
         attributes: span.attributes,
       })),
     );
@@ -116,9 +126,9 @@ describe('trace spans propagate ', () => {
     const stepSpan = spans[2];
     const workflowspan = spans[3];
     const httpSpan = spans[4];
-    expect(stepSpan?.parentSpanId).toBe(workflowspan?.spanContext().spanId);
+    expect(getParentSpanID(stepSpan)).toBe(workflowspan?.spanContext().spanId);
     expect(stepSpan?.spanContext().traceId).toBe(workflowspan?.spanContext().traceId);
-    expect(workflowspan?.parentSpanId).toBe(httpSpan?.spanContext().spanId);
+    expect(getParentSpanID(workflowspan)).toBe(httpSpan?.spanContext().spanId);
     expect(workflowspan?.spanContext().traceId).toBe(httpSpan?.spanContext().traceId);
     expect(workflowspan.attributes['my-lib.didSomething']).toBeTruthy();
   });

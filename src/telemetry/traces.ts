@@ -8,6 +8,7 @@ import type { Span } from '@opentelemetry/sdk-trace-base';
 import type { SpanContext } from '@opentelemetry/api';
 import { TelemetryCollector } from './collector';
 import { globalParams } from '../utils';
+import type { BasicTracerProvider as BasicTracerProviderType } from '@opentelemetry/sdk-trace-base';
 
 // As DBOS OTLP is optional, OTLP objects must only be dynamically imported
 // and only when OTLP is enabled. Importing OTLP types is fine as long
@@ -113,21 +114,21 @@ export function installTraceContextManager(appName: string = 'dbos'): void {
     return;
   }
   const { AsyncLocalStorageContextManager } = require('@opentelemetry/context-async-hooks');
-  const { context } = require('@opentelemetry/api');
+  const { context, trace } = require('@opentelemetry/api');
   const { BasicTracerProvider } = require('@opentelemetry/sdk-trace-base');
 
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
 
-  const provider = new BasicTracerProvider({
+  const provider: BasicTracerProviderType = new BasicTracerProvider({
     resource: {
       attributes: {
         'service.name': appName,
       },
     },
   });
-  provider.register();
+  trace.setGlobalTracerProvider(provider);
 }
 
 export class Tracer {
@@ -142,16 +143,17 @@ export class Tracer {
     if (!globalParams.enableOTLP) {
       return;
     }
+    const { trace } = require('@opentelemetry/api');
     const { BasicTracerProvider } = require('@opentelemetry/sdk-trace-base');
 
-    const tracer = new BasicTracerProvider({
+    const tracer: BasicTracerProviderType = new BasicTracerProvider({
       resource: {
         attributes: {
           'service.name': appName,
         },
       },
     });
-    tracer.register(); // this is a no-op if another tracer provider was already registered
+    trace.setGlobalTracerProvider(tracer);
   }
 
   startSpanWithContext(spanContext: unknown, name: string, attributes?: Attributes): DBOSSpan {
