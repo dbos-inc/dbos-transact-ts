@@ -10,7 +10,7 @@ provider.register();
 
 import Koa from 'koa';
 import Router from '@koa/router';
-import { context, trace, SpanStatusCode, SpanContext } from '@opentelemetry/api';
+import { context, trace, SpanStatusCode } from '@opentelemetry/api';
 import { isTraceContextWorking } from '../src/telemetry/traces';
 import { AddressInfo } from 'net';
 import { globalParams } from '../src/utils';
@@ -77,7 +77,7 @@ export function createApp() {
 }
 
 function getParentSpanID(span: ReadableSpan) {
-  const ctx = span.parentSpanContext as SpanContext | undefined;
+  const ctx = span.parentSpanContext;
   if (ctx) {
     return ctx.spanId;
   } else {
