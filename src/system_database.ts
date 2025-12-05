@@ -188,6 +188,7 @@ export interface SystemDatabase {
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
   garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void>;
+  getMetrics(startTime: string, endTime: string): Promise<MetricData[]>;
 }
 
 // For internal use, not serialized status.
@@ -230,6 +231,12 @@ export interface EnqueueOptions {
 
 export interface ExistenceCheck {
   exists: boolean;
+}
+
+export interface MetricData {
+  metricType: string;
+  metricName: string;
+  value: number;
 }
 
 export async function grantDbosSchemaPermissions(
@@ -2420,5 +2427,48 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
 
     return;
+  }
+
+  async getMetrics(startTime: string, endTime: string): Promise<MetricData[]> {
+    const startEpochMs = new Date(startTime).getTime();
+    const endEpochMs = new Date(endTime).getTime();
+
+    const metrics: MetricData[] = [];
+
+    // Query workflow metrics
+    const workflowResult = await this.pool.query<{ name: string; count: string }>(
+      `SELECT name, COUNT(workflow_uuid) as count
+       FROM "${this.schemaName}".workflow_status
+       WHERE created_at >= $1 AND created_at < $2
+       GROUP BY name`,
+      [startEpochMs, endEpochMs],
+    );
+
+    for (const row of workflowResult.rows) {
+      metrics.push({
+        metricType: 'workflow_count',
+        metricName: row.name,
+        value: Number(row.count),
+      });
+    }
+
+    // Query step metrics
+    const stepResult = await this.pool.query<{ function_name: string; count: string }>(
+      `SELECT function_name, COUNT(*) as count
+       FROM "${this.schemaName}".operation_outputs
+       WHERE completed_at_epoch_ms >= $1 AND completed_at_epoch_ms < $2
+       GROUP BY function_name`,
+      [startEpochMs, endEpochMs],
+    );
+
+    for (const row of stepResult.rows) {
+      metrics.push({
+        metricType: 'step_count',
+        metricName: row.function_name,
+        value: Number(row.count),
+      });
+    }
+
+    return metrics;
   }
 }
