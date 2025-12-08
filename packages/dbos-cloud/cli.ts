@@ -311,16 +311,25 @@ applicationCommands
   .command('logs')
   .description("Print this application's logs")
   .argument('[string]', 'application name (Default: name from package.json)')
+  .option('-l, --last <integer>', 'How far back to query, in seconds from current time.', parseInt)
   .option(
-    '-l, --last <integer>',
-    'How far back to query, in seconds from current time. By default, we retrieve the last hour.',
-    parseInt,
+    '-s, --since <string>',
+    'Fetch log entries starting with the specified timestamp. Timestamp must be ISO 8601 formatted',
+  )
+  .option(
+    '-u, --upto <string>',
+    'Fetch log entries prior to the specified timestamp. Timestamp must be ISO 8601 formatted',
   )
   .option('-p, --pagesize <integer>', 'How many lines to fetch at once when paginating. Default is 1000', parseInt)
-  .action(async (appName: string | undefined, options: { last: number; pagesize: number }) => {
-    const exitCode = await getAppLogs(DBOSCloudHost, options.last, options.pagesize, appName);
-    process.exit(exitCode);
-  });
+  .action(
+    async (
+      appName: string | undefined,
+      options: { last?: number; pagesize?: number; since?: string; upto?: string },
+    ) => {
+      const exitCode = await getAppLogs(DBOSCloudHost, appName, options);
+      process.exit(exitCode);
+    },
+  );
 
 applicationCommands
   .command('resource-usage')

@@ -18,6 +18,7 @@
     "dbos-cloud": "./dist/cli.js"
   },
   "devDependencies": {
+    "@types/luxon": "^3.7.1",
     "@types/node": "^20.6.3",
     "@types/prompt-sync": "^4.2.3",
     "@types/update-notifier": "^6.0.8",
@@ -35,6 +36,7 @@
     "jsonwebtoken": "^9.0.2",
     "jszip": "^3.10.1",
     "jwks-rsa": "^3.1.0",
+    "luxon": "^3.7.2",
     "open": "^10.1.0",
     "prompt-sync": "^4.2.0",
     "update-notifier": "^7.0.0",

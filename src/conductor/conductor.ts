@@ -128,6 +128,8 @@ export class Conductor {
               globalParams.executorID,
               globalParams.appVersion,
               hostname(),
+              'typescript',
+              globalParams.dbosVersion,
             );
             currWebsocket.send(JSON.stringify(infoResp));
             this.dbosExec.logger.info('Connected to DBOS conductor');
@@ -333,6 +335,34 @@ export class Conductor {
               errorMsg,
             );
             currWebsocket.send(JSON.stringify(retentionResponse));
+            break;
+          case protocol.MessageType.GET_METRICS:
+            const getMetricsMessage = baseMsg as protocol.GetMetricsRequest;
+            this.dbosExec.logger.debug(
+              `Received metrics request for time range ${getMetricsMessage.start_time} to ${getMetricsMessage.end_time}`,
+            );
+            let metricsData: protocol.MetricDataOutput[] = [];
+            if (getMetricsMessage.metric_class === 'workflow_step_count') {
+              try {
+                const sysMetrics = await this.dbosExec.systemDatabase.getMetrics(
+                  getMetricsMessage.start_time,
+                  getMetricsMessage.end_time,
+                );
+                metricsData = sysMetrics.map((m) => new protocol.MetricDataOutput(m.metricType, m.metricName, m.value));
+              } catch (e) {
+                errorMsg = `Exception encountered when getting metrics: ${(e as Error).message}`;
+                this.dbosExec.logger.error(errorMsg);
+              }
+            } else {
+              errorMsg = `Unexpected metric class: ${getMetricsMessage.metric_class}`;
+              this.dbosExec.logger.warn(errorMsg);
+            }
+            const getMetricsResponse = new protocol.GetMetricsResponse(
+              getMetricsMessage.request_id,
+              metricsData,
+              errorMsg,
+            );
+            currWebsocket.send(JSON.stringify(getMetricsResponse));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
