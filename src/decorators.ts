@@ -811,21 +811,34 @@ export function wrapDBOSFunctionAndRegister<This, Args extends unknown[], Return
 //  Thus, if you have a "class name", look it up in classesByName, as this is exhaustive
 //  If you have a class or instance, you can look that up in the classesByCtor map,
 //   this contains all decorator-registered classes, but may omit other things.
+//
+// The support for aliasing classes in the decorator registration scheme is a bit tricky,
+//  since the class decorator runs after the method decorators.  To get this to work:
+//  1. We put the methods into the class by using the ctor
+//  2. We complete the name->class registration later
 type AnyConstructor = new (...args: unknown[]) => object;
 const classesByName: Map<string, { reg: ClassRegistration; ctor?: AnyConstructor }> = new Map();
 const classesByCtor: Map<AnyConstructor, { name: string; reg: ClassRegistration }> = new Map();
+
 export function getNameForClass(ctor: object): string {
-  let regtarget: AnyConstructor;
-  if (typeof ctor === 'function') {
+  const reg = getClassRegistration(ctor, false);
+  return reg.reg?.name ?? reg.regTarget.name;
+}
+
+function getClassRegistration(target: object, create: boolean) {
+  let regTarget: AnyConstructor;
+  if (typeof target === 'function') {
     // Static method case
-    regtarget = ctor as AnyConstructor;
+    regTarget = target as AnyConstructor;
   } else {
     // Instance method case
-    regtarget = ctor.constructor as AnyConstructor;
+    regTarget = target.constructor as AnyConstructor;
   }
 
-  if (!classesByCtor.has(regtarget)) return regtarget.name;
-  return classesByCtor.get(regtarget)!.name;
+  if (classesByCtor.has(regTarget)) return { regTarget, reg: classesByCtor.get(regTarget)! };
+  if (!create) return { regTarget };
+  classesByCtor.set(regTarget, { reg: new ClassRegistration(), name: regTarget.name });
+  return { regTarget, reg: classesByCtor.get(regTarget)! };
 }
 
 export function getAllRegisteredClassNames() {
