@@ -314,6 +314,7 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
 
   name: string = '';
   className: string = '';
+  classReg: ClassRegistration;
 
   // Interceptors
   onEnter: { seqNum: number; func: (reg: MethodRegistrationBase, args: unknown[]) => unknown[] }[] = [];
@@ -324,7 +325,12 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
 
   args: MethodParameter[] = [];
 
-  constructor(origFunc: (this: This, ...args: Args) => Promise<Return>, isInstance: boolean) {
+  constructor(
+    classReg: ClassRegistration,
+    origFunc: (this: This, ...args: Args) => Promise<Return>,
+    isInstance: boolean,
+  ) {
+    this.classReg = classReg;
     this.origFunction = origFunc;
     this.isInstance = isInstance;
   }
@@ -352,13 +358,17 @@ export class MethodRegistration<This, Args extends unknown[], Return> implements
     return undefined;
   }
 
+  getClassName() {
+    return this.className || this.classReg.getClassName();
+  }
+
   checkFuncTypeUnassigned(newType: string) {
     const oldType = this.getAssignedType();
     let error: string | undefined = undefined;
     if (oldType && newType !== oldType) {
-      error = `Operation (Name: ${this.className}.${this.name}) is already registered with a conflicting function type: ${oldType} vs. ${newType}`;
+      error = `Operation (Name: ${this.getClassName()}.${this.name}) is already registered with a conflicting function type: ${oldType} vs. ${newType}`;
     } else if (oldType) {
-      error = `Operation (Name: ${this.className}.${this.name}) is already registered.`;
+      error = `Operation (Name: ${this.getClassName()}.${this.name}) is already registered.`;
     }
     if (error) {
       if (this.regLocation) {
@@ -434,6 +444,16 @@ export class ClassRegistration implements RegistrationDefaults {
 
   externalRegInfo: Map<AnyConstructor | object | string, unknown> = new Map();
 
+  ctor: AnyConstructor | undefined;
+
+  constructor(ctor: AnyConstructor | undefined) {
+    this.ctor = ctor;
+  }
+
+  getClassName() {
+    return this.name || this.ctor?.name || '';
+  }
+
   registerOperationByName(name: string, reg: MethodRegistrationBase) {
     const er = this.registeredOperationsByName.get(name) as MethodRegistration<unknown, unknown[], unknown>;
     if (er && er !== reg) {
@@ -453,8 +473,6 @@ export class ClassRegistration implements RegistrationDefaults {
     }
     return this.externalRegInfo.get(reg)!;
   }
-
-  constructor() {}
 }
 
 // #endregion
@@ -551,7 +569,7 @@ export function getRegisteredFunctionFullName(func: unknown) {
   let funcName: string = (func as { name?: string }).name ?? '';
   if (functionToRegistration.has(func)) {
     const fr = functionToRegistration.get(func)!;
-    className = fr.className;
+    className = fr.getClassName();
     funcName = fr.name;
   }
   return { className, name: funcName };
@@ -676,7 +694,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   const origFunc = functionToRegistration.get(func)?.origFunction ?? func;
 
   if (!classReg.allRegisteredOperations.has(origFunc)) {
-    const reg = new MethodRegistration<This, Args, Return>(func, isInstance);
+    const reg = new MethodRegistration<This, Args, Return>(classReg, func, isInstance);
     classReg.allRegisteredOperations.set(func, reg);
   }
   const methReg: MethodRegistration<This, Args, Return> = classReg.allRegisteredOperations.get(
@@ -841,7 +859,7 @@ function getClassRegistration(target: object, create: boolean) {
   if (classesByCtor.has(regTarget)) return { regTarget, reg: classesByCtor.get(regTarget)! };
   if (!create) return { regTarget };
   classesByCtor.set(regTarget, {
-    reg: new ClassRegistration(),
+    reg: new ClassRegistration(regTarget),
     name: regTarget.name,
     regloc: new StackGrabber().getCleanStack(1) ?? [],
   });
@@ -873,7 +891,10 @@ export function getClassRegistrationByName(name: string, create: boolean = false
   }
 
   if (!classesByName.has(name)) {
-    classesByName.set(name, { reg: new ClassRegistration(), regloc: new StackGrabber().getCleanStack(1) ?? [] });
+    classesByName.set(name, {
+      reg: new ClassRegistration(undefined),
+      regloc: new StackGrabber().getCleanStack(1) ?? [],
+    });
   }
 
   const clsReg: ClassRegistration = classesByName.get(name)!.reg;
