@@ -465,6 +465,7 @@ export class DBOSExecutor {
 
     let $deadlineEpochMS: number | undefined = undefined;
     let shouldExecute: boolean | undefined = undefined;
+    const serializer = this.serializer;
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
@@ -485,7 +486,7 @@ export class DBOSExecutor {
         const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
         if (result) {
           if (result.error) {
-            throw deserializeError(DBOSJSON.parse(result.error));
+            throw deserializeError(serializer.parse(result.error));
           }
           return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
         }
@@ -505,7 +506,7 @@ export class DBOSExecutor {
             internalStatus.workflowName,
             true,
             Date.now(),
-            { error: DBOSJSON.stringify(serializeError(e)) },
+            { error: serializer.stringify(serializeError(e)) },
           );
         }
         throw e;
@@ -559,7 +560,7 @@ export class DBOSExecutor {
       const e = err as Error & { dbos_already_logged?: boolean };
       exec.logger.error(e);
       e.dbos_already_logged = true;
-      internalStatus.error = DBOSJSON.stringify(serializeError(e));
+      internalStatus.error = serializer.stringify(serializeError(e));
       internalStatus.status = StatusString.ERROR;
       if (!exec.#debugMode) {
         await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
@@ -600,7 +601,7 @@ export class DBOSExecutor {
             if (recordedResult === null) {
               return callResult === undefined || callResult === null;
             }
-            return DBOSJSON.stringify(recordedResult) === DBOSJSON.stringify(callResult);
+            return serializer.stringify(recordedResult) === serializer.stringify(callResult);
           }
 
           const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
@@ -608,7 +609,7 @@ export class DBOSExecutor {
           );
           if (!resultsMatch(recordedResult, callResult)) {
             this.logger.error(
-              `Detect different output for the workflow UUID ${workflowID}!\n Received: ${DBOSJSON.stringify(callResult)}\n Original: ${DBOSJSON.stringify(recordedResult)}`,
+              `Detect different output for the workflow UUID ${workflowID}!\n Received: ${serializer.stringify(callResult)}\n Original: ${serializer.stringify(recordedResult)}`,
             );
           }
           result = recordedResult;
@@ -839,7 +840,7 @@ export class DBOSExecutor {
       // Record the error, then throw it.
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, maxAttempts, errors) : err;
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
-        error: DBOSJSON.stringify(serializeError(err)),
+        error: this.serializer.stringify(serializeError(err)),
       });
       span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(span);
@@ -861,7 +862,13 @@ export class DBOSExecutor {
     const temp_workflow = async (destinationId: string, message: T, topic?: string) => {
       const ctx = getCurrentContextStore();
       const functionID: number = functionIDGetIncrement();
-      await this.systemDatabase.send(ctx!.workflowId!, functionID, destinationId, DBOSJSON.stringify(message), topic);
+      await this.systemDatabase.send(
+        ctx!.workflowId!,
+        functionID,
+        destinationId,
+        this.serializer.stringify(message),
+        topic,
+      );
     };
     const workflowUUID = idempotencyKey ? destinationId + idempotencyKey : undefined;
     return (
@@ -887,7 +894,7 @@ export class DBOSExecutor {
     key: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
-    return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
+    return this.serializer.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
   }
 
   /**
@@ -935,7 +942,7 @@ export class DBOSExecutor {
       return funcOutput.deserialized;
     } catch (e) {
       await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, false, startTime, {
-        error: DBOSJSON.stringify(serializeError(e)),
+        error: this.serializer.stringify(serializeError(e)),
         childWorkflowID: childWfId,
       });
 
@@ -1057,7 +1064,7 @@ export class DBOSExecutor {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
-    const inputs = DBOSJSON.parse(wfStatus.input) as unknown[];
+    const inputs = this.serializer.parse(wfStatus.input) as unknown[];
     const recoverCtx = this.#getRecoveryContext(workflowID, wfStatus);
 
     const { methReg, configuredInst } = this.#getFunctionInfoFromWFStatus(wfStatus);
@@ -1118,7 +1125,13 @@ export class DBOSExecutor {
       const swf = async (destinationID: string, message: unknown, topic?: string) => {
         const ctx = getCurrentContextStore();
         const functionID: number = functionIDGetIncrement();
-        await this.systemDatabase.send(ctx!.workflowId!, functionID, destinationID, DBOSJSON.stringify(message), topic);
+        await this.systemDatabase.send(
+          ctx!.workflowId!,
+          functionID,
+          destinationID,
+          this.serializer.stringify(message),
+          topic,
+        );
       };
       const temp_workflow = swf as UntypedAsyncFunction;
       return await runWithTopContext(recoverCtx, async () => {
@@ -1171,8 +1184,8 @@ export class DBOSExecutor {
         function_id: row.function_id,
         function_name: row.function_name ?? '<unknown>',
         child_workflow_id: row.child_workflow_id,
-        output: row.output !== null ? DBOSJSON.parse(row.output) : null,
-        error: row.error !== null ? deserializeError(DBOSJSON.parse(row.error as unknown as string)) : null,
+        output: row.output !== null ? this.serializer.parse(row.output) : null,
+        error: row.error !== null ? deserializeError(this.serializer.parse(row.error as unknown as string)) : null,
       };
     });
   }
