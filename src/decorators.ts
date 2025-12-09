@@ -593,15 +593,13 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
 
   if (typeof target === 'function') {
     // Constructor case
-    const classReg = classesByName.get(target.name);
-    classReg?.reg?.allRegisteredOperations?.forEach((m) => registeredOperations.push(m));
+    const classReg = getClassRegistration(target, false);
+    classReg.reg?.reg?.allRegisteredOperations?.forEach((m) => registeredOperations.push(m));
   } else {
     let current: object | undefined = target;
     while (current) {
-      const cname = current.constructor.name;
-      if (classesByName.has(cname)) {
-        registeredOperations.push(...getRegisteredOperations(current.constructor));
-      }
+      // Walk prototype chain
+      registeredOperations.push(...getRegisteredOperations(current.constructor));
       current = Object.getPrototypeOf(current) as object | undefined;
     }
   }
@@ -731,7 +729,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   return methReg;
 }
 
-export function wrapDBOSFunctionAndRegisterByUniqueNameDec<This, Args extends unknown[], Return>(
+export function wrapDBOSFunctionAndRegisterByTarget<This, Args extends unknown[], Return>(
   target: object,
   propertyKey: PropertyKey,
   descriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
@@ -811,6 +809,7 @@ export function wrapDBOSFunctionAndRegister<This, Args extends unknown[], Return
 //  Thus, if you have a "class name", look it up in classesByName, as this is exhaustive
 //  If you have a class or instance, you can look that up in the classesByCtor map,
 //   this contains all decorator-registered classes, but may omit other things.
+//   You should use this map if you can, since the names for these may be aliased.
 //
 // The support for aliasing classes in the decorator registration scheme is a bit tricky,
 //  since the class decorator runs after the method decorators.  To get this to work:
@@ -879,17 +878,10 @@ export function getClassRegistrationByName(name: string, create: boolean = false
 }
 
 export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]): object }>(ctor: CT) {
-  const name = getNameForClass(ctor);
-  if (!classesByName.has(name)) {
-    classesByName.set(name, { ctor, reg: new ClassRegistration() });
-  }
-  const clsReg: ClassRegistration = classesByName.get(name)!.reg;
-
-  if (clsReg.needsInitialized) {
-    clsReg.name = name;
-    clsReg.needsInitialized = false;
-  }
-  return clsReg;
+  const existing = getClassRegistration(ctor, true);
+  const reg = existing.reg!.reg;
+  // This registration will need initialized... that happens later
+  return reg;
 }
 
 function getOrCreateClassRegistrationByName(target: object | undefined, className: string | undefined) {
@@ -918,7 +910,7 @@ function getOrCreateClassRegistrationByName(target: object | undefined, classNam
 }
 
 export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
-  const classReg = classesByName.get(clsname)?.reg;
+  const classReg = getClassRegistrationByName(clsname);
   if (!classReg) return null;
   return classReg.configuredInstances.get(cfgname) ?? null;
 }

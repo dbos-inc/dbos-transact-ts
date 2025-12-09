@@ -61,7 +61,7 @@ import {
   UntypedAsyncFunction,
   FunctionName,
   wrapDBOSFunctionAndRegisterByUniqueName,
-  wrapDBOSFunctionAndRegisterByUniqueNameDec,
+  wrapDBOSFunctionAndRegisterByTarget,
   wrapDBOSFunctionAndRegister,
   ensureDBOSIsLaunched,
   ConfiguredInstance,
@@ -1194,11 +1194,7 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
-        target,
-        propertyKey,
-        inDescriptor,
-      );
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(target, propertyKey, inDescriptor);
       const invoker = DBOS.#getWorkflowInvoker(registration, config);
 
       descriptor.value = invoker;
@@ -1349,11 +1345,7 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
-        target,
-        propertyKey,
-        inDescriptor,
-      );
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(target, propertyKey, inDescriptor);
       registration.setStepConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
