@@ -520,8 +520,10 @@ export function insertAllMiddleware() {
   if (installedMiddleware) return;
   installedMiddleware = true;
 
-  for (const [_cn, c] of classesByName) {
-    for (const f of c.reg.allRegisteredOperations.values()) {
+  const regs = getAllClassRegistrations();
+
+  for (const c of regs) {
+    for (const f of c.allRegisteredOperations.values()) {
       for (const i of middlewareInstallers) {
         i.installMiddleware(f);
       }
@@ -812,7 +814,18 @@ const classesByCtor: Map<AnyConstructor, { name: string; reg: ClassRegistration;
 
 export function getNameForClass(ctor: object): string {
   const reg = getClassRegistration(ctor, false);
-  return reg.reg?.name ?? reg.regTarget.name;
+  return reg.reg?.name || reg.regTarget.name;
+}
+
+function getAllClassRegistrations() {
+  const seen: Set<ClassRegistration> = new Set();
+  for (const [_cn, c] of classesByName) {
+    seen.add(c.reg);
+  }
+  for (const [_c, c] of classesByCtor) {
+    seen.add(c.reg);
+  }
+  return seen;
 }
 
 function getClassRegistration(target: object, create: boolean) {
@@ -881,7 +894,6 @@ export function getOrCreateClassRegistrationByTarget<CT extends { new (...args: 
 
 function getOrCreateClassRegistration(target: object | undefined, className: string | undefined) {
   if (!target && className === undefined) {
-    // Classless workflows go on empty-name
     className = '';
   }
 
@@ -935,13 +947,13 @@ export function finalizeClassRegistrations() {
   }
 
   for (const [cls, reg] of classesByCtor) {
-    const cname = reg.name ?? reg.reg.name ?? getNameForClass(cls);
+    const cname = reg.name || reg.reg.name || getNameForClass(cls);
     const ereg = classesByName.get(cname);
     if (!ereg) {
       classesByName.set(cname, { reg: reg.reg, ctor: cls, regloc: reg.regloc });
       reg.name = cname;
       setName(reg.reg, cname);
-      break;
+      continue;
     }
     if (ereg.reg !== reg.reg) {
       console.error(
@@ -1091,18 +1103,9 @@ export function getRegistrationsForExternal(
       }
     }
   } else {
-    const seen: Set<ClassRegistration> = new Set();
-    for (const [_cn, c] of classesByName) {
-      if (!seen.has(c.reg)) {
-        collectRegForClass(c.reg);
-        seen.add(c.reg);
-      }
-    }
-    for (const [_c, c] of classesByCtor) {
-      if (!seen.has(c.reg)) {
-        collectRegForClass(c.reg);
-        seen.add(c.reg);
-      }
+    const seen = getAllClassRegistrations();
+    for (const c of seen) {
+      collectRegForClass(c);
     }
   }
   return res;
