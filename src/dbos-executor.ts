@@ -61,7 +61,7 @@ import {
 } from './context';
 import { deserializeError, serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
-import { DBOSJSON, serializeFunctionInputOutput } from './serialization';
+import { DBOSJSON, DBOSSerializer, serializeFunctionInputOutput } from './serialization';
 import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -106,6 +106,8 @@ export interface DBOSConfig {
 
   applicationVersion?: string;
   executorID?: string;
+
+  serializer?: DBOSSerializer;
 }
 
 export interface DBOSRuntimeConfig {
@@ -139,6 +141,7 @@ export type DBOSConfigInternal = {
   sysDbPoolSize?: number;
   systemDatabasePool?: Pool;
   systemDatabaseSchemaName: string;
+  serializer: DBOSSerializer;
 
   telemetry: TelemetryConfig;
 
@@ -211,6 +214,7 @@ export class DBOSExecutor {
   readonly logger: GlobalLogger;
   readonly ctxLogger: DBOSContextualLogger;
   readonly tracer: Tracer;
+  readonly serializer: DBOSSerializer;
 
   #wfqEnded?: Promise<void> = undefined;
 
@@ -236,6 +240,7 @@ export class DBOSExecutor {
     this.logger = new GlobalLogger(this.telemetryCollector, this.config.telemetry.logs, this.appName);
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
     this.tracer = new Tracer(this.telemetryCollector, this.appName);
+    this.serializer = config.serializer;
 
     if (this.#debugMode) {
       this.logger.info('Running in debug mode!');
