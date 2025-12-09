@@ -374,6 +374,9 @@ describe('dbos-tests', () => {
 
     test('custom-serializer-test', async () => {
       await DBOS.shutdown();
+      const config = generateDBOSTestConfig();
+      // Reset the test database
+      await setUpDBOSTestSysDb(config);
 
       const key = 'key';
       const value = 'value';
@@ -395,7 +398,6 @@ describe('dbos-tests', () => {
       const queue = new WorkflowQueue('example-queue');
 
       // Configure DBOS with a custom serializer to base64-encoded JSON
-      const config = generateDBOSTestConfig();
       const jsonSerializer: DBOSSerializer = {
         parse: (text: string | null | undefined): unknown => {
           if (text === null || text === undefined) return null;
