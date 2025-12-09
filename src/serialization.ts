@@ -2,6 +2,26 @@ import superjson from 'superjson';
 import type { SuperJSONResult, JSONValue } from 'superjson/dist/types';
 export { type JSONValue };
 
+/**
+ * Generic serializer interface for DBOS.
+ * Implementations must be able to serialize any value to a string and deserialize it back.
+ */
+export interface DBOSSerializer {
+  /**
+   * Serialize a value to a string.
+   * @param value - The value to serialize
+   * @returns The serialized string representation
+   */
+  stringify(value: unknown): string;
+
+  /**
+   * Deserialize a string back to a value.
+   * @param text - The serialized string, or null/undefined
+   * @returns The deserialized value, or null if the input was null/undefined
+   */
+  parse(text: string | null | undefined): unknown;
+}
+
 export type SerializationRecipe<T, S extends JSONValue> = {
   name: string;
   isApplicable: (v: unknown) => v is T;
@@ -156,7 +176,7 @@ function sjstringify(value: unknown) {
  * Backwards compatible - can deserialize both old DBOSJSON format and new SuperJSON format.
  * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
  */
-export const DBOSJSON = {
+export const DBOSJSON: DBOSSerializer = {
   parse: (text: string | null | undefined): unknown => {
     if (text === null || text === undefined) return null; // This is from legacy; SuperJSON can do it.
 
@@ -191,7 +211,6 @@ export const DBOSJSON = {
   stringify: sjstringify,
 };
 
-//#region Serialization Protection
 // Serialization protection - for a serialized object, provide a replacement that gives clear errors
 //  from called functions that will not be there after deserialization.
 

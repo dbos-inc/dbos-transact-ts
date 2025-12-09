@@ -31,7 +31,7 @@ export {
 
 export { Debouncer, DebouncerClient } from './debouncer';
 
-export { SerializationRecipe } from './serialization';
+export { SerializationRecipe, DBOSSerializer } from './serialization';
 
 export { StepConfig } from './step';
 
