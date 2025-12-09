@@ -1,4 +1,4 @@
-import { WorkflowHandle, DBOS, DBOSSerializer } from '../src/';
+import { WorkflowHandle, DBOS, DBOSSerializer, WorkflowQueue } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
@@ -374,6 +374,20 @@ describe('dbos-tests', () => {
 
     test('custom-serializer-test', async () => {
       await DBOS.shutdown();
+
+      const key = 'key';
+      const value = 'value';
+      const message = 'message';
+      const workflow = DBOS.registerWorkflow(
+        async (input: string) => {
+          await DBOS.setEvent(key, input);
+          return DBOS.recv();
+        },
+        { name: 'custom-serializer-test' },
+      );
+      const queue = new WorkflowQueue('example-queue');
+
+      // Configure DBOS with a JSON-based custom serializer
       const config = generateDBOSTestConfig();
       const jsonSerializer: DBOSSerializer = {
         parse: (text: string | null | undefined): unknown => {
@@ -384,19 +398,11 @@ describe('dbos-tests', () => {
       };
       config.serializer = jsonSerializer;
       DBOS.setConfig(config);
-      const workflow = DBOS.registerWorkflow(
-        (topic: string) => {
-          return DBOS.recv(topic);
-        },
-        { name: 'custom-serializer-test' },
-      );
       await DBOS.launch();
-
-      const message = 'message';
-      const topic = 'topic';
-      const handle = await DBOS.startWorkflow(workflow)(topic);
-      await DBOS.send(handle.workflowID, message, topic);
+      const handle = await DBOS.startWorkflow(workflow, { queueName: queue.name })(value);
+      await DBOS.send(handle.workflowID, message);
       assert.equal(await handle.getResult(), message);
+      assert.equal(await DBOS.getEvent(handle.workflowID, key), value);
 
       const client = await DBOSClient.create({
         systemDatabaseUrl: config.systemDatabaseUrl!,
@@ -404,6 +410,7 @@ describe('dbos-tests', () => {
       });
       const clientHandle = client.retrieveWorkflow(handle.workflowID);
       assert.equal(await clientHandle.getResult(), message);
+      assert.equal(await client.getEvent(handle.workflowID, key), value);
       await client.destroy();
     });
   });
