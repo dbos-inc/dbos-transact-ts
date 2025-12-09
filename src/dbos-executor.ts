@@ -61,7 +61,7 @@ import {
 } from './context';
 import { deserializeError, serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
-import { DBOSJSON, DBOSSerializer, serializeFunctionInputOutput } from './serialization';
+import { DBOSSerializer, serializeFunctionInputOutput } from './serialization';
 import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -348,11 +348,11 @@ export class DBOSExecutor {
     return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
 
-  static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, success?: boolean) {
-    if (success === true || !r.error) {
-      return DBOSJSON.parse(r.output ?? null) as R;
+  static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, serializer: DBOSSerializer) {
+    if (!r.error) {
+      return serializer.parse(r.output ?? null) as R;
     } else {
-      throw deserializeError(DBOSJSON.parse(r.error));
+      throw deserializeError(serializer.parse(r.error));
     }
   }
 
@@ -607,6 +607,7 @@ export class DBOSExecutor {
 
           const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
             (await this.systemDatabase.awaitWorkflowResult(workflowID))!,
+            this.serializer,
           );
           if (!resultsMatch(recordedResult, callResult)) {
             this.logger.error(
@@ -761,7 +762,7 @@ export class DBOSExecutor {
       if (checkr.functionName !== stepFnName) {
         throw new DBOSUnexpectedStepError(wfid, funcID, stepFnName, checkr.functionName ?? '?');
       }
-      const check = DBOSExecutor.reviveResultOrError<R>(checkr);
+      const check = DBOSExecutor.reviveResultOrError<R>(checkr, this.serializer);
       span.setAttribute('cached', true);
       span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(span);
@@ -931,7 +932,7 @@ export class DBOSExecutor {
       if (result.functionName !== functionName) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, functionName, result.functionName!);
       }
-      return DBOSExecutor.reviveResultOrError<T>(result);
+      return DBOSExecutor.reviveResultOrError<T>(result, this.serializer);
     }
     try {
       const output: T = await callback();

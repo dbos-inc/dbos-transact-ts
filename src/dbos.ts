@@ -558,7 +558,7 @@ export class DBOS {
         if (rres?.cancelled) {
           throw new DBOSAwaitedWorkflowCancelledError(workflowID);
         }
-        return DBOSExecutor.reviveResultOrError<T>(rres);
+        return DBOSExecutor.reviveResultOrError<T>(rres, DBOS.#executor.serializer);
       },
       'DBOS.getResult',
       workflowID,

@@ -111,7 +111,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     if (res?.cancelled) {
       throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
     }
-    return DBOSExecutor.reviveResultOrError<R>(res!);
+    return DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.getSerializer());
   }
 
   async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
