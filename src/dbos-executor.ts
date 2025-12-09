@@ -254,6 +254,7 @@ export class DBOSExecutor {
       this.systemDatabase = new PostgresSystemDatabase(
         this.config.systemDatabaseUrl,
         this.logger,
+        this.serializer,
         this.config.sysDbPoolSize,
         this.config.systemDatabasePool,
         this.systemDBSchemaName,
@@ -953,7 +954,7 @@ export class DBOSExecutor {
   async getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatus | null> {
     // use sysdb getWorkflowStatus directly in order to support caller ID/FN params
     const status = await this.systemDatabase.getWorkflowStatus(workflowID, callerID, callerFN);
-    return status ? toWorkflowStatus(status) : null;
+    return status ? toWorkflowStatus(status, this.serializer) : null;
   }
 
   async listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatus[]> {

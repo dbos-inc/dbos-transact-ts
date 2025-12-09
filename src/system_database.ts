@@ -27,6 +27,7 @@ import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from '
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 import { DEBUG_TRIGGER_STEP_COMMIT, DEBUG_TRIGGER_INITWF_COMMIT, debugTriggerPoint } from './debugpoint';
+import { DBOSSerializer } from './serialization';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -189,6 +190,7 @@ export interface SystemDatabase {
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
   garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void>;
   getMetrics(startTime: string, endTime: string): Promise<MetricData[]>;
+  getSerializer(): DBOSSerializer;
 }
 
 // For internal use, not serialized status.
@@ -843,6 +845,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
+    readonly serializer: DBOSSerializer,
     sysDbPoolSize: number = DEFAULT_POOL_SIZE,
     systemDatabasePool?: Pool,
     schemaName: string = 'dbos',
@@ -869,6 +872,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         this.logger.warn(`Unexpected error in idle client: ${err}`);
       });
     });
+  }
+  getSerializer(): DBOSSerializer {
+    return this.serializer;
   }
 
   async init(debugMode: boolean = false) {

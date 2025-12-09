@@ -103,7 +103,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
 
   async getStatus(): Promise<WorkflowStatus | null> {
     const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
-    return status ? toWorkflowStatus(status) : null;
+    return status ? toWorkflowStatus(status, DBOSJSON) : null;
   }
 
   async getResult(): Promise<R> {
@@ -132,6 +132,7 @@ export class DBOSClient {
     this.systemDatabase = new PostgresSystemDatabase(
       systemDatabaseUrl,
       this.logger,
+      DBOSJSON,
       DEFAULT_POOL_SIZE,
       systemDatabasePool,
     );
