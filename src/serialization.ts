@@ -16,10 +16,10 @@ export interface DBOSSerializer {
 
   /**
    * Deserialize a string back to a value.
-   * @param text - The serialized string, or null/undefined
-   * @returns The deserialized value, or null if the input was null/undefined
+   * @param text - A serialized string (potentially null)
+   * @returns The deserialized value, or null if the input was null
    */
-  parse(text: string | null | undefined): unknown;
+  parse(text: string | null): unknown;
 }
 
 export type SerializationRecipe<T, S extends JSONValue> = {
@@ -177,7 +177,7 @@ function sjstringify(value: unknown) {
  * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
  */
 export const DBOSJSON: DBOSSerializer = {
-  parse: (text: string | null | undefined): unknown => {
+  parse: (text: string | null): unknown => {
     if (text === null || text === undefined) return null; // This is from legacy; SuperJSON can do it.
 
     /**
