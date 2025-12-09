@@ -387,14 +387,19 @@ describe('dbos-tests', () => {
       );
       const queue = new WorkflowQueue('example-queue');
 
-      // Configure DBOS with a JSON-based custom serializer
+      // Configure DBOS with a custom serializer to base64-encoded JSON
       const config = generateDBOSTestConfig();
       const jsonSerializer: DBOSSerializer = {
         parse: (text: string | null | undefined): unknown => {
           if (text === null || text === undefined) return null;
-          return JSON.parse(text);
+          return JSON.parse(Buffer.from(text, 'base64').toString());
         },
-        stringify: JSON.stringify,
+        stringify: (obj: unknown): string => {
+          if (obj === undefined) {
+            obj = null;
+          }
+          return Buffer.from(JSON.stringify(obj)).toString('base64');
+        },
       };
       config.serializer = jsonSerializer;
       DBOS.setConfig(config);
@@ -427,6 +432,12 @@ describe('dbos-tests', () => {
       assert.equal(await clientHandle.getResult(), message);
       assert.equal(await client.getEvent(handle.workflowID, key), value);
       await client.destroy();
+
+      // const badClient = await DBOSClient.create({
+      //   systemDatabaseUrl: config.systemDatabaseUrl!,
+      // });
+      // const workflows = await badClient.listWorkflows({});
+      // console.log(workflows);
     }, 10000);
   });
 });
