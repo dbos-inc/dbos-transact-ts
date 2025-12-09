@@ -400,10 +400,12 @@ describe('dbos-tests', () => {
       // Configure DBOS with a custom serializer to base64-encoded JSON
       const jsonSerializer: DBOSSerializer = {
         parse: (text: string | null | undefined): unknown => {
+          // Parsers must always return null when receiving null or undefined
           if (text === null || text === undefined) return null;
           return JSON.parse(Buffer.from(text, 'base64').toString());
         },
         stringify: (obj: unknown): string => {
+          // JSON.stringify doesn't handle undefined, so convert it to null instead
           if (obj === undefined) {
             obj = null;
           }
