@@ -16,10 +16,10 @@ export interface DBOSSerializer {
 
   /**
    * Deserialize a string back to a value.
-   * @param text - A serialized string (potentially null)
-   * @returns The deserialized value, or null if the input was null
+   * @param text - A serialized string (potentially null or undefined)
+   * @returns The deserialized value, or null if the input was null/undefined
    */
-  parse(text: string | null): unknown;
+  parse(text: string | null | undefined): unknown;
 }
 
 export type SerializationRecipe<T, S extends JSONValue> = {
@@ -177,7 +177,7 @@ function sjstringify(value: unknown) {
  * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
  */
 export const DBOSJSON: DBOSSerializer = {
-  parse: (text: string | null): unknown => {
+  parse: (text: string | null | undefined): unknown => {
     if (text === null || text === undefined) return null; // This is from legacy; SuperJSON can do it.
 
     /**
@@ -227,10 +227,11 @@ type AnyObject = { [key: string | symbol]: unknown };
 export function serializeFunctionInputOutput<T>(
   value: T,
   path: PathToMember = [],
+  serializer: DBOSSerializer,
 ): { deserialized: T; stringified: string } {
-  const stringified = DBOSJSON.stringify(value);
-  const deserialized = DBOSJSON.parse(stringified) as T;
-  if (isObjectish(deserialized)) {
+  const stringified = serializer.stringify(value);
+  const deserialized = serializer.parse(stringified) as T;
+  if (serializer === DBOSJSON && isObjectish(deserialized)) {
     attachFunctionStubs(value as unknown as AnyObject, deserialized as unknown as AnyObject, path);
   }
   return { deserialized, stringified };

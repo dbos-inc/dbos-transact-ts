@@ -1,4 +1,4 @@
-import { WorkflowHandle, DBOS } from '../src/';
+import { WorkflowHandle, DBOS, DBOSSerializer } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
@@ -371,6 +371,41 @@ describe('dbos-tests', () => {
         status: StatusString.SUCCESS,
       });
     });
+
+    test('custom-serializer-test', async () => {
+      await DBOS.shutdown();
+      const config = generateDBOSTestConfig();
+      const jsonSerializer: DBOSSerializer = {
+        parse: (text: string | null | undefined): unknown => {
+          if (text === null || text === undefined) return null;
+          return JSON.parse(text);
+        },
+        stringify: JSON.stringify,
+      };
+      config.serializer = jsonSerializer;
+      DBOS.setConfig(config);
+      const workflow = DBOS.registerWorkflow(
+        (topic: string) => {
+          return DBOS.recv(topic);
+        },
+        { name: 'custom-serializer-test' },
+      );
+      await DBOS.launch();
+
+      const message = 'message';
+      const topic = 'topic';
+      const handle = await DBOS.startWorkflow(workflow)(topic);
+      await DBOS.send(handle.workflowID, message, topic);
+      assert.equal(await handle.getResult(), message);
+
+      const client = await DBOSClient.create({
+        systemDatabaseUrl: config.systemDatabaseUrl!,
+        serializer: jsonSerializer,
+      });
+      const clientHandle = client.retrieveWorkflow(handle.workflowID);
+      assert.equal(await clientHandle.getResult(), message);
+      await client.destroy();
+    });
   });
 });
 
@@ -525,7 +560,7 @@ describe('custom-pool-test', () => {
       () => {
         return DBOS.recv();
       },
-      { name: 'workflow' },
+      { name: 'custom-pool-test' },
     );
     // Launching with a custom pool but nonexistent database should fail
     await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
@@ -545,11 +580,11 @@ describe('custom-pool-test', () => {
     await DBOS.send(handle.workflowID, message);
     assert.equal(await handle.getResult(), message);
 
-    const client = DBOSClient.create({
+    const client = await DBOSClient.create({
       systemDatabaseUrl: config.systemDatabaseUrl!,
       systemDatabasePool: config.systemDatabasePool,
     });
-    const clientHandle = (await client).retrieveWorkflow(handle.workflowID);
+    const clientHandle = client.retrieveWorkflow(handle.workflowID);
     assert.equal(await clientHandle.getResult(), message);
   });
 });

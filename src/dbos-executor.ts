@@ -432,7 +432,7 @@ export class DBOSExecutor {
       assumedRole: pctx?.assumedRole ?? '',
     });
 
-    const funcArgs = serializeFunctionInputOutput(args, [wfname, '<arguments>']);
+    const funcArgs = serializeFunctionInputOutput(args, [wfname, '<arguments>'], this.serializer);
     args = funcArgs.deserialized;
 
     const internalStatus: WorkflowStatusInternal = {
@@ -619,7 +619,7 @@ export class DBOSExecutor {
           result = callResult!;
         }
 
-        const funcResult = serializeFunctionInputOutput(result, [wfname, '<result>']);
+        const funcResult = serializeFunctionInputOutput(result, [wfname, '<result>'], this.serializer);
         result = funcResult.deserialized;
         internalStatus.output = funcResult.stringified;
         internalStatus.status = StatusString.SUCCESS;
@@ -849,7 +849,7 @@ export class DBOSExecutor {
       throw err as Error;
     } else {
       // Record the execution and return.
-      const funcResult = serializeFunctionInputOutput(result, [stepFnName, '<result>']);
+      const funcResult = serializeFunctionInputOutput(result, [stepFnName, '<result>'], this.serializer);
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
         output: funcResult.stringified,
       });
@@ -936,7 +936,7 @@ export class DBOSExecutor {
     }
     try {
       const output: T = await callback();
-      const funcOutput = serializeFunctionInputOutput(output, [functionName, '<result>']);
+      const funcOutput = serializeFunctionInputOutput(output, [functionName, '<result>'], this.serializer);
       await this.systemDatabase.recordOperationResult(workflowID, functionID, functionName, true, startTime, {
         output: funcOutput.stringified,
         childWorkflowID: childWfId,
