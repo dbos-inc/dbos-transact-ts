@@ -399,20 +399,35 @@ describe('dbos-tests', () => {
       config.serializer = jsonSerializer;
       DBOS.setConfig(config);
       await DBOS.launch();
+
+      // Test workflow operations with a custom serializer
       const handle = await DBOS.startWorkflow(workflow, { queueName: queue.name })(value);
       await DBOS.send(handle.workflowID, message);
       assert.equal(await handle.getResult(), message);
       assert.equal(await DBOS.getEvent(handle.workflowID, key), value);
+      const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+      assert.ok(steps);
+      assert.equal(steps.length, 2);
+      assert.ok(steps[0].name.includes('DBOS.setEvent'));
+      assert.ok(steps[1].name.includes('DBOS.recv'));
+      assert.equal(steps[1].output, message);
 
+      // Test the client with a custom serializer
       const client = await DBOSClient.create({
         systemDatabaseUrl: config.systemDatabaseUrl!,
         serializer: jsonSerializer,
       });
+      const clientEnqueue = await client.enqueue(
+        { workflowName: 'custom-serializer-test', queueName: queue.name },
+        message,
+      );
+      await client.send(clientEnqueue.workflowID, message);
+      assert.equal(await clientEnqueue.getResult(), message);
       const clientHandle = client.retrieveWorkflow(handle.workflowID);
       assert.equal(await clientHandle.getResult(), message);
       assert.equal(await client.getEvent(handle.workflowID, key), value);
       await client.destroy();
-    });
+    }, 10000);
   });
 });
 
