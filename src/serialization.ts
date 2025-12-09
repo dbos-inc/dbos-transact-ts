@@ -391,6 +391,6 @@ export function safeParseError(serializer: DBOSSerializer, val: string) {
   try {
     return deserializeError(serializer.parse(val));
   } catch (e) {
-    return val;
+    return val as unknown as Error;
   }
 }

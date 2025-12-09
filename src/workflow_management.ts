@@ -32,8 +32,8 @@ export async function listWorkflowSteps(sysdb: SystemDatabase, workflowID: strin
   const steps: StepInfo[] = $steps.map((step) => ({
     functionID: step.function_id,
     name: step.function_name ?? '',
-    output: step.output ? sysdb.getSerializer().parse(step.output) : null,
-    error: step.error ? deserializeError(sysdb.getSerializer().parse(step.error)) : null,
+    output: step.output ? safeParse(sysdb.getSerializer(), step.output) : null,
+    error: step.error ? safeParseError(sysdb.getSerializer(), step.error) : null,
     childWorkflowID: step.child_workflow_id,
     startedAtEpochMs: step.started_at_epoch_ms,
     completedAtEpochMs: step.completed_at_epoch_ms,

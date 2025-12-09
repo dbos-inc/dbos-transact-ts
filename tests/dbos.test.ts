@@ -443,13 +443,18 @@ describe('dbos-tests', () => {
       await client.destroy();
 
       // Verify a client without the custom serializer does not fail,
-      // but emits warnings and falls back to returning raw strings
+      // but falls back to returning raw strings
       const badClient = await DBOSClient.create({
         systemDatabaseUrl: config.systemDatabaseUrl!,
       });
       const workflows = await badClient.listWorkflows({});
       assert.equal(workflows.length, 5);
       assert.equal(workflows[0].output, jsonSerializer.stringify(message));
+      const badClientSteps = await badClient.listWorkflowSteps(workflows[0].workflowID);
+      assert.ok(badClientSteps);
+      assert.ok(badClientSteps[1].name.includes('DBOS.recv'));
+      assert.equal(badClientSteps[1].output, jsonSerializer.stringify(message));
+      assert.equal(badClientSteps.length, 2);
       await badClient.destroy();
     }, 10000);
   });
