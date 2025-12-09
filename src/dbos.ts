@@ -68,6 +68,7 @@ import {
   DBOSMethodMiddlewareInstaller,
   DBOSLifecycleCallback,
   associateParameterWithExternal,
+  finalizeClassRegistrations,
 } from './decorators';
 import {
   DBOSJSON,
@@ -206,12 +207,13 @@ export class DBOS {
 
     if (!isTraceContextWorking()) installTraceContextManager(internalConfig.name);
 
-    // Do nothing is DBOS is already initialized
-    insertAllMiddleware();
-
+    // Do nothing if DBOS is already initialized
     if (DBOS.isInitialized()) {
       return;
     }
+
+    finalizeClassRegistrations();
+    insertAllMiddleware();
 
     // Globally set the application version and executor ID.
     // In DBOS Cloud, instead use the value supplied through environment variables.

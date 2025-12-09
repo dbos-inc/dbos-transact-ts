@@ -534,7 +534,7 @@ const functionToRegistration: Map<unknown, MethodRegistration<unknown, unknown[]
 
 // Registration of instance, by constructor+name
 function registerClassInstance(inst: ConfiguredInstance, instname: string) {
-  const creg = getOrCreateClassRegistration(inst.constructor as AnyConstructor);
+  const creg = getOrCreateClassRegistrationByTarget(inst.constructor as AnyConstructor);
   if (creg.configuredInstances.has(instname)) {
     throw new DBOSConflictingRegistrationError(
       `An instance of class '${inst.constructor.name}' with name '${instname}' was already registered.  Earlier registration occurred at:\n${(creg.configuredInstanceRegLocs.get(instname) ?? []).join('\n')}`,
@@ -607,13 +607,6 @@ export function getRegisteredOperations(target: object): ReadonlyArray<MethodReg
   return registeredOperations;
 }
 
-export function getRegisteredFunctionsByClassname(target: string): ReadonlyArray<MethodRegistrationBase> {
-  const registeredOperations: MethodRegistrationBase[] = [];
-  const cls = getClassRegistrationByName(target);
-  cls?.allRegisteredOperations?.forEach((m) => registeredOperations.push(m));
-  return registeredOperations;
-}
-
 const methodArgsByFunction: Map<unknown, MethodParameter[]> = new Map();
 
 export function getOrCreateMethodArgsRegistration(
@@ -674,9 +667,7 @@ function getOrCreateMethodRegistration<This, Args extends unknown[], Return>(
   propertyKey: PropertyKey,
   func: (this: This, ...args: Args) => Promise<Return>,
 ) {
-  let classReg;
-  let isInstance;
-  ({ classReg, isInstance, className } = getOrCreateClassRegistrationByName(target, className));
+  const { classReg, isInstance } = getOrCreateClassRegistration(target, className);
 
   const fname = propertyKey.toString();
 
@@ -756,13 +747,13 @@ export function wrapDBOSFunctionAndRegisterByUniqueName<This, Args extends unkno
   const name = typeof propertyKey === 'string' ? propertyKey : propertyKey.toString();
   const freg = getFunctionRegistration(func) as MethodRegistration<This, Args, Return>;
   if (freg) {
-    const r = getOrCreateClassRegistrationByName(ctorOrProto, className);
+    const r = getOrCreateClassRegistration(ctorOrProto, className);
     r.classReg.registerOperationByName(name, freg);
     return freg;
   }
 
   const registration = getOrCreateMethodRegistration(ctorOrProto, className, propertyKey, func);
-  const r = getOrCreateClassRegistrationByName(ctorOrProto, className);
+  const r = getOrCreateClassRegistration(ctorOrProto, className);
   r.classReg.registerOperationByName(name, registration);
 
   return registration;
@@ -816,8 +807,8 @@ export function wrapDBOSFunctionAndRegister<This, Args extends unknown[], Return
 //  1. We put the methods into the class by using the ctor
 //  2. We complete the name->class registration later
 type AnyConstructor = new (...args: unknown[]) => object;
-const classesByName: Map<string, { reg: ClassRegistration; ctor?: AnyConstructor }> = new Map();
-const classesByCtor: Map<AnyConstructor, { name: string; reg: ClassRegistration }> = new Map();
+const classesByName: Map<string, { reg: ClassRegistration; ctor?: AnyConstructor; regloc: string[] }> = new Map();
+const classesByCtor: Map<AnyConstructor, { name: string; reg: ClassRegistration; regloc: string[] }> = new Map();
 
 export function getNameForClass(ctor: object): string {
   const reg = getClassRegistration(ctor, false);
@@ -836,7 +827,11 @@ function getClassRegistration(target: object, create: boolean) {
 
   if (classesByCtor.has(regTarget)) return { regTarget, reg: classesByCtor.get(regTarget)! };
   if (!create) return { regTarget };
-  classesByCtor.set(regTarget, { reg: new ClassRegistration(), name: regTarget.name });
+  classesByCtor.set(regTarget, {
+    reg: new ClassRegistration(),
+    name: regTarget.name,
+    regloc: new StackGrabber().getCleanStack(1) ?? [],
+  });
   return { regTarget, reg: classesByCtor.get(regTarget)! };
 }
 
@@ -865,7 +860,7 @@ export function getClassRegistrationByName(name: string, create: boolean = false
   }
 
   if (!classesByName.has(name)) {
-    classesByName.set(name, { reg: new ClassRegistration() });
+    classesByName.set(name, { reg: new ClassRegistration(), regloc: new StackGrabber().getCleanStack(1) ?? [] });
   }
 
   const clsReg: ClassRegistration = classesByName.get(name)!.reg;
@@ -877,14 +872,19 @@ export function getClassRegistrationByName(name: string, create: boolean = false
   return clsReg;
 }
 
-export function getOrCreateClassRegistration<CT extends { new (...args: unknown[]): object }>(ctor: CT) {
+export function getOrCreateClassRegistrationByTarget<CT extends { new (...args: unknown[]): object }>(ctor: CT) {
   const existing = getClassRegistration(ctor, true);
   const reg = existing.reg!.reg;
   // This registration will need initialized... that happens later
   return reg;
 }
 
-function getOrCreateClassRegistrationByName(target: object | undefined, className: string | undefined) {
+function getOrCreateClassRegistration(target: object | undefined, className: string | undefined) {
+  if (!target && className === undefined) {
+    // Classless workflows go on empty-name
+    className = '';
+  }
+
   let regtarget: AnyConstructor | undefined = undefined;
   let isInstance = false;
 
@@ -898,21 +898,65 @@ function getOrCreateClassRegistrationByName(target: object | undefined, classNam
       isInstance = true;
     }
   }
-  if (!className) {
-    if (regtarget) className = regtarget.name;
-  }
-  if (!className) {
-    className = '';
+
+  // If we have no class name, this might get assigned later.  Put in placeholder reg
+  if (className === undefined) {
+    const reg = getClassRegistration(regtarget!, true);
+    return { classReg: reg.reg!.reg, isInstance, className };
   }
 
-  const classReg = getClassRegistrationByName(className, true);
-  return { classReg, isInstance, className };
+  // If we have no regtarget, this is plain function registration
+  if (!regtarget) {
+    return { classReg: getClassRegistrationByName(className, true), isInstance: false, className };
+  }
+
+  // We have a regtarget and a name ... assign the name
+  const reg = getClassRegistration(regtarget, true);
+  if (reg.reg!.name && reg.reg!.name !== className) {
+    throw new TypeError(`Attempt to register class under two names: ${reg.reg!.name} vs. ${className}`);
+  }
+  reg.reg!.name = className;
+  return { classReg: reg.reg!.reg, isInstance, className };
 }
 
 export function getConfiguredInstance(clsname: string, cfgname: string): ConfiguredInstance | null {
   const classReg = getClassRegistrationByName(clsname);
   if (!classReg) return null;
   return classReg.configuredInstances.get(cfgname) ?? null;
+}
+
+export function finalizeClassRegistrations() {
+  function setName(reg: ClassRegistration, cname: string) {
+    reg.name = cname;
+    reg.needsInitialized = false;
+    for (const [_fn, f] of reg.registeredOperationsByName) {
+      f.className = cname;
+    }
+  }
+
+  for (const [cls, reg] of classesByCtor) {
+    const cname = reg.name ?? reg.reg.name ?? getNameForClass(cls);
+    const ereg = classesByName.get(cname);
+    if (!ereg) {
+      classesByName.set(cname, { reg: reg.reg, ctor: cls, regloc: reg.regloc });
+      reg.name = cname;
+      setName(reg.reg, cname);
+      break;
+    }
+    if (ereg.reg !== reg.reg) {
+      console.error(
+        `Looks like we could lose info: ${cname} ${ereg.regloc.join(';\n')} \n-\n ${reg.regloc.join(';\n')}`,
+      );
+    }
+    if (ereg.ctor && ereg.ctor !== cls) {
+      throw new DBOSConflictingRegistrationError(
+        `Class ${cname}(${cls.name}) has been given a name that conflicts with another class ${ereg.ctor?.name}.`,
+      );
+    }
+    classesByName.set(cname, { reg: reg.reg, ctor: cls, regloc: reg.regloc });
+    reg.name = cname;
+    setName(reg.reg, cname);
+  }
 }
 
 // #endregion
@@ -946,8 +990,12 @@ export function associateClassWithExternal(
   external: AnyConstructor | object | string,
   cls: AnyConstructor | string,
 ): object {
-  const clsn: string = typeof cls === 'string' ? cls : getNameForClass(cls);
-  const clsreg = getClassRegistrationByName(clsn, true);
+  let clsreg: ClassRegistration | undefined = undefined;
+  if (typeof cls === 'string') {
+    clsreg = getClassRegistrationByName(cls, true);
+  } else {
+    clsreg = getClassRegistration(cls, true).reg!.reg;
+  }
   return clsreg.getRegisteredInfo(external);
 }
 
@@ -1023,27 +1071,44 @@ export function getRegistrationsForExternal(
   const res = new Array<ExternalRegistration>();
 
   if (cls) {
-    const clsname = typeof cls === 'string' ? cls : getNameForClass(cls);
-    const c = classesByName.get(clsname);
-    if (c) {
+    let reg: ClassRegistration | undefined = undefined;
+    if (typeof cls === 'string') {
+      reg = classesByName.get(cls)?.reg;
+    } else if (typeof cls === 'function') {
+      reg = classesByCtor.get(cls as AnyConstructor)?.reg;
+    } else if (cls !== undefined && typeof cls === 'object') {
+      reg = classesByCtor.get(cls.constructor as AnyConstructor)?.reg;
+    }
+
+    if (reg) {
       if (funcName) {
-        const f = c.reg.registeredOperationsByName.get(funcName);
+        const f = reg.registeredOperationsByName.get(funcName);
         if (f) {
           collectRegForFunction(f);
         }
       } else {
-        collectRegForClass(c);
+        collectRegForClass(reg);
       }
     }
   } else {
+    const seen: Set<ClassRegistration> = new Set();
     for (const [_cn, c] of classesByName) {
-      collectRegForClass(c);
+      if (!seen.has(c.reg)) {
+        collectRegForClass(c.reg);
+        seen.add(c.reg);
+      }
+    }
+    for (const [_c, c] of classesByCtor) {
+      if (!seen.has(c.reg)) {
+        collectRegForClass(c.reg);
+        seen.add(c.reg);
+      }
     }
   }
   return res;
 
-  function collectRegForClass(c: { reg: ClassRegistration; ctor?: AnyConstructor }) {
-    for (const f of c.reg.allRegisteredOperations.values()) {
+  function collectRegForClass(reg: ClassRegistration) {
+    for (const f of reg.allRegisteredOperations.values()) {
       collectRegForFunction(f);
     }
   }
