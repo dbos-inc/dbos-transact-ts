@@ -1,3 +1,4 @@
+import { deserializeError } from 'serialize-error';
 import superjson from 'superjson';
 import type { SuperJSONResult, JSONValue } from 'superjson/dist/types';
 export { type JSONValue };
@@ -375,4 +376,21 @@ function isIndexableKey(k: unknown): k is string | number {
   return typeof k === 'string' || typeof k === 'number';
 }
 
-//#endregion
+// Attempt to deserialize a value, but if it fails, retun the raw string.
+// Used for "best-effort" in introspection methods which may encounter
+// old undeserializable data.
+export function safeParse(serializer: DBOSSerializer, val: string) {
+  try {
+    return serializer.parse(val);
+  } catch (e) {
+    return val;
+  }
+}
+
+export function safeParseError(serializer: DBOSSerializer, val: string) {
+  try {
+    return deserializeError(serializer.parse(val));
+  } catch (e) {
+    return val;
+  }
+}

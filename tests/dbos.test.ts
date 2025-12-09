@@ -433,11 +433,15 @@ describe('dbos-tests', () => {
       assert.equal(await client.getEvent(handle.workflowID, key), value);
       await client.destroy();
 
-      // const badClient = await DBOSClient.create({
-      //   systemDatabaseUrl: config.systemDatabaseUrl!,
-      // });
-      // const workflows = await badClient.listWorkflows({});
-      // console.log(workflows);
+      // Verify a client without the custom serializer does not fail,
+      // but emits warnings and falls back to returning raw strings
+      const badClient = await DBOSClient.create({
+        systemDatabaseUrl: config.systemDatabaseUrl!,
+      });
+      const workflows = await badClient.listWorkflows({});
+      assert.equal(workflows.length, 4);
+      assert.equal(workflows[0].output, jsonSerializer.stringify(message));
+      await badClient.destroy();
     }, 10000);
   });
 });

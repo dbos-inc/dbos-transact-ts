@@ -1,6 +1,6 @@
 import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import type { StepInfo, WorkflowStatus, GetWorkflowsInput } from './workflow';
-import { DBOSSerializer } from './serialization';
+import { DBOSSerializer, safeParse, safeParseError } from './serialization';
 import { deserializeError } from 'serialize-error';
 import { randomUUID } from 'node:crypto';
 
@@ -66,9 +66,9 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: D
     assumedRole: internal.assumedRole,
     authenticatedRoles: internal.authenticatedRoles,
 
-    input: internal.input ? (serializer.parse(internal.input) as unknown[]) : undefined,
-    output: internal.output ? serializer.parse(internal.output ?? null) : undefined,
-    error: internal.error ? deserializeError(serializer.parse(internal.error)) : undefined,
+    input: internal.input ? (safeParse(serializer, internal.input) as unknown[]) : undefined,
+    output: internal.output ? safeParse(serializer, internal.output ?? null) : undefined,
+    error: internal.error ? safeParseError(serializer, internal.error) : undefined,
 
     request: internal.request,
     executorId: internal.executorId,
