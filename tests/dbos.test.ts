@@ -385,6 +385,13 @@ describe('dbos-tests', () => {
         },
         { name: 'custom-serializer-test' },
       );
+      const errorWorkflow = DBOS.registerWorkflow(
+        async () => {
+          await Promise.resolve();
+          throw new Error(message);
+        },
+        { name: 'custom-serializer-test-error' },
+      );
       const queue = new WorkflowQueue('example-queue');
 
       // Configure DBOS with a custom serializer to base64-encoded JSON
@@ -416,6 +423,8 @@ describe('dbos-tests', () => {
       assert.ok(steps[0].name.includes('DBOS.setEvent'));
       assert.ok(steps[1].name.includes('DBOS.recv'));
       assert.equal(steps[1].output, message);
+      const errorHandle = await DBOS.startWorkflow(errorWorkflow, { queueName: queue.name })();
+      await expect(errorHandle.getResult()).rejects.toThrow(message);
 
       // Test the client with a custom serializer
       const client = await DBOSClient.create({
@@ -439,7 +448,7 @@ describe('dbos-tests', () => {
         systemDatabaseUrl: config.systemDatabaseUrl!,
       });
       const workflows = await badClient.listWorkflows({});
-      assert.equal(workflows.length, 4);
+      assert.equal(workflows.length, 5);
       assert.equal(workflows[0].output, jsonSerializer.stringify(message));
       await badClient.destroy();
     }, 10000);
