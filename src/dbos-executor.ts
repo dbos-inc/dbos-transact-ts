@@ -60,14 +60,8 @@ import {
   runWithTopContext,
 } from './context';
 import { deserializeError, serializeError } from 'serialize-error';
-import {
-  globalParams,
-  DBOSJSON,
-  sleepms,
-  serializeFunctionInputOutput,
-  INTERNAL_QUEUE_NAME,
-  DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME,
-} from './utils';
+import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
+import { DBOSJSON, serializeFunctionInputOutput } from './serialization';
 import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';

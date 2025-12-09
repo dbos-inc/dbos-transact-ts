@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
-import { DBOSJSON, registerSerializationRecipe } from './utils';
+import { DBOSJSON, registerSerializationRecipe } from './serialization';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
 import { DBOSExecutor } from './dbos-executor';

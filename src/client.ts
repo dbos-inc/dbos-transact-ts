@@ -16,7 +16,8 @@ import {
   type WorkflowHandle,
   type WorkflowStatus,
 } from './workflow';
-import { DBOSJSON, sleepms } from './utils';
+import { sleepms } from './utils';
+import { DBOSJSON } from './serialization';
 import {
   forkWorkflow,
   getWorkflow,

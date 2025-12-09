@@ -69,15 +69,8 @@ import {
   DBOSLifecycleCallback,
   associateParameterWithExternal,
 } from './decorators';
-import {
-  DBOSJSON,
-  defaultEnableOTLP,
-  globalParams,
-  JSONValue,
-  registerSerializationRecipe,
-  SerializationRecipe,
-  sleepms,
-} from './utils';
+import { defaultEnableOTLP, globalParams, sleepms } from './utils';
+import { DBOSJSON, JSONValue, registerSerializationRecipe, SerializationRecipe } from './serialization';
 import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
 

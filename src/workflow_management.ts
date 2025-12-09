@@ -1,6 +1,6 @@
 import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import type { StepInfo, WorkflowStatus, GetWorkflowsInput } from './workflow';
-import { DBOSJSON } from './utils';
+import { DBOSJSON } from './serialization';
 import { deserializeError } from 'serialize-error';
 import { randomUUID } from 'node:crypto';
 

@@ -1,4 +1,4 @@
-import { DBOSJSON, DBOSJSONLegacy, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/utils';
+import { DBOSJSON, DBOSJSONLegacy, SERIALIZER_MARKER_KEY, SERIALIZER_MARKER_VALUE } from '../src/serialization';
 
 /**
  * DBOSJSON uses SuperJSON internally for rich type support.
