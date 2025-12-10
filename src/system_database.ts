@@ -443,8 +443,9 @@ async function insertWorkflowStatus(
         initStatus.workflowUUID,
         initStatus.status,
         initStatus.workflowName,
-        initStatus.workflowClassName,
-        initStatus.workflowConfigName,
+        // For cross-language compatibility, these variables MUST be NULL in the database when not set
+        initStatus.workflowClassName === '' ? null : initStatus.workflowClassName,
+        initStatus.workflowConfigName === '' ? null : initStatus.workflowConfigName,
         initStatus.queueName ?? null,
         initStatus.authenticatedUser,
         initStatus.assumedRole,
@@ -470,7 +471,10 @@ async function insertWorkflowStatus(
     if (rows.length === 0) {
       throw new Error(`Attempt to insert workflow ${initStatus.workflowUUID} failed`);
     }
-    return rows[0];
+    const ret = rows[0];
+    ret.class_name = ret.class_name ?? '';
+    ret.config_name = ret.config_name ?? '';
+    return ret;
   } catch (error) {
     const err: DatabaseError = error as DatabaseError;
     if (err.code === '23505') {
