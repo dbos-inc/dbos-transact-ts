@@ -1216,7 +1216,11 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(
+        target,
+        config.name ?? propertyKey,
+        inDescriptor,
+      );
       const invoker = DBOS.#getWorkflowInvoker(registration, config);
 
       descriptor.value = invoker;

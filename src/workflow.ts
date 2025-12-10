@@ -24,6 +24,8 @@ export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;
 export interface WorkflowConfig {
   /** Maximum number of recovery attempts to make on workflow function, before sending to dead-letter queue */
   maxRecoveryAttempts?: number;
+  /** Name to use */
+  name?: string;
 }
 
 export interface WorkflowStatus {

@@ -3,7 +3,7 @@ import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 @DBOS.className('ClassA')
 class TestClass {
-  @DBOS.workflow()
+  @DBOS.workflow({ name: 'wfAStatic' })
   static decoratedWorkflow(value: number): Promise<number> {
     return TestClass.stepTestStatic(value);
   }
@@ -17,7 +17,7 @@ class TestClass {
 
 @DBOS.className('ClassB')
 class TestClassInst extends ConfiguredInstance {
-  @DBOS.workflow()
+  @DBOS.workflow({ name: 'wfBStatic' })
   static async decoratedWorkflow(value: number): Promise<number> {
     return TestClassInst.stepTestStatic(value);
   }
@@ -28,7 +28,7 @@ class TestClassInst extends ConfiguredInstance {
     return Promise.resolve(value * 100);
   }
 
-  @DBOS.workflow()
+  @DBOS.workflow({ name: 'wfBInstance' })
   async decoratedWorkflowInst(value: number): Promise<number> {
     return await this.stepTest(value);
   }
@@ -93,9 +93,22 @@ describe('rename_tests', () => {
     collector.seenClasses.forEach((v) => sc.push(v));
     expect(sc.toSorted()).toStrictEqual(['ClassA', 'ClassB']);
 
+    // Get registered workflows
+    const sw: string[] = [];
+    collector.seenMethods.forEach((v) => sw.push(v));
+    expect(sw.filter((n) => n.includes('wf')).toSorted()).toStrictEqual([
+      'ClassA/wfAStatic',
+      'ClassB/wfBInstance',
+      'ClassB/wfBStatic',
+    ]);
+
     // Check names in SysDB
     const classnames = (await DBOS.listWorkflows({})).map((wf) => wf.workflowClassName).sort();
     expect(classnames).toStrictEqual(['ClassA', 'ClassB', 'ClassB', 'ClassB']);
+
+    // Check names in SysDB
+    const wfnames = (await DBOS.listWorkflows({})).map((wf) => wf.workflowName).sort();
+    expect(wfnames).toStrictEqual(['wfAStatic', 'wfBInstance', 'wfBInstance', 'wfBStatic']);
   });
 
   // TODO: Test enqueue
