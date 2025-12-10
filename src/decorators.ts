@@ -846,7 +846,7 @@ function getAllClassRegistrations() {
   return seen;
 }
 
-function getClassRegistration(target: object, create: boolean) {
+export function getClassRegistration(target: object, create: boolean) {
   let regTarget: AnyConstructor;
   if (typeof target === 'function') {
     // Static method case

@@ -1,4 +1,4 @@
-import { ConfiguredInstance, DBOS, DBOSConfig } from '../src';
+import { ConfiguredInstance, DBOS, DBOSConfig, DBOSMethodMiddlewareInstaller, MethodRegistrationBase } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 @DBOS.className('ClassA')
@@ -43,8 +43,22 @@ class TestClassInst extends ConfiguredInstance {
 const instA = new TestClassInst('A');
 const instB = new TestClassInst('B');
 
+class TestMWC implements DBOSMethodMiddlewareInstaller {
+  seenClasses: Set<string> = new Set();
+  seenMethods: Set<string> = new Set();
+
+  installMiddleware(methodReg: MethodRegistrationBase): void {
+    const rcn = methodReg.className;
+    const rfn = methodReg.name;
+
+    this.seenClasses.add(rcn);
+    this.seenMethods.add(`${rcn}/${rfn}`);
+  }
+}
+
 describe('rename_tests', () => {
   let config: DBOSConfig;
+  let collector: TestMWC = new TestMWC();
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
@@ -54,6 +68,8 @@ describe('rename_tests', () => {
   });
 
   beforeEach(async () => {
+    collector = new TestMWC();
+    DBOS.registerMiddlewareInstaller(collector);
     await DBOS.launch();
   });
 
@@ -72,13 +88,19 @@ describe('rename_tests', () => {
     expect(rvia).toBe(1000);
     expect(rvib).toBe(1000);
 
+    // Get registered classes
+    const sc: string[] = [];
+    collector.seenClasses.forEach((v) => sc.push(v));
+    expect(sc.toSorted()).toStrictEqual(['ClassA', 'ClassB']);
+
     // Check names in SysDB
     const classnames = (await DBOS.listWorkflows({})).map((wf) => wf.workflowClassName).sort();
-    expect(classnames).toBe(['ClassA', 'ClassB', 'ClassB', 'ClassB']);
+    expect(classnames).toStrictEqual(['ClassA', 'ClassB', 'ClassB', 'ClassB']);
   });
 
   // TODO: Test enqueue
   // TODO: Test recover
+  // TODO: Test external registrations (event rec stuff)
 
   // TODO: Allow wf, step, tx to be named within the decorator
 

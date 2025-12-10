@@ -70,7 +70,7 @@ import {
   DBOSLifecycleCallback,
   associateParameterWithExternal,
   finalizeClassRegistrations,
-  getOrCreateClassRegistrationByTarget,
+  getClassRegistration,
 } from './decorators';
 import {
   DBOSJSON,
@@ -1171,13 +1171,13 @@ export class DBOS {
   static className(name: string) {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
-      const clsreg = getOrCreateClassRegistrationByTarget(ctor);
-      if (clsreg.name && clsreg.name !== name && clsreg.name !== ctor.name) {
+      const clsreg = getClassRegistration(ctor, true);
+      if (clsreg.reg?.name && clsreg.reg.name !== name && clsreg.reg.name !== ctor.name) {
         throw new DBOSConflictingRegistrationError(
-          `Attempt to assign name ${name} to class ${ctor.name}, which has already been aliased to ${clsreg.name}`,
+          `Attempt to assign name ${name} to class ${ctor.name}, which has already been aliased to ${clsreg.reg.name}`,
         );
       }
-      clsreg.name = name;
+      clsreg.reg!.name = name;
     }
     return clsdec;
   }
