@@ -27,6 +27,7 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
+  DBOSConflictingRegistrationError,
 } from './error';
 import {
   getDbosConfig,
@@ -69,6 +70,7 @@ import {
   DBOSLifecycleCallback,
   associateParameterWithExternal,
   finalizeClassRegistrations,
+  getOrCreateClassRegistrationByTarget,
 } from './decorators';
 import {
   DBOSJSON,
@@ -1162,6 +1164,24 @@ export class DBOS {
   //////
   // Decorators
   //////
+
+  /**
+   * Allow a class to be assigned a name
+   */
+  static className(name: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
+      const clsreg = getOrCreateClassRegistrationByTarget(ctor);
+      if (clsreg.name && clsreg.name !== name && clsreg.name !== ctor.name) {
+        throw new DBOSConflictingRegistrationError(
+          `Attempt to assign name ${name} to class ${ctor.name}, which has already been aliased to ${clsreg.name}`,
+        );
+      }
+      clsreg.name = name;
+    }
+    return clsdec;
+  }
+
   /**
    * Decorator associating a class static method with an invocation schedule
    * @param config - The schedule, consisting of a crontab and policy for "make-up work"
