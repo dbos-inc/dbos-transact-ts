@@ -82,8 +82,11 @@ describe('rename_tests', () => {
     collector = new TestMWC();
     DBOS.registerMiddlewareInstaller(collector);
     (DBOS.associateClassWithInfo('test1', TestClass) as { key?: string }).key = 'a';
-    (DBOS.associateFunctionWithInfo('test2', TestClassInst.stepTestStatic, { name: 'tibs' }) as { key?: string }).key =
-      'b';
+    (
+      DBOS.associateFunctionWithInfo('test2', TestClassInst.stepTestStatic, { name: 'tibs' }).regInfo as {
+        key?: string;
+      }
+    ).key = 'b';
     await DBOS.launch();
   });
 
@@ -179,7 +182,7 @@ describe('rename_tests', () => {
 
     expect(DBOS.getAssociatedInfo('test2', TestClassInst, 'tibs').length).toBe(1);
     expect(DBOS.getAssociatedInfo('test2', 'ClassB', 'tibs').length).toBe(1);
-    //expect(DBOS.getAssociatedInfo('test2', TestClassInst, 'tibs')[0].methodConfig).toStrictEqual({key: 'b'});
+    expect(DBOS.getAssociatedInfo('test2', TestClassInst, 'tibs')[0].methodConfig).toStrictEqual({ key: 'b' });
 
     // Negative test - conflicting class names (decorator)
     const result1 = spawnSync('npx', ['ts-node', './tests/dupclassreg.ts'], {
