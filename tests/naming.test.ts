@@ -197,7 +197,7 @@ describe('rename_tests', () => {
     expect(result1.stderr).toContain('DBOSConflictingRegistrationError');
 
     // Negative test - conflicting class names (mix)
-    const result2 = spawnSync('npx', ['ts-node', './tests/dupclassreg.ts'], {
+    const result2 = spawnSync('npx', ['ts-node', './tests/dupclassregexplicit.ts'], {
       encoding: 'utf-8',
       cwd: process.cwd(),
       env: { ...process.env },

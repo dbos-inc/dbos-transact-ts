@@ -1,13 +1,6 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
 import { generateDBOSTestConfig } from './helpers';
 
-class TestClass {
-  @DBOS.workflow()
-  static async workflow() {
-    return Promise.resolve();
-  }
-}
-
 @DBOS.className('TestClass')
 class TestClass2 {
   @DBOS.workflow()
@@ -16,8 +9,9 @@ class TestClass2 {
   }
 }
 
+DBOS.registerWorkflow(async () => Promise.resolve('WF'), { className: 'TestClass', name: 'wf' });
+
 async function main() {
-  new TestClass();
   new TestClass2();
 
   const config = generateDBOSTestConfig();
