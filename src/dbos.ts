@@ -1218,6 +1218,7 @@ export class DBOS {
     ) {
       const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(
         target,
+        propertyKey,
         config.name ?? propertyKey,
         inDescriptor,
       );
@@ -1248,6 +1249,7 @@ export class DBOS {
     const registration = wrapDBOSFunctionAndRegisterByUniqueName(
       config?.ctorOrProto,
       config?.className,
+      config?.name ?? func.name,
       config?.name ?? func.name,
       func,
     );
@@ -1371,7 +1373,12 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(target, propertyKey, inDescriptor);
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(
+        target,
+        propertyKey,
+        config.name,
+        inDescriptor,
+      );
       registration.setStepConfig(config);
 
       const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
@@ -1449,7 +1456,7 @@ export class DBOS {
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;
 
-    const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, func);
+    const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, name, func);
 
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
       ensureDBOSIsLaunched('steps');

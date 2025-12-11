@@ -8,7 +8,7 @@ class TestClass {
     return TestClass.stepTestStatic(value);
   }
 
-  @DBOS.step()
+  @DBOS.step({ name: 'tsbs' })
   static stepTestStatic(value: number): Promise<number> {
     expect(DBOS.stepStatus).toBeDefined();
     return Promise.resolve(value * 100);
@@ -22,7 +22,7 @@ class TestClassInst extends ConfiguredInstance {
     return TestClassInst.stepTestStatic(value);
   }
 
-  @DBOS.step()
+  @DBOS.step({ name: 'tibs' })
   static async stepTestStatic(value: number): Promise<number> {
     expect(DBOS.stepStatus).toBeDefined();
     return Promise.resolve(value * 100);
@@ -33,7 +33,7 @@ class TestClassInst extends ConfiguredInstance {
     return await this.stepTest(value);
   }
 
-  @DBOS.step()
+  @DBOS.step({ name: 'tibi' })
   async stepTest(value: number): Promise<number> {
     expect(DBOS.stepStatus).toBeDefined();
     return Promise.resolve(value * 100);
