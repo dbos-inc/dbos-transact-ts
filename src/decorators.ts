@@ -984,14 +984,14 @@ export function finalizeClassRegistrations() {
       setName(reg.reg, cname);
       continue;
     }
-    if (ereg.reg !== reg.reg) {
-      console.error(
-        `Looks like we could lose info: ${cname} ${ereg.regloc.join(';\n')} \n-\n ${reg.regloc.join(';\n')}`,
-      );
-    }
     if (ereg.ctor && ereg.ctor !== cls) {
       throw new DBOSConflictingRegistrationError(
         `Class ${cname}(${cls.name}) has been given a name that conflicts with another class ${ereg.ctor?.name}.`,
+      );
+    }
+    if (ereg.reg !== reg.reg) {
+      throw new DBOSConflictingRegistrationError(
+        `Class: ${cname}(${cls.name}) has been given a name that was registered directly by name without a class.`,
       );
     }
     classesByName.set(cname, { reg: reg.reg, ctor: cls, regloc: reg.regloc });

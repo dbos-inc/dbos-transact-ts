@@ -1,3 +1,4 @@
+import { spawnSync } from 'node:child_process';
 import {
   ConfiguredInstance,
   DBOS,
@@ -80,6 +81,9 @@ describe('rename_tests', () => {
   beforeEach(async () => {
     collector = new TestMWC();
     DBOS.registerMiddlewareInstaller(collector);
+    (DBOS.associateClassWithInfo('test1', TestClass) as { key?: string }).key = 'a';
+    (DBOS.associateFunctionWithInfo('test2', TestClassInst.stepTestStatic, { name: 'tibs' }) as { key?: string }).key =
+      'b';
     await DBOS.launch();
   });
 
@@ -167,10 +171,44 @@ describe('rename_tests', () => {
     } finally {
       await client.destroy();
     }
+
+    // See if external reg info is there
+    expect(DBOS.getAssociatedInfo('test1', TestClass).length).toBe(2);
+    expect(DBOS.getAssociatedInfo('test1', 'ClassA').length).toBe(2);
+    expect(DBOS.getAssociatedInfo('test1', 'ClassA')[0].classConfig).toStrictEqual({ key: 'a' });
+
+    expect(DBOS.getAssociatedInfo('test2', TestClassInst, 'tibs').length).toBe(1);
+    expect(DBOS.getAssociatedInfo('test2', 'ClassB', 'tibs').length).toBe(1);
+    //expect(DBOS.getAssociatedInfo('test2', TestClassInst, 'tibs')[0].methodConfig).toStrictEqual({key: 'b'});
+
+    // Negative test - conflicting class names (decorator)
+    const result1 = spawnSync('npx', ['ts-node', './tests/dupclassreg.ts'], {
+      encoding: 'utf-8',
+      cwd: process.cwd(),
+      env: { ...process.env },
+      stdio: ['inherit', 'pipe', 'pipe'], // Capture stdout and stderr
+    });
+
+    // Uncomment to see what happened above...
+    //console.log('STDOUT:', result1.stdout);
+    //console.error('STDERR:', result1.stderr);
+
+    // Check if the expected error appears in stderr
+    expect(result1.stderr).toContain('DBOSConflictingRegistrationError');
+
+    // Negative test - conflicting class names (mix)
+    const result2 = spawnSync('npx', ['ts-node', './tests/dupclassreg.ts'], {
+      encoding: 'utf-8',
+      cwd: process.cwd(),
+      env: { ...process.env },
+      stdio: ['inherit', 'pipe', 'pipe'], // Capture stdout and stderr
+    });
+
+    // Uncomment to see what happened above...
+    //console.log('STDOUT:', result2.stdout);
+    //console.error('STDERR:', result2.stderr);
+
+    // Check if the expected error appears in stderr
+    expect(result2.stderr).toContain('DBOSConflictingRegistrationError');
   });
-
-  // TODO: Test external registrations (event rec stuff)
-
-  // TODO: Negative testing (conflicts)
-  // TODO: register calls; hybrid
 });
