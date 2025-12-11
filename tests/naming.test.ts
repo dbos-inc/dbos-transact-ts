@@ -102,20 +102,31 @@ describe('rename_tests', () => {
       'ClassB/wfBStatic',
     ]);
 
-    // Check names in SysDB
+    // Check class names in SysDB
     const classnames = (await DBOS.listWorkflows({})).map((wf) => wf.workflowClassName).sort();
     expect(classnames).toStrictEqual(['ClassA', 'ClassB', 'ClassB', 'ClassB']);
 
-    // Check names in SysDB
+    // Check wf names in SysDB
     const wfnames = (await DBOS.listWorkflows({})).map((wf) => wf.workflowName).sort();
     expect(wfnames).toStrictEqual(['wfAStatic', 'wfBInstance', 'wfBInstance', 'wfBStatic']);
+
+    // Check step names in SysDB
+    const wfids = (await DBOS.listWorkflows({})).map((wf) => wf.workflowID);
+    const stepnames: string[] = [];
+    for (const id of wfids) {
+      const lsr = await DBOS.listWorkflowSteps(id);
+      for (const s of lsr ?? []) {
+        if (!stepnames.includes(s.name)) stepnames.push(s.name);
+      }
+    }
+    stepnames.sort();
+    expect(stepnames).toStrictEqual(['tibi', 'tibs', 'tsbs']);
   });
 
   // TODO: Test enqueue
+  // TODOL Test client
   // TODO: Test recover
   // TODO: Test external registrations (event rec stuff)
-
-  // TODO: Allow wf, step, tx to be named within the decorator
 
   // TODO: Negative testing (conflicts)
   // TODO: register calls; hybrid
