@@ -1,5 +1,15 @@
-import { ConfiguredInstance, DBOS, DBOSConfig, DBOSMethodMiddlewareInstaller, MethodRegistrationBase } from '../src';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import {
+  ConfiguredInstance,
+  DBOS,
+  DBOSClient,
+  DBOSConfig,
+  DBOSMethodMiddlewareInstaller,
+  MethodRegistrationBase,
+  WorkflowQueue,
+} from '../src';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+
+const _queue = new WorkflowQueue('testQueue');
 
 @DBOS.className('ClassA')
 class TestClass {
@@ -121,11 +131,44 @@ describe('rename_tests', () => {
     }
     stepnames.sort();
     expect(stepnames).toStrictEqual(['tibi', 'tibs', 'tsbs']);
+
+    expect(wfids.length).toBe(4);
+    for (const id of wfids) {
+      const resnew = await (await reexecuteWorkflowById(id))?.getResult();
+      expect(resnew).toBe(1000);
+    }
+
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+
+    // Tests client + enqueue
+    try {
+      const handles = await client.enqueue<typeof TestClassInst.stepTestStatic>(
+        {
+          workflowName: 'wfBStatic',
+          workflowClassName: 'ClassB',
+          queueName: 'testQueue',
+          workflowTimeoutMS: 10000,
+        },
+        10,
+      );
+      await expect(handles.getResult()).resolves.toBe(1000);
+
+      const handlei = await client.enqueue<typeof instA.decoratedWorkflowInst>(
+        {
+          workflowName: 'wfBInstance',
+          workflowClassName: 'ClassB',
+          workflowConfigName: 'A',
+          queueName: 'testQueue',
+          workflowTimeoutMS: 10000,
+        },
+        10,
+      );
+      await expect(handlei.getResult()).resolves.toBe(1000);
+    } finally {
+      await client.destroy();
+    }
   });
 
-  // TODO: Test enqueue
-  // TODOL Test client
-  // TODO: Test recover
   // TODO: Test external registrations (event rec stuff)
 
   // TODO: Negative testing (conflicts)
