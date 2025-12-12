@@ -403,8 +403,9 @@ export class DBOSExecutor {
 
     let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
-    let wfname = getRegisteredFunctionFullName(wf).name; // TODO: Should be what was registered in wfInfo...
-    let wfclassname = getRegisteredFunctionClassName(wf);
+    const wfNames = getRegisteredFunctionFullName(wf);
+    let wfname = wfNames.name;
+    let wfclassname = wfNames.className;
 
     const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname || !!params.tempWfType;
 

@@ -10,4 +10,6 @@ export interface StepConfig {
   maxAttempts?: number;
   /** If `retriesAllowed` is true: the multiplier by which the retry interval increases after every retry attempt (default 2) */
   backoffRate?: number;
+  /** If specified, override step function name */
+  name?: string;
 }
