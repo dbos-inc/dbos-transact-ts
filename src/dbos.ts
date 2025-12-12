@@ -346,6 +346,11 @@ export class DBOS {
     return DBOSExecutor.globalInstance?.deactivateEventReceivers();
   }
 
+  /** Start listening for external events (for testing) */
+  static async initEventReceivers() {
+    return DBOSExecutor.globalInstance?.initEventReceivers();
+  }
+
   // Global DBOS executor instance
   static get #executor() {
     return getExecutor();
