@@ -112,6 +112,8 @@ export interface DBOSConfig {
 
   applicationVersion?: string;
   executorID?: string;
+
+  listenQueues?: WorkflowQueue[];
 }
 
 export interface DBOSRuntimeConfig {
@@ -1010,8 +1012,8 @@ export class DBOSExecutor {
     return handlerArray;
   }
 
-  async initEventReceivers() {
-    this.#wfqEnded = wfQueueRunner.dispatchLoop(this);
+  async initEventReceivers(listenQueues: WorkflowQueue[] | null) {
+    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues);
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();

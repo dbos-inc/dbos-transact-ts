@@ -252,7 +252,7 @@ export class DBOS {
       return; // return for cases where process.exit is mocked
     }
 
-    await DBOSExecutor.globalInstance.initEventReceivers();
+    await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
     for (const [_n, ds] of transactionalDataSources) {
       await ds.initialize();
     }
@@ -352,7 +352,7 @@ export class DBOS {
 
   /** Start listening for external events (for testing) */
   static async initEventReceivers() {
-    return DBOSExecutor.globalInstance?.initEventReceivers();
+    return DBOSExecutor.globalInstance?.initEventReceivers(this.#dbosConfig?.listenQueues || null);
   }
 
   // Global DBOS executor instance

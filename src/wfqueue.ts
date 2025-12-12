@@ -1,7 +1,7 @@
 import { DBOSExecutor } from './dbos-executor';
 import { DBOS } from './dbos';
 import { DEBUG_TRIGGER_WORKFLOW_QUEUE_START, debugTriggerPoint } from './debugpoint';
-import { globalParams } from './utils';
+import { globalParams, INTERNAL_QUEUE_NAME } from './utils';
 
 /**
  * Limit the maximum number of functions started from a `WorkflowQueue`
@@ -102,7 +102,7 @@ class WFQueueRunner {
     }
   }
 
-  async dispatchLoop(exec: DBOSExecutor): Promise<void> {
+  async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: WorkflowQueue[] | null): Promise<void> {
     this.isRunning = true;
     while (this.isRunning) {
       // Wait for either the timeout or an interruption
@@ -124,8 +124,17 @@ class WFQueueRunner {
         break;
       }
 
+      let listenQueues;
+      if (listenQueuesArg !== null) {
+        // If explicitly listening for queues, use only those queues plus the internal queue
+        listenQueues = [...listenQueuesArg, this.wfQueuesByName.get(INTERNAL_QUEUE_NAME)!];
+      } else {
+        // Else, listen to all declared queues
+        listenQueues = Array.from(this.wfQueuesByName.values());
+      }
+
       // Check queues
-      for (const [_qn, q] of this.wfQueuesByName) {
+      for (const q of listenQueues) {
         let wfids: string[] = [];
         try {
           if (q.partitionQueue) {
