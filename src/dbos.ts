@@ -6,6 +6,7 @@ import {
   StepStatus,
   DBOSContextOptions,
   functionIDGetIncrement,
+  functionIDGet,
 } from './context';
 import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
 import { DBOSSpan, getActiveSpan, installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
@@ -1609,7 +1610,7 @@ export class DBOS {
 
     const patched = await DBOSExecutor.globalInstance!.systemDatabase.checkPatch(
       DBOS.workflowID!,
-      DBOS.stepID!,
+      functionIDGet(),
       patchName,
       false,
     );
@@ -1641,7 +1642,7 @@ export class DBOS {
 
     const patched = await DBOSExecutor.globalInstance!.systemDatabase.checkPatch(
       DBOS.workflowID!,
-      DBOS.stepID!,
+      functionIDGet(),
       patchName,
       true,
     );

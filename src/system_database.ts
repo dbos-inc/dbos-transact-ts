@@ -517,6 +517,7 @@ async function updateWorkflowStatus(
       resetDeduplicationID?: boolean;
       resetStartedAtEpochMs?: boolean;
       executorId?: string;
+      resetNameTo?: string;
     };
     where?: {
       status?: (typeof StatusString)[keyof typeof StatusString];
@@ -563,6 +564,11 @@ async function updateWorkflowStatus(
   if (update.executorId !== undefined) {
     const param = args.push(update.executorId ?? undefined);
     setClause += `, executor_id=$${param}`;
+  }
+
+  if (update.resetNameTo !== undefined) {
+    const param = args.push(update.resetNameTo ?? undefined);
+    setClause += `, name=$${param}`;
   }
 
   const where = options.where ?? {};
@@ -1466,10 +1472,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
     workflowID: string,
     status: (typeof StatusString)[keyof typeof StatusString],
     resetRecoveryAttempts: boolean,
+    internalOptions?: {
+      updateName?: string;
+    },
   ): Promise<void> {
     const client = await this.pool.connect();
     try {
-      await updateWorkflowStatus(client, workflowID, status, this.schemaName, { update: { resetRecoveryAttempts } });
+      await updateWorkflowStatus(client, workflowID, status, this.schemaName, {
+        update: { resetRecoveryAttempts, resetNameTo: internalOptions?.updateName },
+      });
     } finally {
       client.release();
     }
@@ -2489,6 +2500,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     deprecated: boolean,
   ): Promise<{ isPatched: boolean; hasEntry: boolean }> {
     // Not doing a cancel check at this point.
+    if (functionID === undefined) throw new TypeError('functionID must be defined');
 
     patchName = `DBOS.patch-${patchName}`;
 
