@@ -1,24 +1,23 @@
 import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import type { StepInfo, WorkflowStatus, GetWorkflowsInput } from './workflow';
-import { DBOSJSON } from './utils';
-import { deserializeError } from 'serialize-error';
+import { DBOSSerializer, safeParse, safeParseError } from './serialization';
 import { randomUUID } from 'node:crypto';
 
 export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
   const workflows = await sysdb.listWorkflows(input);
-  return workflows.map((wf) => toWorkflowStatus(wf));
+  return workflows.map((wf) => toWorkflowStatus(wf, sysdb.getSerializer()));
 }
 
 export async function listQueuedWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput) {
   input.queuesOnly = true;
   input.loadOutput = false;
   const workflows = await sysdb.listWorkflows(input);
-  return workflows.map((wf) => toWorkflowStatus(wf));
+  return workflows.map((wf) => toWorkflowStatus(wf, sysdb.getSerializer()));
 }
 
 export async function getWorkflow(sysdb: SystemDatabase, workflowID: string): Promise<WorkflowStatus | undefined> {
   const status = await sysdb.getWorkflowStatus(workflowID);
-  return status ? toWorkflowStatus(status) : undefined;
+  return status ? toWorkflowStatus(status, sysdb.getSerializer()) : undefined;
 }
 
 export async function listWorkflowSteps(sysdb: SystemDatabase, workflowID: string): Promise<StepInfo[] | undefined> {
@@ -32,8 +31,8 @@ export async function listWorkflowSteps(sysdb: SystemDatabase, workflowID: strin
   const steps: StepInfo[] = $steps.map((step) => ({
     functionID: step.function_id,
     name: step.function_name ?? '',
-    output: step.output ? DBOSJSON.parse(step.output) : null,
-    error: step.error ? deserializeError(DBOSJSON.parse(step.error)) : null,
+    output: step.output ? safeParse(sysdb.getSerializer(), step.output) : null,
+    error: step.error ? safeParseError(sysdb.getSerializer(), step.error) : null,
     childWorkflowID: step.child_workflow_id,
     startedAtEpochMs: step.started_at_epoch_ms,
     completedAtEpochMs: step.completed_at_epoch_ms,
@@ -53,7 +52,7 @@ export async function forkWorkflow(
   return newWorkflowID;
 }
 
-export function toWorkflowStatus(internal: WorkflowStatusInternal): WorkflowStatus {
+export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: DBOSSerializer): WorkflowStatus {
   return {
     workflowID: internal.workflowUUID,
     status: internal.status,
@@ -66,9 +65,9 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal): WorkflowStat
     assumedRole: internal.assumedRole,
     authenticatedRoles: internal.authenticatedRoles,
 
-    input: internal.input ? (DBOSJSON.parse(internal.input) as unknown[]) : undefined,
-    output: internal.output ? DBOSJSON.parse(internal.output ?? null) : undefined,
-    error: internal.error ? deserializeError(DBOSJSON.parse(internal.error)) : undefined,
+    input: internal.input ? (safeParse(serializer, internal.input) as unknown[]) : undefined,
+    output: internal.output ? safeParse(serializer, internal.output ?? null) : undefined,
+    error: internal.error ? safeParseError(serializer, internal.error) : undefined,
 
     request: internal.request,
     executorId: internal.executorId,

@@ -9,6 +9,7 @@ import {
 } from '../src/config';
 import { AssertionError } from 'assert';
 import { DBOSConfigInternal, DBOSRuntimeConfig } from '../src/dbos-executor';
+import { DBOSJSON } from '../src/serialization';
 
 describe('dbos-config', () => {
   beforeEach(() => {
@@ -396,6 +397,7 @@ describe('dbos-config', () => {
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
+        serializer: DBOSJSON,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -424,6 +426,7 @@ describe('dbos-config', () => {
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
+        serializer: DBOSJSON,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -450,6 +453,7 @@ describe('dbos-config', () => {
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
+        serializer: DBOSJSON,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -474,6 +478,7 @@ describe('dbos-config', () => {
         sysDbPoolSize: undefined,
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
+        serializer: DBOSJSON,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -494,6 +499,7 @@ describe('dbos-config', () => {
       name: 'my-app',
       systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
       systemDatabaseSchemaName: 'dbos',
+      serializer: DBOSJSON,
       telemetry: {
         logs: {
           logLevel: 'info',

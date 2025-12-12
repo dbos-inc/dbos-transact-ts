@@ -6,7 +6,8 @@
 import type { Logger as OTelLogger, LogAttributes } from '@opentelemetry/api-logs';
 import type { LoggerProvider as LoggerProviderType } from '@opentelemetry/sdk-logs';
 import { TelemetryCollector } from './collector';
-import { DBOSJSON, globalParams, interceptStreams } from '../utils';
+import { globalParams, interceptStreams } from '../utils';
+import { DBOSJSON } from '../serialization';
 import { LoggerConfig } from '../dbos-executor';
 import { DBOSSpan } from './traces';
 import type { format as formatT } from 'winston';

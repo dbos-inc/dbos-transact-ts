@@ -27,6 +27,7 @@ import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from '
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 import { DEBUG_TRIGGER_STEP_COMMIT, DEBUG_TRIGGER_INITWF_COMMIT, debugTriggerPoint } from './debugpoint';
+import { DBOSSerializer } from './serialization';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -189,6 +190,7 @@ export interface SystemDatabase {
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
   garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void>;
   getMetrics(startTime: string, endTime: string): Promise<MetricData[]>;
+  getSerializer(): DBOSSerializer;
 }
 
 // For internal use, not serialized status.
@@ -441,8 +443,9 @@ async function insertWorkflowStatus(
         initStatus.workflowUUID,
         initStatus.status,
         initStatus.workflowName,
-        initStatus.workflowClassName,
-        initStatus.workflowConfigName,
+        // For cross-language compatibility, these variables MUST be NULL in the database when not set
+        initStatus.workflowClassName === '' ? null : initStatus.workflowClassName,
+        initStatus.workflowConfigName === '' ? null : initStatus.workflowConfigName,
         initStatus.queueName ?? null,
         initStatus.authenticatedUser,
         initStatus.assumedRole,
@@ -468,7 +471,10 @@ async function insertWorkflowStatus(
     if (rows.length === 0) {
       throw new Error(`Attempt to insert workflow ${initStatus.workflowUUID} failed`);
     }
-    return rows[0];
+    const ret = rows[0];
+    ret.class_name = ret.class_name ?? '';
+    ret.config_name = ret.config_name ?? '';
+    return ret;
   } catch (error) {
     const err: DatabaseError = error as DatabaseError;
     if (err.code === '23505') {
@@ -843,6 +849,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   constructor(
     readonly systemDatabaseUrl: string,
     readonly logger: GlobalLogger,
+    readonly serializer: DBOSSerializer,
     sysDbPoolSize: number = DEFAULT_POOL_SIZE,
     systemDatabasePool?: Pool,
     schemaName: string = 'dbos',
@@ -869,6 +876,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         this.logger.warn(`Unexpected error in idle client: ${err}`);
       });
     });
+  }
+  getSerializer(): DBOSSerializer {
+    return this.serializer;
   }
 
   async init(debugMode: boolean = false) {

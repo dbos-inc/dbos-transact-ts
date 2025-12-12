@@ -20,7 +20,8 @@ import {
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSNotAuthorizedError, DBOSInvalidWorkflowTransitionError } from '../src/error';
-import { DBOSJSON, sleepms } from '../src/utils';
+import { sleepms } from '../src/utils';
+import { DBOSJSON } from '../src/serialization';
 
 /*
  * Knex user data access interface
