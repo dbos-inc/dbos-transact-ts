@@ -27,6 +27,7 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
+  DBOSConflictingRegistrationError,
 } from './error';
 import {
   getDbosConfig,
@@ -61,13 +62,15 @@ import {
   UntypedAsyncFunction,
   FunctionName,
   wrapDBOSFunctionAndRegisterByUniqueName,
-  wrapDBOSFunctionAndRegisterByUniqueNameDec,
+  wrapDBOSFunctionAndRegisterByTarget,
   wrapDBOSFunctionAndRegister,
   ensureDBOSIsLaunched,
   ConfiguredInstance,
   DBOSMethodMiddlewareInstaller,
   DBOSLifecycleCallback,
   associateParameterWithExternal,
+  finalizeClassRegistrations,
+  getClassRegistration,
 } from './decorators';
 import {
   DBOSJSON,
@@ -206,12 +209,13 @@ export class DBOS {
 
     if (!isTraceContextWorking()) installTraceContextManager(internalConfig.name);
 
-    // Do nothing is DBOS is already initialized
-    insertAllMiddleware();
-
+    // Do nothing if DBOS is already initialized
     if (DBOS.isInitialized()) {
       return;
     }
+
+    finalizeClassRegistrations();
+    insertAllMiddleware();
 
     // Globally set the application version and executor ID.
     // In DBOS Cloud, instead use the value supplied through environment variables.
@@ -1160,6 +1164,24 @@ export class DBOS {
   //////
   // Decorators
   //////
+
+  /**
+   * Allow a class to be assigned a name
+   */
+  static className(name: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
+      const clsreg = getClassRegistration(ctor, true);
+      if (clsreg.reg?.name && clsreg.reg.name !== name && clsreg.reg.name !== ctor.name) {
+        throw new DBOSConflictingRegistrationError(
+          `Attempt to assign name ${name} to class ${ctor.name}, which has already been aliased to ${clsreg.reg.name}`,
+        );
+      }
+      clsreg.reg!.name = name;
+    }
+    return clsdec;
+  }
+
   /**
    * Decorator associating a class static method with an invocation schedule
    * @param config - The schedule, consisting of a crontab and policy for "make-up work"
@@ -1194,9 +1216,10 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(
         target,
         propertyKey,
+        config.name ?? propertyKey,
         inDescriptor,
       );
       const invoker = DBOS.#getWorkflowInvoker(registration, config);
@@ -1226,6 +1249,7 @@ export class DBOS {
     const registration = wrapDBOSFunctionAndRegisterByUniqueName(
       config?.ctorOrProto,
       config?.className,
+      config?.name ?? func.name,
       config?.name ?? func.name,
       func,
     );
@@ -1349,9 +1373,10 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(
         target,
         propertyKey,
+        config.name,
         inDescriptor,
       );
       registration.setStepConfig(config);
@@ -1431,7 +1456,7 @@ export class DBOS {
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;
 
-    const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, func);
+    const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, name, func);
 
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
       ensureDBOSIsLaunched('steps');
