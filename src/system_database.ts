@@ -189,6 +189,14 @@ export interface SystemDatabase {
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
   garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void>;
   getMetrics(startTime: string, endTime: string): Promise<MetricData[]>;
+
+  // Patching
+  checkPatch(
+    workflowID: string,
+    functionID: number,
+    patchName: string,
+    deprecated: boolean,
+  ): Promise<{ isPatched: boolean; hasEntry: boolean }>;
 }
 
 // For internal use, not serialized status.
@@ -2429,6 +2437,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return;
   }
 
+  @dbRetry()
   async getMetrics(startTime: string, endTime: string): Promise<MetricData[]> {
     const startEpochMs = new Date(startTime).getTime();
     const endEpochMs = new Date(endTime).getTime();
@@ -2470,5 +2479,53 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     return metrics;
+  }
+
+  @dbRetry()
+  async checkPatch(
+    workflowID: string,
+    functionID: number,
+    patchName: string,
+    deprecated: boolean,
+  ): Promise<{ isPatched: boolean; hasEntry: boolean }> {
+    // Not doing a cancel check at this point.
+
+    patchName = `DBOS.patch-${patchName}`;
+
+    const { rows } = await this.pool.query<operation_outputs>(
+      `SELECT function_name
+       FROM "${this.schemaName}".operation_outputs
+      WHERE workflow_uuid=$1 AND function_id=$2`,
+      [workflowID, functionID],
+    );
+
+    if (deprecated) {
+      // Deprecated does not write anything.  We skip any existing matching patch marker if it matches
+      if (rows.length === 0) {
+        return { isPatched: true, hasEntry: false };
+      }
+      return { isPatched: true, hasEntry: rows[0].function_name === patchName };
+    }
+
+    // Nondeprecated - skip matching entry, unpatched if nonmatching entry,
+    //  If there is no entry, we insert one that indicates it is patched.
+    if (rows.length !== 0) {
+      if (rows[0].function_name === patchName) {
+        return { isPatched: true, hasEntry: true };
+      }
+      return { isPatched: false, hasEntry: false };
+    }
+
+    // Insert a patchmarker
+    const dn = Date.now();
+    await this.pool.query<operation_outputs>(
+      `INSERT INTO ${this.schemaName}.operation_outputs
+       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       ON CONFLICT DO NOTHING;`,
+      [workflowID, functionID, null, null, patchName, null, dn, dn],
+    );
+
+    return { isPatched: true, hasEntry: true };
   }
 }

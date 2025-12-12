@@ -1582,6 +1582,76 @@ export class DBOS {
   }
 
   /////
+  // Patching
+  /////
+
+  /**
+   * Check if a workflow execution has been patched.
+   *
+   * Patching allows reexecution of workflows to accommate changes to the workflow logic.
+   *
+   * Patches check the system database to see which code branch to take.  As this adds overhead,
+   *  they may eventually be removed; see `deprecatePatch`.
+   *
+   * @param patchName Name of the patch to check.
+   * @returns true if this is the patched(new) workflow variant, or false if the execution predates the patch
+   */
+  static async patch(patchName: string): Promise<boolean> {
+    if (!DBOS.isInWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        '`DBOS.patch` must be called from a workflow, and not within a step',
+      );
+    }
+
+    if (!DBOS.#dbosConfig?.enablePatching) {
+      throw new DBOSInvalidWorkflowTransitionError('Patching is not enabled.  See `enablePatching` in `DBOSConfig`');
+    }
+
+    const patched = await DBOSExecutor.globalInstance!.systemDatabase.checkPatch(
+      DBOS.workflowID!,
+      DBOS.stepID!,
+      patchName,
+      false,
+    );
+    if (patched.hasEntry) {
+      functionIDGetIncrement();
+    }
+    return patched.isPatched;
+  }
+
+  /**
+   * Check if a workflow execution has been patched, within a plan to eventually remove the unpatched (old) variant.
+   *
+   * `patch` may be changed to `deprecatePatch` after all unpatched workflows have completed and will not be reexecuted.
+   * Once all workflows started with `patch` have completed (in favor of those using `deprecatePatch`), the `deprecatePatch` may then be removed.
+   *
+   * @param patchName Name of the patch to check.
+   * @returns true if this is the patched(new) workflow variant, which it should always be if all unpatched workflows have been retired
+   */
+  static async deprecatePatch(patchName: string): Promise<boolean> {
+    if (!DBOS.isInWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        '`DBOS.patch` must be called from a workflow, and not within a step',
+      );
+    }
+
+    if (!DBOS.#dbosConfig?.enablePatching) {
+      throw new DBOSInvalidWorkflowTransitionError('Patching is not enabled.  See `enablePatching` in `DBOSConfig`');
+    }
+
+    const patched = await DBOSExecutor.globalInstance!.systemDatabase.checkPatch(
+      DBOS.workflowID!,
+      DBOS.stepID!,
+      patchName,
+      true,
+    );
+    if (patched.hasEntry) {
+      functionIDGetIncrement();
+    }
+    return patched.isPatched;
+  }
+
+  /////
   // Registration, etc
   /////
 

@@ -112,6 +112,8 @@ export interface DBOSConfig {
 
   applicationVersion?: string;
   executorID?: string;
+
+  enablePatching?: boolean;
 }
 
 export interface DBOSRuntimeConfig {
