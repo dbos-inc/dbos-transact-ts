@@ -1598,4 +1598,40 @@ describe('queue-time-outs', () => {
       })();
     }, Error);
   }, 20000);
+
+  test('explicit-queue-listen-test', async () => {
+    await DBOS.shutdown();
+    const config = generateDBOSTestConfig();
+    // Reset the test database
+    await setUpDBOSTestSysDb(config);
+
+    const queueOne = new WorkflowQueue('queue-one');
+    const queueTwo = new WorkflowQueue('queue-two');
+    const workflow = DBOS.registerWorkflow(
+      async () => {
+        return Promise.resolve(DBOS.workflowID);
+      },
+      { name: 'explicit-queue-listen-test' },
+    );
+
+    config.listenQueues = [queueOne];
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    const handleOne = await DBOS.startWorkflow(workflow, { queueName: queueOne.name })();
+    const handleTwo = await DBOS.startWorkflow(workflow, { queueName: queueTwo.name })();
+    assert.equal(await handleOne.getResult(), handleOne.workflowID);
+    const status = await handleTwo.getStatus();
+    assert.equal(status?.status, 'ENQUEUED');
+
+    await DBOS.shutdown();
+    config.listenQueues = [queueOne, queueTwo];
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    const retrievedHandle = DBOS.retrieveWorkflow(handleTwo.workflowID);
+    assert.equal(await retrievedHandle.getResult(), retrievedHandle.workflowID);
+    const forkedHandle = await DBOS.forkWorkflow(handleTwo.workflowID, 0);
+    assert.equal(await forkedHandle.getResult(), forkedHandle.workflowID);
+  }, 10000);
 });

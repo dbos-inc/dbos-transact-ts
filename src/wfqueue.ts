@@ -102,7 +102,7 @@ class WFQueueRunner {
     }
   }
 
-  async dispatchLoop(exec: DBOSExecutor, listenQueues: WorkflowQueue[] | null): Promise<void> {
+  async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: WorkflowQueue[] | null): Promise<void> {
     this.isRunning = true;
     while (this.isRunning) {
       // Wait for either the timeout or an interruption
@@ -124,9 +124,12 @@ class WFQueueRunner {
         break;
       }
 
-      if (listenQueues !== null) {
-        listenQueues = [...listenQueues, this.wfQueuesByName.get(INTERNAL_QUEUE_NAME)!];
+      let listenQueues;
+      if (listenQueuesArg !== null) {
+        // If explicitly listening for queues, use only those queues plus the internal queue
+        listenQueues = [...listenQueuesArg, this.wfQueuesByName.get(INTERNAL_QUEUE_NAME)!];
       } else {
+        // Else, listen to all declared queues
         listenQueues = Array.from(this.wfQueuesByName.values());
       }
 
