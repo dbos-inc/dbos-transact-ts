@@ -1,6 +1,7 @@
 import { DBOS } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSUnexpectedStepError } from '../src/error';
 
 const step1 = DBOS.registerStep(async () => Promise.resolve(1), { name: 'step1' });
 const step2 = DBOS.registerStep(async () => Promise.resolve(2), { name: 'step2' });
@@ -136,6 +137,13 @@ describe('patching-tests', () => {
     // Patch does not affect reexecution
     await expect((await reexecuteWorkflowById(origWfh.workflowID, true, 'patchedWF1'))!.getResult()).resolves.toBe(3);
 
+    // Test fork before and after patch (will affect reexecution)
+    const fwfhpost = await DBOS.forkWorkflow(origWfh.workflowID, 2);
+    await expect(fwfhpost.getResult()).resolves.toBe(3);
+
+    const fwfhpre = await DBOS.forkWorkflow(origWfh.workflowID, 1);
+    await expect(fwfhpre.getResult()).resolves.toBe(4);
+
     const patchedWfh = await DBOS.startWorkflow(patchedWF1)();
     await expect(patchedWfh.getResult()).resolves.toBe(4);
     await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF1'))!.getResult()).resolves.toBe(
@@ -176,6 +184,11 @@ describe('patching-tests', () => {
       5,
     );
 
+    // Reexecution with the old code will fail, because it does not expect the patch marker.
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'origWF'))!.getResult()).rejects.toThrow(
+      DBOSUnexpectedStepError,
+    );
+
     const depatchedWfh = await DBOS.startWorkflow(depatchedWF2)();
     await expect(depatchedWfh.getResult()).resolves.toBe(5);
 
@@ -189,7 +202,4 @@ describe('patching-tests', () => {
     await expect(patchedWF3a()).resolves.toBe(4);
     await expect(patchedWF3b()).resolves.toBe(4);
   });
-
-  // TODO Check fork
-  // TODO Negative testing / mismanaged patches
 });
