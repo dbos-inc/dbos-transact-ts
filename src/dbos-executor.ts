@@ -113,6 +113,7 @@ export interface DBOSConfig {
   applicationVersion?: string;
   executorID?: string;
 
+  enablePatching?: boolean;
   listenQueues?: WorkflowQueue[];
 }
 

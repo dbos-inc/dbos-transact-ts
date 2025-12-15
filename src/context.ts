@@ -92,6 +92,17 @@ export function functionIDGetIncrement(): number {
   return pctx.curWFFunctionId++;
 }
 
+export function functionIDGet(): number {
+  const pctx = getCurrentContextStore();
+  if (!pctx) throw new DBOSInvalidWorkflowTransitionError(`Attempt to get a call ID number outside of a workflow`);
+  if (!isInWorkflowCtx(pctx))
+    throw new DBOSInvalidWorkflowTransitionError(
+      `Attempt to get a call ID number in a workflow that is already in a call`,
+    );
+  if (pctx.curWFFunctionId === undefined) pctx.curWFFunctionId = 0;
+  return pctx.curWFFunctionId;
+}
+
 export async function runWithTopContext<R>(ctx: DBOSLocalCtx, callback: () => Promise<R>): Promise<R> {
   return await asyncLocalCtx.run(ctx, callback);
 }

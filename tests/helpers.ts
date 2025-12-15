@@ -2,7 +2,7 @@ import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DBOS, StatusString } from '../src';
 import { sleepms } from '../src/utils';
 import { isValidDatabaseName, translateDbosConfig } from '../src/config';
-import { ensureSystemDatabase } from '../src/system_database';
+import { ensureSystemDatabase, PostgresSystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
 import { Client } from 'pg';
@@ -121,12 +121,19 @@ export async function setWfAndChildrenToPending(workflowId: string, resetRecover
   }
 }
 
-export async function reexecuteWorkflowById(workflowId: string, resetRecoveryAttempts: boolean = true) {
+export async function reexecuteWorkflowById(
+  workflowId: string,
+  resetRecoveryAttempts: boolean = true,
+  updateName?: string,
+) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
-  await DBOSExecutor.globalInstance?.systemDatabase.setWorkflowStatus(
+  await (DBOSExecutor.globalInstance?.systemDatabase as PostgresSystemDatabase).setWorkflowStatus(
     workflowId,
     StatusString.PENDING,
     resetRecoveryAttempts,
+    {
+      updateName,
+    },
   );
   return await DBOSExecutor.globalInstance?.executeWorkflowId(workflowId, { isRecoveryDispatch: true });
 }

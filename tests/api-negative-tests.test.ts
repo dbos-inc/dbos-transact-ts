@@ -123,6 +123,11 @@ class TransitionTests {
   static async oopsCallStartWFFromStep() {
     return await DBOS.startWorkflow(TransitionTests).calledWorkflow();
   }
+
+  @DBOS.workflow()
+  static async oopsPatchDisabled() {
+    return await DBOS.patch('nope');
+  }
 }
 
 async function main9() {
@@ -170,6 +175,9 @@ async function main9() {
     );
     await expect(() => TransitionTests.oopsCallStartWFFromStep()).rejects.toThrow(
       'Invalid call to a `workflow` function from within a `step` or `transaction`',
+    );
+    await expect(() => TransitionTests.oopsPatchDisabled()).rejects.toThrow(
+      'Patching is not enabled.  See `enablePatching` in `DBOSConfig`',
     );
   } finally {
     await DBOS.shutdown();
