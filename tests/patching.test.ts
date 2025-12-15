@@ -33,7 +33,7 @@ const depatchedWF1 = DBOS.registerWorkflow(
   async () => {
     const a = await step1();
     let b = 0;
-    if (await DBOS.patch('patch1')) {
+    if (await DBOS.deprecatePatch('patch1')) {
       b = await step3();
     } else {
       expect(true).toBeFalsy();
@@ -60,7 +60,7 @@ const patchedWF2 = DBOS.registerWorkflow(
 const depatchedWF2 = DBOS.registerWorkflow(
   async () => {
     let a = 0;
-    if (await DBOS.patch('patch2')) {
+    if (await DBOS.deprecatePatch('patch2')) {
       a = await step3();
     } else {
       expect(true).toBeFalsy();
@@ -90,9 +90,13 @@ describe('patching-tests', () => {
   });
 
   test('patch-last-step', async () => {
+    expect(DBOS.applicationVersion).toBe('PATCHING_ENABLED');
     const origWfh = await DBOS.startWorkflow(origWF)();
     await expect(origWfh.getResult()).resolves.toBe(3);
     await expect((await reexecuteWorkflowById(origWfh.workflowID))?.getResult()).resolves.toBe(3);
+    const ls = await DBOS.listWorkflowSteps(origWfh.workflowID);
+    expect(ls?.length).toBe(2);
+    expect(ls?.filter((s) => s.name.startsWith('DBOS.patch')).length).toBe(0);
     // Patch does not affect reexecution
     await expect((await reexecuteWorkflowById(origWfh.workflowID, true, 'patchedWF1'))!.getResult()).resolves.toBe(3);
 
@@ -101,6 +105,10 @@ describe('patching-tests', () => {
     await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF1'))!.getResult()).resolves.toBe(
       4,
     );
+    const lsp = await DBOS.listWorkflowSteps(patchedWfh.workflowID);
+    expect(lsp?.length).toBe(3);
+    expect(lsp?.filter((s) => s.name.startsWith('DBOS.patch')).length).toBe(1);
+    expect(lsp?.[1].name).toBe('DBOS.patch-patch1');
 
     // Deprecation does not affect reexecution
     await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'depatchedWF1'))!.getResult()).resolves.toBe(
@@ -109,6 +117,9 @@ describe('patching-tests', () => {
 
     const depatchedWfh = await DBOS.startWorkflow(depatchedWF1)();
     await expect(depatchedWfh.getResult()).resolves.toBe(4);
+    const lsdep = await DBOS.listWorkflowSteps(depatchedWfh.workflowID);
+    expect(lsdep?.length).toBe(2);
+    expect(lsdep?.filter((s) => s.name.startsWith('DBOS.patch')).length).toBe(0);
   });
 
   test('patch-first-step', async () => {
@@ -133,7 +144,6 @@ describe('patching-tests', () => {
     await expect(depatchedWfh.getResult()).resolves.toBe(5);
   });
 
-  // TODO Check list steps
   // TODO Check 2 patches same place
   // TODO Check fork
   // TODO Negative testing / mismanaged patches

@@ -223,6 +223,8 @@ export class DBOS {
     if (process.env.DBOS__CLOUD !== 'true') {
       if (DBOS.#dbosConfig?.applicationVersion) {
         globalParams.appVersion = DBOS.#dbosConfig.applicationVersion;
+      } else if (DBOS.#dbosConfig?.enablePatching) {
+        globalParams.appVersion = 'PATCHING_ENABLED';
       }
       if (DBOS.#dbosConfig?.executorID) {
         globalParams.executorID = DBOS.#dbosConfig.executorID;
