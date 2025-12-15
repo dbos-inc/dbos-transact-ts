@@ -1634,7 +1634,7 @@ export class DBOS {
   static async deprecatePatch(patchName: string): Promise<boolean> {
     if (!DBOS.isInWorkflow()) {
       throw new DBOSInvalidWorkflowTransitionError(
-        '`DBOS.patch` must be called from a workflow, and not within a step',
+        '`DBOS.deprecatePatch` must be called from a workflow, and not within a step',
       );
     }
 
