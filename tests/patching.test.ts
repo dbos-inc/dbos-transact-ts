@@ -57,6 +57,42 @@ const patchedWF2 = DBOS.registerWorkflow(
   { name: 'patchedWF2' },
 );
 
+const patchedWF3a = DBOS.registerWorkflow(
+  async () => {
+    let a = 0;
+    if (await DBOS.patch('patch2')) {
+      if (await DBOS.patch('patch3')) {
+        a = await step2();
+      } else {
+        a = await step3();
+      }
+    } else {
+      a = await step1();
+    }
+    const b = await step2();
+    return a + b;
+  },
+  { name: 'patchedWF3a' },
+);
+
+const patchedWF3b = DBOS.registerWorkflow(
+  async () => {
+    let a = 0;
+    if (await DBOS.patch('patch3')) {
+      a = await step2();
+    } else {
+      if (await DBOS.patch('patch2')) {
+        a = await step3();
+      } else {
+        a = await step1();
+      }
+    }
+    const b = await step2();
+    return a + b;
+  },
+  { name: 'patchedWF3b' },
+);
+
 const depatchedWF2 = DBOS.registerWorkflow(
   async () => {
     let a = 0;
@@ -142,9 +178,18 @@ describe('patching-tests', () => {
 
     const depatchedWfh = await DBOS.startWorkflow(depatchedWF2)();
     await expect(depatchedWfh.getResult()).resolves.toBe(5);
+
+    // Check 2 patches same place
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF3a'))!.getResult()).resolves.toBe(
+      5,
+    );
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'patchedWF3b'))!.getResult()).resolves.toBe(
+      5,
+    );
+    await expect(patchedWF3a()).resolves.toBe(4);
+    await expect(patchedWF3b()).resolves.toBe(4);
   });
 
-  // TODO Check 2 patches same place
   // TODO Check fork
   // TODO Negative testing / mismanaged patches
 });
