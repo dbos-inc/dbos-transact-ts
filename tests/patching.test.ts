@@ -29,6 +29,20 @@ const patchedWF1 = DBOS.registerWorkflow(
   { name: 'patchedWF1' },
 );
 
+const depatchedWF1 = DBOS.registerWorkflow(
+  async () => {
+    const a = await step1();
+    let b = 0;
+    if (await DBOS.patch('patch1')) {
+      b = await step3();
+    } else {
+      expect(true).toBeFalsy();
+    }
+    return a + b;
+  },
+  { name: 'depatchedWF1' },
+);
+
 const patchedWF2 = DBOS.registerWorkflow(
   async () => {
     let a = 0;
@@ -41,6 +55,20 @@ const patchedWF2 = DBOS.registerWorkflow(
     return a + b;
   },
   { name: 'patchedWF2' },
+);
+
+const depatchedWF2 = DBOS.registerWorkflow(
+  async () => {
+    let a = 0;
+    if (await DBOS.patch('patch2')) {
+      a = await step3();
+    } else {
+      expect(true).toBeFalsy();
+    }
+    const b = await step2();
+    return a + b;
+  },
+  { name: 'depatchedWF2' },
 );
 
 describe('patching-tests', () => {
@@ -75,7 +103,12 @@ describe('patching-tests', () => {
     );
 
     // Deprecation does not affect reexecution
-    //
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'depatchedWF1'))!.getResult()).resolves.toBe(
+      4,
+    );
+
+    const depatchedWfh = await DBOS.startWorkflow(depatchedWF1)();
+    await expect(depatchedWfh.getResult()).resolves.toBe(4);
   });
 
   test('patch-first-step', async () => {
@@ -92,6 +125,11 @@ describe('patching-tests', () => {
     );
 
     // Deprecation does not affect reexecution
-    //
+    await expect((await reexecuteWorkflowById(patchedWfh.workflowID, true, 'depatchedWF2'))!.getResult()).resolves.toBe(
+      5,
+    );
+
+    const depatchedWfh = await DBOS.startWorkflow(depatchedWF2)();
+    await expect(depatchedWfh.getResult()).resolves.toBe(5);
   });
 });
