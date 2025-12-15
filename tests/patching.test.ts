@@ -132,4 +132,9 @@ describe('patching-tests', () => {
     const depatchedWfh = await DBOS.startWorkflow(depatchedWF2)();
     await expect(depatchedWfh.getResult()).resolves.toBe(5);
   });
+
+  // TODO Check list steps
+  // TODO Check 2 patches same place
+  // TODO Check fork
+  // TODO Negative testing / mismanaged patches
 });
