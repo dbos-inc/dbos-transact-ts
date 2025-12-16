@@ -188,7 +188,7 @@ export function registerTransaction<This, Args extends unknown[], Return, Config
   const dsn = dsName ?? '<default>';
 
   const funcName = config?.name ?? func.name;
-  const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, funcName, func);
+  const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, funcName, funcName, func);
 
   const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
     ensureDBOSIsLaunched('transactions');

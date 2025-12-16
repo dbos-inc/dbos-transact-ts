@@ -108,6 +108,8 @@ export interface DBOSConfig {
   executorID?: string;
 
   serializer?: DBOSSerializer;
+  enablePatching?: boolean;
+  listenQueues?: WorkflowQueue[];
 }
 
 export interface DBOSRuntimeConfig {
@@ -403,8 +405,9 @@ export class DBOSExecutor {
 
     let wConfig: WorkflowConfig = {};
     const wInfo = getFunctionRegistration(wf);
-    let wfname = getRegisteredFunctionFullName(wf).name; // TODO: Should be what was registered in wfInfo...
-    let wfclassname = getRegisteredFunctionClassName(wf);
+    const wfNames = getRegisteredFunctionFullName(wf);
+    let wfname = wfNames.name;
+    let wfclassname = wfNames.className;
 
     const isTempWorkflow = DBOSExecutor.#tempWorkflowName === wfname || !!params.tempWfType;
 
@@ -1017,8 +1020,8 @@ export class DBOSExecutor {
     return handlerArray;
   }
 
-  async initEventReceivers() {
-    this.#wfqEnded = wfQueueRunner.dispatchLoop(this);
+  async initEventReceivers(listenQueues: WorkflowQueue[] | null) {
+    this.#wfqEnded = wfQueueRunner.dispatchLoop(this, listenQueues);
 
     for (const lcl of getLifecycleListeners()) {
       await lcl.initialize?.();

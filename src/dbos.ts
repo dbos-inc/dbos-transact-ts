@@ -6,6 +6,7 @@ import {
   StepStatus,
   DBOSContextOptions,
   functionIDGetIncrement,
+  functionIDGet,
 } from './context';
 import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
 import { DBOSSpan, getActiveSpan, installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
@@ -27,6 +28,7 @@ import {
   DBOSInvalidWorkflowTransitionError,
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
+  DBOSConflictingRegistrationError,
 } from './error';
 import {
   getDbosConfig,
@@ -61,13 +63,15 @@ import {
   UntypedAsyncFunction,
   FunctionName,
   wrapDBOSFunctionAndRegisterByUniqueName,
-  wrapDBOSFunctionAndRegisterByUniqueNameDec,
+  wrapDBOSFunctionAndRegisterByTarget,
   wrapDBOSFunctionAndRegister,
   ensureDBOSIsLaunched,
   ConfiguredInstance,
   DBOSMethodMiddlewareInstaller,
   DBOSLifecycleCallback,
   associateParameterWithExternal,
+  finalizeClassRegistrations,
+  getClassRegistration,
 } from './decorators';
 import { defaultEnableOTLP, globalParams, sleepms } from './utils';
 import { JSONValue, registerSerializationRecipe, SerializationRecipe } from './serialization';
@@ -199,18 +203,21 @@ export class DBOS {
 
     if (!isTraceContextWorking()) installTraceContextManager(internalConfig.name);
 
-    // Do nothing is DBOS is already initialized
-    insertAllMiddleware();
-
+    // Do nothing if DBOS is already initialized
     if (DBOS.isInitialized()) {
       return;
     }
+
+    finalizeClassRegistrations();
+    insertAllMiddleware();
 
     // Globally set the application version and executor ID.
     // In DBOS Cloud, instead use the value supplied through environment variables.
     if (process.env.DBOS__CLOUD !== 'true') {
       if (DBOS.#dbosConfig?.applicationVersion) {
         globalParams.appVersion = DBOS.#dbosConfig.applicationVersion;
+      } else if (DBOS.#dbosConfig?.enablePatching) {
+        globalParams.appVersion = 'PATCHING_ENABLED';
       }
       if (DBOS.#dbosConfig?.executorID) {
         globalParams.executorID = DBOS.#dbosConfig.executorID;
@@ -241,7 +248,7 @@ export class DBOS {
       return; // return for cases where process.exit is mocked
     }
 
-    await DBOSExecutor.globalInstance.initEventReceivers();
+    await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
     for (const [_n, ds] of transactionalDataSources) {
       await ds.initialize();
     }
@@ -341,7 +348,7 @@ export class DBOS {
 
   /** Start listening for external events (for testing) */
   static async initEventReceivers() {
-    return DBOSExecutor.globalInstance?.initEventReceivers();
+    return DBOSExecutor.globalInstance?.initEventReceivers(this.#dbosConfig?.listenQueues || null);
   }
 
   // Global DBOS executor instance
@@ -1153,6 +1160,24 @@ export class DBOS {
   //////
   // Decorators
   //////
+
+  /**
+   * Allow a class to be assigned a name
+   */
+  static className(name: string) {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    function clsdec<T extends { new (...args: any[]): object }>(ctor: T) {
+      const clsreg = getClassRegistration(ctor, true);
+      if (clsreg.reg?.name && clsreg.reg.name !== name && clsreg.reg.name !== ctor.name) {
+        throw new DBOSConflictingRegistrationError(
+          `Attempt to assign name ${name} to class ${ctor.name}, which has already been aliased to ${clsreg.reg.name}`,
+        );
+      }
+      clsreg.reg!.name = name;
+    }
+    return clsdec;
+  }
+
   /**
    * Decorator associating a class static method with an invocation schedule
    * @param config - The schedule, consisting of a crontab and policy for "make-up work"
@@ -1187,9 +1212,10 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(
         target,
         propertyKey,
+        config.name ?? propertyKey,
         inDescriptor,
       );
       const invoker = DBOS.#getWorkflowInvoker(registration, config);
@@ -1219,6 +1245,7 @@ export class DBOS {
     const registration = wrapDBOSFunctionAndRegisterByUniqueName(
       config?.ctorOrProto,
       config?.className,
+      config?.name ?? func.name,
       config?.name ?? func.name,
       func,
     );
@@ -1342,9 +1369,10 @@ export class DBOS {
       propertyKey: string,
       inDescriptor: TypedPropertyDescriptor<(this: This, ...args: Args) => Promise<Return>>,
     ) {
-      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByUniqueNameDec(
+      const { descriptor, registration } = wrapDBOSFunctionAndRegisterByTarget(
         target,
         propertyKey,
+        config.name,
         inDescriptor,
       );
       registration.setStepConfig(config);
@@ -1424,7 +1452,7 @@ export class DBOS {
   ): (this: This, ...args: Args) => Promise<Return> {
     const name = config.name ?? func.name;
 
-    const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, func);
+    const reg = wrapDBOSFunctionAndRegister(config?.ctorOrProto, config?.className, name, name, func);
 
     const invokeWrapper = async function (this: This, ...rawArgs: Args): Promise<Return> {
       ensureDBOSIsLaunched('steps');
@@ -1547,6 +1575,76 @@ export class DBOS {
       return inDescriptor;
     }
     return apidec;
+  }
+
+  /////
+  // Patching
+  /////
+
+  /**
+   * Check if a workflow execution has been patched.
+   *
+   * Patching allows reexecution of workflows to accommate changes to the workflow logic.
+   *
+   * Patches check the system database to see which code branch to take.  As this adds overhead,
+   *  they may eventually be removed; see `deprecatePatch`.
+   *
+   * @param patchName Name of the patch to check.
+   * @returns true if this is the patched(new) workflow variant, or false if the execution predates the patch
+   */
+  static async patch(patchName: string): Promise<boolean> {
+    if (!DBOS.isInWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        '`DBOS.patch` must be called from a workflow, and not within a step',
+      );
+    }
+
+    if (!DBOS.#dbosConfig?.enablePatching) {
+      throw new DBOSInvalidWorkflowTransitionError('Patching is not enabled.  See `enablePatching` in `DBOSConfig`');
+    }
+
+    const patched = await DBOSExecutor.globalInstance!.systemDatabase.checkPatch(
+      DBOS.workflowID!,
+      functionIDGet(),
+      patchName,
+      false,
+    );
+    if (patched.hasEntry) {
+      functionIDGetIncrement();
+    }
+    return patched.isPatched;
+  }
+
+  /**
+   * Check if a workflow execution has been patched, within a plan to eventually remove the unpatched (old) variant.
+   *
+   * `patch` may be changed to `deprecatePatch` after all unpatched workflows have completed and will not be reexecuted.
+   * Once all workflows started with `patch` have completed (in favor of those using `deprecatePatch`), the `deprecatePatch` may then be removed.
+   *
+   * @param patchName Name of the patch to check.
+   * @returns true if this is the patched(new) workflow variant, which it should always be if all unpatched workflows have been retired
+   */
+  static async deprecatePatch(patchName: string): Promise<boolean> {
+    if (!DBOS.isInWorkflow()) {
+      throw new DBOSInvalidWorkflowTransitionError(
+        '`DBOS.deprecatePatch` must be called from a workflow, and not within a step',
+      );
+    }
+
+    if (!DBOS.#dbosConfig?.enablePatching) {
+      throw new DBOSInvalidWorkflowTransitionError('Patching is not enabled.  See `enablePatching` in `DBOSConfig`');
+    }
+
+    const patched = await DBOSExecutor.globalInstance!.systemDatabase.checkPatch(
+      DBOS.workflowID!,
+      functionIDGet(),
+      patchName,
+      true,
+    );
+    if (patched.hasEntry) {
+      functionIDGetIncrement();
+    }
+    return patched.isPatched;
   }
 
   /////

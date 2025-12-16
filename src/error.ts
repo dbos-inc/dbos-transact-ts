@@ -157,7 +157,10 @@ export class DBOSUnexpectedStepError extends DBOSError {
     recordedName: string,
   ) {
     super(
-      `During execution of workflow ${workflowID} step ${stepID}, function ${recordedName} was recorded when ${expectedName} was expected. Check that your workflow is deterministic.`,
+      recordedName.startsWith('DBOS.patch')
+        ? `During execution of workflow ${workflowID} step ${stepID}, function ${recordedName} was recorded when ${expectedName} was expected.\n
+          Check that your patches are backward compatible, that you do not have older code trying to recover workflows with newer patches, and that your workflow is deterministic.`
+        : `During execution of workflow ${workflowID} step ${stepID}, function ${recordedName} was recorded when ${expectedName} was expected. Check that your workflow is deterministic.`,
       UnexpectedStep,
     );
   }
