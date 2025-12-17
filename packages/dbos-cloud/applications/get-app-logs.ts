@@ -21,7 +21,7 @@ export async function getAppLogs(
 ): Promise<number> {
   const since = options.since ? DateTime.fromISO(options.since) : undefined;
   const upto = options.upto ? DateTime.fromISO(options.upto) : undefined;
-  var last = options.last;
+  let last = options.last;
   const pagesize = options.pagesize ?? 1000;
 
   if (last !== undefined && (isNaN(last) || last <= 0)) {
