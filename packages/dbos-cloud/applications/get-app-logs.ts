@@ -21,7 +21,7 @@ export async function getAppLogs(
 ): Promise<number> {
   const since = options.since ? DateTime.fromISO(options.since) : undefined;
   const upto = options.upto ? DateTime.fromISO(options.upto) : undefined;
-  const last = options.last;
+  var last = options.last;
   const pagesize = options.pagesize ?? 1000;
 
   if (last !== undefined && (isNaN(last) || last <= 0)) {
@@ -38,6 +38,10 @@ export async function getAppLogs(
   }
   if (since && last) {
     throw new Error('The --last and --since parameters cannot be used together');
+  }
+  if (!since && !last) {
+    // default to last hour if neither --last or --since are specified
+    last = 3600;
   }
 
   const logger = getLogger();
