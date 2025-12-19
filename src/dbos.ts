@@ -73,15 +73,8 @@ import {
   finalizeClassRegistrations,
   getClassRegistration,
 } from './decorators';
-import {
-  DBOSJSON,
-  defaultEnableOTLP,
-  globalParams,
-  JSONValue,
-  registerSerializationRecipe,
-  SerializationRecipe,
-  sleepms,
-} from './utils';
+import { defaultEnableOTLP, globalParams, sleepms } from './utils';
+import { JSONValue, registerSerializationRecipe, SerializationRecipe } from './serialization';
 import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
 
@@ -572,7 +565,7 @@ export class DBOS {
         if (rres?.cancelled) {
           throw new DBOSAwaitedWorkflowCancelledError(workflowID);
         }
-        return DBOSExecutor.reviveResultOrError<T>(rres);
+        return DBOSExecutor.reviveResultOrError<T>(rres, DBOS.#executor.serializer);
       },
       'DBOS.getResult',
       workflowID,
@@ -962,7 +955,7 @@ export class DBOS {
         DBOS.workflowID!,
         functionID,
         destinationID,
-        DBOSJSON.stringify(message),
+        DBOS.#executor.serializer.stringify(message),
         topic,
       );
     }
@@ -989,7 +982,7 @@ export class DBOS {
       }
       const functionID: number = functionIDGetIncrement();
       const timeoutFunctionID: number = functionIDGetIncrement();
-      return DBOSJSON.parse(
+      return DBOS.#executor.serializer.parse(
         await DBOSExecutor.globalInstance!.systemDatabase.recv(
           DBOS.workflowID!,
           functionID,
@@ -1024,7 +1017,7 @@ export class DBOS {
         DBOS.workflowID!,
         functionID,
         key,
-        DBOSJSON.stringify(value),
+        DBOS.#executor.serializer.stringify(value),
       );
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.setEvent` outside of a workflow'); // Only workflows can set event
@@ -1057,7 +1050,7 @@ export class DBOS {
         functionID,
         timeoutFunctionID,
       };
-      return DBOSJSON.parse(
+      return DBOS.#executor.serializer.parse(
         await DBOSExecutor.globalInstance!.systemDatabase.getEvent(
           workflowID,
           key,

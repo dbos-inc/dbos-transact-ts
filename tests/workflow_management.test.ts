@@ -20,6 +20,7 @@ import {
   DBOSWorkflowCancelledError,
 } from '../src/error';
 import assert from 'node:assert';
+import { DBOSJSON } from '../src/serialization';
 
 describe('workflow-management-tests', () => {
   let config: DBOSConfig;
@@ -180,7 +181,7 @@ describe('workflow-management-tests', () => {
 
     const logger = new GlobalLogger();
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger);
+    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
     try {
       const input: GetWorkflowsInput = {};
       const infos = await listWorkflows(sysdb, input);
@@ -435,7 +436,7 @@ describe('test-list-queues', () => {
 
     const logger = new GlobalLogger();
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger);
+    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
     try {
       let input: GetWorkflowsInput = {};
       let output: WorkflowStatus[] = [];
@@ -1113,7 +1114,7 @@ describe('test-list-steps', () => {
     expect(result1).toEqual(result2);
 
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, new GlobalLogger());
+    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, new GlobalLogger(), DBOSJSON);
     try {
       const wfs = await listWorkflows(sysdb, {});
       expect(wfs.length).toBe(2);

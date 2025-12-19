@@ -5,6 +5,7 @@ import { writeFileSync } from 'fs';
 import path from 'path';
 import assert from 'assert';
 import { maskDatabaseUrl } from './database_utils';
+import { DBOSJSON } from './serialization';
 
 export const dbosConfigFilePath = 'dbos-config.yaml';
 
@@ -192,6 +193,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
     sysDbPoolSize: options.systemDatabasePoolSize,
     systemDatabasePool: options.systemDatabasePool,
     systemDatabaseSchemaName: options.systemDatabaseSchemaName ?? 'dbos',
+    serializer: options.serializer ?? DBOSJSON,
     telemetry: {
       logs: {
         logLevel: options.logLevel || 'info',

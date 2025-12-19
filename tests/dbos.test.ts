@@ -1,4 +1,4 @@
-import { WorkflowHandle, DBOS } from '../src/';
+import { WorkflowHandle, DBOS, DBOSSerializer, WorkflowQueue } from '../src/';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
@@ -371,6 +371,96 @@ describe('dbos-tests', () => {
         status: StatusString.SUCCESS,
       });
     });
+
+    test('custom-serializer-test', async () => {
+      await DBOS.shutdown();
+      const config = generateDBOSTestConfig();
+      // Reset the test database
+      await setUpDBOSTestSysDb(config);
+
+      const key = 'key';
+      const value = 'value';
+      const message = 'message';
+      const workflow = DBOS.registerWorkflow(
+        async (input: string) => {
+          await DBOS.setEvent(key, input);
+          return DBOS.recv();
+        },
+        { name: 'custom-serializer-test' },
+      );
+      const errorWorkflow = DBOS.registerWorkflow(
+        async () => {
+          await Promise.resolve();
+          throw new Error(message);
+        },
+        { name: 'custom-serializer-test-error' },
+      );
+      const queue = new WorkflowQueue('example-queue');
+
+      // Configure DBOS with a custom serializer to base64-encoded JSON
+      const jsonSerializer: DBOSSerializer = {
+        parse: (text: string | null | undefined): unknown => {
+          // Parsers must always return null when receiving null or undefined
+          if (text === null || text === undefined) return null;
+          return JSON.parse(Buffer.from(text, 'base64').toString());
+        },
+        stringify: (obj: unknown): string => {
+          // JSON.stringify doesn't handle undefined, so convert it to null instead
+          if (obj === undefined) {
+            obj = null;
+          }
+          return Buffer.from(JSON.stringify(obj)).toString('base64');
+        },
+      };
+      config.serializer = jsonSerializer;
+      DBOS.setConfig(config);
+      await DBOS.launch();
+
+      // Test workflow operations with a custom serializer
+      const handle = await DBOS.startWorkflow(workflow, { queueName: queue.name })(value);
+      await DBOS.send(handle.workflowID, message);
+      assert.equal(await handle.getResult(), message);
+      assert.equal(await DBOS.getEvent(handle.workflowID, key), value);
+      const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+      assert.ok(steps);
+      assert.equal(steps.length, 2);
+      assert.ok(steps[0].name.includes('DBOS.setEvent'));
+      assert.ok(steps[1].name.includes('DBOS.recv'));
+      assert.equal(steps[1].output, message);
+      const errorHandle = await DBOS.startWorkflow(errorWorkflow, { queueName: queue.name })();
+      await expect(errorHandle.getResult()).rejects.toThrow(message);
+
+      // Test the client with a custom serializer
+      const client = await DBOSClient.create({
+        systemDatabaseUrl: config.systemDatabaseUrl!,
+        serializer: jsonSerializer,
+      });
+      const clientEnqueue = await client.enqueue(
+        { workflowName: 'custom-serializer-test', queueName: queue.name },
+        message,
+      );
+      await client.send(clientEnqueue.workflowID, message);
+      assert.equal(await clientEnqueue.getResult(), message);
+      const clientHandle = client.retrieveWorkflow(handle.workflowID);
+      assert.equal(await clientHandle.getResult(), message);
+      assert.equal(await client.getEvent(handle.workflowID, key), value);
+      await client.destroy();
+
+      // Verify a client without the custom serializer does not fail,
+      // but falls back to returning raw strings
+      const badClient = await DBOSClient.create({
+        systemDatabaseUrl: config.systemDatabaseUrl!,
+      });
+      const workflows = await badClient.listWorkflows({});
+      assert.equal(workflows.length, 5);
+      assert.equal(workflows[0].output, jsonSerializer.stringify(message));
+      const badClientSteps = await badClient.listWorkflowSteps(workflows[0].workflowID);
+      assert.ok(badClientSteps);
+      assert.ok(badClientSteps[1].name.includes('DBOS.recv'));
+      assert.equal(badClientSteps[1].output, jsonSerializer.stringify(message));
+      assert.equal(badClientSteps.length, 2);
+      await badClient.destroy();
+    }, 10000);
   });
 });
 
@@ -525,7 +615,7 @@ describe('custom-pool-test', () => {
       () => {
         return DBOS.recv();
       },
-      { name: 'workflow' },
+      { name: 'custom-pool-test' },
     );
     // Launching with a custom pool but nonexistent database should fail
     await expect(DBOS.launch()).rejects.toThrow(DBOSInitializationError);
@@ -545,11 +635,11 @@ describe('custom-pool-test', () => {
     await DBOS.send(handle.workflowID, message);
     assert.equal(await handle.getResult(), message);
 
-    const client = DBOSClient.create({
+    const client = await DBOSClient.create({
       systemDatabaseUrl: config.systemDatabaseUrl!,
       systemDatabasePool: config.systemDatabasePool,
     });
-    const clientHandle = (await client).retrieveWorkflow(handle.workflowID);
+    const clientHandle = client.retrieveWorkflow(handle.workflowID);
     assert.equal(await clientHandle.getResult(), message);
   });
 });

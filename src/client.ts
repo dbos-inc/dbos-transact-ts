@@ -16,7 +16,8 @@ import {
   type WorkflowHandle,
   type WorkflowStatus,
 } from './workflow';
-import { DBOSJSON, sleepms } from './utils';
+import { sleepms } from './utils';
+import { DBOSJSON, DBOSSerializer } from './serialization';
 import {
   forkWorkflow,
   getWorkflow,
@@ -102,7 +103,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
 
   async getStatus(): Promise<WorkflowStatus | null> {
     const status = await this.systemDatabase.getWorkflowStatus(this.workflowUUID);
-    return status ? toWorkflowStatus(status) : null;
+    return status ? toWorkflowStatus(status, this.systemDatabase.getSerializer()) : null;
   }
 
   async getResult(): Promise<R> {
@@ -110,12 +111,12 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
     if (res?.cancelled) {
       throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
     }
-    return DBOSExecutor.reviveResultOrError<R>(res!);
+    return DBOSExecutor.reviveResultOrError<R>(res!, this.systemDatabase.getSerializer());
   }
 
   async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return DBOSJSON.parse(status.input) as T;
+    return this.systemDatabase.getSerializer().parse(status.input) as T;
   }
 }
 
@@ -126,11 +127,16 @@ export class DBOSClient {
   private readonly logger: GlobalLogger;
   private readonly systemDatabase: SystemDatabase;
 
-  private constructor(systemDatabaseUrl: string, systemDatabasePool?: Pool) {
+  private constructor(
+    systemDatabaseUrl: string,
+    systemDatabasePool: Pool | undefined,
+    readonly serializer: DBOSSerializer,
+  ) {
     this.logger = new GlobalLogger();
     this.systemDatabase = new PostgresSystemDatabase(
       systemDatabaseUrl,
       this.logger,
+      serializer,
       DEFAULT_POOL_SIZE,
       systemDatabasePool,
     );
@@ -145,11 +151,13 @@ export class DBOSClient {
   static async create({
     systemDatabaseUrl,
     systemDatabasePool,
+    serializer,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
+    serializer?: DBOSSerializer;
   }): Promise<DBOSClient> {
-    const client = new DBOSClient(systemDatabaseUrl, systemDatabasePool);
+    const client = new DBOSClient(systemDatabaseUrl, systemDatabasePool, serializer ?? DBOSJSON);
     return Promise.resolve(client);
   }
 
@@ -195,7 +203,7 @@ export class DBOSClient {
       createdAt: Date.now(),
       timeoutMS: options.workflowTimeoutMS,
       deadlineEpochMS: undefined,
-      input: DBOSJSON.stringify(args),
+      input: this.serializer.stringify(args),
       deduplicationID: options.deduplicationID,
       priority: options.priority ?? 0,
       queuePartitionKey: options.queuePartitionKey,
@@ -231,13 +239,19 @@ export class DBOSClient {
       executorId: '',
       applicationID: '',
       createdAt: Date.now(),
-      input: DBOSJSON.stringify([destinationID, message, topic]),
+      input: this.serializer.stringify([destinationID, message, topic]),
       deduplicationID: undefined,
       priority: 0,
       queuePartitionKey: undefined,
     };
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
-    await this.systemDatabase.send(internalStatus.workflowUUID, 0, destinationID, DBOSJSON.stringify(message), topic);
+    await this.systemDatabase.send(
+      internalStatus.workflowUUID,
+      0,
+      destinationID,
+      this.serializer.stringify(message),
+      topic,
+    );
   }
 
   /**
@@ -248,7 +262,7 @@ export class DBOSClient {
    * @returns A Promise that resolves with the event payload.
    */
   async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
-    return DBOSJSON.parse(await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60)) as T;
+    return this.serializer.parse(await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60)) as T;
   }
 
   /**

@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
-import { DBOSJSON, registerSerializationRecipe } from './utils';
+import { registerSerializationRecipe } from './serialization';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
 import { DBOSExecutor } from './dbos-executor';
@@ -211,7 +211,7 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return DBOSJSON.parse(status.input) as T;
+    return this.systemDatabase.getSerializer().parse(status.input) as T;
   }
 }
 
@@ -242,7 +242,7 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return DBOSJSON.parse(status.input) as T;
+    return this.systemDatabase.getSerializer().parse(status.input) as T;
   }
 }
 
