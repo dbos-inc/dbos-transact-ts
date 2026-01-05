@@ -1,5 +1,5 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { Client, Pool, PoolConfig } from 'pg';
+import { Client, Pool } from 'pg';
 import { KyselyDataSource } from '..';
 import { Database, dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
