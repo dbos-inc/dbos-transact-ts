@@ -94,7 +94,6 @@ export interface DBOSLaunchOptions {
   // For DBOS Conductor
   conductorURL?: string;
   conductorKey?: string;
-  debugMode?: boolean;
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -187,12 +186,9 @@ export class DBOS {
    * @param options - Launch options for connecting to DBOS Conductor
    */
   static async launch(options?: DBOSLaunchOptions): Promise<void> {
-    const debugMode = options?.debugMode ?? process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined;
     const configFile = await readConfigFile();
 
-    let internalConfig = DBOS.#dbosConfig
-      ? translateDbosConfig(DBOS.#dbosConfig, debugMode)
-      : getDbosConfig(configFile);
+    let internalConfig = DBOS.#dbosConfig ? translateDbosConfig(DBOS.#dbosConfig) : getDbosConfig(configFile);
     let runtimeConfig = DBOS.#dbosConfig ? translateRuntimeConfig(DBOS.#dbosConfig) : getRuntimeConfig(configFile);
 
     if (process.env.DBOS__CLOUD === 'true') {
@@ -230,7 +226,7 @@ export class DBOS {
 
     DBOSExecutor.createDebouncerWorkflow();
     DBOSExecutor.createInternalQueue();
-    DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig, { debugMode });
+    DBOSExecutor.globalInstance = new DBOSExecutor(internalConfig);
 
     recordDBOSLaunch();
 

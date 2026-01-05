@@ -68,13 +68,6 @@ export class DBOSConfigKeyTypeError extends DBOSError {
   }
 }
 
-const DebuggerError = 15;
-export class DBOSDebuggerError extends DBOSError {
-  constructor(msg: string) {
-    super('DEBUGGER: ' + msg, DebuggerError);
-  }
-}
-
 const NonExistentWorkflowError = 16;
 export class DBOSNonExistentWorkflowError extends DBOSError {
   constructor(msg: string) {

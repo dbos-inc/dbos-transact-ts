@@ -3,7 +3,6 @@ import {
   DBOSInitializationError,
   DBOSWorkflowConflictError,
   DBOSNotRegisteredError,
-  DBOSDebuggerError,
   DBOSMaxStepRetriesError,
   DBOSWorkflowCancelledError,
   DBOSUnexpectedStepError,
@@ -194,7 +193,6 @@ export interface DBOSExternalState {
 
 export interface DBOSExecutorOptions {
   systemDatabase?: SystemDatabase;
-  debugMode?: boolean;
 }
 
 export class DBOSExecutor {
@@ -208,8 +206,6 @@ export class DBOSExecutor {
   readonly telemetryCollector: TelemetryCollector;
 
   static readonly defaultNotificationTimeoutSec = 60;
-
-  readonly #debugMode: boolean;
 
   readonly systemDBSchemaName: string;
 
@@ -227,9 +223,8 @@ export class DBOSExecutor {
   /* WORKFLOW EXECUTOR LIFE CYCLE MANAGEMENT */
   constructor(
     readonly config: DBOSConfigInternal,
-    { systemDatabase, debugMode }: DBOSExecutorOptions = {},
+    { systemDatabase }: DBOSExecutorOptions = {},
   ) {
-    this.#debugMode = debugMode ?? false;
     this.systemDBSchemaName = config.systemDatabaseSchemaName;
 
     if (config.telemetry.OTLPExporter) {
@@ -243,10 +238,6 @@ export class DBOSExecutor {
     this.ctxLogger = new DBOSContextualLogger(this.logger, () => getActiveSpan());
     this.tracer = new Tracer(this.telemetryCollector, this.appName);
     this.serializer = config.serializer;
-
-    if (this.#debugMode) {
-      this.logger.info('Running in debug mode!');
-    }
 
     if (systemDatabase) {
       this.logger.debug('Using provided system database'); // XXX print the name or something
@@ -279,7 +270,7 @@ export class DBOSExecutor {
       return;
     }
     try {
-      await this.systemDatabase.init(this.#debugMode);
+      await this.systemDatabase.init();
     } catch (err) {
       if (err instanceof DBOSInitializationError) {
         throw err;
@@ -299,31 +290,28 @@ export class DBOSExecutor {
     }
     this.initialized = true;
 
-    // Only execute init code if under non-debug mode
-    if (!this.#debugMode) {
-      // Compute the application version if not provided
-      if (globalParams.appVersion === '') {
-        globalParams.appVersion = this.computeAppVersion();
-        globalParams.wasComputed = true;
-      }
-
-      // Any initialization hooks
-      const classnames = getAllRegisteredClassNames();
-      for (const cls of classnames) {
-        // Init its configurations
-        const creg = getClassRegistrationByName(cls);
-        for (const [_cfgname, cfg] of creg.configuredInstances) {
-          await cfg.initialize();
-        }
-      }
-
-      this.logger.info(`Initializing DBOS (v${globalParams.dbosVersion})`);
-      this.logger.info(`System Database URL: ${maskDatabaseUrl(this.config.systemDatabaseUrl)}`);
-      this.logger.info(`Executor ID: ${this.executorID}`);
-      this.logger.info(`Application version: ${globalParams.appVersion}`);
-
-      await this.recoverPendingWorkflows([this.executorID]);
+    // Compute the application version if not provided
+    if (globalParams.appVersion === '') {
+      globalParams.appVersion = this.computeAppVersion();
+      globalParams.wasComputed = true;
     }
+
+    // Any initialization hooks
+    const classnames = getAllRegisteredClassNames();
+    for (const cls of classnames) {
+      // Init its configurations
+      const creg = getClassRegistrationByName(cls);
+      for (const [_cfgname, cfg] of creg.configuredInstances) {
+        await cfg.initialize();
+      }
+    }
+
+    this.logger.info(`Initializing DBOS (v${globalParams.dbosVersion})`);
+    this.logger.info(`System Database URL: ${maskDatabaseUrl(this.config.systemDatabaseUrl)}`);
+    this.logger.info(`Executor ID: ${this.executorID}`);
+    this.logger.info(`Application version: ${globalParams.appVersion}`);
+
+    await this.recoverPendingWorkflows([this.executorID]);
 
     this.logger.info('DBOS launched!');
   }
@@ -473,66 +461,52 @@ export class DBOSExecutor {
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
-    if (this.#debugMode) {
-      const wfStatus = await this.systemDatabase.getWorkflowStatus(workflowID);
-      if (!wfStatus) {
-        throw new DBOSDebuggerError(`Failed to find inputs for workflow UUID ${workflowID}`);
-      }
-
-      // Make sure we use the same input.
-      if (funcArgs.stringified !== wfStatus.input) {
-        throw new DBOSDebuggerError(
-          `Detected different inputs for workflow UUID ${workflowID}.\n Received: ${funcArgs.stringified}\n Original: ${wfStatus.input}`,
-        );
-      }
-    } else {
-      if (callerFunctionID !== undefined && callerID !== undefined) {
-        const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
-        if (result) {
-          if (result.error) {
-            throw deserializeError(serializer.parse(result.error));
-          }
-          return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
+    if (callerFunctionID !== undefined && callerID !== undefined) {
+      const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
+      if (result) {
+        if (result.error) {
+          throw deserializeError(serializer.parse(result.error));
         }
+        return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
       }
-      let ires;
-      try {
-        ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
-          maxRetries: maxRecoveryAttempts,
-          isDequeuedRequest: params.isQueueDispatch,
-          isRecoveryRequest: params.isRecoveryDispatch,
-        });
-      } catch (e) {
-        if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
-          await this.systemDatabase.recordOperationResult(
-            callerID,
-            callerFunctionID,
-            internalStatus.workflowName,
-            true,
-            Date.now(),
-            { error: serializer.stringify(serializeError(e)) },
-          );
-        }
-        throw e;
-      }
-
-      if (callerFunctionID !== undefined && callerID !== undefined) {
+    }
+    let ires;
+    try {
+      ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
+        maxRetries: maxRecoveryAttempts,
+        isDequeuedRequest: params.isQueueDispatch,
+        isRecoveryRequest: params.isRecoveryDispatch,
+      });
+    } catch (e) {
+      if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
         await this.systemDatabase.recordOperationResult(
           callerID,
           callerFunctionID,
           internalStatus.workflowName,
           true,
           Date.now(),
-          {
-            childWorkflowID: workflowID,
-          },
+          { error: serializer.stringify(serializeError(e)) },
         );
       }
-
-      $deadlineEpochMS = ires.deadlineEpochMS;
-      shouldExecute = ires.shouldExecuteOnThisExecutor;
-      await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
+      throw e;
     }
+
+    if (callerFunctionID !== undefined && callerID !== undefined) {
+      await this.systemDatabase.recordOperationResult(
+        callerID,
+        callerFunctionID,
+        internalStatus.workflowName,
+        true,
+        Date.now(),
+        {
+          childWorkflowID: workflowID,
+        },
+      );
+    }
+
+    $deadlineEpochMS = ires.deadlineEpochMS;
+    shouldExecute = ires.shouldExecuteOnThisExecutor;
+    await debugTriggerPoint(DEBUG_TRIGGER_WORKFLOW_ENQUEUE);
 
     async function callPromiseWithTimeout(
       callPromise: Promise<R>,
@@ -566,9 +540,7 @@ export class DBOSExecutor {
       e.dbos_already_logged = true;
       internalStatus.error = serializer.stringify(serializeError(e));
       internalStatus.status = StatusString.ERROR;
-      if (!exec.#debugMode) {
-        await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
-      }
+      await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
     }
 
@@ -600,35 +572,13 @@ export class DBOSExecutor {
           );
         });
 
-        if (this.#debugMode) {
-          function resultsMatch(recordedResult: Awaited<R>, callResult: Awaited<R>): boolean {
-            if (recordedResult === null) {
-              return callResult === undefined || callResult === null;
-            }
-            return serializer.stringify(recordedResult) === serializer.stringify(callResult);
-          }
-
-          const recordedResult = DBOSExecutor.reviveResultOrError<Awaited<R>>(
-            (await this.systemDatabase.awaitWorkflowResult(workflowID))!,
-            this.serializer,
-          );
-          if (!resultsMatch(recordedResult, callResult)) {
-            this.logger.error(
-              `Detect different output for the workflow UUID ${workflowID}!\n Received: ${serializer.stringify(callResult)}\n Original: ${serializer.stringify(recordedResult)}`,
-            );
-          }
-          result = recordedResult;
-        } else {
-          result = callResult!;
-        }
+        result = callResult!;
 
         const funcResult = serializeFunctionInputOutput(result, [wfname, '<result>'], this.serializer);
         result = funcResult.deserialized;
         internalStatus.output = funcResult.stringified;
         internalStatus.status = StatusString.SUCCESS;
-        if (!this.#debugMode) {
-          await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
-        }
+        await this.systemDatabase.recordWorkflowOutput(workflowID, internalStatus);
         span.setStatus({ code: SpanStatusCode.OK });
       } catch (err) {
         if (err instanceof DBOSWorkflowConflictError) {
@@ -659,10 +609,9 @@ export class DBOSExecutor {
     };
 
     if (
-      this.#debugMode ||
-      (shouldExecute &&
-        (params.queueName === undefined || params.executeWorkflow) &&
-        !this.systemDatabase.checkForRunningWorkflow(workflowID))
+      shouldExecute &&
+      (params.queueName === undefined || params.executeWorkflow) &&
+      !this.systemDatabase.checkForRunningWorkflow(workflowID)
     ) {
       const workflowPromise: Promise<R> = runWorkflow();
 
@@ -770,12 +719,6 @@ export class DBOSExecutor {
       span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(span);
       return check;
-    }
-
-    if (this.#debugMode) {
-      throw new DBOSDebuggerError(
-        `Failed to find the recorded output for the step: workflow UUID: ${wfid}, step number: ${funcID}`,
-      );
     }
 
     const maxAttempts = stepConfig.maxAttempts ?? 3;
@@ -979,10 +922,6 @@ export class DBOSExecutor {
    * It runs to completion all pending workflows that were executing when the previous executor failed.
    */
   async recoverPendingWorkflows(executorIDs: string[] = ['local']): Promise<WorkflowHandle<unknown>[]> {
-    if (this.#debugMode) {
-      throw new DBOSDebuggerError('Cannot recover pending workflows in debug mode.');
-    }
-
     const handlerArray: WorkflowHandle<unknown>[] = [];
     for (const execID of executorIDs) {
       this.logger.debug(`Recovering workflows assigned to executor: ${execID}`);
