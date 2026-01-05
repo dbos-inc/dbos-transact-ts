@@ -1396,6 +1396,88 @@ describe('test-fork', () => {
     expect(ExampleWorkflow.stepFourCount).toBe(2);
     expect(ExampleWorkflow.stepFiveCount).toBe(2);
   });
+
+  const testForkStreamsKey = 'key';
+  const testForkStreamsEvent = new Event();
+  // Step that writes to stream
+  const streamStep = DBOS.registerStep(
+    async (val: number) => {
+      await DBOS.writeStream(testForkStreamsKey, val);
+    },
+    { name: 'stream-step' },
+  );
+
+  // Workflow: waits on event, writes 0, writes 1, calls step(2), closes stream
+  const streamWorkflow = DBOS.registerWorkflow(
+    async () => {
+      await testForkStreamsEvent.wait();
+      await DBOS.writeStream(testForkStreamsKey, 0); // function_id = 1
+      await DBOS.writeStream(testForkStreamsKey, 1); // function_id = 2
+      await streamStep(2); // function_id = 3
+      await DBOS.closeStream(testForkStreamsKey); // function_id = 4
+      return DBOS.workflowID!;
+    },
+    { name: 'stream-fork-workflow' },
+  );
+
+  test('test-fork-streams', async () => {
+    // Helper to read N values from a stream without blocking forever
+    async function readStreamN(workflowID: string, n: number): Promise<number[]> {
+      if (n === 0) return [];
+      const values: number[] = [];
+      for await (const value of DBOS.readStream(workflowID, testForkStreamsKey)) {
+        values.push(value as number);
+        if (values.length >= n) break;
+      }
+      return values;
+    }
+
+    // Run workflow to completion first
+    testForkStreamsEvent.set();
+    const handle = await DBOS.startWorkflow(streamWorkflow, {})();
+    expect(await handle.getResult()).toBe(handle.workflowID);
+
+    // Verify original stream has [0, 1, 2]
+    const allValues: number[] = [];
+    for await (const v of DBOS.readStream(handle.workflowID, testForkStreamsKey)) {
+      allValues.push(v as number);
+    }
+    expect(allValues).toEqual([0, 1, 2]);
+
+    // Block workflow so forks can't advance
+    testForkStreamsEvent.clear();
+
+    // Fork from different points, verify streams have appropriate values
+    const forkOne = await DBOS.forkWorkflow(handle.workflowID, 1);
+    expect(await readStreamN(forkOne.workflowID, 0)).toEqual([]);
+
+    const forkTwo = await DBOS.forkWorkflow(handle.workflowID, 2);
+    expect(await readStreamN(forkTwo.workflowID, 1)).toEqual([0]);
+
+    const forkThree = await DBOS.forkWorkflow(handle.workflowID, 3);
+    expect(await readStreamN(forkThree.workflowID, 2)).toEqual([0, 1]);
+
+    const forkFour = await DBOS.forkWorkflow(handle.workflowID, 4);
+    expect(await readStreamN(forkFour.workflowID, 3)).toEqual([0, 1, 2]);
+
+    const forkFive = await DBOS.forkWorkflow(handle.workflowID, 5);
+    const forkFiveValues: number[] = [];
+    for await (const value of DBOS.readStream(forkFive.workflowID, testForkStreamsKey)) {
+      forkFiveValues.push(value as number);
+    }
+    expect(forkFiveValues).toEqual([0, 1, 2]);
+
+    // Unblock the forked workflows, verify they successfully complete
+    testForkStreamsEvent.set();
+    for (const forkHandle of [forkOne, forkTwo, forkThree, forkFour, forkFive]) {
+      expect(await forkHandle.getResult()).toBeTruthy();
+      const finalValues: number[] = [];
+      for await (const value of DBOS.readStream(forkHandle.workflowID, testForkStreamsKey)) {
+        finalValues.push(value as number);
+      }
+      expect(finalValues).toEqual([0, 1, 2]);
+    }
+  }, 30000);
 });
 
 describe('wf-cancel-tests', () => {
