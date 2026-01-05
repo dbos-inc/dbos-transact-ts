@@ -47,28 +47,37 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'KyselyDataSource';
   #kyselyDBField: Kysely<DBOSKyselyTables>;
   readonly schemaName: string;
+  readonly poolConfig: PoolConfig | undefined;
 
   constructor(
     readonly name: string,
-    private readonly poolConfig: PoolConfig,
+    poolConfigOrKysely: PoolConfig | Kysely<unknown>,
     schemaName: string = 'dbos',
   ) {
     this.schemaName = schemaName;
-    this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
-      dialect: new PostgresDialect({
-        pool: new Pool(poolConfig),
-      }),
-    });
+
+    if (poolConfigOrKysely instanceof Kysely) {
+      this.#kyselyDBField = poolConfigOrKysely as Kysely<DBOSKyselyTables>;
+    } else {
+      this.poolConfig = poolConfigOrKysely;
+      this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
+        dialect: new PostgresDialect({
+          pool: new Pool(poolConfigOrKysely),
+        }),
+      });
+    }
   }
 
   async initialize(): Promise<void> {
-    const kyselyDB = this.#kyselyDBField;
-    this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
-      dialect: new PostgresDialect({
-        pool: new Pool(this.poolConfig),
-      }),
-    });
-    await kyselyDB?.destroy();
+    if (this.poolConfig) {
+      const kyselyDB = this.#kyselyDBField;
+      this.#kyselyDBField = new Kysely<DBOSKyselyTables>({
+        dialect: new PostgresDialect({
+          pool: new Pool(this.poolConfig),
+        }),
+      });
+      await kyselyDB?.destroy();
+    }
 
     // Check for connectivity & the schema
     let installed = false;
