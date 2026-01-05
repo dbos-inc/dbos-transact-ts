@@ -1203,6 +1203,29 @@ export class PostgresSystemDatabase implements SystemDatabase {
           FROM "${this.schemaName}".streams
           WHERE workflow_uuid = $2 AND function_id < $3`;
         await client.query(copyStreamsQuery, [newWorkflowID, workflowID, startStep]);
+
+        // Copy events history
+        const copyEventsHistoryQuery = `INSERT INTO "${this.schemaName}".workflow_events_history
+          (workflow_uuid, function_id, key, value)
+          SELECT $1 AS workflow_uuid, function_id, key, value
+          FROM "${this.schemaName}".workflow_events_history
+          WHERE workflow_uuid = $2 AND function_id < $3`;
+        await client.query(copyEventsHistoryQuery, [newWorkflowID, workflowID, startStep]);
+
+        // Copy only the latest version of each event (max function_id per key) into workflow_events
+        const copyLatestEventsQuery = `INSERT INTO "${this.schemaName}".workflow_events
+          (workflow_uuid, key, value)
+          SELECT $1 AS workflow_uuid, weh1.key, weh1.value
+          FROM "${this.schemaName}".workflow_events_history weh1
+          WHERE weh1.workflow_uuid = $2
+            AND weh1.function_id = (
+              SELECT MAX(weh2.function_id)
+              FROM "${this.schemaName}".workflow_events_history weh2
+              WHERE weh2.workflow_uuid = $2
+                AND weh2.key = weh1.key
+                AND weh2.function_id < $3
+            )`;
+        await client.query(copyLatestEventsQuery, [newWorkflowID, workflowID, startStep]);
       }
 
       await client.query('COMMIT');
@@ -1520,6 +1543,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
              DO UPDATE SET value = $3
              RETURNING workflow_uuid;`,
           [workflowID, key, message],
+        );
+        // Also write to the immutable history table for fork support
+        await client.query(
+          `INSERT INTO "${this.schemaName}".workflow_events_history (workflow_uuid, function_id, key, value)
+             VALUES ($1, $2, $3, $4)
+             ON CONFLICT (workflow_uuid, function_id, key)
+             DO UPDATE SET value = $4;`,
+          [workflowID, functionID, key, message],
         );
         return undefined;
       });

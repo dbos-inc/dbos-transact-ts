@@ -1411,10 +1411,10 @@ describe('test-fork', () => {
   const streamWorkflow = DBOS.registerWorkflow(
     async () => {
       await testForkStreamsEvent.wait();
-      await DBOS.writeStream(testForkStreamsKey, 0); // function_id = 1
-      await DBOS.writeStream(testForkStreamsKey, 1); // function_id = 2
-      await streamStep(2); // function_id = 3
-      await DBOS.closeStream(testForkStreamsKey); // function_id = 4
+      await DBOS.writeStream(testForkStreamsKey, 0); // function_id = 0
+      await DBOS.writeStream(testForkStreamsKey, 1); // function_id = 1
+      await streamStep(2); // function_id = 2
+      await DBOS.closeStream(testForkStreamsKey); // function_id = 3
       return DBOS.workflowID!;
     },
     { name: 'stream-fork-workflow' },
@@ -1448,19 +1448,19 @@ describe('test-fork', () => {
     testForkStreamsEvent.clear();
 
     // Fork from different points, verify streams have appropriate values
-    const forkOne = await DBOS.forkWorkflow(handle.workflowID, 1);
+    const forkOne = await DBOS.forkWorkflow(handle.workflowID, 0);
     expect(await readStreamN(forkOne.workflowID, 0)).toEqual([]);
 
-    const forkTwo = await DBOS.forkWorkflow(handle.workflowID, 2);
+    const forkTwo = await DBOS.forkWorkflow(handle.workflowID, 1);
     expect(await readStreamN(forkTwo.workflowID, 1)).toEqual([0]);
 
-    const forkThree = await DBOS.forkWorkflow(handle.workflowID, 3);
+    const forkThree = await DBOS.forkWorkflow(handle.workflowID, 2);
     expect(await readStreamN(forkThree.workflowID, 2)).toEqual([0, 1]);
 
-    const forkFour = await DBOS.forkWorkflow(handle.workflowID, 4);
+    const forkFour = await DBOS.forkWorkflow(handle.workflowID, 3);
     expect(await readStreamN(forkFour.workflowID, 3)).toEqual([0, 1, 2]);
 
-    const forkFive = await DBOS.forkWorkflow(handle.workflowID, 5);
+    const forkFive = await DBOS.forkWorkflow(handle.workflowID, 4);
     const forkFiveValues: number[] = [];
     for await (const value of DBOS.readStream(forkFive.workflowID, testForkStreamsKey)) {
       forkFiveValues.push(value as number);
@@ -1477,7 +1477,59 @@ describe('test-fork', () => {
       }
       expect(finalValues).toEqual([0, 1, 2]);
     }
-  }, 30000);
+  }, 10000);
+
+  const testForkEventsKey = 'event_key';
+  const testForkEventsEvent = new Event();
+
+  // Workflow: waits on event, sets event to 0, 1, 2
+  const eventWorkflow = DBOS.registerWorkflow(
+    async () => {
+      await testForkEventsEvent.wait();
+      await DBOS.setEvent(testForkEventsKey, 0); // function_id = 0
+      await DBOS.setEvent(testForkEventsKey, 1); // function_id = 1
+      await DBOS.setEvent(testForkEventsKey, 2); // function_id = 2
+      return DBOS.workflowID!;
+    },
+    { name: 'event-fork-workflow' },
+  );
+
+  test('test-fork-events', async () => {
+    // Run workflow to completion first
+    testForkEventsEvent.set();
+    const handle = await DBOS.startWorkflow(eventWorkflow, {})();
+    expect(await handle.getResult()).toBe(handle.workflowID);
+
+    // Verify the event's final value is 2
+    expect(await DBOS.getEvent(handle.workflowID, testForkEventsKey)).toBe(2);
+
+    // Block workflow so forks can't advance
+    testForkEventsEvent.clear();
+
+    // Fork from different points, verify events have appropriate values
+    const forkOne = await DBOS.forkWorkflow(handle.workflowID, 0);
+    expect(await DBOS.getEvent(forkOne.workflowID, testForkEventsKey, 0)).toBeNull();
+
+    const forkTwo = await DBOS.forkWorkflow(handle.workflowID, 1);
+    expect(await DBOS.getEvent(forkTwo.workflowID, testForkEventsKey)).toBe(0);
+
+    const forkThree = await DBOS.forkWorkflow(handle.workflowID, 2);
+    expect(await DBOS.getEvent(forkThree.workflowID, testForkEventsKey)).toBe(1);
+
+    const forkFour = await DBOS.forkWorkflow(handle.workflowID, 3);
+    expect(await DBOS.getEvent(forkFour.workflowID, testForkEventsKey)).toBe(2);
+
+    // Fork from a fork
+    const forkFive = await DBOS.forkWorkflow(forkFour.workflowID, 3);
+    expect(await DBOS.getEvent(forkFive.workflowID, testForkEventsKey)).toBe(2);
+
+    // Unblock the forked workflows, verify they successfully complete
+    testForkEventsEvent.set();
+    for (const forkHandle of [forkOne, forkTwo, forkThree, forkFour, forkFive]) {
+      expect(await forkHandle.getResult()).toBeTruthy();
+      expect(await DBOS.getEvent(forkHandle.workflowID, testForkEventsKey)).toBe(2);
+    }
+  }, 10000);
 });
 
 describe('wf-cancel-tests', () => {
