@@ -182,7 +182,7 @@ export interface SystemDatabase {
 
   // Streaming
   writeStreamFromWorkflow(workflowID: string, functionID: number, key: string, value: unknown): Promise<void>;
-  writeStreamFromStep(workflowID: string, key: string, value: unknown): Promise<void>;
+  writeStreamFromStep(workflowID: string, functionID: number, key: string, value: unknown): Promise<void>;
   closeStream(workflowID: string, functionID: number, key: string): Promise<void>;
   readStream(workflowID: string, key: string, offset: number): Promise<unknown>;
 
@@ -1188,12 +1188,21 @@ export class PostgresSystemDatabase implements SystemDatabase {
       );
 
       if (startStep > 0) {
-        const query = `INSERT INTO "${this.schemaName}".operation_outputs 
-          (workflow_uuid, function_id, output, error, function_name, child_workflow_id )
+        // Copy operation outputs
+        const copyOutputsQuery = `INSERT INTO "${this.schemaName}".operation_outputs
+          (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
           SELECT $1 AS workflow_uuid, function_id, output, error, function_name, child_workflow_id
           FROM "${this.schemaName}".operation_outputs
           WHERE workflow_uuid = $2 AND function_id < $3`;
-        await client.query(query, [newWorkflowID, workflowID, startStep]);
+        await client.query(copyOutputsQuery, [newWorkflowID, workflowID, startStep]);
+
+        // Copy streams
+        const copyStreamsQuery = `INSERT INTO "${this.schemaName}".streams
+          (workflow_uuid, key, value, "offset", function_id)
+          SELECT $1 AS workflow_uuid, key, value, "offset", function_id
+          FROM "${this.schemaName}".streams
+          WHERE workflow_uuid = $2 AND function_id < $3`;
+        await client.query(copyStreamsQuery, [newWorkflowID, workflowID, startStep]);
       }
 
       await client.query('COMMIT');
@@ -2318,14 +2327,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   @dbRetry()
-  async writeStreamFromStep(workflowID: string, key: string, value: unknown): Promise<void> {
+  async writeStreamFromStep(workflowID: string, functionID: number, key: string, value: unknown): Promise<void> {
     const client: PoolClient = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
 
       // Find the maximum offset for this workflow_uuid and key combination
       const maxOffsetResult = await client.query(
-        `SELECT MAX("offset") FROM "${this.schemaName}".streams 
+        `SELECT MAX("offset") FROM "${this.schemaName}".streams
          WHERE workflow_uuid = $1 AND key = $2`,
         [workflowID, key],
       );
@@ -2339,9 +2348,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
       // Insert the new stream entry
       await client.query(
-        `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset")
-         VALUES ($1, $2, $3, $4)`,
-        [workflowID, key, serializedValue, nextOffset],
+        `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id)
+         VALUES ($1, $2, $3, $4, $5)`,
+        [workflowID, key, serializedValue, nextOffset, functionID],
       );
 
       await client.query('COMMIT');
@@ -2380,9 +2389,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Insert the new stream entry
         await client.query(
-          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset")
-           VALUES ($1, $2, $3, $4)`,
-          [workflowID, key, serializedValue, nextOffset],
+          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id)
+           VALUES ($1, $2, $3, $4, $5)`,
+          [workflowID, key, serializedValue, nextOffset, functionID],
         );
 
         return undefined;

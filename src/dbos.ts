@@ -1079,7 +1079,12 @@ export class DBOS {
           value,
         );
       } else if (DBOS.isInStep()) {
-        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(DBOS.workflowID!, key, value);
+        return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(
+          DBOS.workflowID!,
+          DBOS.stepID!,
+          key,
+          value,
+        );
       } else {
         throw new DBOSInvalidWorkflowTransitionError(
           'Invalid call to `DBOS.writeStream` outside of a workflow or step',
