@@ -508,7 +508,6 @@ describe('KyselyDataSourceWithCustomKysely', () => {
     });
 
     // Create a datasource using the custom Kysely instance
-    // The constructor accepts PoolConfig | Kysely at runtime via KyselyTransactionHandler
     const customDataSource = new KyselyDataSource<Database>('custom-kysely-db', customKysely);
 
     // Create transaction functions that use the custom datasource
