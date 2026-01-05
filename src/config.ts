@@ -109,16 +109,7 @@ export function getSystemDatabaseUrl(configFile: Pick<ConfigFile, 'name' | 'syst
   if (!isValidDatabaseName(dbName))
     throw new Error(`Database name "${dbName}" in database_url ${maskDatabaseUrl(databaseUrl)} is invalid.`);
 
-  if (process.env.DBOS_DEBUG_WORKFLOW_ID !== undefined) {
-    // If in debug mode, apply the debug overrides
-    url.hostname = process.env.DBOS_DBHOST || url.hostname;
-    url.port = process.env.DBOS_DBPORT || url.port;
-    url.username = process.env.DBOS_DBUSER || url.username;
-    url.password = process.env.DBOS_DBPASSWORD || url.password;
-    return url.toString();
-  } else {
-    return databaseUrl;
-  }
+  return databaseUrl;
 
   function defaultSysDatabaseUrl(appName?: string): string {
     assert(appName, 'Application name must be defined to construct a valid database URL.');
