@@ -1,10 +1,10 @@
 import { DBOS } from '@dbos-inc/dbos-sdk';
-import { Client, Pool } from 'pg';
+import { Client, Pool, PoolConfig } from 'pg';
 import { KyselyDataSource } from '..';
 import { Database, dropDB, ensureDB } from './test-helpers';
 import { randomUUID } from 'crypto';
 import SuperJSON from 'superjson';
-import { sql } from 'kysely';
+import { Kysely, PostgresDialect, sql } from 'kysely';
 
 const config = { client: 'pg', connection: { user: 'postgres', database: 'kysely_ds_test_userdb' } };
 const dataSource = new KyselyDataSource<Database>('app-db', config.connection);
@@ -483,5 +483,73 @@ describe('KyselyDataSourceCreateTxCompletion', () => {
     expect(rows[0].function_num).toBe(0);
     expect(rows[0].output).not.toBeNull();
     expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+  });
+});
+
+describe('KyselyDataSourceWithCustomKysely', () => {
+  const userDB = new Pool(config.connection);
+
+  beforeAll(async () => {
+    await createDatabases(userDB, true);
+    DBOS.setConfig({ name: 'kysely-ds-test' });
+  });
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+    await userDB.end();
+  });
+
+  test('datasource with custom Kysely instance', async () => {
+    // Create a custom Kysely instance
+    const customKysely = new Kysely<Database>({
+      dialect: new PostgresDialect({
+        pool: new Pool(config.connection),
+      }),
+    });
+
+    // Create a datasource using the custom Kysely instance
+    // The constructor accepts PoolConfig | Kysely at runtime via KyselyTransactionHandler
+    const customDataSource = new KyselyDataSource<Database>('custom-kysely-db', customKysely);
+
+    // Create transaction functions that use the custom datasource
+    async function customInsertFunction(user: string) {
+      const result = await customDataSource.client
+        .insertInto('greetings')
+        .values({ name: user, greet_count: 1 })
+        .onConflict((oc) => oc.column('name').doUpdateSet({ greet_count: sql`greetings.greet_count + 1` }))
+        .returning('greet_count')
+        .executeTakeFirst();
+
+      return { user, greet_count: result?.greet_count };
+    }
+
+    const regCustomInsert = customDataSource.registerTransaction(customInsertFunction);
+
+    async function customInsertWorkflow(user: string) {
+      return await regCustomInsert(user);
+    }
+
+    const regCustomWorkflow = DBOS.registerWorkflow(customInsertWorkflow);
+    await DBOS.launch();
+
+    const user = 'customKyselyTest' + Date.now();
+    const workflowID = randomUUID();
+
+    // Execute the workflow using the custom Kysely-backed datasource
+    const result = await DBOS.withNextWorkflowID(workflowID, () => regCustomWorkflow(user));
+    expect(result).toMatchObject({ user, greet_count: 1 });
+
+    // Verify the transaction was recorded
+    const { rows } = await userDB.query<transaction_completion>(
+      'SELECT * FROM dbos.transaction_completion WHERE workflow_id = $1',
+      [workflowID],
+    );
+    expect(rows.length).toBe(1);
+    expect(rows[0].workflow_id).toBe(workflowID);
+    expect(rows[0].output).not.toBeNull();
+    expect(SuperJSON.parse(rows[0].output!)).toMatchObject({ user, greet_count: 1 });
+
+    // Clean up the custom Kysely instance
+    await customKysely.destroy();
   });
 });

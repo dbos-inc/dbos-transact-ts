@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any */
 // using https://kysely.dev/
 import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
@@ -51,7 +52,7 @@ class KyselyTransactionHandler implements DataSourceTransactionHandler {
 
   constructor(
     readonly name: string,
-    poolConfigOrKysely: PoolConfig | Kysely<unknown>,
+    poolConfigOrKysely: PoolConfig | Kysely<any>,
     schemaName: string = 'dbos',
   ) {
     this.schemaName = schemaName;
@@ -299,10 +300,10 @@ export class KyselyDataSource<DB> implements DBOSDataSource<TransactionConfig> {
 
   constructor(
     readonly name: string,
-    poolConfig: PoolConfig,
+    poolConfigOrKysely: PoolConfig | Kysely<any>,
     schemaName: string = 'dbos',
   ) {
-    this.#provider = new KyselyTransactionHandler(name, poolConfig, schemaName);
+    this.#provider = new KyselyTransactionHandler(name, poolConfigOrKysely, schemaName);
     registerDataSource(this.#provider);
   }
 
