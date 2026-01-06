@@ -62,7 +62,7 @@ export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
  *     be done elsewhere (executor), as it may require application-specific logic or extensions.
  */
 export interface SystemDatabase {
-  init(debugMode?: boolean): Promise<void>;
+  init(): Promise<void>;
   destroy(): Promise<void>;
 
   initWorkflowStatus(
@@ -305,14 +305,9 @@ export async function grantDbosSchemaPermissions(
 export async function ensureSystemDatabase(
   sysDbUrl: string,
   logger: GlobalLogger,
-  debugMode: boolean = false,
   customPool?: Pool,
   schemaName: string = 'dbos',
 ) {
-  if (debugMode) {
-    // Don't create anything in debug mode
-    return;
-  }
   let client: ClientBase | null = null;
   if (customPool) {
     // If a custom pool is passed in, assume the database already exists and create
@@ -332,7 +327,7 @@ export async function ensureSystemDatabase(
     const cconnect = await connectToPGAndReportOutcome(sysDbUrl, () => {}, 'System Database');
     if (cconnect.result !== 'ok') {
       logger.warn(
-        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}${debugMode ? ' (debug mode)' : ''}
+        `Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}
         ${cconnect.message}: (${cconnect.code ? cconnect.code : 'connectivity problem'})`,
       );
       throw new DBOSInitializationError(`Unable to connect to system database at ${maskDatabaseUrl(sysDbUrl)}`);
@@ -896,11 +891,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return this.serializer;
   }
 
-  async init(debugMode: boolean = false) {
+  async init() {
     await ensureSystemDatabase(
       this.systemDatabaseUrl,
       this.logger,
-      debugMode,
       this.customPool ? this.pool : undefined,
       this.schemaName,
     );

@@ -114,7 +114,7 @@ program
     try {
       // Load the DBOS system schema.
       logger.info(`Creating DBOS system database and schema: ${schemaName}`);
-      await ensureSystemDatabase(systemDatabaseUrl, logger, false, undefined, schemaName);
+      await ensureSystemDatabase(systemDatabaseUrl, logger, undefined, schemaName);
 
       // Grant permissions to application role if specified
       if (options.appRole) {

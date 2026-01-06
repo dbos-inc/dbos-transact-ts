@@ -337,19 +337,6 @@ describe('dbos-config', () => {
       );
     });
 
-    test('uses environment variable overrides with connection string input', () => {
-      process.env.DBOS_DBHOST = 'envhost';
-      process.env.DBOS_DBPORT = '7777';
-      process.env.DBOS_DBUSER = 'envuser';
-      process.env.DBOS_DBPASSWORD = 'envpass';
-      process.env.DBOS_DEBUG_WORKFLOW_ID = 'debug-workflow-id';
-
-      const url = getSystemDatabaseUrl({
-        system_database_url: 'postgresql://a:b@c:1234/appdb?connect_timeout=22&sslmode=disable',
-      });
-      expect(url).toBe('postgresql://envuser:envpass@envhost:7777/appdb?connect_timeout=22&sslmode=disable');
-    });
-
     test('correctly handles app names with spaces', () => {
       const url = getSystemDatabaseUrl({
         name: 'app name with spaces',
