@@ -1540,6 +1540,8 @@ describe('queue-time-outs', () => {
       queueName: partitionQueue.name,
       enqueueOptions: { queuePartitionKey: blockedPartitionKey },
     })();
+    const status = await blockedBlockedHandle.getStatus();
+    assert.equal(status?.queuePartitionKey, blockedPartitionKey);
     const blockedNormalHandle = await DBOS.startWorkflow(partitionNormalWorkflow, {
       queueName: partitionQueue.name,
       enqueueOptions: { queuePartitionKey: blockedPartitionKey },
