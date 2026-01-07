@@ -1078,6 +1078,8 @@ describe('enqueue-options', () => {
       queueName: TestExample.queue.name,
       enqueueOptions: { deduplicationID: dedupID },
     }).parentWorkflow('abc');
+    const status = await wfh1.getStatus();
+    assert.equal(status?.deduplicationID, dedupID);
 
     // different dup_id no issue
     const wfid2 = randomUUID();
@@ -1185,6 +1187,8 @@ describe('enqueue-options', () => {
         queueName: TestPriority.queue.name,
         enqueueOptions: { priority: i },
       }).parentWorkflow(i);
+      const status = await handle.getStatus();
+      assert.equal(status?.priority, i);
       wf_handles.push(handle);
     }
 
@@ -1307,6 +1311,7 @@ describe('queue-time-outs', () => {
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
     const status = await DBOS.getWorkflowStatus(workflowID);
     expect(status?.status).toBe(StatusString.CANCELLED);
+    expect(status?.timeoutMS).toBe(100);
   });
 
   // enqueue workflow with *no* timeout which calls a blocked child with timeout
@@ -1535,6 +1540,8 @@ describe('queue-time-outs', () => {
       queueName: partitionQueue.name,
       enqueueOptions: { queuePartitionKey: blockedPartitionKey },
     })();
+    const status = await blockedBlockedHandle.getStatus();
+    assert.equal(status?.queuePartitionKey, blockedPartitionKey);
     const blockedNormalHandle = await DBOS.startWorkflow(partitionNormalWorkflow, {
       queueName: partitionQueue.name,
       enqueueOptions: { queuePartitionKey: blockedPartitionKey },

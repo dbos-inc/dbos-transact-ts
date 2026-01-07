@@ -2067,6 +2067,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'application_id',
       'workflow_deadline_epoch_ms',
       'workflow_timeout_ms',
+      'deduplication_id',
+      'priority',
+      'queue_partition_key',
       'forked_from',
     ];
 
@@ -2144,6 +2147,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (input.applicationVersion) {
       whereClauses.push(`application_version = $${paramCounter}`);
       params.push(input.applicationVersion);
+      paramCounter++;
+    }
+    if (input.executorId) {
+      whereClauses.push(`executor_id = $${paramCounter}`);
+      params.push(input.executorId);
       paramCounter++;
     }
 

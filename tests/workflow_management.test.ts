@@ -98,12 +98,26 @@ describe('workflow-management-tests', () => {
     await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
 
     const input: GetWorkflowsInput = {
-      applicationVersion: globalParams.appVersion,
+      applicationVersion: DBOS.applicationVersion,
     };
     let workflows = await DBOS.listWorkflows(input);
     expect(workflows.length).toBe(1);
 
     input.applicationVersion = 'v1';
+    workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(0);
+  });
+
+  test('getworkflows-with-executorID', async () => {
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
+
+    const input: GetWorkflowsInput = {
+      executorId: DBOS.executorID,
+    };
+    let workflows = await DBOS.listWorkflows(input);
+    expect(workflows.length).toBe(1);
+
+    input.executorId = 'fake-id';
     workflows = await DBOS.listWorkflows(input);
     expect(workflows.length).toBe(0);
   });
