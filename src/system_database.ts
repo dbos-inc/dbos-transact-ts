@@ -2149,6 +2149,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       params.push(input.applicationVersion);
       paramCounter++;
     }
+    if (input.executorId) {
+      whereClauses.push(`executor_id = $${paramCounter}`);
+      params.push(input.executorId);
+      paramCounter++;
+    }
 
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const orderClause = `ORDER BY created_at ${input.sortDesc ? 'DESC' : 'ASC'}`;

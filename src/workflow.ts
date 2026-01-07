@@ -97,6 +97,7 @@ export interface GetWorkflowsInput {
   endTime?: string; // Retrieve workflows started before this (RFC 3339-compliant) timestamp.
   authenticatedUser?: string; // Retrieve workflows run by this authenticated user.
   applicationVersion?: string; // Retrieve workflows started on this application version.
+  executorId?: string; // Retrieve workflows run by this executor ID.
   workflow_id_prefix?: string; // Retrieve workflows whose ID have this prefix
   queueName?: string; // If this workflow is enqueued, on which queue
   queuesOnly?: boolean; // Return only workflows that are actively enqueued

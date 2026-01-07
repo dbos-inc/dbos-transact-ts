@@ -395,6 +395,11 @@ export class DBOS {
     return globalParams.appVersion;
   }
 
+  /** Get the current executor ID */
+  static get executorID(): string {
+    return globalParams.executorID;
+  }
+
   /** Get the current workflow ID */
   static get workflowID(): string | undefined {
     return getCurrentContextStore()?.workflowId;
