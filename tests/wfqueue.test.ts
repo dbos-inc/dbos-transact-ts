@@ -1078,6 +1078,8 @@ describe('enqueue-options', () => {
       queueName: TestExample.queue.name,
       enqueueOptions: { deduplicationID: dedupID },
     }).parentWorkflow('abc');
+    const status = await wfh1.getStatus();
+    assert.equal(status?.deduplicationID, dedupID);
 
     // different dup_id no issue
     const wfid2 = randomUUID();
