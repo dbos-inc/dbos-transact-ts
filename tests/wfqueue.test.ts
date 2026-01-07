@@ -1309,6 +1309,7 @@ describe('queue-time-outs', () => {
     await expect(handle.getResult()).rejects.toThrow(new DBOSAwaitedWorkflowCancelledError(workflowID));
     const status = await DBOS.getWorkflowStatus(workflowID);
     expect(status?.status).toBe(StatusString.CANCELLED);
+    expect(status?.timeoutMS).toBe(100);
   });
 
   // enqueue workflow with *no* timeout which calls a blocked child with timeout
