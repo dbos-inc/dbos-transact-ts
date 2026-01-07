@@ -2067,6 +2067,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'application_id',
       'workflow_deadline_epoch_ms',
       'workflow_timeout_ms',
+      'deduplication_id',
+      'priority',
+      'queue_partition_key',
       'forked_from',
     ];
 

@@ -1185,6 +1185,8 @@ describe('enqueue-options', () => {
         queueName: TestPriority.queue.name,
         enqueueOptions: { priority: i },
       }).parentWorkflow(i);
+      const status = await handle.getStatus();
+      assert.equal(status?.priority, i);
       wf_handles.push(handle);
     }
 
