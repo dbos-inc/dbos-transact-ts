@@ -9,7 +9,7 @@ describe('clear-reg-tests', () => {
     DBOS.setConfig(config);
   });
 
-  test('nonserializable-randomstuff', async () => {
+  test('clear-reg-between-runs', async () => {
     for (let i = 1; i <= 2; ++i) {
       const stepfunc1 = DBOS.registerStep(async () => {
         return Promise.resolve(`${i}`);
