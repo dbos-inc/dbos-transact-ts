@@ -27,7 +27,7 @@ describe('clear-reg-tests', () => {
 
       // Decorated code
       // eslint-disable-next-line @typescript-eslint/no-require-imports
-      const m = require(`./dynamic_code_v${i}`) as typeof import('./dynamic_code_v1'); // Load it dynamically inside expect
+      const m = require(`./dynamic_code_v${i}`) as typeof import('./dynamic_code_v1'); // (Both source files have same interface)
 
       await DBOS.launch();
       try {
