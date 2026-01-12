@@ -36,6 +36,15 @@ describe('clear-reg-tests', () => {
         expect(await wfh.getResult()).toBe(`${i}${i}`);
         expect(await (await reexecuteWorkflowById(wfh.workflowID))!.getResult()).toBe(`${i}${i}`);
         await expect(m.DBOSWFTest.runWF()).resolves.toBe(i === 1 ? 'A' : 'B');
+        await expect(m.instA.doWorkflow()).resolves.toBe(i === 1 ? 'done A1' : 'done A2');
+        await expect(m.instB.doWorkflow()).resolves.toBe('done B');
+        await expect((await DBOS.startWorkflow(m.instB).doWorkflow()).getResult()).resolves.toBe('done B');
+        await expect(
+          (await DBOS.startWorkflow(m.instA, { queueName: m.queue.name }).doWorkflow()).getResult(),
+        ).resolves.toBe(i === 1 ? 'done A1' : 'done A2');
+        await expect(
+          (await DBOS.startWorkflow(m.instB, { queueName: m.queue.name }).doWorkflow()).getResult(),
+        ).resolves.toBe('done B');
 
         // Wait for scheduled WF to run
         while (!m.DBOSWFTest.ran) await sleepms(100);
