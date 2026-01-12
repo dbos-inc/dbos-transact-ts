@@ -1,4 +1,5 @@
 import { DBOS } from '../src/dbos';
+import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
 describe('clear-reg-tests', () => {
@@ -32,6 +33,9 @@ describe('clear-reg-tests', () => {
       try {
         await expect(wf()).resolves.toBe(`${i}${i}`);
         await expect(m.DBOSWFTest.runWF()).resolves.toBe(i === 1 ? 'A' : 'B');
+
+        // Wait for scheduled WF to run
+        while (!m.DBOSWFTest.ran) await sleepms(100);
       } finally {
         expect(() => DBOS.clearRegistry()).toThrow();
         await DBOS.shutdown();

@@ -311,7 +311,6 @@ export class DBOS {
     if (DBOSExecutor.globalInstance) {
       await DBOSExecutor.globalInstance.deactivateEventReceivers();
       await DBOSExecutor.globalInstance.destroy();
-      DBOSExecutor.globalInstance = undefined;
     }
 
     for (const [_n, ds] of transactionalDataSources) {
