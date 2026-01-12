@@ -1,6 +1,6 @@
 import { DBOS } from '../src/dbos';
 import { sleepms } from '../src/utils';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 
 describe('clear-reg-tests', () => {
   const config = generateDBOSTestConfig();
@@ -32,6 +32,9 @@ describe('clear-reg-tests', () => {
       await DBOS.launch();
       try {
         await expect(wf()).resolves.toBe(`${i}${i}`);
+        const wfh = await DBOS.startWorkflow(wf)();
+        expect(await wfh.getResult()).toBe(`${i}${i}`);
+        expect(await (await reexecuteWorkflowById(wfh.workflowID))!.getResult()).toBe(`${i}${i}`);
         await expect(m.DBOSWFTest.runWF()).resolves.toBe(i === 1 ? 'A' : 'B');
 
         // Wait for scheduled WF to run
