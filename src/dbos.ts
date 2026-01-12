@@ -72,6 +72,7 @@ import {
   associateParameterWithExternal,
   finalizeClassRegistrations,
   getClassRegistration,
+  clearAllRegistrations,
 } from './decorators';
 import { defaultEnableOTLP, globalParams, sleepms } from './utils';
 import { JSONValue, registerSerializationRecipe, SerializationRecipe } from './serialization';
@@ -324,6 +325,21 @@ export class DBOS {
     globalParams.executorID = process.env.DBOS__VMID || 'local';
 
     recordDBOSShutdown();
+  }
+
+  /**
+   * Clear the DBOS workflow, queue, instance, data source, listener, and other registries.
+   *   This is available for testing and development purposes only.
+   *   This may only be done while DBOS is not launch()ed.
+   *   Decorated / registered functions created prior to `clearRegistry` may no longer be used.
+   *     Fresh wrappers may be created from the original functions.
+   */
+  static clearRegistry(config: DBOSConfig) {
+    assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
+    DBOS.#dbosConfig = config;
+
+    clearAllRegistrations();
+    wfQueueRunner.clearRegistrations();
   }
 
   /** Stop listening for external events (for testing) */

@@ -102,6 +102,10 @@ class WFQueueRunner {
     }
   }
 
+  clearRegistrations() {
+    this.wfQueuesByName.clear();
+  }
+
   async dispatchLoop(exec: DBOSExecutor, listenQueuesArg: WorkflowQueue[] | null): Promise<void> {
     this.isRunning = true;
     while (this.isRunning) {

@@ -516,6 +516,17 @@ export function ensureDBOSIsLaunched(reason: string) {
   }
 }
 
+export function clearAllRegistrations() {
+  lifecycleListeners.length = 0;
+  installedMiddleware = false;
+  middlewareInstallers.length = 0;
+  functionToRegistration.clear();
+  methodArgsByFunction.clear();
+  classesByName.clear();
+  classesByCtor.clear();
+  transactionalDataSources.clear();
+}
+
 // DBOS launch lifecycle listener
 const lifecycleListeners: DBOSLifecycleCallback[] = [];
 export function registerLifecycleCallback(lcl: DBOSLifecycleCallback) {
