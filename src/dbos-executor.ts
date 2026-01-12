@@ -324,8 +324,6 @@ export class DBOSExecutor {
 
       if (DBOSExecutor.globalInstance === this) {
         DBOSExecutor.globalInstance = undefined;
-        DBOSExecutor.debouncerWorkflow = undefined;
-        DBOSExecutor.internalQueue = undefined;
       }
     } catch (err) {
       const e = err as Error;

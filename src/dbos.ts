@@ -337,6 +337,8 @@ export class DBOS {
     assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
     clearAllRegistrations();
     wfQueueRunner.clearRegistrations();
+    DBOSExecutor.debouncerWorkflow = undefined;
+    DBOSExecutor.internalQueue = undefined;
   }
 
   /** Stop listening for external events (for testing) */
