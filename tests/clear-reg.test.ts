@@ -14,6 +14,7 @@ describe('clear-reg-tests', () => {
       const stepfunc1 = DBOS.registerStep(async () => {
         return Promise.resolve(`${i}`);
       });
+      // Explicit registered code
       const wffunc1 = async () => {
         const so1 = await DBOS.runStep(() => {
           return Promise.resolve(`${i}`);
@@ -22,9 +23,15 @@ describe('clear-reg-tests', () => {
         return so1 + so2;
       };
       const wf = DBOS.registerWorkflow(wffunc1);
+
+      // Decorated code
+      // eslint-disable-next-line @typescript-eslint/no-require-imports
+      const m = require(`./dynamic_code_v${i}`) as typeof import('./dynamic_code_v1'); // Load it dynamically inside expect
+
       await DBOS.launch();
       try {
         await expect(wf()).resolves.toBe(`${i}${i}`);
+        await expect(m.DBOSWFTest.runWF()).resolves.toBe(i === 1 ? 'A' : 'B');
       } finally {
         expect(() => DBOS.clearRegistry()).toThrow();
         await DBOS.shutdown();
