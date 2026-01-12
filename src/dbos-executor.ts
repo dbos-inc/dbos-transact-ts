@@ -321,10 +321,6 @@ export class DBOSExecutor {
       await this.systemDatabase.awaitRunningWorkflows();
       await this.systemDatabase.destroy();
       await this.logger.destroy();
-
-      if (DBOSExecutor.globalInstance === this) {
-        DBOSExecutor.globalInstance = undefined;
-      }
     } catch (err) {
       const e = err as Error;
       this.logger.error(e);
