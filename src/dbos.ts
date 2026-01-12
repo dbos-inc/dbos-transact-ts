@@ -334,10 +334,8 @@ export class DBOS {
    *   Decorated / registered functions created prior to `clearRegistry` may no longer be used.
    *     Fresh wrappers may be created from the original functions.
    */
-  static clearRegistry(config: DBOSConfig) {
+  static clearRegistry() {
     assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
-    DBOS.#dbosConfig = config;
-
     clearAllRegistrations();
     wfQueueRunner.clearRegistrations();
   }
