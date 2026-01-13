@@ -290,9 +290,15 @@ export class DBOS {
    *   Stops receiving external workflow requests
    *   Disconnects from administration / Conductor
    *   Stops workflow processing and disconnects from databases
-   * @param deregisterFunctions - If true, clear out all registrations (see `clearRegistry`)
+   * @param options Optional shutdown options.
+   * @param options.deregister
+   *   If true, clear the DBOS workflow, queue, instance, data source, listener, and other registries.
+   *   This is available for testing and development purposes only.
+   *   Functions may then be registered before the next call to DBOS.launch().
+   *   Decorated / registered functions created prior to `clearRegistry` may no longer be used.
+   *     Fresh wrappers may be created from the original functions.
    */
-  static async shutdown(deregisterFunctions: boolean = false) {
+  static async shutdown(options?: { deregister?: boolean }) {
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
@@ -327,7 +333,7 @@ export class DBOS {
 
     recordDBOSShutdown();
 
-    if (deregisterFunctions) {
+    if (options?.deregister) {
       DBOS.clearRegistry();
     }
   }
@@ -339,7 +345,7 @@ export class DBOS {
    *   Decorated / registered functions created prior to `clearRegistry` may no longer be used.
    *     Fresh wrappers may be created from the original functions.
    */
-  static clearRegistry() {
+  private static clearRegistry() {
     assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
     clearAllRegistrations();
     wfQueueRunner.clearRegistrations();

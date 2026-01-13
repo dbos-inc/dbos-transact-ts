@@ -49,11 +49,10 @@ describe('clear-reg-tests', () => {
         // Wait for scheduled WF to run
         while (!m.DBOSWFTest.ran) await sleepms(100);
       } finally {
-        expect(() => DBOS.clearRegistry()).toThrow();
-        await DBOS.shutdown(i === 1);
         if (i === 2) {
-          DBOS.clearRegistry();
+          await DBOS.shutdown(); // 2 calls don't hurt
         }
+        await DBOS.shutdown({ deregister: true });
       }
     }
   }, 20000);
