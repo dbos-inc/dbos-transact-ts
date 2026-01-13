@@ -50,8 +50,10 @@ describe('clear-reg-tests', () => {
         while (!m.DBOSWFTest.ran) await sleepms(100);
       } finally {
         expect(() => DBOS.clearRegistry()).toThrow();
-        await DBOS.shutdown();
-        DBOS.clearRegistry();
+        await DBOS.shutdown(i === 1);
+        if (i === 2) {
+          DBOS.clearRegistry();
+        }
       }
     }
   }, 20000);

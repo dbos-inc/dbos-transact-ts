@@ -290,8 +290,9 @@ export class DBOS {
    *   Stops receiving external workflow requests
    *   Disconnects from administration / Conductor
    *   Stops workflow processing and disconnects from databases
+   * @param deregisterFunctions - If true, clear out all registrations (see `clearRegistry`)
    */
-  static async shutdown() {
+  static async shutdown(deregisterFunctions: boolean = false) {
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
@@ -325,6 +326,10 @@ export class DBOS {
     globalParams.executorID = process.env.DBOS__VMID || 'local';
 
     recordDBOSShutdown();
+
+    if (deregisterFunctions) {
+      DBOS.clearRegistry();
+    }
   }
 
   /**
