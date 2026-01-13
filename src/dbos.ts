@@ -72,6 +72,7 @@ import {
   associateParameterWithExternal,
   finalizeClassRegistrations,
   getClassRegistration,
+  clearAllRegistrations,
 } from './decorators';
 import { defaultEnableOTLP, globalParams, sleepms } from './utils';
 import { JSONValue, registerSerializationRecipe, SerializationRecipe } from './serialization';
@@ -289,8 +290,15 @@ export class DBOS {
    *   Stops receiving external workflow requests
    *   Disconnects from administration / Conductor
    *   Stops workflow processing and disconnects from databases
+   * @param options Optional shutdown options.
+   * @param options.deregister
+   *   If true, clear the DBOS workflow, queue, instance, data source, listener, and other registries.
+   *   This is available for testing and development purposes only.
+   *   Functions may then be registered before the next call to DBOS.launch().
+   *   Decorated / registered functions created prior to `clearRegistry` may no longer be used.
+   *     Fresh wrappers may be created from the original functions.
    */
-  static async shutdown() {
+  static async shutdown(options?: { deregister?: boolean }) {
     // Stop the admin server
     if (DBOS.adminServer) {
       DBOS.adminServer.close();
@@ -324,6 +332,25 @@ export class DBOS {
     globalParams.executorID = process.env.DBOS__VMID || 'local';
 
     recordDBOSShutdown();
+
+    if (options?.deregister) {
+      DBOS.clearRegistry();
+    }
+  }
+
+  /**
+   * Clear the DBOS workflow, queue, instance, data source, listener, and other registries.
+   *   This is available for testing and development purposes only.
+   *   This may only be done while DBOS is not launch()ed.
+   *   Decorated / registered functions created prior to `clearRegistry` may no longer be used.
+   *     Fresh wrappers may be created from the original functions.
+   */
+  private static clearRegistry() {
+    assert(!DBOS.isInitialized(), 'Cannot call DBOS.clearRegistry after DBOS.launch');
+    clearAllRegistrations();
+    wfQueueRunner.clearRegistrations();
+    DBOSExecutor.debouncerWorkflow = undefined;
+    DBOSExecutor.internalQueue = undefined;
   }
 
   /** Stop listening for external events (for testing) */
