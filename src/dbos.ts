@@ -546,7 +546,7 @@ export class DBOS {
   /**
    * Get the workflow result, given a workflow ID
    * @param workflowID - ID of the workflow
-   * @param timeoutSeconds - Maximum time to wait for result
+   * @param timeoutSeconds - Maximum time to wait for result; if not provided, the operation does not time out
    * @returns The return value of the workflow, or throws the exception thrown by the workflow, or `null` if times out
    */
   static async getResult<T>(workflowID: string, timeoutSeconds?: number): Promise<T | null> {
@@ -981,7 +981,7 @@ export class DBOS {
    * @see `DBOS.send`
    *
    * @param topic - Optional topic; if specified the `recv` command can specify the same topic to receive selectively
-   * @param timeoutSeconds - Optional timeout; if no message is received before the timeout, `null` will be returned
+   * @param timeoutSeconds - If no message is received before the timeout (default 60 seconds), `null` will be returned
    * @template T - The type of message that is expected to be received
    * @returns Any message received, or `null` if the timeout expires
    */
@@ -1042,7 +1042,7 @@ export class DBOS {
    *
    * @param workflowID - The ID of the workflow with the corresponding `setEvent`
    * @param key - The key for the event; at most one value is associated with a key at any given time.
-   * @param timeoutSeconds - Optional timeout; if a value for `key` is not set before the timeout, `null` will be returned
+   * @param timeoutSeconds - If a value for `key` is not available before the timeout (default 60 seconds), `null` will be returned
    * @template T - The expected type for the value assigned to `key`
    * @returns The value to associate with `key`, or `null` if the timeout is hit
    */

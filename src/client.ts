@@ -258,7 +258,7 @@ export class DBOSClient {
    * Retrieves an event published by workflowID for a given key.
    * @param workflowID - The ID of the workflow that published the event.
    * @param key - The key associated with the event you want to retrieve.
-   * @param timeoutSeconds - Optional timeout in seconds for how long to wait for the event to be available.
+   * @param timeoutSeconds - Timeout in seconds for how long to wait for the event to be available; default 60 seconds.
    * @returns A Promise that resolves with the event payload.
    */
   async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
