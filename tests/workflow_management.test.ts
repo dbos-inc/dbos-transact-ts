@@ -1786,59 +1786,92 @@ describe('wf-cancel-tests', () => {
 
   // Workflow export/import test
   class ExportImportTest {
+    @DBOS.step()
+    static async testStep(): Promise<void> {
+      return Promise.resolve();
+    }
+
+    @DBOS.workflow()
+    static async grandchildWorkflow(): Promise<string> {
+      return Promise.resolve('grandchild-result');
+    }
+
     @DBOS.workflow()
     static async childWorkflow(): Promise<string> {
-      return Promise.resolve('child-result');
+      const handle = await DBOS.startWorkflow(ExportImportTest).grandchildWorkflow();
+      await handle.getResult();
+      return 'child-result';
     }
 
     @DBOS.workflow()
     static async parentWorkflow(): Promise<string> {
       const handle = await DBOS.startWorkflow(ExportImportTest).childWorkflow();
       await handle.getResult();
-      await DBOS.setEvent('test-key', 'test-value');
-      return 'parent-result';
+      // Run multiple steps
+      for (let i = 0; i < 10; i++) {
+        await ExportImportTest.testStep();
+      }
+      await DBOS.setEvent('key', 'value');
+      await DBOS.writeStream('key', 'value');
+      await DBOS.closeStream('key');
+      return DBOS.workflowID!;
     }
   }
 
   test('test-workflow-export-import', async () => {
-    const parentWfid = randomUUID();
-    const handle = await DBOS.startWorkflow(ExportImportTest, { workflowID: parentWfid }).parentWorkflow();
-    await handle.getResult();
+    const workflowId = randomUUID();
+    const handle = await DBOS.startWorkflow(ExportImportTest, { workflowID: workflowId }).parentWorkflow();
+    const result = await handle.getResult();
+    expect(result).toBe(workflowId);
 
-    // Get the child workflow ID
-    const steps = await DBOS.listWorkflowSteps(parentWfid);
-    const childWfid = steps!.find((s) => s.childWorkflowID)?.childWorkflowID;
-    expect(childWfid).toBeDefined();
-
-    // Verify both workflows exist
-    expect(await DBOS.getWorkflowStatus(parentWfid)).not.toBeNull();
-    expect(await DBOS.getWorkflowStatus(childWfid!)).not.toBeNull();
-
-    // Export the workflow with children
     const sysDb = DBOSExecutor.globalInstance!.systemDatabase as PostgresSystemDatabase;
-    const exported = await sysDb.exportWorkflow(parentWfid, true);
 
-    // Should have exported 2 workflows (parent + child)
-    expect(exported.length).toBe(2);
+    // Export with children
+    const exported = await sysDb.exportWorkflow(workflowId, true);
+    const originalSteps = await DBOS.listWorkflowSteps(workflowId);
 
-    // Delete both workflows
-    await DBOS.deleteWorkflow(parentWfid, true);
-    expect(await DBOS.getWorkflowStatus(parentWfid)).toBeNull();
-    expect(await DBOS.getWorkflowStatus(childWfid!)).toBeNull();
+    // Importing into an existing database fails with a primary key conflict
+    await expect(sysDb.importWorkflow(exported)).rejects.toThrow();
 
-    // Import the workflows back
+    // Delete the workflows
+    await DBOS.deleteWorkflow(workflowId, true);
+
+    // Importing the workflow succeeds after deletion
     await sysDb.importWorkflow(exported);
 
-    // Verify both workflows are restored
-    expect(await DBOS.getWorkflowStatus(parentWfid)).not.toBeNull();
-    expect(await DBOS.getWorkflowStatus(childWfid!)).not.toBeNull();
+    // All workflow information is present - verify event
+    const eventValue = await DBOS.getEvent(workflowId, 'key');
+    expect(eventValue).toBe('value');
 
-    // Verify the event was restored
-    const eventValue = await DBOS.getEvent(parentWfid, 'test-key');
-    expect(eventValue).toBe('test-value');
+    // Verify stream is restored
+    const streamValues: unknown[] = [];
+    for await (const v of DBOS.readStream(workflowId, 'key')) {
+      streamValues.push(v);
+    }
+    expect(streamValues).toEqual(['value']);
 
-    // Verify steps are restored
-    const restoredSteps = await DBOS.listWorkflowSteps(parentWfid);
-    expect(restoredSteps!.length).toBe(steps!.length);
+    // Verify steps are restored with same content
+    const importedSteps = await DBOS.listWorkflowSteps(workflowId);
+    expect(importedSteps!.length).toBe(originalSteps!.length);
+    for (let i = 0; i < importedSteps!.length; i++) {
+      expect(importedSteps![i].functionID).toBe(originalSteps![i].functionID);
+      expect(importedSteps![i].name).toBe(originalSteps![i].name);
+    }
+
+    // The child workflows are also copied over (parent + child + grandchild = 3)
+    expect(exported.length).toBe(3);
+    const allWorkflows = await DBOS.listWorkflows({
+      workflowIDs: exported.map((w) => w.workflow_status.workflow_uuid),
+    });
+    expect(allWorkflows.length).toBe(3);
+
+    // The imported workflow can be forked
+    const forkedHandle = await DBOS.forkWorkflow(workflowId, importedSteps!.length);
+    const forkedResult = await forkedHandle.getResult();
+    expect(forkedResult).toBe(forkedHandle.workflowID);
+
+    // The forked workflow has the event
+    const forkedEventValue = await DBOS.getEvent(forkedHandle.workflowID, 'key');
+    expect(forkedEventValue).toBe('value');
   });
 });
