@@ -6,6 +6,8 @@ import { GetWorkflowsInput, StatusString } from '..';
 import { hostname } from 'node:os';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
+import * as zlib from 'node:zlib';
+import type { ExportedWorkflow } from '../system_database';
 
 interface IntervalTimeout {
   interval: NodeJS.Timeout | undefined;
@@ -376,6 +378,42 @@ export class Conductor {
               errorMsg,
             );
             currWebsocket.send(JSON.stringify(getMetricsResponse));
+            break;
+          case protocol.MessageType.EXPORT_WORKFLOW:
+            const exportMsg = baseMsg as protocol.ExportWorkflowRequest;
+            let serializedWorkflow: string | null = null;
+            try {
+              const exported = await this.dbosExec.systemDatabase.exportWorkflow(
+                exportMsg.workflow_id,
+                exportMsg.export_children ?? false,
+              );
+              if (exported.length > 0) {
+                const jsonStr = JSON.stringify(exported);
+                const compressed = zlib.gzipSync(jsonStr);
+                serializedWorkflow = compressed.toString('base64');
+              }
+            } catch (e) {
+              errorMsg = `Exception encountered when exporting workflow ${exportMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const exportResp = new protocol.ExportWorkflowResponse(baseMsg.request_id, serializedWorkflow, errorMsg);
+            currWebsocket.send(JSON.stringify(exportResp));
+            break;
+          case protocol.MessageType.IMPORT_WORKFLOW:
+            const importMsg = baseMsg as protocol.ImportWorkflowRequest;
+            let importSuccess = true;
+            try {
+              const compressedData = Buffer.from(importMsg.serialized_workflow, 'base64');
+              const decompressed = zlib.gunzipSync(compressedData);
+              const workflows = JSON.parse(decompressed.toString()) as ExportedWorkflow[];
+              await this.dbosExec.systemDatabase.importWorkflow(workflows);
+            } catch (e) {
+              errorMsg = `Exception encountered when importing workflow: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+              importSuccess = false;
+            }
+            const importResp = new protocol.ImportWorkflowResponse(baseMsg.request_id, importSuccess, errorMsg);
+            currWebsocket.send(JSON.stringify(importResp));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
