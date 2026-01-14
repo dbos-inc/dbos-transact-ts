@@ -7,7 +7,11 @@ import { hostname } from 'node:os';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
 import * as zlib from 'node:zlib';
+import { promisify } from 'node:util';
 import type { ExportedWorkflow } from '../system_database';
+
+const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
 
 interface IntervalTimeout {
   interval: NodeJS.Timeout | undefined;
@@ -389,7 +393,7 @@ export class Conductor {
               );
               if (exported.length > 0) {
                 const jsonStr = JSON.stringify(exported);
-                const compressed = zlib.gzipSync(jsonStr);
+                const compressed = await gzip(jsonStr);
                 serializedWorkflow = compressed.toString('base64');
               }
             } catch (e) {
@@ -404,7 +408,7 @@ export class Conductor {
             let importSuccess = true;
             try {
               const compressedData = Buffer.from(importMsg.serialized_workflow, 'base64');
-              const decompressed = zlib.gunzipSync(compressedData);
+              const decompressed = await gunzip(compressedData);
               const workflows = JSON.parse(decompressed.toString()) as ExportedWorkflow[];
               await this.dbosExec.systemDatabase.importWorkflow(workflows);
             } catch (e) {
