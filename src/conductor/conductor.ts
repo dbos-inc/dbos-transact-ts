@@ -160,6 +160,19 @@ export class Conductor {
             const cancelResp = new protocol.CancelResponse(baseMsg.request_id, cancelSuccess, errorMsg);
             currWebsocket.send(JSON.stringify(cancelResp));
             break;
+          case protocol.MessageType.DELETE:
+            const deleteMsg = baseMsg as protocol.DeleteRequest;
+            let deleteSuccess = true;
+            try {
+              await this.dbosExec.deleteWorkflow(deleteMsg.workflow_id, deleteMsg.delete_children ?? false);
+            } catch (e) {
+              errorMsg = `Exception encountered when deleting workflow ${deleteMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+              deleteSuccess = false;
+            }
+            const deleteResp = new protocol.DeleteResponse(baseMsg.request_id, deleteSuccess, errorMsg);
+            currWebsocket.send(JSON.stringify(deleteResp));
+            break;
           case protocol.MessageType.RESUME:
             const resumeMsg = baseMsg as protocol.ResumeRequest;
             let resumeSuccess = true;

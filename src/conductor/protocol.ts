@@ -5,6 +5,7 @@ export enum MessageType {
   EXECUTOR_INFO = 'executor_info',
   RECOVERY = 'recovery',
   CANCEL = 'cancel',
+  DELETE = 'delete',
   LIST_WORKFLOWS = 'list_workflows',
   LIST_QUEUED_WORKFLOWS = 'list_queued_workflows',
   RESUME = 'resume',
@@ -89,6 +90,26 @@ export class CancelResponse extends BaseResponse {
   success: boolean;
   constructor(request_id: string, success: boolean, error_message?: string) {
     super(MessageType.CANCEL, request_id, error_message);
+    this.success = success;
+  }
+}
+
+export class DeleteRequest implements BaseMessage {
+  type = MessageType.DELETE;
+  request_id: string;
+  workflow_id: string;
+  delete_children: boolean;
+  constructor(request_id: string, workflow_id: string, delete_children: boolean = false) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+    this.delete_children = delete_children;
+  }
+}
+
+export class DeleteResponse extends BaseResponse {
+  success: boolean;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.DELETE, request_id, error_message);
     this.success = success;
   }
 }
