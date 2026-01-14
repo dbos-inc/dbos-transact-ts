@@ -1783,4 +1783,62 @@ describe('wf-cancel-tests', () => {
     // Verify deleting a non-existent workflow doesn't error
     await DBOS.deleteWorkflow(parentWfid2, false);
   });
+
+  // Workflow export/import test
+  class ExportImportTest {
+    @DBOS.workflow()
+    static async childWorkflow(): Promise<string> {
+      return Promise.resolve('child-result');
+    }
+
+    @DBOS.workflow()
+    static async parentWorkflow(): Promise<string> {
+      const handle = await DBOS.startWorkflow(ExportImportTest).childWorkflow();
+      await handle.getResult();
+      await DBOS.setEvent('test-key', 'test-value');
+      return 'parent-result';
+    }
+  }
+
+  test('test-workflow-export-import', async () => {
+    const parentWfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ExportImportTest, { workflowID: parentWfid }).parentWorkflow();
+    await handle.getResult();
+
+    // Get the child workflow ID
+    const steps = await DBOS.listWorkflowSteps(parentWfid);
+    const childWfid = steps!.find((s) => s.childWorkflowID)?.childWorkflowID;
+    expect(childWfid).toBeDefined();
+
+    // Verify both workflows exist
+    expect(await DBOS.getWorkflowStatus(parentWfid)).not.toBeNull();
+    expect(await DBOS.getWorkflowStatus(childWfid!)).not.toBeNull();
+
+    // Export the workflow with children
+    const sysDb = DBOSExecutor.globalInstance!.systemDatabase as PostgresSystemDatabase;
+    const exported = await sysDb.exportWorkflow(parentWfid, true);
+
+    // Should have exported 2 workflows (parent + child)
+    expect(exported.length).toBe(2);
+
+    // Delete both workflows
+    await DBOS.deleteWorkflow(parentWfid, true);
+    expect(await DBOS.getWorkflowStatus(parentWfid)).toBeNull();
+    expect(await DBOS.getWorkflowStatus(childWfid!)).toBeNull();
+
+    // Import the workflows back
+    await sysDb.importWorkflow(exported);
+
+    // Verify both workflows are restored
+    expect(await DBOS.getWorkflowStatus(parentWfid)).not.toBeNull();
+    expect(await DBOS.getWorkflowStatus(childWfid!)).not.toBeNull();
+
+    // Verify the event was restored
+    const eventValue = await DBOS.getEvent(parentWfid, 'test-key');
+    expect(eventValue).toBe('test-value');
+
+    // Verify steps are restored
+    const restoredSteps = await DBOS.listWorkflowSteps(parentWfid);
+    expect(restoredSteps!.length).toBe(steps!.length);
+  });
 });
