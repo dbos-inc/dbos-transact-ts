@@ -115,6 +115,8 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
+  deleteWorkflow(workflowID: string, deleteChildren?: boolean): Promise<void>;
+  getWorkflowChildren(workflowID: string): Promise<string[]>;
   forkWorkflow(
     workflowID: string,
     startStep: number,
@@ -1780,6 +1782,63 @@ export class PostgresSystemDatabase implements SystemDatabase {
       throw error;
     } finally {
       client.release();
+    }
+  }
+
+  async getWorkflowChildren(workflowID: string): Promise<string[]> {
+    // BFS to find all descendant workflows
+    const visited = new Set<string>([workflowID]);
+    const queue: string[] = [workflowID];
+    const children: string[] = [];
+
+    const client = await this.pool.connect();
+    try {
+      while (queue.length > 0) {
+        const batch = queue.splice(0, queue.length);
+        const result = await client.query<{ child_workflow_id: string }>(
+          `SELECT DISTINCT child_workflow_id
+           FROM "${this.schemaName}".operation_outputs
+           WHERE workflow_uuid = ANY($1)
+             AND child_workflow_id IS NOT NULL`,
+          [batch],
+        );
+        for (const row of result.rows) {
+          if (!visited.has(row.child_workflow_id)) {
+            visited.add(row.child_workflow_id);
+            queue.push(row.child_workflow_id);
+            children.push(row.child_workflow_id);
+          }
+        }
+      }
+    } finally {
+      client.release();
+    }
+    return children;
+  }
+
+  async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
+    let workflowsToDelete: string[] = [workflowID];
+
+    if (deleteChildren) {
+      const children = await this.getWorkflowChildren(workflowID);
+      workflowsToDelete = [...workflowsToDelete, ...children];
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `DELETE FROM "${this.schemaName}".workflow_status
+         WHERE workflow_uuid = ANY($1)`,
+        [workflowsToDelete],
+      );
+    } finally {
+      client.release();
+    }
+
+    // Clean up in-memory maps
+    for (const wfid of workflowsToDelete) {
+      this.runningWorkflowMap.delete(wfid);
+      this.workflowCancellationMap.delete(wfid);
     }
   }
 

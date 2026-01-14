@@ -672,6 +672,23 @@ export class DBOS {
   }
 
   /**
+   * Delete a workflow and optionally all its child workflows.
+   * This permanently removes the workflow from the system database.
+   * If the workflow does not exist, this operation succeeds silently (idempotent).
+   *
+   * WARNING: This operation is irreversible.
+   *
+   * @param workflowID - ID of the workflow to delete
+   * @param deleteChildren - If true, also delete all child workflows recursively (default: false)
+   */
+  static async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
+    ensureDBOSIsLaunched('deleteWorkflow');
+    return await runInternalStep(async () => {
+      return await DBOS.#executor.deleteWorkflow(workflowID, deleteChildren);
+    }, 'DBOS.deleteWorkflow');
+  }
+
+  /**
    * Fork a workflow given its ID.
    * @param workflowID - ID of the workflow
    * @param startStep - Step ID to start the forked workflow from

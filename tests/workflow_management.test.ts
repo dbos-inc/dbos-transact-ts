@@ -1725,4 +1725,62 @@ describe('wf-cancel-tests', () => {
       return 'Done';
     }
   }
+
+  // Delete workflow test
+  class DeleteWorkflowTest {
+    @DBOS.workflow()
+    static async childWorkflow(x: number): Promise<number> {
+      return Promise.resolve(x * 2);
+    }
+
+    @DBOS.workflow()
+    static async parentWorkflow(x: number): Promise<number> {
+      const handle = await DBOS.startWorkflow(DeleteWorkflowTest).childWorkflow(x);
+      return handle.getResult();
+    }
+  }
+
+  test('test-delete-workflow', async () => {
+    // Run the parent workflow which starts a child workflow
+    const parentWfid = randomUUID();
+    const handle = await DBOS.startWorkflow(DeleteWorkflowTest, { workflowID: parentWfid }).parentWorkflow(5);
+    const result = await handle.getResult();
+    expect(result).toBe(10);
+
+    // Get the child workflow ID
+    const steps = await DBOS.listWorkflowSteps(parentWfid);
+    const childWfid = steps!.find((s) => s.childWorkflowID)?.childWorkflowID;
+    expect(childWfid).toBeDefined();
+
+    // Verify both workflows exist
+    expect(await DBOS.getWorkflowStatus(parentWfid)).not.toBeNull();
+    expect(await DBOS.getWorkflowStatus(childWfid!)).not.toBeNull();
+
+    // Delete without deleteChildren - only parent should be deleted
+    await DBOS.deleteWorkflow(parentWfid, false);
+    expect(await DBOS.getWorkflowStatus(parentWfid)).toBeNull();
+    expect(await DBOS.getWorkflowStatus(childWfid!)).not.toBeNull();
+
+    // Run again to test deleteChildren=true
+    const parentWfid2 = randomUUID();
+    const handle2 = await DBOS.startWorkflow(DeleteWorkflowTest, { workflowID: parentWfid2 }).parentWorkflow(7);
+    const result2 = await handle2.getResult();
+    expect(result2).toBe(14);
+
+    const steps2 = await DBOS.listWorkflowSteps(parentWfid2);
+    const childWfid2 = steps2!.find((s) => s.childWorkflowID)?.childWorkflowID;
+    expect(childWfid2).toBeDefined();
+
+    // Verify both workflows exist
+    expect(await DBOS.getWorkflowStatus(parentWfid2)).not.toBeNull();
+    expect(await DBOS.getWorkflowStatus(childWfid2!)).not.toBeNull();
+
+    // Delete with deleteChildren=true - both should be deleted
+    await DBOS.deleteWorkflow(parentWfid2, true);
+    expect(await DBOS.getWorkflowStatus(parentWfid2)).toBeNull();
+    expect(await DBOS.getWorkflowStatus(childWfid2!)).toBeNull();
+
+    // Verify deleting a non-existent workflow doesn't error
+    await DBOS.deleteWorkflow(parentWfid2, false);
+  });
 });
