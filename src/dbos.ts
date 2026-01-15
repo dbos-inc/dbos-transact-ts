@@ -674,7 +674,6 @@ export class DBOS {
   /**
    * Delete a workflow and optionally all its child workflows.
    * This permanently removes the workflow from the system database.
-   * If the workflow does not exist, this operation succeeds silently (idempotent).
    *
    * WARNING: This operation is irreversible.
    *
