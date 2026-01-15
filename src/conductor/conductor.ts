@@ -233,11 +233,15 @@ export class Conductor {
               status: body.status as (typeof StatusString)[keyof typeof StatusString],
               applicationVersion: body.application_version,
               forkedFrom: body.forked_from,
+              queueName: body.queue_name,
               limit: body.limit,
               offset: body.offset,
               sortDesc: body.sort_desc,
+              workflow_id_prefix: body.workflow_id_prefix,
               loadInput: body.load_input ?? false, // Default to false if not provided
               loadOutput: body.load_output ?? false, // Default to false if not provided
+              executorId: body.executor_id,
+              queuesOnly: body.queues_only,
             };
             let workflowsOutput: protocol.WorkflowsOutput[] = [];
             try {
@@ -254,16 +258,22 @@ export class Conductor {
             const listQueuedWFMsg = baseMsg as protocol.ListQueuedWorkflowsRequest;
             const bodyQueued = listQueuedWFMsg.body;
             const listQueuedWFReq: GetWorkflowsInput = {
+              workflowIDs: bodyQueued.workflow_uuids,
               workflowName: bodyQueued.workflow_name,
+              authenticatedUser: bodyQueued.authenticated_user,
               startTime: bodyQueued.start_time,
               endTime: bodyQueued.end_time,
               status: bodyQueued.status as (typeof StatusString)[keyof typeof StatusString],
+              applicationVersion: bodyQueued.application_version,
               forkedFrom: bodyQueued.forked_from,
-              limit: bodyQueued.limit,
               queueName: bodyQueued.queue_name,
+              limit: bodyQueued.limit,
               offset: bodyQueued.offset,
               sortDesc: bodyQueued.sort_desc,
+              workflow_id_prefix: bodyQueued.workflow_id_prefix,
               loadInput: bodyQueued.load_input ?? false, // Default to false if not provided
+              loadOutput: bodyQueued.load_output ?? false, // Default to false if not provided
+              executorId: bodyQueued.executor_id,
             };
             let queuedWFOutput: protocol.WorkflowsOutput[] = [];
             try {

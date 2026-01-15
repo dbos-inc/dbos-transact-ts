@@ -161,11 +161,15 @@ export interface ListWorkflowsBody {
   status?: string;
   application_version?: string;
   forked_from?: string;
+  queue_name?: string;
   limit?: number;
   offset?: number;
   sort_desc: boolean;
+  workflow_id_prefix?: string;
   load_input?: boolean; // Load the input of the workflow (default false)
   load_output?: boolean; // Load the output of the workflow (default false)
+  executor_id?: string;
+  queues_only?: boolean;
 }
 
 export class WorkflowsOutput {
@@ -179,7 +183,6 @@ export class WorkflowsOutput {
   AuthenticatedRoles?: string;
   Input?: string;
   Output?: string;
-  Request?: string;
   Error?: string;
   CreatedAt?: string;
   UpdatedAt?: string;
@@ -206,7 +209,6 @@ export class WorkflowsOutput {
       (info.authenticatedRoles ?? []).length > 0 ? JSON.stringify(info.authenticatedRoles) : undefined;
     this.Input = info.input ? JSON.stringify(info.input) : undefined;
     this.Output = info.output ? JSON.stringify(info.output) : undefined;
-    this.Request = info.request ? JSON.stringify(info.request) : undefined;
     this.Error = info.error ? JSON.stringify(serializeError(info.error)) : undefined;
     this.CreatedAt = info.createdAt ? String(info.createdAt) : undefined;
     this.UpdatedAt = info.updatedAt ? String(info.updatedAt) : undefined;
@@ -261,16 +263,22 @@ export class ListWorkflowsResponse extends BaseResponse {
 }
 
 export interface ListQueuedWorkflowsBody {
+  workflow_uuids?: string[];
   workflow_name?: string;
+  authenticated_user?: string;
   start_time?: string;
   end_time?: string;
   status?: string;
+  application_version?: string;
   forked_from?: string;
   queue_name?: string;
   limit?: number;
   offset?: number;
   sort_desc: boolean;
+  workflow_id_prefix?: string;
   load_input?: boolean; // Load the input of the workflow (default false)
+  load_output?: boolean; // Load the output of the workflow (default false)
+  executor_id?: string;
 }
 
 export class ListQueuedWorkflowsRequest implements BaseMessage {
