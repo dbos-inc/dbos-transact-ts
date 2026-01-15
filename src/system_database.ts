@@ -16,6 +16,8 @@ import {
   operation_outputs,
   workflow_status,
   workflow_events,
+  workflow_events_history,
+  streams,
   event_dispatch_kv,
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
@@ -36,6 +38,15 @@ export interface SystemDatabaseStoredResult {
   cancelled?: boolean;
   childWorkflowID?: string | null;
   functionName?: string;
+}
+
+/* Exported workflow format for import/export */
+export interface ExportedWorkflow {
+  workflow_status: workflow_status;
+  operation_outputs: operation_outputs[];
+  workflow_events: workflow_events[];
+  workflow_events_history: workflow_events_history[];
+  streams: streams[];
 }
 
 export const DBOS_FUNCNAME_SEND = 'DBOS.send';
@@ -115,6 +126,10 @@ export interface SystemDatabase {
   ): Promise<void>;
   cancelWorkflow(workflowID: string): Promise<void>;
   resumeWorkflow(workflowID: string): Promise<void>;
+  deleteWorkflow(workflowID: string, deleteChildren?: boolean): Promise<void>;
+  getWorkflowChildren(workflowID: string): Promise<string[]>;
+  exportWorkflow(workflowID: string, exportChildren?: boolean): Promise<ExportedWorkflow[]>;
+  importWorkflow(workflows: ExportedWorkflow[]): Promise<void>;
   forkWorkflow(
     workflowID: string,
     startStep: number,
@@ -1776,6 +1791,251 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query('COMMIT');
     } catch (error) {
       this.logger.error(error);
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getWorkflowChildren(workflowID: string): Promise<string[]> {
+    // BFS to find all descendant workflows
+    const visited = new Set<string>([workflowID]);
+    const queue: string[] = [workflowID];
+    const children: string[] = [];
+
+    const client = await this.pool.connect();
+    try {
+      while (queue.length > 0) {
+        const batch = queue.splice(0, queue.length);
+        const result = await client.query<{ child_workflow_id: string }>(
+          `SELECT DISTINCT child_workflow_id
+           FROM "${this.schemaName}".operation_outputs
+           WHERE workflow_uuid = ANY($1)
+             AND child_workflow_id IS NOT NULL`,
+          [batch],
+        );
+        for (const row of result.rows) {
+          if (!visited.has(row.child_workflow_id)) {
+            visited.add(row.child_workflow_id);
+            queue.push(row.child_workflow_id);
+            children.push(row.child_workflow_id);
+          }
+        }
+      }
+    } finally {
+      client.release();
+    }
+    return children;
+  }
+
+  async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
+    let workflowsToDelete: string[] = [workflowID];
+
+    if (deleteChildren) {
+      const children = await this.getWorkflowChildren(workflowID);
+      workflowsToDelete = [...workflowsToDelete, ...children];
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `DELETE FROM "${this.schemaName}".workflow_status
+         WHERE workflow_uuid = ANY($1)`,
+        [workflowsToDelete],
+      );
+    } finally {
+      client.release();
+    }
+
+    // Clean up in-memory maps
+    for (const wfid of workflowsToDelete) {
+      this.runningWorkflowMap.delete(wfid);
+      this.workflowCancellationMap.delete(wfid);
+    }
+  }
+
+  async exportWorkflow(workflowID: string, exportChildren: boolean = false): Promise<ExportedWorkflow[]> {
+    const workflowIDs = [workflowID];
+    if (exportChildren) {
+      workflowIDs.push(...(await this.getWorkflowChildren(workflowID)));
+    }
+
+    const exportedWorkflows: ExportedWorkflow[] = [];
+
+    const client = await this.pool.connect();
+    try {
+      for (const wfID of workflowIDs) {
+        // Export workflow_status
+        const statusResult = await client.query<workflow_status>(
+          `SELECT
+            workflow_uuid, status, name, authenticated_user, assumed_role,
+            authenticated_roles, request, output, error, executor_id,
+            created_at, updated_at, application_version, application_id,
+            class_name, config_name, recovery_attempts, queue_name,
+            workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
+            deduplication_id, inputs, priority, queue_partition_key, forked_from
+          FROM "${this.schemaName}".workflow_status
+          WHERE workflow_uuid = $1`,
+          [wfID],
+        );
+
+        if (statusResult.rows.length === 0) {
+          throw new DBOSNonExistentWorkflowError(`Workflow ${wfID} does not exist`);
+        }
+
+        const workflowStatus = statusResult.rows[0];
+
+        // Export operation_outputs
+        const outputsResult = await client.query<operation_outputs>(
+          `SELECT
+            workflow_uuid, function_id, function_name, output, error,
+            child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms
+          FROM "${this.schemaName}".operation_outputs
+          WHERE workflow_uuid = $1`,
+          [wfID],
+        );
+
+        // Export workflow_events
+        const eventsResult = await client.query<workflow_events>(
+          `SELECT workflow_uuid, key, value
+          FROM "${this.schemaName}".workflow_events
+          WHERE workflow_uuid = $1`,
+          [wfID],
+        );
+
+        // Export workflow_events_history
+        const historyResult = await client.query<workflow_events_history>(
+          `SELECT workflow_uuid, function_id, key, value
+          FROM "${this.schemaName}".workflow_events_history
+          WHERE workflow_uuid = $1`,
+          [wfID],
+        );
+
+        // Export streams
+        const streamsResult = await client.query<streams>(
+          `SELECT workflow_uuid, key, value, "offset", function_id
+          FROM "${this.schemaName}".streams
+          WHERE workflow_uuid = $1`,
+          [wfID],
+        );
+
+        exportedWorkflows.push({
+          workflow_status: workflowStatus,
+          operation_outputs: outputsResult.rows,
+          workflow_events: eventsResult.rows,
+          workflow_events_history: historyResult.rows,
+          streams: streamsResult.rows,
+        });
+      }
+    } finally {
+      client.release();
+    }
+
+    return exportedWorkflows;
+  }
+
+  async importWorkflow(workflows: ExportedWorkflow[]): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+
+      for (const workflow of workflows) {
+        const status = workflow.workflow_status;
+
+        // Import workflow_status
+        await client.query(
+          `INSERT INTO "${this.schemaName}".workflow_status (
+            workflow_uuid, status, name, authenticated_user, assumed_role,
+            authenticated_roles, request, output, error, executor_id,
+            created_at, updated_at, application_version, application_id,
+            class_name, config_name, recovery_attempts, queue_name,
+            workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
+            deduplication_id, inputs, priority, queue_partition_key, forked_from
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)`,
+          [
+            status.workflow_uuid,
+            status.status,
+            status.name,
+            status.authenticated_user,
+            status.assumed_role,
+            status.authenticated_roles,
+            status.request,
+            status.output,
+            status.error,
+            status.executor_id,
+            status.created_at,
+            status.updated_at,
+            status.application_version,
+            status.application_id,
+            status.class_name,
+            status.config_name,
+            status.recovery_attempts,
+            status.queue_name,
+            status.workflow_timeout_ms,
+            status.workflow_deadline_epoch_ms,
+            status.started_at_epoch_ms,
+            status.deduplication_id,
+            status.inputs,
+            status.priority,
+            status.queue_partition_key,
+            status.forked_from,
+          ],
+        );
+
+        // Import operation_outputs
+        for (const output of workflow.operation_outputs) {
+          await client.query(
+            `INSERT INTO "${this.schemaName}".operation_outputs (
+              workflow_uuid, function_id, function_name, output, error,
+              child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+            [
+              output.workflow_uuid,
+              output.function_id,
+              output.function_name,
+              output.output,
+              output.error,
+              output.child_workflow_id,
+              output.started_at_epoch_ms,
+              output.completed_at_epoch_ms,
+            ],
+          );
+        }
+
+        // Import workflow_events
+        for (const event of workflow.workflow_events) {
+          await client.query(
+            `INSERT INTO "${this.schemaName}".workflow_events (
+              workflow_uuid, key, value
+            ) VALUES ($1, $2, $3)`,
+            [event.workflow_uuid, event.key, event.value],
+          );
+        }
+
+        // Import workflow_events_history
+        for (const history of workflow.workflow_events_history) {
+          await client.query(
+            `INSERT INTO "${this.schemaName}".workflow_events_history (
+              workflow_uuid, function_id, key, value
+            ) VALUES ($1, $2, $3, $4)`,
+            [history.workflow_uuid, history.function_id, history.key, history.value],
+          );
+        }
+
+        // Import streams
+        for (const stream of workflow.streams) {
+          await client.query(
+            `INSERT INTO "${this.schemaName}".streams (
+              workflow_uuid, key, value, "offset", function_id
+            ) VALUES ($1, $2, $3, $4, $5)`,
+            [stream.workflow_uuid, stream.key, stream.value, stream.offset, stream.function_id],
+          );
+        }
+      }
+
+      await client.query('COMMIT');
+    } catch (error) {
       await client.query('ROLLBACK');
       throw error;
     } finally {

@@ -1134,6 +1134,11 @@ export class DBOSExecutor {
     await this.systemDatabase.resumeWorkflow(workflowID);
   }
 
+  async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
+    await this.systemDatabase.deleteWorkflow(workflowID, deleteChildren);
+    this.logger.info(`Deleted workflow ${workflowID}${deleteChildren ? ' and its children' : ''}`);
+  }
+
   /**
     An application's version is computed from a hash of the source of its workflows.
     This is guaranteed to be stable given identical source code because it uses an MD5 hash
