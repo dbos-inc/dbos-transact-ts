@@ -68,6 +68,14 @@ export interface streams {
   key: string;
   value: string;
   offset: number;
+  function_id: number;
+}
+
+export interface workflow_events_history {
+  workflow_uuid: string;
+  function_id: number;
+  key: string;
+  value: string;
 }
 
 // This is the deserialized version of operation_outputs

@@ -5,6 +5,7 @@ export enum MessageType {
   EXECUTOR_INFO = 'executor_info',
   RECOVERY = 'recovery',
   CANCEL = 'cancel',
+  DELETE = 'delete',
   LIST_WORKFLOWS = 'list_workflows',
   LIST_QUEUED_WORKFLOWS = 'list_queued_workflows',
   RESUME = 'resume',
@@ -15,6 +16,8 @@ export enum MessageType {
   FORK_WORKFLOW = 'fork_workflow',
   RETENTION = 'retention',
   GET_METRICS = 'get_metrics',
+  EXPORT_WORKFLOW = 'export_workflow',
+  IMPORT_WORKFLOW = 'import_workflow',
 }
 
 export interface BaseMessage {
@@ -89,6 +92,26 @@ export class CancelResponse extends BaseResponse {
   success: boolean;
   constructor(request_id: string, success: boolean, error_message?: string) {
     super(MessageType.CANCEL, request_id, error_message);
+    this.success = success;
+  }
+}
+
+export class DeleteRequest implements BaseMessage {
+  type = MessageType.DELETE;
+  request_id: string;
+  workflow_id: string;
+  delete_children: boolean;
+  constructor(request_id: string, workflow_id: string, delete_children: boolean = false) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+    this.delete_children = delete_children;
+  }
+}
+
+export class DeleteResponse extends BaseResponse {
+  success: boolean;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.DELETE, request_id, error_message);
     this.success = success;
   }
 }
@@ -411,5 +434,43 @@ export class GetMetricsResponse extends BaseResponse {
   constructor(request_id: string, metrics: MetricDataOutput[], error_message?: string) {
     super(MessageType.GET_METRICS, request_id, error_message);
     this.metrics = metrics;
+  }
+}
+
+export class ExportWorkflowRequest implements BaseMessage {
+  type = MessageType.EXPORT_WORKFLOW;
+  request_id: string;
+  workflow_id: string;
+  export_children: boolean;
+  constructor(request_id: string, workflow_id: string, export_children: boolean = false) {
+    this.request_id = request_id;
+    this.workflow_id = workflow_id;
+    this.export_children = export_children;
+  }
+}
+
+export class ExportWorkflowResponse extends BaseResponse {
+  serialized_workflow: string | null;
+  constructor(request_id: string, serialized_workflow: string | null, error_message?: string) {
+    super(MessageType.EXPORT_WORKFLOW, request_id, error_message);
+    this.serialized_workflow = serialized_workflow;
+  }
+}
+
+export class ImportWorkflowRequest implements BaseMessage {
+  type = MessageType.IMPORT_WORKFLOW;
+  request_id: string;
+  serialized_workflow: string;
+  constructor(request_id: string, serialized_workflow: string) {
+    this.request_id = request_id;
+    this.serialized_workflow = serialized_workflow;
+  }
+}
+
+export class ImportWorkflowResponse extends BaseResponse {
+  success: boolean;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.IMPORT_WORKFLOW, request_id, error_message);
+    this.success = success;
   }
 }

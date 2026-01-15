@@ -6,6 +6,12 @@ import { GetWorkflowsInput, StatusString } from '..';
 import { hostname } from 'node:os';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
+import * as zlib from 'node:zlib';
+import { promisify } from 'node:util';
+import type { ExportedWorkflow } from '../system_database';
+
+const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
 
 interface IntervalTimeout {
   interval: NodeJS.Timeout | undefined;
@@ -159,6 +165,19 @@ export class Conductor {
             }
             const cancelResp = new protocol.CancelResponse(baseMsg.request_id, cancelSuccess, errorMsg);
             currWebsocket.send(JSON.stringify(cancelResp));
+            break;
+          case protocol.MessageType.DELETE:
+            const deleteMsg = baseMsg as protocol.DeleteRequest;
+            let deleteSuccess = true;
+            try {
+              await this.dbosExec.deleteWorkflow(deleteMsg.workflow_id, deleteMsg.delete_children ?? false);
+            } catch (e) {
+              errorMsg = `Exception encountered when deleting workflow ${deleteMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+              deleteSuccess = false;
+            }
+            const deleteResp = new protocol.DeleteResponse(baseMsg.request_id, deleteSuccess, errorMsg);
+            currWebsocket.send(JSON.stringify(deleteResp));
             break;
           case protocol.MessageType.RESUME:
             const resumeMsg = baseMsg as protocol.ResumeRequest;
@@ -373,6 +392,42 @@ export class Conductor {
               errorMsg,
             );
             currWebsocket.send(JSON.stringify(getMetricsResponse));
+            break;
+          case protocol.MessageType.EXPORT_WORKFLOW:
+            const exportMsg = baseMsg as protocol.ExportWorkflowRequest;
+            let serializedWorkflow: string | null = null;
+            try {
+              const exported = await this.dbosExec.systemDatabase.exportWorkflow(
+                exportMsg.workflow_id,
+                exportMsg.export_children ?? false,
+              );
+              if (exported.length > 0) {
+                const jsonStr = JSON.stringify(exported);
+                const compressed = await gzip(jsonStr);
+                serializedWorkflow = compressed.toString('base64');
+              }
+            } catch (e) {
+              errorMsg = `Exception encountered when exporting workflow ${exportMsg.workflow_id}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const exportResp = new protocol.ExportWorkflowResponse(baseMsg.request_id, serializedWorkflow, errorMsg);
+            currWebsocket.send(JSON.stringify(exportResp));
+            break;
+          case protocol.MessageType.IMPORT_WORKFLOW:
+            const importMsg = baseMsg as protocol.ImportWorkflowRequest;
+            let importSuccess = true;
+            try {
+              const compressedData = Buffer.from(importMsg.serialized_workflow, 'base64');
+              const decompressed = await gunzip(compressedData);
+              const workflows = JSON.parse(decompressed.toString()) as ExportedWorkflow[];
+              await this.dbosExec.systemDatabase.importWorkflow(workflows);
+            } catch (e) {
+              errorMsg = `Exception encountered when importing workflow: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+              importSuccess = false;
+            }
+            const importResp = new protocol.ImportWorkflowResponse(baseMsg.request_id, importSuccess, errorMsg);
+            currWebsocket.send(JSON.stringify(importResp));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
