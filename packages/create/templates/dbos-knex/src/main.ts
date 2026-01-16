@@ -92,7 +92,7 @@ app.get('/', (req: Request, res: Response) => {
 // Serve the transaction from the /greeting/:name path
 app.get('/greeting/:name', (req: Request, res: Response) => {
   const { name } = req.params;
-  Hello.helloTransaction(name)
+  Hello.helloTransaction(name as string)
     .then((result) => res.send(result))
     .catch((error) => {
       console.error(error);
