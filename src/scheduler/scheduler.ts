@@ -175,15 +175,9 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
       const date = new Date(nextExec);
       if (methodReg.workflowConfig && methodReg.registeredFunction) {
         const workflowID = `sched-${name}-${date.toISOString()}`;
-        // Only start the workflow if it doesn't already exist (another instance may have started it)
-        if (!(await DBOS.getWorkflowStatus(workflowID))) {
-          const wfParams = { workflowID, queueName: queueName ?? INTERNAL_QUEUE_NAME };
-          DBOS.logger.debug(`Executing scheduled workflow ${workflowID}`);
-          await DBOS.startWorkflow(methodReg.registeredFunction as ScheduledHandler<unknown>, wfParams)(
-            date,
-            new Date(),
-          );
-        }
+        const wfParams = { workflowID, queueName: queueName ?? INTERNAL_QUEUE_NAME };
+        DBOS.logger.debug(`Executing scheduled workflow ${workflowID}`);
+        await DBOS.startWorkflow(methodReg.registeredFunction as ScheduledHandler<unknown>, wfParams)(date, new Date());
       } else {
         DBOS.logger.error(`${name} is @scheduled but not a workflow`);
       }
