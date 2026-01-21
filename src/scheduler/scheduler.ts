@@ -129,7 +129,15 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
     while (!signal.aborted) {
       const nextExec = timeMatcher.nextWakeupTime(lastExec).getTime();
-      const sleepTime = nextExec - Date.now();
+      let sleepTime = nextExec - Date.now();
+
+      // To prevent a "thundering herd" problem in a distributed setting,
+      // apply jitter of up to 10% the sleep time, capped at 10 seconds
+      if (sleepTime > 0) {
+        const maxJitter = Math.min(sleepTime / 10, 10000);
+        const jitter = Math.random() * maxJitter;
+        sleepTime += jitter;
+      }
 
       if (sleepTime > 0) {
         await new Promise<void>((resolve, reject) => {
@@ -167,9 +175,15 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
       const date = new Date(nextExec);
       if (methodReg.workflowConfig && methodReg.registeredFunction) {
         const workflowID = `sched-${name}-${date.toISOString()}`;
-        const wfParams = { workflowID, queueName: queueName ?? INTERNAL_QUEUE_NAME };
-        DBOS.logger.debug(`Executing scheduled workflow ${workflowID}`);
-        await DBOS.startWorkflow(methodReg.registeredFunction as ScheduledHandler<unknown>, wfParams)(date, new Date());
+        // Only start the workflow if it doesn't already exist (another instance may have started it)
+        if (!(await DBOS.getWorkflowStatus(workflowID))) {
+          const wfParams = { workflowID, queueName: queueName ?? INTERNAL_QUEUE_NAME };
+          DBOS.logger.debug(`Executing scheduled workflow ${workflowID}`);
+          await DBOS.startWorkflow(methodReg.registeredFunction as ScheduledHandler<unknown>, wfParams)(
+            date,
+            new Date(),
+          );
+        }
       } else {
         DBOS.logger.error(`${name} is @scheduled but not a workflow`);
       }
