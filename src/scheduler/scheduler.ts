@@ -129,7 +129,15 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
 
     while (!signal.aborted) {
       const nextExec = timeMatcher.nextWakeupTime(lastExec).getTime();
-      const sleepTime = nextExec - Date.now();
+      let sleepTime = nextExec - Date.now();
+
+      // To prevent a "thundering herd" problem in a distributed setting,
+      // apply jitter of up to 10% the sleep time, capped at 10 seconds
+      if (sleepTime > 0) {
+        const maxJitter = Math.min(sleepTime / 10, 10000);
+        const jitter = Math.random() * maxJitter;
+        sleepTime += jitter;
+      }
 
       if (sleepTime > 0) {
         await new Promise<void>((resolve, reject) => {
