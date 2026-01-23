@@ -90,6 +90,14 @@ import assert from 'node:assert';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
+/**
+ * Alert handler function signature for receiving alerts from DBOS Conductor.
+ * @param name - Name/type of the alert
+ * @param message - Alert message content
+ * @param metadata - Additional key-value metadata
+ */
+export type AlertHandler = (name: string, message: string, metadata: Record<string, string>) => void | Promise<void>;
+
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
   // For DBOS Conductor
@@ -156,6 +164,14 @@ export function runInternalStep<T>(
     }
   }
   return callback();
+}
+
+// Module-level alert handler storage (internal use only)
+let alertHandler: AlertHandler | undefined = undefined;
+
+/** @internal */
+export function getAlertHandler(): AlertHandler | undefined {
+  return alertHandler;
 }
 
 export class DBOS {
@@ -351,6 +367,7 @@ export class DBOS {
     wfQueueRunner.clearRegistrations();
     DBOSExecutor.debouncerWorkflow = undefined;
     DBOSExecutor.internalQueue = undefined;
+    alertHandler = undefined;
   }
 
   /** Stop listening for external events (for testing) */
@@ -1748,5 +1765,35 @@ export class DBOS {
     funcName?: string,
   ): readonly ExternalRegistration[] {
     return getRegistrationsForExternal(external, cls, funcName);
+  }
+
+  /////
+  // Alert Handling
+  /////
+
+  /**
+   * Register an alert handler to receive alerts from DBOS Conductor.
+   * Only one handler can be registered, and it must be registered before DBOS.launch().
+   * If no handler is registered, alerts will be logged.
+   *
+   * @param handler - Function to handle incoming alerts
+   * @throws Error if DBOS is already initialized or if a handler is already registered
+   *
+   * @example
+   * ```typescript
+   * DBOS.setAlertHandler((name, message, metadata) => {
+   *   console.log(`Alert: ${name} - ${message}`, metadata);
+   *   // Send to monitoring service, etc.
+   * });
+   * ```
+   */
+  static setAlertHandler(handler: AlertHandler): void {
+    if (DBOS.isInitialized()) {
+      throw new DBOSError('Cannot set alert handler after DBOS.launch()');
+    }
+    if (alertHandler) {
+      throw new DBOSError('Alert handler is already registered. Only one handler is allowed.');
+    }
+    alertHandler = handler;
   }
 }

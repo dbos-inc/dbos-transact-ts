@@ -1,4 +1,5 @@
 export { DBOS } from './dbos';
+export type { AlertHandler } from './dbos';
 
 export { DBOSClient } from './client';
 

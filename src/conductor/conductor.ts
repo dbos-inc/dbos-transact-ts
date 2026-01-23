@@ -1,4 +1,5 @@
 import { DBOSExecutor } from '../dbos-executor';
+import { getAlertHandler } from '../dbos';
 import { globalParams } from '../utils';
 import WebSocket from 'ws';
 import * as protocol from './protocol';
@@ -428,6 +429,26 @@ export class Conductor {
             }
             const importResp = new protocol.ImportWorkflowResponse(baseMsg.request_id, importSuccess, errorMsg);
             currWebsocket.send(JSON.stringify(importResp));
+            break;
+          case protocol.MessageType.ALERT:
+            const alertMsg = baseMsg as protocol.AlertRequest;
+            let alertSuccess = true;
+            try {
+              const handler = getAlertHandler();
+              if (handler) {
+                await Promise.resolve(handler(alertMsg.name, alertMsg.message, alertMsg.metadata));
+              } else {
+                this.dbosExec.logger.warn(
+                  `Alert received (no handler registered): [${alertMsg.name}] ${alertMsg.message} | Metadata: ${JSON.stringify(alertMsg.metadata)}`,
+                );
+              }
+            } catch (e) {
+              errorMsg = `Exception in alert handler: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+              alertSuccess = false;
+            }
+            const alertResp = new protocol.AlertResponse(baseMsg.request_id, alertSuccess, errorMsg);
+            currWebsocket.send(JSON.stringify(alertResp));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
