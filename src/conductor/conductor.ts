@@ -1,5 +1,5 @@
 import { DBOSExecutor } from '../dbos-executor';
-import { getAlertHandler } from '../dbos';
+import { getAlertHandler } from '../decorators';
 import { globalParams } from '../utils';
 import WebSocket from 'ws';
 import * as protocol from './protocol';

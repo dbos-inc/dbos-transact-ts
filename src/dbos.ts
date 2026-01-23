@@ -40,11 +40,13 @@ import {
 } from './config';
 import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
+  AlertHandler,
   associateClassWithExternal,
   associateMethodWithExternal,
   ClassAuthDefaults,
   DBOS_AUTH,
   ExternalRegistration,
+  getAlertHandler,
   getLifecycleListeners,
   getRegisteredOperations,
   getFunctionRegistration,
@@ -56,6 +58,7 @@ import {
   recordDBOSShutdown,
   registerFunctionWrapper,
   registerLifecycleCallback,
+  setAlertHandler,
   transactionalDataSources,
   registerMiddlewareInstaller,
   MethodRegistrationBase,
@@ -89,14 +92,6 @@ import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
 
 type AnyConstructor = new (...args: unknown[]) => object;
-
-/**
- * Alert handler function signature for receiving alerts from DBOS Conductor.
- * @param name - Name/type of the alert
- * @param message - Alert message content
- * @param metadata - Additional key-value metadata
- */
-export type AlertHandler = (name: string, message: string, metadata: Record<string, string>) => void | Promise<void>;
 
 // Declare all the options a user can pass to the DBOS object during launch()
 export interface DBOSLaunchOptions {
@@ -164,14 +159,6 @@ export function runInternalStep<T>(
     }
   }
   return callback();
-}
-
-// Module-level alert handler storage (internal use only)
-let alertHandler: AlertHandler | undefined = undefined;
-
-/** @internal */
-export function getAlertHandler(): AlertHandler | undefined {
-  return alertHandler;
 }
 
 export class DBOS {
@@ -367,7 +354,6 @@ export class DBOS {
     wfQueueRunner.clearRegistrations();
     DBOSExecutor.debouncerWorkflow = undefined;
     DBOSExecutor.internalQueue = undefined;
-    alertHandler = undefined;
   }
 
   /** Stop listening for external events (for testing) */
@@ -1791,9 +1777,9 @@ export class DBOS {
     if (DBOS.isInitialized()) {
       throw new DBOSError('Cannot set alert handler after DBOS.launch()');
     }
-    if (alertHandler) {
+    if (getAlertHandler()) {
       throw new DBOSError('Alert handler is already registered. Only one handler is allowed.');
     }
-    alertHandler = handler;
+    setAlertHandler(handler);
   }
 }

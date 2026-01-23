@@ -1,11 +1,11 @@
 export { DBOS } from './dbos';
-export type { AlertHandler } from './dbos';
 
 export { DBOSClient } from './client';
 
 export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler';
 
 export {
+  AlertHandler,
   ArgDataType,
   DBOSDataType,
   DBOSLifecycleCallback,
