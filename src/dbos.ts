@@ -1781,7 +1781,7 @@ export class DBOS {
    *
    * @example
    * ```typescript
-   * DBOS.setAlertHandler((name, message, metadata) => {
+   * DBOS.setAlertHandler(async (name: string, message: string, metadata: Record<string, string>) => {
    *   console.log(`Alert: ${name} - ${message}`, metadata);
    *   // Send to monitoring service, etc.
    * });
