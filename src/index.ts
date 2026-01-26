@@ -5,6 +5,7 @@ export { DBOSClient } from './client';
 export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler';
 
 export {
+  AlertHandler,
   ArgDataType,
   DBOSDataType,
   DBOSLifecycleCallback,
