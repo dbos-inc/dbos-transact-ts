@@ -92,3 +92,30 @@ export interface step_info {
   started_at_epoch_ms?: number;
   completed_at_epoch_ms?: number;
 }
+
+// This is system DB schema for portable inputs / outputs / messages / events / errors
+
+// ---------- Canonical JSON value space ----------
+// Note the absensce of "Date", etc.
+// Canonical Date = RFC 3339 / ISO-8601 UTC string: YYYY-MM-DDTHH:mm:ss(.sss)Z
+// This can be fixed with AJV (applied later)
+export type JsonPrimitive = null | boolean | number | string;
+export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+export type JsonObject = { [k: string]: JsonValue };
+export type JsonArray = JsonValue[];
+
+// ---------- Workflow args + result ----------
+export type JsonWorkflowArgs = {
+  positionalArgs?: JsonArray;
+  namedArgs?: JsonObject;
+};
+export type JsonWorkflowResult = JsonValue;
+export interface JsonWorkflowErrorData {
+  code: number | string;
+  message: string; // Human-readable string
+  data?: JsonValue; // structured details (retryable, origin, etc.)
+}
+
+// --------- Notification(Message) and WF event
+export type JsonMessage = JsonValue;
+export type JsonEvent = JsonValue;
