@@ -26,18 +26,21 @@ export interface workflow_status {
   queue_partition_key?: string; // Partition key for partitioned queues.
   forked_from?: string;
   owner_xid?: string;
+  serialization: string | null;
 }
 
 export interface notifications {
   destination_uuid: string;
   topic: string;
   message: string;
+  serialization: string | null;
 }
 
 export interface workflow_events {
   workflow_uuid: string;
   key: string;
   value: string;
+  serialization: string | null;
 }
 
 export interface operation_outputs {
@@ -76,6 +79,7 @@ export interface workflow_events_history {
   function_id: number;
   key: string;
   value: string;
+  serialization: string | null;
 }
 
 // This is the deserialized version of operation_outputs
