@@ -19,6 +19,7 @@ import {
   WorkflowConfig,
   WorkflowHandle,
   WorkflowParams,
+  WorkflowSerializationFormat,
   WorkflowStatus,
 } from './workflow';
 import { DLogger, GlobalLogger } from './telemetry/logs';
@@ -125,6 +126,33 @@ export interface StartWorkflowParams {
   queueName?: string;
   timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
+}
+
+/**
+ * Options for `DBOS.send`
+ */
+export interface SendOptions {
+  /** Serialization format override, allows cross-language send/recv */
+  serialization?: WorkflowSerializationFormat;
+}
+
+/**
+ * Options for `DBOS.writeStream`
+ */
+export interface WriteStreamOptions {
+  /** Serialization format override, allows cross-language writeStream / readStream */
+  serialization?: WorkflowSerializationFormat;
+}
+
+/**
+ * Options for `DBOS.setEvent`
+ */
+export interface SetEventOptions {
+  /**
+   * Serialization format override, allows event to be read by
+   *   workflows or clients written in other languages
+   */
+  serialization?: WorkflowSerializationFormat;
 }
 
 export function getExecutor() {
@@ -964,6 +992,9 @@ export class DBOS {
     return new Proxy(target, handler);
   }
 
+  // TODO Portable: To start a language in another workflow, no function definition, shape more like client enqueue
+  //  but without having to make a client
+
   /**
    * Send `message` on optional `topic` to the workflow with `destinationID`
    *  This can be done from inside or outside of DBOS workflow functions
@@ -974,8 +1005,15 @@ export class DBOS {
    * @param message - Message to send, which must be serializable as JSON
    * @param topic - Optional topic; if specified the `recv` command can specify the same topic to receive selectively
    * @param idempotencyKey - Optional key for sending the message exactly once
+   * @param options - `SendOptions`
    */
-  static async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  static async send<T>(
+    destinationID: string,
+    message: T,
+    topic?: string,
+    idempotencyKey?: string,
+    _options?: SendOptions,
+  ): Promise<void> {
     ensureDBOSIsLaunched('send');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1039,8 +1077,9 @@ export class DBOS {
    *
    * @param key - The key for the event; at most one value is associated with a key at any given time.
    * @param value - The value to associate with `key`
+   * @param options - `SetEventOptions` allowing control of the recorded event
    */
-  static async setEvent<T>(key: string, value: T): Promise<void> {
+  static async setEvent<T>(key: string, value: T, _options?: SetEventOptions): Promise<void> {
     ensureDBOSIsLaunched('setEvent');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1102,8 +1141,9 @@ export class DBOS {
    * Write a value to a stream.
    * @param key - The stream key/name within the workflow
    * @param value - A serializable value to write to the stream
+   * @param options - `WriteStreamOptions` for controlling serialization
    */
-  static async writeStream<T>(key: string, value: T): Promise<void> {
+  static async writeStream<T>(key: string, value: T, _options: WriteStreamOptions): Promise<void> {
     ensureDBOSIsLaunched('writeStream');
     if (DBOS.isWithinWorkflow()) {
       if (DBOS.isInWorkflow()) {

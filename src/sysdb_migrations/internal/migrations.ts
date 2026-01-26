@@ -222,6 +222,7 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
         `ALTER TABLE "${schemaName}"."notifications" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
         `ALTER TABLE "${schemaName}"."workflow_events" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
         `ALTER TABLE "${schemaName}"."workflow_events_history" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."streams" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
       ],
     },
   ];

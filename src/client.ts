@@ -14,6 +14,7 @@ import {
   StatusString,
   type StepInfo,
   type WorkflowHandle,
+  WorkflowSerializationFormat,
   type WorkflowStatus,
 } from './workflow';
 import { sleepms } from './utils';
@@ -76,6 +77,14 @@ interface ClientEnqueueOptions {
   deduplicationID?: string;
 
   /**
+   * Serialization to use for enqueued request
+   *   Default is to use the serialization for JS/TS, as this is the most flexible
+   *   If `portable_json` is specified, a more limited JSON serialization is used,
+   *    allowing cross-language enqueues of workflows with simple semantics
+   */
+  serialization?: WorkflowSerializationFormat;
+
+  /**
    * An optional priority for the workflow.
    * Workflows with higher priority will be dequeued first.
    */
@@ -85,6 +94,19 @@ interface ClientEnqueueOptions {
    * Required when enqueueing on a partitioned queue.
    */
   queuePartitionKey?: string;
+}
+
+/**
+ * Options for client send
+ */
+interface ClientSendOptions {
+  /**
+   * Serialization to use for sent message
+   *   Default is to use the serialization for TS/JS, as this is the most flexible
+   *   If `portable_json` is specified, a more limited JSON serialization is used,
+   *     allowing cross-language message sends
+   */
+  serialization?: WorkflowSerializationFormat;
 }
 
 export class ClientHandle<R> implements WorkflowHandle<R> {
@@ -107,6 +129,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
+    // TODO: Portable
     const res = await this.systemDatabase.awaitWorkflowResult(this.workflowID);
     if (res?.cancelled) {
       throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);
@@ -222,8 +245,15 @@ export class DBOSClient {
    * @param idempotencyKey - An optional idempotency key to ensure that the message is only sent once.
    * @returns A Promise that resolves when the message has been sent.
    */
-  async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send<T>(
+    destinationID: string,
+    message: T,
+    topic?: string,
+    idempotencyKey?: string,
+    _options?: ClientSendOptions,
+  ): Promise<void> {
     idempotencyKey ??= randomUUID();
+    // TODO: Portable
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: `${destinationID}-${idempotencyKey}`,
       status: StatusString.SUCCESS,
