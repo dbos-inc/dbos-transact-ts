@@ -40,11 +40,13 @@ import {
 } from './config';
 import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
 import {
+  AlertHandler,
   associateClassWithExternal,
   associateMethodWithExternal,
   ClassAuthDefaults,
   DBOS_AUTH,
   ExternalRegistration,
+  getAlertHandler,
   getLifecycleListeners,
   getRegisteredOperations,
   getFunctionRegistration,
@@ -56,6 +58,7 @@ import {
   recordDBOSShutdown,
   registerFunctionWrapper,
   registerLifecycleCallback,
+  setAlertHandler,
   transactionalDataSources,
   registerMiddlewareInstaller,
   MethodRegistrationBase,
@@ -1748,5 +1751,35 @@ export class DBOS {
     funcName?: string,
   ): readonly ExternalRegistration[] {
     return getRegistrationsForExternal(external, cls, funcName);
+  }
+
+  /////
+  // Alert Handling
+  /////
+
+  /**
+   * Register an alert handler to receive alerts from DBOS Conductor.
+   * Only one handler can be registered, and it must be registered before DBOS.launch().
+   * If no handler is registered, alerts will be logged.
+   *
+   * @param handler - Function to handle incoming alerts
+   * @throws Error if DBOS is already initialized or if a handler is already registered
+   *
+   * @example
+   * ```typescript
+   * DBOS.setAlertHandler(async (name: string, message: string, metadata: Record<string, string>) => {
+   *   console.log(`Alert: ${name} - ${message}`, metadata);
+   *   // Send to monitoring service, etc.
+   * });
+   * ```
+   */
+  static setAlertHandler(handler: AlertHandler): void {
+    if (DBOS.isInitialized()) {
+      throw new DBOSError('Cannot set alert handler after DBOS.launch()');
+    }
+    if (getAlertHandler()) {
+      throw new DBOSError('Alert handler is already registered. Only one handler is allowed.');
+    }
+    setAlertHandler(handler);
   }
 }

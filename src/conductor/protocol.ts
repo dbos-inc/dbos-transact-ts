@@ -18,6 +18,7 @@ export enum MessageType {
   GET_METRICS = 'get_metrics',
   EXPORT_WORKFLOW = 'export_workflow',
   IMPORT_WORKFLOW = 'import_workflow',
+  ALERT = 'alert',
 }
 
 export interface BaseMessage {
@@ -471,6 +472,21 @@ export class ImportWorkflowResponse extends BaseResponse {
   success: boolean;
   constructor(request_id: string, success: boolean, error_message?: string) {
     super(MessageType.IMPORT_WORKFLOW, request_id, error_message);
+    this.success = success;
+  }
+}
+
+export interface AlertRequest extends BaseMessage {
+  type: MessageType.ALERT;
+  name: string;
+  message: string;
+  metadata: Record<string, string>;
+}
+
+export class AlertResponse extends BaseResponse {
+  success: boolean;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.ALERT, request_id, error_message);
     this.success = success;
   }
 }

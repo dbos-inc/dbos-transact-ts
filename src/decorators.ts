@@ -3,6 +3,31 @@ import { StepConfig } from './step';
 import { DBOSConflictingRegistrationError, DBOSNotRegisteredError } from './error';
 import { DataSourceTransactionHandler } from './datasource';
 
+// #region Alert handler
+
+/**
+ * Alert handler function signature for receiving alerts from DBOS Conductor.
+ * @param name - Name/type of the alert
+ * @param message - Alert message content
+ * @param metadata - Additional key-value metadata
+ */
+export type AlertHandler = (name: string, message: string, metadata: Record<string, string>) => Promise<void>;
+
+// Module-level alert handler storage (internal use only)
+let alertHandler: AlertHandler | undefined = undefined;
+
+/** @internal */
+export function getAlertHandler(): AlertHandler | undefined {
+  return alertHandler;
+}
+
+/** @internal */
+export function setAlertHandler(handler: AlertHandler): void {
+  alertHandler = handler;
+}
+
+// #endregion
+
 // #region Interfaces and supporting types
 
 export type TypedAsyncFunction<T extends unknown[], R> = (...args: T) => Promise<R>;
@@ -525,6 +550,7 @@ export function clearAllRegistrations() {
   classesByName.clear();
   classesByCtor.clear();
   transactionalDataSources.clear();
+  alertHandler = undefined;
 }
 
 // DBOS launch lifecycle listener
