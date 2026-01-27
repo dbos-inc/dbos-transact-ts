@@ -288,13 +288,31 @@ export function serializeFunctionInputOutput<T>(
   value: T,
   path: PathToMember = [],
   serializer: DBOSSerializer,
-): { deserialized: T; stringified: string } {
+  serialization?: string | null,
+): { deserialized: T; stringified: string; sername: string } {
+  for (const ser of [DBOSPortableJSON, DBOSJSON]) {
+    if (serialization === ser.name()) {
+      const stringified = ser.stringify(value);
+      const deserialized = ser.parse(stringified) as T;
+      if (isObjectish(deserialized)) {
+        attachFunctionStubs(value as unknown as AnyObject, deserialized as unknown as AnyObject, path);
+      }
+      return { deserialized, stringified, sername: ser.name() };
+    }
+  }
+
+  const sername = serializer.name();
+  if (serialization && serialization !== sername) {
+    throw new TypeError(
+      `Serializer provided (${sername}) is not compatible with the required serialization (${serialization})`,
+    );
+  }
   const stringified = serializer.stringify(value);
   const deserialized = serializer.parse(stringified) as T;
-  if (serializer === DBOSJSON && isObjectish(deserialized)) {
+  if (serializer.name() === DBOSJSON.name() && isObjectish(deserialized)) {
     attachFunctionStubs(value as unknown as AnyObject, deserialized as unknown as AnyObject, path);
   }
-  return { deserialized, stringified };
+  return { deserialized, stringified, sername };
 }
 
 // Walks original & deserialized in lockstep and attaches stubs for missing functions.

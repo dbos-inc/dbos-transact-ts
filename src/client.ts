@@ -18,7 +18,7 @@ import {
   type WorkflowStatus,
 } from './workflow';
 import { sleepms } from './utils';
-import { DBOSJSON, DBOSSerializer } from './serialization';
+import { DBOSJSON, DBOSPortableJSON, DBOSSerializer } from './serialization';
 import {
   forkWorkflow,
   getWorkflow,
@@ -30,6 +30,7 @@ import {
 import { DBOSExecutor } from './dbos-executor';
 import { DBOSAwaitedWorkflowCancelledError } from './error';
 import { Pool } from 'pg';
+import { JsonWorkflowArgs } from '../schemas/system_db_schema';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -165,6 +166,19 @@ export class DBOSClient {
     );
   }
 
+  private deserializeValue(serializedValue: string, serialization: string | null): unknown {
+    if (serialization === DBOSPortableJSON.name()) {
+      return DBOSPortableJSON.parse(serializedValue);
+    }
+    if (serialization === DBOSJSON.name()) {
+      return DBOSJSON.parse(serializedValue);
+    }
+    if (!serialization || serialization === this.serializer.name()) {
+      return this.serializer.parse(serializedValue);
+    }
+    throw new TypeError(`Value deserialization type ${serialization} is not available`);
+  }
+
   /**
    * Creates a new instance of the DBOSClient.
    * @param databaseUrl - The connection string for the database. This should include the hostname, port, username, password, and database name.
@@ -226,10 +240,14 @@ export class DBOSClient {
       createdAt: Date.now(),
       timeoutMS: options.workflowTimeoutMS,
       deadlineEpochMS: undefined,
-      input: this.serializer.stringify(args),
+      input:
+        options.serialization === 'portable'
+          ? DBOSPortableJSON.stringify({ positionalArgs: args } satisfies JsonWorkflowArgs)
+          : this.serializer.stringify(args),
       deduplicationID: options.deduplicationID,
       priority: options.priority ?? 0,
       queuePartitionKey: options.queuePartitionKey,
+      serialization: options.serialization === 'portable' ? DBOSPortableJSON.name() : this.serializer.name(),
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
@@ -250,7 +268,7 @@ export class DBOSClient {
     message: T,
     topic?: string,
     idempotencyKey?: string,
-    _options?: ClientSendOptions,
+    options?: ClientSendOptions,
   ): Promise<void> {
     idempotencyKey ??= randomUUID();
     // TODO: Portable
@@ -269,10 +287,14 @@ export class DBOSClient {
       executorId: '',
       applicationID: '',
       createdAt: Date.now(),
-      input: this.serializer.stringify([destinationID, message, topic]),
+      input:
+        options?.serialization === 'portable'
+          ? DBOSPortableJSON.stringify({ positionalArgs: [destinationID, message, topic] } as JsonWorkflowArgs)
+          : this.serializer.stringify([destinationID, message, topic]),
       deduplicationID: undefined,
       priority: 0,
       queuePartitionKey: undefined,
+      serialization: options?.serialization === 'portable' ? DBOSPortableJSON.name() : this.serializer.name(),
     };
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
     await this.systemDatabase.send(
@@ -350,10 +372,10 @@ export class DBOSClient {
     while (true) {
       try {
         const value = await this.systemDatabase.readStream(workflowID, key, offset);
-        if (value === DBOS_STREAM_CLOSED_SENTINEL) {
+        if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield value as T;
+        yield this.deserializeValue(value.serializedValue, value.serialization) as T;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {

@@ -48,7 +48,7 @@ import {
   getClassRegistrationByName,
   getRegisteredFunctionFullName,
 } from './decorators';
-import type { step_info } from '../schemas/system_db_schema';
+import { WorkflowError, type JsonWorkflowErrorData, type step_info } from '../schemas/system_db_schema';
 import {
   runInStepContext,
   getNextWFID,
@@ -60,7 +60,7 @@ import {
 } from './context';
 import { deserializeError, serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
-import { DBOSSerializer, serializeFunctionInputOutput } from './serialization';
+import { DBOSJSON, DBOSPortableJSON, DBOSSerializer, serializeFunctionInputOutput } from './serialization';
 import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -334,7 +334,35 @@ export class DBOSExecutor {
     return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
 
+  deserializeValue(serializedValue: string, serialization: string | null): unknown {
+    if (serialization === DBOSPortableJSON.name()) {
+      return DBOSPortableJSON.parse(serializedValue);
+    }
+    if (serialization === DBOSJSON.name()) {
+      return DBOSJSON.parse(serializedValue);
+    }
+    if (!serialization || serialization === this.serializer.name()) {
+      return this.serializer.parse(serializedValue);
+    }
+    throw new TypeError(`Value deserialization type ${serialization} is not available`);
+  }
+
   static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, serializer: DBOSSerializer) {
+    if (r.serialization === DBOSPortableJSON.name()) {
+      if (!r.error) {
+        return DBOSPortableJSON.parse(r.output ?? null) as R;
+      } else {
+        const errdata = DBOSPortableJSON.parse(r.error) as JsonWorkflowErrorData;
+        throw new WorkflowError(errdata.message, errdata.code, errdata.data);
+      }
+    } else if (r.serialization === DBOSJSON.name()) {
+      if (!r.error) {
+        return DBOSJSON.parse(r.output ?? null) as R;
+      } else {
+        throw deserializeError(DBOSJSON.parse(r.error));
+      }
+    }
+
     if (!r.error) {
       return serializer.parse(r.output ?? null) as R;
     } else {
@@ -419,6 +447,7 @@ export class DBOSExecutor {
       assumedRole: pctx?.assumedRole ?? '',
     });
 
+    // TODO Kind of serialization
     const funcArgs = serializeFunctionInputOutput(args, [wfname, '<arguments>'], this.serializer);
     args = funcArgs.deserialized;
 
@@ -445,6 +474,7 @@ export class DBOSExecutor {
       deduplicationID: params.enqueueOptions?.deduplicationID,
       priority: priority ?? 0,
       queuePartitionKey: params.enqueueOptions?.queuePartitionKey,
+      serialization: funcArgs.sername,
     };
 
     if (isTempWorkflow) {
@@ -453,6 +483,7 @@ export class DBOSExecutor {
 
     let $deadlineEpochMS: number | undefined = undefined;
     let shouldExecute: boolean | undefined = undefined;
+    // TODO Serializer
     const serializer = this.serializer;
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
@@ -534,6 +565,7 @@ export class DBOSExecutor {
       const e = err as Error & { dbos_already_logged?: boolean };
       exec.logger.error(e);
       e.dbos_already_logged = true;
+      // TODO: Serialization of error
       internalStatus.error = serializer.stringify(serializeError(e));
       internalStatus.status = StatusString.ERROR;
       await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
@@ -570,6 +602,7 @@ export class DBOSExecutor {
 
         result = callResult!;
 
+        // TODO Serialization
         const funcResult = serializeFunctionInputOutput(result, [wfname, '<result>'], this.serializer);
         result = funcResult.deserialized;
         internalStatus.output = funcResult.stringified;
@@ -810,6 +843,7 @@ export class DBOSExecutor {
         ctx!.workflowId!,
         functionID,
         destinationId,
+        // TODO Serialization
         this.serializer.stringify(message),
         topic,
       );
@@ -838,6 +872,7 @@ export class DBOSExecutor {
     key: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
+    // TODO Serialization
     return this.serializer.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
   }
 
@@ -1004,6 +1039,7 @@ export class DBOSExecutor {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
+    // TODO Serializer
     const inputs = this.serializer.parse(wfStatus.input) as unknown[];
     const recoverCtx = this.#getRecoveryContext(workflowID, wfStatus);
 

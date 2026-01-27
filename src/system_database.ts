@@ -38,6 +38,7 @@ export interface SystemDatabaseStoredResult {
   cancelled?: boolean;
   childWorkflowID?: string | null;
   functionName?: string;
+  serialization?: string | null; // Only for WF result, not step
 }
 
 /* Exported workflow format for import/export */
@@ -196,10 +197,27 @@ export interface SystemDatabase {
   upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState>;
 
   // Streaming
-  writeStreamFromWorkflow(workflowID: string, functionID: number, key: string, value: unknown): Promise<void>;
-  writeStreamFromStep(workflowID: string, functionID: number, key: string, value: unknown): Promise<void>;
+  writeStreamFromWorkflow(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    serializedValue: string,
+    serialization: string,
+    functionName: string,
+  ): Promise<void>;
+  writeStreamFromStep(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    serializedValue: string,
+    serialization: string,
+  ): Promise<void>;
   closeStream(workflowID: string, functionID: number, key: string): Promise<void>;
-  readStream(workflowID: string, key: string, offset: number): Promise<unknown>;
+  readStream(
+    workflowID: string,
+    key: string,
+    offset: number,
+  ): Promise<{ serializedValue: string; serialization: string | null }>;
 
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
@@ -244,6 +262,7 @@ export interface WorkflowStatusInternal {
   priority: number;
   queuePartitionKey?: string;
   forkedFrom?: string;
+  serialization: string | null;
 }
 
 export interface EnqueueOptions {
@@ -681,6 +700,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
     forkedFrom: row.forked_from ?? undefined,
+    serialization: row.serialization,
   };
 }
 
@@ -1191,6 +1211,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           priority: 0,
           queuePartitionKey: undefined,
           forkedFrom: workflowID,
+          serialization: workflowStatus.serialization,
         },
         this.schemaName,
         null,
@@ -2620,7 +2641,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   @dbRetry()
-  async writeStreamFromStep(workflowID: string, functionID: number, key: string, value: unknown): Promise<void> {
+  async writeStreamFromStep(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    serializedValue: string,
+    serialization: string,
+  ): Promise<void> {
     const client: PoolClient = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -2636,14 +2663,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
       const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
 
-      // Serialize the value before storing
-      const serializedValue = JSON.stringify(value);
-
       // Insert the new stream entry
       await client.query(
-        `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [workflowID, key, serializedValue, nextOffset, functionID],
+        `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [workflowID, key, serializedValue, nextOffset, functionID, serialization],
       );
 
       await client.query('COMMIT');
@@ -2657,13 +2681,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   @dbRetry()
-  async writeStreamFromWorkflow(workflowID: string, functionID: number, key: string, value: unknown): Promise<void> {
+  async writeStreamFromWorkflow(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    serializedValue: string,
+    serialization: string,
+    functionName: string,
+  ): Promise<void> {
     const client: PoolClient = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      const functionName =
-        value === DBOS_STREAM_CLOSED_SENTINEL ? DBOS_FUNCNAME_CLOSESTREAM : DBOS_FUNCNAME_WRITESTREAM;
 
       await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
         // Find the maximum offset for this workflow_uuid and key combination
@@ -2677,14 +2705,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
         const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
 
-        // Serialize the value before storing
-        const serializedValue = JSON.stringify(value);
-
         // Insert the new stream entry
         await client.query(
-          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [workflowID, key, serializedValue, nextOffset, functionID],
+          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [workflowID, key, serializedValue, nextOffset, functionID, serialization],
         );
 
         return undefined;
@@ -2701,15 +2726,26 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async closeStream(workflowID: string, functionID: number, key: string): Promise<void> {
-    await this.writeStreamFromWorkflow(workflowID, functionID, key, DBOS_STREAM_CLOSED_SENTINEL);
+    await this.writeStreamFromWorkflow(
+      workflowID,
+      functionID,
+      key,
+      DBOS_STREAM_CLOSED_SENTINEL,
+      'portable_json',
+      DBOS_FUNCNAME_CLOSESTREAM,
+    );
   }
 
   @dbRetry()
-  async readStream(workflowID: string, key: string, offset: number): Promise<unknown> {
+  async readStream(
+    workflowID: string,
+    key: string,
+    offset: number,
+  ): Promise<{ serializedValue: string; serialization: string | null }> {
     const client: PoolClient = await this.pool.connect();
     try {
       const result = await client.query(
-        `SELECT value FROM "${this.schemaName}".streams 
+        `SELECT value, serialization FROM "${this.schemaName}".streams 
          WHERE workflow_uuid = $1 AND key = $2 AND "offset" = $3`,
         [workflowID, key, offset],
       );
@@ -2719,8 +2755,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
 
       // Deserialize the value before returning
-      const row = result.rows[0] as { value: string };
-      return JSON.parse(row.value);
+      const row = result.rows[0] as { value: string; serialization: string | null };
+      return { serializedValue: row.value, serialization: row.serialization };
     } finally {
       client.release();
     }

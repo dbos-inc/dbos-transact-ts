@@ -1,4 +1,4 @@
-export type SysDBSerializationFormat = 'js_superjson' | 'portable_json' | 'custom';
+export type SysDBSerializationFormat = string;
 
 export interface workflow_status {
   workflow_uuid: string;
@@ -117,6 +117,16 @@ export interface JsonWorkflowErrorData {
   code: number | string;
   message: string; // Human-readable string
   data?: JsonValue; // structured details (retryable, origin, etc.)
+}
+
+export class WorkflowError extends Error {
+  constructor(
+    message: string,
+    readonly code: number | string,
+    readonly data?: JsonValue,
+  ) {
+    super(message);
+  }
 }
 
 // --------- Notification(Message) and WF event
