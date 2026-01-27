@@ -9,6 +9,11 @@ export { type JSONValue };
  */
 export interface DBOSSerializer {
   /**
+   * Return a name for the serialization format
+   */
+  name: () => string;
+
+  /**
    * Serialize a value to a string.
    * @param value - The value to serialize
    * @returns The serialized string representation
@@ -126,6 +131,7 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
 
 // Keep the old DBOSJSON implementation for reference/testing
 export const DBOSJSONLegacy = {
+  name: () => 'js_legacy',
   parse: (text: string | null) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return text === null ? null : JSON.parse(text, DBOSReviver);
@@ -178,6 +184,8 @@ function sjstringify(value: unknown) {
  * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
  */
 export const DBOSJSON: DBOSSerializer = {
+  name: () => 'js_superjson',
+
   parse: (text: string | null | undefined): unknown => {
     if (text === null || text === undefined) return null; // This is from legacy; SuperJSON can do it.
 
@@ -210,6 +218,57 @@ export const DBOSJSON: DBOSSerializer = {
     return DBOSJSONLegacy.parse(text);
   },
   stringify: sjstringify,
+};
+
+function portableJsonReplacer(_key: string, value: unknown): unknown {
+  if (value instanceof Date) return value.toISOString();
+
+  if (typeof value === 'bigint') return value.toString(10);
+
+  if (value instanceof Map) {
+    // If keys are strings, represent as a plain JSON object.
+    let allStringKeys = true;
+    for (const k of value.keys()) {
+      if (typeof k !== 'string') {
+        allStringKeys = false;
+        break;
+      }
+    }
+    if (!allStringKeys) {
+      throw new TypeError(`Attempt to do portable JSON serialization of a map with non-string keys`);
+      // Other option: list of [key,value] pairs (portable, but needs schema/consumer intent)
+      // return Array.from(value.entries());
+    }
+
+    const obj: Record<string, unknown> = {};
+    for (const [k, v] of value.entries()) obj[k as string] = v;
+    return obj;
+  }
+
+  if (value instanceof Set) return Array.from(value.values());
+
+  if (value instanceof Error) {
+    return { name: value.name, message: value.message };
+    // If you want stack too:
+    // return { name: value.name, message: value.message, stack: value.stack };
+  }
+
+  return value;
+}
+
+/**
+ * DBOS Portable JSON serializer,
+ *   should be something that can be implemented in any language
+ */
+export const DBOSPortableJSON: DBOSSerializer = {
+  name: () => 'portable_json',
+  parse: (text: string | null) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return text === null ? null : JSON.parse(text);
+  },
+  stringify: (value: unknown): string => {
+    return JSON.stringify(value, portableJsonReplacer);
+  },
 };
 
 // Serialization protection - for a serialized object, provide a replacement that gives clear errors
