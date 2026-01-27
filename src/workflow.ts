@@ -79,6 +79,8 @@ export interface WorkflowStatus {
 
   // If this workflow was forked from another, that workflow's ID.
   readonly forkedFrom?: string;
+  // If this workflow was started by another workflow, that workflow's ID.
+  readonly parentWorkflowID?: string;
 
   // INTERNAL
   // Deprecated field

@@ -244,6 +244,7 @@ export interface WorkflowStatusInternal {
   priority: number;
   queuePartitionKey?: string;
   forkedFrom?: string;
+  parentWorkflowID?: string;
 }
 
 export interface EnqueueOptions {
@@ -442,13 +443,14 @@ async function insertWorkflowStatus(
         priority,
         queue_partition_key,
         forked_from,
+        parent_workflow_id,
         owner_xid
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $25)
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26)
       ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE
             WHEN workflow_status.status != '${StatusString.ENQUEUED}'
-            THEN workflow_status.recovery_attempts + $24
+            THEN workflow_status.recovery_attempts + $25
             ELSE workflow_status.recovery_attempts
           END,
           updated_at = EXCLUDED.updated_at,
@@ -483,6 +485,7 @@ async function insertWorkflowStatus(
         initStatus.priority,
         initStatus.queuePartitionKey ?? null,
         initStatus.forkedFrom ?? null,
+        initStatus.parentWorkflowID ?? null,
         (incrementAttempts ?? false) ? 1 : 0,
         ownerXid,
       ],
@@ -681,6 +684,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
     forkedFrom: row.forked_from ?? undefined,
+    parentWorkflowID: row.parent_workflow_id ?? undefined,
   };
 }
 
@@ -2331,6 +2335,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'priority',
       'queue_partition_key',
       'forked_from',
+      'parent_workflow_id',
     ];
 
     input.loadInput = input.loadInput ?? true;

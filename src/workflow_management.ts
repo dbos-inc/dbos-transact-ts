@@ -82,6 +82,7 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: D
     priority: internal.priority,
     queuePartitionKey: internal.queuePartitionKey,
     forkedFrom: internal.forkedFrom,
+    parentWorkflowID: internal.parentWorkflowID,
   };
 }
 

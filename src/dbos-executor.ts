@@ -445,6 +445,7 @@ export class DBOSExecutor {
       deduplicationID: params.enqueueOptions?.deduplicationID,
       priority: priority ?? 0,
       queuePartitionKey: params.enqueueOptions?.queuePartitionKey,
+      parentWorkflowID: callerID,
     };
 
     if (isTempWorkflow) {
