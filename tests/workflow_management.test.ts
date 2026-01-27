@@ -1907,6 +1907,22 @@ describe('wf-cancel-tests', () => {
     });
     expect(allWorkflows.length).toBe(3);
 
+    // Verify parent workflow IDs are set correctly after import
+    const parentStatus = await DBOS.getWorkflowStatus(workflowId);
+    expect(parentStatus).not.toBeNull();
+    expect(parentStatus!.parentWorkflowID).toBeUndefined();
+
+    // Find child workflows by filtering on parentWorkflowID
+    const childWorkflows = await DBOS.listWorkflows({ parentWorkflowID: workflowId });
+    expect(childWorkflows.length).toBe(1);
+    const childWorkflowId = childWorkflows[0].workflowID;
+    expect(childWorkflows[0].parentWorkflowID).toBe(workflowId);
+
+    // Find grandchild workflows
+    const grandchildWorkflows = await DBOS.listWorkflows({ parentWorkflowID: childWorkflowId });
+    expect(grandchildWorkflows.length).toBe(1);
+    expect(grandchildWorkflows[0].parentWorkflowID).toBe(childWorkflowId);
+
     // The imported workflow can be forked
     const forkedHandle = await DBOS.forkWorkflow(workflowId, importedSteps!.length);
     const forkedResult = await forkedHandle.getResult();
