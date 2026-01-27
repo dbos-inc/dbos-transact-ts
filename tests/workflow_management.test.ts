@@ -1157,6 +1157,33 @@ describe('test-list-steps', () => {
     const c2 = await (await reexecuteWorkflowById(wfid))?.getResult();
     expect(c2).toBe(1);
   });
+
+  test('test-parent-workflow-id', async () => {
+    const parentWfid = randomUUID();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: parentWfid }).callChildWorkflowfirst();
+    const childID = await handle.getResult();
+    expect(childID).toBeDefined();
+
+    // Verify the child workflow's status has parentWorkflowID set to the parent's ID
+    const childStatus = await DBOS.getWorkflowStatus(childID!);
+    expect(childStatus).not.toBeNull();
+    expect(childStatus!.parentWorkflowID).toBe(parentWfid);
+
+    // Verify the parent workflow does not have a parentWorkflowID
+    const parentStatus = await DBOS.getWorkflowStatus(parentWfid);
+    expect(parentStatus).not.toBeNull();
+    expect(parentStatus!.parentWorkflowID).toBeUndefined();
+
+    // Test filtering by parentWorkflowID
+    const childWorkflows = await DBOS.listWorkflows({ parentWorkflowID: parentWfid });
+    expect(childWorkflows.length).toBe(1);
+    expect(childWorkflows[0].workflowID).toBe(childID);
+    expect(childWorkflows[0].parentWorkflowID).toBe(parentWfid);
+
+    // Verify filtering with a non-existent parentWorkflowID returns no results
+    const noWorkflows = await DBOS.listWorkflows({ parentWorkflowID: 'non-existent-id' });
+    expect(noWorkflows.length).toBe(0);
+  });
 });
 
 describe('test-fork', () => {
