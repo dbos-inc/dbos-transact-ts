@@ -1129,15 +1129,13 @@ export class DBOS {
         functionID,
         timeoutFunctionID,
       };
-      // TODO Serialization
-      return DBOS.#executor.serializer.parse(
-        await DBOSExecutor.globalInstance!.systemDatabase.getEvent(
-          workflowID,
-          key,
-          timeoutSeconds ?? DBOSExecutor.defaultNotificationTimeoutSec,
-          params,
-        ),
-      ) as T;
+      const evt = await DBOSExecutor.globalInstance!.systemDatabase.getEvent(
+        workflowID,
+        key,
+        timeoutSeconds ?? DBOSExecutor.defaultNotificationTimeoutSec,
+        params,
+      );
+      return DBOS.#executor.deserializeValue(evt.serializedValue, evt.serialization) as T;
     }
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
   }

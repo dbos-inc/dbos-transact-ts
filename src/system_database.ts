@@ -29,7 +29,7 @@ import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from '
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 import { DEBUG_TRIGGER_STEP_COMMIT, DEBUG_TRIGGER_INITWF_COMMIT, debugTriggerPoint } from './debugpoint';
-import { DBOSSerializer } from './serialization';
+import { DBOSPortableJSON, DBOSSerializer } from './serialization';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -108,6 +108,7 @@ export interface SystemDatabase {
       childWorkflowID?: string | null;
       output?: string | null;
       error?: string | null;
+      serialization?: string | null;
     },
   ): Promise<void>;
 
@@ -181,7 +182,7 @@ export interface SystemDatabase {
       functionID: number;
       timeoutFunctionID: number;
     },
-  ): Promise<string | null>;
+  ): Promise<{ serializedValue: string | null; serialization: string | null }>;
 
   // Event receiver state queries / updates
   // An event dispatcher may keep state in the system database
@@ -637,13 +638,14 @@ async function recordOperationResult(
     childWorkflowID?: string | null;
     output?: string | null;
     error?: string | null;
+    serialization?: string | null;
   } = {},
 ): Promise<void> {
   try {
     const out = await client.query<operation_outputs>(
       `INSERT INTO ${schemaName}.operation_outputs
-       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, serialization)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT DO NOTHING RETURNING completed_at_epoch_ms;`,
       [
         workflowID,
@@ -654,6 +656,7 @@ async function recordOperationResult(
         options.childWorkflowID ?? null,
         startTimeEpochMs,
         endTimeEpochMs,
+        options.serialization ?? null,
       ],
     );
     if (checkConflict && (out?.rowCount ?? 0) > 0 && Number(out?.rows?.[0]?.completed_at_epoch_ms) !== endTimeEpochMs) {
@@ -1140,6 +1143,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       childWorkflowID?: string | null;
       output?: string | null;
       error?: string | null;
+      serialization?: string | null;
     } = {},
   ): Promise<void> {
     const client = await this.pool.connect();
@@ -1356,6 +1360,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           Date.now(),
           {
             output: JSON.stringify(endTimeMs),
+            serialization: DBOSPortableJSON.name(),
           },
         );
       }
@@ -1526,6 +1531,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         Date.now(),
         {
           output: message,
+          // TODO Serialization
         },
       );
       await client.query(`COMMIT`);
@@ -1604,7 +1610,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       functionID: number;
       timeoutFunctionID: number;
     },
-  ): Promise<string | null> {
+  ): Promise<{ serializedValue: string | null; serialization: string | null }> {
     const startTime = Date.now();
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerWorkflow) {
@@ -1621,12 +1627,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
             res.functionName!,
           );
         }
-        return res.output!;
+        return { serializedValue: res.output!, serialization: null };
       }
     }
 
     // Get the return the value. if it's in the DB, otherwise return null.
     let value: string | null = null;
+    let valueSer: string | null = null;
     const payloadKey = `${workflowID}::${key}`;
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
@@ -1650,7 +1657,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
           await this.pool.query<workflow_events>(
-            `SELECT key, value
+            `SELECT key, value, serialization
              FROM "${this.schemaName}".workflow_events
              WHERE workflow_uuid=$1 AND key=$2;`,
             [workflowID, key],
@@ -1659,6 +1666,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         if (initRecvRows.length > 0) {
           value = initRecvRows[0].value;
+          valueSer = initRecvRows[0].serialization;
           break;
         }
 
@@ -1705,10 +1713,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
         DBOS_FUNCNAME_GETEVENT,
         true,
         startTime,
-        { output: value },
+        {
+          output: value,
+          serialization: valueSer,
+        },
       );
     }
-    return value;
+    return { serializedValue: value, serialization: valueSer };
   }
 
   #setWFCancelMap(workflowID: string) {

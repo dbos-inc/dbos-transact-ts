@@ -334,7 +334,7 @@ export class DBOSExecutor {
     return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
 
-  deserializeValue(serializedValue: string, serialization: string | null): unknown {
+  deserializeValue(serializedValue: string | null, serialization: string | null): unknown {
     if (serialization === DBOSPortableJSON.name()) {
       return DBOSPortableJSON.parse(serializedValue);
     }
@@ -872,8 +872,8 @@ export class DBOSExecutor {
     key: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
-    // TODO Serialization
-    return this.serializer.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
+    const evt = await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
+    return this.deserializeValue(evt.serializedValue, evt.serialization) as T;
   }
 
   /**

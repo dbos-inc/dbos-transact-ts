@@ -166,7 +166,7 @@ export class DBOSClient {
     );
   }
 
-  private deserializeValue(serializedValue: string, serialization: string | null): unknown {
+  private deserializeValue(serializedValue: string | null, serialization: string | null): unknown {
     if (serialization === DBOSPortableJSON.name()) {
       return DBOSPortableJSON.parse(serializedValue);
     }
@@ -314,7 +314,8 @@ export class DBOSClient {
    * @returns A Promise that resolves with the event payload.
    */
   async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
-    return this.serializer.parse(await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60)) as T;
+    const evt = await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
+    return this.deserializeValue(evt.serializedValue, evt.serialization) as T;
   }
 
   /**
