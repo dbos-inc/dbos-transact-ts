@@ -243,6 +243,7 @@ export interface WorkflowStatusInternal {
   deduplicationID?: string;
   priority: number;
   queuePartitionKey?: string;
+  startedAtEpochMs?: number;
   forkedFrom?: string;
   parentWorkflowID?: string;
 }
@@ -683,6 +684,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     deduplicationID: row.deduplication_id ?? undefined,
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
+    startedAtEpochMs: row.started_at_epoch_ms ? Number(row.started_at_epoch_ms) : undefined,
     forkedFrom: row.forked_from ?? undefined,
     parentWorkflowID: row.parent_workflow_id ?? undefined,
   };
@@ -2334,6 +2336,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'deduplication_id',
       'priority',
       'queue_partition_key',
+      'started_at_epoch_ms',
       'forked_from',
       'parent_workflow_id',
     ];

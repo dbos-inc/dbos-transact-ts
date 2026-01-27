@@ -76,6 +76,8 @@ export interface WorkflowStatus {
   readonly priority: number;
   // If this workflow is enqueued on a partitioned queue, its partition key
   readonly queuePartitionKey?: string;
+  // If this workflow was enqueued, the time it was dequeued (started execution), as a UNIX epoch timestamp in milliseconds.
+  readonly dequeuedAt?: number;
 
   // If this workflow was forked from another, that workflow's ID.
   readonly forkedFrom?: string;

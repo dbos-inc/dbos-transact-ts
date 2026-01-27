@@ -1183,6 +1183,21 @@ describe('test-list-steps', () => {
     // Verify filtering with a non-existent parentWorkflowID returns no results
     const noWorkflows = await DBOS.listWorkflows({ parentWorkflowID: 'non-existent-id' });
     expect(noWorkflows.length).toBe(0);
+
+    // Test dequeuedAt with a queued child workflow
+    const queuedParentWfid = randomUUID();
+    const queuedHandle = await DBOS.startWorkflow(TestListSteps, {
+      workflowID: queuedParentWfid,
+    }).enqueueChildWorkflowFirst();
+    const queuedChildID = await queuedHandle.getResult();
+    expect(queuedChildID).toBeDefined();
+
+    // Verify the queued child workflow has dequeuedAt set and it's greater than createdAt
+    const queuedChildStatus = await DBOS.getWorkflowStatus(queuedChildID!);
+    expect(queuedChildStatus).not.toBeNull();
+    expect(queuedChildStatus!.parentWorkflowID).toBe(queuedParentWfid);
+    expect(queuedChildStatus!.dequeuedAt).toBeDefined();
+    expect(queuedChildStatus!.dequeuedAt).toBeGreaterThanOrEqual(queuedChildStatus!.createdAt);
   });
 });
 
