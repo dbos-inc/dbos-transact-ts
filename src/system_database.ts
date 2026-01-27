@@ -2394,6 +2394,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       params.push(input.forkedFrom);
       paramCounter++;
     }
+    if (input.parentWorkflowID) {
+      whereClauses.push(`parent_workflow_id = $${paramCounter}`);
+      params.push(input.parentWorkflowID);
+      paramCounter++;
+    }
     if (input.startTime) {
       whereClauses.push(`created_at >= $${paramCounter}`);
       params.push(new Date(input.startTime).getTime());
