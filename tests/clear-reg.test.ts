@@ -1,4 +1,5 @@
 import { DBOS } from '../src/dbos';
+import { DBOSExecutor } from '../src/dbos-executor';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 
@@ -30,6 +31,13 @@ describe('clear-reg-tests', () => {
       const m = require(`./dynamic_code_v${i}`) as typeof import('./dynamic_code_v1'); // (Both source files have same interface)
 
       await DBOS.launch();
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const conncount: any = await DBOSExecutor.globalInstance?.systemDatabase?.countConnections();
+      console.log(`LAUNCH CONNECTION STATE: ${JSON.stringify(conncount)} connections`);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(conncount.connectionsByState['idle']).toBe(1);
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(conncount.connectionsByState['active']).toBe(1);
       try {
         await expect(wf()).resolves.toBe(`${i}${i}`);
         const wfh = await DBOS.startWorkflow(wf)();
@@ -49,6 +57,7 @@ describe('clear-reg-tests', () => {
         // Wait for scheduled WF to run
         while (!m.DBOSWFTest.ran) await sleepms(100);
       } finally {
+        console.log(`PRE-SHUTDOWN CONNECTION STATE: ${JSON.stringify(conncount)} connections`);
         if (i === 2) {
           await DBOS.shutdown(); // 2 calls don't hurt
         }

@@ -75,6 +75,7 @@ export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 export interface SystemDatabase {
   init(): Promise<void>;
   destroy(): Promise<void>;
+  countConnections(): Promise<unknown>;
 
   initWorkflowStatus(
     initStatus: WorkflowStatusInternal,
@@ -887,7 +888,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const systemPoolConfig: PoolConfig = {
         ...getClientConfig(systemDatabaseUrl),
         // This sets the application_name column in pg_stat_activity
-        application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}`,
+        application_name: `dbos_transact_${globalParams.executorID}_${globalParams.appVersion}-${process.pid}`,
         max: sysDbPoolSize,
       };
       this.pool = new Pool(systemPoolConfig);
@@ -931,6 +932,49 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     }
     await this.pool.end();
+  }
+
+  async countConnections() {
+    const stateRes = await this.pool.query<{
+      state: string | null;
+      count: string;
+    }>(`
+      SELECT
+        COALESCE(state, 'unknown') AS state,
+        COUNT(*)::text AS count
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+      GROUP BY state;
+    `);
+
+    const stateMap: { [key: string]: number } = {};
+
+    for (const row of stateRes.rows) {
+      stateMap[row.state ?? 'unknown'] = Number(row.count);
+    }
+
+    const appRes = await this.pool.query<{
+      application_name: string | null;
+      count: string;
+    }>(`
+      SELECT
+        COALESCE(application_name, 'unknown') AS application_name,
+        COUNT(*)::text AS count
+      FROM pg_stat_activity
+      WHERE datname = current_database()
+      GROUP BY application_name;
+    `);
+
+    const appMap: { [key: string]: number } = {};
+
+    for (const row of appRes.rows) {
+      appMap[row.application_name ?? 'unknown'] = Number(row.count);
+    }
+
+    return {
+      connectionsByState: stateMap,
+      connectionsByClient: appMap,
+    };
   }
 
   @dbRetry()
