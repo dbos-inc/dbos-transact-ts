@@ -1880,7 +1880,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
             created_at, updated_at, application_version, application_id,
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
-            deduplication_id, inputs, priority, queue_partition_key, forked_from
+            deduplication_id, inputs, priority, queue_partition_key, forked_from,
+            parent_workflow_id
           FROM "${this.schemaName}".workflow_status
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1957,8 +1958,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
             created_at, updated_at, application_version, application_id,
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
-            deduplication_id, inputs, priority, queue_partition_key, forked_from
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)`,
+            deduplication_id, inputs, priority, queue_partition_key, forked_from,
+            parent_workflow_id
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
           [
             status.workflow_uuid,
             status.status,
@@ -1986,6 +1988,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             status.priority,
             status.queue_partition_key,
             status.forked_from,
+            status.parent_workflow_id,
           ],
         );
 
