@@ -1094,7 +1094,7 @@ export class DBOS {
    * @param value - The value to associate with `key`
    * @param options - `SetEventOptions` allowing control of the recorded event
    */
-  static async setEvent<T>(key: string, value: T, _options?: SetEventOptions): Promise<void> {
+  static async setEvent<T>(key: string, value: T, options?: SetEventOptions): Promise<void> {
     ensureDBOSIsLaunched('setEvent');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1103,12 +1103,14 @@ export class DBOS {
         );
       }
       const functionID = functionIDGetIncrement();
-      // TODO Serialization
       return DBOSExecutor.globalInstance!.systemDatabase.setEvent(
         DBOS.workflowID!,
         functionID,
         key,
-        DBOS.#executor.serializer.stringify(value),
+        options?.serialization === 'portable'
+          ? DBOSPortableJSON.stringify(value)
+          : DBOS.#executor.serializer.stringify(value),
+        options?.serialization === 'portable' ? DBOSPortableJSON.name() : DBOS.#executor.serializer.name(),
       );
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.setEvent` outside of a workflow'); // Only workflows can set event

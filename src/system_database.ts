@@ -173,7 +173,13 @@ export interface SystemDatabase {
     timeoutSeconds?: number,
   ): Promise<{ serializedValue: string | null; serialization: string | null }>;
 
-  setEvent(workflowID: string, functionID: number, key: string, value: string | null): Promise<void>;
+  setEvent(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    value: string | null,
+    serialization: string | null,
+  ): Promise<void>;
   getEvent(
     workflowID: string,
     key: string,
@@ -204,7 +210,7 @@ export interface SystemDatabase {
     functionID: number,
     key: string,
     serializedValue: string,
-    serialization: string,
+    serialization: string | null,
     functionName: string,
   ): Promise<void>;
   writeStreamFromStep(
@@ -212,7 +218,7 @@ export interface SystemDatabase {
     functionID: number,
     key: string,
     serializedValue: string,
-    serialization: string,
+    serialization: string | null,
   ): Promise<void>;
   closeStream(workflowID: string, functionID: number, key: string): Promise<void>;
   readStream(
@@ -1570,27 +1576,33 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   @dbRetry()
-  async setEvent(workflowID: string, functionID: number, key: string, message: string | null): Promise<void> {
+  async setEvent(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    message: string | null,
+    serialization: string | null,
+  ): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SETEVENT, workflowID, functionID, async () => {
         await client.query(
-          `INSERT INTO "${this.schemaName}".workflow_events (workflow_uuid, key, value)
-             VALUES ($1, $2, $3)
+          `INSERT INTO "${this.schemaName}".workflow_events (workflow_uuid, key, value, serialization)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (workflow_uuid, key)
              DO UPDATE SET value = $3
              RETURNING workflow_uuid;`,
-          [workflowID, key, message],
+          [workflowID, key, message, serialization],
         );
         // Also write to the immutable history table for fork support
         await client.query(
-          `INSERT INTO "${this.schemaName}".workflow_events_history (workflow_uuid, function_id, key, value)
-             VALUES ($1, $2, $3, $4)
+          `INSERT INTO "${this.schemaName}".workflow_events_history (workflow_uuid, function_id, key, value, serialization)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (workflow_uuid, function_id, key)
              DO UPDATE SET value = $4;`,
-          [workflowID, functionID, key, message],
+          [workflowID, functionID, key, message, serialization],
         );
         return undefined;
       });
@@ -2661,7 +2673,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     key: string,
     serializedValue: string,
-    serialization: string,
+    serialization: string | null,
   ): Promise<void> {
     const client: PoolClient = await this.pool.connect();
     try {
@@ -2701,7 +2713,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     key: string,
     serializedValue: string,
-    serialization: string,
+    serialization: string | null,
     functionName: string,
   ): Promise<void> {
     const client: PoolClient = await this.pool.connect();
