@@ -1,6 +1,6 @@
 import type { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import type { StepInfo, WorkflowStatus, GetWorkflowsInput } from './workflow';
-import { DBOSSerializer, safeParse, safeParseError } from './serialization';
+import { DBOSSerializer, safeParse, safeParseError, safeParsePositionalArgs } from './serialization';
 import { randomUUID } from 'node:crypto';
 
 export async function listWorkflows(sysdb: SystemDatabase, input: GetWorkflowsInput): Promise<WorkflowStatus[]> {
@@ -31,8 +31,8 @@ export async function listWorkflowSteps(sysdb: SystemDatabase, workflowID: strin
   const steps: StepInfo[] = $steps.map((step) => ({
     functionID: step.function_id,
     name: step.function_name ?? '',
-    output: step.output ? safeParse(sysdb.getSerializer(), step.output) : null,
-    error: step.error ? safeParseError(sysdb.getSerializer(), step.error) : null,
+    output: step.output ? safeParse(sysdb.getSerializer(), step.output, step.serialization) : null,
+    error: step.error ? safeParseError(sysdb.getSerializer(), step.error, step.serialization) : null,
     childWorkflowID: step.child_workflow_id,
     startedAtEpochMs: step.started_at_epoch_ms,
     completedAtEpochMs: step.completed_at_epoch_ms,
@@ -66,9 +66,11 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: D
     authenticatedRoles: internal.authenticatedRoles,
 
     // TODO Serialization
-    input: internal.input ? (safeParse(serializer, internal.input) as unknown[]) : undefined,
-    output: internal.output ? safeParse(serializer, internal.output ?? null) : undefined,
-    error: internal.error ? safeParseError(serializer, internal.error) : undefined,
+    input: internal.input
+      ? (safeParsePositionalArgs(serializer, internal.input, internal.serialization) as unknown[])
+      : undefined,
+    output: internal.output ? safeParse(serializer, internal.output ?? null, internal.serialization) : undefined,
+    error: internal.error ? safeParseError(serializer, internal.error, internal.serialization) : undefined,
 
     request: internal.request,
     executorId: internal.executorId,

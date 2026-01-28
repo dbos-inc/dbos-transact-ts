@@ -1,6 +1,7 @@
 import { deserializeError } from 'serialize-error';
 import superjson from 'superjson';
 import type { SuperJSONResult, JSONValue } from 'superjson/dist/types';
+import { JsonWorkflowArgs } from '../schemas/system_db_schema';
 export { type JSONValue };
 
 /**
@@ -453,18 +454,64 @@ function isIndexableKey(k: unknown): k is string | number {
   return typeof k === 'string' || typeof k === 'number';
 }
 
+// Deserialize a plain value (not function inputs) using specified serialization,
+//   or the provided default
+export function deserializeValue(
+  serializedValue: string | null,
+  serialization: string | null,
+  serializer: DBOSSerializer,
+): unknown {
+  if (serialization === DBOSPortableJSON.name()) {
+    return DBOSPortableJSON.parse(serializedValue);
+  }
+  if (serialization === DBOSJSON.name()) {
+    return DBOSJSON.parse(serializedValue);
+  }
+  if (!serialization || serialization === serializer.name()) {
+    return serializer.parse(serializedValue);
+  }
+  throw new TypeError(`Value deserialization type ${serialization} is not available`);
+}
+
+// Deserialize a plain value (not function inputs) using specified serialization,
+//   or the provided default
+export function deserializePositionalArgs(
+  serializedValue: string | null,
+  serialization: string | null,
+  serializer: DBOSSerializer,
+): unknown {
+  if (serialization === DBOSPortableJSON.name()) {
+    return (DBOSPortableJSON.parse(serializedValue) as JsonWorkflowArgs).positionalArgs;
+  }
+  if (serialization === DBOSJSON.name()) {
+    return DBOSJSON.parse(serializedValue);
+  }
+  if (!serialization || serialization === serializer.name()) {
+    return serializer.parse(serializedValue);
+  }
+  throw new TypeError(`Value deserialization type ${serialization} is not available`);
+}
+
 // Attempt to deserialize a value, but if it fails, retun the raw string.
 // Used for "best-effort" in introspection methods which may encounter
 // old undeserializable data.
-export function safeParse(serializer: DBOSSerializer, val: string) {
+export function safeParse(serializer: DBOSSerializer, val: string, serialization: string | null) {
   try {
-    return serializer.parse(val);
+    return deserializeValue(val, serialization, serializer);
   } catch (e) {
     return val;
   }
 }
 
-export function safeParseError(serializer: DBOSSerializer, val: string) {
+export function safeParsePositionalArgs(serializer: DBOSSerializer, val: string, serialization: string | null) {
+  try {
+    return deserializePositionalArgs(val, serialization, serializer);
+  } catch (e) {
+    return val;
+  }
+}
+
+export function safeParseError(serializer: DBOSSerializer, val: string, _serialization: string | null) {
   try {
     return deserializeError(serializer.parse(val));
   } catch (e) {

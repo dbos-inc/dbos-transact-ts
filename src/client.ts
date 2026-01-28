@@ -18,7 +18,7 @@ import {
   type WorkflowStatus,
 } from './workflow';
 import { sleepms } from './utils';
-import { DBOSJSON, DBOSPortableJSON, DBOSSerializer } from './serialization';
+import { DBOSJSON, DBOSPortableJSON, DBOSSerializer, deserializeValue } from './serialization';
 import {
   forkWorkflow,
   getWorkflow,
@@ -166,19 +166,6 @@ export class DBOSClient {
     );
   }
 
-  private deserializeValue(serializedValue: string | null, serialization: string | null): unknown {
-    if (serialization === DBOSPortableJSON.name()) {
-      return DBOSPortableJSON.parse(serializedValue);
-    }
-    if (serialization === DBOSJSON.name()) {
-      return DBOSJSON.parse(serializedValue);
-    }
-    if (!serialization || serialization === this.serializer.name()) {
-      return this.serializer.parse(serializedValue);
-    }
-    throw new TypeError(`Value deserialization type ${serialization} is not available`);
-  }
-
   /**
    * Creates a new instance of the DBOSClient.
    * @param databaseUrl - The connection string for the database. This should include the hostname, port, username, password, and database name.
@@ -315,7 +302,7 @@ export class DBOSClient {
    */
   async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
     const evt = await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
-    return this.deserializeValue(evt.serializedValue, evt.serialization) as T;
+    return deserializeValue(evt.serializedValue, evt.serialization, this.serializer) as T;
   }
 
   /**
@@ -376,7 +363,7 @@ export class DBOSClient {
         if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield this.deserializeValue(value.serializedValue, value.serialization) as T;
+        yield deserializeValue(value.serializedValue, value.serialization, this.serializer) as T;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {

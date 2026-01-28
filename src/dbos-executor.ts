@@ -60,7 +60,13 @@ import {
 } from './context';
 import { deserializeError, serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
-import { DBOSJSON, DBOSPortableJSON, DBOSSerializer, serializeFunctionInputOutput } from './serialization';
+import {
+  DBOSJSON,
+  DBOSPortableJSON,
+  DBOSSerializer,
+  deserializeValue,
+  serializeFunctionInputOutput,
+} from './serialization';
 import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -332,19 +338,6 @@ export class DBOSExecutor {
   #getFunctionInfoFromWFStatus(wf: WorkflowStatusInternal) {
     const methReg = getFunctionRegistrationByName(wf.workflowClassName, wf.workflowName);
     return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
-  }
-
-  deserializeValue(serializedValue: string | null, serialization: string | null): unknown {
-    if (serialization === DBOSPortableJSON.name()) {
-      return DBOSPortableJSON.parse(serializedValue);
-    }
-    if (serialization === DBOSJSON.name()) {
-      return DBOSJSON.parse(serializedValue);
-    }
-    if (!serialization || serialization === this.serializer.name()) {
-      return this.serializer.parse(serializedValue);
-    }
-    throw new TypeError(`Value deserialization type ${serialization} is not available`);
   }
 
   static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, serializer: DBOSSerializer) {
@@ -873,7 +866,7 @@ export class DBOSExecutor {
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
     const evt = await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
-    return this.deserializeValue(evt.serializedValue, evt.serialization) as T;
+    return deserializeValue(evt.serializedValue, evt.serialization, this.serializer) as T;
   }
 
   /**

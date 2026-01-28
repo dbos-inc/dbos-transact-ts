@@ -54,7 +54,7 @@ export interface operation_outputs {
   function_name?: string;
   started_at_epoch_ms?: number;
   completed_at_epoch_ms?: number;
-  serialization: SysDBSerializationFormat | null;
+  serialization: SysDBSerializationFormat | null; // Relevant only to getEvent / recv / etc.
 }
 
 export interface event_dispatch_kv {

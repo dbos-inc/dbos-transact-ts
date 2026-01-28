@@ -79,7 +79,7 @@ import {
   clearAllRegistrations,
 } from './decorators';
 import { defaultEnableOTLP, globalParams, sleepms } from './utils';
-import { JSONValue, registerSerializationRecipe, SerializationRecipe } from './serialization';
+import { deserializeValue, JSONValue, registerSerializationRecipe, SerializationRecipe } from './serialization';
 import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
 
@@ -1058,16 +1058,15 @@ export class DBOS {
       }
       const functionID: number = functionIDGetIncrement();
       const timeoutFunctionID: number = functionIDGetIncrement();
-      // TODO Serialization
-      return DBOS.#executor.serializer.parse(
-        await DBOSExecutor.globalInstance!.systemDatabase.recv(
-          DBOS.workflowID!,
-          functionID,
-          timeoutFunctionID,
-          topic,
-          timeoutSeconds,
-        ),
-      ) as T;
+      const msg = await DBOSExecutor.globalInstance!.systemDatabase.recv(
+        DBOS.workflowID!,
+        functionID,
+        timeoutFunctionID,
+        topic,
+        timeoutSeconds,
+      );
+
+      return deserializeValue(msg.serializedValue, msg.serialization, DBOS.#executor.serializer) as T;
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.recv` outside of a workflow'); // Only workflows can recv
   }
@@ -1135,7 +1134,7 @@ export class DBOS {
         timeoutSeconds ?? DBOSExecutor.defaultNotificationTimeoutSec,
         params,
       );
-      return DBOS.#executor.deserializeValue(evt.serializedValue, evt.serialization) as T;
+      return deserializeValue(evt.serializedValue, evt.serialization, DBOS.#executor.serializer) as T;
     }
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
   }
@@ -1217,7 +1216,11 @@ export class DBOS {
         if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield DBOSExecutor.globalInstance!.deserializeValue(value.serializedValue, value.serialization) as T;
+        yield deserializeValue(
+          value.serializedValue,
+          value.serialization,
+          DBOSExecutor.globalInstance!.serializer,
+        ) as T;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {

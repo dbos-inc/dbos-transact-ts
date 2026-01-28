@@ -170,7 +170,7 @@ export interface SystemDatabase {
     timeoutFunctionID: number,
     topic?: string,
     timeoutSeconds?: number,
-  ): Promise<string | null>;
+  ): Promise<{ serializedValue: string | null; serialization: string | null }>;
 
   setEvent(workflowID: string, functionID: number, key: string, value: string | null): Promise<void>;
   getEvent(
@@ -1417,7 +1417,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     timeoutFunctionID: number,
     topic?: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
-  ): Promise<string | null> {
+  ): Promise<{ serializedValue: string | null; serialization: string | null }> {
     topic = topic ?? this.nullTopic;
     const startTime = Date.now();
     // First, check for previous executions.
@@ -1426,7 +1426,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (res.functionName !== DBOS_FUNCNAME_RECV) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_RECV, res.functionName!);
       }
-      return res.output!;
+      return { serializedValue: res.output!, serialization: res.serialization ?? null };
     }
 
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
@@ -1494,13 +1494,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
     let message: string | null = null;
+    let serialization: string | null = null;
     const client = await this.pool.connect();
     try {
       await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
       const finalRecvRows = (
         await client.query<notifications>(
           `WITH oldest_entry AS (
-        SELECT destination_uuid, topic, message, created_at_epoch_ms
+        SELECT destination_uuid, topic, message, created_at_epoch_ms, serialization
         FROM "${this.schemaName}".notifications
         WHERE destination_uuid = $1
           AND topic = $2
@@ -1519,6 +1520,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       ).rows;
       if (finalRecvRows.length > 0) {
         message = finalRecvRows[0].message;
+        serialization = finalRecvRows[0].serialization;
       }
       await recordOperationResult(
         client,
@@ -1531,7 +1533,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         Date.now(),
         {
           output: message,
-          // TODO Serialization
+          serialization,
         },
       );
       await client.query(`COMMIT`);
@@ -1543,7 +1545,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client.release();
     }
 
-    return message;
+    return { serializedValue: message, serialization };
   }
 
   // Only used in tests
