@@ -19,6 +19,7 @@ import {
   workflow_events_history,
   streams,
   event_dispatch_kv,
+  SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
@@ -85,7 +86,12 @@ export interface SystemDatabase {
       isDequeuedRequest?: boolean;
       maxRetries?: number;
     },
-  ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }>;
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
@@ -434,6 +440,7 @@ interface InsertWorkflowResult {
   workflow_deadline_epoch_ms: number | null;
   executor_id: string | null;
   owner_xid: string | null;
+  serialization: string | null;
 }
 
 async function insertWorkflowStatus(
@@ -469,8 +476,9 @@ async function insertWorkflowStatus(
         priority,
         queue_partition_key,
         forked_from,
-        owner_xid
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $25)
+        owner_xid,
+        serialization
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $25, $26)
       ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE
@@ -484,7 +492,7 @@ async function insertWorkflowStatus(
             THEN EXCLUDED.executor_id
             ELSE workflow_status.executor_id
           END
-        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid`,
+        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -512,6 +520,7 @@ async function insertWorkflowStatus(
         initStatus.forkedFrom ?? null,
         (incrementAttempts ?? false) ? 1 : 0,
         ownerXid,
+        initStatus.serialization,
       ],
     );
     if (rows.length === 0) {
@@ -972,7 +981,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
       isDequeuedRequest?: boolean;
       maxRetries?: number;
     },
-  ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }> {
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }> {
     const client = await this.pool.connect();
     let shouldCommit = false;
     try {
@@ -1014,7 +1028,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
           throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries ?? -1);
         }
-        return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false };
+        return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false, serialization: resRow.serialization };
       }
 
       // Upsert above already set executor assignment and incremented the recovery attempt
@@ -1038,7 +1052,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options.maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
-      return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: true };
+      return {
+        status,
+        deadlineEpochMS,
+        shouldExecuteOnThisExecutor: true,
+        serialization: resRow.serialization,
+      };
     } finally {
       try {
         if (shouldCommit) {

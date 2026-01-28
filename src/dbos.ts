@@ -139,7 +139,7 @@ export interface StartWorkflowParams {
  */
 export interface SendOptions {
   /** Serialization format override, allows cross-language send/recv */
-  serialization?: WorkflowSerializationFormat;
+  serializationType?: WorkflowSerializationFormat;
 }
 
 /**
@@ -147,7 +147,7 @@ export interface SendOptions {
  */
 export interface WriteStreamOptions {
   /** Serialization format override, allows cross-language writeStream / readStream */
-  serialization?: WorkflowSerializationFormat;
+  serializationType?: WorkflowSerializationFormat;
 }
 
 /**
@@ -158,7 +158,7 @@ export interface SetEventOptions {
    * Serialization format override, allows event to be read by
    *   workflows or clients written in other languages
    */
-  serialization?: WorkflowSerializationFormat;
+  serializationType?: WorkflowSerializationFormat;
 }
 
 export function getExecutor() {
@@ -467,6 +467,11 @@ export class DBOS {
   /** Get the current workflow ID */
   static get workflowID(): string | undefined {
     return getCurrentContextStore()?.workflowId;
+  }
+
+  /** Use portable serialization by default? */
+  static get defaultSerializationType(): WorkflowSerializationFormat | undefined {
+    return getCurrentContextStore()?.serializationType;
   }
 
   /** Get the current step number, within the current workflow */
@@ -1031,7 +1036,11 @@ export class DBOS {
         );
       }
       const functionID: number = functionIDGetIncrement();
-      const sermsg = serializeValue(message, DBOS.#executor.serializer, options?.serialization);
+      const sermsg = serializeValue(
+        message,
+        DBOS.#executor.serializer,
+        options?.serializationType ?? DBOS.defaultSerializationType,
+      );
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
         functionID,
@@ -1041,7 +1050,13 @@ export class DBOS {
         sermsg.serialization,
       );
     }
-    return DBOS.#executor.runSendTempWF(destinationID, message, topic, idempotencyKey, options?.serialization); // Temp WF variant
+    return DBOS.#executor.runSendTempWF(
+      destinationID,
+      message,
+      topic,
+      idempotencyKey,
+      options?.serializationType ?? DBOS.defaultSerializationType,
+    ); // Temp WF variant
   }
 
   /**
@@ -1096,7 +1111,11 @@ export class DBOS {
         );
       }
       const functionID = functionIDGetIncrement();
-      const serevt = serializeValue(value, DBOS.#executor.serializer, options?.serialization);
+      const serevt = serializeValue(
+        value,
+        DBOS.#executor.serializer,
+        options?.serializationType ?? DBOS.defaultSerializationType,
+      );
       return DBOSExecutor.globalInstance!.systemDatabase.setEvent(
         DBOS.workflowID!,
         functionID,
@@ -1152,28 +1171,31 @@ export class DBOS {
    * @param value - A serializable value to write to the stream
    * @param options - `WriteStreamOptions` for controlling serialization
    */
-  static async writeStream<T>(key: string, value: T, _options: WriteStreamOptions = {}): Promise<void> {
+  static async writeStream<T>(key: string, value: T, options: WriteStreamOptions = {}): Promise<void> {
     ensureDBOSIsLaunched('writeStream');
     if (DBOS.isWithinWorkflow()) {
+      const serval = serializeValue(
+        value,
+        DBOS.#executor.serializer,
+        options.serializationType ?? DBOS.defaultSerializationType,
+      );
       if (DBOS.isInWorkflow()) {
         const functionID: number = functionIDGetIncrement();
-        // TODO Serializer
         return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromWorkflow(
           DBOS.workflowID!,
           functionID,
           key,
-          DBOSExecutor.globalInstance!.serializer.stringify(value),
-          DBOSExecutor.globalInstance!.serializer.name(),
+          serval.serializedValue!,
+          serval.serialization,
           DBOS_FUNCNAME_WRITESTREAM,
         );
       } else if (DBOS.isInStep()) {
-        // TODO Serializer
         return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(
           DBOS.workflowID!,
           DBOS.stepID!,
           key,
-          DBOSExecutor.globalInstance!.serializer.stringify(value),
-          DBOSExecutor.globalInstance!.serializer.name(),
+          serval.serializedValue!,
+          serval.serialization,
         );
       } else {
         throw new DBOSInvalidWorkflowTransitionError(

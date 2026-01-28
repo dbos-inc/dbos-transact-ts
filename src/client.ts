@@ -82,7 +82,7 @@ interface ClientEnqueueOptions {
    *   If `portable_json` is specified, a more limited JSON serialization is used,
    *    allowing cross-language enqueues of workflows with simple semantics
    */
-  serialization?: WorkflowSerializationFormat;
+  serializationType?: WorkflowSerializationFormat;
 
   /**
    * An optional priority for the workflow.
@@ -106,7 +106,7 @@ interface ClientSendOptions {
    *   If `portable_json` is specified, a more limited JSON serialization is used,
    *     allowing cross-language message sends
    */
-  serialization?: WorkflowSerializationFormat;
+  serializationType?: WorkflowSerializationFormat;
 }
 
 export class ClientHandle<R> implements WorkflowHandle<R> {
@@ -206,7 +206,7 @@ export class DBOSClient {
     const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
 
-    const serparam = serializeArgs(args, undefined, this.serializer, options?.serialization);
+    const serparam = serializeArgs(args, undefined, this.serializer, options?.serializationType);
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.ENQUEUED,
@@ -254,12 +254,12 @@ export class DBOSClient {
     options?: ClientSendOptions,
   ): Promise<void> {
     idempotencyKey ??= randomUUID();
-    const sermsg = serializeValue(message, this.serializer, options?.serialization);
+    const sermsg = serializeValue(message, this.serializer, options?.serializationType);
     const srwfp = serializeArgs(
-      [destinationID, message, topic, options?.serialization === 'portable'],
+      [destinationID, message, topic, options?.serializationType],
       undefined,
       this.serializer,
-      options?.serialization,
+      options?.serializationType,
     );
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: `${destinationID}-${idempotencyKey}`,
