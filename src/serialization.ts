@@ -577,25 +577,6 @@ export function serializeValue(
   };
 }
 
-export function serializeValueWithSerializer(
-  value: unknown,
-  serializer: DBOSSerializer,
-  serialization: string | null,
-): { serializedValue: string | null; serialization: string | null } {
-  for (const ser of [DBOSPortableJSON, DBOSJSON]) {
-    if (serialization === ser.name()) {
-      return {
-        serializedValue: ser.stringify(value),
-        serialization: ser.name(),
-      };
-    }
-  }
-  return {
-    serializedValue: serializer.stringify(value),
-    serialization: serializer.name(),
-  };
-}
-
 export function serializeArgs(
   positionalArgs: unknown[] | undefined,
   namedArgs: { [key: string]: unknown } | undefined,
@@ -612,9 +593,6 @@ export function serializeArgs(
     throw new TypeError(`Serialization format '${serializationFormat}' does not currently support named args.`);
   }
   if (serializationFormat === 'native') {
-    if (namedArgs) {
-      throw new TypeError(`Serialization format '${serializationFormat}' does not currently support named args.`);
-    }
     return {
       serializedValue: DBOSJSON.stringify(positionalArgs),
       serialization: DBOSJSON.name(),
@@ -629,29 +607,15 @@ export function serializeArgs(
 export function serializeResError(
   err: Error,
   serializer: DBOSSerializer,
-  serializationFormat: WorkflowSerializationFormat,
+  serializationType: WorkflowSerializationFormat,
 ): { serializedValue: string | null; serialization: string | null } {
-  if (serializationFormat === 'portable') {
-    return {
-      serializedValue: DBOSPortableJSON.stringify({
-        name: err.name,
-        message: err.message,
-        code: (err as { code?: unknown }).code,
-        data: (err as { data?: JsonValue }).data,
-      } as JsonWorkflowErrorData),
-      serialization: DBOSPortableJSON.name(),
-    };
-  }
-  if (serializationFormat === 'native') {
-    return {
-      serializedValue: DBOSJSON.stringify(serializeError(err)),
-      serialization: DBOSJSON.name(),
-    };
-  }
-  return {
-    serializedValue: serializer.stringify(serializeError(err)),
-    serialization: serializer.name(),
-  };
+  const serialization =
+    serializationType === 'portable'
+      ? DBOSPortableJSON.name()
+      : serializationType === 'native'
+        ? DBOSJSON.name()
+        : serializer.name();
+  return serializeResErrorWithSerializer(err, serializer, serialization);
 }
 
 export function serializeResErrorWithSerializer(
