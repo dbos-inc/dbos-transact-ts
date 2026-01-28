@@ -20,6 +20,7 @@ import {
   type StepInfo,
   WorkflowConfig,
   DEFAULT_MAX_RECOVERY_ATTEMPTS,
+  WorkflowSerializationFormat,
 } from './workflow';
 
 import { type StepConfig } from './step';
@@ -61,11 +62,11 @@ import {
 import { deserializeError, serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
 import {
-  DBOSPortableJSON,
   DBOSSerializer,
   deserializeResError,
   deserializeValue,
   serializeFunctionInputOutput,
+  serializeValue,
 } from './serialization';
 import { DBOS, GetWorkflowsInput } from '.';
 
@@ -816,21 +817,25 @@ export class DBOSExecutor {
     message: T,
     topic: string | undefined,
     idempotencyKey: string | undefined,
-    portable: boolean,
+    serialization: WorkflowSerializationFormat | null | undefined,
   ): Promise<void> {
     // Create a workflow and call send.
-    const temp_workflow = async (destinationId: string, message: T, topic?: string, serialization?: string | null) => {
+    const temp_workflow = async (
+      destinationId: string,
+      message: T,
+      topic?: string,
+      serialization?: WorkflowSerializationFormat | null,
+    ) => {
       const ctx = getCurrentContextStore();
       const functionID: number = functionIDGetIncrement();
+      const sermsg = serializeValue(message, this.serializer, serialization ?? undefined);
       await this.systemDatabase.send(
         ctx!.workflowId!,
         functionID,
         destinationId,
-        serialization === DBOSPortableJSON.name()
-          ? DBOSPortableJSON.stringify(message)
-          : this.serializer.stringify(message),
+        sermsg.serializedValue,
         topic,
-        serialization === DBOSPortableJSON.name() ? DBOSPortableJSON.name() : this.serializer.name(),
+        sermsg.serialization,
       );
     };
     const workflowUUID = idempotencyKey ? destinationId + idempotencyKey : undefined;
@@ -847,7 +852,7 @@ export class DBOSExecutor {
           destinationId,
           message,
           topic,
-          portable ? DBOSPortableJSON.name() : null,
+          serialization,
         )
       ).getResult()
     );
@@ -1087,18 +1092,22 @@ export class DBOSExecutor {
         );
       });
     } else if (nameArr[1] === TempWorkflowType.send) {
-      const swf = async (destinationID: string, message: unknown, topic?: string, serialization?: string | null) => {
+      const swf = async (
+        destinationID: string,
+        message: unknown,
+        topic?: string,
+        serialization?: WorkflowSerializationFormat | null,
+      ) => {
         const ctx = getCurrentContextStore();
         const functionID: number = functionIDGetIncrement();
+        const sermsg = serializeValue(message, this.serializer, serialization ?? undefined);
         await this.systemDatabase.send(
           ctx!.workflowId!,
           functionID,
           destinationID,
-          serialization === DBOSPortableJSON.name()
-            ? DBOSPortableJSON.stringify(message)
-            : this.serializer.stringify(message),
+          sermsg.serializedValue,
           topic,
-          serialization ?? null,
+          sermsg.serialization,
         );
       };
       const temp_workflow = swf as UntypedAsyncFunction;

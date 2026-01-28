@@ -80,11 +80,11 @@ import {
 } from './decorators';
 import { defaultEnableOTLP, globalParams, sleepms } from './utils';
 import {
-  DBOSPortableJSON,
   deserializeValue,
   JSONValue,
   registerSerializationRecipe,
   SerializationRecipe,
+  serializeValue,
 } from './serialization';
 import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
@@ -1031,24 +1031,17 @@ export class DBOS {
         );
       }
       const functionID: number = functionIDGetIncrement();
+      const sermsg = serializeValue(message, DBOS.#executor.serializer, options?.serialization);
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
         functionID,
         destinationID,
-        options?.serialization === 'portable'
-          ? DBOSPortableJSON.stringify(message)
-          : DBOS.#executor.serializer.stringify(message),
+        sermsg.serializedValue,
         topic,
-        options?.serialization === 'portable' ? DBOSPortableJSON.name() : DBOS.#executor.serializer.name(),
+        sermsg.serialization,
       );
     }
-    return DBOS.#executor.runSendTempWF(
-      destinationID,
-      message,
-      topic,
-      idempotencyKey,
-      options?.serialization === 'portable',
-    ); // Temp WF variant
+    return DBOS.#executor.runSendTempWF(destinationID, message, topic, idempotencyKey, options?.serialization); // Temp WF variant
   }
 
   /**
@@ -1103,14 +1096,13 @@ export class DBOS {
         );
       }
       const functionID = functionIDGetIncrement();
+      const serevt = serializeValue(value, DBOS.#executor.serializer, options?.serialization);
       return DBOSExecutor.globalInstance!.systemDatabase.setEvent(
         DBOS.workflowID!,
         functionID,
         key,
-        options?.serialization === 'portable'
-          ? DBOSPortableJSON.stringify(value)
-          : DBOS.#executor.serializer.stringify(value),
-        options?.serialization === 'portable' ? DBOSPortableJSON.name() : DBOS.#executor.serializer.name(),
+        serevt.serializedValue,
+        serevt.serialization,
       );
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.setEvent` outside of a workflow'); // Only workflows can set event
