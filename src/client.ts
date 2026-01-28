@@ -130,7 +130,6 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
   }
 
   async getResult(): Promise<R> {
-    // TODO: Portable
     const res = await this.systemDatabase.awaitWorkflowResult(this.workflowID);
     if (res?.cancelled) {
       throw new DBOSAwaitedWorkflowCancelledError(this.workflowID);

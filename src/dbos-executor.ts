@@ -48,7 +48,7 @@ import {
   getClassRegistrationByName,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { WorkflowError, type JsonWorkflowErrorData, type step_info } from '../schemas/system_db_schema';
+import { type step_info } from '../schemas/system_db_schema';
 import {
   runInStepContext,
   getNextWFID,
@@ -60,13 +60,7 @@ import {
 } from './context';
 import { deserializeError, serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
-import {
-  DBOSJSON,
-  DBOSPortableJSON,
-  DBOSSerializer,
-  deserializeValue,
-  serializeFunctionInputOutput,
-} from './serialization';
+import { DBOSSerializer, deserializeResError, deserializeValue, serializeFunctionInputOutput } from './serialization';
 import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -340,27 +334,11 @@ export class DBOSExecutor {
     return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
 
-  static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, serializer: DBOSSerializer) {
-    if (r.serialization === DBOSPortableJSON.name()) {
-      if (!r.error) {
-        return DBOSPortableJSON.parse(r.output ?? null) as R;
-      } else {
-        const errdata = DBOSPortableJSON.parse(r.error) as JsonWorkflowErrorData;
-        throw new WorkflowError(errdata.message, errdata.code, errdata.data);
-      }
-    } else if (r.serialization === DBOSJSON.name()) {
-      if (!r.error) {
-        return DBOSJSON.parse(r.output ?? null) as R;
-      } else {
-        throw deserializeError(DBOSJSON.parse(r.error));
-      }
+  static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, serializer: DBOSSerializer): R {
+    if (r.error) {
+      throw deserializeResError(r.error, r.serialization ?? null, serializer);
     }
-
-    if (!r.error) {
-      return serializer.parse(r.output ?? null) as R;
-    } else {
-      throw deserializeError(serializer.parse(r.error));
-    }
+    return deserializeValue(r.output ?? null, r.serialization ?? null, serializer) as R;
   }
 
   async workflow<T extends unknown[], R>(

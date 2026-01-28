@@ -1,7 +1,7 @@
 import { deserializeError } from 'serialize-error';
 import superjson from 'superjson';
 import type { SuperJSONResult, JSONValue } from 'superjson/dist/types';
-import { JsonWorkflowArgs } from '../schemas/system_db_schema';
+import { JsonWorkflowArgs, JsonWorkflowErrorData, PortableWorkflowError } from '../schemas/system_db_schema';
 export { type JSONValue };
 
 /**
@@ -492,6 +492,24 @@ export function deserializePositionalArgs(
   throw new TypeError(`Value deserialization type ${serialization} is not available`);
 }
 
+export function deserializeResError(
+  serializedValue: string | null,
+  serialization: string | null,
+  serializer: DBOSSerializer,
+): Error {
+  if (serialization === DBOSPortableJSON.name()) {
+    const errdata = DBOSPortableJSON.parse(serializedValue) as JsonWorkflowErrorData;
+    throw new PortableWorkflowError(errdata.message, errdata.code, errdata.data);
+  }
+  if (serialization === DBOSJSON.name()) {
+    return deserializeError(DBOSJSON.parse(serializedValue));
+  }
+  if (!serialization || serialization === serializer.name()) {
+    return deserializeError(serializer.parse(serializedValue));
+  }
+  throw new TypeError(`Value deserialization type ${serialization} is not available`);
+}
+
 // Attempt to deserialize a value, but if it fails, retun the raw string.
 // Used for "best-effort" in introspection methods which may encounter
 // old undeserializable data.
@@ -511,10 +529,10 @@ export function safeParsePositionalArgs(serializer: DBOSSerializer, val: string,
   }
 }
 
-export function safeParseError(serializer: DBOSSerializer, val: string, _serialization: string | null) {
+export function safeParseError(serializer: DBOSSerializer, val: string, serialization: string | null) {
   try {
-    return deserializeError(serializer.parse(val));
+    return deserializeResError(val, serialization, serializer);
   } catch (e) {
-    return val as unknown as Error;
+    return new Error(val);
   }
 }

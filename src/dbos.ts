@@ -613,7 +613,6 @@ export class DBOS {
         if (rres?.cancelled) {
           throw new DBOSAwaitedWorkflowCancelledError(workflowID);
         }
-        // TODO Serialization
         return DBOSExecutor.reviveResultOrError<T>(rres, DBOS.#executor.serializer);
       },
       'DBOS.getResult',

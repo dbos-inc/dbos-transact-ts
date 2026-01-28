@@ -120,7 +120,7 @@ export interface JsonWorkflowErrorData {
   data?: JsonValue; // structured details (retryable, origin, etc.)
 }
 
-export class WorkflowError extends Error {
+export class PortableWorkflowError extends Error {
   constructor(
     message: string,
     readonly code: number | string,
