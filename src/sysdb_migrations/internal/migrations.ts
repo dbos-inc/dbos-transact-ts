@@ -209,11 +209,17 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
             key TEXT NOT NULL,
             value TEXT NOT NULL,
             PRIMARY KEY (workflow_uuid, function_id, key),
-            FOREIGN KEY (workflow_uuid) REFERENCES "${schemaName}".workflow_status(workflow_uuid) 
+            FOREIGN KEY (workflow_uuid) REFERENCES "${schemaName}".workflow_status(workflow_uuid)
                 ON UPDATE CASCADE ON DELETE CASCADE
         );
         `,
         `ALTER TABLE "${schemaName}".streams ADD COLUMN function_id INTEGER NOT NULL DEFAULT 0;`,
+      ],
+    },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "parent_workflow_id" TEXT DEFAULT NULL;`,
+        `CREATE INDEX "idx_workflow_status_parent_workflow_id" ON "${schemaName}"."workflow_status" ("parent_workflow_id");`,
       ],
     },
   ];

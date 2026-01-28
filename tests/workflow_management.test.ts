@@ -1157,6 +1157,48 @@ describe('test-list-steps', () => {
     const c2 = await (await reexecuteWorkflowById(wfid))?.getResult();
     expect(c2).toBe(1);
   });
+
+  test('test-parent-workflow-id', async () => {
+    const parentWfid = randomUUID();
+    const handle = await DBOS.startWorkflow(TestListSteps, { workflowID: parentWfid }).callChildWorkflowfirst();
+    const childID = await handle.getResult();
+    expect(childID).toBeDefined();
+
+    // Verify the child workflow's status has parentWorkflowID set to the parent's ID
+    const childStatus = await DBOS.getWorkflowStatus(childID!);
+    expect(childStatus).not.toBeNull();
+    expect(childStatus!.parentWorkflowID).toBe(parentWfid);
+
+    // Verify the parent workflow does not have a parentWorkflowID
+    const parentStatus = await DBOS.getWorkflowStatus(parentWfid);
+    expect(parentStatus).not.toBeNull();
+    expect(parentStatus!.parentWorkflowID).toBeUndefined();
+
+    // Test filtering by parentWorkflowID
+    const childWorkflows = await DBOS.listWorkflows({ parentWorkflowID: parentWfid });
+    expect(childWorkflows.length).toBe(1);
+    expect(childWorkflows[0].workflowID).toBe(childID);
+    expect(childWorkflows[0].parentWorkflowID).toBe(parentWfid);
+
+    // Verify filtering with a non-existent parentWorkflowID returns no results
+    const noWorkflows = await DBOS.listWorkflows({ parentWorkflowID: 'non-existent-id' });
+    expect(noWorkflows.length).toBe(0);
+
+    // Test dequeuedAt with a queued child workflow
+    const queuedParentWfid = randomUUID();
+    const queuedHandle = await DBOS.startWorkflow(TestListSteps, {
+      workflowID: queuedParentWfid,
+    }).enqueueChildWorkflowFirst();
+    const queuedChildID = await queuedHandle.getResult();
+    expect(queuedChildID).toBeDefined();
+
+    // Verify the queued child workflow has dequeuedAt set and it's greater than createdAt
+    const queuedChildStatus = await DBOS.getWorkflowStatus(queuedChildID!);
+    expect(queuedChildStatus).not.toBeNull();
+    expect(queuedChildStatus!.parentWorkflowID).toBe(queuedParentWfid);
+    expect(queuedChildStatus!.dequeuedAt).toBeDefined();
+    expect(queuedChildStatus!.dequeuedAt).toBeGreaterThanOrEqual(queuedChildStatus!.createdAt);
+  });
 });
 
 describe('test-fork', () => {
@@ -1864,6 +1906,22 @@ describe('wf-cancel-tests', () => {
       workflowIDs: exported.map((w) => w.workflow_status.workflow_uuid),
     });
     expect(allWorkflows.length).toBe(3);
+
+    // Verify parent workflow IDs are set correctly after import
+    const parentStatus = await DBOS.getWorkflowStatus(workflowId);
+    expect(parentStatus).not.toBeNull();
+    expect(parentStatus!.parentWorkflowID).toBeUndefined();
+
+    // Find child workflows by filtering on parentWorkflowID
+    const childWorkflows = await DBOS.listWorkflows({ parentWorkflowID: workflowId });
+    expect(childWorkflows.length).toBe(1);
+    const childWorkflowId = childWorkflows[0].workflowID;
+    expect(childWorkflows[0].parentWorkflowID).toBe(workflowId);
+
+    // Find grandchild workflows
+    const grandchildWorkflows = await DBOS.listWorkflows({ parentWorkflowID: childWorkflowId });
+    expect(grandchildWorkflows.length).toBe(1);
+    expect(grandchildWorkflows[0].parentWorkflowID).toBe(childWorkflowId);
 
     // The imported workflow can be forked
     const forkedHandle = await DBOS.forkWorkflow(workflowId, importedSteps!.length);

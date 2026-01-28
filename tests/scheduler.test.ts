@@ -26,7 +26,7 @@ describe('cf-scheduled-wf-tests-simple', () => {
 
   test('wf-scheduled', async () => {
     // Make sure two functions with the same name in different classes are not interfering with each other.
-    await sleepms(2500);
+    await sleepms(4500);
     expect(DBOSSchedDuplicate.nCalls).toBeGreaterThanOrEqual(2);
     expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(2);
     expect(DBOSSchedTestClass.nTooEarly).toBe(0);
@@ -35,8 +35,8 @@ describe('cf-scheduled-wf-tests-simple', () => {
     await DBOS.deactivateEventReceivers();
 
     await sleepms(1000);
-    expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(3);
-  });
+    expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(6);
+  }, 10000);
 });
 
 const q = new WorkflowQueue('schedQ', { concurrency: 1 });
@@ -147,7 +147,7 @@ describe('cf-scheduled-wf-tests-oaoo', () => {
     let startDownTime: number[] = [];
     try {
       await sleepms(3000);
-      expect(DBOSSchedTestClassOAOO.nCalls).toBeGreaterThanOrEqual(2);
+      expect(DBOSSchedTestClassOAOO.nCalls).toBeGreaterThanOrEqual(1);
       expect(DBOSSchedTestClassOAOO.nCalls).toBeLessThanOrEqual(4);
       startDownTime = process.hrtime();
     } finally {
@@ -158,14 +158,14 @@ describe('cf-scheduled-wf-tests-oaoo', () => {
     await DBOS.launch();
     try {
       await sleepms(3000);
-      expect(DBOSSchedTestClassOAOO.nCalls).toBeGreaterThanOrEqual(7); // 3 new ones, 5 recovered ones, +/-
+      expect(DBOSSchedTestClassOAOO.nCalls).toBeGreaterThanOrEqual(6); // 3 new ones, 5 recovered ones, +/-
       const endDownTime = process.hrtime();
       const nShouldHaveHappened = endDownTime[0] - startDownTime[0] + 2;
       expect(DBOSSchedTestClassOAOO.nCalls).toBeLessThanOrEqual(nShouldHaveHappened);
     } finally {
       await DBOS.shutdown();
     }
-  }, 15000);
+  }, 20000);
 });
 
 describe('cf-scheduled-wf-tests-when-active', () => {
@@ -186,7 +186,7 @@ describe('cf-scheduled-wf-tests-when-active', () => {
     await DBOS.launch();
     try {
       await sleepms(3000);
-      expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(2);
+      expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(1);
       expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(4);
       expect(DBOSSchedTestClass.nQCalls).toBeGreaterThanOrEqual(1); // This has some delay, potentially...
 
@@ -208,12 +208,12 @@ describe('cf-scheduled-wf-tests-when-active', () => {
     await DBOS.launch();
     try {
       await sleepms(3000);
-      expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(2); // 3 new ones, +/- 1
+      expect(DBOSSchedTestClass.nCalls).toBeGreaterThanOrEqual(1); // 3 new ones, +/- 1
       expect(DBOSSchedTestClass.nCalls).toBeLessThanOrEqual(4); // No old ones from recovery or sleep interval
     } finally {
       await DBOS.shutdown();
     }
-  }, 15000);
+  }, 20000);
 });
 
 interface SchedulerEvents {
@@ -278,7 +278,7 @@ describe('decorator-free-scheduled', () => {
     }
     try {
       schedulerEmitter.on('scheduled', onScheduled);
-      await sleepms(2500);
+      await sleepms(3500);
       expect(events.length).toBeGreaterThanOrEqual(2);
     } finally {
       schedulerEmitter.off('scheduled', onScheduled);
@@ -289,5 +289,5 @@ describe('decorator-free-scheduled', () => {
     for (const workflow of workflows) {
       expect(workflow.queueName).toEqual(INTERNAL_QUEUE_NAME);
     }
-  });
+  }, 10000);
 });

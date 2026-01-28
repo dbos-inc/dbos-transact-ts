@@ -81,7 +81,9 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: D
     deduplicationID: internal.deduplicationID,
     priority: internal.priority,
     queuePartitionKey: internal.queuePartitionKey,
+    dequeuedAt: internal.startedAtEpochMs,
     forkedFrom: internal.forkedFrom,
+    parentWorkflowID: internal.parentWorkflowID,
   };
 }
 
