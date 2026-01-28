@@ -115,15 +115,17 @@ export type JsonWorkflowArgs = {
 };
 export type JsonWorkflowResult = JsonValue;
 export interface JsonWorkflowErrorData {
-  code: number | string;
-  message: string; // Human-readable string
+  name: string; // Error name
+  message: string; // Human-readable ;-) string
+  code?: number | string;
   data?: JsonValue; // structured details (retryable, origin, etc.)
 }
 
 export class PortableWorkflowError extends Error {
   constructor(
     message: string,
-    readonly code: number | string,
+    readonly name: string,
+    readonly code?: number | string,
     readonly data?: JsonValue,
   ) {
     super(message);

@@ -18,7 +18,7 @@ import {
   type WorkflowStatus,
 } from './workflow';
 import { sleepms } from './utils';
-import { DBOSJSON, DBOSPortableJSON, DBOSSerializer, deserializeValue } from './serialization';
+import { DBOSJSON, DBOSSerializer, deserializeValue, serializeArgs, serializeValue } from './serialization';
 import {
   forkWorkflow,
   getWorkflow,
@@ -30,7 +30,6 @@ import {
 import { DBOSExecutor } from './dbos-executor';
 import { DBOSAwaitedWorkflowCancelledError } from './error';
 import { Pool } from 'pg';
-import { JsonWorkflowArgs } from '../schemas/system_db_schema';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -207,6 +206,7 @@ export class DBOSClient {
     const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
 
+    const serparam = serializeArgs(args, undefined, this.serializer, options?.serialization);
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.ENQUEUED,
@@ -226,14 +226,11 @@ export class DBOSClient {
       createdAt: Date.now(),
       timeoutMS: options.workflowTimeoutMS,
       deadlineEpochMS: undefined,
-      input:
-        options.serialization === 'portable'
-          ? DBOSPortableJSON.stringify({ positionalArgs: args } satisfies JsonWorkflowArgs)
-          : this.serializer.stringify(args),
+      input: serparam.serializedValue,
       deduplicationID: options.deduplicationID,
       priority: options.priority ?? 0,
       queuePartitionKey: options.queuePartitionKey,
-      serialization: options.serialization === 'portable' ? DBOSPortableJSON.name() : this.serializer.name(),
+      serialization: serparam.serialization,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
@@ -257,6 +254,13 @@ export class DBOSClient {
     options?: ClientSendOptions,
   ): Promise<void> {
     idempotencyKey ??= randomUUID();
+    const sermsg = serializeValue(message, this.serializer, options?.serialization);
+    const srwfp = serializeArgs(
+      [destinationID, message, topic, options?.serialization === 'portable'],
+      undefined,
+      this.serializer,
+      options?.serialization,
+    );
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: `${destinationID}-${idempotencyKey}`,
       status: StatusString.SUCCESS,
@@ -272,23 +276,20 @@ export class DBOSClient {
       executorId: '',
       applicationID: '',
       createdAt: Date.now(),
-      input:
-        options?.serialization === 'portable'
-          ? DBOSPortableJSON.stringify({ positionalArgs: [destinationID, message, topic] } as JsonWorkflowArgs)
-          : this.serializer.stringify([destinationID, message, topic]),
+      input: srwfp.serializedValue,
       deduplicationID: undefined,
       priority: 0,
       queuePartitionKey: undefined,
-      serialization: options?.serialization === 'portable' ? DBOSPortableJSON.name() : this.serializer.name(),
+      serialization: srwfp.serialization,
     };
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
     await this.systemDatabase.send(
       internalStatus.workflowUUID,
       0,
       destinationID,
-      this.serializer.stringify(message),
+      sermsg.serializedValue,
       topic,
-      options?.serialization === 'portable' ? DBOSPortableJSON.name() : this.serializer.name(),
+      sermsg.serialization,
     );
   }
 

@@ -18,7 +18,7 @@ export interface WorkflowParams {
 
 export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;
 
-export type WorkflowSerializationFormat = null | 'native' | 'portable';
+export type WorkflowSerializationFormat = undefined | 'native' | 'portable';
 
 /**
  * Configuration for `DBOS.workflow` functions

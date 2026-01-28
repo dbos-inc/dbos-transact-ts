@@ -1,7 +1,8 @@
-import { deserializeError } from 'serialize-error';
+import { deserializeError, serializeError } from 'serialize-error';
 import superjson from 'superjson';
 import type { SuperJSONResult, JSONValue } from 'superjson/dist/types';
-import { JsonWorkflowArgs, JsonWorkflowErrorData, PortableWorkflowError } from '../schemas/system_db_schema';
+import { JsonValue, JsonWorkflowArgs, JsonWorkflowErrorData, PortableWorkflowError } from '../schemas/system_db_schema';
+import { WorkflowSerializationFormat } from './workflow';
 export { type JSONValue };
 
 /**
@@ -499,7 +500,7 @@ export function deserializeResError(
 ): Error {
   if (serialization === DBOSPortableJSON.name()) {
     const errdata = DBOSPortableJSON.parse(serializedValue) as JsonWorkflowErrorData;
-    throw new PortableWorkflowError(errdata.message, errdata.code, errdata.data);
+    throw new PortableWorkflowError(errdata.message, errdata.name, errdata.code, errdata.data);
   }
   if (serialization === DBOSJSON.name()) {
     return deserializeError(DBOSJSON.parse(serializedValue));
@@ -535,4 +536,85 @@ export function safeParseError(serializer: DBOSSerializer, val: string, serializ
   } catch (e) {
     return new Error(val);
   }
+}
+
+export function serializeValue(
+  value: unknown,
+  serializer: DBOSSerializer,
+  serializationFormat: WorkflowSerializationFormat,
+): { serializedValue: string | null; serialization: string | null } {
+  if (serializationFormat === 'portable') {
+    return {
+      serializedValue: DBOSPortableJSON.stringify(value),
+      serialization: DBOSPortableJSON.name(),
+    };
+  }
+  if (serializationFormat === 'native') {
+    return {
+      serializedValue: DBOSJSON.stringify(value),
+      serialization: DBOSJSON.name(),
+    };
+  }
+  return {
+    serializedValue: serializer.stringify(value),
+    serialization: serializer.name(),
+  };
+}
+
+export function serializeArgs(
+  positionalArgs: unknown[] | undefined,
+  namedArgs: { [key: string]: unknown } | undefined,
+  serializer: DBOSSerializer,
+  serializationFormat: WorkflowSerializationFormat,
+): { serializedValue: string | null; serialization: string | null } {
+  if (serializationFormat === 'portable') {
+    return {
+      serializedValue: DBOSPortableJSON.stringify({ positionalArgs, namedArgs } as JsonWorkflowArgs),
+      serialization: DBOSPortableJSON.name(),
+    };
+  }
+  if (namedArgs) {
+    throw new TypeError(`Serialization format '${serializationFormat}' does not currently support named args.`);
+  }
+  if (serializationFormat === 'native') {
+    if (namedArgs) {
+      throw new TypeError(`Serialization format '${serializationFormat}' does not currently support named args.`);
+    }
+    return {
+      serializedValue: DBOSJSON.stringify(positionalArgs),
+      serialization: DBOSJSON.name(),
+    };
+  }
+  return {
+    serializedValue: serializer.stringify(positionalArgs),
+    serialization: serializer.name(),
+  };
+}
+
+export function serializeResError(
+  err: Error,
+  serializer: DBOSSerializer,
+  serializationFormat: WorkflowSerializationFormat,
+): { serializedValue: string | null; serialization: string | null } {
+  if (serializationFormat === 'portable') {
+    return {
+      serializedValue: DBOSPortableJSON.stringify({
+        name: err.name,
+        message: err.message,
+        code: (err as { code?: unknown }).code,
+        data: (err as { data?: JsonValue }).data,
+      } as JsonWorkflowErrorData),
+      serialization: DBOSPortableJSON.name(),
+    };
+  }
+  if (serializationFormat === 'native') {
+    return {
+      serializedValue: DBOSJSON.stringify(serializeError(err)),
+      serialization: DBOSJSON.name(),
+    };
+  }
+  return {
+    serializedValue: serializer.stringify(serializeError(err)),
+    serialization: serializer.name(),
+  };
 }
