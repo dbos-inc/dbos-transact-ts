@@ -60,7 +60,13 @@ import {
 } from './context';
 import { deserializeError, serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
-import { DBOSSerializer, deserializeResError, deserializeValue, serializeFunctionInputOutput } from './serialization';
+import {
+  DBOSPortableJSON,
+  DBOSSerializer,
+  deserializeResError,
+  deserializeValue,
+  serializeFunctionInputOutput,
+} from './serialization';
 import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -805,34 +811,46 @@ export class DBOSExecutor {
     }
   }
 
-  async runSendTempWF<T>(destinationId: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  async runSendTempWF<T>(
+    destinationId: string,
+    message: T,
+    topic: string | undefined,
+    idempotencyKey: string | undefined,
+    portable: boolean,
+  ): Promise<void> {
     // Create a workflow and call send.
-    const temp_workflow = async (destinationId: string, message: T, topic?: string) => {
+    const temp_workflow = async (destinationId: string, message: T, topic?: string, serialization?: string | null) => {
       const ctx = getCurrentContextStore();
       const functionID: number = functionIDGetIncrement();
       await this.systemDatabase.send(
         ctx!.workflowId!,
         functionID,
         destinationId,
-        // TODO Serialization
-        this.serializer.stringify(message),
+        serialization === DBOSPortableJSON.name()
+          ? DBOSPortableJSON.stringify(message)
+          : this.serializer.stringify(message),
         topic,
+        serialization === DBOSPortableJSON.name() ? DBOSPortableJSON.name() : this.serializer.name(),
       );
     };
     const workflowUUID = idempotencyKey ? destinationId + idempotencyKey : undefined;
     return (
-      await this.workflow(
-        temp_workflow,
-        {
-          workflowUUID: workflowUUID,
-          tempWfType: TempWorkflowType.send,
-          configuredInstance: null,
-        },
-        destinationId,
-        message,
-        topic,
-      )
-    ).getResult();
+      // This workflow runs natively
+      (
+        await this.workflow(
+          temp_workflow,
+          {
+            workflowUUID: workflowUUID,
+            tempWfType: TempWorkflowType.send,
+            configuredInstance: null,
+          },
+          destinationId,
+          message,
+          topic,
+          portable ? DBOSPortableJSON.name() : null,
+        )
+      ).getResult()
+    );
   }
 
   /**
@@ -1069,15 +1087,18 @@ export class DBOSExecutor {
         );
       });
     } else if (nameArr[1] === TempWorkflowType.send) {
-      const swf = async (destinationID: string, message: unknown, topic?: string) => {
+      const swf = async (destinationID: string, message: unknown, topic?: string, serialization?: string | null) => {
         const ctx = getCurrentContextStore();
         const functionID: number = functionIDGetIncrement();
         await this.systemDatabase.send(
           ctx!.workflowId!,
           functionID,
           destinationID,
-          this.serializer.stringify(message),
+          serialization === DBOSPortableJSON.name()
+            ? DBOSPortableJSON.stringify(message)
+            : this.serializer.stringify(message),
           topic,
+          serialization ?? null,
         );
       };
       const temp_workflow = swf as UntypedAsyncFunction;

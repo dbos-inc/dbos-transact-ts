@@ -257,7 +257,6 @@ export class DBOSClient {
     options?: ClientSendOptions,
   ): Promise<void> {
     idempotencyKey ??= randomUUID();
-    // TODO: Portable
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: `${destinationID}-${idempotencyKey}`,
       status: StatusString.SUCCESS,
@@ -289,6 +288,7 @@ export class DBOSClient {
       destinationID,
       this.serializer.stringify(message),
       topic,
+      options?.serialization === 'portable' ? DBOSPortableJSON.name() : this.serializer.name(),
     );
   }
 

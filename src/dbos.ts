@@ -79,7 +79,13 @@ import {
   clearAllRegistrations,
 } from './decorators';
 import { defaultEnableOTLP, globalParams, sleepms } from './utils';
-import { deserializeValue, JSONValue, registerSerializationRecipe, SerializationRecipe } from './serialization';
+import {
+  DBOSPortableJSON,
+  deserializeValue,
+  JSONValue,
+  registerSerializationRecipe,
+  SerializationRecipe,
+} from './serialization';
 import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
 
@@ -1012,7 +1018,7 @@ export class DBOS {
     message: T,
     topic?: string,
     idempotencyKey?: string,
-    _options?: SendOptions,
+    options?: SendOptions,
   ): Promise<void> {
     ensureDBOSIsLaunched('send');
     if (DBOS.isWithinWorkflow()) {
@@ -1029,12 +1035,20 @@ export class DBOS {
         DBOS.workflowID!,
         functionID,
         destinationID,
-        // TODO Serialization
-        DBOS.#executor.serializer.stringify(message),
+        options?.serialization === 'portable'
+          ? DBOSPortableJSON.stringify(message)
+          : DBOS.#executor.serializer.stringify(message),
         topic,
+        options?.serialization === 'portable' ? DBOSPortableJSON.name() : DBOS.#executor.serializer.name(),
       );
     }
-    return DBOS.#executor.runSendTempWF(destinationID, message, topic, idempotencyKey); // Temp WF variant
+    return DBOS.#executor.runSendTempWF(
+      destinationID,
+      message,
+      topic,
+      idempotencyKey,
+      options?.serialization === 'portable',
+    ); // Temp WF variant
   }
 
   /**

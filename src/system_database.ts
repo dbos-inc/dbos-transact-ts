@@ -162,7 +162,8 @@ export interface SystemDatabase {
     functionID: number,
     destinationID: string,
     message: string | null,
-    topic?: string,
+    topic: string | undefined,
+    serialization: string | null,
   ): Promise<void>;
   recv(
     workflowID: string,
@@ -1381,7 +1382,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     destinationID: string,
     message: string | null,
-    topic?: string,
+    topic: string | undefined,
+    serialization: string | null,
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
     const client: PoolClient = await this.pool.connect();
@@ -1390,8 +1392,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
         await client.query(
-          `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
-          [destinationID, topic, message],
+          `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization) VALUES ($1, $2, $3, $4);`,
+          [destinationID, topic, message, serialization],
         );
         return undefined;
       });

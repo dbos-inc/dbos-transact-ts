@@ -65,7 +65,6 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: D
     assumedRole: internal.assumedRole,
     authenticatedRoles: internal.authenticatedRoles,
 
-    // TODO Serialization
     input: internal.input
       ? (safeParsePositionalArgs(serializer, internal.input, internal.serialization) as unknown[])
       : undefined,
