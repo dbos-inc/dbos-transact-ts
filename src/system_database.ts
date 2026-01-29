@@ -2398,6 +2398,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'priority',
       'queue_partition_key',
       'forked_from',
+      'serialization',
     ];
 
     input.loadInput = input.loadInput ?? true;
