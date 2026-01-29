@@ -2364,7 +2364,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     // Helper: add a filter for a field that may be a single value or an array.
     // Uses = for a single value, IN (...) for an array.
     const addFilter = (column: string, value: string | string[] | undefined) => {
-      if (value === undefined) return;
+      if (!value) return;
       if (Array.isArray(value)) {
         const placeholders = value.map((_, i) => `$${paramCounter + i}`).join(', ');
         whereClauses.push(`${column} IN (${placeholders})`);

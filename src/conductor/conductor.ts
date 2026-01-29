@@ -3,7 +3,7 @@ import { getAlertHandler } from '../decorators';
 import { globalParams } from '../utils';
 import WebSocket from 'ws';
 import * as protocol from './protocol';
-import { GetWorkflowsInput, WorkflowStatusString } from '..';
+import { GetWorkflowsInput, WorkflowStatusString } from '../workflow';
 import { hostname } from 'node:os';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
