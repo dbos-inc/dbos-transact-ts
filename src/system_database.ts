@@ -2214,16 +2214,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
         if (callerID) await this.checkIfCanceled(callerID);
         try {
           const { rows } = await this.pool.query<workflow_status>(
-            `SELECT status, output, error FROM "${this.schemaName}".workflow_status 
+            `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status 
              WHERE workflow_uuid=$1`,
             [workflowID],
           );
           if (rows.length > 0) {
             const status = rows[0].status;
             if (status === StatusString.SUCCESS) {
-              return { output: rows[0].output };
+              return { output: rows[0].output, serialization: rows[0].serialization };
             } else if (status === StatusString.ERROR) {
-              return { error: rows[0].error };
+              return { error: rows[0].error, serialization: rows[0].serialization };
             } else if (status === StatusString.CANCELLED) {
               return { cancelled: true };
             } else {

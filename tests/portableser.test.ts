@@ -3,6 +3,7 @@ import { DBOS, DBOSConfig, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import {
   notifications,
+  PortableWorkflowError,
   streams,
   workflow_events,
   workflow_events_history,
@@ -49,6 +50,18 @@ const portWorkflow = DBOS.registerWorkflow(
     serialization: 'portable',
   },
 );
+
+class PortableWorkflow {
+  static lastWfid: string | undefined = undefined;
+
+  @DBOS.workflow({ serialization: 'portable' })
+  // eslint-disable-next-line @typescript-eslint/require-await
+  static async pwfError() {
+    PortableWorkflow.lastWfid = DBOS.workflowID;
+    expect(DBOS.defaultSerializationType).toBe('portable');
+    throw new Error('Failed!');
+  }
+}
 
 const simpleRecv = DBOS.registerWorkflow(
   async (topic: string) => {
@@ -225,6 +238,31 @@ describe('portable-serizlization-tests', () => {
     // Check reexec
     const reh = await reexecuteWorkflowById(wfhp.workflowID);
     expect(await reh?.getResult()).toBe('s-1-k:v@"m"');
+
+    // Check WF that throws an error
+    await expect(PortableWorkflow.pwfError()).rejects.toThrow('Failed!');
+
+    // Snoop the DB to make sure serialization format is correct
+    // WF
+    const eser = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
+      [PortableWorkflow.lastWfid],
+    );
+    expect(eser.rows[0].serialization).toBe(DBOSPortableJSON.name());
+    expect(eser.rows[0].output).toBeNull();
+    expect(eser.rows[0].error).toBe('{\"name\":\"Error\",\"message\":\"Failed!\"}');
+
+    const errh = DBOS.retrieveWorkflow(PortableWorkflow.lastWfid!);
+    await expect(errh.getResult()).rejects.toThrow('Failed!');
+    try {
+      await errh.getResult();
+    } catch (e: any) {
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      expect((e as PortableWorkflowError).message).toBe('Failed!');
+      expect((e as PortableWorkflowError).name).toBe('Error');
+      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
+      expect(e.constructor.name).toBe('PortableWorkflowError');
+    }
   });
 
   test('test-direct-insert', async () => {
