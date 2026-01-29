@@ -1,6 +1,11 @@
 import { Client } from 'pg';
-import { DBOS, DBOSConfig } from '../src';
+import { DBOS, DBOSConfig, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { workflow_status } from '../schemas/system_db_schema';
+import { DBOSJSON, DBOSPortableJSON } from '../src/serialization';
+import { randomUUID } from 'node:crypto';
+
+const _queue = new WorkflowQueue('testq');
 
 async function workflowFunc(s: string, x: number, o: { k: string; v: string[] }, wfid?: string): Promise<string> {
   await DBOS.setEvent('defstat', { status: 'Happy' });
@@ -37,6 +42,13 @@ const portWorkflow = DBOS.registerWorkflow(
   },
 );
 
+const simpleRecv = DBOS.registerWorkflow(
+  async (topic: string) => {
+    return await DBOS.recv(topic);
+  },
+  { name: 'simpleRecv' },
+);
+
 describe('portable-serizlization-tests', () => {
   let config: DBOSConfig;
   let systemDBClient: Client;
@@ -64,24 +76,114 @@ describe('portable-serizlization-tests', () => {
   });
 
   test('test-explicit-ser', async () => {
-    // Run with default serialization
-    const wfhd = await DBOS.startWorkflow(defWorkflow)('s', 1, { k: 'k', v: ['v'] });
+    // Run WF with default serialization
+    //  But first, receivers
+    const drpwfh = await DBOS.startWorkflow(simpleRecv)('portable');
+    const wfhd = await DBOS.startWorkflow(defWorkflow)('s', 1, { k: 'k', v: ['v'] }, drpwfh.workflowID);
     await DBOS.send(wfhd.workflowID, 'm', 'incoming');
+    expect(await DBOS.getEvent(wfhd.workflowID, 'defstat')).toStrictEqual({ status: 'Happy' });
+    expect(await DBOS.getEvent(wfhd.workflowID, 'nstat')).toStrictEqual({ status: 'Happy' });
+    expect(await DBOS.getEvent(wfhd.workflowID, 'pstat')).toStrictEqual({ status: 'Happy' });
+    const { value: ddread } = await DBOS.readStream(wfhd.workflowID, 'defstream').next();
+    expect(ddread).toStrictEqual({ stream: 'OhYeah' });
+    const { value: dnread } = await DBOS.readStream(wfhd.workflowID, 'nstream').next();
+    expect(dnread).toStrictEqual({ stream: 'OhYeah' });
+    const { value: dpread } = await DBOS.readStream(wfhd.workflowID, 'pstream').next();
+    expect(dpread).toStrictEqual({ stream: 'OhYeah' });
     const rvd = await wfhd.getResult();
     expect(rvd).toBe('s-1-k:v@"m"');
+    expect(await drpwfh.getResult()).toStrictEqual({ message: 'Hello!' });
+
+    // Snoop the DB to make sure serialization format is correct
+    // WF
+    const nser = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
+      [wfhd.workflowID],
+    );
+    expect(nser.rows[0].serialization).toBe(DBOSJSON.name());
+    // Messages
+    // Events
+    // Streams
 
     // Run with portable serialization
-    const wfhp = await DBOS.startWorkflow(portWorkflow)('s', 1, { k: 'k', v: ['v'] });
+    const drdwfh = await DBOS.startWorkflow(simpleRecv)('portable');
+    const wfhp = await DBOS.startWorkflow(portWorkflow)('s', 1, { k: 'k', v: ['v'] }, drdwfh.workflowID);
     await DBOS.send(wfhp.workflowID, 'm', 'incoming');
+    expect(await DBOS.getEvent(wfhp.workflowID, 'defstat')).toStrictEqual({ status: 'Happy' });
+    expect(await DBOS.getEvent(wfhp.workflowID, 'nstat')).toStrictEqual({ status: 'Happy' });
+    expect(await DBOS.getEvent(wfhp.workflowID, 'pstat')).toStrictEqual({ status: 'Happy' });
+    const { value: pdread } = await DBOS.readStream(wfhp.workflowID, 'defstream').next();
+    expect(pdread).toStrictEqual({ stream: 'OhYeah' });
+    const { value: pnread } = await DBOS.readStream(wfhp.workflowID, 'nstream').next();
+    expect(pnread).toStrictEqual({ stream: 'OhYeah' });
+    const { value: ppread } = await DBOS.readStream(wfhp.workflowID, 'pstream').next();
+    expect(ppread).toStrictEqual({ stream: 'OhYeah' });
     const rvp = await wfhp.getResult();
     expect(rvp).toBe('s-1-k:v@"m"');
+    expect(await drdwfh.getResult()).toStrictEqual({ message: 'Hello!' });
+
+    // Snoop the DB to make sure serialization format is correct
+    // WF
+    const pser = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
+      [wfhp.workflowID],
+    );
+    expect(pser.rows[0].serialization).toBe(DBOSPortableJSON.name());
+    expect(pser.rows[0].output).toBe('"s-1-k:v@\\"m\\""');
   });
+
+  test('test-direct-insert', async () => {
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid,
+        name,
+        class_name,
+        queue_name,
+        status,
+        inputs,
+        created_at,
+        serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'workflowPortable',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: ['s', 1, { k: 'k', v: ['v'] }] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.notifications(
+        destination_uuid,
+        topic,
+        message,
+        serialization
+      )
+      VALUES ($1, $2, $3, $4);
+    `,
+      [id, 'incoming', JSON.stringify('M'), 'portable_json'],
+    );
+
+    // This is cheating, but we tested it above
+    const wfh = DBOS.retrieveWorkflow(id);
+    const res = await wfh.getResult();
+    expect(res).toBe('s-1-k:v@"M"');
+  });
+
+  test('test-workflow-export-import', async () => {});
 
   test('test-portable-client', async () => {});
 
-  test('test-direct-insert', async () => {});
-
-  test('test-workflow-export-import', async () => {});
+  // TODO: Test error cases
 
   test('test-nonserializable-stuff', async () => {});
 });
