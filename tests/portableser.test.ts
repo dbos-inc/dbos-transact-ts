@@ -1,7 +1,13 @@
 import { Client } from 'pg';
 import { DBOS, DBOSConfig, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
-import { notifications, workflow_events, workflow_events_history, workflow_status } from '../schemas/system_db_schema';
+import {
+  notifications,
+  streams,
+  workflow_events,
+  workflow_events_history,
+  workflow_status,
+} from '../schemas/system_db_schema';
 import { DBOSJSON, DBOSPortableJSON } from '../src/serialization';
 import { randomUUID } from 'node:crypto';
 
@@ -97,6 +103,14 @@ describe('portable-serizlization-tests', () => {
       expect(hser.rows[0].serialization).toBe(ser);
     }
 
+    async function checkStreamSer(wfid: string, key: string, ser: string) {
+      const mser = await systemDBClient.query<streams>(
+        `SELECT * FROM dbos.streams where workflow_uuid = $1 and key=$2;`,
+        [wfid, key],
+      );
+      expect(mser.rows[0].serialization).toBe(ser);
+    }
+
     // Run WF with default serialization
     //  But first, receivers
     const drpwfh = await DBOS.startWorkflow(simpleRecv)('native');
@@ -133,6 +147,9 @@ describe('portable-serizlization-tests', () => {
     await checkEvtSer(wfhd.workflowID, 'pstat', DBOSPortableJSON.name());
 
     // Streams
+    await checkStreamSer(wfhd.workflowID, 'defstream', DBOSJSON.name());
+    await checkStreamSer(wfhd.workflowID, 'nstream', DBOSJSON.name());
+    await checkStreamSer(wfhd.workflowID, 'pstream', DBOSPortableJSON.name());
 
     // Run with portable serialization
     const drdwfh = await DBOS.startWorkflow(simpleRecv)('portable');
@@ -168,6 +185,11 @@ describe('portable-serizlization-tests', () => {
     await checkEvtSer(wfhp.workflowID, 'defstat', DBOSPortableJSON.name());
     await checkEvtSer(wfhp.workflowID, 'nstat', DBOSJSON.name());
     await checkEvtSer(wfhp.workflowID, 'pstat', DBOSPortableJSON.name());
+
+    // Streams
+    await checkStreamSer(wfhp.workflowID, 'defstream', DBOSPortableJSON.name());
+    await checkStreamSer(wfhp.workflowID, 'nstream', DBOSJSON.name());
+    await checkStreamSer(wfhp.workflowID, 'pstream', DBOSPortableJSON.name());
   });
 
   test('test-direct-insert', async () => {
