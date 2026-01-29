@@ -218,12 +218,12 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
     },
     {
       pg: [
-        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
-        `ALTER TABLE "${schemaName}"."notifications" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
-        `ALTER TABLE "${schemaName}"."workflow_events" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
-        `ALTER TABLE "${schemaName}"."workflow_events_history" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
-        `ALTER TABLE "${schemaName}"."operation_outputs" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
-        `ALTER TABLE "${schemaName}"."streams" ADD COLUMN "serialization" VARCHAR(16) DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."notifications" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."workflow_events" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."workflow_events_history" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."operation_outputs" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."streams" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
       ],
     },
   ];
