@@ -162,6 +162,7 @@ export interface ListWorkflowsBody {
   status?: string;
   application_version?: string;
   forked_from?: string;
+  parent_workflow_id?: string;
   queue_name?: string;
   limit?: number;
   offset?: number;
@@ -195,7 +196,9 @@ export class WorkflowsOutput {
   DeduplicationID?: string;
   Priority?: string;
   QueuePartitionKey?: string;
+  DequeuedAt?: string;
   ForkedFrom?: string;
+  ParentWorkflowID?: string;
 
   constructor(info: WorkflowStatus) {
     // Mark empty fields as undefined
@@ -221,7 +224,9 @@ export class WorkflowsOutput {
     this.DeduplicationID = info.deduplicationID;
     this.Priority = String(info.priority);
     this.QueuePartitionKey = info.queuePartitionKey;
+    this.DequeuedAt = info.dequeuedAt !== undefined ? String(info.dequeuedAt) : undefined;
     this.ForkedFrom = info.forkedFrom;
+    this.ParentWorkflowID = info.parentWorkflowID;
   }
 }
 
@@ -272,6 +277,7 @@ export interface ListQueuedWorkflowsBody {
   status?: string;
   application_version?: string;
   forked_from?: string;
+  parent_workflow_id?: string;
   queue_name?: string;
   limit?: number;
   offset?: number;

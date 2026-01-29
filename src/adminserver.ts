@@ -511,6 +511,7 @@ export class DBOSAdminServer {
           status?: (typeof StatusString)[keyof typeof StatusString];
           application_version?: string;
           fork_from?: string;
+          parent_workflow_id?: string;
           limit?: number;
           offset?: number;
           sort_desc?: boolean;
@@ -529,6 +530,7 @@ export class DBOSAdminServer {
           status: body.status,
           applicationVersion: body.application_version,
           forkedFrom: body.fork_from,
+          parentWorkflowID: body.parent_workflow_id,
           limit: body.limit,
           offset: body.offset,
           sortDesc: body.sort_desc,
@@ -563,6 +565,7 @@ export class DBOSAdminServer {
           end_time?: string;
           status?: (typeof StatusString)[keyof typeof StatusString];
           fork_from?: string;
+          parent_workflow_id?: string;
           queue_name?: string;
           limit?: number;
           offset?: number;
@@ -577,6 +580,7 @@ export class DBOSAdminServer {
           endTime: body.end_time,
           status: body.status,
           forkedFrom: body.fork_from,
+          parentWorkflowID: body.parent_workflow_id,
           queueName: body.queue_name,
           limit: body.limit,
           offset: body.offset,

@@ -26,6 +26,7 @@ export interface workflow_status {
   queue_partition_key?: string; // Partition key for partitioned queues.
   forked_from?: string;
   owner_xid?: string;
+  parent_workflow_id?: string;
 }
 
 export interface notifications {
