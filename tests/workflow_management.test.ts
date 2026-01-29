@@ -151,7 +151,7 @@ describe('workflow-management-tests', () => {
     expect(workflows.length).toBe(0);
 
     // Test applicationVersion as a list
-    workflows = await DBOS.listWorkflows({ applicationVersion: [DBOS.applicationVersion!, 'v999'] });
+    workflows = await DBOS.listWorkflows({ applicationVersion: [DBOS.applicationVersion, 'v999'] });
     expect(workflows.length).toBe(2);
 
     workflows = await DBOS.listWorkflows({ applicationVersion: ['v999'] });
