@@ -538,7 +538,7 @@ export function safeParse(serializer: DBOSSerializer, val: string, serialization
   }
 }
 
-export function safeParsePositionalArgs(serializer: DBOSSerializer, val: string, serialization: string | null) {
+export function safeParsePositionalArgs(serializer: DBOSSerializer, val: string | null, serialization: string | null) {
   try {
     return deserializePositionalArgs(val, serialization, serializer);
   } catch (e) {

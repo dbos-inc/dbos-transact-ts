@@ -18,7 +18,14 @@ import {
   type WorkflowStatus,
 } from './workflow';
 import { sleepms } from './utils';
-import { DBOSJSON, DBOSSerializer, deserializeValue, serializeArgs, serializeValue } from './serialization';
+import {
+  DBOSJSON,
+  DBOSSerializer,
+  deserializePositionalArgs,
+  deserializeValue,
+  serializeArgs,
+  serializeValue,
+} from './serialization';
 import {
   forkWorkflow,
   getWorkflow,
@@ -138,7 +145,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
 
   async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return this.systemDatabase.getSerializer().parse(status.input) as T;
+    return deserializePositionalArgs(status.input, status.serialization, this.systemDatabase.getSerializer()) as T;
   }
 }
 

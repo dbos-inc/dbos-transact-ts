@@ -814,6 +814,7 @@ export class DBOSExecutor {
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, maxAttempts, errors) : err;
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
         error: this.serializer.stringify(serializeError(err)),
+        serialization: this.serializer.name(),
       });
       span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(span);
@@ -823,6 +824,7 @@ export class DBOSExecutor {
       const funcResult = serializeFunctionInputOutput(result, [stepFnName, '<result>'], this.serializer);
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
         output: funcResult.stringified,
+        serialization: funcResult.sername,
       });
       span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(span);

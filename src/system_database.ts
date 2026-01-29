@@ -1385,7 +1385,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           Date.now(),
           Date.now(),
           {
-            output: JSON.stringify(endTimeMs),
+            output: DBOSPortableJSON.stringify(endTimeMs),
             serialization: DBOSPortableJSON.name(),
           },
         );
