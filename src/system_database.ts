@@ -1941,7 +1941,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
             created_at, updated_at, application_version, application_id,
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
-            deduplication_id, inputs, priority, queue_partition_key, forked_from
+            deduplication_id, inputs, priority, queue_partition_key, forked_from,
+            serialization
           FROM "${this.schemaName}".workflow_status
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1957,7 +1958,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const outputsResult = await client.query<operation_outputs>(
           `SELECT
             workflow_uuid, function_id, function_name, output, error,
-            child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms
+            child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms,
+            serialization
           FROM "${this.schemaName}".operation_outputs
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1965,7 +1967,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Export workflow_events
         const eventsResult = await client.query<workflow_events>(
-          `SELECT workflow_uuid, key, value
+          `SELECT workflow_uuid, key, value, serialization
           FROM "${this.schemaName}".workflow_events
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1973,7 +1975,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Export workflow_events_history
         const historyResult = await client.query<workflow_events_history>(
-          `SELECT workflow_uuid, function_id, key, value
+          `SELECT workflow_uuid, function_id, key, value, serialization
           FROM "${this.schemaName}".workflow_events_history
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1981,7 +1983,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Export streams
         const streamsResult = await client.query<streams>(
-          `SELECT workflow_uuid, key, value, "offset", function_id
+          `SELECT workflow_uuid, key, value, "offset", function_id, serialization
           FROM "${this.schemaName}".streams
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -2018,8 +2020,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
             created_at, updated_at, application_version, application_id,
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
-            deduplication_id, inputs, priority, queue_partition_key, forked_from
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26)`,
+            deduplication_id, inputs, priority, queue_partition_key, forked_from,
+            serialization
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
           [
             status.workflow_uuid,
             status.status,
@@ -2047,6 +2050,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             status.priority,
             status.queue_partition_key,
             status.forked_from,
+            status.serialization,
           ],
         );
 
@@ -2055,8 +2059,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
           await client.query(
             `INSERT INTO "${this.schemaName}".operation_outputs (
               workflow_uuid, function_id, function_name, output, error,
-              child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms,
+              serialization
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
             [
               output.workflow_uuid,
               output.function_id,
@@ -2066,6 +2071,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
               output.child_workflow_id,
               output.started_at_epoch_ms,
               output.completed_at_epoch_ms,
+              output.serialization,
             ],
           );
         }
@@ -2074,9 +2080,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         for (const event of workflow.workflow_events) {
           await client.query(
             `INSERT INTO "${this.schemaName}".workflow_events (
-              workflow_uuid, key, value
-            ) VALUES ($1, $2, $3)`,
-            [event.workflow_uuid, event.key, event.value],
+              workflow_uuid, key, value, serialization
+            ) VALUES ($1, $2, $3, $4)`,
+            [event.workflow_uuid, event.key, event.value, event.serialization],
           );
         }
 
@@ -2084,9 +2090,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         for (const history of workflow.workflow_events_history) {
           await client.query(
             `INSERT INTO "${this.schemaName}".workflow_events_history (
-              workflow_uuid, function_id, key, value
-            ) VALUES ($1, $2, $3, $4)`,
-            [history.workflow_uuid, history.function_id, history.key, history.value],
+              workflow_uuid, function_id, key, value, serialization
+            ) VALUES ($1, $2, $3, $4, $5)`,
+            [history.workflow_uuid, history.function_id, history.key, history.value, history.serialization],
           );
         }
 
@@ -2094,9 +2100,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         for (const stream of workflow.streams) {
           await client.query(
             `INSERT INTO "${this.schemaName}".streams (
-              workflow_uuid, key, value, "offset", function_id
-            ) VALUES ($1, $2, $3, $4, $5)`,
-            [stream.workflow_uuid, stream.key, stream.value, stream.offset, stream.function_id],
+              workflow_uuid, key, value, "offset", function_id, serialization
+            ) VALUES ($1, $2, $3, $4, $5, $6)`,
+            [stream.workflow_uuid, stream.key, stream.value, stream.offset, stream.function_id, stream.serialization],
           );
         }
       }
@@ -2398,7 +2404,6 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'priority',
       'queue_partition_key',
       'forked_from',
-      'serialization',
     ];
 
     input.loadInput = input.loadInput ?? true;
@@ -2409,6 +2414,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     if (input.loadOutput) {
       selectColumns.push('output', 'error');
+    }
+
+    if (input.loadInput || input.loadOutput) {
+      selectColumns.push('serialization');
     }
 
     input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
