@@ -1,6 +1,6 @@
 import * as http from 'http';
 import * as url from 'url';
-import { GetWorkflowsInput, StatusString } from './workflow';
+import { GetWorkflowsInput, WorkflowStatusString } from './workflow';
 import { DBOSError } from './error';
 import { DBOSExecutor } from './dbos-executor';
 import { GlobalLogger } from './telemetry/logs';
@@ -504,18 +504,18 @@ export class DBOSAdminServer {
       handler: async (req, res) => {
         const body = (await parseJsonBody(req)) as {
           workflow_uuids?: string[];
-          workflow_name?: string;
-          authenticated_user?: string;
+          workflow_name?: string | string[];
+          authenticated_user?: string | string[];
           start_time?: string;
           end_time?: string;
-          status?: (typeof StatusString)[keyof typeof StatusString];
-          application_version?: string;
-          fork_from?: string;
-          parent_workflow_id?: string;
+          status?: WorkflowStatusString | WorkflowStatusString[];
+          application_version?: string | string[];
+          fork_from?: string | string[];
+          parent_workflow_id?: string | string[];
           limit?: number;
           offset?: number;
           sort_desc?: boolean;
-          workflow_id_prefix?: string;
+          workflow_id_prefix?: string | string[];
           load_input?: boolean;
           load_output?: boolean;
         };
@@ -560,13 +560,13 @@ export class DBOSAdminServer {
       path: listQueuedWorkflowsUrl,
       handler: async (req, res) => {
         const body = (await parseJsonBody(req)) as {
-          workflow_name?: string;
+          workflow_name?: string | string[];
           start_time?: string;
           end_time?: string;
-          status?: (typeof StatusString)[keyof typeof StatusString];
-          fork_from?: string;
-          parent_workflow_id?: string;
-          queue_name?: string;
+          status?: WorkflowStatusString | WorkflowStatusString[];
+          fork_from?: string | string[];
+          parent_workflow_id?: string | string[];
+          queue_name?: string | string[];
           limit?: number;
           offset?: number;
           sort_desc?: boolean;
