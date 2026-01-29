@@ -122,6 +122,64 @@ describe('workflow-management-tests', () => {
     expect(workflows.length).toBe(0);
   });
 
+  test('getworkflows-with-list-filters', async () => {
+    // Run two workflows with different names and statuses
+    await expect(TestEndpoints.testWorkflow('alice')).resolves.toBe('alice');
+    await expect(TestEndpoints.failWorkflow('bob')).rejects.toThrow();
+
+    // Test status as a list: [SUCCESS, ERROR] should return both
+    let workflows = await DBOS.listWorkflows({ status: [StatusString.SUCCESS, StatusString.ERROR] });
+    expect(workflows.length).toBe(2);
+
+    // Test status list with only one matching value
+    workflows = await DBOS.listWorkflows({ status: [StatusString.SUCCESS] });
+    expect(workflows.length).toBe(1);
+    expect(workflows[0].status).toBe(StatusString.SUCCESS);
+
+    // Test status list with no matching values
+    workflows = await DBOS.listWorkflows({ status: [StatusString.PENDING, StatusString.CANCELLED] });
+    expect(workflows.length).toBe(0);
+
+    // Test workflowName as a list
+    workflows = await DBOS.listWorkflows({ workflowName: ['testWorkflow', 'failWorkflow'] });
+    expect(workflows.length).toBe(2);
+
+    workflows = await DBOS.listWorkflows({ workflowName: ['testWorkflow', 'nonExistent'] });
+    expect(workflows.length).toBe(1);
+
+    workflows = await DBOS.listWorkflows({ workflowName: ['nonExistent'] });
+    expect(workflows.length).toBe(0);
+
+    // Test applicationVersion as a list
+    workflows = await DBOS.listWorkflows({ applicationVersion: [DBOS.applicationVersion!, 'v999'] });
+    expect(workflows.length).toBe(2);
+
+    workflows = await DBOS.listWorkflows({ applicationVersion: ['v999'] });
+    expect(workflows.length).toBe(0);
+
+    // Test executorId as a list
+    workflows = await DBOS.listWorkflows({ executorId: [DBOS.executorID, 'fake-id'] });
+    expect(workflows.length).toBe(2);
+
+    workflows = await DBOS.listWorkflows({ executorId: ['fake-id'] });
+    expect(workflows.length).toBe(0);
+
+    // Test workflow_id_prefix as a list
+    const allWorkflows = await DBOS.listWorkflows({});
+    expect(allWorkflows.length).toBe(2);
+    const prefix0 = allWorkflows[0].workflowID.substring(0, 8);
+    const prefix1 = allWorkflows[1].workflowID.substring(0, 8);
+
+    workflows = await DBOS.listWorkflows({ workflow_id_prefix: [prefix0, prefix1] });
+    expect(workflows.length).toBe(2);
+
+    workflows = await DBOS.listWorkflows({ workflow_id_prefix: [prefix0] });
+    expect(workflows.length).toBe(1);
+
+    workflows = await DBOS.listWorkflows({ workflow_id_prefix: ['nonexistent-prefix'] });
+    expect(workflows.length).toBe(0);
+  });
+
   test('getworkflows-with-limit', async () => {
     const workflowIDs: string[] = [];
     let wfid = await TestEndpoints.testWorkflowGetID();
@@ -530,6 +588,45 @@ describe('test-list-queues', () => {
         queueName: 'no',
       };
 
+      output = await listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(0);
+
+      // Test queue name as a list
+      input = {
+        queueName: [TestListQueues.queue.name, 'otherQueue'],
+      };
+      output = await listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
+
+      input = {
+        queueName: ['no', 'alsoNo'],
+      };
+      output = await listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(0);
+
+      // Test status as a list
+      input = {
+        status: ['PENDING', 'ENQUEUED'],
+      };
+      output = await listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
+
+      input = {
+        status: ['SUCCESS', 'ERROR'],
+      };
+      output = await listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(0);
+
+      // Test workflowName as a list
+      input = {
+        workflowName: ['blockingTask', 'otherWorkflow'],
+      };
+      output = await listQueuedWorkflows(sysdb, input);
+      expect(output.length).toBe(TestListQueues.queuedSteps);
+
+      input = {
+        workflowName: ['no', 'alsoNo'],
+      };
       output = await listQueuedWorkflows(sysdb, input);
       expect(output.length).toBe(0);
 
@@ -1184,6 +1281,14 @@ describe('test-list-steps', () => {
     const noWorkflows = await DBOS.listWorkflows({ parentWorkflowID: 'non-existent-id' });
     expect(noWorkflows.length).toBe(0);
 
+    // Test filtering by parentWorkflowID as a list
+    const childWorkflows2 = await DBOS.listWorkflows({ parentWorkflowID: [parentWfid, 'non-existent-id'] });
+    expect(childWorkflows2.length).toBe(1);
+    expect(childWorkflows2[0].workflowID).toBe(childID);
+
+    const childWorkflows3 = await DBOS.listWorkflows({ parentWorkflowID: ['non-existent-id', 'also-non-existent'] });
+    expect(childWorkflows3.length).toBe(0);
+
     // Test dequeuedAt with a queued child workflow
     const queuedParentWfid = randomUUID();
     const queuedHandle = await DBOS.startWorkflow(TestListSteps, {
@@ -1347,6 +1452,13 @@ describe('test-fork', () => {
     expect(forkedWorkflows[0].workflowID).toBe(forkedHandle.workflowID);
     expect(forkedWorkflows[1].workflowID).toBe(forkedHandle2.workflowID);
     expect(forkedWorkflows[2].workflowID).toBe(forkedHandle3.workflowID);
+
+    // Test forkedFrom as a list
+    const forkedWorkflows2 = await DBOS.listWorkflows({ forkedFrom: [handle.workflowID, 'nonexistent-id'] });
+    expect(forkedWorkflows2.length).toBe(3);
+
+    const forkedWorkflows3 = await DBOS.listWorkflows({ forkedFrom: ['nonexistent-id'] });
+    expect(forkedWorkflows3.length).toBe(0);
   }, 10000);
 
   test('test-fork-childwf', async () => {
