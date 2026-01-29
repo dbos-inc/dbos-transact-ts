@@ -80,9 +80,13 @@ export interface WorkflowStatus {
   readonly priority: number;
   // If this workflow is enqueued on a partitioned queue, its partition key
   readonly queuePartitionKey?: string;
+  // If this workflow was enqueued, the time it was dequeued (started execution), as a UNIX epoch timestamp in milliseconds.
+  readonly dequeuedAt?: number;
 
   // If this workflow was forked from another, that workflow's ID.
   readonly forkedFrom?: string;
+  // If this workflow was started by another workflow, that workflow's ID.
+  readonly parentWorkflowID?: string;
 
   // INTERNAL
   // Deprecated field
@@ -106,6 +110,7 @@ export interface GetWorkflowsInput {
   queueName?: string; // If this workflow is enqueued, on which queue
   queuesOnly?: boolean; // Return only workflows that are actively enqueued
   forkedFrom?: string; // Get workflows forked from this workflow ID.
+  parentWorkflowID?: string; // Get workflows started by this parent workflow ID.
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).

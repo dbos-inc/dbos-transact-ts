@@ -275,7 +275,9 @@ export interface WorkflowStatusInternal {
   deduplicationID?: string;
   priority: number;
   queuePartitionKey?: string;
+  startedAtEpochMs?: number;
   forkedFrom?: string;
+  parentWorkflowID?: string;
   serialization: string | null;
 }
 
@@ -476,14 +478,15 @@ async function insertWorkflowStatus(
         priority,
         queue_partition_key,
         forked_from,
-        owner_xid,
-        serialization
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $25, $26)
+        parent_workflow_id,
+        serialization,
+        owner_xid
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27)
       ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE
             WHEN workflow_status.status != '${StatusString.ENQUEUED}'
-            THEN workflow_status.recovery_attempts + $24
+            THEN workflow_status.recovery_attempts + $25
             ELSE workflow_status.recovery_attempts
           END,
           updated_at = EXCLUDED.updated_at,
@@ -518,9 +521,10 @@ async function insertWorkflowStatus(
         initStatus.priority,
         initStatus.queuePartitionKey ?? null,
         initStatus.forkedFrom ?? null,
+        initStatus.parentWorkflowID ?? null,
         (incrementAttempts ?? false) ? 1 : 0,
-        ownerXid,
         initStatus.serialization,
+        ownerXid,
       ],
     );
     if (rows.length === 0) {
@@ -718,7 +722,9 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     deduplicationID: row.deduplication_id ?? undefined,
     priority: row.priority ?? 0,
     queuePartitionKey: row.queue_partition_key ?? undefined,
+    startedAtEpochMs: row.started_at_epoch_ms ? Number(row.started_at_epoch_ms) : undefined,
     forkedFrom: row.forked_from ?? undefined,
+    parentWorkflowID: row.parent_workflow_id ?? undefined,
     serialization: row.serialization,
   };
 }
@@ -1942,7 +1948,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
-            serialization
+            parent_workflow_id, serialization
           FROM "${this.schemaName}".workflow_status
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -2021,8 +2027,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
-            serialization
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
+            parent_workflow_id, serialization
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
           [
             status.workflow_uuid,
             status.status,
@@ -2050,6 +2056,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             status.priority,
             status.queue_partition_key,
             status.forked_from,
+            status.parent_workflow_id,
             status.serialization,
           ],
         );
@@ -2403,7 +2410,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
       'deduplication_id',
       'priority',
       'queue_partition_key',
+      'started_at_epoch_ms',
       'forked_from',
+      'parent_workflow_id',
     ];
 
     input.loadInput = input.loadInput ?? true;
@@ -2464,6 +2473,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     if (input.forkedFrom) {
       whereClauses.push(`forked_from = $${paramCounter}`);
       params.push(input.forkedFrom);
+      paramCounter++;
+    }
+    if (input.parentWorkflowID) {
+      whereClauses.push(`parent_workflow_id = $${paramCounter}`);
+      params.push(input.parentWorkflowID);
       paramCounter++;
     }
     if (input.startTime) {
