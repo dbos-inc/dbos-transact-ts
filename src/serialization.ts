@@ -1,6 +1,8 @@
-import { deserializeError } from 'serialize-error';
+import { deserializeError, serializeError } from 'serialize-error';
 import superjson from 'superjson';
 import type { SuperJSONResult, JSONValue } from 'superjson/dist/types';
+import { JsonValue, JsonWorkflowArgs, JsonWorkflowErrorData, PortableWorkflowError } from '../schemas/system_db_schema';
+import { WorkflowSerializationFormat } from './workflow';
 export { type JSONValue };
 
 /**
@@ -8,6 +10,11 @@ export { type JSONValue };
  * Implementations must be able to serialize any value to a string and deserialize it back.
  */
 export interface DBOSSerializer {
+  /**
+   * Return a name for the serialization format
+   */
+  name: () => string;
+
   /**
    * Serialize a value to a string.
    * @param value - The value to serialize
@@ -126,6 +133,7 @@ export function DBOSReviver(_key: string, value: unknown): unknown {
 
 // Keep the old DBOSJSON implementation for reference/testing
 export const DBOSJSONLegacy = {
+  name: () => 'js_legacy',
   parse: (text: string | null) => {
     // eslint-disable-next-line @typescript-eslint/no-unsafe-return
     return text === null ? null : JSON.parse(text, DBOSReviver);
@@ -178,6 +186,8 @@ function sjstringify(value: unknown) {
  * New serialization uses SuperJSON to handle Sets, Maps, undefined, RegExp, circular refs, etc.
  */
 export const DBOSJSON: DBOSSerializer = {
+  name: () => 'js_superjson',
+
   parse: (text: string | null | undefined): unknown => {
     if (text === null || text === undefined) return null; // This is from legacy; SuperJSON can do it.
 
@@ -212,6 +222,57 @@ export const DBOSJSON: DBOSSerializer = {
   stringify: sjstringify,
 };
 
+function portableJsonReplacer(_key: string, value: unknown): unknown {
+  if (value instanceof Date) return value.toISOString();
+
+  if (typeof value === 'bigint') return value.toString(10);
+
+  if (value instanceof Map) {
+    // If keys are strings, represent as a plain JSON object.
+    let allStringKeys = true;
+    for (const k of value.keys()) {
+      if (typeof k !== 'string') {
+        allStringKeys = false;
+        break;
+      }
+    }
+    if (!allStringKeys) {
+      throw new TypeError(`Attempt to do portable JSON serialization of a map with non-string keys`);
+      // Other option: list of [key,value] pairs (portable, but needs schema/consumer intent)
+      // return Array.from(value.entries());
+    }
+
+    const obj: Record<string, unknown> = {};
+    for (const [k, v] of value.entries()) obj[k as string] = v;
+    return obj;
+  }
+
+  if (value instanceof Set) return Array.from(value.values());
+
+  if (value instanceof Error) {
+    return { name: value.name, message: value.message };
+    // If you want stack too:
+    // return { name: value.name, message: value.message, stack: value.stack };
+  }
+
+  return value;
+}
+
+/**
+ * DBOS Portable JSON serializer,
+ *   should be something that can be implemented in any language
+ */
+export const DBOSPortableJSON: DBOSSerializer = {
+  name: () => 'portable_json',
+  parse: (text: string | null) => {
+    // eslint-disable-next-line @typescript-eslint/no-unsafe-return
+    return text === null ? null : JSON.parse(text);
+  },
+  stringify: (value: unknown): string => {
+    return JSON.stringify(value, portableJsonReplacer);
+  },
+};
+
 // Serialization protection - for a serialized object, provide a replacement that gives clear errors
 //  from called functions that will not be there after deserialization.
 
@@ -229,13 +290,47 @@ export function serializeFunctionInputOutput<T>(
   value: T,
   path: PathToMember = [],
   serializer: DBOSSerializer,
-): { deserialized: T; stringified: string } {
+  serializationType?: WorkflowSerializationFormat,
+): { deserialized: T; stringified: string; sername: string } {
+  const serialization =
+    serializationType === 'portable'
+      ? DBOSPortableJSON.name()
+      : serializationType === 'native'
+        ? DBOSJSON.name()
+        : serializer.name();
+
+  return serializeFunctionInputOutputWithSerializer(value, path, serializer, serialization);
+}
+
+export function serializeFunctionInputOutputWithSerializer<T>(
+  value: T,
+  path: PathToMember = [],
+  serializer: DBOSSerializer,
+  serialization: string | null,
+): { deserialized: T; stringified: string; sername: string } {
+  for (const ser of [DBOSPortableJSON, DBOSJSON]) {
+    if (serialization === ser.name()) {
+      const stringified = ser.stringify(value);
+      const deserialized = ser.parse(stringified) as T;
+      if (isObjectish(deserialized)) {
+        attachFunctionStubs(value as unknown as AnyObject, deserialized as unknown as AnyObject, path);
+      }
+      return { deserialized, stringified, sername: ser.name() };
+    }
+  }
+
+  const sername = serializer.name();
+  if (serialization && serialization !== sername) {
+    throw new TypeError(
+      `Serializer provided (${sername}) is not compatible with the required serialization (${serialization})`,
+    );
+  }
   const stringified = serializer.stringify(value);
   const deserialized = serializer.parse(stringified) as T;
-  if (serializer === DBOSJSON && isObjectish(deserialized)) {
+  if (serializer.name() === DBOSJSON.name() && isObjectish(deserialized)) {
     attachFunctionStubs(value as unknown as AnyObject, deserialized as unknown as AnyObject, path);
   }
-  return { deserialized, stringified };
+  return { deserialized, stringified, sername };
 }
 
 // Walks original & deserialized in lockstep and attaches stubs for missing functions.
@@ -376,21 +471,177 @@ function isIndexableKey(k: unknown): k is string | number {
   return typeof k === 'string' || typeof k === 'number';
 }
 
+// Deserialize a plain value (not function inputs) using specified serialization,
+//   or the provided default
+export function deserializeValue(
+  serializedValue: string | null,
+  serialization: string | null,
+  serializer: DBOSSerializer,
+): unknown {
+  if (serialization === DBOSPortableJSON.name()) {
+    return DBOSPortableJSON.parse(serializedValue);
+  }
+  if (serialization === DBOSJSON.name()) {
+    return DBOSJSON.parse(serializedValue);
+  }
+  if (!serialization || serialization === serializer.name()) {
+    return serializer.parse(serializedValue);
+  }
+  throw new TypeError(`Value deserialization type ${serialization} is not available`);
+}
+
+// Deserialize a plain value (not function inputs) using specified serialization,
+//   or the provided default
+export function deserializePositionalArgs(
+  serializedValue: string | null,
+  serialization: string | null,
+  serializer: DBOSSerializer,
+): unknown[] {
+  if (serialization === DBOSPortableJSON.name()) {
+    return (DBOSPortableJSON.parse(serializedValue) as JsonWorkflowArgs).positionalArgs ?? [];
+  }
+  if (serialization === DBOSJSON.name()) {
+    return DBOSJSON.parse(serializedValue) as unknown[];
+  }
+  if (!serialization || serialization === serializer.name()) {
+    return serializer.parse(serializedValue) as unknown[];
+  }
+  throw new TypeError(`Value deserialization type ${serialization} is not available`);
+}
+
+export function deserializeResError(
+  serializedValue: string | null,
+  serialization: string | null,
+  serializer: DBOSSerializer,
+): Error {
+  if (serialization === DBOSPortableJSON.name()) {
+    const errdata = DBOSPortableJSON.parse(serializedValue) as JsonWorkflowErrorData;
+    throw new PortableWorkflowError(errdata.message, errdata.name, errdata.code, errdata.data);
+  }
+  if (serialization === DBOSJSON.name()) {
+    return deserializeError(DBOSJSON.parse(serializedValue));
+  }
+  if (!serialization || serialization === serializer.name()) {
+    return deserializeError(serializer.parse(serializedValue));
+  }
+  throw new TypeError(`Value deserialization type ${serialization} is not available`);
+}
+
 // Attempt to deserialize a value, but if it fails, retun the raw string.
 // Used for "best-effort" in introspection methods which may encounter
 // old undeserializable data.
-export function safeParse(serializer: DBOSSerializer, val: string) {
+export function safeParse(serializer: DBOSSerializer, val: string, serialization: string | null) {
   try {
-    return serializer.parse(val);
+    return deserializeValue(val, serialization, serializer);
   } catch (e) {
     return val;
   }
 }
 
-export function safeParseError(serializer: DBOSSerializer, val: string) {
+export function safeParsePositionalArgs(serializer: DBOSSerializer, val: string | null, serialization: string | null) {
   try {
-    return deserializeError(serializer.parse(val));
+    return deserializePositionalArgs(val, serialization, serializer);
   } catch (e) {
-    return val as unknown as Error;
+    return val;
   }
+}
+
+export function safeParseError(serializer: DBOSSerializer, val: string, serialization: string | null) {
+  try {
+    return deserializeResError(val, serialization, serializer);
+  } catch (e) {
+    return new Error(val);
+  }
+}
+
+export function serializeValue(
+  value: unknown,
+  serializer: DBOSSerializer,
+  serializationFormat: WorkflowSerializationFormat,
+): { serializedValue: string | null; serialization: string | null } {
+  if (serializationFormat === 'portable') {
+    return {
+      serializedValue: DBOSPortableJSON.stringify(value),
+      serialization: DBOSPortableJSON.name(),
+    };
+  }
+  if (serializationFormat === 'native') {
+    return {
+      serializedValue: DBOSJSON.stringify(value),
+      serialization: DBOSJSON.name(),
+    };
+  }
+  return {
+    serializedValue: serializer.stringify(value),
+    serialization: serializer.name(),
+  };
+}
+
+export function serializeArgs(
+  positionalArgs: unknown[] | undefined,
+  namedArgs: { [key: string]: unknown } | undefined,
+  serializer: DBOSSerializer,
+  serializationFormat: WorkflowSerializationFormat,
+): { serializedValue: string | null; serialization: string | null } {
+  if (serializationFormat === 'portable') {
+    return {
+      serializedValue: DBOSPortableJSON.stringify({ positionalArgs, namedArgs } as JsonWorkflowArgs),
+      serialization: DBOSPortableJSON.name(),
+    };
+  }
+  if (namedArgs) {
+    throw new TypeError(`Serialization format '${serializationFormat}' does not currently support named args.`);
+  }
+  if (serializationFormat === 'native') {
+    return {
+      serializedValue: DBOSJSON.stringify(positionalArgs),
+      serialization: DBOSJSON.name(),
+    };
+  }
+  return {
+    serializedValue: serializer.stringify(positionalArgs),
+    serialization: serializer.name(),
+  };
+}
+
+export function serializeResError(
+  err: Error,
+  serializer: DBOSSerializer,
+  serializationType: WorkflowSerializationFormat,
+): { serializedValue: string | null; serialization: string | null } {
+  const serialization =
+    serializationType === 'portable'
+      ? DBOSPortableJSON.name()
+      : serializationType === 'native'
+        ? DBOSJSON.name()
+        : serializer.name();
+  return serializeResErrorWithSerializer(err, serializer, serialization);
+}
+
+export function serializeResErrorWithSerializer(
+  err: Error,
+  serializer: DBOSSerializer,
+  serialization: string | null,
+): { serializedValue: string | null; serialization: string | null } {
+  if (serialization === DBOSPortableJSON.name()) {
+    return {
+      serializedValue: DBOSPortableJSON.stringify({
+        name: err.name,
+        message: err.message,
+        code: (err as { code?: unknown }).code,
+        data: (err as { data?: JsonValue }).data,
+      } as JsonWorkflowErrorData),
+      serialization: DBOSPortableJSON.name(),
+    };
+  }
+  if (serialization === DBOSJSON.name()) {
+    return {
+      serializedValue: DBOSJSON.stringify(serializeError(err)),
+      serialization: DBOSJSON.name(),
+    };
+  }
+  return {
+    serializedValue: serializer.stringify(serializeError(err)),
+    serialization: serializer.name(),
+  };
 }
