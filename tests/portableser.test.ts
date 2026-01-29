@@ -256,12 +256,10 @@ describe('portable-serizlization-tests', () => {
     await expect(errh.getResult()).rejects.toThrow('Failed!');
     try {
       await errh.getResult();
-    } catch (e: any) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    } catch (e) {
       expect((e as PortableWorkflowError).message).toBe('Failed!');
       expect((e as PortableWorkflowError).name).toBe('Error');
-      // eslint-disable-next-line @typescript-eslint/no-unsafe-member-access
-      expect(e.constructor.name).toBe('PortableWorkflowError');
+      expect((e as object).constructor.name).toBe('PortableWorkflowError');
     }
   });
 
