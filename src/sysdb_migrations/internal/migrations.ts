@@ -222,5 +222,15 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
         `CREATE INDEX "idx_workflow_status_parent_workflow_id" ON "${schemaName}"."workflow_status" ("parent_workflow_id");`,
       ],
     },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_status" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."notifications" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."workflow_events" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."workflow_events_history" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."operation_outputs" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."streams" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
+      ],
+    },
   ];
 }
