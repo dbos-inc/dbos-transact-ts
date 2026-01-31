@@ -99,18 +99,18 @@ export interface WorkflowStatus {
 
 export interface GetWorkflowsInput {
   workflowIDs?: string[]; // Retrieve workflows with these IDs.
-  workflowName?: string; // Retrieve workflows with this name.
-  status?: 'PENDING' | 'SUCCESS' | 'ERROR' | 'MAX_RECOVERY_ATTEMPTS_EXCEEDED' | 'CANCELLED' | 'ENQUEUED'; // Retrieve workflows with this status (Must be `ENQUEUED`, `PENDING`, `SUCCESS`, `ERROR`, `CANCELLED`, or `RETRIES_EXCEEDED`)
+  workflowName?: string | string[]; // Retrieve workflows with this name (or any of these names).
+  status?: WorkflowStatusString | WorkflowStatusString[]; // Retrieve workflows with this status (or any of these statuses).
   startTime?: string; // Retrieve workflows started after this (RFC 3339-compliant) timestamp.
   endTime?: string; // Retrieve workflows started before this (RFC 3339-compliant) timestamp.
-  authenticatedUser?: string; // Retrieve workflows run by this authenticated user.
-  applicationVersion?: string; // Retrieve workflows started on this application version.
-  executorId?: string; // Retrieve workflows run by this executor ID.
-  workflow_id_prefix?: string; // Retrieve workflows whose ID have this prefix
-  queueName?: string; // If this workflow is enqueued, on which queue
+  authenticatedUser?: string | string[]; // Retrieve workflows run by this authenticated user (or any of these users).
+  applicationVersion?: string | string[]; // Retrieve workflows started on this application version (or any of these versions).
+  executorId?: string | string[]; // Retrieve workflows run by this executor ID (or any of these executor IDs).
+  workflow_id_prefix?: string | string[]; // Retrieve workflows whose ID have this prefix (or any of these prefixes).
+  queueName?: string | string[]; // If this workflow is enqueued, on which queue (or any of these queues).
   queuesOnly?: boolean; // Return only workflows that are actively enqueued
-  forkedFrom?: string; // Get workflows forked from this workflow ID.
-  parentWorkflowID?: string; // Get workflows started by this parent workflow ID.
+  forkedFrom?: string | string[]; // Get workflows forked from this workflow ID (or any of these workflow IDs).
+  parentWorkflowID?: string | string[]; // Get workflows started by this parent workflow ID (or any of these parent workflow IDs).
   limit?: number; // Return up to this many workflows IDs. IDs are ordered by workflow creation time.
   offset?: number; // Skip this many workflows IDs. IDs are ordered by workflow creation time.
   sortDesc?: boolean; // Sort the workflows in descending order by creation time (default ascending order).
@@ -152,6 +152,14 @@ export const StatusString = {
   /** Workflow is on a `WorkflowQueue` and has not yet started */
   ENQUEUED: 'ENQUEUED',
 } as const;
+
+export type WorkflowStatusString =
+  | 'PENDING'
+  | 'SUCCESS'
+  | 'ERROR'
+  | 'MAX_RECOVERY_ATTEMPTS_EXCEEDED'
+  | 'CANCELLED'
+  | 'ENQUEUED';
 
 export function isWorkflowActive(status: string) {
   return status === StatusString.PENDING || status === StatusString.ENQUEUED;
