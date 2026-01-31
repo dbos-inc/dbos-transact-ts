@@ -3,7 +3,7 @@ import { getAlertHandler } from '../decorators';
 import { globalParams } from '../utils';
 import WebSocket from 'ws';
 import * as protocol from './protocol';
-import { GetWorkflowsInput, StatusString } from '..';
+import { GetWorkflowsInput, WorkflowStatusString } from '../workflow';
 import { hostname } from 'node:os';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
@@ -231,7 +231,7 @@ export class Conductor {
               authenticatedUser: body.authenticated_user,
               startTime: body.start_time,
               endTime: body.end_time,
-              status: body.status as (typeof StatusString)[keyof typeof StatusString],
+              status: body.status as WorkflowStatusString | WorkflowStatusString[],
               applicationVersion: body.application_version,
               forkedFrom: body.forked_from,
               parentWorkflowID: body.parent_workflow_id,
@@ -265,7 +265,7 @@ export class Conductor {
               authenticatedUser: bodyQueued.authenticated_user,
               startTime: bodyQueued.start_time,
               endTime: bodyQueued.end_time,
-              status: bodyQueued.status as (typeof StatusString)[keyof typeof StatusString],
+              status: bodyQueued.status as WorkflowStatusString | WorkflowStatusString[],
               applicationVersion: bodyQueued.application_version,
               forkedFrom: bodyQueued.forked_from,
               parentWorkflowID: bodyQueued.parent_workflow_id,

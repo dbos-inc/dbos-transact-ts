@@ -2361,6 +2361,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
     const params: unknown[] = [];
     let paramCounter = 1;
 
+    // Helper: add a filter for a field that may be a single value or an array.
+    // Uses = for a single value, IN (...) for an array.
+    const addFilter = (column: string, value: string | string[] | undefined) => {
+      if (!value) return;
+      if (Array.isArray(value)) {
+        const placeholders = value.map((_, i) => `$${paramCounter + i}`).join(', ');
+        whereClauses.push(`${column} IN (${placeholders})`);
+        params.push(...value);
+        paramCounter += value.length;
+      } else {
+        whereClauses.push(`${column} = $${paramCounter}`);
+        params.push(value);
+        paramCounter++;
+      }
+    };
+
     // If queuesOnly, filter for queued workflows
     if (input.queuesOnly) {
       whereClauses.push(`queue_name IS NOT NULL`);
@@ -2369,20 +2385,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
       paramCounter += 2;
     }
 
-    if (input.workflowName) {
-      whereClauses.push(`name = $${paramCounter}`);
-      params.push(input.workflowName);
-      paramCounter++;
-    }
-    if (input.queueName) {
-      whereClauses.push(`queue_name = $${paramCounter}`);
-      params.push(input.queueName);
-      paramCounter++;
-    }
+    addFilter('name', input.workflowName);
+    addFilter('queue_name', input.queueName);
+
     if (input.workflow_id_prefix) {
-      whereClauses.push(`workflow_uuid LIKE $${paramCounter}`);
-      params.push(`${input.workflow_id_prefix}%`);
-      paramCounter++;
+      if (Array.isArray(input.workflow_id_prefix)) {
+        const likeClauses = input.workflow_id_prefix.map((_, i) => `workflow_uuid LIKE $${paramCounter + i}`);
+        whereClauses.push(`(${likeClauses.join(' OR ')})`);
+        params.push(...input.workflow_id_prefix.map((p) => `${p}%`));
+        paramCounter += input.workflow_id_prefix.length;
+      } else {
+        whereClauses.push(`workflow_uuid LIKE $${paramCounter}`);
+        params.push(`${input.workflow_id_prefix}%`);
+        paramCounter++;
+      }
     }
     if (input.workflowIDs) {
       const placeholders = input.workflowIDs.map((_, i) => `$${paramCounter + i}`).join(', ');
@@ -2390,21 +2406,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       params.push(...input.workflowIDs);
       paramCounter += input.workflowIDs.length;
     }
-    if (input.authenticatedUser) {
-      whereClauses.push(`authenticated_user = $${paramCounter}`);
-      params.push(input.authenticatedUser);
-      paramCounter++;
-    }
-    if (input.forkedFrom) {
-      whereClauses.push(`forked_from = $${paramCounter}`);
-      params.push(input.forkedFrom);
-      paramCounter++;
-    }
-    if (input.parentWorkflowID) {
-      whereClauses.push(`parent_workflow_id = $${paramCounter}`);
-      params.push(input.parentWorkflowID);
-      paramCounter++;
-    }
+
+    addFilter('authenticated_user', input.authenticatedUser);
+    addFilter('forked_from', input.forkedFrom);
+    addFilter('parent_workflow_id', input.parentWorkflowID);
+
     if (input.startTime) {
       whereClauses.push(`created_at >= $${paramCounter}`);
       params.push(new Date(input.startTime).getTime());
@@ -2415,21 +2421,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
       params.push(new Date(input.endTime).getTime());
       paramCounter++;
     }
-    if (input.status) {
-      whereClauses.push(`status = $${paramCounter}`);
-      params.push(input.status);
-      paramCounter++;
-    }
-    if (input.applicationVersion) {
-      whereClauses.push(`application_version = $${paramCounter}`);
-      params.push(input.applicationVersion);
-      paramCounter++;
-    }
-    if (input.executorId) {
-      whereClauses.push(`executor_id = $${paramCounter}`);
-      params.push(input.executorId);
-      paramCounter++;
-    }
+
+    addFilter('status', input.status);
+    addFilter('application_version', input.applicationVersion);
+    addFilter('executor_id', input.executorId);
 
     const whereClause = whereClauses.length > 0 ? `WHERE ${whereClauses.join(' AND ')}` : '';
     const orderClause = `ORDER BY created_at ${input.sortDesc ? 'DESC' : 'ASC'}`;

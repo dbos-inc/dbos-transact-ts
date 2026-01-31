@@ -155,22 +155,22 @@ export class RestartResponse extends BaseResponse {
 
 export interface ListWorkflowsBody {
   workflow_uuids: string[];
-  workflow_name?: string;
-  authenticated_user?: string;
+  workflow_name?: string | string[];
+  authenticated_user?: string | string[];
   start_time?: string;
   end_time?: string;
-  status?: string;
-  application_version?: string;
-  forked_from?: string;
-  parent_workflow_id?: string;
-  queue_name?: string;
+  status?: string | string[];
+  application_version?: string | string[];
+  forked_from?: string | string[];
+  parent_workflow_id?: string | string[];
+  queue_name?: string | string[];
   limit?: number;
   offset?: number;
   sort_desc: boolean;
-  workflow_id_prefix?: string;
+  workflow_id_prefix?: string | string[];
   load_input?: boolean; // Load the input of the workflow (default false)
   load_output?: boolean; // Load the output of the workflow (default false)
-  executor_id?: string;
+  executor_id?: string | string[];
   queues_only?: boolean;
 }
 
@@ -270,22 +270,22 @@ export class ListWorkflowsResponse extends BaseResponse {
 
 export interface ListQueuedWorkflowsBody {
   workflow_uuids?: string[];
-  workflow_name?: string;
-  authenticated_user?: string;
+  workflow_name?: string | string[];
+  authenticated_user?: string | string[];
   start_time?: string;
   end_time?: string;
-  status?: string;
-  application_version?: string;
-  forked_from?: string;
-  parent_workflow_id?: string;
-  queue_name?: string;
+  status?: string | string[];
+  application_version?: string | string[];
+  forked_from?: string | string[];
+  parent_workflow_id?: string | string[];
+  queue_name?: string | string[];
   limit?: number;
   offset?: number;
   sort_desc: boolean;
-  workflow_id_prefix?: string;
+  workflow_id_prefix?: string | string[];
   load_input?: boolean; // Load the input of the workflow (default false)
   load_output?: boolean; // Load the output of the workflow (default false)
-  executor_id?: string;
+  executor_id?: string | string[];
 }
 
 export class ListQueuedWorkflowsRequest implements BaseMessage {
