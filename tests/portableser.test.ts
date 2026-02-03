@@ -1,5 +1,5 @@
 import { Client } from 'pg';
-import { DBOS, DBOSClient, DBOSConfig, WorkflowQueue } from '../src';
+import { DBOS, DBOSClient, DBOSConfig, WorkflowHandle, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import {
   notifications,
@@ -315,66 +315,79 @@ describe('portable-serizlization-tests', () => {
 
   test('test-portable-client', async () => {
     const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
-
     try {
-      // Run WF with custom serialization
-      const wfhr = await client.enqueue<typeof simpleRecv>(
-        {
-          workflowName: 'simpleRecv',
-          queueName: 'testq',
-          serializationType: 'portable',
-        },
-        'portable',
-      );
-      const wfhs = await client.enqueue<typeof defWorkflow>(
-        {
-          workflowName: 'workflowDef',
-          workflowClassName: 'workflows',
-          queueName: 'testq',
-          serializationType: 'portable',
-        },
-        's',
-        1,
-        { k: 'k', v: ['v'] },
-        wfhr.workflowID,
-      );
-      await client.send(wfhs.workflowID, 'm', 'incoming', undefined, { serializationType: 'portable' });
-      expect(await client.getEvent(wfhs.workflowID, 'defstat', 2)).toStrictEqual({ status: 'Happy' });
-      expect(await client.getEvent(wfhs.workflowID, 'nstat', 2)).toStrictEqual({ status: 'Happy' });
-      expect(await client.getEvent(wfhs.workflowID, 'pstat', 2)).toStrictEqual({ status: 'Happy' });
-      const { value: ddread } = await client.readStream(wfhs.workflowID, 'defstream').next();
-      expect(ddread).toStrictEqual({ stream: 'OhYeah' });
-      const { value: dnread } = await client.readStream(wfhs.workflowID, 'nstream').next();
-      expect(dnread).toStrictEqual({ stream: 'OhYeah' });
-      const { value: dpread } = await client.readStream(wfhs.workflowID, 'pstream').next();
-      expect(dpread).toStrictEqual({ stream: 'OhYeah' });
-      const rvs = await wfhs.getResult();
-      expect(rvs).toBe('s-1-k:v@"m"');
-      expect(await wfhr.getResult()).toStrictEqual({ message: 'Hello!' });
+      for (const calltype of ['regular', 'portable']) {
+        // Run WF with custom serialization
+        const wfhr = await client.enqueue<typeof simpleRecv>(
+          {
+            workflowName: 'simpleRecv',
+            queueName: 'testq',
+            serializationType: 'portable',
+          },
+          'portable',
+        );
+        let wfhs: WorkflowHandle<string>;
+        if (calltype === 'portable') {
+          wfhs = await client.enqueuePortable<string>(
+            {
+              workflowName: 'workflowDef',
+              workflowClassName: 'workflows',
+              queueName: 'testq',
+            },
+            ['s', 1, { k: 'k', v: ['v'] }, wfhr.workflowID],
+          );
+        } else {
+          wfhs = await client.enqueue<typeof defWorkflow>(
+            {
+              workflowName: 'workflowDef',
+              workflowClassName: 'workflows',
+              queueName: 'testq',
+              serializationType: 'portable',
+            },
+            's',
+            1,
+            { k: 'k', v: ['v'] },
+            wfhr.workflowID,
+          );
+        }
+        await client.send(wfhs.workflowID, 'm', 'incoming', undefined, { serializationType: 'portable' });
+        expect(await client.getEvent(wfhs.workflowID, 'defstat', 2)).toStrictEqual({ status: 'Happy' });
+        expect(await client.getEvent(wfhs.workflowID, 'nstat', 2)).toStrictEqual({ status: 'Happy' });
+        expect(await client.getEvent(wfhs.workflowID, 'pstat', 2)).toStrictEqual({ status: 'Happy' });
+        const { value: ddread } = await client.readStream(wfhs.workflowID, 'defstream').next();
+        expect(ddread).toStrictEqual({ stream: 'OhYeah' });
+        const { value: dnread } = await client.readStream(wfhs.workflowID, 'nstream').next();
+        expect(dnread).toStrictEqual({ stream: 'OhYeah' });
+        const { value: dpread } = await client.readStream(wfhs.workflowID, 'pstream').next();
+        expect(dpread).toStrictEqual({ stream: 'OhYeah' });
+        const rvs = await wfhs.getResult();
+        expect(rvs).toBe('s-1-k:v@"m"');
+        expect(await wfhr.getResult()).toStrictEqual({ message: 'Hello!' });
 
-      // Snoop the DB to make sure serialization format is correct
-      // WF
-      const pser = await systemDBClient.query<workflow_status>(
-        'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
-        [wfhs.workflowID],
-      );
-      expect(pser.rows[0].serialization).toBe(DBOSPortableJSON.name());
-      expect(pser.rows[0].output).toBe('"s-1-k:v@\\"m\\""');
+        // Snoop the DB to make sure serialization format is correct
+        // WF
+        const pser = await systemDBClient.query<workflow_status>(
+          'SELECT * FROM dbos.workflow_status where workflow_uuid = $1',
+          [wfhs.workflowID],
+        );
+        expect(pser.rows[0].serialization).toBe(DBOSPortableJSON.name());
+        expect(pser.rows[0].output).toBe('"s-1-k:v@\\"m\\""');
 
-      // Messages
-      await checkMsgSer(wfhr.workflowID, 'default', DBOSJSON.name()); // TODO: Should be portable
-      await checkMsgSer(wfhr.workflowID, 'native', DBOSJSON.name());
-      //await checkMsgSer(drdwfh.workflowID, 'portable', DBOSPortableJSON.name()); // This got deleted
+        // Messages
+        await checkMsgSer(wfhr.workflowID, 'default', DBOSJSON.name()); // TODO: Should be portable
+        await checkMsgSer(wfhr.workflowID, 'native', DBOSJSON.name());
+        //await checkMsgSer(drdwfh.workflowID, 'portable', DBOSPortableJSON.name()); // This got deleted
 
-      // Events
-      await checkEvtSer(wfhs.workflowID, 'defstat', DBOSJSON.name()); // TODO: Should be portable
-      await checkEvtSer(wfhs.workflowID, 'nstat', DBOSJSON.name());
-      await checkEvtSer(wfhs.workflowID, 'pstat', DBOSPortableJSON.name());
+        // Events
+        await checkEvtSer(wfhs.workflowID, 'defstat', DBOSJSON.name()); // TODO: Should be portable
+        await checkEvtSer(wfhs.workflowID, 'nstat', DBOSJSON.name());
+        await checkEvtSer(wfhs.workflowID, 'pstat', DBOSPortableJSON.name());
 
-      // Streams
-      await checkStreamSer(wfhs.workflowID, 'defstream', DBOSJSON.name()); // TODO: Should be portable
-      await checkStreamSer(wfhs.workflowID, 'nstream', DBOSJSON.name());
-      await checkStreamSer(wfhs.workflowID, 'pstream', DBOSPortableJSON.name());
+        // Streams
+        await checkStreamSer(wfhs.workflowID, 'defstream', DBOSJSON.name()); // TODO: Should be portable
+        await checkStreamSer(wfhs.workflowID, 'nstream', DBOSJSON.name());
+        await checkStreamSer(wfhs.workflowID, 'pstream', DBOSPortableJSON.name());
+      }
     } finally {
       await client.destroy();
     }

@@ -203,7 +203,7 @@ export class DBOSClient {
    * Enqueues a workflow for execution.
    * @param options - Options for the enqueue operation, including queue name, workflow name, and other parameters.
    * @param args - Arguments to pass to the workflow upon execution.
-   * @returns A Promise that resolves when the message has been sent.
+   * @returns A Promise that resolves when enqueue is complete, providing a handle to the enqueued workflow.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async enqueue<T extends (...args: any[]) => Promise<any>>(
@@ -243,6 +243,59 @@ export class DBOSClient {
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
 
     return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
+  }
+
+  /**
+   * Enqueues a workflow for execution, where the workflow function definition is not
+   *   available and may be implemented in another language.
+   * @param options - Options for the enqueue operation, including queue name, workflow name, and other parameters.
+   * @param positionalArgs - Array of positional arguments to pass to the workflow upon execution.
+   * @param namedArgs - Optional object containing named arguments for the target workflow (useful mainly for calling Python functions with kwargs)
+   * @returns A Promise that resolves when enqueue is complete, providing a handle to the enqueued workflow.
+   */
+  async enqueuePortable<T = unknown>(
+    options: ClientEnqueueOptions,
+    positionalArgs: unknown[],
+    namedArgs?: { [key: string]: unknown },
+  ): Promise<WorkflowHandle<T>> {
+    const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
+    const workflowUUID = options.workflowID ?? randomUUID();
+
+    const serparam = serializeArgs(
+      positionalArgs,
+      namedArgs,
+      this.serializer,
+      options?.serializationType ?? 'portable',
+    );
+    const internalStatus: WorkflowStatusInternal = {
+      workflowUUID: workflowUUID,
+      status: StatusString.ENQUEUED,
+      workflowName: workflowName,
+      workflowClassName: workflowClassName ?? '',
+      workflowConfigName: workflowConfigName ?? '',
+      queueName: queueName,
+      authenticatedUser: '',
+      output: null,
+      error: null,
+      assumedRole: '',
+      authenticatedRoles: [],
+      request: {},
+      executorId: '',
+      applicationVersion: appVersion,
+      applicationID: '',
+      createdAt: Date.now(),
+      timeoutMS: options.workflowTimeoutMS,
+      deadlineEpochMS: undefined,
+      input: serparam.serializedValue,
+      deduplicationID: options.deduplicationID,
+      priority: options.priority ?? 0,
+      queuePartitionKey: options.queuePartitionKey,
+      serialization: serparam.serialization,
+    };
+
+    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+
+    return new ClientHandle<T>(this.systemDatabase, workflowUUID);
   }
 
   /**
