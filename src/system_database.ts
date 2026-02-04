@@ -1256,32 +1256,32 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (startStep > 0) {
         // Copy operation outputs
         const copyOutputsQuery = `INSERT INTO "${this.schemaName}".operation_outputs
-          (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
-          SELECT $1 AS workflow_uuid, function_id, output, error, function_name, child_workflow_id
+          (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id)
+          SELECT $1 AS workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id
           FROM "${this.schemaName}".operation_outputs
           WHERE workflow_uuid = $2 AND function_id < $3`;
         await client.query(copyOutputsQuery, [newWorkflowID, workflowID, startStep]);
 
         // Copy streams
         const copyStreamsQuery = `INSERT INTO "${this.schemaName}".streams
-          (workflow_uuid, key, value, "offset", function_id)
-          SELECT $1 AS workflow_uuid, key, value, "offset", function_id
+          (workflow_uuid, key, value, serialization, "offset", function_id)
+          SELECT $1 AS workflow_uuid, key, value, serialization, "offset", function_id
           FROM "${this.schemaName}".streams
           WHERE workflow_uuid = $2 AND function_id < $3`;
         await client.query(copyStreamsQuery, [newWorkflowID, workflowID, startStep]);
 
         // Copy events history
         const copyEventsHistoryQuery = `INSERT INTO "${this.schemaName}".workflow_events_history
-          (workflow_uuid, function_id, key, value)
-          SELECT $1 AS workflow_uuid, function_id, key, value
+          (workflow_uuid, function_id, key, value, serialization)
+          SELECT $1 AS workflow_uuid, function_id, key, value, serialization
           FROM "${this.schemaName}".workflow_events_history
           WHERE workflow_uuid = $2 AND function_id < $3`;
         await client.query(copyEventsHistoryQuery, [newWorkflowID, workflowID, startStep]);
 
         // Copy only the latest version of each event (max function_id per key) into workflow_events
         const copyLatestEventsQuery = `INSERT INTO "${this.schemaName}".workflow_events
-          (workflow_uuid, key, value)
-          SELECT $1 AS workflow_uuid, weh1.key, weh1.value
+          (workflow_uuid, key, value, serialization)
+          SELECT $1 AS workflow_uuid, weh1.key, weh1.value, serialization
           FROM "${this.schemaName}".workflow_events_history weh1
           WHERE weh1.workflow_uuid = $2
             AND weh1.function_id = (
@@ -1533,21 +1533,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
       const finalRecvRows = (
         await client.query<notifications>(
-          `WITH oldest_entry AS (
-        SELECT destination_uuid, topic, message, created_at_epoch_ms, serialization
-        FROM "${this.schemaName}".notifications
+          `DELETE FROM "${this.schemaName}".notifications
         WHERE destination_uuid = $1
           AND topic = $2
-        ORDER BY created_at_epoch_ms ASC
-        LIMIT 1
-       )
-
-        DELETE FROM "${this.schemaName}".notifications
-        USING oldest_entry
-        WHERE notifications.destination_uuid = oldest_entry.destination_uuid
-          AND notifications.topic = oldest_entry.topic
-          AND notifications.created_at_epoch_ms = oldest_entry.created_at_epoch_ms
-        RETURNING notifications.*;`,
+          AND message_uuid = (
+            SELECT message_uuid
+            FROM "${this.schemaName}".notifications
+            WHERE destination_uuid = $1
+              AND topic = $2
+            ORDER BY created_at_epoch_ms ASC
+            LIMIT 1
+          )
+        RETURNING notifications.message, notifications.serialization;`,
           [workflowID, topic],
         )
       ).rows;
