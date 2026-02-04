@@ -1479,21 +1479,18 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
       const finalRecvRows = (
         await client.query<notifications>(
-          `WITH oldest_entry AS (
-        SELECT destination_uuid, topic, message, created_at_epoch_ms
-        FROM "${this.schemaName}".notifications
+          `DELETE FROM "${this.schemaName}".notifications
         WHERE destination_uuid = $1
           AND topic = $2
-        ORDER BY created_at_epoch_ms ASC
-        LIMIT 1
-       )
-
-        DELETE FROM "${this.schemaName}".notifications
-        USING oldest_entry
-        WHERE notifications.destination_uuid = oldest_entry.destination_uuid
-          AND notifications.topic = oldest_entry.topic
-          AND notifications.created_at_epoch_ms = oldest_entry.created_at_epoch_ms
-        RETURNING notifications.*;`,
+          AND message_uuid = (
+            SELECT message_uuid
+            FROM "${this.schemaName}".notifications
+            WHERE destination_uuid = $1
+              AND topic = $2
+            ORDER BY created_at_epoch_ms ASC
+            LIMIT 1
+          )
+        RETURNING notifications.message;`,
           [workflowID, topic],
         )
       ).rows;
