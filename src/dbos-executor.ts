@@ -562,6 +562,7 @@ export class DBOSExecutor {
       internalStatus.status = StatusString.ERROR;
       await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+      return deserializeResError(sererr.serializedValue, sererr.serialization, eserializer);
     }
 
     const runWorkflow = async () => {
@@ -625,8 +626,7 @@ export class DBOSExecutor {
             throw e;
           }
         } else {
-          await handleWorkflowError(err as Error, this);
-          throw err;
+          throw await handleWorkflowError(err as Error, this);
         }
       } finally {
         this.tracer.endSpan(span);

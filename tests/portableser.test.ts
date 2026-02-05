@@ -241,9 +241,10 @@ describe('portable-serizlization-tests', () => {
 
     // Error handling
     // Check WF that throws an error
-    // TODO: Should the error thrown from direct invocation be PortableWorkflowError
-    //  for consistency (like we do with return values, run through ser/des)?
+    // The error thrown from direct invocation should be PortableWorkflowError
+    //  for consistency (like we do with return values, run through ser/des)
     await expect(PortableWorkflow.pwfError()).rejects.toThrow('Failed!');
+    await expect(PortableWorkflow.pwfError()).rejects.toThrow(PortableWorkflowError);
 
     // Snoop the DB to make sure serialization format is correct
     // WF
