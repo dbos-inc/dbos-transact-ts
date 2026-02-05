@@ -430,7 +430,7 @@ export class DBOSExecutor {
       assumedRole: pctx?.assumedRole ?? '',
     });
 
-    const serializationType = wInfo?.workflowConfig?.serialization;
+    let serializationType = wInfo?.workflowConfig?.serialization;
     const funcArgs = serializeFunctionInputOutput(
       serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
       [wfname, '<arguments>'],
@@ -494,6 +494,7 @@ export class DBOSExecutor {
         isDequeuedRequest: params.isQueueDispatch,
         isRecoveryRequest: params.isRecoveryDispatch,
       });
+      serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } catch (e) {
       if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
         const sererr = serializeResError(e, this.serializer, undefined); // This is a step result
@@ -626,7 +627,11 @@ export class DBOSExecutor {
             throw e;
           }
         } else {
-          throw await handleWorkflowError(err as Error, this);
+          // If we want to be consistent about what is thrown (stored result vs live)
+          //  we would have to do this.  It is a breaking change in the sense that it
+          //  is a behavior change, but it would "break" things that are already broken
+          /*throw*/ await handleWorkflowError(err as Error, this);
+          throw err;
         }
       } finally {
         this.tracer.endSpan(span);

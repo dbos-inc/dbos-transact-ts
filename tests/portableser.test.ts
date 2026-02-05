@@ -241,10 +241,12 @@ describe('portable-serizlization-tests', () => {
 
     // Error handling
     // Check WF that throws an error
-    // The error thrown from direct invocation should be PortableWorkflowError
-    //  for consistency (like we do with return values, run through ser/des)
     await expect(PortableWorkflow.pwfError()).rejects.toThrow('Failed!');
-    await expect(PortableWorkflow.pwfError()).rejects.toThrow(PortableWorkflowError);
+    // The error thrown from direct invocation should be PortableWorkflowError
+    //  for consistency (like we do with return values, run through ser/des)?
+    // However, in JS you cannot count on this.  It's just how it is... there is no class
+    //  registry.
+    // await expect(PortableWorkflow.pwfError()).rejects.toThrow(PortableWorkflowError);
 
     // Snoop the DB to make sure serialization format is correct
     // WF
@@ -384,17 +386,17 @@ describe('portable-serizlization-tests', () => {
         expect(pser.rows[0].output).toBe('"s-1-k:v@\\"m\\""');
 
         // Messages
-        await checkMsgSer(wfhr.workflowID, 'default', DBOSJSON.name()); // TODO: Should be portable
+        await checkMsgSer(wfhr.workflowID, 'default', DBOSPortableJSON.name());
         await checkMsgSer(wfhr.workflowID, 'native', DBOSJSON.name());
         //await checkMsgSer(drdwfh.workflowID, 'portable', DBOSPortableJSON.name()); // This got deleted
 
         // Events
-        await checkEvtSer(wfhs.workflowID, 'defstat', DBOSJSON.name()); // TODO: Should be portable
+        await checkEvtSer(wfhs.workflowID, 'defstat', DBOSPortableJSON.name());
         await checkEvtSer(wfhs.workflowID, 'nstat', DBOSJSON.name());
         await checkEvtSer(wfhs.workflowID, 'pstat', DBOSPortableJSON.name());
 
         // Streams
-        await checkStreamSer(wfhs.workflowID, 'defstream', DBOSJSON.name()); // TODO: Should be portable
+        await checkStreamSer(wfhs.workflowID, 'defstream', DBOSPortableJSON.name());
         await checkStreamSer(wfhs.workflowID, 'nstream', DBOSJSON.name());
         await checkStreamSer(wfhs.workflowID, 'pstream', DBOSPortableJSON.name());
       }

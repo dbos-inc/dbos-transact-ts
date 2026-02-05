@@ -533,6 +533,7 @@ async function insertWorkflowStatus(
     const ret = rows[0];
     ret.class_name = ret.class_name ?? '';
     ret.config_name = ret.config_name ?? '';
+    initStatus.serialization = ret.serialization;
     return ret;
   } catch (error) {
     const err: DatabaseError = error as DatabaseError;
