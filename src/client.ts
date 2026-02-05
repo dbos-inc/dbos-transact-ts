@@ -42,7 +42,7 @@ import { Pool } from 'pg';
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
  * This includes parameters like queue name, workflow name, workflow class name, and other optional settings.
  */
-interface ClientEnqueueOptions {
+export interface ClientEnqueueOptions {
   /**
    * The name of the queue to which the workflow will be enqueued.
    */

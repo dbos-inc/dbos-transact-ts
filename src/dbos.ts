@@ -15,6 +15,7 @@ import {
   InternalWFHandle,
   isWorkflowActive,
   RetrievedHandle,
+  StatusString,
   StepInfo,
   WorkflowConfig,
   WorkflowHandle,
@@ -84,6 +85,7 @@ import {
   JSONValue,
   registerSerializationRecipe,
   SerializationRecipe,
+  serializeArgs,
   serializeValue,
 } from './serialization';
 import { DBOSAdminServer } from './adminserver';
@@ -93,10 +95,16 @@ import { randomUUID } from 'node:crypto';
 
 import { StepConfig } from './step';
 import { Conductor } from './conductor/conductor';
-import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL, DBOS_FUNCNAME_WRITESTREAM } from './system_database';
+import {
+  EnqueueOptions,
+  DBOS_STREAM_CLOSED_SENTINEL,
+  DBOS_FUNCNAME_WRITESTREAM,
+  WorkflowStatusInternal,
+} from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
+import { type ClientEnqueueOptions } from './client';
 
 type AnyConstructor = new (...args: unknown[]) => object;
 
@@ -1003,8 +1011,58 @@ export class DBOS {
     return new Proxy(target, handler);
   }
 
-  // TODO Portable: To start a language in another workflow, no function definition, shape more like client enqueue
-  //  but without having to make a client
+  /**
+   * Enqueues a workflow for execution, where the workflow function definition is not
+   *   available and may be implemented in another language.
+   * @param options - Options for the enqueue operation, including queue name, workflow name, and other parameters.
+   * @param positionalArgs - Array of positional arguments to pass to the workflow upon execution.
+   * @param namedArgs - Optional object containing named arguments for the target workflow (useful mainly for calling Python functions with kwargs)
+   * @returns A Promise that resolves when enqueue is complete, providing a handle to the enqueued workflow.
+   */
+  static async enqueuePortable<T = unknown>(
+    options: ClientEnqueueOptions,
+    positionalArgs: unknown[],
+    namedArgs?: { [key: string]: unknown },
+  ): Promise<WorkflowHandle<T>> {
+    const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
+    const workflowID = options.workflowID ?? randomUUID();
+
+    const serparam = serializeArgs(
+      positionalArgs,
+      namedArgs,
+      DBOS.#executor.serializer,
+      options?.serializationType ?? 'portable',
+    );
+    const internalStatus: WorkflowStatusInternal = {
+      workflowUUID: workflowID,
+      status: StatusString.ENQUEUED,
+      workflowName: workflowName,
+      workflowClassName: workflowClassName ?? '',
+      workflowConfigName: workflowConfigName ?? '',
+      queueName: queueName,
+      authenticatedUser: '',
+      output: null,
+      error: null,
+      assumedRole: '',
+      authenticatedRoles: [],
+      request: {},
+      executorId: '',
+      applicationVersion: appVersion,
+      applicationID: '',
+      createdAt: Date.now(),
+      timeoutMS: options.workflowTimeoutMS,
+      deadlineEpochMS: undefined,
+      input: serparam.serializedValue,
+      deduplicationID: options.deduplicationID,
+      priority: options.priority ?? 0,
+      queuePartitionKey: options.queuePartitionKey,
+      serialization: serparam.serialization,
+    };
+
+    await DBOS.#executor.systemDatabase.initWorkflowStatus(internalStatus, null);
+
+    return new RetrievedHandle<T>(DBOS.#executor.systemDatabase, workflowID);
+  }
 
   /**
    * Send `message` on optional `topic` to the workflow with `destinationID`
