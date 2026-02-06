@@ -159,10 +159,10 @@ export class DBOSUnexpectedStepError extends DBOSError {
   }
 }
 
-const TargetWorkFlowCancelled = 27;
+const TargetWorkflowCancelled = 27;
 export class DBOSAwaitedWorkflowCancelledError extends DBOSError {
   constructor(readonly workflowID: string) {
-    super(`Awaited ${workflowID} was cancelled`, TargetWorkFlowCancelled);
+    super(`Awaited ${workflowID} was cancelled`, TargetWorkflowCancelled);
   }
 }
 
@@ -190,6 +190,13 @@ export class DBOSInvalidQueuePriorityError extends DBOSError {
     readonly max: number,
   ) {
     super(`Invalid priority ${priority}. Priority must be between ${min} and ${max}.`, InvalidQueuePriority);
+  }
+}
+
+const AwaitedWorkflowExceededMaxRecoveryAttempts = 30;
+export class DBOSAwaitedWorkflowExceededMaxRecoveryAttempts extends DBOSError {
+  constructor(readonly workflowID: string) {
+    super(`Awaited ${workflowID} exceeded its maximum recovery attempts`, AwaitedWorkflowExceededMaxRecoveryAttempts);
   }
 }
 
