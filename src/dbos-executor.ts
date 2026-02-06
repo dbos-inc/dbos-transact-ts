@@ -630,7 +630,10 @@ export class DBOSExecutor {
           // If we want to be consistent about what is thrown (stored result vs live)
           //  we would have to do this.  It is a breaking change in the sense that it
           //  is a behavior change, but it would "break" things that are already broken
-          /*throw*/ await handleWorkflowError(err as Error, this);
+          if (serializationType === 'portable') {
+            throw await handleWorkflowError(err as Error, this);
+          }
+          await handleWorkflowError(err as Error, this);
           throw err;
         }
       } finally {

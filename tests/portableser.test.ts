@@ -246,7 +246,7 @@ describe('portable-serizlization-tests', () => {
     //  for consistency (like we do with return values, run through ser/des)?
     // However, in JS you cannot count on this.  It's just how it is... there is no class
     //  registry.
-    // await expect(PortableWorkflow.pwfError()).rejects.toThrow(PortableWorkflowError);
+    await expect(PortableWorkflow.pwfError()).rejects.toThrow(PortableWorkflowError);
 
     // Snoop the DB to make sure serialization format is correct
     // WF
