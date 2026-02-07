@@ -36,6 +36,7 @@ export interface SystemDatabaseStoredResult {
   output?: string | null;
   error?: string | null;
   cancelled?: boolean;
+  maxRecoveryAttemptsExceeded?: boolean;
   childWorkflowID?: string | null;
   functionName?: string;
 }
@@ -2152,6 +2153,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
               return { error: rows[0].error };
             } else if (status === StatusString.CANCELLED) {
               return { cancelled: true };
+            } else if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
+              return { maxRecoveryAttemptsExceeded: true };
             } else {
               // Status is not actionable
             }
