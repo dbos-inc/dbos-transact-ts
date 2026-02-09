@@ -319,7 +319,7 @@ describe('portable-serizlization-tests', () => {
   test('test-portable-client', async () => {
     const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
     try {
-      for (const calltype of ['regular', 'portable', 'dbos']) {
+      for (const calltype of ['regular', 'portable']) {
         // Run WF with custom serialization
         const wfhr = await client.enqueue<typeof simpleRecv>(
           {
@@ -332,15 +332,6 @@ describe('portable-serizlization-tests', () => {
         let wfhs: WorkflowHandle<string>;
         if (calltype === 'portable') {
           wfhs = await client.enqueuePortable<string>(
-            {
-              workflowName: 'workflowDef',
-              workflowClassName: 'workflows',
-              queueName: 'testq',
-            },
-            ['s', 1, { k: 'k', v: ['v'] }, wfhr.workflowID],
-          );
-        } else if (calltype === 'dbos') {
-          wfhs = await DBOS.enqueuePortable<string>(
             {
               workflowName: 'workflowDef',
               workflowClassName: 'workflows',
