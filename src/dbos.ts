@@ -31,6 +31,7 @@ import {
   DBOSNotRegisteredError,
   DBOSAwaitedWorkflowCancelledError,
   DBOSConflictingRegistrationError,
+  DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
 } from './error';
 import {
   getDbosConfig,
@@ -631,6 +632,9 @@ export class DBOS {
         if (!rres) return null;
         if (rres?.cancelled) {
           throw new DBOSAwaitedWorkflowCancelledError(workflowID);
+        }
+        if (rres?.maxRecoveryAttemptsExceeded) {
+          throw new DBOSAwaitedWorkflowExceededMaxRecoveryAttempts(workflowID);
         }
         return DBOSExecutor.reviveResultOrError<T>(rres, DBOS.#executor.serializer);
       },

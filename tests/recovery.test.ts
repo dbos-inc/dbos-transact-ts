@@ -9,7 +9,7 @@ import {
 import { DBOSConfig } from '../src/dbos-executor';
 import { Client } from 'pg';
 import { StatusString } from '../dist/src';
-import { DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
+import { DBOSAwaitedWorkflowExceededMaxRecoveryAttempts, DBOSMaxRecoveryAttemptsExceededError } from '../src/error';
 import { sleepms } from '../src/utils';
 import { runWithTopContext } from '../src/context';
 import assert from 'assert';
@@ -116,6 +116,10 @@ describe('recovery-tests', () => {
     await expect(
       DBOS.startWorkflow(LocalRecovery, { workflowID: handle.workflowID }).deadLetterWorkflow(),
     ).rejects.toThrow(DBOSMaxRecoveryAttemptsExceededError);
+
+    // Verify retrieving the status throws an exception
+    const retrievedHandle = DBOS.retrieveWorkflow(handle.workflowID);
+    await expect(retrievedHandle.getResult()).rejects.toThrow(DBOSAwaitedWorkflowExceededMaxRecoveryAttempts);
 
     // Resume the workflow. Verify it returns to PENDING status without error and attempts are reset.
     const resumedHandle = await DBOS.resumeWorkflow(handle.workflowID);
