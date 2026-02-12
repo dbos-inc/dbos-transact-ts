@@ -1,3 +1,4 @@
+import { inspect } from 'node:util';
 import { serializeError } from 'serialize-error';
 import type { StepInfo, WorkflowStatus } from '../workflow';
 
@@ -211,8 +212,8 @@ export class WorkflowsOutput {
     this.AssumedRole = info.assumedRole ? info.assumedRole : undefined;
     this.AuthenticatedRoles =
       (info.authenticatedRoles ?? []).length > 0 ? JSON.stringify(info.authenticatedRoles) : undefined;
-    this.Input = info.input ? JSON.stringify(info.input) : undefined;
-    this.Output = info.output ? JSON.stringify(info.output) : undefined;
+    this.Input = info.input ? inspect(info.input) : undefined;
+    this.Output = info.output ? inspect(info.output) : undefined;
     this.Error = info.error ? JSON.stringify(serializeError(info.error)) : undefined;
     this.CreatedAt = info.createdAt ? String(info.createdAt) : undefined;
     this.UpdatedAt = info.updatedAt ? String(info.updatedAt) : undefined;
@@ -242,7 +243,7 @@ export class WorkflowSteps {
   constructor(info: StepInfo) {
     this.function_id = info.functionID;
     this.function_name = info.name;
-    this.output = info.output ? JSON.stringify(info.output) : undefined;
+    this.output = info.output ? inspect(info.output) : undefined;
     this.error = info.error ? JSON.stringify(serializeError(info.error)) : undefined;
     this.child_workflow_id = info.childWorkflowID ?? undefined;
     this.started_at_epoch_ms = info.startedAtEpochMs !== undefined ? String(info.startedAtEpochMs) : undefined;
