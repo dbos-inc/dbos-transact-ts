@@ -1,7 +1,7 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import { SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
-import { registerSerializationRecipe } from './serialization';
+import { deserializePositionalArgs, registerSerializationRecipe } from './serialization';
 import { DBOS, runInternalStep } from './dbos';
 import { EnqueueOptions } from './system_database';
 import { DBOSExecutor } from './dbos-executor';
@@ -18,6 +18,8 @@ export interface WorkflowParams {
 
 export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;
 
+export type WorkflowSerializationFormat = undefined | 'native' | 'portable';
+
 /**
  * Configuration for `DBOS.workflow` functions
  */
@@ -26,6 +28,8 @@ export interface WorkflowConfig {
   maxRecoveryAttempts?: number;
   /** Name to use */
   name?: string;
+  /** Default serialization to use */
+  serialization?: WorkflowSerializationFormat;
 }
 
 export interface WorkflowStatus {
@@ -225,7 +229,7 @@ export class InvokedHandle<R> implements InternalWFHandle<R> {
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return this.systemDatabase.getSerializer().parse(status.input) as T;
+    return deserializePositionalArgs(status.input, status.serialization, this.systemDatabase.getSerializer()) as T;
   }
 }
 
@@ -256,7 +260,7 @@ export class RetrievedHandle<R> implements InternalWFHandle<R> {
 
   async getWorkflowInputs<T extends any[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return this.systemDatabase.getSerializer().parse(status.input) as T;
+    return deserializePositionalArgs(status.input, status.serialization, this.systemDatabase.getSerializer()) as T;
   }
 }
 

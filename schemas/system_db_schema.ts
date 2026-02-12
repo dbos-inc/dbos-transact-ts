@@ -1,3 +1,5 @@
+export type SysDBSerializationFormat = string;
+
 export interface workflow_status {
   workflow_uuid: string;
   status: string;
@@ -27,18 +29,21 @@ export interface workflow_status {
   forked_from?: string;
   owner_xid?: string;
   parent_workflow_id?: string;
+  serialization: SysDBSerializationFormat | null;
 }
 
 export interface notifications {
   destination_uuid: string;
   topic: string;
   message: string;
+  serialization: SysDBSerializationFormat | null;
 }
 
 export interface workflow_events {
   workflow_uuid: string;
   key: string;
   value: string;
+  serialization: SysDBSerializationFormat | null;
 }
 
 export interface operation_outputs {
@@ -50,6 +55,7 @@ export interface operation_outputs {
   function_name?: string;
   started_at_epoch_ms?: number;
   completed_at_epoch_ms?: number;
+  serialization: SysDBSerializationFormat | null; // Relevant only to getEvent / recv / etc.
 }
 
 export interface event_dispatch_kv {
@@ -70,6 +76,7 @@ export interface streams {
   value: string;
   offset: number;
   function_id: number;
+  serialization: SysDBSerializationFormat | null;
 }
 
 export interface workflow_events_history {
@@ -77,6 +84,7 @@ export interface workflow_events_history {
   function_id: number;
   key: string;
   value: string;
+  serialization: SysDBSerializationFormat | null;
 }
 
 // This is the deserialized version of operation_outputs
@@ -89,3 +97,42 @@ export interface step_info {
   started_at_epoch_ms?: number;
   completed_at_epoch_ms?: number;
 }
+
+// This is system DB schema for portable inputs / outputs / messages / events / errors
+
+// ---------- Canonical JSON value space ----------
+// Note the absensce of "Date", etc.
+// Canonical Date = RFC 3339 / ISO-8601 UTC string: YYYY-MM-DDTHH:mm:ss(.sss)Z
+// This can be fixed with AJV (applied later)
+export type JsonPrimitive = null | boolean | number | string;
+export type JsonValue = JsonPrimitive | JsonObject | JsonArray;
+export type JsonObject = { [k: string]: JsonValue };
+export type JsonArray = JsonValue[];
+
+// ---------- Workflow args + result ----------
+export type JsonWorkflowArgs = {
+  positionalArgs?: JsonArray;
+  namedArgs?: JsonObject;
+};
+export type JsonWorkflowResult = JsonValue;
+export interface JsonWorkflowErrorData {
+  name: string; // Error name
+  message: string; // Human-readable ;-) string
+  code?: number | string;
+  data?: JsonValue; // structured details (retryable, origin, etc.)
+}
+
+export class PortableWorkflowError extends Error {
+  constructor(
+    message: string,
+    readonly name: string,
+    readonly code?: number | string,
+    readonly data?: JsonValue,
+  ) {
+    super(message);
+  }
+}
+
+// --------- Notification(Message) and WF event
+export type JsonMessage = JsonValue;
+export type JsonEvent = JsonValue;

@@ -14,10 +14,18 @@ import {
   StatusString,
   type StepInfo,
   type WorkflowHandle,
+  WorkflowSerializationFormat,
   type WorkflowStatus,
 } from './workflow';
 import { sleepms } from './utils';
-import { DBOSJSON, DBOSSerializer } from './serialization';
+import {
+  DBOSJSON,
+  DBOSSerializer,
+  deserializePositionalArgs,
+  deserializeValue,
+  serializeArgs,
+  serializeValue,
+} from './serialization';
 import {
   forkWorkflow,
   getWorkflow,
@@ -34,7 +42,7 @@ import { Pool } from 'pg';
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
  * This includes parameters like queue name, workflow name, workflow class name, and other optional settings.
  */
-interface ClientEnqueueOptions {
+export interface ClientEnqueueOptions {
   /**
    * The name of the queue to which the workflow will be enqueued.
    */
@@ -76,6 +84,14 @@ interface ClientEnqueueOptions {
   deduplicationID?: string;
 
   /**
+   * Serialization to use for enqueued request
+   *   Default is to use the serialization for JS/TS, as this is the most flexible
+   *   If `portable_json` is specified, a more limited JSON serialization is used,
+   *    allowing cross-language enqueues of workflows with simple semantics
+   */
+  serializationType?: WorkflowSerializationFormat;
+
+  /**
    * An optional priority for the workflow.
    * Workflows with higher priority will be dequeued first.
    */
@@ -85,6 +101,19 @@ interface ClientEnqueueOptions {
    * Required when enqueueing on a partitioned queue.
    */
   queuePartitionKey?: string;
+}
+
+/**
+ * Options for client send
+ */
+interface ClientSendOptions {
+  /**
+   * Serialization to use for sent message
+   *   Default is to use the serialization for TS/JS, as this is the most flexible
+   *   If `portable_json` is specified, a more limited JSON serialization is used,
+   *     allowing cross-language message sends
+   */
+  serializationType?: WorkflowSerializationFormat;
 }
 
 export class ClientHandle<R> implements WorkflowHandle<R> {
@@ -116,7 +145,7 @@ export class ClientHandle<R> implements WorkflowHandle<R> {
 
   async getWorkflowInputs<T extends unknown[]>(): Promise<T> {
     const status = (await this.systemDatabase.getWorkflowStatus(this.workflowUUID)) as WorkflowStatusInternal;
-    return this.systemDatabase.getSerializer().parse(status.input) as T;
+    return deserializePositionalArgs(status.input, status.serialization, this.systemDatabase.getSerializer()) as T;
   }
 }
 
@@ -174,7 +203,7 @@ export class DBOSClient {
    * Enqueues a workflow for execution.
    * @param options - Options for the enqueue operation, including queue name, workflow name, and other parameters.
    * @param args - Arguments to pass to the workflow upon execution.
-   * @returns A Promise that resolves when the message has been sent.
+   * @returns A Promise that resolves when enqueue is complete, providing a handle to the enqueued workflow.
    */
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   async enqueue<T extends (...args: any[]) => Promise<any>>(
@@ -184,6 +213,7 @@ export class DBOSClient {
     const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
     const workflowUUID = options.workflowID ?? randomUUID();
 
+    const serparam = serializeArgs(args, undefined, this.serializer, options?.serializationType);
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowUUID,
       status: StatusString.ENQUEUED,
@@ -203,15 +233,69 @@ export class DBOSClient {
       createdAt: Date.now(),
       timeoutMS: options.workflowTimeoutMS,
       deadlineEpochMS: undefined,
-      input: this.serializer.stringify(args),
+      input: serparam.serializedValue,
       deduplicationID: options.deduplicationID,
       priority: options.priority ?? 0,
       queuePartitionKey: options.queuePartitionKey,
+      serialization: serparam.serialization,
     };
 
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
 
     return new ClientHandle<Awaited<ReturnType<T>>>(this.systemDatabase, workflowUUID);
+  }
+
+  /**
+   * Enqueues a workflow for execution, where the workflow function definition is not
+   *   available and may be implemented in another language.
+   * @param options - Options for the enqueue operation, including queue name, workflow name, and other parameters.
+   * @param positionalArgs - Array of positional arguments to pass to the workflow upon execution.
+   * @param namedArgs - Optional object containing named arguments for the target workflow (useful mainly for calling Python functions with kwargs)
+   * @returns A Promise that resolves when enqueue is complete, providing a handle to the enqueued workflow.
+   */
+  async enqueuePortable<T = unknown>(
+    options: ClientEnqueueOptions,
+    positionalArgs: unknown[],
+    namedArgs?: { [key: string]: unknown },
+  ): Promise<WorkflowHandle<T>> {
+    const { workflowName, workflowClassName, workflowConfigName, queueName, appVersion } = options;
+    const workflowUUID = options.workflowID ?? randomUUID();
+
+    const serparam = serializeArgs(
+      positionalArgs,
+      namedArgs,
+      this.serializer,
+      options?.serializationType ?? 'portable',
+    );
+    const internalStatus: WorkflowStatusInternal = {
+      workflowUUID: workflowUUID,
+      status: StatusString.ENQUEUED,
+      workflowName: workflowName,
+      workflowClassName: workflowClassName ?? '',
+      workflowConfigName: workflowConfigName ?? '',
+      queueName: queueName,
+      authenticatedUser: '',
+      output: null,
+      error: null,
+      assumedRole: '',
+      authenticatedRoles: [],
+      request: {},
+      executorId: '',
+      applicationVersion: appVersion,
+      applicationID: '',
+      createdAt: Date.now(),
+      timeoutMS: options.workflowTimeoutMS,
+      deadlineEpochMS: undefined,
+      input: serparam.serializedValue,
+      deduplicationID: options.deduplicationID,
+      priority: options.priority ?? 0,
+      queuePartitionKey: options.queuePartitionKey,
+      serialization: serparam.serialization,
+    };
+
+    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+
+    return new ClientHandle<T>(this.systemDatabase, workflowUUID);
   }
 
   /**
@@ -222,8 +306,21 @@ export class DBOSClient {
    * @param idempotencyKey - An optional idempotency key to ensure that the message is only sent once.
    * @returns A Promise that resolves when the message has been sent.
    */
-  async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  async send<T>(
+    destinationID: string,
+    message: T,
+    topic?: string,
+    idempotencyKey?: string,
+    options?: ClientSendOptions,
+  ): Promise<void> {
     idempotencyKey ??= randomUUID();
+    const sermsg = serializeValue(message, this.serializer, options?.serializationType);
+    const srwfp = serializeArgs(
+      [destinationID, message, topic, options?.serializationType],
+      undefined,
+      this.serializer,
+      options?.serializationType,
+    );
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: `${destinationID}-${idempotencyKey}`,
       status: StatusString.SUCCESS,
@@ -239,18 +336,20 @@ export class DBOSClient {
       executorId: '',
       applicationID: '',
       createdAt: Date.now(),
-      input: this.serializer.stringify([destinationID, message, topic]),
+      input: srwfp.serializedValue,
       deduplicationID: undefined,
       priority: 0,
       queuePartitionKey: undefined,
+      serialization: srwfp.serialization,
     };
     await this.systemDatabase.initWorkflowStatus(internalStatus, null);
     await this.systemDatabase.send(
       internalStatus.workflowUUID,
       0,
       destinationID,
-      this.serializer.stringify(message),
+      sermsg.serializedValue,
       topic,
+      sermsg.serialization,
     );
   }
 
@@ -262,7 +361,8 @@ export class DBOSClient {
    * @returns A Promise that resolves with the event payload.
    */
   async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
-    return this.serializer.parse(await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60)) as T;
+    const evt = await this.systemDatabase.getEvent(workflowID, key, timeoutSeconds ?? 60);
+    return deserializeValue(evt.serializedValue, evt.serialization, this.serializer) as T;
   }
 
   /**
@@ -320,10 +420,10 @@ export class DBOSClient {
     while (true) {
       try {
         const value = await this.systemDatabase.readStream(workflowID, key, offset);
-        if (value === DBOS_STREAM_CLOSED_SENTINEL) {
+        if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield value as T;
+        yield deserializeValue(value.serializedValue, value.serialization, this.serializer) as T;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {

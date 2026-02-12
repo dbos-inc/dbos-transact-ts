@@ -328,6 +328,55 @@ describe('DBOSClient', () => {
     }
   }, 20000);
 
+  test('DBOSClient-enqueue-and-get-result-portable', async () => {
+    await DBOS.launch(); // Before client create as it will create sysdb
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+
+    const version = globalParams.appVersion;
+
+    let wfid: string;
+    try {
+      const handle = await client.enqueue<EnqueueTest>(
+        {
+          workflowName: 'enqueueTest',
+          workflowClassName: 'ClientTest',
+          queueName: 'testQueue',
+          serializationType: 'portable',
+        },
+        42,
+        'test',
+        { first: 'John', last: 'Doe', age: 30 },
+      );
+      wfid = handle.workflowID;
+
+      let result = await handle.getResult();
+      expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+      // Shut down DBOS and retrieve again.
+      // It should work because the client and DBOS are isolated.
+      await DBOS.shutdown();
+      result = await handle.getResult();
+      expect(result).toBe('42-test-{"first":"John","last":"Doe","age":30}');
+    } finally {
+      await client.destroy();
+    }
+
+    const dbClient = new Client(poolConfig);
+    try {
+      await dbClient.connect();
+      const result = await dbClient.query<workflow_status>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfid],
+      );
+      expect(result.rows).toHaveLength(1);
+      expect(result.rows[0].workflow_uuid).toBe(wfid);
+      expect(result.rows[0].status).toBe('SUCCESS');
+      expect(result.rows[0].application_version).toBe(version);
+    } finally {
+      await dbClient.end();
+    }
+  }, 20000);
+
   test('DBOSClient-enqueue-dedupid', async () => {
     await DBOS.launch(); // Before client create as it will create sysdb
 
@@ -625,6 +674,26 @@ describe('DBOSClient', () => {
     const result = await handle.getResult();
     expect(result).toBe(message);
   }, 30000);
+
+  test('DBOSClient-send-portable', async () => {
+    const now = Date.now();
+    const workflowID = `client-send-${now}`;
+    const topic = `test-topic-${now}`;
+    const message = `Hello, DBOS! (${now})`;
+
+    await DBOS.launch();
+    const handle = await DBOS.startWorkflow(ClientTest, { workflowID }).sendTest(topic);
+
+    const client = await DBOSClient.create({ systemDatabaseUrl });
+    try {
+      await client.send<string>(workflowID, message, topic, undefined, { serializationType: 'portable' });
+    } finally {
+      await client.destroy();
+    }
+
+    const result = await handle.getResult();
+    expect(result).toBe(message);
+  });
 
   test('DBOSClient-getEvent-while-running', async () => {
     const now = Date.now();

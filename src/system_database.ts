@@ -19,6 +19,7 @@ import {
   workflow_events_history,
   streams,
   event_dispatch_kv,
+  SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
@@ -29,7 +30,7 @@ import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from '
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 import { DEBUG_TRIGGER_STEP_COMMIT, DEBUG_TRIGGER_INITWF_COMMIT, debugTriggerPoint } from './debugpoint';
-import { DBOSSerializer } from './serialization';
+import { DBOSPortableJSON, DBOSSerializer } from './serialization';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -39,6 +40,7 @@ export interface SystemDatabaseStoredResult {
   maxRecoveryAttemptsExceeded?: boolean;
   childWorkflowID?: string | null;
   functionName?: string;
+  serialization?: string | null; // Only for WF result, not step
 }
 
 /* Exported workflow format for import/export */
@@ -85,7 +87,12 @@ export interface SystemDatabase {
       isDequeuedRequest?: boolean;
       maxRetries?: number;
     },
-  ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }>;
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }>;
   recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
   recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
 
@@ -108,6 +115,7 @@ export interface SystemDatabase {
       childWorkflowID?: string | null;
       output?: string | null;
       error?: string | null;
+      serialization?: string | null;
     },
   ): Promise<void>;
 
@@ -161,7 +169,8 @@ export interface SystemDatabase {
     functionID: number,
     destinationID: string,
     message: string | null,
-    topic?: string,
+    topic: string | undefined,
+    serialization: string | null,
   ): Promise<void>;
   recv(
     workflowID: string,
@@ -169,9 +178,15 @@ export interface SystemDatabase {
     timeoutFunctionID: number,
     topic?: string,
     timeoutSeconds?: number,
-  ): Promise<string | null>;
+  ): Promise<{ serializedValue: string | null; serialization: string | null }>;
 
-  setEvent(workflowID: string, functionID: number, key: string, value: string | null): Promise<void>;
+  setEvent(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    value: string | null,
+    serialization: string | null,
+  ): Promise<void>;
   getEvent(
     workflowID: string,
     key: string,
@@ -181,7 +196,7 @@ export interface SystemDatabase {
       functionID: number;
       timeoutFunctionID: number;
     },
-  ): Promise<string | null>;
+  ): Promise<{ serializedValue: string | null; serialization: string | null }>;
 
   // Event receiver state queries / updates
   // An event dispatcher may keep state in the system database
@@ -197,10 +212,27 @@ export interface SystemDatabase {
   upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState>;
 
   // Streaming
-  writeStreamFromWorkflow(workflowID: string, functionID: number, key: string, value: unknown): Promise<void>;
-  writeStreamFromStep(workflowID: string, functionID: number, key: string, value: unknown): Promise<void>;
+  writeStreamFromWorkflow(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    serializedValue: string,
+    serialization: string | null,
+    functionName: string,
+  ): Promise<void>;
+  writeStreamFromStep(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    serializedValue: string,
+    serialization: string | null,
+  ): Promise<void>;
   closeStream(workflowID: string, functionID: number, key: string): Promise<void>;
-  readStream(workflowID: string, key: string, offset: number): Promise<unknown>;
+  readStream(
+    workflowID: string,
+    key: string,
+    offset: number,
+  ): Promise<{ serializedValue: string; serialization: string | null }>;
 
   // Workflow management
   listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
@@ -247,6 +279,7 @@ export interface WorkflowStatusInternal {
   startedAtEpochMs?: number;
   forkedFrom?: string;
   parentWorkflowID?: string;
+  serialization: string | null;
 }
 
 export interface EnqueueOptions {
@@ -410,6 +443,7 @@ interface InsertWorkflowResult {
   workflow_deadline_epoch_ms: number | null;
   executor_id: string | null;
   owner_xid: string | null;
+  serialization: string | null;
 }
 
 async function insertWorkflowStatus(
@@ -446,8 +480,9 @@ async function insertWorkflowStatus(
         queue_partition_key,
         forked_from,
         parent_workflow_id,
+        serialization,
         owner_xid
-      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26)
+      ) VALUES($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $26, $27)
       ON CONFLICT (workflow_uuid)
         DO UPDATE SET
           recovery_attempts = CASE
@@ -461,7 +496,7 @@ async function insertWorkflowStatus(
             THEN EXCLUDED.executor_id
             ELSE workflow_status.executor_id
           END
-        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid`,
+        RETURNING recovery_attempts, status, name, class_name, config_name, queue_name, workflow_deadline_epoch_ms, executor_id, owner_xid, serialization`,
       [
         initStatus.workflowUUID,
         initStatus.status,
@@ -489,6 +524,7 @@ async function insertWorkflowStatus(
         initStatus.forkedFrom ?? null,
         initStatus.parentWorkflowID ?? null,
         (incrementAttempts ?? false) ? 1 : 0,
+        initStatus.serialization,
         ownerXid,
       ],
     );
@@ -498,6 +534,7 @@ async function insertWorkflowStatus(
     const ret = rows[0];
     ret.class_name = ret.class_name ?? '';
     ret.config_name = ret.config_name ?? '';
+    initStatus.serialization = ret.serialization;
     return ret;
   } catch (error) {
     const err: DatabaseError = error as DatabaseError;
@@ -623,13 +660,14 @@ async function recordOperationResult(
     childWorkflowID?: string | null;
     output?: string | null;
     error?: string | null;
+    serialization?: string | null;
   } = {},
 ): Promise<void> {
   try {
     const out = await client.query<operation_outputs>(
       `INSERT INTO ${schemaName}.operation_outputs
-       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+       (workflow_uuid, function_id, output, error, function_name, child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms, serialization)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
        ON CONFLICT DO NOTHING RETURNING completed_at_epoch_ms;`,
       [
         workflowID,
@@ -640,6 +678,7 @@ async function recordOperationResult(
         options.childWorkflowID ?? null,
         startTimeEpochMs,
         endTimeEpochMs,
+        options.serialization ?? null,
       ],
     );
     if (checkConflict && (out?.rowCount ?? 0) > 0 && Number(out?.rows?.[0]?.completed_at_epoch_ms) !== endTimeEpochMs) {
@@ -688,6 +727,7 @@ function mapWorkflowStatus(row: workflow_status): WorkflowStatusInternal {
     startedAtEpochMs: row.started_at_epoch_ms ? Number(row.started_at_epoch_ms) : undefined,
     forkedFrom: row.forked_from ?? undefined,
     parentWorkflowID: row.parent_workflow_id ?? undefined,
+    serialization: row.serialization,
   };
 }
 
@@ -949,7 +989,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
       isDequeuedRequest?: boolean;
       maxRetries?: number;
     },
-  ): Promise<{ status: string; shouldExecuteOnThisExecutor: boolean; deadlineEpochMS?: number }> {
+  ): Promise<{
+    status: string;
+    shouldExecuteOnThisExecutor: boolean;
+    deadlineEpochMS?: number;
+    serialization: SysDBSerializationFormat | null;
+  }> {
     const client = await this.pool.connect();
     let shouldCommit = false;
     try {
@@ -991,7 +1036,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
           throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options?.maxRetries ?? -1);
         }
-        return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false };
+        return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: false, serialization: resRow.serialization };
       }
 
       // Upsert above already set executor assignment and incremented the recovery attempt
@@ -1015,7 +1060,12 @@ export class PostgresSystemDatabase implements SystemDatabase {
         throw new DBOSMaxRecoveryAttemptsExceededError(initStatus.workflowUUID, options.maxRetries);
       }
       this.logger.debug(`Workflow ${initStatus.workflowUUID} attempt number: ${attempts}.`);
-      return { status, deadlineEpochMS, shouldExecuteOnThisExecutor: true };
+      return {
+        status,
+        deadlineEpochMS,
+        shouldExecuteOnThisExecutor: true,
+        serialization: resRow.serialization,
+      };
     } finally {
       try {
         if (shouldCommit) {
@@ -1127,6 +1177,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       childWorkflowID?: string | null;
       output?: string | null;
       error?: string | null;
+      serialization?: string | null;
     } = {},
   ): Promise<void> {
     const client = await this.pool.connect();
@@ -1198,6 +1249,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
           priority: 0,
           queuePartitionKey: undefined,
           forkedFrom: workflowID,
+          serialization: workflowStatus.serialization,
         },
         this.schemaName,
         null,
@@ -1206,32 +1258,32 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (startStep > 0) {
         // Copy operation outputs
         const copyOutputsQuery = `INSERT INTO "${this.schemaName}".operation_outputs
-          (workflow_uuid, function_id, output, error, function_name, child_workflow_id)
-          SELECT $1 AS workflow_uuid, function_id, output, error, function_name, child_workflow_id
+          (workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id)
+          SELECT $1 AS workflow_uuid, function_id, output, error, serialization, function_name, child_workflow_id
           FROM "${this.schemaName}".operation_outputs
           WHERE workflow_uuid = $2 AND function_id < $3`;
         await client.query(copyOutputsQuery, [newWorkflowID, workflowID, startStep]);
 
         // Copy streams
         const copyStreamsQuery = `INSERT INTO "${this.schemaName}".streams
-          (workflow_uuid, key, value, "offset", function_id)
-          SELECT $1 AS workflow_uuid, key, value, "offset", function_id
+          (workflow_uuid, key, value, serialization, "offset", function_id)
+          SELECT $1 AS workflow_uuid, key, value, serialization, "offset", function_id
           FROM "${this.schemaName}".streams
           WHERE workflow_uuid = $2 AND function_id < $3`;
         await client.query(copyStreamsQuery, [newWorkflowID, workflowID, startStep]);
 
         // Copy events history
         const copyEventsHistoryQuery = `INSERT INTO "${this.schemaName}".workflow_events_history
-          (workflow_uuid, function_id, key, value)
-          SELECT $1 AS workflow_uuid, function_id, key, value
+          (workflow_uuid, function_id, key, value, serialization)
+          SELECT $1 AS workflow_uuid, function_id, key, value, serialization
           FROM "${this.schemaName}".workflow_events_history
           WHERE workflow_uuid = $2 AND function_id < $3`;
         await client.query(copyEventsHistoryQuery, [newWorkflowID, workflowID, startStep]);
 
         // Copy only the latest version of each event (max function_id per key) into workflow_events
         const copyLatestEventsQuery = `INSERT INTO "${this.schemaName}".workflow_events
-          (workflow_uuid, key, value)
-          SELECT $1 AS workflow_uuid, weh1.key, weh1.value
+          (workflow_uuid, key, value, serialization)
+          SELECT $1 AS workflow_uuid, weh1.key, weh1.value, serialization
           FROM "${this.schemaName}".workflow_events_history weh1
           WHERE weh1.workflow_uuid = $2
             AND weh1.function_id = (
@@ -1341,7 +1393,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
           Date.now(),
           Date.now(),
           {
-            output: JSON.stringify(endTimeMs),
+            output: DBOSPortableJSON.stringify(endTimeMs),
+            serialization: DBOSPortableJSON.name(),
           },
         );
       }
@@ -1362,7 +1415,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
     functionID: number,
     destinationID: string,
     message: string | null,
-    topic?: string,
+    topic: string | undefined,
+    serialization: string | null,
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
     const client: PoolClient = await this.pool.connect();
@@ -1371,8 +1425,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
         await client.query(
-          `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message) VALUES ($1, $2, $3);`,
-          [destinationID, topic, message],
+          `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization) VALUES ($1, $2, $3, $4);`,
+          [destinationID, topic, message, serialization],
         );
         return undefined;
       });
@@ -1398,7 +1452,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     timeoutFunctionID: number,
     topic?: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
-  ): Promise<string | null> {
+  ): Promise<{ serializedValue: string | null; serialization: string | null }> {
     topic = topic ?? this.nullTopic;
     const startTime = Date.now();
     // First, check for previous executions.
@@ -1407,7 +1461,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       if (res.functionName !== DBOS_FUNCNAME_RECV) {
         throw new DBOSUnexpectedStepError(workflowID, functionID, DBOS_FUNCNAME_RECV, res.functionName!);
       }
-      return res.output!;
+      return { serializedValue: res.output!, serialization: res.serialization ?? null };
     }
 
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
@@ -1475,6 +1529,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     // Transactionally consume and return the message if it's in the DB, otherwise return null.
     let message: string | null = null;
+    let serialization: string | null = null;
     const client = await this.pool.connect();
     try {
       await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
@@ -1491,12 +1546,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
             ORDER BY created_at_epoch_ms ASC
             LIMIT 1
           )
-        RETURNING notifications.message;`,
+        RETURNING notifications.message, notifications.serialization;`,
           [workflowID, topic],
         )
       ).rows;
       if (finalRecvRows.length > 0) {
         message = finalRecvRows[0].message;
+        serialization = finalRecvRows[0].serialization;
       }
       await recordOperationResult(
         client,
@@ -1509,6 +1565,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         Date.now(),
         {
           output: message,
+          serialization,
         },
       );
       await client.query(`COMMIT`);
@@ -1520,7 +1577,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       client.release();
     }
 
-    return message;
+    return { serializedValue: message, serialization };
   }
 
   // Only used in tests
@@ -1543,27 +1600,33 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   @dbRetry()
-  async setEvent(workflowID: string, functionID: number, key: string, message: string | null): Promise<void> {
+  async setEvent(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    message: string | null,
+    serialization: string | null,
+  ): Promise<void> {
     const client: PoolClient = await this.pool.connect();
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SETEVENT, workflowID, functionID, async () => {
         await client.query(
-          `INSERT INTO "${this.schemaName}".workflow_events (workflow_uuid, key, value)
-             VALUES ($1, $2, $3)
+          `INSERT INTO "${this.schemaName}".workflow_events (workflow_uuid, key, value, serialization)
+             VALUES ($1, $2, $3, $4)
              ON CONFLICT (workflow_uuid, key)
              DO UPDATE SET value = $3
              RETURNING workflow_uuid;`,
-          [workflowID, key, message],
+          [workflowID, key, message, serialization],
         );
         // Also write to the immutable history table for fork support
         await client.query(
-          `INSERT INTO "${this.schemaName}".workflow_events_history (workflow_uuid, function_id, key, value)
-             VALUES ($1, $2, $3, $4)
+          `INSERT INTO "${this.schemaName}".workflow_events_history (workflow_uuid, function_id, key, value, serialization)
+             VALUES ($1, $2, $3, $4, $5)
              ON CONFLICT (workflow_uuid, function_id, key)
              DO UPDATE SET value = $4;`,
-          [workflowID, functionID, key, message],
+          [workflowID, functionID, key, message, serialization],
         );
         return undefined;
       });
@@ -1587,7 +1650,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       functionID: number;
       timeoutFunctionID: number;
     },
-  ): Promise<string | null> {
+  ): Promise<{ serializedValue: string | null; serialization: string | null }> {
     const startTime = Date.now();
     // Check if the operation has been done before for OAOO (only do this inside a workflow).
     if (callerWorkflow) {
@@ -1604,12 +1667,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
             res.functionName!,
           );
         }
-        return res.output!;
+        return { serializedValue: res.output!, serialization: null };
       }
     }
 
     // Get the return the value. if it's in the DB, otherwise return null.
     let value: string | null = null;
+    let valueSer: string | null = null;
     const payloadKey = `${workflowID}::${key}`;
     const timeoutms = timeoutSeconds !== undefined ? timeoutSeconds * 1000 : undefined;
     let finishTime = timeoutms !== undefined ? Date.now() + timeoutms : undefined;
@@ -1633,7 +1697,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
           await this.pool.query<workflow_events>(
-            `SELECT key, value
+            `SELECT key, value, serialization
              FROM "${this.schemaName}".workflow_events
              WHERE workflow_uuid=$1 AND key=$2;`,
             [workflowID, key],
@@ -1642,6 +1706,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         if (initRecvRows.length > 0) {
           value = initRecvRows[0].value;
+          valueSer = initRecvRows[0].serialization;
           break;
         }
 
@@ -1688,10 +1753,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
         DBOS_FUNCNAME_GETEVENT,
         true,
         startTime,
-        { output: value },
+        {
+          output: value,
+          serialization: valueSer,
+        },
       );
     }
-    return value;
+    return { serializedValue: value, serialization: valueSer };
   }
 
   #setWFCancelMap(workflowID: string) {
@@ -1879,7 +1947,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
-            parent_workflow_id
+            parent_workflow_id, serialization
           FROM "${this.schemaName}".workflow_status
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1895,7 +1963,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const outputsResult = await client.query<operation_outputs>(
           `SELECT
             workflow_uuid, function_id, function_name, output, error,
-            child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms
+            child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms,
+            serialization
           FROM "${this.schemaName}".operation_outputs
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1903,7 +1972,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Export workflow_events
         const eventsResult = await client.query<workflow_events>(
-          `SELECT workflow_uuid, key, value
+          `SELECT workflow_uuid, key, value, serialization
           FROM "${this.schemaName}".workflow_events
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1911,7 +1980,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Export workflow_events_history
         const historyResult = await client.query<workflow_events_history>(
-          `SELECT workflow_uuid, function_id, key, value
+          `SELECT workflow_uuid, function_id, key, value, serialization
           FROM "${this.schemaName}".workflow_events_history
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1919,7 +1988,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
         // Export streams
         const streamsResult = await client.query<streams>(
-          `SELECT workflow_uuid, key, value, "offset", function_id
+          `SELECT workflow_uuid, key, value, "offset", function_id, serialization
           FROM "${this.schemaName}".streams
           WHERE workflow_uuid = $1`,
           [wfID],
@@ -1957,8 +2026,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
             class_name, config_name, recovery_attempts, queue_name,
             workflow_timeout_ms, workflow_deadline_epoch_ms, started_at_epoch_ms,
             deduplication_id, inputs, priority, queue_partition_key, forked_from,
-            parent_workflow_id
-          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27)`,
+            parent_workflow_id, serialization
+          ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28)`,
           [
             status.workflow_uuid,
             status.status,
@@ -1987,6 +2056,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
             status.queue_partition_key,
             status.forked_from,
             status.parent_workflow_id,
+            status.serialization,
           ],
         );
 
@@ -1995,8 +2065,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
           await client.query(
             `INSERT INTO "${this.schemaName}".operation_outputs (
               workflow_uuid, function_id, function_name, output, error,
-              child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms
-            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8)`,
+              child_workflow_id, started_at_epoch_ms, completed_at_epoch_ms,
+              serialization
+            ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
             [
               output.workflow_uuid,
               output.function_id,
@@ -2006,6 +2077,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
               output.child_workflow_id,
               output.started_at_epoch_ms,
               output.completed_at_epoch_ms,
+              output.serialization,
             ],
           );
         }
@@ -2014,9 +2086,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         for (const event of workflow.workflow_events) {
           await client.query(
             `INSERT INTO "${this.schemaName}".workflow_events (
-              workflow_uuid, key, value
-            ) VALUES ($1, $2, $3)`,
-            [event.workflow_uuid, event.key, event.value],
+              workflow_uuid, key, value, serialization
+            ) VALUES ($1, $2, $3, $4)`,
+            [event.workflow_uuid, event.key, event.value, event.serialization],
           );
         }
 
@@ -2024,9 +2096,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         for (const history of workflow.workflow_events_history) {
           await client.query(
             `INSERT INTO "${this.schemaName}".workflow_events_history (
-              workflow_uuid, function_id, key, value
-            ) VALUES ($1, $2, $3, $4)`,
-            [history.workflow_uuid, history.function_id, history.key, history.value],
+              workflow_uuid, function_id, key, value, serialization
+            ) VALUES ($1, $2, $3, $4, $5)`,
+            [history.workflow_uuid, history.function_id, history.key, history.value, history.serialization],
           );
         }
 
@@ -2034,9 +2106,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
         for (const stream of workflow.streams) {
           await client.query(
             `INSERT INTO "${this.schemaName}".streams (
-              workflow_uuid, key, value, "offset", function_id
-            ) VALUES ($1, $2, $3, $4, $5)`,
-            [stream.workflow_uuid, stream.key, stream.value, stream.offset, stream.function_id],
+              workflow_uuid, key, value, "offset", function_id, serialization
+            ) VALUES ($1, $2, $3, $4, $5, $6)`,
+            [stream.workflow_uuid, stream.key, stream.value, stream.offset, stream.function_id, stream.serialization],
           );
         }
       }
@@ -2141,16 +2213,16 @@ export class PostgresSystemDatabase implements SystemDatabase {
         if (callerID) await this.checkIfCanceled(callerID);
         try {
           const { rows } = await this.pool.query<workflow_status>(
-            `SELECT status, output, error FROM "${this.schemaName}".workflow_status 
+            `SELECT status, output, error, serialization FROM "${this.schemaName}".workflow_status 
              WHERE workflow_uuid=$1`,
             [workflowID],
           );
           if (rows.length > 0) {
             const status = rows[0].status;
             if (status === StatusString.SUCCESS) {
-              return { output: rows[0].output };
+              return { output: rows[0].output, serialization: rows[0].serialization };
             } else if (status === StatusString.ERROR) {
-              return { error: rows[0].error };
+              return { error: rows[0].error, serialization: rows[0].serialization };
             } else if (status === StatusString.CANCELLED) {
               return { cancelled: true };
             } else if (status === StatusString.MAX_RECOVERY_ATTEMPTS_EXCEEDED) {
@@ -2352,6 +2424,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
 
     if (input.loadOutput) {
       selectColumns.push('output', 'error');
+    }
+
+    if (input.loadInput || input.loadOutput) {
+      selectColumns.push('serialization');
     }
 
     input.sortDesc = input.sortDesc ?? false; // By default, sort in ascending order
@@ -2631,7 +2707,13 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   @dbRetry()
-  async writeStreamFromStep(workflowID: string, functionID: number, key: string, value: unknown): Promise<void> {
+  async writeStreamFromStep(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    serializedValue: string,
+    serialization: string | null,
+  ): Promise<void> {
     const client: PoolClient = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
@@ -2647,14 +2729,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
       const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
       const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
 
-      // Serialize the value before storing
-      const serializedValue = JSON.stringify(value);
-
       // Insert the new stream entry
       await client.query(
-        `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id)
-         VALUES ($1, $2, $3, $4, $5)`,
-        [workflowID, key, serializedValue, nextOffset, functionID],
+        `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
+         VALUES ($1, $2, $3, $4, $5, $6)`,
+        [workflowID, key, serializedValue, nextOffset, functionID, serialization],
       );
 
       await client.query('COMMIT');
@@ -2668,13 +2747,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   @dbRetry()
-  async writeStreamFromWorkflow(workflowID: string, functionID: number, key: string, value: unknown): Promise<void> {
+  async writeStreamFromWorkflow(
+    workflowID: string,
+    functionID: number,
+    key: string,
+    serializedValue: string,
+    serialization: string | null,
+    functionName: string,
+  ): Promise<void> {
     const client: PoolClient = await this.pool.connect();
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      const functionName =
-        value === DBOS_STREAM_CLOSED_SENTINEL ? DBOS_FUNCNAME_CLOSESTREAM : DBOS_FUNCNAME_WRITESTREAM;
 
       await this.#runAndRecordResult(client, functionName, workflowID, functionID, async () => {
         // Find the maximum offset for this workflow_uuid and key combination
@@ -2688,14 +2771,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
         const maxOffset = (maxOffsetResult.rows[0] as { max: number | null }).max;
         const nextOffset = maxOffset !== null ? maxOffset + 1 : 0;
 
-        // Serialize the value before storing
-        const serializedValue = JSON.stringify(value);
-
         // Insert the new stream entry
         await client.query(
-          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id)
-           VALUES ($1, $2, $3, $4, $5)`,
-          [workflowID, key, serializedValue, nextOffset, functionID],
+          `INSERT INTO "${this.schemaName}".streams (workflow_uuid, key, value, "offset", function_id, serialization)
+           VALUES ($1, $2, $3, $4, $5, $6)`,
+          [workflowID, key, serializedValue, nextOffset, functionID, serialization],
         );
 
         return undefined;
@@ -2712,15 +2792,26 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async closeStream(workflowID: string, functionID: number, key: string): Promise<void> {
-    await this.writeStreamFromWorkflow(workflowID, functionID, key, DBOS_STREAM_CLOSED_SENTINEL);
+    await this.writeStreamFromWorkflow(
+      workflowID,
+      functionID,
+      key,
+      DBOS_STREAM_CLOSED_SENTINEL,
+      'portable_json',
+      DBOS_FUNCNAME_CLOSESTREAM,
+    );
   }
 
   @dbRetry()
-  async readStream(workflowID: string, key: string, offset: number): Promise<unknown> {
+  async readStream(
+    workflowID: string,
+    key: string,
+    offset: number,
+  ): Promise<{ serializedValue: string; serialization: string | null }> {
     const client: PoolClient = await this.pool.connect();
     try {
       const result = await client.query(
-        `SELECT value FROM "${this.schemaName}".streams 
+        `SELECT value, serialization FROM "${this.schemaName}".streams 
          WHERE workflow_uuid = $1 AND key = $2 AND "offset" = $3`,
         [workflowID, key, offset],
       );
@@ -2730,8 +2821,8 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
 
       // Deserialize the value before returning
-      const row = result.rows[0] as { value: string };
-      return JSON.parse(row.value);
+      const row = result.rows[0] as { value: string; serialization: string | null };
+      return { serializedValue: row.value, serialization: row.serialization };
     } finally {
       client.release();
     }

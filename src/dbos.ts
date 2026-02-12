@@ -19,6 +19,7 @@ import {
   WorkflowConfig,
   WorkflowHandle,
   WorkflowParams,
+  WorkflowSerializationFormat,
   WorkflowStatus,
 } from './workflow';
 import { DLogger, GlobalLogger } from './telemetry/logs';
@@ -79,7 +80,13 @@ import {
   clearAllRegistrations,
 } from './decorators';
 import { defaultEnableOTLP, globalParams, sleepms } from './utils';
-import { JSONValue, registerSerializationRecipe, SerializationRecipe } from './serialization';
+import {
+  deserializeValue,
+  JSONValue,
+  registerSerializationRecipe,
+  SerializationRecipe,
+  serializeValue,
+} from './serialization';
 import { DBOSAdminServer } from './adminserver';
 import { Server } from 'http';
 
@@ -87,7 +94,7 @@ import { randomUUID } from 'node:crypto';
 
 import { StepConfig } from './step';
 import { Conductor } from './conductor/conductor';
-import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL } from './system_database';
+import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL, DBOS_FUNCNAME_WRITESTREAM } from './system_database';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
@@ -126,6 +133,33 @@ export interface StartWorkflowParams {
   queueName?: string;
   timeoutMS?: number | null;
   enqueueOptions?: EnqueueOptions;
+}
+
+/**
+ * Options for `DBOS.send`
+ */
+export interface SendOptions {
+  /** Serialization format override, allows cross-language send/recv */
+  serializationType?: WorkflowSerializationFormat;
+}
+
+/**
+ * Options for `DBOS.writeStream`
+ */
+export interface WriteStreamOptions {
+  /** Serialization format override, allows cross-language writeStream / readStream */
+  serializationType?: WorkflowSerializationFormat;
+}
+
+/**
+ * Options for `DBOS.setEvent`
+ */
+export interface SetEventOptions {
+  /**
+   * Serialization format override, allows event to be read by
+   *   workflows or clients written in other languages
+   */
+  serializationType?: WorkflowSerializationFormat;
 }
 
 export function getExecutor() {
@@ -434,6 +468,11 @@ export class DBOS {
   /** Get the current workflow ID */
   static get workflowID(): string | undefined {
     return getCurrentContextStore()?.workflowId;
+  }
+
+  /** Use portable serialization by default? */
+  static get defaultSerializationType(): WorkflowSerializationFormat | undefined {
+    return getCurrentContextStore()?.serializationType;
   }
 
   /** Get the current step number, within the current workflow */
@@ -978,8 +1017,15 @@ export class DBOS {
    * @param message - Message to send, which must be serializable as JSON
    * @param topic - Optional topic; if specified the `recv` command can specify the same topic to receive selectively
    * @param idempotencyKey - Optional key for sending the message exactly once
+   * @param options - `SendOptions`
    */
-  static async send<T>(destinationID: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  static async send<T>(
+    destinationID: string,
+    message: T,
+    topic?: string,
+    idempotencyKey?: string,
+    options?: SendOptions,
+  ): Promise<void> {
     ensureDBOSIsLaunched('send');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -991,15 +1037,27 @@ export class DBOS {
         );
       }
       const functionID: number = functionIDGetIncrement();
+      const sermsg = serializeValue(
+        message,
+        DBOS.#executor.serializer,
+        options?.serializationType ?? DBOS.defaultSerializationType,
+      );
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
         functionID,
         destinationID,
-        DBOS.#executor.serializer.stringify(message),
+        sermsg.serializedValue,
         topic,
+        sermsg.serialization,
       );
     }
-    return DBOS.#executor.runSendTempWF(destinationID, message, topic, idempotencyKey); // Temp WF variant
+    return DBOS.#executor.runSendTempWF(
+      destinationID,
+      message,
+      topic,
+      idempotencyKey,
+      options?.serializationType ?? DBOS.defaultSerializationType,
+    ); // Temp WF variant
   }
 
   /**
@@ -1022,15 +1080,15 @@ export class DBOS {
       }
       const functionID: number = functionIDGetIncrement();
       const timeoutFunctionID: number = functionIDGetIncrement();
-      return DBOS.#executor.serializer.parse(
-        await DBOSExecutor.globalInstance!.systemDatabase.recv(
-          DBOS.workflowID!,
-          functionID,
-          timeoutFunctionID,
-          topic,
-          timeoutSeconds,
-        ),
-      ) as T;
+      const msg = await DBOSExecutor.globalInstance!.systemDatabase.recv(
+        DBOS.workflowID!,
+        functionID,
+        timeoutFunctionID,
+        topic,
+        timeoutSeconds,
+      );
+
+      return deserializeValue(msg.serializedValue, msg.serialization, DBOS.#executor.serializer) as T;
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.recv` outside of a workflow'); // Only workflows can recv
   }
@@ -1043,8 +1101,9 @@ export class DBOS {
    *
    * @param key - The key for the event; at most one value is associated with a key at any given time.
    * @param value - The value to associate with `key`
+   * @param options - `SetEventOptions` allowing control of the recorded event
    */
-  static async setEvent<T>(key: string, value: T): Promise<void> {
+  static async setEvent<T>(key: string, value: T, options?: SetEventOptions): Promise<void> {
     ensureDBOSIsLaunched('setEvent');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1053,11 +1112,17 @@ export class DBOS {
         );
       }
       const functionID = functionIDGetIncrement();
+      const serevt = serializeValue(
+        value,
+        DBOS.#executor.serializer,
+        options?.serializationType ?? DBOS.defaultSerializationType,
+      );
       return DBOSExecutor.globalInstance!.systemDatabase.setEvent(
         DBOS.workflowID!,
         functionID,
         key,
-        DBOS.#executor.serializer.stringify(value),
+        serevt.serializedValue,
+        serevt.serialization,
       );
     }
     throw new DBOSInvalidWorkflowTransitionError('Attempt to call `DBOS.setEvent` outside of a workflow'); // Only workflows can set event
@@ -1090,14 +1155,13 @@ export class DBOS {
         functionID,
         timeoutFunctionID,
       };
-      return DBOS.#executor.serializer.parse(
-        await DBOSExecutor.globalInstance!.systemDatabase.getEvent(
-          workflowID,
-          key,
-          timeoutSeconds ?? DBOSExecutor.defaultNotificationTimeoutSec,
-          params,
-        ),
-      ) as T;
+      const evt = await DBOSExecutor.globalInstance!.systemDatabase.getEvent(
+        workflowID,
+        key,
+        timeoutSeconds ?? DBOSExecutor.defaultNotificationTimeoutSec,
+        params,
+      );
+      return deserializeValue(evt.serializedValue, evt.serialization, DBOS.#executor.serializer) as T;
     }
     return DBOS.#executor.getEvent(workflowID, key, timeoutSeconds);
   }
@@ -1106,24 +1170,33 @@ export class DBOS {
    * Write a value to a stream.
    * @param key - The stream key/name within the workflow
    * @param value - A serializable value to write to the stream
+   * @param options - `WriteStreamOptions` for controlling serialization
    */
-  static async writeStream<T>(key: string, value: T): Promise<void> {
+  static async writeStream<T>(key: string, value: T, options: WriteStreamOptions = {}): Promise<void> {
     ensureDBOSIsLaunched('writeStream');
     if (DBOS.isWithinWorkflow()) {
+      const serval = serializeValue(
+        value,
+        DBOS.#executor.serializer,
+        options.serializationType ?? DBOS.defaultSerializationType,
+      );
       if (DBOS.isInWorkflow()) {
         const functionID: number = functionIDGetIncrement();
         return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromWorkflow(
           DBOS.workflowID!,
           functionID,
           key,
-          value,
+          serval.serializedValue!,
+          serval.serialization,
+          DBOS_FUNCNAME_WRITESTREAM,
         );
       } else if (DBOS.isInStep()) {
         return await DBOSExecutor.globalInstance!.systemDatabase.writeStreamFromStep(
           DBOS.workflowID!,
           DBOS.stepID!,
           key,
-          value,
+          serval.serializedValue!,
+          serval.serialization,
         );
       } else {
         throw new DBOSInvalidWorkflowTransitionError(
@@ -1170,10 +1243,14 @@ export class DBOS {
     while (true) {
       try {
         const value = await DBOSExecutor.globalInstance!.systemDatabase.readStream(workflowID, key, offset);
-        if (value === DBOS_STREAM_CLOSED_SENTINEL) {
+        if (value.serializedValue === DBOS_STREAM_CLOSED_SENTINEL) {
           break;
         }
-        yield value as T;
+        yield deserializeValue(
+          value.serializedValue,
+          value.serialization,
+          DBOSExecutor.globalInstance!.serializer,
+        ) as T;
         offset += 1;
       } catch (error: unknown) {
         if (error instanceof Error && error.message.includes('No value found')) {

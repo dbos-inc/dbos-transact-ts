@@ -20,6 +20,7 @@ import {
   type StepInfo,
   WorkflowConfig,
   DEFAULT_MAX_RECOVERY_ATTEMPTS,
+  WorkflowSerializationFormat,
 } from './workflow';
 
 import { type StepConfig } from './step';
@@ -48,7 +49,7 @@ import {
   getClassRegistrationByName,
   getRegisteredFunctionFullName,
 } from './decorators';
-import type { step_info } from '../schemas/system_db_schema';
+import { JsonWorkflowArgs, type step_info } from '../schemas/system_db_schema';
 import {
   runInStepContext,
   getNextWFID,
@@ -60,7 +61,18 @@ import {
 } from './context';
 import { deserializeError, serializeError } from 'serialize-error';
 import { globalParams, sleepms, INTERNAL_QUEUE_NAME, DEBOUNCER_WORKLOW_NAME as DEBOUNCER_WORKLOW_NAME } from './utils';
-import { DBOSSerializer, serializeFunctionInputOutput } from './serialization';
+import {
+  DBOSPortableJSON,
+  DBOSSerializer,
+  deserializePositionalArgs,
+  deserializeResError,
+  deserializeValue,
+  serializeFunctionInputOutput,
+  serializeFunctionInputOutputWithSerializer,
+  serializeResError,
+  serializeResErrorWithSerializer,
+  serializeValue,
+} from './serialization';
 import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
@@ -334,12 +346,11 @@ export class DBOSExecutor {
     return { methReg, configuredInst: getConfiguredInstance(wf.workflowClassName, wf.workflowConfigName) };
   }
 
-  static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, serializer: DBOSSerializer) {
-    if (!r.error) {
-      return serializer.parse(r.output ?? null) as R;
-    } else {
-      throw deserializeError(serializer.parse(r.error));
+  static reviveResultOrError<R = unknown>(r: SystemDatabaseStoredResult, serializer: DBOSSerializer): R {
+    if (r.error) {
+      throw deserializeResError(r.error, r.serialization ?? null, serializer);
     }
+    return deserializeValue(r.output ?? null, r.serialization ?? null, serializer) as R;
   }
 
   async workflow<T extends unknown[], R>(
@@ -419,8 +430,17 @@ export class DBOSExecutor {
       assumedRole: pctx?.assumedRole ?? '',
     });
 
-    const funcArgs = serializeFunctionInputOutput(args, [wfname, '<arguments>'], this.serializer);
-    args = funcArgs.deserialized;
+    let serializationType = wInfo?.workflowConfig?.serialization;
+    const funcArgs = serializeFunctionInputOutput(
+      serializationType === 'portable' ? ({ positionalArgs: args } as JsonWorkflowArgs) : args,
+      [wfname, '<arguments>'],
+      this.serializer,
+      serializationType,
+    );
+    args =
+      serializationType === 'portable'
+        ? ((funcArgs.deserialized as JsonWorkflowArgs).positionalArgs! as T)
+        : (funcArgs.deserialized as T);
 
     const internalStatus: WorkflowStatusInternal = {
       workflowUUID: workflowID,
@@ -446,6 +466,7 @@ export class DBOSExecutor {
       priority: priority ?? 0,
       queuePartitionKey: params.enqueueOptions?.queuePartitionKey,
       parentWorkflowID: callerID,
+      serialization: funcArgs.sername,
     };
 
     if (isTempWorkflow) {
@@ -454,7 +475,6 @@ export class DBOSExecutor {
 
     let $deadlineEpochMS: number | undefined = undefined;
     let shouldExecute: boolean | undefined = undefined;
-    const serializer = this.serializer;
 
     // Synchronously set the workflow's status to PENDING and record workflow inputs.
     // We have to do it for all types of workflows because operation_outputs table has a foreign key constraint on workflow status table.
@@ -462,27 +482,29 @@ export class DBOSExecutor {
       const result = await this.systemDatabase.getOperationResultAndThrowIfCancelled(callerID, callerFunctionID);
       if (result) {
         if (result.error) {
-          throw deserializeError(serializer.parse(result.error));
+          throw deserializeResError(result.error, result.serialization ?? null, this.serializer);
         }
         return new RetrievedHandle(this.systemDatabase, result.childWorkflowID!);
       }
     }
-    let ires;
+    let ires: Awaited<ReturnType<SystemDatabase['initWorkflowStatus']>>;
     try {
       ires = await this.systemDatabase.initWorkflowStatus(internalStatus, randomUUID(), {
         maxRetries: maxRecoveryAttempts,
         isDequeuedRequest: params.isQueueDispatch,
         isRecoveryRequest: params.isRecoveryDispatch,
       });
+      serializationType = ires.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     } catch (e) {
       if (e instanceof DBOSQueueDuplicatedError && callerID && callerFunctionID) {
+        const sererr = serializeResError(e, this.serializer, undefined); // This is a step result
         await this.systemDatabase.recordOperationResult(
           callerID,
           callerFunctionID,
           internalStatus.workflowName,
           true,
           Date.now(),
-          { error: serializer.stringify(serializeError(e)) },
+          { error: sererr.serializedValue, serialization: sererr.serialization },
         );
       }
       throw e;
@@ -530,15 +552,18 @@ export class DBOSExecutor {
       }
     }
 
+    const eserializer = this.serializer;
     async function handleWorkflowError(err: Error, exec: DBOSExecutor) {
       // Record the error.
       const e = err as Error & { dbos_already_logged?: boolean };
       exec.logger.error(e);
       e.dbos_already_logged = true;
-      internalStatus.error = serializer.stringify(serializeError(e));
+      const sererr = serializeResErrorWithSerializer(e, eserializer, ires.serialization ?? null);
+      internalStatus.error = sererr.serializedValue;
       internalStatus.status = StatusString.ERROR;
       await exec.systemDatabase.recordWorkflowError(workflowID, internalStatus);
       span.setStatus({ code: SpanStatusCode.ERROR, message: e.message });
+      return deserializeResError(sererr.serializedValue, sererr.serialization, eserializer);
     }
 
     const runWorkflow = async () => {
@@ -556,6 +581,7 @@ export class DBOSExecutor {
               workflowId: workflowID,
               logger: this.ctxLogger,
               curWFFunctionId: undefined,
+              serializationType,
             },
             () => {
               const callPromise = wf.call(params.configuredInstance, ...args);
@@ -571,7 +597,12 @@ export class DBOSExecutor {
 
         result = callResult!;
 
-        const funcResult = serializeFunctionInputOutput(result, [wfname, '<result>'], this.serializer);
+        const funcResult = serializeFunctionInputOutputWithSerializer(
+          result,
+          [wfname, '<result>'],
+          this.serializer,
+          ires.serialization,
+        );
         result = funcResult.deserialized;
         internalStatus.output = funcResult.stringified;
         internalStatus.status = StatusString.SUCCESS;
@@ -596,6 +627,12 @@ export class DBOSExecutor {
             throw e;
           }
         } else {
+          // If we want to be consistent about what is thrown (stored result vs live)
+          //  we would have to do this.  It is a breaking change in the sense that it
+          //  is a behavior change, but it would "break" things that are already broken
+          if (serializationType === 'portable') {
+            throw await handleWorkflowError(err as Error, this);
+          }
           await handleWorkflowError(err as Error, this);
           throw err;
         }
@@ -786,6 +823,7 @@ export class DBOSExecutor {
       err = err === dbosNull ? new DBOSMaxStepRetriesError(stepFnName, maxAttempts, errors) : err;
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
         error: this.serializer.stringify(serializeError(err)),
+        serialization: this.serializer.name(),
       });
       span.setStatus({ code: SpanStatusCode.ERROR, message: (err as Error).message });
       this.tracer.endSpan(span);
@@ -795,6 +833,7 @@ export class DBOSExecutor {
       const funcResult = serializeFunctionInputOutput(result, [stepFnName, '<result>'], this.serializer);
       await this.systemDatabase.recordOperationResult(wfid, funcID, stepFnName, true, startTime, {
         output: funcResult.stringified,
+        serialization: funcResult.sername,
       });
       span.setStatus({ code: SpanStatusCode.OK });
       this.tracer.endSpan(span);
@@ -802,17 +841,30 @@ export class DBOSExecutor {
     }
   }
 
-  async runSendTempWF<T>(destinationId: string, message: T, topic?: string, idempotencyKey?: string): Promise<void> {
+  async runSendTempWF<T>(
+    destinationId: string,
+    message: T,
+    topic: string | undefined,
+    idempotencyKey: string | undefined,
+    serialization: WorkflowSerializationFormat | null | undefined,
+  ): Promise<void> {
     // Create a workflow and call send.
-    const temp_workflow = async (destinationId: string, message: T, topic?: string) => {
+    const temp_workflow = async (
+      destinationId: string,
+      message: T,
+      topic?: string,
+      serialization?: WorkflowSerializationFormat | null,
+    ) => {
       const ctx = getCurrentContextStore();
       const functionID: number = functionIDGetIncrement();
+      const sermsg = serializeValue(message, this.serializer, serialization ?? undefined);
       await this.systemDatabase.send(
         ctx!.workflowId!,
         functionID,
         destinationId,
-        this.serializer.stringify(message),
+        sermsg.serializedValue,
         topic,
+        sermsg.serialization,
       );
     };
     const workflowUUID = idempotencyKey ? destinationId + idempotencyKey : undefined;
@@ -827,6 +879,7 @@ export class DBOSExecutor {
         destinationId,
         message,
         topic,
+        serialization,
       )
     ).getResult();
   }
@@ -839,7 +892,8 @@ export class DBOSExecutor {
     key: string,
     timeoutSeconds: number = DBOSExecutor.defaultNotificationTimeoutSec,
   ): Promise<T | null> {
-    return this.serializer.parse(await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds)) as T;
+    const evt = await this.systemDatabase.getEvent(workflowUUID, key, timeoutSeconds);
+    return deserializeValue(evt.serializedValue, evt.serialization, this.serializer) as T;
   }
 
   /**
@@ -1005,7 +1059,7 @@ export class DBOSExecutor {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
-    const inputs = this.serializer.parse(wfStatus.input) as unknown[];
+    const inputs = deserializePositionalArgs(wfStatus.input, wfStatus.serialization, this.serializer);
     const recoverCtx = this.#getRecoveryContext(workflowID, wfStatus);
 
     const { methReg, configuredInst } = this.#getFunctionInfoFromWFStatus(wfStatus);
@@ -1063,15 +1117,22 @@ export class DBOSExecutor {
         );
       });
     } else if (nameArr[1] === TempWorkflowType.send) {
-      const swf = async (destinationID: string, message: unknown, topic?: string) => {
+      const swf = async (
+        destinationID: string,
+        message: unknown,
+        topic?: string,
+        serialization?: WorkflowSerializationFormat | null,
+      ) => {
         const ctx = getCurrentContextStore();
         const functionID: number = functionIDGetIncrement();
+        const sermsg = serializeValue(message, this.serializer, serialization ?? undefined);
         await this.systemDatabase.send(
           ctx!.workflowId!,
           functionID,
           destinationID,
-          this.serializer.stringify(message),
+          sermsg.serializedValue,
           topic,
+          sermsg.serialization,
         );
       };
       const temp_workflow = swf as UntypedAsyncFunction;
@@ -1110,6 +1171,7 @@ export class DBOSExecutor {
     oc.authenticatedUser = status.authenticatedUser;
     oc.authenticatedRoles = status.authenticatedRoles;
     oc.assumedRole = status.assumedRole;
+    oc.serializationType = status.serialization === DBOSPortableJSON.name() ? 'portable' : undefined;
     return oc;
   }
 

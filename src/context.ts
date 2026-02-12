@@ -5,6 +5,7 @@ import { AsyncLocalStorage } from 'async_hooks';
 import { DBOSInvalidWorkflowTransitionError } from './error';
 import Koa from 'koa';
 import { DBOSExecutor } from './dbos-executor';
+import { WorkflowSerializationFormat } from './workflow';
 
 export interface StepStatus {
   stepID: number;
@@ -23,6 +24,7 @@ export interface DBOSContextOptions {
   operationType?: string; // A custom helper for users to set a operation type of their choice. Intended for functions setting a pctx to run DBOS operations from.
   operationCaller?: string; // This is made to pass through the operationName to DBOS contexts, and potentially the caller span name.
   workflowTimeoutMS?: number | null;
+  serializationType?: WorkflowSerializationFormat;
 }
 
 export interface DBOSLocalCtx extends DBOSContextOptions {
