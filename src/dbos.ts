@@ -79,8 +79,9 @@ import {
   getClassRegistration,
   clearAllRegistrations,
   getRegisteredFunctionFullName,
+  getFunctionRegistrationByName,
 } from './decorators';
-import { defaultEnableOTLP, globalParams, sleepms } from './utils';
+import { defaultEnableOTLP, globalParams, sleepms, INTERNAL_QUEUE_NAME } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -102,7 +103,7 @@ import {
   WorkflowScheduleInternal,
 } from './system_database';
 import { WorkflowSchedule, ScheduledWorkflowFn, toWorkflowSchedule, createScheduleId } from './scheduler/scheduler';
-import { validateCrontab } from './scheduler/crontab';
+import { validateCrontab, TimeMatcher } from './scheduler/crontab';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
@@ -1985,5 +1986,94 @@ export class DBOS {
       await systemDb.deleteSchedule(sched.scheduleName);
       await systemDb.createSchedule(sched);
     }
+  }
+
+  static async triggerSchedule(name: string): Promise<WorkflowHandle<unknown>> {
+    ensureDBOSIsLaunched('triggerSchedule');
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSError('triggerSchedule cannot be called from within a workflow');
+    }
+
+    const executor = DBOSExecutor.globalInstance!;
+    const sched = await executor.systemDatabase.getSchedule(name);
+    if (!sched) {
+      throw new DBOSError(`Schedule "${name}" not found`);
+    }
+
+    const methReg = getFunctionRegistrationByName(sched.workflowClassName, sched.workflowName);
+    if (!methReg || !methReg.registeredFunction) {
+      throw new DBOSNotRegisteredError(
+        sched.workflowName,
+        `Workflow "${sched.workflowClassName}.${sched.workflowName}" for schedule "${name}" is not registered`,
+      );
+    }
+
+    let context: unknown;
+    try {
+      context = executor.serializer.parse(sched.context);
+    } catch {
+      context = null;
+    }
+
+    const now = new Date();
+    const workflowID = `sched-${name}-trigger-${now.toISOString()}`;
+    const wfParams = { workflowID, queueName: INTERNAL_QUEUE_NAME };
+    return await DBOS.startWorkflow(methReg.registeredFunction as ScheduledWorkflowFn, wfParams)(now, context);
+  }
+
+  static async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
+    ensureDBOSIsLaunched('backfillSchedule');
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSError('backfillSchedule cannot be called from within a workflow');
+    }
+
+    const executor = DBOSExecutor.globalInstance!;
+    const sched = await executor.systemDatabase.getSchedule(name);
+    if (!sched) {
+      throw new DBOSError(`Schedule "${name}" not found`);
+    }
+
+    const methReg = getFunctionRegistrationByName(sched.workflowClassName, sched.workflowName);
+    if (!methReg || !methReg.registeredFunction) {
+      throw new DBOSNotRegisteredError(
+        sched.workflowName,
+        `Workflow "${sched.workflowClassName}.${sched.workflowName}" for schedule "${name}" is not registered`,
+      );
+    }
+
+    let context: unknown;
+    try {
+      context = executor.serializer.parse(sched.context);
+    } catch {
+      context = null;
+    }
+
+    const timeMatcher = new TimeMatcher(sched.schedule);
+    const handles: WorkflowHandle<unknown>[] = [];
+    let current = start.getTime();
+
+    while (current < end.getTime()) {
+      const next = timeMatcher.nextWakeupTime(current);
+      if (next.getTime() >= end.getTime()) {
+        break;
+      }
+
+      const workflowID = `sched-${name}-${next.toISOString()}`;
+
+      // Idempotency: skip if already exists
+      const existing = await DBOS.getWorkflowStatus(workflowID);
+      if (!existing) {
+        const wfParams = { workflowID, queueName: INTERNAL_QUEUE_NAME };
+        const handle = await DBOS.startWorkflow(methReg.registeredFunction as ScheduledWorkflowFn, wfParams)(
+          next,
+          context,
+        );
+        handles.push(handle);
+      }
+
+      current = next.getTime();
+    }
+
+    return handles;
   }
 }

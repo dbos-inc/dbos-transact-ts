@@ -512,4 +512,108 @@ describe('dynamic-scheduler-tests', () => {
 
     await DBOS.deleteSchedule('pause-test');
   }, 30000);
+
+  // ---------------------------------------------------------------------------
+  // Trigger schedule
+  // ---------------------------------------------------------------------------
+  const triggerResults: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
+  async function triggerWorkflow(scheduledDate: Date, context: unknown) {
+    triggerResults.dates.push(scheduledDate);
+    triggerResults.contexts.push(context);
+    await Promise.resolve();
+  }
+  const regTriggerWf = DBOS.registerWorkflow(triggerWorkflow, { name: 'triggerWorkflow' });
+
+  test('trigger-schedule', async () => {
+    triggerResults.dates = [];
+    triggerResults.contexts = [];
+
+    // Create a daily schedule (won't fire on its own during test)
+    await DBOS.createSchedule({
+      scheduleName: 'trigger-test',
+      workflowFn: regTriggerWf,
+      schedule: '0 0 * * *',
+      context: { source: 'trigger' },
+    });
+
+    // Manually trigger
+    const before = new Date();
+    const handle = await DBOS.triggerSchedule('trigger-test');
+    await handle.getResult();
+    const after = new Date();
+
+    expect(triggerResults.dates.length).toBe(1);
+    expect(triggerResults.dates[0].getTime()).toBeGreaterThanOrEqual(before.getTime());
+    expect(triggerResults.dates[0].getTime()).toBeLessThanOrEqual(after.getTime());
+    expect(triggerResults.contexts[0]).toEqual({ source: 'trigger' });
+
+    // Trigger again — should produce a second firing
+    const handle2 = await DBOS.triggerSchedule('trigger-test');
+    await handle2.getResult();
+    expect(triggerResults.dates.length).toBe(2);
+
+    // Triggering a nonexistent schedule should throw
+    await expect(DBOS.triggerSchedule('nonexistent')).rejects.toThrow(/not found/);
+
+    await DBOS.deleteSchedule('trigger-test');
+  }, 30000);
+
+  // ---------------------------------------------------------------------------
+  // Backfill schedule
+  // ---------------------------------------------------------------------------
+  const backfillResults: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
+  async function backfillWorkflow(scheduledDate: Date, context: unknown) {
+    backfillResults.dates.push(scheduledDate);
+    backfillResults.contexts.push(context);
+    await Promise.resolve();
+  }
+  const regBackfillWf = DBOS.registerWorkflow(backfillWorkflow, { name: 'backfillWorkflow' });
+
+  test('backfill-schedule', async () => {
+    backfillResults.dates = [];
+    backfillResults.contexts = [];
+
+    // Create an every-minute schedule
+    await DBOS.createSchedule({
+      scheduleName: 'backfill-test',
+      workflowFn: regBackfillWf,
+      schedule: '* * * * *',
+      context: { source: 'backfill' },
+    });
+
+    // Backfill a 5-minute window in the past
+    const end = new Date();
+    end.setMilliseconds(0);
+    const start = new Date(end.getTime() - 5 * 60 * 1000);
+
+    const handles = await DBOS.backfillSchedule('backfill-test', start, end);
+    // Every-minute schedule over 5 minutes should yield ~5 handles (start exclusive, end exclusive)
+    expect(handles.length).toBeGreaterThanOrEqual(4);
+    expect(handles.length).toBeLessThanOrEqual(5);
+
+    // Wait for all workflows to complete
+    for (const h of handles) {
+      await h.getResult();
+    }
+
+    expect(backfillResults.dates.length).toBe(handles.length);
+    // All contexts should match
+    for (const ctx of backfillResults.contexts) {
+      expect(ctx).toEqual({ source: 'backfill' });
+    }
+    // All dates should be within range
+    for (const d of backfillResults.dates) {
+      expect(d.getTime()).toBeGreaterThanOrEqual(start.getTime());
+      expect(d.getTime()).toBeLessThan(end.getTime());
+    }
+
+    // Backfill again — idempotent, should return 0 new handles
+    const handles2 = await DBOS.backfillSchedule('backfill-test', start, end);
+    expect(handles2.length).toBe(0);
+
+    // Backfilling a nonexistent schedule should throw
+    await expect(DBOS.backfillSchedule('nonexistent', start, end)).rejects.toThrow(/not found/);
+
+    await DBOS.deleteSchedule('backfill-test');
+  }, 30000);
 });
