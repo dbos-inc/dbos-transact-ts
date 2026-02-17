@@ -30,8 +30,8 @@ describe('dynamic-scheduler-tests', () => {
   // schedule-crud
   // ---------------------------------------------------------------------------
 
-  async function myWorkflow(_scheduledAt: string, _ctx: unknown) {}
-  async function otherWorkflow(_scheduledAt: string, _ctx: unknown) {}
+  async function myWorkflow(_scheduledDate: Date, _context: unknown) {}
+  async function otherWorkflow(_scheduledDate: Date, _context: unknown) {}
 
   const regMyWf = DBOS.registerWorkflow(myWorkflow, { name: 'myWorkflow' });
   const regOtherWf = DBOS.registerWorkflow(otherWorkflow, { name: 'otherWorkflow' });
@@ -122,7 +122,7 @@ describe('dynamic-scheduler-tests', () => {
   // apply-schedules
   // ---------------------------------------------------------------------------
 
-  async function targetWorkflow(_scheduledAt: string, _ctx: unknown) {}
+  async function targetWorkflow(_scheduledDate: Date, _context: unknown) {}
   const regTargetWf = DBOS.registerWorkflow(targetWorkflow, { name: 'targetWorkflow' });
 
   async function badApplyWorkflow() {

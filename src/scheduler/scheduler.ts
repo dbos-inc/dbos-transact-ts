@@ -2,6 +2,8 @@ import { WorkflowScheduleInternal } from '../system_database';
 import { DBOSSerializer } from '../serialization';
 import { randomUUID } from 'crypto';
 
+export type ScheduledWorkflowFn = (scheduledDate: Date, context: unknown) => Promise<void>;
+
 export interface WorkflowSchedule {
   scheduleId: string;
   scheduleName: string;

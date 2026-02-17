@@ -101,7 +101,7 @@ import {
   DBOS_FUNCNAME_WRITESTREAM,
   WorkflowScheduleInternal,
 } from './system_database';
-import { WorkflowSchedule, toWorkflowSchedule, createScheduleId } from './scheduler/scheduler';
+import { WorkflowSchedule, ScheduledWorkflowFn, toWorkflowSchedule, createScheduleId } from './scheduler/scheduler';
 import { validateCrontab } from './scheduler/crontab';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
@@ -1878,8 +1878,7 @@ export class DBOS {
 
   static async createSchedule(options: {
     scheduleName: string;
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    workflowFn: (...args: any[]) => Promise<any>;
+    workflowFn: ScheduledWorkflowFn;
     schedule: string;
     context?: unknown;
   }): Promise<void> {
@@ -1955,8 +1954,7 @@ export class DBOS {
   static async applySchedules(
     schedules: Array<{
       scheduleName: string;
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      workflowFn: (...args: any[]) => Promise<any>;
+      workflowFn: ScheduledWorkflowFn;
       schedule: string;
       context?: unknown;
     }>,
