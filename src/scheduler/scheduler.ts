@@ -158,8 +158,6 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
 
     const timeMatcher = new TimeMatcher(cronExpression);
 
-    const context = serializer.parse(serializedContext);
-
     let lastExec = new Date().setMilliseconds(0);
 
     while (!signal.aborted) {
@@ -183,15 +181,15 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       const date = new Date(nextExec);
       const workflowID = `sched-${scheduleName}-${date.toISOString()}`;
 
-      // Idempotency check
-      const existing = await DBOS.getWorkflowStatus(workflowID);
-      if (existing) {
-        lastExec = nextExec;
-        continue;
-      }
-
       try {
+        // Idempotency check -- for performance only, not needed for correctness
+        const existing = await DBOS.getWorkflowStatus(workflowID);
+        if (existing) {
+          lastExec = nextExec;
+          continue;
+        }
         const wfParams = { workflowID, queueName: INTERNAL_QUEUE_NAME };
+        const context = serializer.parse(serializedContext);
         await DBOS.startWorkflow(methReg.registeredFunction as ScheduledWorkflowFn, wfParams)(date, context);
       } catch (e) {
         DBOS.logger.warn(
