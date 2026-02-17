@@ -78,6 +78,7 @@ import {
   finalizeClassRegistrations,
   getClassRegistration,
   clearAllRegistrations,
+  getRegisteredFunctionFullName,
 } from './decorators';
 import { defaultEnableOTLP, globalParams, sleepms } from './utils';
 import {
@@ -94,7 +95,14 @@ import { randomUUID } from 'node:crypto';
 
 import { StepConfig } from './step';
 import { Conductor } from './conductor/conductor';
-import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL, DBOS_FUNCNAME_WRITESTREAM } from './system_database';
+import {
+  EnqueueOptions,
+  DBOS_STREAM_CLOSED_SENTINEL,
+  DBOS_FUNCNAME_WRITESTREAM,
+  WorkflowScheduleInternal,
+} from './system_database';
+import { WorkflowSchedule, toWorkflowSchedule, createScheduleId } from './scheduler/scheduler';
+import { validateCrontab } from './scheduler/crontab';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
@@ -1862,5 +1870,118 @@ export class DBOS {
       throw new DBOSError('Alert handler is already registered. Only one handler is allowed.');
     }
     setAlertHandler(handler);
+  }
+
+  /////
+  // Dynamic Workflow Schedules
+  /////
+
+  static async createSchedule(options: {
+    scheduleName: string;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    workflowFn: (...args: any[]) => Promise<any>;
+    schedule: string;
+    context?: unknown;
+  }): Promise<void> {
+    ensureDBOSIsLaunched('createSchedule');
+    const { className, name: funcName } = getRegisteredFunctionFullName(options.workflowFn);
+    validateCrontab(options.schedule);
+
+    const schedInternal: WorkflowScheduleInternal = {
+      scheduleId: createScheduleId(),
+      scheduleName: options.scheduleName,
+      workflowName: funcName,
+      workflowClassName: className,
+      schedule: options.schedule,
+      status: 'ACTIVE',
+      context: JSON.stringify(options.context !== undefined ? options.context : null),
+    };
+
+    await runInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.createSchedule(schedInternal),
+      'DBOS.createSchedule',
+    );
+  }
+
+  static async listSchedules(filters?: {
+    status?: string;
+    workflowName?: string;
+    scheduleNamePrefix?: string;
+  }): Promise<WorkflowSchedule[]> {
+    ensureDBOSIsLaunched('listSchedules');
+    const results = await runInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.listSchedules(filters),
+      'DBOS.listSchedules',
+    );
+    return results.map(toWorkflowSchedule);
+  }
+
+  static async getSchedule(name: string): Promise<WorkflowSchedule | null> {
+    ensureDBOSIsLaunched('getSchedule');
+    const result = await runInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.getSchedule(name),
+      'DBOS.getSchedule',
+    );
+    return result ? toWorkflowSchedule(result) : null;
+  }
+
+  static async deleteSchedule(name: string): Promise<void> {
+    ensureDBOSIsLaunched('deleteSchedule');
+    await runInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.deleteSchedule(name),
+      'DBOS.deleteSchedule',
+    );
+  }
+
+  static async pauseSchedule(name: string): Promise<void> {
+    ensureDBOSIsLaunched('pauseSchedule');
+    await runInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.setScheduleStatus(name, 'PAUSED'),
+      'DBOS.pauseSchedule',
+    );
+  }
+
+  static async resumeSchedule(name: string): Promise<void> {
+    ensureDBOSIsLaunched('resumeSchedule');
+    await runInternalStep(
+      () => DBOSExecutor.globalInstance!.systemDatabase.setScheduleStatus(name, 'ACTIVE'),
+      'DBOS.resumeSchedule',
+    );
+  }
+
+  static async applySchedules(
+    schedules: Array<{
+      scheduleName: string;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      workflowFn: (...args: any[]) => Promise<any>;
+      schedule: string;
+      context?: unknown;
+    }>,
+  ): Promise<void> {
+    ensureDBOSIsLaunched('applySchedules');
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSError('applySchedules cannot be called from within a workflow');
+    }
+
+    const internals: WorkflowScheduleInternal[] = [];
+    for (const sched of schedules) {
+      const { className, name: funcName } = getRegisteredFunctionFullName(sched.workflowFn);
+      validateCrontab(sched.schedule);
+      internals.push({
+        scheduleId: createScheduleId(),
+        scheduleName: sched.scheduleName,
+        workflowName: funcName,
+        workflowClassName: className,
+        schedule: sched.schedule,
+        status: 'ACTIVE',
+        context: JSON.stringify(sched.context !== undefined ? sched.context : null),
+      });
+    }
+
+    const systemDb = DBOSExecutor.globalInstance!.systemDatabase;
+    for (const sched of internals) {
+      await systemDb.deleteSchedule(sched.scheduleName);
+      await systemDb.createSchedule(sched);
+    }
   }
 }

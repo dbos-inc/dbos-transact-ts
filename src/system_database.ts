@@ -248,6 +248,27 @@ export interface SystemDatabase {
   ): Promise<{ isPatched: boolean; hasEntry: boolean }>;
 
   getSerializer(): DBOSSerializer;
+
+  // Dynamic workflow schedules
+  createSchedule(schedule: WorkflowScheduleInternal): Promise<void>;
+  listSchedules(filters?: {
+    status?: string;
+    workflowName?: string;
+    scheduleNamePrefix?: string;
+  }): Promise<WorkflowScheduleInternal[]>;
+  getSchedule(name: string): Promise<WorkflowScheduleInternal | null>;
+  deleteSchedule(name: string): Promise<void>;
+  setScheduleStatus(name: string, status: string): Promise<void>;
+}
+
+export interface WorkflowScheduleInternal {
+  scheduleId: string;
+  scheduleName: string;
+  workflowName: string;
+  workflowClassName: string;
+  schedule: string;
+  status: string;
+  context: string; // JSON-serialized
 }
 
 // For internal use, not serialized status.
@@ -2954,5 +2975,103 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
 
     return { isPatched: true, hasEntry: true };
+  }
+
+  // Dynamic workflow schedules
+
+  async createSchedule(schedule: WorkflowScheduleInternal): Promise<void> {
+    try {
+      await this.pool.query(
+        `INSERT INTO "${this.schemaName}".workflow_schedules
+         (schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          schedule.scheduleId,
+          schedule.scheduleName,
+          schedule.workflowName,
+          schedule.workflowClassName,
+          schedule.schedule,
+          schedule.status,
+          schedule.context,
+        ],
+      );
+    } catch (e) {
+      if (e instanceof DatabaseError && e.code === '23505') {
+        throw new Error(`Schedule '${schedule.scheduleName}' already exists`);
+      }
+      throw e;
+    }
+  }
+
+  async listSchedules(filters?: {
+    status?: string;
+    workflowName?: string;
+    scheduleNamePrefix?: string;
+  }): Promise<WorkflowScheduleInternal[]> {
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    if (filters?.status) {
+      conditions.push(`status = $${paramIdx++}`);
+      params.push(filters.status);
+    }
+    if (filters?.workflowName) {
+      conditions.push(`workflow_name = $${paramIdx++}`);
+      params.push(filters.workflowName);
+    }
+    if (filters?.scheduleNamePrefix) {
+      conditions.push(`schedule_name LIKE $${paramIdx++}`);
+      params.push(`${filters.scheduleNamePrefix}%`);
+    }
+
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const result = await this.pool.query(
+      `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context
+       FROM "${this.schemaName}".workflow_schedules${where}
+       ORDER BY schedule_name`,
+      params,
+    );
+
+    return result.rows.map((row) => ({
+      scheduleId: row.schedule_id as string,
+      scheduleName: row.schedule_name as string,
+      workflowName: row.workflow_name as string,
+      workflowClassName: row.workflow_class_name as string,
+      schedule: row.schedule as string,
+      status: row.status as string,
+      context: row.context as string,
+    }));
+  }
+
+  async getSchedule(name: string): Promise<WorkflowScheduleInternal | null> {
+    const result = await this.pool.query(
+      `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context
+       FROM "${this.schemaName}".workflow_schedules
+       WHERE schedule_name = $1`,
+      [name],
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0];
+    return {
+      scheduleId: row.schedule_id as string,
+      scheduleName: row.schedule_name as string,
+      workflowName: row.workflow_name as string,
+      workflowClassName: row.workflow_class_name as string,
+      schedule: row.schedule as string,
+      status: row.status as string,
+      context: row.context as string,
+    };
+  }
+
+  async deleteSchedule(name: string): Promise<void> {
+    await this.pool.query(`DELETE FROM "${this.schemaName}".workflow_schedules WHERE schedule_name = $1`, [name]);
+  }
+
+  async setScheduleStatus(name: string, status: string): Promise<void> {
+    await this.pool.query(`UPDATE "${this.schemaName}".workflow_schedules SET status = $1 WHERE schedule_name = $2`, [
+      status,
+      name,
+    ]);
   }
 }
