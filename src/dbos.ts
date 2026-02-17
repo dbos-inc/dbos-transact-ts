@@ -220,7 +220,7 @@ export function runInternalStep<T>(
  * methods so they participate in the same transaction.
  * Outside a workflow, the callback is called directly with `undefined` as the client.
  */
-function runTransactionalInternalStep<T>(
+async function runTransactionalInternalStep<T>(
   callback: (client: PoolClient | undefined) => Promise<T>,
   funcName: string,
 ): Promise<T> {
@@ -232,20 +232,23 @@ function runTransactionalInternalStep<T>(
       const functionID = functionIDGetIncrement();
       let freshResult: T;
 
-      return executor.systemDatabase
-        .runTransactionalStep(DBOS.workflowID!, functionID, funcName, async (client) => {
+      const stored = await executor.systemDatabase.runTransactionalStep(
+        DBOS.workflowID!,
+        functionID,
+        funcName,
+        async (client) => {
           freshResult = await callback(client);
           return executor.serializer.stringify(freshResult !== undefined ? freshResult : null);
-        })
-        .then((stored) => {
-          if (stored !== undefined) {
-            if (stored.functionName !== funcName) {
-              throw new DBOSUnexpectedStepError(DBOS.workflowID!, functionID, funcName, stored.functionName!);
-            }
-            return DBOSExecutor.reviveResultOrError<T>(stored, executor.serializer);
-          }
-          return freshResult;
-        });
+        },
+      );
+
+      if (stored !== undefined) {
+        if (stored.functionName !== funcName) {
+          throw new DBOSUnexpectedStepError(DBOS.workflowID!, functionID, funcName, stored.functionName!);
+        }
+        return DBOSExecutor.reviveResultOrError<T>(stored, executor.serializer);
+      }
+      return freshResult!;
     } else {
       throw new DBOSInvalidWorkflowTransitionError(
         `Invalid call to \`${funcName}\` inside a \`transaction\` or \`procedure\``,
