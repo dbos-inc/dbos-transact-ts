@@ -540,10 +540,10 @@ describe('dynamic-scheduler-tests', () => {
     const before = new Date();
     const handle = await DBOS.triggerSchedule('trigger-test');
     await handle.getResult();
-    const after = new Date();
 
     expect(triggerResults.dates.length).toBe(1);
     expect(triggerResults.dates[0].getTime()).toBeGreaterThanOrEqual(before.getTime());
+    const after = new Date();
     expect(triggerResults.dates[0].getTime()).toBeLessThanOrEqual(after.getTime());
     expect(triggerResults.contexts[0]).toEqual({ source: 'trigger' });
 

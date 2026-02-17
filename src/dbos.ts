@@ -2048,11 +2048,7 @@ export class DBOS {
       });
     }
 
-    const systemDb = DBOSExecutor.globalInstance!.systemDatabase;
-    for (const sched of internals) {
-      await systemDb.deleteSchedule(sched.scheduleName);
-      await systemDb.createSchedule(sched);
-    }
+    await DBOSExecutor.globalInstance!.systemDatabase.applySchedules(internals);
   }
 
   static async triggerSchedule(name: string): Promise<WorkflowHandle<unknown>> {

@@ -271,6 +271,7 @@ export interface SystemDatabase {
   getSchedule(name: string, client?: PoolClient): Promise<WorkflowScheduleInternal | null>;
   deleteSchedule(name: string, client?: PoolClient): Promise<void>;
   setScheduleStatus(name: string, status: string, client?: PoolClient): Promise<void>;
+  applySchedules(schedules: WorkflowScheduleInternal[]): Promise<void>;
 }
 
 export interface WorkflowScheduleInternal {
@@ -3128,5 +3129,22 @@ export class PostgresSystemDatabase implements SystemDatabase {
       status,
       name,
     ]);
+  }
+
+  async applySchedules(schedules: WorkflowScheduleInternal[]): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const sched of schedules) {
+        await this.deleteSchedule(sched.scheduleName, client);
+        await this.createSchedule(sched, client);
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 }
