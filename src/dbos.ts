@@ -1956,7 +1956,7 @@ export class DBOS {
       workflowClassName: className,
       schedule: options.schedule,
       status: 'ACTIVE',
-      context: serializer.stringify(options.context !== undefined ? options.context : null),
+      context: serializer.stringify(options.context),
     };
 
     await runTransactionalInternalStep(
@@ -2044,7 +2044,7 @@ export class DBOS {
         workflowClassName: className,
         schedule: sched.schedule,
         status: 'ACTIVE',
-        context: serializer.stringify(sched.context !== undefined ? sched.context : null),
+        context: serializer.stringify(sched.context),
       });
     }
 

@@ -468,7 +468,7 @@ export class DBOSClient {
       workflowClassName: options.workflowClassName ?? '',
       schedule: options.schedule,
       status: 'ACTIVE',
-      context: this.serializer.stringify(options.context !== undefined ? options.context : null),
+      context: this.serializer.stringify(options.context),
     };
     await this.systemDatabase.createSchedule(schedInternal);
   }
@@ -518,7 +518,7 @@ export class DBOSClient {
         workflowClassName: sched.workflowClassName ?? '',
         schedule: sched.schedule,
         status: 'ACTIVE',
-        context: this.serializer.stringify(sched.context !== undefined ? sched.context : null),
+        context: this.serializer.stringify(sched.context),
       });
     }
     await this.systemDatabase.applySchedules(internals);
