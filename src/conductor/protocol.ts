@@ -20,6 +20,12 @@ export enum MessageType {
   EXPORT_WORKFLOW = 'export_workflow',
   IMPORT_WORKFLOW = 'import_workflow',
   ALERT = 'alert',
+  LIST_SCHEDULES = 'list_schedules',
+  GET_SCHEDULE = 'get_schedule',
+  PAUSE_SCHEDULE = 'pause_schedule',
+  RESUME_SCHEDULE = 'resume_schedule',
+  BACKFILL_SCHEDULE = 'backfill_schedule',
+  TRIGGER_SCHEDULE = 'trigger_schedule',
 }
 
 export interface BaseMessage {
@@ -495,5 +501,134 @@ export class AlertResponse extends BaseResponse {
   constructor(request_id: string, success: boolean, error_message?: string) {
     super(MessageType.ALERT, request_id, error_message);
     this.success = success;
+  }
+}
+
+// --- Schedule protocol messages ---
+
+export interface ScheduleOutput {
+  schedule_id: string;
+  schedule_name: string;
+  workflow_name: string;
+  schedule: string;
+  status: string;
+  context: string;
+}
+
+export interface ListSchedulesBody {
+  status?: string;
+  workflow_name?: string;
+  schedule_name_prefix?: string;
+}
+
+export class ListSchedulesRequest implements BaseMessage {
+  type = MessageType.LIST_SCHEDULES;
+  request_id: string;
+  body: ListSchedulesBody;
+  constructor(request_id: string, body: ListSchedulesBody) {
+    this.request_id = request_id;
+    this.body = body;
+  }
+}
+
+export class ListSchedulesResponse extends BaseResponse {
+  output: ScheduleOutput[];
+  constructor(request_id: string, output: ScheduleOutput[], error_message?: string) {
+    super(MessageType.LIST_SCHEDULES, request_id, error_message);
+    this.output = output;
+  }
+}
+
+export class GetScheduleRequest implements BaseMessage {
+  type = MessageType.GET_SCHEDULE;
+  request_id: string;
+  schedule_name: string;
+  constructor(request_id: string, schedule_name: string) {
+    this.request_id = request_id;
+    this.schedule_name = schedule_name;
+  }
+}
+
+export class GetScheduleResponse extends BaseResponse {
+  output?: ScheduleOutput;
+  constructor(request_id: string, output?: ScheduleOutput, error_message?: string) {
+    super(MessageType.GET_SCHEDULE, request_id, error_message);
+    this.output = output;
+  }
+}
+
+export class PauseScheduleRequest implements BaseMessage {
+  type = MessageType.PAUSE_SCHEDULE;
+  request_id: string;
+  schedule_name: string;
+  constructor(request_id: string, schedule_name: string) {
+    this.request_id = request_id;
+    this.schedule_name = schedule_name;
+  }
+}
+
+export class PauseScheduleResponse extends BaseResponse {
+  success: boolean;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.PAUSE_SCHEDULE, request_id, error_message);
+    this.success = success;
+  }
+}
+
+export class ResumeScheduleRequest implements BaseMessage {
+  type = MessageType.RESUME_SCHEDULE;
+  request_id: string;
+  schedule_name: string;
+  constructor(request_id: string, schedule_name: string) {
+    this.request_id = request_id;
+    this.schedule_name = schedule_name;
+  }
+}
+
+export class ResumeScheduleResponse extends BaseResponse {
+  success: boolean;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.RESUME_SCHEDULE, request_id, error_message);
+    this.success = success;
+  }
+}
+
+export class TriggerScheduleRequest implements BaseMessage {
+  type = MessageType.TRIGGER_SCHEDULE;
+  request_id: string;
+  schedule_name: string;
+  constructor(request_id: string, schedule_name: string) {
+    this.request_id = request_id;
+    this.schedule_name = schedule_name;
+  }
+}
+
+export class TriggerScheduleResponse extends BaseResponse {
+  workflow_id?: string;
+  constructor(request_id: string, workflow_id?: string, error_message?: string) {
+    super(MessageType.TRIGGER_SCHEDULE, request_id, error_message);
+    this.workflow_id = workflow_id;
+  }
+}
+
+export class BackfillScheduleRequest implements BaseMessage {
+  type = MessageType.BACKFILL_SCHEDULE;
+  request_id: string;
+  schedule_name: string;
+  start: string;
+  end: string;
+  constructor(request_id: string, schedule_name: string, start: string, end: string) {
+    this.request_id = request_id;
+    this.schedule_name = schedule_name;
+    this.start = start;
+    this.end = end;
+  }
+}
+
+export class BackfillScheduleResponse extends BaseResponse {
+  workflow_ids: string[];
+  constructor(request_id: string, workflow_ids: string[], error_message?: string) {
+    super(MessageType.BACKFILL_SCHEDULE, request_id, error_message);
+    this.workflow_ids = workflow_ids;
   }
 }
