@@ -122,6 +122,7 @@ export interface DBOSConfig {
   serializer?: DBOSSerializer;
   enablePatching?: boolean;
   listenQueues?: WorkflowQueue[];
+  schedulerPollingIntervalMs?: number;
 }
 
 export interface DBOSRuntimeConfig {
@@ -158,6 +159,8 @@ export type DBOSConfigInternal = {
   serializer: DBOSSerializer;
 
   telemetry: TelemetryConfig;
+
+  schedulerPollingIntervalMs?: number;
 
   http?: {
     cors_middleware?: boolean;
@@ -268,7 +271,7 @@ export class DBOSExecutor {
     }
 
     new ScheduledReceiver(); // Create the scheduler, which registers itself.
-    new DynamicSchedulerLoop(); // Create the dynamic scheduler, which registers itself.
+    new DynamicSchedulerLoop(config.schedulerPollingIntervalMs); // Create the dynamic scheduler, which registers itself.
 
     this.initialized = false;
     DBOSExecutor.globalInstance = this;

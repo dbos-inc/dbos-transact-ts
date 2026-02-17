@@ -54,8 +54,8 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
   readonly #scheduleLoops = new Map<string, ScheduleLoopEntry>();
   readonly #pollingIntervalMs: number;
 
-  constructor() {
-    this.#pollingIntervalMs = 2000;
+  constructor(pollingIntervalMs?: number) {
+    this.#pollingIntervalMs = pollingIntervalMs ?? 30000;
     DBOS.registerLifecycleCallback(this);
   }
 

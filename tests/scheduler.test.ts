@@ -8,6 +8,7 @@ describe('dynamic-scheduler-tests', () => {
 
   beforeAll(async () => {
     config = generateDBOSTestConfig();
+    config.schedulerPollingIntervalMs = 1000;
     await setUpDBOSTestSysDb(config);
     DBOS.setConfig(config);
     expect(config.systemDatabaseUrl).toBeDefined();
