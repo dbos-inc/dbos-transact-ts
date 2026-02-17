@@ -1,4 +1,4 @@
-import { DBOS } from '../src';
+import { DBOS, ConfiguredInstance } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase } from './helpers';
 import { sleepms } from '../src/utils';
@@ -654,5 +654,26 @@ describe('dynamic-scheduler-tests', () => {
     expect(ScheduledClass.counter).toBeGreaterThan(snapshot);
 
     await DBOS.deleteSchedule('class-static-test');
+  }, 30000);
+
+  // Instance method on a ConfiguredInstance — should fail at createSchedule time
+  class InstanceScheduleClass extends ConfiguredInstance {
+    @DBOS.workflow()
+    async instanceWf(_scheduledDate: Date, _context: unknown) {
+      await Promise.resolve();
+    }
+  }
+
+  const _inst = new InstanceScheduleClass('test-inst');
+
+  test('dynamic-scheduler-instance-method-rejected', async () => {
+    await expect(
+      DBOS.createSchedule({
+        scheduleName: 'instance-test',
+        // eslint-disable-next-line @typescript-eslint/unbound-method
+        workflowFn: _inst.instanceWf,
+        schedule: '* * * * * *',
+      }),
+    ).rejects.toThrow(/instance method/i);
   }, 30000);
 });

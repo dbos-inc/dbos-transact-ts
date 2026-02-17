@@ -1890,6 +1890,14 @@ export class DBOS {
     context?: unknown;
   }): Promise<void> {
     ensureDBOSIsLaunched('createSchedule');
+
+    const reg = getFunctionRegistration(options.workflowFn);
+    if (reg?.isInstance) {
+      throw new DBOSError(
+        `Cannot schedule instance method "${reg.name}". Only static methods and free functions can be used in schedules.`,
+      );
+    }
+
     const { className, name: funcName } = getRegisteredFunctionFullName(options.workflowFn);
     validateCrontab(options.schedule);
 
@@ -1974,6 +1982,12 @@ export class DBOS {
     const serializer = DBOSExecutor.globalInstance!.serializer;
     const internals: WorkflowScheduleInternal[] = [];
     for (const sched of schedules) {
+      const reg = getFunctionRegistration(sched.workflowFn);
+      if (reg?.isInstance) {
+        throw new DBOSError(
+          `Cannot schedule instance method "${reg.name}". Only static methods and free functions can be used in schedules.`,
+        );
+      }
       const { className, name: funcName } = getRegisteredFunctionFullName(sched.workflowFn);
       validateCrontab(sched.schedule);
       internals.push({
