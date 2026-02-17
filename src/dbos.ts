@@ -40,7 +40,7 @@ import {
   translateDbosConfig,
   translateRuntimeConfig,
 } from './config';
-import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
+import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler_decorator';
 import {
   AlertHandler,
   associateClassWithExternal,

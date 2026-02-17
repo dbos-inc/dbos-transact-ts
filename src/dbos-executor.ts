@@ -77,7 +77,7 @@ import { DBOS, GetWorkflowsInput } from '.';
 
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
-import { ScheduledReceiver } from './scheduler/scheduler';
+import { ScheduledReceiver } from './scheduler/scheduler_decorator';
 import * as crypto from 'crypto';
 import {
   forkWorkflow,

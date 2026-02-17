@@ -232,5 +232,20 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
         `ALTER TABLE "${schemaName}"."streams" ADD COLUMN "serialization" TEXT DEFAULT NULL`,
       ],
     },
+    {
+      pg: [
+        `CREATE TABLE "${schemaName}"."workflow_schedules" (
+          "schedule_id" TEXT NOT NULL,
+          "schedule_name" TEXT NOT NULL,
+          "workflow_name" TEXT NOT NULL,
+          "workflow_class_name" TEXT NOT NULL DEFAULT '',
+          "schedule" TEXT NOT NULL,
+          "status" TEXT NOT NULL DEFAULT 'ACTIVE',
+          "context" TEXT NOT NULL DEFAULT 'null',
+          CONSTRAINT "workflow_schedules_pkey" PRIMARY KEY ("schedule_id"),
+          CONSTRAINT "workflow_schedules_schedule_name_unique" UNIQUE ("schedule_name")
+        )`,
+      ],
+    },
   ];
 }
