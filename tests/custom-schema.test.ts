@@ -1,4 +1,4 @@
-import { DBOS } from '../src';
+import { DBOS, DBOSClient } from '../src';
 import { generateDBOSTestConfig } from './helpers';
 import { Client } from 'pg';
 
@@ -126,18 +126,41 @@ describe('custom-schema-tests', () => {
       const result = await WorkflowTestClass.testWorkflow();
       expect(result).toBe('step completed');
 
-      // Verify workflow status was recorded in custom schema
+      // Verify workflow status was recorded in custom schema via raw SQL
       const pgSystemClient = new Client({
         connectionString: dbUrl.toString(),
       });
       await pgSystemClient.connect();
 
-      const workflowCount = await pgSystemClient.query<{ count: string }>(
+      const workflowRows = await pgSystemClient.query<{ count: string }>(
         `SELECT COUNT(*) as count FROM ${customSchemaName}.workflow_status`,
       );
-      expect(parseInt(workflowCount.rows[0].count)).toBeGreaterThan(0);
+      expect(parseInt(workflowRows.rows[0].count)).toBe(1);
 
       await pgSystemClient.end();
+
+      // Verify DBOS.listWorkflows reads from the custom schema
+      const dbosWorkflows = await DBOS.listWorkflows({ workflowName: 'testWorkflow' });
+      expect(dbosWorkflows.length).toBe(1);
+      expect(dbosWorkflows[0].workflowName).toBe('testWorkflow');
+      expect(dbosWorkflows[0].workflowClassName).toBe('WorkflowTestClass');
+      expect(dbosWorkflows[0].status).toBe('SUCCESS');
+
+      // Verify DBOSClient can query the custom schema
+      const client = await DBOSClient.create({
+        systemDatabaseUrl: dbUrl.toString(),
+        systemDatabaseSchemaName: customSchemaName,
+      });
+
+      try {
+        const clientWorkflows = await client.listWorkflows({ workflowName: 'testWorkflow' });
+        expect(clientWorkflows.length).toBe(1);
+        expect(clientWorkflows[0].workflowName).toBe('testWorkflow');
+        expect(clientWorkflows[0].workflowClassName).toBe('WorkflowTestClass');
+        expect(clientWorkflows[0].status).toBe('SUCCESS');
+      } finally {
+        await client.destroy();
+      }
     } finally {
       // Clean up test database
       const cleanupClient = new Client({
