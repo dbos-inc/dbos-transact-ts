@@ -78,6 +78,7 @@ import { DBOS, GetWorkflowsInput } from '.';
 import { wfQueueRunner, WorkflowQueue } from './wfqueue';
 import { debugTriggerPoint, DEBUG_TRIGGER_WORKFLOW_ENQUEUE } from './debugpoint';
 import { ScheduledReceiver } from './scheduler/scheduler_decorator';
+import { DynamicSchedulerLoop } from './scheduler/scheduler';
 import * as crypto from 'crypto';
 import {
   forkWorkflow,
@@ -267,6 +268,7 @@ export class DBOSExecutor {
     }
 
     new ScheduledReceiver(); // Create the scheduler, which registers itself.
+    new DynamicSchedulerLoop(); // Create the dynamic scheduler, which registers itself.
 
     this.initialized = false;
     DBOSExecutor.globalInstance = this;

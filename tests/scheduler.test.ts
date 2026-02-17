@@ -1,6 +1,7 @@
 import { DBOS } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase } from './helpers';
+import { sleepms } from '../src/utils';
 
 describe('dynamic-scheduler-tests', () => {
   let config: DBOSConfig;
@@ -256,4 +257,258 @@ describe('dynamic-scheduler-tests', () => {
     const forkedSteps = await DBOS.listWorkflowSteps(forkedHandle.workflowID);
     expect(forkedSteps!.map((s) => s.name)).toEqual(stepNames);
   });
+
+  // ---------------------------------------------------------------------------
+  // Dynamic scheduler firing tests
+  // ---------------------------------------------------------------------------
+
+  async function retryUntilSuccess(fn: () => void, timeoutMs: number = 10000, intervalMs: number = 200): Promise<void> {
+    const deadline = Date.now() + timeoutMs;
+    let lastError: Error | undefined;
+    while (Date.now() < deadline) {
+      try {
+        fn();
+        return;
+      } catch (e) {
+        lastError = e as Error;
+        await sleepms(intervalMs);
+      }
+    }
+    throw lastError ?? new Error('retryUntilSuccess timed out');
+  }
+
+  // --- Firing test workflows ---
+  const firesCounterA: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
+  const firesCounterB: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
+  async function firesWorkflowA(scheduledDate: Date, context: unknown) {
+    firesCounterA.dates.push(scheduledDate);
+    firesCounterA.contexts.push(context);
+    await Promise.resolve();
+  }
+  async function firesWorkflowB(scheduledDate: Date, context: unknown) {
+    firesCounterB.dates.push(scheduledDate);
+    firesCounterB.contexts.push(context);
+    await Promise.resolve();
+  }
+  const regFiresA = DBOS.registerWorkflow(firesWorkflowA, { name: 'firesWorkflowA' });
+  const regFiresB = DBOS.registerWorkflow(firesWorkflowB, { name: 'firesWorkflowB' });
+
+  test('dynamic-scheduler-fires', async () => {
+    firesCounterA.dates = [];
+    firesCounterA.contexts = [];
+    firesCounterB.dates = [];
+    firesCounterB.contexts = [];
+
+    await DBOS.createSchedule({
+      scheduleName: 'fire-a',
+      workflowFn: regFiresA,
+      schedule: '* * * * * *',
+      context: { key: 'alpha' },
+    });
+    await DBOS.createSchedule({
+      scheduleName: 'fire-b',
+      workflowFn: regFiresB,
+      schedule: '* * * * * *',
+      context: { key: 'beta' },
+    });
+
+    await retryUntilSuccess(() => {
+      expect(firesCounterA.dates.length).toBeGreaterThanOrEqual(2);
+      expect(firesCounterB.dates.length).toBeGreaterThanOrEqual(2);
+    });
+
+    // Verify contexts
+    for (const ctx of firesCounterA.contexts) {
+      expect(ctx).toEqual({ key: 'alpha' });
+    }
+    for (const ctx of firesCounterB.contexts) {
+      expect(ctx).toEqual({ key: 'beta' });
+    }
+
+    await DBOS.deleteSchedule('fire-a');
+    await DBOS.deleteSchedule('fire-b');
+  }, 30000);
+
+  // --- Delete stops firing ---
+  let deleteCounter = 0;
+  async function deleteTestWorkflow(_scheduledDate: Date, _context: unknown) {
+    deleteCounter++;
+    await Promise.resolve();
+  }
+  const regDeleteWf = DBOS.registerWorkflow(deleteTestWorkflow, { name: 'deleteTestWorkflow' });
+
+  test('dynamic-scheduler-delete-stops-firing', async () => {
+    deleteCounter = 0;
+
+    await DBOS.createSchedule({
+      scheduleName: 'delete-test',
+      workflowFn: regDeleteWf,
+      schedule: '* * * * * *',
+    });
+
+    await retryUntilSuccess(() => {
+      expect(deleteCounter).toBeGreaterThanOrEqual(1);
+    });
+
+    await DBOS.deleteSchedule('delete-test');
+    await sleepms(3000);
+    const snapshot = deleteCounter;
+    await sleepms(3000);
+    expect(deleteCounter).toBe(snapshot);
+  }, 30000);
+
+  // --- Add after launch ---
+  let addAfterCounter = 0;
+  async function addAfterWorkflow(_scheduledDate: Date, _context: unknown) {
+    addAfterCounter++;
+    await Promise.resolve();
+  }
+  const regAddAfterWf = DBOS.registerWorkflow(addAfterWorkflow, { name: 'addAfterWorkflow' });
+
+  test('dynamic-scheduler-add-after-launch', async () => {
+    addAfterCounter = 0;
+    await sleepms(2000);
+    expect(addAfterCounter).toBe(0);
+
+    await DBOS.createSchedule({
+      scheduleName: 'add-after',
+      workflowFn: regAddAfterWf,
+      schedule: '* * * * * *',
+    });
+
+    await retryUntilSuccess(() => {
+      expect(addAfterCounter).toBeGreaterThanOrEqual(2);
+    });
+
+    await DBOS.deleteSchedule('add-after');
+  }, 30000);
+
+  // --- Replace schedule ---
+  const replaceResults: { count: number; contexts: unknown[] } = { count: 0, contexts: [] };
+  async function replaceWorkflow(_scheduledDate: Date, context: unknown) {
+    replaceResults.count++;
+    replaceResults.contexts.push(context);
+    await Promise.resolve();
+  }
+  const regReplaceWf = DBOS.registerWorkflow(replaceWorkflow, { name: 'replaceWorkflow' });
+
+  test('dynamic-scheduler-replace-schedule', async () => {
+    replaceResults.count = 0;
+    replaceResults.contexts = [];
+
+    // Create a daily schedule that won't fire
+    await DBOS.createSchedule({
+      scheduleName: 'replace-test',
+      workflowFn: regReplaceWf,
+      schedule: '0 0 * * *',
+      context: { version: 'v1' },
+    });
+    await sleepms(3000);
+    expect(replaceResults.count).toBe(0);
+
+    // Delete + create every-second schedule with v2 context
+    await DBOS.deleteSchedule('replace-test');
+    await DBOS.createSchedule({
+      scheduleName: 'replace-test',
+      workflowFn: regReplaceWf,
+      schedule: '* * * * * *',
+      context: { version: 'v2' },
+    });
+
+    await retryUntilSuccess(() => {
+      expect(replaceResults.count).toBeGreaterThanOrEqual(2);
+    });
+    // All firings so far should have v2 context
+    for (const ctx of replaceResults.contexts) {
+      expect(ctx).toEqual({ version: 'v2' });
+    }
+
+    // Replace again with v3
+    const snapshot = replaceResults.count;
+    await DBOS.deleteSchedule('replace-test');
+    // Wait for polling loop to detect deletion and stop the old loop
+    await sleepms(3000);
+    replaceResults.contexts = [];
+    await DBOS.createSchedule({
+      scheduleName: 'replace-test',
+      workflowFn: regReplaceWf,
+      schedule: '* * * * * *',
+      context: { version: 'v3' },
+    });
+
+    await retryUntilSuccess(() => {
+      expect(replaceResults.count).toBeGreaterThanOrEqual(snapshot + 2);
+    });
+    // New firings should have v3 context
+    for (const ctx of replaceResults.contexts) {
+      expect(ctx).toEqual({ version: 'v3' });
+    }
+
+    await DBOS.deleteSchedule('replace-test');
+  }, 30000);
+
+  // --- Long schedule shutdown ---
+  let longCounter = 0;
+  async function longScheduleWorkflow(_scheduledDate: Date, _context: unknown) {
+    longCounter++;
+    await Promise.resolve();
+  }
+  const regLongWf = DBOS.registerWorkflow(longScheduleWorkflow, { name: 'longScheduleWorkflow' });
+
+  test('dynamic-scheduler-long-schedule-shutdown', async () => {
+    longCounter = 0;
+
+    await DBOS.createSchedule({
+      scheduleName: 'long-test',
+      workflowFn: regLongWf,
+      schedule: '0 0 * * *',
+    });
+
+    await sleepms(3000);
+    expect(longCounter).toBe(0);
+    // Test passes if DBOS.shutdown() in afterEach doesn't hang/timeout
+  }, 30000);
+
+  // --- Pause/Resume ---
+  let pauseCounter = 0;
+  async function pauseWorkflow(_scheduledDate: Date, _context: unknown) {
+    pauseCounter++;
+    await Promise.resolve();
+  }
+  const regPauseWf = DBOS.registerWorkflow(pauseWorkflow, { name: 'pauseWorkflow' });
+
+  test('dynamic-scheduler-pause-resume', async () => {
+    pauseCounter = 0;
+
+    await DBOS.createSchedule({
+      scheduleName: 'pause-test',
+      workflowFn: regPauseWf,
+      schedule: '* * * * * *',
+    });
+
+    await retryUntilSuccess(() => {
+      expect(pauseCounter).toBeGreaterThanOrEqual(1);
+    });
+
+    // Pause
+    await DBOS.pauseSchedule('pause-test');
+    const pausedSched = await DBOS.getSchedule('pause-test');
+    expect(pausedSched!.status).toBe('PAUSED');
+
+    await sleepms(3000);
+    const snapshot = pauseCounter;
+    await sleepms(3000);
+    expect(pauseCounter).toBe(snapshot);
+
+    // Resume
+    await DBOS.resumeSchedule('pause-test');
+    const resumedSched = await DBOS.getSchedule('pause-test');
+    expect(resumedSched!.status).toBe('ACTIVE');
+
+    await retryUntilSuccess(() => {
+      expect(pauseCounter).toBeGreaterThan(snapshot);
+    });
+
+    await DBOS.deleteSchedule('pause-test');
+  }, 30000);
 });
