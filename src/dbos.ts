@@ -31,6 +31,7 @@ import {
   DBOSAwaitedWorkflowCancelledError,
   DBOSConflictingRegistrationError,
   DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
+  DBOSUnexpectedStepError,
 } from './error';
 import {
   getDbosConfig,
@@ -101,6 +102,7 @@ import {
   DBOS_FUNCNAME_WRITESTREAM,
   WorkflowScheduleInternal,
 } from './system_database';
+import { PoolClient } from 'pg';
 import {
   WorkflowSchedule,
   ScheduledWorkflowFn,
@@ -209,6 +211,48 @@ export function runInternalStep<T>(
     }
   }
   return callback();
+}
+
+/**
+ * Like runInternalStep, but when called from within a workflow, the callback and the step
+ * result recording run in the same database transaction (via runTransactionalStep).
+ * The callback receives a PoolClient that should be passed to any SystemDatabase
+ * methods so they participate in the same transaction.
+ * Outside a workflow, the callback is called directly with `undefined` as the client.
+ */
+function runTransactionalInternalStep<T>(
+  callback: (client: PoolClient | undefined) => Promise<T>,
+  funcName: string,
+): Promise<T> {
+  if (DBOS.isWithinWorkflow()) {
+    if (DBOS.isInStep()) {
+      return callback(undefined);
+    } else if (DBOS.isInWorkflow()) {
+      const executor = DBOSExecutor.globalInstance!;
+      const functionID = functionIDGetIncrement();
+      let freshResult: T;
+
+      return executor.systemDatabase
+        .runTransactionalStep(DBOS.workflowID!, functionID, funcName, async (client) => {
+          freshResult = await callback(client);
+          return executor.serializer.stringify(freshResult !== undefined ? freshResult : null);
+        })
+        .then((stored) => {
+          if (stored !== undefined) {
+            if (stored.functionName !== funcName) {
+              throw new DBOSUnexpectedStepError(DBOS.workflowID!, functionID, funcName, stored.functionName!);
+            }
+            return DBOSExecutor.reviveResultOrError<T>(stored, executor.serializer);
+          }
+          return freshResult;
+        });
+    } else {
+      throw new DBOSInvalidWorkflowTransitionError(
+        `Invalid call to \`${funcName}\` inside a \`transaction\` or \`procedure\``,
+      );
+    }
+  }
+  return callback(undefined);
 }
 
 export class DBOS {
@@ -1912,8 +1956,8 @@ export class DBOS {
       context: serializer.stringify(options.context !== undefined ? options.context : null),
     };
 
-    await runInternalStep(
-      () => DBOSExecutor.globalInstance!.systemDatabase.createSchedule(schedInternal),
+    await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.createSchedule(schedInternal, client),
       'DBOS.createSchedule',
     );
   }
@@ -1925,8 +1969,8 @@ export class DBOS {
   }): Promise<WorkflowSchedule[]> {
     ensureDBOSIsLaunched('listSchedules');
     const serializer = DBOSExecutor.globalInstance!.serializer;
-    const results = await runInternalStep(
-      () => DBOSExecutor.globalInstance!.systemDatabase.listSchedules(filters),
+    const results = await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.listSchedules(filters, client),
       'DBOS.listSchedules',
     );
     return results.map((r) => toWorkflowSchedule(r, serializer));
@@ -1935,8 +1979,8 @@ export class DBOS {
   static async getSchedule(name: string): Promise<WorkflowSchedule | null> {
     ensureDBOSIsLaunched('getSchedule');
     const serializer = DBOSExecutor.globalInstance!.serializer;
-    const result = await runInternalStep(
-      () => DBOSExecutor.globalInstance!.systemDatabase.getSchedule(name),
+    const result = await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.getSchedule(name, client),
       'DBOS.getSchedule',
     );
     return result ? toWorkflowSchedule(result, serializer) : null;
@@ -1944,24 +1988,24 @@ export class DBOS {
 
   static async deleteSchedule(name: string): Promise<void> {
     ensureDBOSIsLaunched('deleteSchedule');
-    await runInternalStep(
-      () => DBOSExecutor.globalInstance!.systemDatabase.deleteSchedule(name),
+    await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.deleteSchedule(name, client),
       'DBOS.deleteSchedule',
     );
   }
 
   static async pauseSchedule(name: string): Promise<void> {
     ensureDBOSIsLaunched('pauseSchedule');
-    await runInternalStep(
-      () => DBOSExecutor.globalInstance!.systemDatabase.setScheduleStatus(name, 'PAUSED'),
+    await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.setScheduleStatus(name, 'PAUSED', client),
       'DBOS.pauseSchedule',
     );
   }
 
   static async resumeSchedule(name: string): Promise<void> {
     ensureDBOSIsLaunched('resumeSchedule');
-    await runInternalStep(
-      () => DBOSExecutor.globalInstance!.systemDatabase.setScheduleStatus(name, 'ACTIVE'),
+    await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.setScheduleStatus(name, 'ACTIVE', client),
       'DBOS.resumeSchedule',
     );
   }

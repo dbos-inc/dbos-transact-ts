@@ -250,16 +250,27 @@ export interface SystemDatabase {
 
   getSerializer(): DBOSSerializer;
 
+  // Run a callback and record the step result in a single system DB transaction.
+  // If the step was already recorded, returns the previous serialized result without running the callback.
+  // The callback receives a PoolClient that should be passed to any SystemDatabase methods
+  // called within the callback so they run on the same transaction.
+  // The callback should return the serialized output string to record.
+  runTransactionalStep(
+    workflowID: string,
+    functionID: number,
+    functionName: string,
+    callback: (client: PoolClient) => Promise<string | null>,
+  ): Promise<SystemDatabaseStoredResult | undefined>;
+
   // Dynamic workflow schedules
-  createSchedule(schedule: WorkflowScheduleInternal): Promise<void>;
-  listSchedules(filters?: {
-    status?: string;
-    workflowName?: string;
-    scheduleNamePrefix?: string;
-  }): Promise<WorkflowScheduleInternal[]>;
-  getSchedule(name: string): Promise<WorkflowScheduleInternal | null>;
-  deleteSchedule(name: string): Promise<void>;
-  setScheduleStatus(name: string, status: string): Promise<void>;
+  createSchedule(schedule: WorkflowScheduleInternal, client?: PoolClient): Promise<void>;
+  listSchedules(
+    filters?: { status?: string; workflowName?: string; scheduleNamePrefix?: string },
+    client?: PoolClient,
+  ): Promise<WorkflowScheduleInternal[]>;
+  getSchedule(name: string, client?: PoolClient): Promise<WorkflowScheduleInternal | null>;
+  deleteSchedule(name: string, client?: PoolClient): Promise<void>;
+  setScheduleStatus(name: string, status: string, client?: PoolClient): Promise<void>;
 }
 
 export interface WorkflowScheduleInternal {
@@ -2978,11 +2989,51 @@ export class PostgresSystemDatabase implements SystemDatabase {
     return { isPatched: true, hasEntry: true };
   }
 
+  async runTransactionalStep(
+    workflowID: string,
+    functionID: number,
+    functionName: string,
+    callback: (client: PoolClient) => Promise<string | null>,
+  ): Promise<SystemDatabaseStoredResult | undefined> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
+      if (existing !== undefined) {
+        await client.query('ROLLBACK');
+        return existing;
+      }
+      const startTime = Date.now();
+      const output = await callback(client);
+      await recordOperationResult(
+        client,
+        workflowID,
+        functionID,
+        functionName,
+        true,
+        this.schemaName,
+        startTime,
+        Date.now(),
+        {
+          output,
+        },
+      );
+      await client.query('COMMIT');
+      return undefined;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
   // Dynamic workflow schedules
 
-  async createSchedule(schedule: WorkflowScheduleInternal): Promise<void> {
+  async createSchedule(schedule: WorkflowScheduleInternal, client?: PoolClient): Promise<void> {
+    const q = client ?? this.pool;
     try {
-      await this.pool.query(
+      await q.query(
         `INSERT INTO "${this.schemaName}".workflow_schedules
          (schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context)
          VALUES ($1, $2, $3, $4, $5, $6, $7)`,
@@ -3004,11 +3055,11 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
   }
 
-  async listSchedules(filters?: {
-    status?: string;
-    workflowName?: string;
-    scheduleNamePrefix?: string;
-  }): Promise<WorkflowScheduleInternal[]> {
+  async listSchedules(
+    filters?: { status?: string; workflowName?: string; scheduleNamePrefix?: string },
+    client?: PoolClient,
+  ): Promise<WorkflowScheduleInternal[]> {
+    const q = client ?? this.pool;
     const conditions: string[] = [];
     const params: unknown[] = [];
     let paramIdx = 1;
@@ -3027,7 +3078,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }
 
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
-    const result = await this.pool.query(
+    const result = await q.query(
       `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context
        FROM "${this.schemaName}".workflow_schedules${where}
        ORDER BY schedule_name`,
@@ -3045,8 +3096,9 @@ export class PostgresSystemDatabase implements SystemDatabase {
     }));
   }
 
-  async getSchedule(name: string): Promise<WorkflowScheduleInternal | null> {
-    const result = await this.pool.query(
+  async getSchedule(name: string, client?: PoolClient): Promise<WorkflowScheduleInternal | null> {
+    const q = client ?? this.pool;
+    const result = await q.query(
       `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context
        FROM "${this.schemaName}".workflow_schedules
        WHERE schedule_name = $1`,
@@ -3065,12 +3117,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
     };
   }
 
-  async deleteSchedule(name: string): Promise<void> {
-    await this.pool.query(`DELETE FROM "${this.schemaName}".workflow_schedules WHERE schedule_name = $1`, [name]);
+  async deleteSchedule(name: string, client?: PoolClient): Promise<void> {
+    const q = client ?? this.pool;
+    await q.query(`DELETE FROM "${this.schemaName}".workflow_schedules WHERE schedule_name = $1`, [name]);
   }
 
-  async setScheduleStatus(name: string, status: string): Promise<void> {
-    await this.pool.query(`UPDATE "${this.schemaName}".workflow_schedules SET status = $1 WHERE schedule_name = $2`, [
+  async setScheduleStatus(name: string, status: string, client?: PoolClient): Promise<void> {
+    const q = client ?? this.pool;
+    await q.query(`UPDATE "${this.schemaName}".workflow_schedules SET status = $1 WHERE schedule_name = $2`, [
       status,
       name,
     ]);
