@@ -1,4 +1,4 @@
-import { DBOS, ConfiguredInstance } from '../src';
+import { DBOS, ConfiguredInstance, DBOSClient } from '../src';
 import { DBOSConfig } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase } from './helpers';
 import { sleepms } from '../src/utils';
@@ -676,4 +676,225 @@ describe('dynamic-scheduler-tests', () => {
       }),
     ).rejects.toThrow(/instance method/i);
   }, 30000);
+
+  // ---------------------------------------------------------------------------
+  // Client schedule tests
+  // ---------------------------------------------------------------------------
+
+  test('test_client_schedule_crud', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      await client.createSchedule({
+        scheduleName: 'client-test',
+        workflowName: 'myWorkflow',
+        schedule: '* * * * *',
+        context: { env: 'client' },
+      });
+
+      const schedules = await client.listSchedules();
+      expect(schedules.length).toBe(1);
+      expect(schedules[0].scheduleName).toBe('client-test');
+      expect(schedules[0].workflowName).toBe('myWorkflow');
+      expect(schedules[0].schedule).toBe('* * * * *');
+      expect(schedules[0].context).toEqual({ env: 'client' });
+
+      const sched = await client.getSchedule('client-test');
+      expect(sched).not.toBeNull();
+      expect(sched!.scheduleName).toBe('client-test');
+      expect(sched!.context).toEqual({ env: 'client' });
+
+      expect(await client.getSchedule('nonexistent')).toBeNull();
+
+      // Reject duplicate
+      await expect(
+        client.createSchedule({
+          scheduleName: 'client-test',
+          workflowName: 'myWorkflow',
+          schedule: '0 0 * * *',
+        }),
+      ).rejects.toThrow(/already exists/);
+
+      // Reject invalid cron
+      await expect(
+        client.createSchedule({
+          scheduleName: 'bad',
+          workflowName: 'myWorkflow',
+          schedule: 'not a cron',
+        }),
+      ).rejects.toThrow();
+
+      // List with filters
+      await client.createSchedule({
+        scheduleName: 'client-other',
+        workflowName: 'otherWorkflow',
+        schedule: '0 0 * * *',
+      });
+      expect((await client.listSchedules({ status: 'ACTIVE' })).length).toBe(2);
+      expect((await client.listSchedules({ workflowName: 'myWorkflow' })).length).toBe(1);
+      expect((await client.listSchedules({ scheduleNamePrefix: 'client-t' })).length).toBe(1);
+
+      // Delete
+      await client.deleteSchedule('client-test');
+      await client.deleteSchedule('client-other');
+      expect((await client.listSchedules()).length).toBe(0);
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  test('test_client_apply_schedules', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      await client.applySchedules([
+        { scheduleName: 'csched-a', workflowName: 'myWorkflow', schedule: '* * * * *', context: { region: 'us' } },
+        { scheduleName: 'csched-b', workflowName: 'otherWorkflow', schedule: '0 0 * * *' },
+      ]);
+      let schedules = await client.listSchedules();
+      expect(schedules.length).toBe(2);
+
+      // Replace csched-a, add csched-c
+      await client.applySchedules([
+        { scheduleName: 'csched-a', workflowName: 'myWorkflow', schedule: '0 * * * *', context: null },
+        { scheduleName: 'csched-c', workflowName: 'otherWorkflow', schedule: '*/5 * * * *', context: [1, 2] },
+      ]);
+      schedules = await client.listSchedules();
+      expect(schedules.length).toBe(3);
+      const byName = Object.fromEntries(schedules.map((s) => [s.scheduleName, s]));
+      expect(byName['csched-a'].schedule).toBe('0 * * * *');
+      expect(byName['csched-a'].context).toBeNull();
+      expect(byName['csched-c'].context).toEqual([1, 2]);
+
+      // Reject invalid cron
+      await expect(
+        client.applySchedules([{ scheduleName: 'bad', workflowName: 'myWorkflow', schedule: 'not a cron' }]),
+      ).rejects.toThrow();
+
+      // Clean up
+      await client.deleteSchedule('csched-a');
+      await client.deleteSchedule('csched-b');
+      await client.deleteSchedule('csched-c');
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  // --- Client trigger/backfill workflows ---
+  const clientTriggerResults: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
+  async function clientTriggerWorkflow(scheduledDate: Date, context: unknown) {
+    clientTriggerResults.dates.push(scheduledDate);
+    clientTriggerResults.contexts.push(context);
+    await Promise.resolve();
+  }
+  DBOS.registerWorkflow(clientTriggerWorkflow, { name: 'clientTriggerWorkflow' });
+
+  const clientBackfillResults: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
+  async function clientBackfillWorkflow(scheduledDate: Date, context: unknown) {
+    clientBackfillResults.dates.push(scheduledDate);
+    clientBackfillResults.contexts.push(context);
+    await Promise.resolve();
+  }
+  DBOS.registerWorkflow(clientBackfillWorkflow, { name: 'clientBackfillWorkflow' });
+
+  test('test_client_trigger_schedule', async () => {
+    clientTriggerResults.dates = [];
+    clientTriggerResults.contexts = [];
+
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      await client.createSchedule({
+        scheduleName: 'client-trigger',
+        workflowName: 'clientTriggerWorkflow',
+        schedule: '0 0 * * *',
+        context: { source: 'client-trigger' },
+      });
+
+      const before = new Date();
+      const handle = await client.triggerSchedule('client-trigger');
+      await handle.getResult();
+
+      expect(clientTriggerResults.dates.length).toBe(1);
+      expect(clientTriggerResults.dates[0].getTime()).toBeGreaterThanOrEqual(before.getTime() - 1000);
+      expect(clientTriggerResults.contexts[0]).toEqual({ source: 'client-trigger' });
+
+      // Trigger again
+      const handle2 = await client.triggerSchedule('client-trigger');
+      await handle2.getResult();
+      expect(clientTriggerResults.dates.length).toBe(2);
+
+      // Nonexistent schedule
+      await expect(client.triggerSchedule('nonexistent')).rejects.toThrow(/not found/);
+
+      await client.deleteSchedule('client-trigger');
+    } finally {
+      await client.destroy();
+    }
+  }, 30000);
+
+  test('test_client_backfill_schedule', async () => {
+    clientBackfillResults.dates = [];
+    clientBackfillResults.contexts = [];
+
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      await client.createSchedule({
+        scheduleName: 'client-backfill',
+        workflowName: 'clientBackfillWorkflow',
+        schedule: '* * * * *',
+        context: { source: 'client-backfill' },
+      });
+
+      const end = new Date();
+      end.setMilliseconds(0);
+      const start = new Date(end.getTime() - 5 * 60 * 1000);
+
+      const handles = await client.backfillSchedule('client-backfill', start, end);
+      expect(handles.length).toBeGreaterThanOrEqual(4);
+      expect(handles.length).toBeLessThanOrEqual(5);
+
+      for (const h of handles) {
+        await h.getResult();
+      }
+
+      expect(clientBackfillResults.dates.length).toBe(handles.length);
+      for (const ctx of clientBackfillResults.contexts) {
+        expect(ctx).toEqual({ source: 'client-backfill' });
+      }
+      for (const d of clientBackfillResults.dates) {
+        expect(d.getTime()).toBeGreaterThanOrEqual(start.getTime());
+        expect(d.getTime()).toBeLessThan(end.getTime());
+      }
+
+      await expect(client.backfillSchedule('nonexistent', start, end)).rejects.toThrow(/not found/);
+
+      await client.deleteSchedule('client-backfill');
+    } finally {
+      await client.destroy();
+    }
+  }, 30000);
+
+  test('test_client_pause_resume_schedule', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      await client.createSchedule({
+        scheduleName: 'client-pause',
+        workflowName: 'myWorkflow',
+        schedule: '* * * * *',
+      });
+
+      const sched = await client.getSchedule('client-pause');
+      expect(sched!.status).toBe('ACTIVE');
+
+      await client.pauseSchedule('client-pause');
+      const paused = await client.getSchedule('client-pause');
+      expect(paused!.status).toBe('PAUSED');
+
+      await client.resumeSchedule('client-pause');
+      const resumed = await client.getSchedule('client-pause');
+      expect(resumed!.status).toBe('ACTIVE');
+
+      await client.deleteSchedule('client-pause');
+    } finally {
+      await client.destroy();
+    }
+  });
 });
