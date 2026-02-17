@@ -19,6 +19,7 @@ import {
   workflow_events_history,
   streams,
   event_dispatch_kv,
+  workflow_schedules,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
@@ -3033,14 +3034,14 @@ export class PostgresSystemDatabase implements SystemDatabase {
       params,
     );
 
-    return result.rows.map((row) => ({
-      scheduleId: row.schedule_id as string,
-      scheduleName: row.schedule_name as string,
-      workflowName: row.workflow_name as string,
-      workflowClassName: row.workflow_class_name as string,
-      schedule: row.schedule as string,
-      status: row.status as string,
-      context: row.context as string,
+    return result.rows.map((row: workflow_schedules) => ({
+      scheduleId: row.schedule_id,
+      scheduleName: row.schedule_name,
+      workflowName: row.workflow_name,
+      workflowClassName: row.workflow_class_name,
+      schedule: row.schedule,
+      status: row.status,
+      context: row.context,
     }));
   }
 
@@ -3052,15 +3053,15 @@ export class PostgresSystemDatabase implements SystemDatabase {
       [name],
     );
     if (result.rows.length === 0) return null;
-    const row = result.rows[0];
+    const row = result.rows[0] as workflow_schedules;
     return {
-      scheduleId: row.schedule_id as string,
-      scheduleName: row.schedule_name as string,
-      workflowName: row.workflow_name as string,
-      workflowClassName: row.workflow_class_name as string,
-      schedule: row.schedule as string,
-      status: row.status as string,
-      context: row.context as string,
+      scheduleId: row.schedule_id,
+      scheduleName: row.schedule_name,
+      workflowName: row.workflow_name,
+      workflowClassName: row.workflow_class_name,
+      schedule: row.schedule,
+      status: row.status,
+      context: row.context,
     };
   }
 
