@@ -2056,7 +2056,9 @@ export class DBOS {
     if (DBOS.isWithinWorkflow()) {
       throw new DBOSError('triggerSchedule cannot be called from within a workflow');
     }
-    return triggerScheduleImpl(name);
+    const executor = DBOSExecutor.globalInstance!;
+    const workflowID = await triggerScheduleImpl(executor.systemDatabase, executor.serializer, name);
+    return new RetrievedHandle(executor.systemDatabase, workflowID);
   }
 
   static async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
@@ -2064,6 +2066,8 @@ export class DBOS {
     if (DBOS.isWithinWorkflow()) {
       throw new DBOSError('backfillSchedule cannot be called from within a workflow');
     }
-    return backfillScheduleImpl(name, start, end);
+    const executor = DBOSExecutor.globalInstance!;
+    const workflowIDs = await backfillScheduleImpl(executor.systemDatabase, executor.serializer, name, start, end);
+    return workflowIDs.map((id) => new RetrievedHandle(executor.systemDatabase, id));
   }
 }

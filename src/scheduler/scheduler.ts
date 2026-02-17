@@ -1,13 +1,13 @@
-import { WorkflowScheduleInternal } from '../system_database';
-import { DBOSSerializer } from '../serialization';
+import { type SystemDatabase, WorkflowScheduleInternal, type WorkflowStatusInternal } from '../system_database';
+import { DBOSSerializer, serializeArgs } from '../serialization';
 import { randomUUID } from 'crypto';
 import { DBOS } from '..';
 import { DBOSLifecycleCallback, getFunctionRegistrationByName } from '../decorators';
 import { INTERNAL_QUEUE_NAME } from '../utils';
 import { TimeMatcher } from './crontab';
 import { DBOSExecutor } from '../dbos-executor';
-import { DBOSError, DBOSNotRegisteredError } from '../error';
-import { type WorkflowHandle } from '../workflow';
+import { DBOSError } from '../error';
+import { StatusString } from '../workflow';
 
 export type ScheduledWorkflowFn = (scheduledDate: Date, context: unknown) => Promise<void>;
 
@@ -22,12 +22,7 @@ export interface WorkflowSchedule {
 }
 
 export function toWorkflowSchedule(internal: WorkflowScheduleInternal, serializer: DBOSSerializer): WorkflowSchedule {
-  let context: unknown;
-  try {
-    context = serializer.parse(internal.context);
-  } catch {
-    context = null;
-  }
+  const context = serializer.parse(internal.context);
 
   return {
     scheduleId: internal.scheduleId,
@@ -163,12 +158,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
 
     const timeMatcher = new TimeMatcher(cronExpression);
 
-    let context: unknown;
-    try {
-      context = serializer.parse(serializedContext);
-    } catch {
-      context = null;
-    }
+    const context = serializer.parse(serializedContext);
 
     let lastExec = new Date().setMilliseconds(0);
 
@@ -240,65 +230,81 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
   }
 }
 
-function resolveScheduleWorkflow(sched: WorkflowScheduleInternal, scheduleName: string) {
-  const methReg = getFunctionRegistrationByName(sched.workflowClassName, sched.workflowName);
-  if (!methReg || !methReg.registeredFunction) {
-    throw new DBOSNotRegisteredError(
-      sched.workflowName,
-      `Workflow "${sched.workflowClassName}.${sched.workflowName}" for schedule "${scheduleName}" is not registered`,
-    );
-  }
-
-  const serializer = DBOSExecutor.globalInstance!.serializer;
-  let context: unknown;
-  try {
-    context = serializer.parse(sched.context);
-  } catch {
-    context = null;
-  }
-
-  return { methReg, context };
+function enqueueScheduledWorkflow(
+  systemDatabase: SystemDatabase,
+  serializer: DBOSSerializer,
+  sched: WorkflowScheduleInternal,
+  workflowID: string,
+  scheduledDate: Date,
+  context: unknown,
+): Promise<void> {
+  const serparam = serializeArgs([scheduledDate, context], undefined, serializer, undefined);
+  const internalStatus: WorkflowStatusInternal = {
+    workflowUUID: workflowID,
+    status: StatusString.ENQUEUED,
+    workflowName: sched.workflowName,
+    workflowClassName: sched.workflowClassName,
+    workflowConfigName: '',
+    queueName: INTERNAL_QUEUE_NAME,
+    authenticatedUser: '',
+    output: null,
+    error: null,
+    assumedRole: '',
+    authenticatedRoles: [],
+    request: {},
+    executorId: '',
+    applicationID: '',
+    createdAt: Date.now(),
+    input: serparam.serializedValue,
+    deduplicationID: undefined,
+    priority: 0,
+    queuePartitionKey: undefined,
+    serialization: serparam.serialization,
+  };
+  return systemDatabase.initWorkflowStatus(internalStatus, null).then(() => {});
 }
 
-export async function triggerSchedule(name: string): Promise<WorkflowHandle<unknown>> {
-  const executor = DBOSExecutor.globalInstance!;
-  const sched = await executor.systemDatabase.getSchedule(name);
+export async function triggerSchedule(
+  systemDatabase: SystemDatabase,
+  serializer: DBOSSerializer,
+  name: string,
+): Promise<string> {
+  const sched = await systemDatabase.getSchedule(name);
   if (!sched) {
     throw new DBOSError(`Schedule "${name}" not found`);
   }
-
-  const { methReg, context } = resolveScheduleWorkflow(sched, name);
+  const context = serializer.parse(sched.context);
   const now = new Date();
   const workflowID = `sched-${name}-trigger-${now.toISOString()}`;
-  const wfParams = { workflowID, queueName: INTERNAL_QUEUE_NAME };
-  return await DBOS.startWorkflow(methReg.registeredFunction as ScheduledWorkflowFn, wfParams)(now, context);
+  await enqueueScheduledWorkflow(systemDatabase, serializer, sched, workflowID, now, context);
+  return workflowID;
 }
 
-export async function backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
-  const executor = DBOSExecutor.globalInstance!;
-  const sched = await executor.systemDatabase.getSchedule(name);
+export async function backfillSchedule(
+  systemDatabase: SystemDatabase,
+  serializer: DBOSSerializer,
+  name: string,
+  start: Date,
+  end: Date,
+): Promise<string[]> {
+  const sched = await systemDatabase.getSchedule(name);
   if (!sched) {
     throw new DBOSError(`Schedule "${name}" not found`);
   }
-
-  const { methReg, context } = resolveScheduleWorkflow(sched, name);
+  const context = serializer.parse(sched.context);
   const timeMatcher = new TimeMatcher(sched.schedule);
-  const handles: WorkflowHandle<unknown>[] = [];
+  const workflowIDs: string[] = [];
   let current = start.getTime();
 
   while (current < end.getTime()) {
     const next = timeMatcher.nextWakeupTime(current);
-    if (next.getTime() >= end.getTime()) {
-      break;
-    }
+    if (next.getTime() >= end.getTime()) break;
 
     const workflowID = `sched-${name}-${next.toISOString()}`;
-    const wfParams = { workflowID, queueName: INTERNAL_QUEUE_NAME };
-    const handle = await DBOS.startWorkflow(methReg.registeredFunction as ScheduledWorkflowFn, wfParams)(next, context);
-    handles.push(handle);
-
+    await enqueueScheduledWorkflow(systemDatabase, serializer, sched, workflowID, next, context);
+    workflowIDs.push(workflowID);
     current = next.getTime();
   }
 
-  return handles;
+  return workflowIDs;
 }

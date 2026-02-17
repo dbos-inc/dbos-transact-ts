@@ -18,7 +18,7 @@ import {
   WorkflowSerializationFormat,
   type WorkflowStatus,
 } from './workflow';
-import { sleepms, INTERNAL_QUEUE_NAME } from './utils';
+import { sleepms } from './utils';
 import {
   DBOSJSON,
   DBOSSerializer,
@@ -36,10 +36,16 @@ import {
   toWorkflowStatus,
 } from './workflow_management';
 import { DBOSExecutor } from './dbos-executor';
-import { DBOSAwaitedWorkflowCancelledError, DBOSError } from './error';
+import { DBOSAwaitedWorkflowCancelledError } from './error';
 import { Pool } from 'pg';
-import { type WorkflowSchedule, toWorkflowSchedule, createScheduleId } from './scheduler/scheduler';
-import { validateCrontab, TimeMatcher } from './scheduler/crontab';
+import {
+  type WorkflowSchedule,
+  toWorkflowSchedule,
+  createScheduleId,
+  triggerSchedule,
+  backfillSchedule,
+} from './scheduler/scheduler';
+import { validateCrontab } from './scheduler/crontab';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -519,93 +525,12 @@ export class DBOSClient {
   }
 
   async triggerSchedule(name: string): Promise<WorkflowHandle<unknown>> {
-    const sched = await this.systemDatabase.getSchedule(name);
-    if (!sched) {
-      throw new DBOSError(`Schedule "${name}" not found`);
-    }
-    let context: unknown;
-    try {
-      context = this.serializer.parse(sched.context);
-    } catch {
-      context = null;
-    }
-    const now = new Date();
-    const workflowID = `sched-${name}-trigger-${now.toISOString()}`;
-    const serparam = serializeArgs([now, context], undefined, this.serializer, undefined);
-    const internalStatus: WorkflowStatusInternal = {
-      workflowUUID: workflowID,
-      status: StatusString.ENQUEUED,
-      workflowName: sched.workflowName,
-      workflowClassName: sched.workflowClassName,
-      workflowConfigName: '',
-      queueName: INTERNAL_QUEUE_NAME,
-      authenticatedUser: '',
-      output: null,
-      error: null,
-      assumedRole: '',
-      authenticatedRoles: [],
-      request: {},
-      executorId: '',
-      applicationID: '',
-      createdAt: Date.now(),
-      input: serparam.serializedValue,
-      deduplicationID: undefined,
-      priority: 0,
-      queuePartitionKey: undefined,
-      serialization: serparam.serialization,
-    };
-    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
+    const workflowID = await triggerSchedule(this.systemDatabase, this.serializer, name);
     return new ClientHandle(this.systemDatabase, workflowID);
   }
 
   async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
-    const sched = await this.systemDatabase.getSchedule(name);
-    if (!sched) {
-      throw new DBOSError(`Schedule "${name}" not found`);
-    }
-    let context: unknown;
-    try {
-      context = this.serializer.parse(sched.context);
-    } catch {
-      context = null;
-    }
-    const timeMatcher = new TimeMatcher(sched.schedule);
-    const handles: WorkflowHandle<unknown>[] = [];
-    let current = start.getTime();
-
-    while (current < end.getTime()) {
-      const next = timeMatcher.nextWakeupTime(current);
-      if (next.getTime() >= end.getTime()) break;
-
-      const workflowID = `sched-${name}-${next.toISOString()}`;
-      const serparam = serializeArgs([next, context], undefined, this.serializer, undefined);
-      const internalStatus: WorkflowStatusInternal = {
-        workflowUUID: workflowID,
-        status: StatusString.ENQUEUED,
-        workflowName: sched.workflowName,
-        workflowClassName: sched.workflowClassName,
-        workflowConfigName: '',
-        queueName: INTERNAL_QUEUE_NAME,
-        authenticatedUser: '',
-        output: null,
-        error: null,
-        assumedRole: '',
-        authenticatedRoles: [],
-        request: {},
-        executorId: '',
-        applicationID: '',
-        createdAt: Date.now(),
-        input: serparam.serializedValue,
-        deduplicationID: undefined,
-        priority: 0,
-        queuePartitionKey: undefined,
-        serialization: serparam.serialization,
-      };
-      await this.systemDatabase.initWorkflowStatus(internalStatus, null);
-      handles.push(new ClientHandle(this.systemDatabase, workflowID));
-      current = next.getTime();
-    }
-
-    return handles;
+    const workflowIDs = await backfillSchedule(this.systemDatabase, this.serializer, name, start, end);
+    return workflowIDs.map((id) => new ClientHandle(this.systemDatabase, id));
   }
 }
