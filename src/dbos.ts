@@ -1887,6 +1887,7 @@ export class DBOS {
     const { className, name: funcName } = getRegisteredFunctionFullName(options.workflowFn);
     validateCrontab(options.schedule);
 
+    const serializer = DBOSExecutor.globalInstance!.serializer;
     const schedInternal: WorkflowScheduleInternal = {
       scheduleId: createScheduleId(),
       scheduleName: options.scheduleName,
@@ -1894,7 +1895,7 @@ export class DBOS {
       workflowClassName: className,
       schedule: options.schedule,
       status: 'ACTIVE',
-      context: JSON.stringify(options.context !== undefined ? options.context : null),
+      context: serializer.stringify(options.context !== undefined ? options.context : null),
     };
 
     await runInternalStep(
@@ -1909,20 +1910,22 @@ export class DBOS {
     scheduleNamePrefix?: string;
   }): Promise<WorkflowSchedule[]> {
     ensureDBOSIsLaunched('listSchedules');
+    const serializer = DBOSExecutor.globalInstance!.serializer;
     const results = await runInternalStep(
       () => DBOSExecutor.globalInstance!.systemDatabase.listSchedules(filters),
       'DBOS.listSchedules',
     );
-    return results.map(toWorkflowSchedule);
+    return results.map((r) => toWorkflowSchedule(r, serializer));
   }
 
   static async getSchedule(name: string): Promise<WorkflowSchedule | null> {
     ensureDBOSIsLaunched('getSchedule');
+    const serializer = DBOSExecutor.globalInstance!.serializer;
     const result = await runInternalStep(
       () => DBOSExecutor.globalInstance!.systemDatabase.getSchedule(name),
       'DBOS.getSchedule',
     );
-    return result ? toWorkflowSchedule(result) : null;
+    return result ? toWorkflowSchedule(result, serializer) : null;
   }
 
   static async deleteSchedule(name: string): Promise<void> {
@@ -1963,6 +1966,7 @@ export class DBOS {
       throw new DBOSError('applySchedules cannot be called from within a workflow');
     }
 
+    const serializer = DBOSExecutor.globalInstance!.serializer;
     const internals: WorkflowScheduleInternal[] = [];
     for (const sched of schedules) {
       const { className, name: funcName } = getRegisteredFunctionFullName(sched.workflowFn);
@@ -1974,7 +1978,7 @@ export class DBOS {
         workflowClassName: className,
         schedule: sched.schedule,
         status: 'ACTIVE',
-        context: JSON.stringify(sched.context !== undefined ? sched.context : null),
+        context: serializer.stringify(sched.context !== undefined ? sched.context : null),
       });
     }
 

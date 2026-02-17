@@ -1,4 +1,5 @@
 import { WorkflowScheduleInternal } from '../system_database';
+import { DBOSSerializer } from '../serialization';
 import { randomUUID } from 'crypto';
 
 export interface WorkflowSchedule {
@@ -11,10 +12,10 @@ export interface WorkflowSchedule {
   context: unknown; // deserialized
 }
 
-export function toWorkflowSchedule(internal: WorkflowScheduleInternal): WorkflowSchedule {
+export function toWorkflowSchedule(internal: WorkflowScheduleInternal, serializer: DBOSSerializer): WorkflowSchedule {
   let context: unknown;
   try {
-    context = JSON.parse(internal.context);
+    context = serializer.parse(internal.context);
   } catch {
     context = null;
   }
