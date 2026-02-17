@@ -265,7 +265,7 @@ export interface SystemDatabase {
   // Dynamic workflow schedules
   createSchedule(schedule: WorkflowScheduleInternal, client?: PoolClient): Promise<void>;
   listSchedules(
-    filters?: { status?: string; workflowName?: string; scheduleNamePrefix?: string },
+    filters?: { status?: string | string[]; workflowName?: string | string[]; scheduleNamePrefix?: string | string[] },
     client?: PoolClient,
   ): Promise<WorkflowScheduleInternal[]>;
   getSchedule(name: string, client?: PoolClient): Promise<WorkflowScheduleInternal | null>;
@@ -3057,7 +3057,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
   }
 
   async listSchedules(
-    filters?: { status?: string; workflowName?: string; scheduleNamePrefix?: string },
+    filters?: { status?: string | string[]; workflowName?: string | string[]; scheduleNamePrefix?: string | string[] },
     client?: PoolClient,
   ): Promise<WorkflowScheduleInternal[]> {
     const q = client ?? this.pool;
@@ -3066,16 +3066,30 @@ export class PostgresSystemDatabase implements SystemDatabase {
     let paramIdx = 1;
 
     if (filters?.status) {
-      conditions.push(`status = $${paramIdx++}`);
-      params.push(filters.status);
+      const vals = Array.isArray(filters.status) ? filters.status : [filters.status];
+      const placeholders = vals.map((v) => {
+        params.push(v);
+        return `$${paramIdx++}`;
+      });
+      conditions.push(`status IN (${placeholders.join(', ')})`);
     }
     if (filters?.workflowName) {
-      conditions.push(`workflow_name = $${paramIdx++}`);
-      params.push(filters.workflowName);
+      const vals = Array.isArray(filters.workflowName) ? filters.workflowName : [filters.workflowName];
+      const placeholders = vals.map((v) => {
+        params.push(v);
+        return `$${paramIdx++}`;
+      });
+      conditions.push(`workflow_name IN (${placeholders.join(', ')})`);
     }
     if (filters?.scheduleNamePrefix) {
-      conditions.push(`schedule_name LIKE $${paramIdx++}`);
-      params.push(`${filters.scheduleNamePrefix}%`);
+      const prefixes = Array.isArray(filters.scheduleNamePrefix)
+        ? filters.scheduleNamePrefix
+        : [filters.scheduleNamePrefix];
+      const likeClauses = prefixes.map((p) => {
+        params.push(`${p}%`);
+        return `schedule_name LIKE $${paramIdx++}`;
+      });
+      conditions.push(`(${likeClauses.join(' OR ')})`);
     }
 
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';

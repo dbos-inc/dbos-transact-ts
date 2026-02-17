@@ -1966,9 +1966,9 @@ export class DBOS {
   }
 
   static async listSchedules(filters?: {
-    status?: string;
-    workflowName?: string;
-    scheduleNamePrefix?: string;
+    status?: string | string[];
+    workflowName?: string | string[];
+    scheduleNamePrefix?: string | string[];
   }): Promise<WorkflowSchedule[]> {
     ensureDBOSIsLaunched('listSchedules');
     const serializer = DBOSExecutor.globalInstance!.serializer;

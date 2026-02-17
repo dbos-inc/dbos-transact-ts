@@ -474,9 +474,9 @@ export class DBOSClient {
   }
 
   async listSchedules(filters?: {
-    status?: string;
-    workflowName?: string;
-    scheduleNamePrefix?: string;
+    status?: string | string[];
+    workflowName?: string | string[];
+    scheduleNamePrefix?: string | string[];
   }): Promise<WorkflowSchedule[]> {
     const results = await this.systemDatabase.listSchedules(filters);
     return results.map((r) => toWorkflowSchedule(r, this.serializer));

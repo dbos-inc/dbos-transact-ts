@@ -109,6 +109,14 @@ describe('dynamic-scheduler-tests', () => {
     expect((await DBOS.listSchedules({ scheduleNamePrefix: 'other-' })).length).toBe(1);
     expect((await DBOS.listSchedules({ scheduleNamePrefix: 'nonexistent-' })).length).toBe(0);
 
+    // Array filters
+    expect((await DBOS.listSchedules({ status: ['ACTIVE', 'PAUSED'] })).length).toBe(2);
+    expect((await DBOS.listSchedules({ status: ['PAUSED'] })).length).toBe(1);
+    expect((await DBOS.listSchedules({ workflowName: ['myWorkflow', 'otherWorkflow'] })).length).toBe(2);
+    expect((await DBOS.listSchedules({ workflowName: ['myWorkflow'] })).length).toBe(1);
+    expect((await DBOS.listSchedules({ scheduleNamePrefix: ['test-', 'other-'] })).length).toBe(2);
+    expect((await DBOS.listSchedules({ scheduleNamePrefix: ['nonexistent-', 'also-nonexistent-'] })).length).toBe(0);
+
     // Combine filters
     expect((await DBOS.listSchedules({ status: 'ACTIVE', scheduleNamePrefix: 'test-' })).length).toBe(1);
     expect((await DBOS.listSchedules({ status: 'PAUSED', scheduleNamePrefix: 'test-' })).length).toBe(0);

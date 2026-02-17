@@ -510,15 +510,16 @@ export interface ScheduleOutput {
   schedule_id: string;
   schedule_name: string;
   workflow_name: string;
+  workflow_class_name?: string;
   schedule: string;
   status: string;
   context: string;
 }
 
 export interface ListSchedulesBody {
-  status?: string;
-  workflow_name?: string;
-  schedule_name_prefix?: string;
+  status?: string | string[];
+  workflow_name?: string | string[];
+  schedule_name_prefix?: string | string[];
 }
 
 export class ListSchedulesRequest implements BaseMessage {
