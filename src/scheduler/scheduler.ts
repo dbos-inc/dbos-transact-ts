@@ -6,6 +6,8 @@ import { DBOSLifecycleCallback, getFunctionRegistrationByName } from '../decorat
 import { INTERNAL_QUEUE_NAME } from '../utils';
 import { TimeMatcher } from './crontab';
 import { DBOSExecutor } from '../dbos-executor';
+import { DBOSError, DBOSNotRegisteredError } from '../error';
+import { type WorkflowHandle } from '../workflow';
 
 export type ScheduledWorkflowFn = (scheduledDate: Date, context: unknown) => Promise<void>;
 
@@ -236,4 +238,67 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       }, ms);
     });
   }
+}
+
+function resolveScheduleWorkflow(sched: WorkflowScheduleInternal, scheduleName: string) {
+  const methReg = getFunctionRegistrationByName(sched.workflowClassName, sched.workflowName);
+  if (!methReg || !methReg.registeredFunction) {
+    throw new DBOSNotRegisteredError(
+      sched.workflowName,
+      `Workflow "${sched.workflowClassName}.${sched.workflowName}" for schedule "${scheduleName}" is not registered`,
+    );
+  }
+
+  const serializer = DBOSExecutor.globalInstance!.serializer;
+  let context: unknown;
+  try {
+    context = serializer.parse(sched.context);
+  } catch {
+    context = null;
+  }
+
+  return { methReg, context };
+}
+
+export async function triggerSchedule(name: string): Promise<WorkflowHandle<unknown>> {
+  const executor = DBOSExecutor.globalInstance!;
+  const sched = await executor.systemDatabase.getSchedule(name);
+  if (!sched) {
+    throw new DBOSError(`Schedule "${name}" not found`);
+  }
+
+  const { methReg, context } = resolveScheduleWorkflow(sched, name);
+  const now = new Date();
+  const workflowID = `sched-${name}-trigger-${now.toISOString()}`;
+  const wfParams = { workflowID, queueName: INTERNAL_QUEUE_NAME };
+  return await DBOS.startWorkflow(methReg.registeredFunction as ScheduledWorkflowFn, wfParams)(now, context);
+}
+
+export async function backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
+  const executor = DBOSExecutor.globalInstance!;
+  const sched = await executor.systemDatabase.getSchedule(name);
+  if (!sched) {
+    throw new DBOSError(`Schedule "${name}" not found`);
+  }
+
+  const { methReg, context } = resolveScheduleWorkflow(sched, name);
+  const timeMatcher = new TimeMatcher(sched.schedule);
+  const handles: WorkflowHandle<unknown>[] = [];
+  let current = start.getTime();
+
+  while (current < end.getTime()) {
+    const next = timeMatcher.nextWakeupTime(current);
+    if (next.getTime() >= end.getTime()) {
+      break;
+    }
+
+    const workflowID = `sched-${name}-${next.toISOString()}`;
+    const wfParams = { workflowID, queueName: INTERNAL_QUEUE_NAME };
+    const handle = await DBOS.startWorkflow(methReg.registeredFunction as ScheduledWorkflowFn, wfParams)(next, context);
+    handles.push(handle);
+
+    current = next.getTime();
+  }
+
+  return handles;
 }

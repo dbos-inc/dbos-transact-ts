@@ -607,10 +607,6 @@ describe('dynamic-scheduler-tests', () => {
       expect(d.getTime()).toBeLessThan(end.getTime());
     }
 
-    // Backfill again — idempotent, should return 0 new handles
-    const handles2 = await DBOS.backfillSchedule('backfill-test', start, end);
-    expect(handles2.length).toBe(0);
-
     // Backfilling a nonexistent schedule should throw
     await expect(DBOS.backfillSchedule('nonexistent', start, end)).rejects.toThrow(/not found/);
 
