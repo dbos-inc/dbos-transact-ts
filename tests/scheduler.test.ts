@@ -612,4 +612,47 @@ describe('dynamic-scheduler-tests', () => {
 
     await DBOS.deleteSchedule('backfill-test');
   }, 30000);
+
+  // ---------------------------------------------------------------------------
+  // Class-based workflows
+  // ---------------------------------------------------------------------------
+  class ScheduledClass {
+    static counter = 0;
+    static contexts: unknown[] = [];
+
+    @DBOS.workflow()
+    static async scheduledStaticWf(scheduledDate: Date, context: unknown) {
+      ScheduledClass.counter++;
+      ScheduledClass.contexts.push(context);
+      await Promise.resolve();
+    }
+  }
+
+  test('dynamic-scheduler-class-static-method', async () => {
+    ScheduledClass.counter = 0;
+    ScheduledClass.contexts = [];
+
+    await DBOS.createSchedule({
+      scheduleName: 'class-static-test',
+      workflowFn: ScheduledClass.scheduledStaticWf,
+      schedule: '* * * * * *',
+      context: { from: 'static-class' },
+    });
+
+    await retryUntilSuccess(() => {
+      expect(ScheduledClass.counter).toBeGreaterThanOrEqual(2);
+    });
+
+    for (const ctx of ScheduledClass.contexts) {
+      expect(ctx).toEqual({ from: 'static-class' });
+    }
+
+    // Also verify trigger works with class static method
+    const snapshot = ScheduledClass.counter;
+    const handle = await DBOS.triggerSchedule('class-static-test');
+    await handle.getResult();
+    expect(ScheduledClass.counter).toBeGreaterThan(snapshot);
+
+    await DBOS.deleteSchedule('class-static-test');
+  }, 30000);
 });
