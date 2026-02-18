@@ -169,6 +169,7 @@ export class DBOSClient {
     systemDatabaseUrl: string,
     systemDatabasePool: Pool | undefined,
     readonly serializer: DBOSSerializer,
+    systemDatabaseSchemaName?: string,
   ) {
     this.logger = new GlobalLogger();
     this.systemDatabase = new PostgresSystemDatabase(
@@ -177,6 +178,7 @@ export class DBOSClient {
       serializer,
       DEFAULT_POOL_SIZE,
       systemDatabasePool,
+      systemDatabaseSchemaName,
     );
   }
 
@@ -190,12 +192,19 @@ export class DBOSClient {
     systemDatabaseUrl,
     systemDatabasePool,
     serializer,
+    systemDatabaseSchemaName,
   }: {
     systemDatabaseUrl: string;
     systemDatabasePool?: Pool;
     serializer?: DBOSSerializer;
+    systemDatabaseSchemaName?: string;
   }): Promise<DBOSClient> {
-    const client = new DBOSClient(systemDatabaseUrl, systemDatabasePool, serializer ?? DBOSJSON);
+    const client = new DBOSClient(
+      systemDatabaseUrl,
+      systemDatabasePool,
+      serializer ?? DBOSJSON,
+      systemDatabaseSchemaName,
+    );
     return Promise.resolve(client);
   }
 
