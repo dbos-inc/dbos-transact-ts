@@ -205,9 +205,7 @@ export function runInternalStep<T>(
         childWFID,
       );
     } else {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Invalid call to \`${funcName}\` inside a \`transaction\` or \`procedure\``,
-      );
+      throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` inside a \`transaction\``);
     }
   }
   return callback();
@@ -250,9 +248,7 @@ async function runTransactionalInternalStep<T>(
       }
       return freshResult!;
     } else {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Invalid call to \`${funcName}\` inside a \`transaction\` or \`procedure\``,
-      );
+      throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` inside a \`transaction\``);
     }
   }
   return callback(undefined);
@@ -577,8 +573,8 @@ export class DBOS {
 
   /**
    * @returns true if called from within a workflow
-   *  (regardless of whether the workflow is currently executing a step,
-   *   transaction, or procedure), false otherwise
+   *  (regardless of whether the workflow is currently executing a step
+   *   or transaction), false otherwise
    */
   static isWithinWorkflow(): boolean {
     return getCurrentContextStore()?.workflowId !== undefined;
@@ -586,7 +582,7 @@ export class DBOS {
 
   /**
    * @returns true if called from within a workflow that is not currently executing
-   *  a step, transaction, or procedure, or false otherwise
+   *  a step or transaction, or false otherwise
    */
   static isInWorkflow(): boolean {
     return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
@@ -646,9 +642,7 @@ export class DBOS {
       } else if (DBOS.isInWorkflow()) {
         return DBOS.#executor.getWorkflowStatus(workflowID, DBOS.workflowID, functionIDGetIncrement());
       } else {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `getWorkflowStatus` inside a `transaction` or `procedure`',
-        );
+        throw new DBOSInvalidWorkflowTransitionError('Invalid call to `getWorkflowStatus` inside a `transaction`');
       }
     }
     return DBOS.#executor.getWorkflowStatus(workflowID);
