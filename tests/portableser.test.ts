@@ -1,5 +1,5 @@
 import { Client } from 'pg';
-import { DBOS, DBOSClient, DBOSConfig, WorkflowHandle, WorkflowQueue } from '../src';
+import { DBOS, DBOSClient, DBOSConfig, DBOSSerializer, WorkflowHandle, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import {
   notifications,
@@ -395,4 +395,220 @@ describe('portable-serizlization-tests', () => {
       await client.destroy();
     }
   }, 15000);
+});
+
+// Workflows for custom-serializer-restart tests (registered at module level)
+const custSerWorkflow = DBOS.registerWorkflow(
+  async (input: string) => {
+    await DBOS.setEvent('key', input);
+    return `result:${input}`;
+  },
+  { name: 'custSerWorkflow' },
+);
+
+const custSerErrorWorkflow = DBOS.registerWorkflow(
+  async (msg: string) => {
+    return Promise.reject(new Error(msg));
+  },
+  { name: 'custSerErrorWorkflow' },
+);
+
+describe('custom-serializer-restart-tests', () => {
+  const base64Serializer: DBOSSerializer = {
+    name: () => 'custom_base64',
+    parse: (text: string | null | undefined): unknown => {
+      if (text === null || text === undefined) return null;
+      return JSON.parse(Buffer.from(text, 'base64').toString());
+    },
+    stringify: (obj: unknown): string => {
+      if (obj === undefined) obj = null;
+      return Buffer.from(JSON.stringify(obj)).toString('base64');
+    },
+  };
+
+  let config: DBOSConfig;
+  let systemDBClient: Client;
+
+  beforeAll(() => {
+    config = generateDBOSTestConfig();
+  });
+
+  afterEach(async () => {
+    if (systemDBClient) {
+      await systemDBClient.end();
+    }
+    await DBOS.shutdown();
+  });
+
+  test('test-add-custom-serializer-reads-old-data', async () => {
+    // Phase 1: Launch with default serializer, run workflows
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    config.serializer = undefined;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+
+    const p1Handle = await DBOS.startWorkflow(custSerWorkflow)('hello');
+    expect(await p1Handle.getResult()).toBe('result:hello');
+    expect(await DBOS.getEvent(p1Handle.workflowID, 'key')).toBe('hello');
+
+    const p1ErrHandle = await DBOS.startWorkflow(custSerErrorWorkflow)('phase1-oops');
+    await expect(p1ErrHandle.getResult()).rejects.toThrow('phase1-oops');
+
+    // Verify DB stores default serialization format
+    const p1Status = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [p1Handle.workflowID],
+    );
+    expect(p1Status.rows[0].serialization).toBe(DBOSJSON.name());
+
+    await DBOS.shutdown();
+
+    // Phase 2: Relaunch with custom serializer
+    config.serializer = base64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // Old data (js_superjson) should still be readable via DBOS API
+    expect(await DBOS.retrieveWorkflow(p1Handle.workflowID).getResult()).toBe('result:hello');
+    expect(await DBOS.getEvent(p1Handle.workflowID, 'key')).toBe('hello');
+    await expect(DBOS.retrieveWorkflow(p1ErrHandle.workflowID).getResult()).rejects.toThrow('phase1-oops');
+
+    // Old data should also be readable via DBOSClient with the custom serializer
+    const client = await DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+      serializer: base64Serializer,
+    });
+    expect(await client.retrieveWorkflow(p1Handle.workflowID).getResult()).toBe('result:hello');
+    expect(await client.getEvent(p1Handle.workflowID, 'key')).toBe('hello');
+
+    // New workflows should use the custom serializer
+    const p2Handle = await DBOS.startWorkflow(custSerWorkflow)('world');
+    expect(await p2Handle.getResult()).toBe('result:world');
+    expect(await DBOS.getEvent(p2Handle.workflowID, 'key')).toBe('world');
+
+    // Client should also read new custom-serialized data
+    expect(await client.retrieveWorkflow(p2Handle.workflowID).getResult()).toBe('result:world');
+    expect(await client.getEvent(p2Handle.workflowID, 'key')).toBe('world');
+    await client.destroy();
+
+    // Verify DB stores custom serialization format
+    const p2Status = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [p2Handle.workflowID],
+    );
+    expect(p2Status.rows[0].serialization).toBe('custom_base64');
+    expect(p2Status.rows[0].output).toBe(base64Serializer.stringify('result:world'));
+
+    const p2Evt = await systemDBClient.query<workflow_events>(
+      'SELECT * FROM dbos.workflow_events WHERE workflow_uuid = $1 AND key = $2',
+      [p2Handle.workflowID, 'key'],
+    );
+    expect(p2Evt.rows[0].serialization).toBe('custom_base64');
+
+    process.env.DBOS__APPVERSION = undefined;
+  }, 30000);
+
+  test('test-remove-custom-serializer-errors', async () => {
+    // Phase 1: Launch with custom serializer, create data
+    process.env.DBOS__APPVERSION = 'v0';
+    await setUpDBOSTestSysDb(config);
+    config.serializer = base64Serializer;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    systemDBClient = new Client({ connectionString: config.systemDatabaseUrl });
+    await systemDBClient.connect();
+
+    // Insert a default-format (js_superjson) workflow directly for comparison,
+    // since we can't run both serializers in one launch
+    const defaultWfId = randomUUID();
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, status, output, created_at, serialization
+      ) VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+      [
+        defaultWfId,
+        'custSerWorkflow',
+        '',
+        'SUCCESS',
+        DBOSJSON.stringify('result:default'),
+        Date.now(),
+        DBOSJSON.name(),
+      ],
+    );
+    await systemDBClient.query(
+      `INSERT INTO dbos.workflow_events(
+        workflow_uuid, key, value, serialization
+      ) VALUES ($1, $2, $3, $4)`,
+      [defaultWfId, 'key', DBOSJSON.stringify('default'), DBOSJSON.name()],
+    );
+
+    // Run workflows with custom serializer
+    const custHandle = await DBOS.startWorkflow(custSerWorkflow)('custom');
+    expect(await custHandle.getResult()).toBe('result:custom');
+    expect(await DBOS.getEvent(custHandle.workflowID, 'key')).toBe('custom');
+
+    const custErrHandle = await DBOS.startWorkflow(custSerErrorWorkflow)('custom-oops');
+    await expect(custErrHandle.getResult()).rejects.toThrow('custom-oops');
+
+    await DBOS.shutdown();
+
+    // Phase 2: Relaunch WITHOUT custom serializer
+    config.serializer = undefined;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // Default-format data should still be readable
+    expect(await DBOS.retrieveWorkflow(defaultWfId).getResult()).toBe('result:default');
+    expect(await DBOS.getEvent(defaultWfId, 'key')).toBe('default');
+
+    // Custom-format workflow result should throw TypeError
+    await expect(DBOS.retrieveWorkflow(custHandle.workflowID).getResult()).rejects.toThrow('is not available');
+    // Custom-format event should throw TypeError
+    await expect(DBOS.getEvent(custHandle.workflowID, 'key')).rejects.toThrow('is not available');
+    // Custom-format error workflow should throw TypeError (not the original error)
+    await expect(DBOS.retrieveWorkflow(custErrHandle.workflowID).getResult()).rejects.toThrow('is not available');
+
+    // DBOSClient without the serializer should behave equivalently
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+
+    // Default-format data readable via client too
+    expect(await client.retrieveWorkflow(defaultWfId).getResult()).toBe('result:default');
+    expect(await client.getEvent(defaultWfId, 'key')).toBe('default');
+
+    // Custom-format data: client getResult/getEvent throw TypeError
+    await expect(client.retrieveWorkflow(custHandle.workflowID).getResult()).rejects.toThrow('is not available');
+    await expect(client.getEvent(custHandle.workflowID, 'key')).rejects.toThrow('is not available');
+
+    // listWorkflows falls back to raw strings for custom data (both DBOS and client)
+    const allWorkflows = await DBOS.listWorkflows({});
+    const custListed = allWorkflows.find((w) => w.workflowID === custHandle.workflowID);
+    expect(custListed).toBeDefined();
+    expect(custListed!.output).toBe(base64Serializer.stringify('result:custom'));
+    const defaultListed = allWorkflows.find((w) => w.workflowID === defaultWfId);
+    expect(defaultListed).toBeDefined();
+    expect(defaultListed!.output).toBe('result:default');
+
+    const clientWorkflows = await client.listWorkflows({});
+    const clientCustListed = clientWorkflows.find((w) => w.workflowID === custHandle.workflowID);
+    expect(clientCustListed).toBeDefined();
+    expect(clientCustListed!.output).toBe(base64Serializer.stringify('result:custom'));
+    const clientDefaultListed = clientWorkflows.find((w) => w.workflowID === defaultWfId);
+    expect(clientDefaultListed).toBeDefined();
+    expect(clientDefaultListed!.output).toBe('result:default');
+
+    await client.destroy();
+
+    // listWorkflowSteps for custom-format workflow should also fall back
+    const custSteps = await DBOS.listWorkflowSteps(custHandle.workflowID);
+    expect(custSteps).toBeDefined();
+    const setEventStep = custSteps!.find((s) => s.name.includes('setEvent'));
+    expect(setEventStep).toBeDefined();
+
+    process.env.DBOS__APPVERSION = undefined;
+  }, 30000);
 });
