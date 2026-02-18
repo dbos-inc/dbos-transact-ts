@@ -2,6 +2,7 @@ import {
   PostgresSystemDatabase,
   type SystemDatabase,
   type WorkflowStatusInternal,
+  type WorkflowScheduleInternal,
   DBOS_STREAM_CLOSED_SENTINEL,
   DEFAULT_POOL_SIZE,
 } from './system_database';
@@ -37,6 +38,14 @@ import {
 import { DBOSExecutor } from './dbos-executor';
 import { DBOSAwaitedWorkflowCancelledError } from './error';
 import { Pool } from 'pg';
+import {
+  type WorkflowSchedule,
+  toWorkflowSchedule,
+  createScheduleId,
+  triggerSchedule,
+  backfillSchedule,
+} from './scheduler/scheduler';
+import { validateCrontab } from './scheduler/crontab';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -447,5 +456,90 @@ export class DBOSClient {
         throw error;
       }
     }
+  }
+
+  // ---------------------------------------------------------------------------
+  // Dynamic Workflow Schedules
+  // ---------------------------------------------------------------------------
+
+  async createSchedule(options: {
+    scheduleName: string;
+    workflowName: string;
+    workflowClassName?: string;
+    schedule: string;
+    context?: unknown;
+  }): Promise<void> {
+    validateCrontab(options.schedule);
+    const schedInternal: WorkflowScheduleInternal = {
+      scheduleId: createScheduleId(),
+      scheduleName: options.scheduleName,
+      workflowName: options.workflowName,
+      workflowClassName: options.workflowClassName ?? '',
+      schedule: options.schedule,
+      status: 'ACTIVE',
+      context: this.serializer.stringify(options.context),
+    };
+    await this.systemDatabase.createSchedule(schedInternal);
+  }
+
+  async listSchedules(filters?: {
+    status?: string | string[];
+    workflowName?: string | string[];
+    scheduleNamePrefix?: string | string[];
+  }): Promise<WorkflowSchedule[]> {
+    const results = await this.systemDatabase.listSchedules(filters);
+    return results.map((r) => toWorkflowSchedule(r, this.serializer));
+  }
+
+  async getSchedule(name: string): Promise<WorkflowSchedule | null> {
+    const result = await this.systemDatabase.getSchedule(name);
+    return result ? toWorkflowSchedule(result, this.serializer) : null;
+  }
+
+  async deleteSchedule(name: string): Promise<void> {
+    await this.systemDatabase.deleteSchedule(name);
+  }
+
+  async pauseSchedule(name: string): Promise<void> {
+    await this.systemDatabase.setScheduleStatus(name, 'PAUSED');
+  }
+
+  async resumeSchedule(name: string): Promise<void> {
+    await this.systemDatabase.setScheduleStatus(name, 'ACTIVE');
+  }
+
+  async applySchedules(
+    schedules: Array<{
+      scheduleName: string;
+      workflowName: string;
+      workflowClassName?: string;
+      schedule: string;
+      context?: unknown;
+    }>,
+  ): Promise<void> {
+    const internals: WorkflowScheduleInternal[] = [];
+    for (const sched of schedules) {
+      validateCrontab(sched.schedule);
+      internals.push({
+        scheduleId: createScheduleId(),
+        scheduleName: sched.scheduleName,
+        workflowName: sched.workflowName,
+        workflowClassName: sched.workflowClassName ?? '',
+        schedule: sched.schedule,
+        status: 'ACTIVE',
+        context: this.serializer.stringify(sched.context),
+      });
+    }
+    await this.systemDatabase.applySchedules(internals);
+  }
+
+  async triggerSchedule(name: string): Promise<WorkflowHandle<unknown>> {
+    const workflowID = await triggerSchedule(this.systemDatabase, this.serializer, name);
+    return new ClientHandle(this.systemDatabase, workflowID);
+  }
+
+  async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
+    const workflowIDs = await backfillSchedule(this.systemDatabase, this.serializer, name, start, end);
+    return workflowIDs.map((id) => new ClientHandle(this.systemDatabase, id));
   }
 }

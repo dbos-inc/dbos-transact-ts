@@ -87,6 +87,16 @@ export interface workflow_events_history {
   serialization: SysDBSerializationFormat | null;
 }
 
+export interface workflow_schedules {
+  schedule_id: string;
+  schedule_name: string;
+  workflow_name: string;
+  workflow_class_name: string;
+  schedule: string;
+  status: string;
+  context: string;
+}
+
 // This is the deserialized version of operation_outputs
 export interface step_info {
   function_id: number;

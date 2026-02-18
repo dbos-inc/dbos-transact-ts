@@ -196,6 +196,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
         logsEndpoint: options.otlpLogsEndpoints,
       },
     },
+    schedulerPollingIntervalMs: options.schedulerPollingIntervalMs,
   };
 }
 
