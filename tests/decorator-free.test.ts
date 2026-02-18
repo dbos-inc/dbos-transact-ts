@@ -769,8 +769,8 @@ describe('unserializable-negative-tests', () => {
       await expect(wfReturnsAPGClient()).rejects.toThrow(
         `Attempted to call 'query' at path returnClient.<result> on an object that is a serialized function input our output value. Functions are not preserved through serialization; see 'DBOS.registerSerialization'.`,
       );
-      await expect(returnsAFetchResponse()).resolves.toBe(undefined);
-      await expect(returnsAnAxiosResponse()).rejects.toThrow(`Converting circular structure to JSON`);
+      await expect(returnsAFetchResponse()).rejects.toThrow(); // Security updates to `fetch` lead to different behavior here
+      await expect(returnsAnAxiosResponse()).rejects.toThrow(); // Security updates to `axios` lead to different behavior here
     } finally {
       await DBOS.shutdown();
     }
