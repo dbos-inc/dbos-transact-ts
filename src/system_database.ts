@@ -19,6 +19,7 @@ import {
   workflow_events_history,
   streams,
   event_dispatch_kv,
+  workflow_schedules,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
@@ -248,6 +249,39 @@ export interface SystemDatabase {
   ): Promise<{ isPatched: boolean; hasEntry: boolean }>;
 
   getSerializer(): DBOSSerializer;
+
+  // Run a callback and record the step result in a single system DB transaction.
+  // If the step was already recorded, returns the previous serialized result without running the callback.
+  // The callback receives a PoolClient that should be passed to any SystemDatabase methods
+  // called within the callback so they run on the same transaction.
+  // The callback should return the serialized output string to record.
+  runTransactionalStep(
+    workflowID: string,
+    functionID: number,
+    functionName: string,
+    callback: (client: PoolClient) => Promise<string | null>,
+  ): Promise<SystemDatabaseStoredResult | undefined>;
+
+  // Dynamic workflow schedules
+  createSchedule(schedule: WorkflowScheduleInternal, client?: PoolClient): Promise<void>;
+  listSchedules(
+    filters?: { status?: string | string[]; workflowName?: string | string[]; scheduleNamePrefix?: string | string[] },
+    client?: PoolClient,
+  ): Promise<WorkflowScheduleInternal[]>;
+  getSchedule(name: string, client?: PoolClient): Promise<WorkflowScheduleInternal | null>;
+  deleteSchedule(name: string, client?: PoolClient): Promise<void>;
+  setScheduleStatus(name: string, status: string, client?: PoolClient): Promise<void>;
+  applySchedules(schedules: WorkflowScheduleInternal[]): Promise<void>;
+}
+
+export interface WorkflowScheduleInternal {
+  scheduleId: string;
+  scheduleName: string;
+  workflowName: string;
+  workflowClassName: string;
+  schedule: string;
+  status: string;
+  context: string; // JSON-serialized
 }
 
 // For internal use, not serialized status.
@@ -2954,5 +2988,177 @@ export class PostgresSystemDatabase implements SystemDatabase {
     );
 
     return { isPatched: true, hasEntry: true };
+  }
+
+  async runTransactionalStep(
+    workflowID: string,
+    functionID: number,
+    functionName: string,
+    callback: (client: PoolClient) => Promise<string | null>,
+  ): Promise<SystemDatabaseStoredResult | undefined> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+      const existing = await this.#getOperationResultAndThrowIfCancelled(client, workflowID, functionID);
+      if (existing !== undefined) {
+        await client.query('ROLLBACK');
+        return existing;
+      }
+      const startTime = Date.now();
+      const output = await callback(client);
+      await recordOperationResult(
+        client,
+        workflowID,
+        functionID,
+        functionName,
+        true,
+        this.schemaName,
+        startTime,
+        Date.now(),
+        {
+          output,
+        },
+      );
+      await client.query('COMMIT');
+      return undefined;
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
+  }
+
+  // Dynamic workflow schedules
+
+  async createSchedule(schedule: WorkflowScheduleInternal, client?: PoolClient): Promise<void> {
+    const q = client ?? this.pool;
+    try {
+      await q.query(
+        `INSERT INTO "${this.schemaName}".workflow_schedules
+         (schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context)
+         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+        [
+          schedule.scheduleId,
+          schedule.scheduleName,
+          schedule.workflowName,
+          schedule.workflowClassName,
+          schedule.schedule,
+          schedule.status,
+          schedule.context,
+        ],
+      );
+    } catch (e) {
+      if (e instanceof DatabaseError && e.code === '23505') {
+        throw new Error(`Schedule '${schedule.scheduleName}' already exists`);
+      }
+      throw e;
+    }
+  }
+
+  async listSchedules(
+    filters?: { status?: string | string[]; workflowName?: string | string[]; scheduleNamePrefix?: string | string[] },
+    client?: PoolClient,
+  ): Promise<WorkflowScheduleInternal[]> {
+    const q = client ?? this.pool;
+    const conditions: string[] = [];
+    const params: unknown[] = [];
+    let paramIdx = 1;
+
+    if (filters?.status) {
+      const vals = Array.isArray(filters.status) ? filters.status : [filters.status];
+      const placeholders = vals.map((v) => {
+        params.push(v);
+        return `$${paramIdx++}`;
+      });
+      conditions.push(`status IN (${placeholders.join(', ')})`);
+    }
+    if (filters?.workflowName) {
+      const vals = Array.isArray(filters.workflowName) ? filters.workflowName : [filters.workflowName];
+      const placeholders = vals.map((v) => {
+        params.push(v);
+        return `$${paramIdx++}`;
+      });
+      conditions.push(`workflow_name IN (${placeholders.join(', ')})`);
+    }
+    if (filters?.scheduleNamePrefix) {
+      const prefixes = Array.isArray(filters.scheduleNamePrefix)
+        ? filters.scheduleNamePrefix
+        : [filters.scheduleNamePrefix];
+      const likeClauses = prefixes.map((p) => {
+        params.push(`${p}%`);
+        return `schedule_name LIKE $${paramIdx++}`;
+      });
+      conditions.push(`(${likeClauses.join(' OR ')})`);
+    }
+
+    const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
+    const result = await q.query(
+      `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context
+       FROM "${this.schemaName}".workflow_schedules${where}
+       ORDER BY schedule_name`,
+      params,
+    );
+
+    return result.rows.map((row: workflow_schedules) => ({
+      scheduleId: row.schedule_id,
+      scheduleName: row.schedule_name,
+      workflowName: row.workflow_name,
+      workflowClassName: row.workflow_class_name,
+      schedule: row.schedule,
+      status: row.status,
+      context: row.context,
+    }));
+  }
+
+  async getSchedule(name: string, client?: PoolClient): Promise<WorkflowScheduleInternal | null> {
+    const q = client ?? this.pool;
+    const result = await q.query(
+      `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context
+       FROM "${this.schemaName}".workflow_schedules
+       WHERE schedule_name = $1`,
+      [name],
+    );
+    if (result.rows.length === 0) return null;
+    const row = result.rows[0] as workflow_schedules;
+    return {
+      scheduleId: row.schedule_id,
+      scheduleName: row.schedule_name,
+      workflowName: row.workflow_name,
+      workflowClassName: row.workflow_class_name,
+      schedule: row.schedule,
+      status: row.status,
+      context: row.context,
+    };
+  }
+
+  async deleteSchedule(name: string, client?: PoolClient): Promise<void> {
+    const q = client ?? this.pool;
+    await q.query(`DELETE FROM "${this.schemaName}".workflow_schedules WHERE schedule_name = $1`, [name]);
+  }
+
+  async setScheduleStatus(name: string, status: string, client?: PoolClient): Promise<void> {
+    const q = client ?? this.pool;
+    await q.query(`UPDATE "${this.schemaName}".workflow_schedules SET status = $1 WHERE schedule_name = $2`, [
+      status,
+      name,
+    ]);
+  }
+
+  async applySchedules(schedules: WorkflowScheduleInternal[]): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN');
+      for (const sched of schedules) {
+        await this.deleteSchedule(sched.scheduleName, client);
+        await this.createSchedule(sched, client);
+      }
+      await client.query('COMMIT');
+    } catch (e) {
+      await client.query('ROLLBACK');
+      throw e;
+    } finally {
+      client.release();
+    }
   }
 }

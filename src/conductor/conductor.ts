@@ -8,8 +8,9 @@ import { hostname } from 'node:os';
 import { globalTimeout } from '../workflow_management';
 import assert from 'node:assert';
 import * as zlib from 'node:zlib';
-import { promisify } from 'node:util';
+import { inspect, promisify } from 'node:util';
 import type { ExportedWorkflow } from '../system_database';
+import { triggerSchedule, backfillSchedule } from '../scheduler/scheduler';
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -451,6 +452,126 @@ export class Conductor {
             }
             const alertResp = new protocol.AlertResponse(baseMsg.request_id, alertSuccess, errorMsg);
             currWebsocket.send(JSON.stringify(alertResp));
+            break;
+          case protocol.MessageType.LIST_SCHEDULES:
+            const listSchedMsg = baseMsg as protocol.ListSchedulesRequest;
+            let schedOutput: protocol.ScheduleOutput[] = [];
+            try {
+              const scheds = await this.dbosExec.systemDatabase.listSchedules({
+                status: listSchedMsg.body.status,
+                workflowName: listSchedMsg.body.workflow_name,
+                scheduleNamePrefix: listSchedMsg.body.schedule_name_prefix,
+              });
+              schedOutput = scheds.map((s) => ({
+                schedule_id: s.scheduleId,
+                schedule_name: s.scheduleName,
+                workflow_name: s.workflowName,
+                workflow_class_name: s.workflowClassName || undefined,
+                schedule: s.schedule,
+                status: s.status,
+                context: inspect(this.dbosExec.serializer.parse(s.context)),
+              }));
+            } catch (e) {
+              errorMsg = `Exception encountered when listing schedules: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const listSchedResp = new protocol.ListSchedulesResponse(listSchedMsg.request_id, schedOutput, errorMsg);
+            currWebsocket.send(JSON.stringify(listSchedResp));
+            break;
+          case protocol.MessageType.GET_SCHEDULE:
+            const getSchedMsg = baseMsg as protocol.GetScheduleRequest;
+            let getSchedOutput: protocol.ScheduleOutput | undefined = undefined;
+            try {
+              const sched = await this.dbosExec.systemDatabase.getSchedule(getSchedMsg.schedule_name);
+              if (sched) {
+                getSchedOutput = {
+                  schedule_id: sched.scheduleId,
+                  schedule_name: sched.scheduleName,
+                  workflow_name: sched.workflowName,
+                  workflow_class_name: sched.workflowClassName || undefined,
+                  schedule: sched.schedule,
+                  status: sched.status,
+                  context: inspect(this.dbosExec.serializer.parse(sched.context)),
+                };
+              }
+            } catch (e) {
+              errorMsg = `Exception encountered when getting schedule ${getSchedMsg.schedule_name}: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const getSchedResp = new protocol.GetScheduleResponse(getSchedMsg.request_id, getSchedOutput, errorMsg);
+            currWebsocket.send(JSON.stringify(getSchedResp));
+            break;
+          case protocol.MessageType.PAUSE_SCHEDULE:
+            const pauseSchedMsg = baseMsg as protocol.PauseScheduleRequest;
+            let pauseSuccess = true;
+            try {
+              await this.dbosExec.systemDatabase.setScheduleStatus(pauseSchedMsg.schedule_name, 'PAUSED');
+            } catch (e) {
+              errorMsg = `Exception encountered when pausing schedule '${pauseSchedMsg.schedule_name}': ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+              pauseSuccess = false;
+            }
+            const pauseSchedResp = new protocol.PauseScheduleResponse(baseMsg.request_id, pauseSuccess, errorMsg);
+            currWebsocket.send(JSON.stringify(pauseSchedResp));
+            break;
+          case protocol.MessageType.RESUME_SCHEDULE:
+            const resumeSchedMsg = baseMsg as protocol.ResumeScheduleRequest;
+            let resumeSchedSuccess = true;
+            try {
+              await this.dbosExec.systemDatabase.setScheduleStatus(resumeSchedMsg.schedule_name, 'ACTIVE');
+            } catch (e) {
+              errorMsg = `Exception encountered when resuming schedule '${resumeSchedMsg.schedule_name}': ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+              resumeSchedSuccess = false;
+            }
+            const resumeSchedResp = new protocol.ResumeScheduleResponse(
+              baseMsg.request_id,
+              resumeSchedSuccess,
+              errorMsg,
+            );
+            currWebsocket.send(JSON.stringify(resumeSchedResp));
+            break;
+          case protocol.MessageType.BACKFILL_SCHEDULE:
+            const backfillSchedMsg = baseMsg as protocol.BackfillScheduleRequest;
+            let backfillWorkflowIds: string[] = [];
+            try {
+              backfillWorkflowIds = await backfillSchedule(
+                this.dbosExec.systemDatabase,
+                this.dbosExec.serializer,
+                backfillSchedMsg.schedule_name,
+                new Date(backfillSchedMsg.start),
+                new Date(backfillSchedMsg.end),
+              );
+            } catch (e) {
+              errorMsg = `Exception encountered when backfilling schedule '${backfillSchedMsg.schedule_name}': ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const backfillSchedResp = new protocol.BackfillScheduleResponse(
+              baseMsg.request_id,
+              backfillWorkflowIds,
+              errorMsg,
+            );
+            currWebsocket.send(JSON.stringify(backfillSchedResp));
+            break;
+          case protocol.MessageType.TRIGGER_SCHEDULE:
+            const triggerSchedMsg = baseMsg as protocol.TriggerScheduleRequest;
+            let triggerWorkflowId: string | undefined = undefined;
+            try {
+              triggerWorkflowId = await triggerSchedule(
+                this.dbosExec.systemDatabase,
+                this.dbosExec.serializer,
+                triggerSchedMsg.schedule_name,
+              );
+            } catch (e) {
+              errorMsg = `Exception encountered when triggering schedule '${triggerSchedMsg.schedule_name}': ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const triggerSchedResp = new protocol.TriggerScheduleResponse(
+              baseMsg.request_id,
+              triggerWorkflowId,
+              errorMsg,
+            );
+            currWebsocket.send(JSON.stringify(triggerSchedResp));
             break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);

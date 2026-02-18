@@ -2,7 +2,9 @@ export { DBOS } from './dbos';
 
 export { DBOSClient } from './client';
 
-export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler';
+export { SchedulerMode, SchedulerConfig } from './scheduler/scheduler_decorator';
+
+export { WorkflowSchedule, ScheduledWorkflowFn } from './scheduler/scheduler';
 
 export {
   AlertHandler,

@@ -31,6 +31,7 @@ import {
   DBOSAwaitedWorkflowCancelledError,
   DBOSConflictingRegistrationError,
   DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
+  DBOSUnexpectedStepError,
 } from './error';
 import {
   getDbosConfig,
@@ -40,7 +41,7 @@ import {
   translateDbosConfig,
   translateRuntimeConfig,
 } from './config';
-import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler';
+import { ScheduledArgs, ScheduledReceiver, SchedulerConfig } from './scheduler/scheduler_decorator';
 import {
   AlertHandler,
   associateClassWithExternal,
@@ -78,6 +79,7 @@ import {
   finalizeClassRegistrations,
   getClassRegistration,
   clearAllRegistrations,
+  getRegisteredFunctionFullName,
 } from './decorators';
 import { defaultEnableOTLP, globalParams, sleepms } from './utils';
 import {
@@ -94,7 +96,22 @@ import { randomUUID } from 'node:crypto';
 
 import { StepConfig } from './step';
 import { Conductor } from './conductor/conductor';
-import { EnqueueOptions, DBOS_STREAM_CLOSED_SENTINEL, DBOS_FUNCNAME_WRITESTREAM } from './system_database';
+import {
+  EnqueueOptions,
+  DBOS_STREAM_CLOSED_SENTINEL,
+  DBOS_FUNCNAME_WRITESTREAM,
+  WorkflowScheduleInternal,
+} from './system_database';
+import { PoolClient } from 'pg';
+import {
+  WorkflowSchedule,
+  ScheduledWorkflowFn,
+  toWorkflowSchedule,
+  createScheduleId,
+  triggerSchedule as triggerScheduleImpl,
+  backfillSchedule as backfillScheduleImpl,
+} from './scheduler/scheduler';
+import { validateCrontab } from './scheduler/crontab';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
@@ -188,12 +205,53 @@ export function runInternalStep<T>(
         childWFID,
       );
     } else {
-      throw new DBOSInvalidWorkflowTransitionError(
-        `Invalid call to \`${funcName}\` inside a \`transaction\` or \`procedure\``,
-      );
+      throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` inside a \`transaction\``);
     }
   }
   return callback();
+}
+
+/**
+ * Like runInternalStep, but when called from within a workflow, the callback and the step
+ * result recording run in the same database transaction (via runTransactionalStep).
+ * The callback receives a PoolClient that should be passed to any SystemDatabase
+ * methods so they participate in the same transaction.
+ * Outside a workflow, the callback is called directly with `undefined` as the client.
+ */
+async function runTransactionalInternalStep<T>(
+  callback: (client: PoolClient | undefined) => Promise<T>,
+  funcName: string,
+): Promise<T> {
+  if (DBOS.isWithinWorkflow()) {
+    if (DBOS.isInStep()) {
+      return callback(undefined);
+    } else if (DBOS.isInWorkflow()) {
+      const executor = DBOSExecutor.globalInstance!;
+      const functionID = functionIDGetIncrement();
+      let freshResult: T;
+
+      const stored = await executor.systemDatabase.runTransactionalStep(
+        DBOS.workflowID!,
+        functionID,
+        funcName,
+        async (client) => {
+          freshResult = await callback(client);
+          return executor.serializer.stringify(freshResult !== undefined ? freshResult : null);
+        },
+      );
+
+      if (stored !== undefined) {
+        if (stored.functionName !== funcName) {
+          throw new DBOSUnexpectedStepError(DBOS.workflowID!, functionID, funcName, stored.functionName!);
+        }
+        return DBOSExecutor.reviveResultOrError<T>(stored, executor.serializer);
+      }
+      return freshResult!;
+    } else {
+      throw new DBOSInvalidWorkflowTransitionError(`Invalid call to \`${funcName}\` inside a \`transaction\``);
+    }
+  }
+  return callback(undefined);
 }
 
 export class DBOS {
@@ -515,8 +573,8 @@ export class DBOS {
 
   /**
    * @returns true if called from within a workflow
-   *  (regardless of whether the workflow is currently executing a step,
-   *   transaction, or procedure), false otherwise
+   *  (regardless of whether the workflow is currently executing a step
+   *   or transaction), false otherwise
    */
   static isWithinWorkflow(): boolean {
     return getCurrentContextStore()?.workflowId !== undefined;
@@ -524,7 +582,7 @@ export class DBOS {
 
   /**
    * @returns true if called from within a workflow that is not currently executing
-   *  a step, transaction, or procedure, or false otherwise
+   *  a step or transaction, or false otherwise
    */
   static isInWorkflow(): boolean {
     return DBOS.isWithinWorkflow() && !DBOS.isInTransaction() && !DBOS.isInStep();
@@ -584,9 +642,7 @@ export class DBOS {
       } else if (DBOS.isInWorkflow()) {
         return DBOS.#executor.getWorkflowStatus(workflowID, DBOS.workflowID, functionIDGetIncrement());
       } else {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `getWorkflowStatus` inside a `transaction` or `procedure`',
-        );
+        throw new DBOSInvalidWorkflowTransitionError('Invalid call to `getWorkflowStatus` inside a `transaction`');
       }
     }
     return DBOS.#executor.getWorkflowStatus(workflowID);
@@ -1862,5 +1918,150 @@ export class DBOS {
       throw new DBOSError('Alert handler is already registered. Only one handler is allowed.');
     }
     setAlertHandler(handler);
+  }
+
+  /////
+  // Dynamic Workflow Schedules
+  /////
+
+  static async createSchedule(options: {
+    scheduleName: string;
+    workflowFn: ScheduledWorkflowFn;
+    schedule: string;
+    context?: unknown;
+  }): Promise<void> {
+    ensureDBOSIsLaunched('createSchedule');
+
+    const reg = getFunctionRegistration(options.workflowFn);
+    if (reg?.isInstance) {
+      throw new DBOSError(
+        `Cannot schedule instance method "${reg.name}". Only static methods and free functions can be used in schedules.`,
+      );
+    }
+
+    const { className, name: funcName } = getRegisteredFunctionFullName(options.workflowFn);
+    validateCrontab(options.schedule);
+
+    const serializer = DBOSExecutor.globalInstance!.serializer;
+    const schedInternal: WorkflowScheduleInternal = {
+      scheduleId: createScheduleId(),
+      scheduleName: options.scheduleName,
+      workflowName: funcName,
+      workflowClassName: className,
+      schedule: options.schedule,
+      status: 'ACTIVE',
+      context: serializer.stringify(options.context),
+    };
+
+    await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.createSchedule(schedInternal, client),
+      'DBOS.createSchedule',
+    );
+  }
+
+  static async listSchedules(filters?: {
+    status?: string | string[];
+    workflowName?: string | string[];
+    scheduleNamePrefix?: string | string[];
+  }): Promise<WorkflowSchedule[]> {
+    ensureDBOSIsLaunched('listSchedules');
+    const serializer = DBOSExecutor.globalInstance!.serializer;
+    const results = await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.listSchedules(filters, client),
+      'DBOS.listSchedules',
+    );
+    return results.map((r) => toWorkflowSchedule(r, serializer));
+  }
+
+  static async getSchedule(name: string): Promise<WorkflowSchedule | null> {
+    ensureDBOSIsLaunched('getSchedule');
+    const serializer = DBOSExecutor.globalInstance!.serializer;
+    const result = await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.getSchedule(name, client),
+      'DBOS.getSchedule',
+    );
+    return result ? toWorkflowSchedule(result, serializer) : null;
+  }
+
+  static async deleteSchedule(name: string): Promise<void> {
+    ensureDBOSIsLaunched('deleteSchedule');
+    await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.deleteSchedule(name, client),
+      'DBOS.deleteSchedule',
+    );
+  }
+
+  static async pauseSchedule(name: string): Promise<void> {
+    ensureDBOSIsLaunched('pauseSchedule');
+    await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.setScheduleStatus(name, 'PAUSED', client),
+      'DBOS.pauseSchedule',
+    );
+  }
+
+  static async resumeSchedule(name: string): Promise<void> {
+    ensureDBOSIsLaunched('resumeSchedule');
+    await runTransactionalInternalStep(
+      (client) => DBOSExecutor.globalInstance!.systemDatabase.setScheduleStatus(name, 'ACTIVE', client),
+      'DBOS.resumeSchedule',
+    );
+  }
+
+  static async applySchedules(
+    schedules: Array<{
+      scheduleName: string;
+      workflowFn: ScheduledWorkflowFn;
+      schedule: string;
+      context?: unknown;
+    }>,
+  ): Promise<void> {
+    ensureDBOSIsLaunched('applySchedules');
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSError('applySchedules cannot be called from within a workflow');
+    }
+
+    const serializer = DBOSExecutor.globalInstance!.serializer;
+    const internals: WorkflowScheduleInternal[] = [];
+    for (const sched of schedules) {
+      const reg = getFunctionRegistration(sched.workflowFn);
+      if (reg?.isInstance) {
+        throw new DBOSError(
+          `Cannot schedule instance method "${reg.name}". Only static methods and free functions can be used in schedules.`,
+        );
+      }
+      const { className, name: funcName } = getRegisteredFunctionFullName(sched.workflowFn);
+      validateCrontab(sched.schedule);
+      internals.push({
+        scheduleId: createScheduleId(),
+        scheduleName: sched.scheduleName,
+        workflowName: funcName,
+        workflowClassName: className,
+        schedule: sched.schedule,
+        status: 'ACTIVE',
+        context: serializer.stringify(sched.context),
+      });
+    }
+
+    await DBOSExecutor.globalInstance!.systemDatabase.applySchedules(internals);
+  }
+
+  static async triggerSchedule(name: string): Promise<WorkflowHandle<unknown>> {
+    ensureDBOSIsLaunched('triggerSchedule');
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSError('triggerSchedule cannot be called from within a workflow');
+    }
+    const executor = DBOSExecutor.globalInstance!;
+    const workflowID = await triggerScheduleImpl(executor.systemDatabase, executor.serializer, name);
+    return new RetrievedHandle(executor.systemDatabase, workflowID);
+  }
+
+  static async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
+    ensureDBOSIsLaunched('backfillSchedule');
+    if (DBOS.isWithinWorkflow()) {
+      throw new DBOSError('backfillSchedule cannot be called from within a workflow');
+    }
+    const executor = DBOSExecutor.globalInstance!;
+    const workflowIDs = await backfillScheduleImpl(executor.systemDatabase, executor.serializer, name, start, end);
+    return workflowIDs.map((id) => new RetrievedHandle(executor.systemDatabase, id));
   }
 }

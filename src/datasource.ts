@@ -133,7 +133,7 @@ export async function runTransaction<T>(
   }
   if (!DBOS.isInWorkflow()) {
     throw new DBOSInvalidWorkflowTransitionError(
-      `Invalid call to \`${funcName}\` inside a \`step\`, \`transaction\`, or \`procedure\``,
+      `Invalid call to \`${funcName}\` inside a \`step\` or \`transaction\``,
     );
   }
 
