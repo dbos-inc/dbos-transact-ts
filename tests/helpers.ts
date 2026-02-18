@@ -43,7 +43,13 @@ export async function setUpDBOSTestSysDb(config: DBOSConfig) {
   if (r.status !== 'did_not_exist' && r.status !== 'dropped') {
     throw new Error(`Unable to drop ${maskDatabaseUrl(internalConfig.systemDatabaseUrl)}`);
   }
-  await ensureSystemDatabase(internalConfig.systemDatabaseUrl, new GlobalLogger());
+  await ensureSystemDatabase(
+    internalConfig.systemDatabaseUrl,
+    new GlobalLogger(),
+    undefined,
+    undefined,
+    internalConfig.useListenNotify,
+  );
 }
 
 // A helper class for testing concurrency. Behaves similarly to threading.Event in Python.

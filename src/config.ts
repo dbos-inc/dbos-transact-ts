@@ -29,6 +29,7 @@ export interface ConfigFile {
       tracesEndpoint?: string | string[];
     };
   };
+  use_listen_notify?: boolean;
   runtimeConfig?: Partial<DBOSRuntimeConfig>; // naming nit: runtime_config
 }
 
@@ -163,6 +164,7 @@ export function getDbosConfig(
       otlpLogsEndpoints: toArray(config.telemetry?.OTLPExporter?.logsEndpoint),
       runAdminServer: config.runtimeConfig?.runAdminServer,
       adminPort: config.runtimeConfig?.admin_port,
+      useListenNotify: config.use_listen_notify,
     },
     options.forceConsole,
   );
@@ -197,6 +199,7 @@ export function translateDbosConfig(options: DBOSConfig, forceConsole: boolean =
       },
     },
     schedulerPollingIntervalMs: options.schedulerPollingIntervalMs,
+    useListenNotify: options.useListenNotify ?? true,
   };
 }
 

@@ -123,6 +123,7 @@ export interface DBOSConfig {
   enablePatching?: boolean;
   listenQueues?: WorkflowQueue[];
   schedulerPollingIntervalMs?: number;
+  useListenNotify?: boolean;
 }
 
 export interface DBOSRuntimeConfig {
@@ -161,6 +162,7 @@ export type DBOSConfigInternal = {
   telemetry: TelemetryConfig;
 
   schedulerPollingIntervalMs?: number;
+  useListenNotify: boolean;
 
   http?: {
     cors_middleware?: boolean;
@@ -267,6 +269,7 @@ export class DBOSExecutor {
         this.config.sysDbPoolSize,
         this.config.systemDatabasePool,
         this.systemDBSchemaName,
+        this.config.useListenNotify,
       );
     }
 

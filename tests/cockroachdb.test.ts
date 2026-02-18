@@ -21,6 +21,7 @@ describeIf('cockroachdb', () => {
     config = {
       name: 'cockroachdb-test',
       systemDatabaseUrl,
+      useListenNotify: false,
     };
     DBOS.setConfig(config);
   });
