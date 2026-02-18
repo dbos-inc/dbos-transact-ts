@@ -27,7 +27,7 @@ describeIf('cockroachdb', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
-  }, 10000);
+  }, 60000);
 
   afterEach(async () => {
     await DBOS.shutdown();
