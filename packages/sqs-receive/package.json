@@ -17,7 +17,7 @@
     "test": "tsx --test tests/*.test.ts"
   },
   "dependencies": {
-    "@aws-sdk/client-sqs": "^3.596.0"
+    "@aws-sdk/client-sqs": "^3.992.0"
   },
   "peerDependencies": {
     "@dbos-inc/dbos-sdk": "*"
