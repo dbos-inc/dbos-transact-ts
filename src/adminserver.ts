@@ -270,6 +270,7 @@ export class DBOSAdminServer {
         const recoverHandles = await dbosExec.recoverPendingWorkflows(executorIDs);
 
         // Return a list of workflowUUIDs being recovered.
+        // eslint-disable-next-line @typescript-eslint/await-thenable
         const result = await Promise.allSettled(recoverHandles.map((i) => i.workflowID)).then((results) =>
           results.filter((i) => i.status === 'fulfilled').map((i) => (i as PromiseFulfilledResult<unknown>).value),
         );
