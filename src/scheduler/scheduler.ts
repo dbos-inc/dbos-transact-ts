@@ -9,7 +9,10 @@ import { DBOSExecutor } from '../dbos-executor';
 import { DBOSError } from '../error';
 import { StatusString } from '../workflow';
 
-export type ScheduledWorkflowFn = (scheduledDate: Date, context: unknown) => Promise<void>;
+// Because of function contravariance, we need to use any here.
+// We can't use generics because they don't support applySchedules and its array of schedules.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export type ScheduledWorkflowFn = (scheduledDate: Date, context: any) => Promise<void>;
 
 export interface WorkflowSchedule {
   scheduleId: string;
@@ -190,7 +193,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
         }
         const wfParams = { workflowID, queueName: INTERNAL_QUEUE_NAME };
         const context = serializer.parse(serializedContext);
-        await DBOS.startWorkflow(methReg.registeredFunction as ScheduledWorkflowFn, wfParams)(date, context);
+        await DBOS.startWorkflow(methReg.registeredFunction, wfParams)(date, context);
       } catch (e) {
         DBOS.logger.warn(
           `Dynamic scheduler: error firing workflow for schedule "${scheduleName}": ${(e as Error).message}`,

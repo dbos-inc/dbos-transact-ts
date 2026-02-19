@@ -289,12 +289,12 @@ describe('dynamic-scheduler-tests', () => {
   // --- Firing test workflows ---
   const firesCounterA: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
   const firesCounterB: { dates: Date[]; contexts: unknown[] } = { dates: [], contexts: [] };
-  async function firesWorkflowA(scheduledDate: Date, context: unknown) {
+  async function firesWorkflowA(scheduledDate: Date, context: object) {
     firesCounterA.dates.push(scheduledDate);
     firesCounterA.contexts.push(context);
     await Promise.resolve();
   }
-  async function firesWorkflowB(scheduledDate: Date, context: unknown) {
+  async function firesWorkflowB(scheduledDate: Date, context: object) {
     firesCounterB.dates.push(scheduledDate);
     firesCounterB.contexts.push(context);
     await Promise.resolve();
