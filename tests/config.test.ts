@@ -385,6 +385,7 @@ describe('dbos-config', () => {
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
         serializer: DBOSJSON,
+        useListenNotify: true,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -414,6 +415,7 @@ describe('dbos-config', () => {
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
         serializer: DBOSJSON,
+        useListenNotify: true,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -441,6 +443,7 @@ describe('dbos-config', () => {
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
         serializer: DBOSJSON,
+        useListenNotify: true,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -466,6 +469,7 @@ describe('dbos-config', () => {
         systemDatabasePool: undefined,
         systemDatabaseSchemaName: 'dbos',
         serializer: DBOSJSON,
+        useListenNotify: true,
         telemetry: {
           logs: {
             logLevel: 'info',
@@ -487,6 +491,7 @@ describe('dbos-config', () => {
       systemDatabaseUrl: 'postgres://foo:bar@father:1234/blahblahblah',
       systemDatabaseSchemaName: 'dbos',
       serializer: DBOSJSON,
+      useListenNotify: true,
       telemetry: {
         logs: {
           logLevel: 'info',

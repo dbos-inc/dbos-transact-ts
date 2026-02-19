@@ -1,6 +1,10 @@
 import type { DBMigration } from '../migration_runner';
 
-export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigration> {
+export function allMigrations(
+  schemaName: string = 'dbos',
+  opts?: { useListenNotify?: boolean },
+): ReadonlyArray<DBMigration> {
+  const useListenNotify = opts?.useListenNotify ?? true;
   return [
     {
       name: '20240123182943_schema',
@@ -28,8 +32,9 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
     },
     {
       name: '20240123183030_triggers',
-      pg: [
-        `
+      pg: useListenNotify
+        ? [
+            `
     CREATE OR REPLACE FUNCTION "${schemaName}".notifications_function() RETURNS TRIGGER AS $$
     DECLARE
         payload text := NEW.destination_uuid || '::' || NEW.topic;
@@ -56,7 +61,8 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
     AFTER INSERT ON "${schemaName}".workflow_events
     FOR EACH ROW EXECUTE FUNCTION "${schemaName}".workflow_events_function();
   `,
-      ],
+          ]
+        : [],
     },
     {
       name: '20240124015239_status_timestamp',
@@ -68,7 +74,7 @@ export function allMigrations(schemaName: string = 'dbos'): ReadonlyArray<DBMigr
       name: '20240201213211_replica_identity',
       pg: [
         `create extension if not exists "uuid-ossp"`,
-        `alter table "${schemaName}"."notifications" add column "message_uuid" text default uuid_generate_v4()`,
+        `alter table "${schemaName}"."notifications" add column "message_uuid" text not null default uuid_generate_v4()`,
         `alter table "${schemaName}"."notifications" add constraint "notifications_pkey" primary key ("message_uuid")`,
       ],
     },

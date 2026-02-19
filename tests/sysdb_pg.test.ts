@@ -252,3 +252,37 @@ describe('queued-wf-tests-simple', () => {
     sysDB().dbPollingIntervalResultMs = prev;
   }, 10000);
 });
+
+describe('sysdb-no-listen-notify', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = { ...generateDBOSTestConfig(), useListenNotify: false };
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  }, 10000);
+
+  test('polling-without-listen-notify', async () => {
+    expect(sysDB().shouldUseDBNotifications).toBe(false);
+    sysDB().dbPollingIntervalResultMs = 100;
+    sysDB().dbPollingIntervalEventMs = 100;
+
+    await doTheNonWFTimeoutTest();
+    await doTheNonWFInstantTest();
+    await doTheNonWFDelayedTest();
+
+    await doTheWFTimeoutTest();
+    await doTheWFInstantTest();
+    await doTheWFDelayedTest();
+
+    await doTheWFCancelTest();
+  }, 10000);
+});

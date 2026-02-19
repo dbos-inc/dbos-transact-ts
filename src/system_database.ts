@@ -392,6 +392,7 @@ export async function ensureSystemDatabase(
   logger: GlobalLogger,
   customPool?: Pool,
   schemaName: string = 'dbos',
+  useListenNotify: boolean = true,
 ) {
   let client: ClientBase | null = null;
   if (customPool) {
@@ -421,7 +422,7 @@ export async function ensureSystemDatabase(
   }
 
   try {
-    await runSysMigrationsPg(client, allMigrations(schemaName), schemaName, {
+    await runSysMigrationsPg(client, allMigrations(schemaName, { useListenNotify }), schemaName, {
       onWarn: (e: string) => logger.info(e),
     });
   } finally {
@@ -959,8 +960,10 @@ export class PostgresSystemDatabase implements SystemDatabase {
     sysDbPoolSize: number = DEFAULT_POOL_SIZE,
     systemDatabasePool?: Pool,
     schemaName: string = 'dbos',
+    useListenNotify: boolean = true,
   ) {
     this.schemaName = schemaName;
+    this.shouldUseDBNotifications = useListenNotify;
     if (systemDatabasePool) {
       this.pool = systemDatabasePool;
       this.customPool = true;
@@ -993,6 +996,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
       this.logger,
       this.customPool ? this.pool : undefined,
       this.schemaName,
+      this.shouldUseDBNotifications,
     );
 
     if (this.shouldUseDBNotifications) {
