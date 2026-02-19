@@ -1,5 +1,6 @@
 import { DBOS, WorkflowQueue } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
+import { randomUUID } from 'node:crypto';
 import { PostgresSystemDatabase } from '../src/system_database';
 import { Client } from 'pg';
 
@@ -31,6 +32,14 @@ class CRDBTestClass {
     await DBOS.setEvent('key1', 'value1');
     await DBOS.setEvent('key2', 'value2');
     return 'done';
+  }
+
+  @DBOS.workflow()
+  static async streamWriterWorkflow(streamKey: string, testValues: unknown[]) {
+    for (const value of testValues) {
+      await DBOS.writeStream(streamKey, value);
+    }
+    await DBOS.closeStream(streamKey);
   }
 }
 
@@ -91,6 +100,13 @@ describeIf('cockroachdb', () => {
     await expect(DBOS.getEvent(handle.workflowID, 'key1')).resolves.toBe('value1');
     await expect(DBOS.getEvent(handle.workflowID, 'key2')).resolves.toBe('value2');
     await expect(DBOS.getEvent(handle.workflowID, 'nonexistent', 0)).resolves.toBeNull();
+
+    // Fork the workflow from the end and verify the forked workflow also has the events
+    const steps = await DBOS.listWorkflowSteps(handle.workflowID);
+    const forkedHandle = await DBOS.forkWorkflow(handle.workflowID, steps!.length);
+    await forkedHandle.getResult();
+    await expect(DBOS.getEvent(forkedHandle.workflowID, 'key1')).resolves.toBe('value1');
+    await expect(DBOS.getEvent(forkedHandle.workflowID, 'key2')).resolves.toBe('value2');
   });
 
   test('list-workflows', async () => {
@@ -102,6 +118,7 @@ describeIf('cockroachdb', () => {
     const match = workflows.find((w) => w.workflowID === handle.workflowID);
     expect(match).toBeDefined();
     expect(match?.status).toBe('SUCCESS');
+    expect(match?.priority).toBe(0);
   });
 
   test('list-workflow-steps', async () => {
@@ -112,5 +129,22 @@ describeIf('cockroachdb', () => {
     expect(steps).toBeDefined();
     expect(steps!.length).toBe(1);
     expect(steps![0].name).toContain('testStep');
+    expect(steps![0].functionID).toBe(0);
+  });
+
+  test('streaming', async () => {
+    const testValues = ['hello', 42, { key: 'value' }, [1, 2, 3], null];
+    const streamKey = 'test_stream';
+    const wfid = randomUUID();
+
+    await DBOS.withNextWorkflowID(wfid, async () => {
+      await CRDBTestClass.streamWriterWorkflow(streamKey, testValues);
+    });
+
+    const readValues: unknown[] = [];
+    for await (const value of DBOS.readStream(wfid, streamKey)) {
+      readValues.push(value);
+    }
+    expect(readValues).toEqual(testValues);
   });
 });

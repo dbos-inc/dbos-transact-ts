@@ -19,7 +19,7 @@ export function allMigrations(
     {
       name: '20240123183021_tables',
       pg: [
-        `create table "${schemaName}"."operation_outputs" ("workflow_uuid" text not null, "function_id" integer not null, "output" text, "error" text, constraint "operation_outputs_pkey" primary key ("workflow_uuid", "function_id"))`,
+        `create table "${schemaName}"."operation_outputs" ("workflow_uuid" text not null, "function_id" int4 not null, "output" text, "error" text, constraint "operation_outputs_pkey" primary key ("workflow_uuid", "function_id"))`,
         `create table "${schemaName}"."workflow_inputs" ("workflow_uuid" text not null, "inputs" text not null, constraint "workflow_inputs_pkey" primary key ("workflow_uuid"))`,
         `create table "${schemaName}"."workflow_status" ("workflow_uuid" text, "status" text, "name" text, "authenticated_user" text, "assumed_role" text, "authenticated_roles" text, "request" text, "output" text, "error" text, "executor_id" text, constraint "workflow_status_pkey" primary key ("workflow_uuid"))`,
         `create table "${schemaName}"."notifications" ("destination_uuid" text not null, "topic" text, "message" text not null, "created_at_epoch_ms" bigint not null default (EXTRACT(EPOCH FROM now())*1000)::bigint)`,
@@ -155,7 +155,7 @@ export function allMigrations(
     },
     {
       name: '20252512000000_queue_priority',
-      pg: [`alter table "${schemaName}"."workflow_queue" add column "priority" integer not null default '0'`],
+      pg: [`alter table "${schemaName}"."workflow_queue" add column "priority" int4 not null default '0'`],
     },
     {
       name: '20252523000000_consolidate_inputs',
@@ -164,7 +164,7 @@ export function allMigrations(
     {
       name: '20252528000000_consolidate_queues',
       pg: [
-        `alter table "${schemaName}"."workflow_status" add column "started_at_epoch_ms" bigint null, add column "deduplication_id" text null, add column "priority" integer not null default '0'`,
+        `alter table "${schemaName}"."workflow_status" add column "started_at_epoch_ms" bigint null, add column "deduplication_id" text null, add column "priority" int4 not null default '0'`,
         `alter table "${schemaName}"."workflow_status" add constraint "uq_workflow_status_queue_name_dedup_id" unique ("queue_name", "deduplication_id")`,
         `create index "workflow_status_status_index" on "${schemaName}"."workflow_status" ("status")`,
       ],
@@ -172,7 +172,7 @@ export function allMigrations(
     {
       name: '20252806000000_streaming',
       pg: [
-        `create table "${schemaName}"."streams" ("workflow_uuid" text not null, "key" text not null, "value" text not null, "offset" integer not null, constraint "streams_pkey" primary key ("workflow_uuid", "key", "offset"))`,
+        `create table "${schemaName}"."streams" ("workflow_uuid" text not null, "key" text not null, "value" text not null, "offset" int4 not null, constraint "streams_pkey" primary key ("workflow_uuid", "key", "offset"))`,
         `alter table "${schemaName}"."streams" add constraint "streams_workflow_uuid_foreign" foreign key ("workflow_uuid") references "${schemaName}"."workflow_status" ("workflow_uuid") on update CASCADE on delete CASCADE`,
       ],
     },
@@ -211,7 +211,7 @@ export function allMigrations(
         `
         CREATE TABLE "${schemaName}".workflow_events_history (
             workflow_uuid TEXT NOT NULL,
-            function_id INTEGER NOT NULL,
+            function_id INT4 NOT NULL,
             key TEXT NOT NULL,
             value TEXT NOT NULL,
             PRIMARY KEY (workflow_uuid, function_id, key),
@@ -219,7 +219,7 @@ export function allMigrations(
                 ON UPDATE CASCADE ON DELETE CASCADE
         );
         `,
-        `ALTER TABLE "${schemaName}".streams ADD COLUMN function_id INTEGER NOT NULL DEFAULT 0;`,
+        `ALTER TABLE "${schemaName}".streams ADD COLUMN function_id INT4 NOT NULL DEFAULT 0;`,
       ],
     },
     {
