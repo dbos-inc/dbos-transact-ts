@@ -592,10 +592,17 @@ export class Conductor {
       });
 
       currWebsocket.on('unexpected-response', (_, res) => {
-        this.dbosExec.logger.warn(`Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}}`);
-        if (this.reconnectTimeout === undefined) {
-          this.resetWebsocket(currWebsocket, currPing);
-        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf-8');
+          this.dbosExec.logger.warn(
+            `Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}. Details: ${body}`,
+          );
+          if (this.reconnectTimeout === undefined) {
+            this.resetWebsocket(currWebsocket, currPing);
+          }
+        });
       });
 
       currWebsocket.on('error', (err) => {
