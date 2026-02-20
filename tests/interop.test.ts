@@ -13,7 +13,7 @@
  */
 
 import { Client } from 'pg';
-import { DBOS, WorkflowQueue } from '../src';
+import { DBOS, DBOSClient, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { workflow_events, workflow_events_history, workflow_status, streams } from '../schemas/system_db_schema';
 import { DBOSConfig } from '../src/dbos-executor';
@@ -66,7 +66,7 @@ const CANONICAL_MESSAGE = { sender: 'test', payload: [1, 2, 3] };
 
 const _interopQueue = new WorkflowQueue('interopq');
 
-const canonicalWorkflow = DBOS.registerWorkflow(
+const _canonicalWorkflow = DBOS.registerWorkflow(
   async (
     text: string,
     num: number,
@@ -141,73 +141,77 @@ describe('interop-tests', () => {
   // --------------------------------------------------------------------------
 
   test('test-interop-canonical', async () => {
-    // Start the canonical workflow
-    const wfh = await DBOS.startWorkflow(canonicalWorkflow)(
-      CANONICAL_TEXT,
-      CANONICAL_NUM,
-      CANONICAL_DT,
-      CANONICAL_ITEMS,
-      CANONICAL_META,
-      CANONICAL_FLAG,
-      CANONICAL_EMPTY,
-    );
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      // Start the canonical workflow
+      const wfh = await client.enqueuePortable(
+        {
+          queueName: 'interopq',
+          workflowName: 'canonicalWorkflow',
+          workflowClassName: 'interop',
+        },
+        [CANONICAL_TEXT, CANONICAL_NUM, CANONICAL_DT, CANONICAL_ITEMS, CANONICAL_META, CANONICAL_FLAG, CANONICAL_EMPTY],
+      );
 
-    // Send the canonical message
-    await DBOS.send(wfh.workflowID, CANONICAL_MESSAGE, 'interop_topic', undefined, {
-      serializationType: 'portable',
-    });
+      // Send the canonical message
+      await client.send(wfh.workflowID, CANONICAL_MESSAGE, 'interop_topic', undefined, {
+        serializationType: 'portable',
+      });
 
-    // Verify result
-    const result = await wfh.getResult();
-    expect(result).toStrictEqual(EXPECTED_RESULT);
+      // Verify result
+      const result = await wfh.getResult();
+      expect(result).toStrictEqual(EXPECTED_RESULT);
 
-    // ---- Verify DB records ----
+      // ---- Verify DB records ----
 
-    // workflow_status
-    const wsResult = await systemDBClient.query<workflow_status>(
-      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-      [wfh.workflowID],
-    );
-    expect(wsResult.rows).toHaveLength(1);
-    const wsRow = wsResult.rows[0];
-    expect(wsRow.serialization).toBe('portable_json');
-    expect(wsRow.status).toBe('SUCCESS');
-    expect(wsRow.name).toBe('canonicalWorkflow');
-    expect(wsRow.class_name).toBe('interop');
+      // workflow_status
+      const wsResult = await systemDBClient.query<workflow_status>(
+        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+        [wfh.workflowID],
+      );
+      expect(wsResult.rows).toHaveLength(1);
+      const wsRow = wsResult.rows[0];
+      expect(wsRow.serialization).toBe('portable_json');
+      expect(wsRow.status).toBe('SUCCESS');
+      expect(wsRow.name).toBe('canonicalWorkflow');
+      expect(wsRow.class_name).toBe('interop');
 
-    // Input string should actually match (no need for structural compare)
-    expect(wsRow.inputs).toBe(GOLDEN_INPUTS_JSON);
+      // Input string should actually match (no need for structural compare)
+      expect(wsRow.inputs).toBe(GOLDEN_INPUTS_JSON);
 
-    // Output: exact string comparison
-    expect(wsRow.output).toBe(GOLDEN_OUTPUT_JSON);
+      // Output: exact string comparison
+      expect(wsRow.output).toBe(GOLDEN_OUTPUT_JSON);
 
-    // workflow_events: exact string comparison
-    const evtResult = await systemDBClient.query<workflow_events>(
-      'SELECT * FROM dbos.workflow_events WHERE workflow_uuid = $1 AND key = $2',
-      [wfh.workflowID, 'interop_status'],
-    );
-    expect(evtResult.rows).toHaveLength(1);
-    expect(evtResult.rows[0].serialization).toBe('portable_json');
-    expect(evtResult.rows[0].value).toBe(GOLDEN_EVENT_JSON);
+      // workflow_events: exact string comparison
+      const evtResult = await systemDBClient.query<workflow_events>(
+        'SELECT * FROM dbos.workflow_events WHERE workflow_uuid = $1 AND key = $2',
+        [wfh.workflowID, 'interop_status'],
+      );
+      expect(evtResult.rows).toHaveLength(1);
+      expect(evtResult.rows[0].serialization).toBe('portable_json');
+      expect(evtResult.rows[0].value).toBe(GOLDEN_EVENT_JSON);
 
-    // workflow_events_history: exact string comparison
-    const evthResult = await systemDBClient.query<workflow_events_history>(
-      'SELECT * FROM dbos.workflow_events_history WHERE workflow_uuid = $1 AND key = $2',
-      [wfh.workflowID, 'interop_status'],
-    );
-    expect(evthResult.rows).toHaveLength(1);
-    expect(evthResult.rows[0].serialization).toBe('portable_json');
-    expect(evthResult.rows[0].value).toBe(GOLDEN_EVENT_JSON);
+      // workflow_events_history: exact string comparison
+      const evthResult = await systemDBClient.query<workflow_events_history>(
+        'SELECT * FROM dbos.workflow_events_history WHERE workflow_uuid = $1 AND key = $2',
+        [wfh.workflowID, 'interop_status'],
+      );
+      expect(evthResult.rows).toHaveLength(1);
+      expect(evthResult.rows[0].serialization).toBe('portable_json');
+      expect(evthResult.rows[0].value).toBe(GOLDEN_EVENT_JSON);
 
-    // streams: exact string comparison
-    const streamResult = await systemDBClient.query<streams>(
-      'SELECT * FROM dbos.streams WHERE workflow_uuid = $1 AND key = $2',
-      [wfh.workflowID, 'interop_stream'],
-    );
-    expect(streamResult.rows).toHaveLength(1);
-    expect(streamResult.rows[0].serialization).toBe('portable_json');
-    expect(streamResult.rows[0].offset).toBe(0);
-    expect(streamResult.rows[0].value).toBe(GOLDEN_STREAM_JSON);
+      // streams: exact string comparison
+      const streamResult = await systemDBClient.query<streams>(
+        'SELECT * FROM dbos.streams WHERE workflow_uuid = $1 AND key = $2',
+        [wfh.workflowID, 'interop_stream'],
+      );
+      expect(streamResult.rows).toHaveLength(1);
+      expect(streamResult.rows[0].serialization).toBe('portable_json');
+      expect(streamResult.rows[0].offset).toBe(0);
+      expect(streamResult.rows[0].value).toBe(GOLDEN_STREAM_JSON);
+    } finally {
+      await client.destroy();
+    }
   });
 
   // --------------------------------------------------------------------------
