@@ -2,6 +2,7 @@ import { Client } from 'pg';
 import { DBOS, DBOSClient, DBOSConfig, DBOSSerializer, WorkflowHandle, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import {
+  JsonWorkflowArgs,
   notifications,
   PortableWorkflowError,
   streams,
@@ -72,9 +73,9 @@ const simpleRecv = DBOS.registerWorkflow(
 );
 
 // Simple portable workflow that doesn't recv (for insert tests)
-const simplePortWorkflow = DBOS.registerWorkflow(
+const _simplePortWorkflow = DBOS.registerWorkflow(
   async (s: string, x: number, o: { k: string; v: string[] }) => {
-    return `${s}-${x}-${o.k}:${o.v.join(',')}`;
+    return Promise.resolve(`${s}-${x}-${o.k}:${o.v.join(',')}`);
   },
   {
     name: 'simplePortWorkflow',
@@ -86,7 +87,7 @@ const simplePortWorkflow = DBOS.registerWorkflow(
 // Workflow with inputSchema validation (Zod)
 const validatedWorkflow = DBOS.registerWorkflow(
   async (s: string, x: number, o: { k: string; v: string[] }) => {
-    return `${s}-${x}-${o.k}:${o.v.join(',')}`;
+    return Promise.resolve(`${s}-${x}-${o.k}:${o.v.join(',')}`);
   },
   {
     name: 'validatedWorkflow',
@@ -100,7 +101,7 @@ const validatedWorkflow = DBOS.registerWorkflow(
 const dateWorkflow = DBOS.registerWorkflow(
   async (d: Date) => {
     expect(d).toBeInstanceOf(Date);
-    return `date:${d.toISOString()}`;
+    return Promise.resolve(`date:${d.toISOString()}`);
   },
   {
     name: 'dateWorkflow',
@@ -540,10 +541,10 @@ describe('portable-serizlization-tests', () => {
       [wfh.workflowID],
     );
     expect(dbRow.rows[0].serialization).toBe('portable_json');
-    const storedInputs = JSON.parse(dbRow.rows[0].inputs!);
+    const storedInputs = JSON.parse(dbRow.rows[0].inputs) as JsonWorkflowArgs;
     // Portable JSON stores the Date as an ISO string
-    expect(typeof storedInputs.positionalArgs[0]).toBe('string');
-    expect(storedInputs.positionalArgs[0]).toBe(testDate.toISOString());
+    expect(typeof storedInputs.positionalArgs?.[0]).toBe('string');
+    expect(storedInputs.positionalArgs?.[0]).toBe(testDate.toISOString());
   });
 
   test('test-input-schema-direct-invocation', async () => {
