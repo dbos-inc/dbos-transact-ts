@@ -21,6 +21,17 @@ export const DEFAULT_MAX_RECOVERY_ATTEMPTS = 100;
 export type WorkflowSerializationFormat = undefined | 'native' | 'portable';
 
 /**
+ * An object with a `parse` method that validates and optionally transforms input.
+ * Compatible with Zod schemas, AJV wrappers, or any custom validator.
+ */
+export interface InputSchema {
+  /** Validate (and optionally transform) workflow input arguments.
+   *  Receives the arguments as an array (tuple). Should throw on validation failure.
+   *  Return the validated/transformed arguments array. */
+  parse(input: unknown): unknown;
+}
+
+/**
  * Configuration for `DBOS.workflow` functions
  */
 export interface WorkflowConfig {
@@ -30,6 +41,12 @@ export interface WorkflowConfig {
   name?: string;
   /** Default serialization to use */
   serialization?: WorkflowSerializationFormat;
+  /** Schema for validating and transforming workflow input arguments.
+   *  Must have a `.parse()` method (compatible with Zod, AJV wrappers, etc.).
+   *  The schema receives the arguments as an array (tuple) and should return
+   *  the validated/transformed array. Runs before the workflow function on
+   *  every invocation (direct call, queue dispatch, and recovery). */
+  inputSchema?: InputSchema;
 }
 
 export interface WorkflowStatus {
