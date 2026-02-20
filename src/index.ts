@@ -24,6 +24,7 @@ export * as Error from './error';
 export { DBOSWorkflowConflictError } from './error';
 
 export {
+  InputSchema,
   WorkflowConfig,
   WorkflowHandle,
   StatusString,

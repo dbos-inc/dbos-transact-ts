@@ -103,7 +103,8 @@
     "testcontainers": "^11.6.0",
     "ts-jest": "^29.2.4",
     "typescript": "^5.4.5",
-    "typescript-eslint": "^8.26.1"
+    "typescript-eslint": "^8.26.1",
+    "zod": "^4.3.6"
   },
   "dependencies": {
     "commander": "12.0.0",

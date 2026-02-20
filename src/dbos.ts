@@ -1509,6 +1509,12 @@ export class DBOS {
     config: WorkflowConfig | undefined,
   ): (this: This, ...args: Args) => Promise<Return> {
     registration.setWorkflowConfig(config ?? {});
+    if (config?.inputSchema) {
+      const schema = config.inputSchema;
+      registration.addEntryInterceptor((_reg, args) => {
+        return schema.parse(args) as unknown[];
+      });
+    }
     const invoker = async function (this: This, ...rawArgs: Args): Promise<Return> {
       ensureDBOSIsLaunched('workflows');
       if (DBOS.isInWorkflow()) {
