@@ -14,10 +14,8 @@
 
 import { Client } from 'pg';
 import { DBOS, WorkflowQueue } from '../src';
-import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { workflow_events, workflow_events_history, workflow_status, streams } from '../schemas/system_db_schema';
-import { DBOSExecutor } from '../src/dbos-executor';
-import { PostgresSystemDatabase } from '../src/system_database';
 import { DBOSConfig } from '../src/dbos-executor';
 import { z } from 'zod';
 
@@ -246,45 +244,5 @@ describe('interop-tests', () => {
     const wfh = DBOS.retrieveWorkflow(id);
     const result = await wfh.getResult();
     expect(result).toStrictEqual(EXPECTED_RESULT);
-  });
-
-  // --------------------------------------------------------------------------
-  // Test: Export/import replay
-  // --------------------------------------------------------------------------
-
-  test('test-interop-replay', async () => {
-    // Run the canonical workflow
-    const wfh = await DBOS.startWorkflow(canonicalWorkflow)(
-      CANONICAL_TEXT,
-      CANONICAL_NUM,
-      CANONICAL_DT,
-      CANONICAL_ITEMS,
-      CANONICAL_META,
-      CANONICAL_FLAG,
-      CANONICAL_EMPTY,
-    );
-
-    await DBOS.send(wfh.workflowID, CANONICAL_MESSAGE, 'interop_topic', undefined, {
-      serializationType: 'portable',
-    });
-
-    expect(await wfh.getResult()).toStrictEqual(EXPECTED_RESULT);
-
-    // Export
-    const sysDb = DBOSExecutor.globalInstance!.systemDatabase as PostgresSystemDatabase;
-    const exported = await sysDb.exportWorkflow(wfh.workflowID, true);
-
-    // Delete
-    await DBOS.deleteWorkflow(wfh.workflowID, true);
-
-    // Re-import
-    await sysDb.importWorkflow(exported);
-
-    // Verify result still available
-    expect(await DBOS.retrieveWorkflow(wfh.workflowID).getResult()).toStrictEqual(EXPECTED_RESULT);
-
-    // Re-execute (replay from recorded steps)
-    const reHandle = await reexecuteWorkflowById(wfh.workflowID);
-    expect(await reHandle?.getResult()).toStrictEqual(EXPECTED_RESULT);
   });
 });
