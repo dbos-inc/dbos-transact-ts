@@ -1067,7 +1067,18 @@ export class DBOSExecutor {
       this.logger.error(`Failed to find inputs for workflowUUID: ${workflowID}`);
       throw new DBOSError(`Failed to find inputs for workflow UUID: ${workflowID}`);
     }
-    const inputs = deserializePositionalArgs(wfStatus.input, wfStatus.serialization, this.serializer);
+    let inputs: unknown[];
+    try {
+      inputs = deserializePositionalArgs(wfStatus.input, wfStatus.serialization, this.serializer);
+    } catch (err) {
+      // If deserialization fails, record the error on the workflow
+      // so it transitions to ERROR instead of being stuck in PENDING.
+      this.logger.error(`Failed to deserialize inputs for workflow ${workflowID}: ${(err as Error).message}`);
+      const sererr = serializeResErrorWithSerializer(err as Error, this.serializer, wfStatus.serialization);
+      wfStatus.error = sererr.serializedValue;
+      await this.systemDatabase.recordWorkflowError(workflowID, wfStatus);
+      throw err;
+    }
     const recoverCtx = this.#getRecoveryContext(workflowID, wfStatus);
 
     const { methReg, configuredInst } = this.#getFunctionInfoFromWFStatus(wfStatus);

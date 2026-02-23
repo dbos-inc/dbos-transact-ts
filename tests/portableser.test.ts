@@ -2,6 +2,7 @@ import { Client } from 'pg';
 import { DBOS, DBOSClient, DBOSConfig, DBOSSerializer, WorkflowHandle, WorkflowQueue } from '../src';
 import { generateDBOSTestConfig, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
 import {
+  JsonWorkflowArgs,
   notifications,
   PortableWorkflowError,
   streams,
@@ -13,6 +14,7 @@ import { DBOSJSON, DBOSPortableJSON } from '../src/serialization';
 import { randomUUID } from 'node:crypto';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { PostgresSystemDatabase } from '../src/system_database';
+import { z } from 'zod';
 
 const _queue = new WorkflowQueue('testq');
 
@@ -68,6 +70,45 @@ const simpleRecv = DBOS.registerWorkflow(
     return await DBOS.recv(topic);
   },
   { name: 'simpleRecv' },
+);
+
+// Simple portable workflow that doesn't recv (for insert tests)
+const _simplePortWorkflow = DBOS.registerWorkflow(
+  async (s: string, x: number, o: { k: string; v: string[] }) => {
+    return Promise.resolve(`${s}-${x}-${o.k}:${o.v.join(',')}`);
+  },
+  {
+    name: 'simplePortWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+  },
+);
+
+// Workflow with inputSchema validation (Zod)
+const validatedWorkflow = DBOS.registerWorkflow(
+  async (s: string, x: number, o: { k: string; v: string[] }) => {
+    return Promise.resolve(`${s}-${x}-${o.k}:${o.v.join(',')}`);
+  },
+  {
+    name: 'validatedWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+    inputSchema: z.tuple([z.string(), z.number(), z.object({ k: z.string(), v: z.array(z.string()) })]),
+  },
+);
+
+// Workflow with inputSchema that coerces string → Date
+const dateWorkflow = DBOS.registerWorkflow(
+  async (d: Date) => {
+    expect(d).toBeInstanceOf(Date);
+    return Promise.resolve(`date:${d.toISOString()}`);
+  },
+  {
+    name: 'dateWorkflow',
+    className: 'workflows',
+    serialization: 'portable',
+    inputSchema: z.tuple([z.coerce.date()]),
+  },
 );
 
 describe('portable-serizlization-tests', () => {
@@ -314,6 +355,208 @@ describe('portable-serizlization-tests', () => {
     const wfh = DBOS.retrieveWorkflow(id);
     const res = await wfh.getResult();
     expect(res).toBe('s-1-k:v@"M"');
+  });
+
+  test('test-invalid-json-input', async () => {
+    // Insert a workflow with unparseable JSON in the inputs column
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [id, 'simplePortWorkflow', 'workflows', 'testq', 'ENQUEUED', 'not valid json{{', Date.now(), 'portable_json'],
+    );
+
+    // The queue poller picks this up, changes status to PENDING, then
+    // deserializePositionalArgs throws a SyntaxError. The error is now
+    // caught in executeWorkflowId which records it as ERROR status
+    // (previously, the workflow would be stuck in PENDING forever).
+    const wfh = DBOS.retrieveWorkflow(id);
+    await expect(wfh.getResult()).rejects.toThrow();
+
+    const result = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [id],
+    );
+    expect(result.rows).toHaveLength(1);
+    expect(result.rows[0].status).toBe('ERROR');
+    expect(result.rows[0].error).toBeDefined();
+  });
+
+  test('test-mismatched-args-input', async () => {
+    // Insert a workflow with valid JSON but wrong argument types.
+    // simplePortWorkflow expects (s: string, x: number, o: {k: string, v: string[]})
+    // We provide [123, "not_a_number", "not_an_object"].
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'simplePortWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [123, 'not_a_number', 'not_an_object'] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    // The JSON parses fine, but when the workflow function tries o.v.join(','),
+    // it crashes because 'not_an_object' is a string, not an object with a v property.
+    // Unlike invalid JSON, this error occurs INSIDE the workflow execution,
+    // so the workflow machinery catches it and records an ERROR status.
+    const wfh = DBOS.retrieveWorkflow(id);
+    await expect(wfh.getResult()).rejects.toThrow();
+
+    const result = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [id],
+    );
+    expect(result.rows[0].status).toBe('ERROR');
+    expect(result.rows[0].error).toBeDefined();
+  });
+
+  test('test-input-schema-rejects-bad-input', async () => {
+    // validatedWorkflow has inputSchema: z.tuple([z.string(), z.number(), z.object({...})])
+    // Insert with wrong types — the Zod schema should reject them with a clear error.
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'validatedWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [123, 'not_a_number', 'not_an_object'] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    // With inputSchema, the error is a ZodError with a clear validation message,
+    // not a cryptic runtime crash from within the workflow function.
+    const wfh = DBOS.retrieveWorkflow(id);
+    await expect(wfh.getResult()).rejects.toThrow();
+
+    const result = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [id],
+    );
+    expect(result.rows[0].status).toBe('ERROR');
+    // The error should contain Zod validation details
+    expect(result.rows[0].error).toBeDefined();
+    expect(result.rows[0].error).toContain('expected string');
+  });
+
+  test('test-input-schema-valid-input', async () => {
+    // validatedWorkflow with correct types — should pass validation and succeed.
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'validatedWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: ['hello', 42, { k: 'key', v: ['a', 'b'] }] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const wfh = DBOS.retrieveWorkflow(id);
+    const res = await wfh.getResult();
+    expect(res).toBe('hello-42-key:a,b');
+  });
+
+  test('test-input-schema-coercion', async () => {
+    // dateWorkflow has inputSchema: z.tuple([z.coerce.date()])
+    // Insert an ISO date string — Zod should coerce it to a Date object.
+    const isoDate = '2025-06-15T12:00:00.000Z';
+    const id = randomUUID();
+    await systemDBClient.query(
+      `
+      INSERT INTO dbos.workflow_status(
+        workflow_uuid, name, class_name, queue_name,
+        status, inputs, created_at, serialization
+      )
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8);
+      `,
+      [
+        id,
+        'dateWorkflow',
+        'workflows',
+        'testq',
+        'ENQUEUED',
+        JSON.stringify({ positionalArgs: [isoDate] }),
+        Date.now(),
+        'portable_json',
+      ],
+    );
+
+    const wfh = DBOS.retrieveWorkflow(id);
+    const res = await wfh.getResult();
+    // The workflow receives a real Date object (coerced from the ISO string)
+    // and returns its ISO string representation.
+    expect(res).toBe(`date:${isoDate}`);
+  });
+
+  test('test-input-schema-date-roundtrip', async () => {
+    // Full round-trip: enqueue with a real Date → portable JSON serializes it
+    // to an ISO string → queue poller deserializes → Zod coerces string back to Date.
+    const testDate = new Date('2025-06-15T12:00:00.000Z');
+    const wfh = await DBOS.startWorkflow(dateWorkflow, { queueName: 'testq' })(testDate);
+    const res = await wfh.getResult();
+    expect(res).toBe(`date:${testDate.toISOString()}`);
+
+    // Verify the inputs column in the DB stored the date as a string (portable JSON),
+    // not as a Date object — confirming the coercion happened on the way back in.
+    const dbRow = await systemDBClient.query<workflow_status>(
+      'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
+      [wfh.workflowID],
+    );
+    expect(dbRow.rows[0].serialization).toBe('portable_json');
+    const storedInputs = JSON.parse(dbRow.rows[0].inputs) as JsonWorkflowArgs;
+    // Portable JSON stores the Date as an ISO string
+    expect(typeof storedInputs.positionalArgs?.[0]).toBe('string');
+    expect(storedInputs.positionalArgs?.[0]).toBe(testDate.toISOString());
+  });
+
+  test('test-input-schema-direct-invocation', async () => {
+    // Verify inputSchema validation also works on direct (non-queue) invocation.
+    // validatedWorkflow should succeed with correct args.
+    const res = await validatedWorkflow('hello', 42, { k: 'key', v: ['a', 'b'] });
+    expect(res).toBe('hello-42-key:a,b');
+
+    // dateWorkflow should coerce a string to Date on direct invocation too.
+    const isoDate = '2025-06-15T12:00:00.000Z';
+    const dateRes = await dateWorkflow(isoDate as unknown as Date);
+    expect(dateRes).toBe(`date:${isoDate}`);
   });
 
   test('test-portable-client', async () => {
