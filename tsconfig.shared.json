@@ -8,7 +8,6 @@
     "esModuleInterop": true /* Emit additional JavaScript to ease support for importing CommonJS modules. This enables 'allowSyntheticDefaultImports' for type compatibility. */,
     "experimentalDecorators": true /* Enable experimental support for legacy experimental decorators. */,
     "forceConsistentCasingInFileNames": true /* Ensure that casing is correct in imports. */,
-    "isolatedModules": true /* Required by ts-jest when using Node16 module mode. */,
     "module": "Node16" /* Specify what module code is generated. */,
     "newLine": "lf" /* Set the newline character for emitting files. */,
     "resolveJsonModule": true /* Include modules imported with JSON extension in the compilation. */,
