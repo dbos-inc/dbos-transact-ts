@@ -2335,6 +2335,31 @@ export class PostgresSystemDatabase implements SystemDatabase {
         await client.query('LISTEN dbos_notifications_channel;');
         await client.query('LISTEN dbos_workflow_events_channel;');
 
+        // Self-test: verify LISTEN actually works by sending a NOTIFY and checking it arrives.
+        // If a transaction-mode pooler (e.g. PgBouncer pool_mode=transaction) is in the path,
+        // LISTEN succeeds but the subscription is silently lost when the backend is released.
+        let selfTestReceived = false;
+        const onSelfTest = (msg: Notification) => {
+          if (msg.channel === 'dbos_notifications_channel' && msg.payload === 'dbos_listen_selftest') {
+            selfTestReceived = true;
+          }
+        };
+        client.on('notification', onSelfTest);
+        await this.pool.query("NOTIFY dbos_notifications_channel, 'dbos_listen_selftest'");
+        for (let i = 0; i < 30 && !selfTestReceived; i++) {
+          await new Promise((r) => setTimeout(r, 100));
+        }
+        client.removeListener('notification', onSelfTest);
+
+        if (!selfTestReceived) {
+          this.logger.warn(
+            'LISTEN/NOTIFY self-test failed: notification was not received within 3 seconds. ' +
+              'This typically means the connection is going through a transaction-mode pooler ' +
+              '(e.g. PgBouncer with pool_mode=transaction), which silently breaks LISTEN/NOTIFY. ' +
+              'Workflow notifications will fall back to polling, which may increase latency.',
+          );
+        }
+
         const handler = (msg: Notification) => {
           if (!this.shouldUseDBNotifications) return;
           if (msg.channel === 'dbos_notifications_channel' && msg.payload) {
