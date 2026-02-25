@@ -792,7 +792,7 @@ class WaitFirstQueueTest {
   }
 }
 
-// dummy declaration to match the workflow in tests/wfqueueworker.ts
+// Dummy declaration to match the workflow in tests/wfqueueworker.ts
 export class InterProcessWorkflowTask {
   @DBOS.workflow()
   static async task(_: number) {
