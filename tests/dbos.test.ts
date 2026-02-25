@@ -463,7 +463,35 @@ describe('dbos-tests', () => {
       await badClient.destroy();
     }, 10000);
   });
+
+  test('test_wait_first', async () => {
+    const handleFast = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
+    const handleSlow = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
+
+    const resultHandle = await DBOS.waitFirst([handleFast, handleSlow]);
+    expect(resultHandle.workflowID).toBe(handleFast.workflowID);
+    expect(await resultHandle.getResult()).toBe('fast');
+    // Wait for slow workflow to finish so it doesn't hang
+    await handleSlow.getResult();
+  }, 10000);
+
+  test('test_wait_first_empty', async () => {
+    await expect(DBOS.waitFirst([])).rejects.toThrow('handles must not be empty');
+  });
 });
+
+class WaitFirstTestClass {
+  @DBOS.workflow()
+  static async fastWorkflow() {
+    return 'fast';
+  }
+
+  @DBOS.workflow()
+  static async slowWorkflow() {
+    await DBOS.sleep(1);
+    return 'slow';
+  }
+}
 
 class DBOSTimeoutTestClass {
   @DBOS.workflow()

@@ -693,6 +693,32 @@ export class DBOS {
   }
 
   /**
+   * Wait for any one of the given workflow handles to complete and return it.
+   * Polls the database until at least one workflow's status is no longer PENDING or ENQUEUED,
+   * then returns the corresponding handle.
+   * @param handles - Non-empty array of workflow handles to wait on
+   * @returns The first handle whose workflow has completed
+   */
+  static async waitFirst<T>(handles: WorkflowHandle<T>[]): Promise<WorkflowHandle<T>> {
+    ensureDBOSIsLaunched('waitFirst');
+    if (handles.length === 0) {
+      throw new Error('handles must not be empty');
+    }
+    // Build a map from workflow ID to handle (last occurrence wins on duplicates, matching Python).
+    const handleMap = new Map<string, WorkflowHandle<T>>();
+    for (let i = handles.length - 1; i >= 0; i--) {
+      handleMap.set(handles[i].workflowID, handles[i]);
+    }
+    const workflowIds = [...handleMap.keys()];
+
+    const completedId = await runInternalStep(async () => {
+      return await DBOSExecutor.globalInstance!.systemDatabase.awaitFirstWorkflowId(workflowIds, DBOS.workflowID);
+    }, 'DBOS.waitFirst');
+
+    return handleMap.get(completedId)!;
+  }
+
+  /**
    * Create a workflow handle with a given workflow ID.
    * This call always returns a handle, even if the workflow does not exist.
    * The resulting handle will check the database to provide any workflow information.

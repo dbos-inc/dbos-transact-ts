@@ -720,7 +720,56 @@ describe('queued-wf-tests-simple', () => {
     await expect(other_version_handle.getResult()).resolves.toBeTruthy();
     await client.destroy();
   });
+
+  test('test_wait_first_queue', async () => {
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(WaitFirstQueueTest, { workflowID: wfid }).processTasks();
+    const result = await handle.getResult();
+
+    const expected = Array.from(
+      { length: WaitFirstQueueTest.numTasks },
+      (_, i) => `result-${WaitFirstQueueTest.numTasks - 1 - i}`,
+    );
+    expect(result).toEqual(expected);
+
+    // Verify the steps are correct:
+    // 5 enqueue steps + 5 (waitFirst, getResult) pairs = 15 steps
+    const steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps).toBeDefined();
+    expect(steps!.length).toBe(WaitFirstQueueTest.numTasks * 3);
+  }, 30000);
 });
+
+const waitFirstQueue = new WorkflowQueue('wait_first_queue', { concurrency: 5 });
+
+class WaitFirstQueueTest {
+  static numTasks = 5;
+
+  @DBOS.workflow()
+  static async processTask(taskId: number) {
+    // Higher task_id sleeps less, so tasks complete in reverse order
+    await DBOS.sleepms(1000 * (WaitFirstQueueTest.numTasks - 1 - taskId));
+    return `result-${taskId}`;
+  }
+
+  @DBOS.workflow()
+  static async processTasks() {
+    const handles: WorkflowHandle<string>[] = [];
+    for (let i = 0; i < WaitFirstQueueTest.numTasks; i++) {
+      const handle = await DBOS.startWorkflow(WaitFirstQueueTest, { queueName: waitFirstQueue.name }).processTask(i);
+      handles.push(handle);
+    }
+
+    const results: string[] = [];
+    let remaining = [...handles];
+    while (remaining.length > 0) {
+      const completed = await DBOS.waitFirst(remaining);
+      results.push(await completed.getResult());
+      remaining = remaining.filter((h) => h.workflowID !== completed.workflowID);
+    }
+    return results;
+  }
+}
 
 // dummy declaration to match the workflow in tests/wfqueueworker.ts
 export class InterProcessWorkflowTask {

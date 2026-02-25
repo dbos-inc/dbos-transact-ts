@@ -128,6 +128,8 @@ export interface SystemDatabase {
     timerFuncID?: number,
   ): Promise<SystemDatabaseStoredResult | undefined>;
 
+  awaitFirstWorkflowId(workflowIds: string[], callerID?: string): Promise<string>;
+
   // Workflow management
   setWorkflowStatus(
     workflowID: string,
@@ -2306,6 +2308,54 @@ export class PostgresSystemDatabase implements SystemDatabase {
       } finally {
         this.cancelWakeupMap.deregisterCallback(irh);
         if (crh) this.cancelWakeupMap.deregisterCallback(crh);
+      }
+    }
+  }
+
+  @dbRetry()
+  async awaitFirstWorkflowId(workflowIds: string[], callerID?: string): Promise<string> {
+    const placeholders = workflowIds.map((_, i) => `$${i + 1}`).join(', ');
+
+    while (true) {
+      let resolveNotification: () => void;
+      const wakeupPromise = new Promise<void>((resolve) => {
+        resolveNotification = resolve;
+      });
+
+      // Register cancel callbacks for all target workflows and the caller.
+      const cbHandles = workflowIds.map((wfid) =>
+        this.cancelWakeupMap.registerCallback(wfid, () => resolveNotification!()),
+      );
+      const callerCbHandle = callerID
+        ? this.cancelWakeupMap.registerCallback(callerID, () => resolveNotification!())
+        : undefined;
+
+      try {
+        if (callerID) await this.checkIfCanceled(callerID);
+
+        const { rows } = await this.pool.query<workflow_status>(
+          `SELECT workflow_uuid FROM "${this.schemaName}".workflow_status
+           WHERE workflow_uuid IN (${placeholders})
+             AND status NOT IN ('${StatusString.PENDING}', '${StatusString.ENQUEUED}')
+           LIMIT 1`,
+          workflowIds,
+        );
+
+        if (rows.length > 0) {
+          return rows[0].workflow_uuid;
+        }
+
+        const { promise: sleepPromise, cancel: sleepCancel } = cancellableSleep(this.dbPollingIntervalResultMs);
+        try {
+          await Promise.race([wakeupPromise, sleepPromise]);
+        } finally {
+          sleepCancel();
+        }
+      } finally {
+        for (const h of cbHandles) {
+          this.cancelWakeupMap.deregisterCallback(h);
+        }
+        if (callerCbHandle) this.cancelWakeupMap.deregisterCallback(callerCbHandle);
       }
     }
   }
