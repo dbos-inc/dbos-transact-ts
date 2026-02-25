@@ -768,7 +768,7 @@ class WaitFirstQueueTest {
   @DBOS.workflow()
   static async processTask(taskId: number) {
     // Higher task_id sleeps less, so tasks complete in reverse order
-    await DBOS.sleepms(1000 * (WaitFirstQueueTest.numTasks - 1 - taskId));
+    await DBOS.sleepms(2000 * (WaitFirstQueueTest.numTasks - 1 - taskId));
     return `result-${taskId}`;
   }
 
