@@ -372,6 +372,42 @@ describe('dbos-tests', () => {
       });
     });
 
+    test('test_wait_first', async () => {
+      const handleFast = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
+      const handleSlow = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
+
+      const resultHandle = await DBOS.waitFirst([handleFast, handleSlow]);
+      expect(resultHandle.workflowID).toBe(handleFast.workflowID);
+      expect(await resultHandle.getResult()).toBe('fast');
+      // Wait for slow workflow to finish so it doesn't hang
+      await handleSlow.getResult();
+
+      // Test waitFirst via the client
+      const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+      try {
+        const handleFast2 = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
+        const handleSlow2 = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
+
+        const clientHandleFast = client.retrieveWorkflow(handleFast2.workflowID);
+        const clientHandleSlow = client.retrieveWorkflow(handleSlow2.workflowID);
+
+        const clientResult = await client.waitFirst([clientHandleFast, clientHandleSlow]);
+        expect(clientResult.workflowID).toBe(handleFast2.workflowID);
+        expect(await clientResult.getResult()).toBe('fast');
+        await handleSlow2.getResult();
+
+        // Client waitFirst with empty handles should throw
+        await expect(client.waitFirst([])).rejects.toThrow('handles must not be empty');
+      } finally {
+        await client.destroy();
+      }
+    }, 10000);
+
+    test('test_wait_first_empty', async () => {
+      await expect(DBOS.waitFirst([])).rejects.toThrow('handles must not be empty');
+    });
+
+    // This test should run last in the block as it changes some global state
     test('custom-serializer-test', async () => {
       await DBOS.shutdown();
       const config = generateDBOSTestConfig();
@@ -462,41 +498,6 @@ describe('dbos-tests', () => {
       assert.equal(badClientSteps.length, 2);
       await badClient.destroy();
     }, 10000);
-  });
-
-  test('test_wait_first', async () => {
-    const handleFast = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
-    const handleSlow = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
-
-    const resultHandle = await DBOS.waitFirst([handleFast, handleSlow]);
-    expect(resultHandle.workflowID).toBe(handleFast.workflowID);
-    expect(await resultHandle.getResult()).toBe('fast');
-    // Wait for slow workflow to finish so it doesn't hang
-    await handleSlow.getResult();
-
-    // Test waitFirst via the client
-    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
-    try {
-      const handleFast2 = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
-      const handleSlow2 = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
-
-      const clientHandleFast = client.retrieveWorkflow(handleFast2.workflowID);
-      const clientHandleSlow = client.retrieveWorkflow(handleSlow2.workflowID);
-
-      const clientResult = await client.waitFirst([clientHandleFast, clientHandleSlow]);
-      expect(clientResult.workflowID).toBe(handleFast2.workflowID);
-      expect(await clientResult.getResult()).toBe('fast');
-      await handleSlow2.getResult();
-
-      // Client waitFirst with empty handles should throw
-      await expect(client.waitFirst([])).rejects.toThrow('handles must not be empty');
-    } finally {
-      await client.destroy();
-    }
-  }, 10000);
-
-  test('test_wait_first_empty', async () => {
-    await expect(DBOS.waitFirst([])).rejects.toThrow('handles must not be empty');
   });
 });
 
