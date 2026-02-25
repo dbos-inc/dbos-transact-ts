@@ -155,7 +155,7 @@ describe('PG16 drop/create e2e', () => {
 
   test('url masking', () => {
     expect(maskDatabaseUrl('postgres://postgres:secret@localhost:5432/dbostest?connect_timeout=7')).toBe(
-      'postgres://postgres:s****t@localhost:5432/dbostest?connect_timeout=7',
+      'postgres://postgres:***@localhost:5432/dbostest?connect_timeout=7',
     );
   });
 
