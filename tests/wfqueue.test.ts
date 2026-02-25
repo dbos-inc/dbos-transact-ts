@@ -722,21 +722,41 @@ describe('queued-wf-tests-simple', () => {
   });
 
   test('test_wait_first_queue', async () => {
+    const numTasks = WaitFirstQueueTest.numTasks;
     const wfid = randomUUID();
-    const handle = await DBOS.startWorkflow(WaitFirstQueueTest, { workflowID: wfid }).processTasks();
-    const result = await handle.getResult();
-
-    const expected = Array.from(
-      { length: WaitFirstQueueTest.numTasks },
-      (_, i) => `result-${WaitFirstQueueTest.numTasks - 1 - i}`,
-    );
+    const result = await DBOS.withNextWorkflowID(wfid, async () => {
+      return await WaitFirstQueueTest.processTasks();
+    });
+    const expected = Array.from({ length: numTasks }, (_, i) => `result-${numTasks - 1 - i}`);
     expect(result).toEqual(expected);
 
     // Verify the steps are correct:
     // 5 enqueue steps + 5 (waitFirst, getResult) pairs = 15 steps
     const steps = await DBOS.listWorkflowSteps(wfid);
     expect(steps).toBeDefined();
-    expect(steps!.length).toBe(WaitFirstQueueTest.numTasks * 3);
+    expect(steps!.length).toBe(numTasks * 3);
+
+    // First numTasks steps are the enqueues (functionID is 0-based in TS)
+    for (let i = 0; i < numTasks; i++) {
+      expect(steps![i].functionID).toBe(i);
+      expect(steps![i].name).toBe('processTask');
+      expect(steps![i].childWorkflowID).not.toBeNull();
+    }
+
+    // Remaining steps alternate between waitFirst and getResult
+    for (let i = 0; i < numTasks; i++) {
+      const waitStep = steps![numTasks + i * 2];
+      const resultStep = steps![numTasks + i * 2 + 1];
+      expect(waitStep.name).toBe('DBOS.waitFirst');
+      expect(resultStep.name).toBe('DBOS.getResult');
+    }
+
+    // Fork from the last waitFirst step and verify same result
+    const lastWaitFirstStepId = steps![numTasks + (numTasks - 1) * 2].functionID;
+    const forkedHandle = await DBOS.forkWorkflow(wfid, lastWaitFirstStepId);
+    expect(await forkedHandle.getResult()).toEqual(expected);
+
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
   }, 30000);
 });
 
@@ -764,7 +784,8 @@ class WaitFirstQueueTest {
     let remaining = [...handles];
     while (remaining.length > 0) {
       const completed = await DBOS.waitFirst(remaining);
-      results.push(await completed.getResult());
+      const result = (await completed.getResult()) as string;
+      results.push(result);
       remaining = remaining.filter((h) => h.workflowID !== completed.workflowID);
     }
     return results;
