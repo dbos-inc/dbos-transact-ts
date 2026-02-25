@@ -736,7 +736,7 @@ describe('queued-wf-tests-simple', () => {
     expect(steps).toBeDefined();
     expect(steps!.length).toBe(numTasks * 3);
 
-    // First numTasks steps are the enqueues (functionID is 0-based in TS)
+    // First numTasks steps are the enqueues (functionID is 0-based)
     for (let i = 0; i < numTasks; i++) {
       expect(steps![i].functionID).toBe(i);
       expect(steps![i].name).toBe('processTask');
