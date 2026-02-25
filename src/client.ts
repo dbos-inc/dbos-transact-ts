@@ -424,6 +424,20 @@ export class DBOSClient {
     return listWorkflowSteps(this.systemDatabase, workflowID);
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  async waitFirst(handles: WorkflowHandle<any>[]): Promise<WorkflowHandle<any>> {
+    if (handles.length === 0) {
+      throw new Error('handles must not be empty');
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const handleMap = new Map<string, WorkflowHandle<any>>();
+    for (let i = handles.length - 1; i >= 0; i--) {
+      handleMap.set(handles[i].workflowID, handles[i]);
+    }
+    const completedId = await this.systemDatabase.awaitFirstWorkflowId([...handleMap.keys()]);
+    return handleMap.get(completedId)!;
+  }
+
   /**
    * Read values from a stream as an async generator.
    * This function reads values from a stream identified by the workflowID and key,

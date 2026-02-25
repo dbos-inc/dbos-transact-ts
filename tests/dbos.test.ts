@@ -473,6 +473,26 @@ describe('dbos-tests', () => {
     expect(await resultHandle.getResult()).toBe('fast');
     // Wait for slow workflow to finish so it doesn't hang
     await handleSlow.getResult();
+
+    // Test waitFirst via the client
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      const handleFast2 = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
+      const handleSlow2 = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
+
+      const clientHandleFast = client.retrieveWorkflow(handleFast2.workflowID);
+      const clientHandleSlow = client.retrieveWorkflow(handleSlow2.workflowID);
+
+      const clientResult = await client.waitFirst([clientHandleFast, clientHandleSlow]);
+      expect(clientResult.workflowID).toBe(handleFast2.workflowID);
+      expect(await clientResult.getResult()).toBe('fast');
+      await handleSlow2.getResult();
+
+      // Client waitFirst with empty handles should throw
+      await expect(client.waitFirst([])).rejects.toThrow('handles must not be empty');
+    } finally {
+      await client.destroy();
+    }
   }, 10000);
 
   test('test_wait_first_empty', async () => {
@@ -483,12 +503,13 @@ describe('dbos-tests', () => {
 class WaitFirstTestClass {
   @DBOS.workflow()
   static async fastWorkflow() {
+    await Promise.resolve();
     return 'fast';
   }
 
   @DBOS.workflow()
   static async slowWorkflow() {
-    await DBOS.sleep(1);
+    await DBOS.sleep(2);
     return 'slow';
   }
 }
