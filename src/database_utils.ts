@@ -364,9 +364,7 @@ export function maskDatabaseUrl(urlStr: string): string {
   try {
     const u = new URL(urlStr);
     if (u.password) {
-      const p = decodeURIComponent(u.password);
-      const masked = p.length <= 2 ? p : `${p[0]}${'*'.repeat(p.length - 2)}${p[p.length - 1]}`;
-      u.password = encodeURIComponent(masked);
+      u.password = encodeURIComponent('***');
     }
     return u.toString();
   } catch {
