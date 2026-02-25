@@ -644,6 +644,53 @@ class DBOSTestClass {
   }
 }
 
+class TimeoutTestClass {
+  @DBOS.workflow()
+  static async getEventTimeoutWorkflow() {
+    const workflowID = DBOS.workflowID!;
+    return DBOS.getEvent(workflowID, 'key', 0);
+  }
+
+  @DBOS.workflow()
+  static async recvTimeoutWorkflow() {
+    return DBOS.recv(undefined, 0);
+  }
+}
+
+describe('timeout-tests', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('get-event-timeout', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutTestClass).getEventTimeoutWorkflow();
+    expect(await handle.getResult()).toBeNull();
+
+    const forkedHandle = await DBOS.forkWorkflow(handle.workflowID, 5);
+    expect(await forkedHandle.getResult()).toBeNull();
+  });
+
+  test('recv-timeout', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutTestClass).recvTimeoutWorkflow();
+    expect(await handle.getResult()).toBeNull();
+
+    const forkedHandle = await DBOS.forkWorkflow(handle.workflowID, 5);
+    expect(await forkedHandle.getResult()).toBeNull();
+  });
+});
+
 describe('custom-pool-test', () => {
   afterEach(async () => {
     await DBOS.shutdown();
