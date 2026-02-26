@@ -1112,6 +1112,11 @@ export class DBOS {
     options?: SendOptions,
   ): Promise<void> {
     ensureDBOSIsLaunched('send');
+    const sermsg = serializeValue(
+      message,
+      DBOS.#executor.serializer,
+      options?.serializationType ?? DBOS.defaultSerializationType,
+    );
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.send` inside a `step` or `transaction`');
@@ -1122,11 +1127,6 @@ export class DBOS {
         );
       }
       const functionID: number = functionIDGetIncrement();
-      const sermsg = serializeValue(
-        message,
-        DBOS.#executor.serializer,
-        options?.serializationType ?? DBOS.defaultSerializationType,
-      );
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
         functionID,
@@ -1136,11 +1136,6 @@ export class DBOS {
         sermsg.serialization,
       );
     }
-    const sermsg = serializeValue(
-      message,
-      DBOS.#executor.serializer,
-      options?.serializationType ?? DBOS.defaultSerializationType,
-    );
     return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
       destinationID,
       sermsg.serializedValue,
