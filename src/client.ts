@@ -331,43 +331,14 @@ export class DBOSClient {
     idempotencyKey?: string,
     options?: ClientSendOptions,
   ): Promise<void> {
-    idempotencyKey ??= randomUUID();
+    const messageUUID = idempotencyKey ?? randomUUID();
     const sermsg = serializeValue(message, this.serializer, options?.serializationType);
-    const srwfp = serializeArgs(
-      [destinationID, message, topic, options?.serializationType],
-      undefined,
-      this.serializer,
-      options?.serializationType,
-    );
-    const internalStatus: WorkflowStatusInternal = {
-      workflowUUID: `${destinationID}-${idempotencyKey}`,
-      status: StatusString.SUCCESS,
-      workflowName: 'temp_workflow-send-client',
-      workflowClassName: '',
-      workflowConfigName: '',
-      authenticatedUser: '',
-      output: null,
-      error: null,
-      assumedRole: '',
-      authenticatedRoles: [],
-      request: {},
-      executorId: '',
-      applicationID: '',
-      createdAt: Date.now(),
-      input: srwfp.serializedValue,
-      deduplicationID: undefined,
-      priority: 0,
-      queuePartitionKey: undefined,
-      serialization: srwfp.serialization,
-    };
-    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
-    await this.systemDatabase.send(
-      internalStatus.workflowUUID,
-      0,
+    await this.systemDatabase.sendDirect(
       destinationID,
       sermsg.serializedValue,
       topic,
       sermsg.serialization,
+      messageUUID,
     );
   }
 

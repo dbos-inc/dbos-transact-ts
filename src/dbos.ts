@@ -1136,13 +1136,18 @@ export class DBOS {
         sermsg.serialization,
       );
     }
-    return DBOS.#executor.runSendTempWF(
-      destinationID,
+    const sermsg = serializeValue(
       message,
-      topic,
-      idempotencyKey,
+      DBOS.#executor.serializer,
       options?.serializationType ?? DBOS.defaultSerializationType,
-    ); // Temp WF variant
+    );
+    return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
+      destinationID,
+      sermsg.serializedValue,
+      topic,
+      sermsg.serialization,
+      idempotencyKey,
+    );
   }
 
   /**

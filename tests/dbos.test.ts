@@ -4,12 +4,7 @@ import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
 import { Client, Pool } from 'pg';
-import {
-  DBOSWorkflowCancelledError,
-  DBOSAwaitedWorkflowCancelledError,
-  DBOSInitializationError,
-  DBOSInvalidWorkflowTransitionError,
-} from '../src/error';
+import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
 import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
@@ -585,7 +580,7 @@ describe('dbos-tests', () => {
         systemDatabaseUrl: config.systemDatabaseUrl!,
       });
       const workflows = await badClient.listWorkflows({});
-      assert.equal(workflows.length, 5);
+      assert.equal(workflows.length, 3);
       assert.equal(workflows[0].output, jsonSerializer.stringify(message));
       const badClientSteps = await badClient.listWorkflowSteps(workflows[0].workflowID);
       assert.ok(badClientSteps);

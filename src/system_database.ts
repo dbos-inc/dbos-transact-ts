@@ -175,6 +175,13 @@ export interface SystemDatabase {
     topic: string | undefined,
     serialization: string | null,
   ): Promise<void>;
+  sendDirect(
+    destinationID: string,
+    message: string | null,
+    topic: string | undefined,
+    serialization: string | null,
+    messageUUID?: string,
+  ): Promise<void>;
   recv(
     workflowID: string,
     functionID: number,
@@ -1482,6 +1489,32 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     } finally {
       client.release();
+    }
+  }
+
+  @dbRetry()
+  async sendDirect(
+    destinationID: string,
+    message: string | null,
+    topic: string | undefined,
+    serialization: string | null,
+    messageUUID?: string,
+  ): Promise<void> {
+    topic = topic ?? this.nullTopic;
+    messageUUID = messageUUID ?? randomUUID();
+    try {
+      await this.pool.query(
+        `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization, message_uuid)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (message_uuid) DO NOTHING;`,
+        [destinationID, topic, message, serialization, messageUUID],
+      );
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '23503') {
+        throw new DBOSNonExistentWorkflowError(`Sent to non-existent destination workflow UUID: ${destinationID}`);
+      }
+      throw err;
     }
   }
 
