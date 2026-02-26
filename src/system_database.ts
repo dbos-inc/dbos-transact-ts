@@ -1525,7 +1525,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
           await this.pool.query<notifications>(
-            `SELECT topic FROM "${this.schemaName}".notifications WHERE destination_uuid=$1 AND topic=$2;`,
+            `SELECT topic FROM "${this.schemaName}".notifications WHERE destination_uuid=$1 AND topic=$2 AND consumed = false;`,
             [workflowID, topic],
           )
         ).rows;
@@ -1575,14 +1575,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
       const finalRecvRows = (
         await client.query<notifications>(
-          `DELETE FROM "${this.schemaName}".notifications
+          `UPDATE "${this.schemaName}".notifications
+        SET consumed = true
         WHERE destination_uuid = $1
           AND topic = $2
+          AND consumed = false
           AND message_uuid = (
             SELECT message_uuid
             FROM "${this.schemaName}".notifications
             WHERE destination_uuid = $1
               AND topic = $2
+              AND consumed = false
             ORDER BY created_at_epoch_ms ASC
             LIMIT 1
           )

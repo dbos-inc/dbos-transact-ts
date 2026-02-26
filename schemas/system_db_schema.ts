@@ -36,6 +36,7 @@ export interface notifications {
   destination_uuid: string;
   topic: string;
   message: string;
+  consumed: boolean;
   serialization: SysDBSerializationFormat | null;
 }
 
