@@ -1117,10 +1117,7 @@ export class DBOS {
       DBOS.#executor.serializer,
       options?.serializationType ?? DBOS.defaultSerializationType,
     );
-    if (DBOS.isWithinWorkflow()) {
-      if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.send` inside a `step` or `transaction`');
-      }
+    if (DBOS.isInWorkflow()) {
       if (idempotencyKey) {
         throw new DBOSInvalidWorkflowTransitionError(
           'Invalid call to `DBOS.send` with an idempotency key from within a workflow',
@@ -1135,14 +1132,15 @@ export class DBOS {
         topic,
         sermsg.serialization,
       );
+    } else {
+      return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
+        destinationID,
+        sermsg.serializedValue,
+        topic,
+        sermsg.serialization,
+        idempotencyKey,
+      );
     }
-    return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
-      destinationID,
-      sermsg.serializedValue,
-      topic,
-      sermsg.serialization,
-      idempotencyKey,
-    );
   }
 
   /**

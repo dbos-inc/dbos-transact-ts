@@ -151,11 +151,9 @@ async function main9() {
       'Invalid call to a `transaction` function from within a `step`',
     );
 
+    // Send from a transaction calls sendDirect; 'aaa' doesn't exist so it throws.
     await expect(() => TransitionTests.oopsCallSendFromTxWF()).rejects.toThrow(
-      'Invalid call to `DBOS.send` inside a `step` or `transaction`',
-    );
-    await expect(() => TransitionTests.oopsCallSendFromStep()).rejects.toThrow(
-      'Invalid call to `DBOS.send` inside a `step` or `transaction`',
+      'Sent to non-existent destination workflow UUID: aaa',
     );
     await expect(() => TransitionTests.oopsCallGetFromTxWF()).rejects.toThrow(
       'Invalid call to `DBOS.getEvent` inside a `step` or `transaction`',
