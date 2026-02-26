@@ -424,6 +424,21 @@ export class DBOSClient {
     return listWorkflowSteps(this.systemDatabase, workflowID);
   }
 
+  async waitFirst(handles: WorkflowHandle<unknown>[]): Promise<WorkflowHandle<unknown>> {
+    if (handles.length === 0) {
+      throw new Error('handles must not be empty');
+    }
+    const handleMap = new Map<string, WorkflowHandle<unknown>>();
+    for (const handle of handles) {
+      if (handleMap.has(handle.workflowID)) {
+        throw new Error(`Duplicate workflow ID in waitFirst: ${handle.workflowID}`);
+      }
+      handleMap.set(handle.workflowID, handle);
+    }
+    const completedId = await this.systemDatabase.awaitFirstWorkflowId([...handleMap.keys()]);
+    return handleMap.get(completedId)!;
+  }
+
   /**
    * Read values from a stream as an async generator.
    * This function reads values from a stream identified by the workflowID and key,

@@ -720,9 +720,106 @@ describe('queued-wf-tests-simple', () => {
     await expect(other_version_handle.getResult()).resolves.toBeTruthy();
     await client.destroy();
   });
+
+  test('test_wait_first_queue', async () => {
+    const numTasks = WaitFirstQueueTest.numTasks;
+    WaitFirstQueueTest.resetEvents();
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(WaitFirstQueueTest, { workflowID: wfid }).processTasks();
+
+    // Release tasks in reverse order, waiting for each to be consumed
+    for (let roundIdx = 0; roundIdx < numTasks; roundIdx++) {
+      const taskId = numTasks - 1 - roundIdx;
+      WaitFirstQueueTest.goResolvers[taskId]();
+      await WaitFirstQueueTest.consumedPromises[roundIdx];
+    }
+
+    const result = await handle.getResult();
+    const expected = Array.from({ length: numTasks }, (_, i) => `result-${numTasks - 1 - i}`);
+    expect(result).toEqual(expected);
+
+    // Verify the steps are correct:
+    // 5 enqueue steps + 5 (waitFirst, getResult) pairs = 15 steps
+    const steps = await DBOS.listWorkflowSteps(wfid);
+    expect(steps).toBeDefined();
+    expect(steps!.length).toBe(numTasks * 3);
+
+    // First numTasks steps are the enqueues (functionID is 0-based)
+    for (let i = 0; i < numTasks; i++) {
+      expect(steps![i].functionID).toBe(i);
+      expect(steps![i].name).toBe('processTask');
+      expect(steps![i].childWorkflowID).not.toBeNull();
+    }
+
+    // Remaining steps alternate between waitFirst and getResult
+    for (let i = 0; i < numTasks; i++) {
+      const waitStep = steps![numTasks + i * 2];
+      const resultStep = steps![numTasks + i * 2 + 1];
+      expect(waitStep.name).toBe('DBOS.waitFirst');
+      expect(resultStep.name).toBe('DBOS.getResult');
+    }
+
+    // Fork from the last waitFirst step and verify same result
+    const lastWaitFirstStepId = steps![numTasks + (numTasks - 1) * 2].functionID;
+    const forkedHandle = await DBOS.forkWorkflow(wfid, lastWaitFirstStepId);
+    expect(await forkedHandle.getResult()).toEqual(expected);
+
+    expect(await queueEntriesAreCleanedUp()).toBe(true);
+  }, 30000);
 });
 
-// dummy declaration to match the workflow in tests/wfqueueworker.ts
+const waitFirstQueue = new WorkflowQueue('wait_first_queue', { concurrency: 5 });
+
+class WaitFirstQueueTest {
+  static numTasks = 5;
+  static goResolvers: (() => void)[] = [];
+  static goPromises: Promise<void>[] = [];
+  static consumedResolvers: (() => void)[] = [];
+  static consumedPromises: Promise<void>[] = [];
+
+  static resetEvents() {
+    WaitFirstQueueTest.goResolvers = [];
+    WaitFirstQueueTest.goPromises = [];
+    WaitFirstQueueTest.consumedResolvers = [];
+    WaitFirstQueueTest.consumedPromises = [];
+    for (let i = 0; i < WaitFirstQueueTest.numTasks; i++) {
+      let goResolve!: () => void;
+      WaitFirstQueueTest.goPromises.push(new Promise<void>((r) => (goResolve = r)));
+      WaitFirstQueueTest.goResolvers.push(goResolve);
+      let consumedResolve!: () => void;
+      WaitFirstQueueTest.consumedPromises.push(new Promise<void>((r) => (consumedResolve = r)));
+      WaitFirstQueueTest.consumedResolvers.push(consumedResolve);
+    }
+  }
+
+  @DBOS.workflow()
+  static async processTask(taskId: number) {
+    await WaitFirstQueueTest.goPromises[taskId];
+    return `result-${taskId}`;
+  }
+
+  @DBOS.workflow()
+  static async processTasks() {
+    const handles: WorkflowHandle<string>[] = [];
+    for (let i = 0; i < WaitFirstQueueTest.numTasks; i++) {
+      const handle = await DBOS.startWorkflow(WaitFirstQueueTest, { queueName: waitFirstQueue.name }).processTask(i);
+      handles.push(handle);
+    }
+
+    const results: string[] = [];
+    let remaining = [...handles];
+    for (let roundIdx = 0; roundIdx < WaitFirstQueueTest.numTasks; roundIdx++) {
+      const completed = await DBOS.waitFirst(remaining);
+      const result = (await completed.getResult()) as string;
+      results.push(result);
+      remaining = remaining.filter((h) => h.workflowID !== completed.workflowID);
+      WaitFirstQueueTest.consumedResolvers[roundIdx]();
+    }
+    return results;
+  }
+}
+
+// Dummy declaration to match the workflow in tests/wfqueueworker.ts
 export class InterProcessWorkflowTask {
   @DBOS.workflow()
   static async task(_: number) {

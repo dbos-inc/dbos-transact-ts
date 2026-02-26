@@ -372,6 +372,42 @@ describe('dbos-tests', () => {
       });
     });
 
+    test('test_wait_first', async () => {
+      const handleFast = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
+      const handleSlow = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
+
+      const resultHandle = await DBOS.waitFirst([handleFast, handleSlow]);
+      expect(resultHandle.workflowID).toBe(handleFast.workflowID);
+      expect(await resultHandle.getResult()).toBe('fast');
+      // Wait for slow workflow to finish so it doesn't hang
+      await handleSlow.getResult();
+
+      // Test waitFirst via the client
+      const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+      try {
+        const handleFast2 = await DBOS.startWorkflow(WaitFirstTestClass).fastWorkflow();
+        const handleSlow2 = await DBOS.startWorkflow(WaitFirstTestClass).slowWorkflow();
+
+        const clientHandleFast = client.retrieveWorkflow(handleFast2.workflowID);
+        const clientHandleSlow = client.retrieveWorkflow(handleSlow2.workflowID);
+
+        const clientResult = await client.waitFirst([clientHandleFast, clientHandleSlow]);
+        expect(clientResult.workflowID).toBe(handleFast2.workflowID);
+        expect(await clientResult.getResult()).toBe('fast');
+        await handleSlow2.getResult();
+
+        // Client waitFirst with empty handles should throw
+        await expect(client.waitFirst([])).rejects.toThrow('handles must not be empty');
+      } finally {
+        await client.destroy();
+      }
+    }, 10000);
+
+    test('test_wait_first_empty', async () => {
+      await expect(DBOS.waitFirst([])).rejects.toThrow('handles must not be empty');
+    });
+
+    // This test should run last in the block as it changes some global state
     test('custom-serializer-test', async () => {
       await DBOS.shutdown();
       const config = generateDBOSTestConfig();
@@ -464,6 +500,20 @@ describe('dbos-tests', () => {
     }, 10000);
   });
 });
+
+class WaitFirstTestClass {
+  @DBOS.workflow()
+  static async fastWorkflow() {
+    await Promise.resolve();
+    return 'fast';
+  }
+
+  @DBOS.workflow()
+  static async slowWorkflow() {
+    await DBOS.sleep(2);
+    return 'slow';
+  }
+}
 
 class DBOSTimeoutTestClass {
   @DBOS.workflow()
@@ -594,6 +644,53 @@ class DBOSTestClass {
     return Promise.resolve();
   }
 }
+
+class TimeoutTestClass {
+  @DBOS.workflow()
+  static async getEventTimeoutWorkflow() {
+    const workflowID = DBOS.workflowID!;
+    return DBOS.getEvent(workflowID, 'key', 0);
+  }
+
+  @DBOS.workflow()
+  static async recvTimeoutWorkflow() {
+    return DBOS.recv(undefined, 0);
+  }
+}
+
+describe('timeout-tests', () => {
+  let config: DBOSConfig;
+
+  beforeAll(async () => {
+    config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+  });
+
+  beforeEach(async () => {
+    await DBOS.launch();
+  });
+
+  afterEach(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('get-event-timeout', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutTestClass).getEventTimeoutWorkflow();
+    expect(await handle.getResult()).toBeNull();
+
+    const forkedHandle = await DBOS.forkWorkflow(handle.workflowID, 5);
+    expect(await forkedHandle.getResult()).toBeNull();
+  });
+
+  test('recv-timeout', async () => {
+    const handle = await DBOS.startWorkflow(TimeoutTestClass).recvTimeoutWorkflow();
+    expect(await handle.getResult()).toBeNull();
+
+    const forkedHandle = await DBOS.forkWorkflow(handle.workflowID, 5);
+    expect(await forkedHandle.getResult()).toBeNull();
+  });
+});
 
 describe('custom-pool-test', () => {
   afterEach(async () => {
