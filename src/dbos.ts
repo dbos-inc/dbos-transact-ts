@@ -699,15 +699,13 @@ export class DBOS {
    * @param handles - Non-empty array of workflow handles to wait on
    * @returns The first handle whose workflow has completed
    */
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  static async waitFirst(handles: WorkflowHandle<any>[]): Promise<WorkflowHandle<any>> {
+  static async waitFirst(handles: WorkflowHandle<unknown>[]): Promise<WorkflowHandle<unknown>> {
     ensureDBOSIsLaunched('waitFirst');
     if (handles.length === 0) {
       throw new Error('handles must not be empty');
     }
     // Build a map from workflow ID to handle.
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleMap = new Map<string, WorkflowHandle<any>>();
+    const handleMap = new Map<string, WorkflowHandle<unknown>>();
     for (let i = handles.length - 1; i >= 0; i--) {
       handleMap.set(handles[i].workflowID, handles[i]);
     }

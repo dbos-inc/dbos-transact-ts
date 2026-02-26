@@ -424,13 +424,11 @@ export class DBOSClient {
     return listWorkflowSteps(this.systemDatabase, workflowID);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  async waitFirst(handles: WorkflowHandle<any>[]): Promise<WorkflowHandle<any>> {
+  async waitFirst(handles: WorkflowHandle<unknown>[]): Promise<WorkflowHandle<unknown>> {
     if (handles.length === 0) {
       throw new Error('handles must not be empty');
     }
-    // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const handleMap = new Map<string, WorkflowHandle<any>>();
+    const handleMap = new Map<string, WorkflowHandle<unknown>>();
     for (let i = handles.length - 1; i >= 0; i--) {
       handleMap.set(handles[i].workflowID, handles[i]);
     }
