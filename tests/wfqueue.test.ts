@@ -723,10 +723,18 @@ describe('queued-wf-tests-simple', () => {
 
   test('test_wait_first_queue', async () => {
     const numTasks = WaitFirstQueueTest.numTasks;
+    WaitFirstQueueTest.resetEvents();
     const wfid = randomUUID();
-    const result = await DBOS.withNextWorkflowID(wfid, async () => {
-      return await WaitFirstQueueTest.processTasks();
-    });
+    const handle = await DBOS.startWorkflow(WaitFirstQueueTest, { workflowID: wfid }).processTasks();
+
+    // Release tasks in reverse order, waiting for each to be consumed
+    for (let roundIdx = 0; roundIdx < numTasks; roundIdx++) {
+      const taskId = numTasks - 1 - roundIdx;
+      WaitFirstQueueTest.goResolvers[taskId]();
+      await WaitFirstQueueTest.consumedPromises[roundIdx];
+    }
+
+    const result = await handle.getResult();
     const expected = Array.from({ length: numTasks }, (_, i) => `result-${numTasks - 1 - i}`);
     expect(result).toEqual(expected);
 
@@ -764,11 +772,29 @@ const waitFirstQueue = new WorkflowQueue('wait_first_queue', { concurrency: 5 })
 
 class WaitFirstQueueTest {
   static numTasks = 5;
+  static goResolvers: (() => void)[] = [];
+  static goPromises: Promise<void>[] = [];
+  static consumedResolvers: (() => void)[] = [];
+  static consumedPromises: Promise<void>[] = [];
+
+  static resetEvents() {
+    WaitFirstQueueTest.goResolvers = [];
+    WaitFirstQueueTest.goPromises = [];
+    WaitFirstQueueTest.consumedResolvers = [];
+    WaitFirstQueueTest.consumedPromises = [];
+    for (let i = 0; i < WaitFirstQueueTest.numTasks; i++) {
+      let goResolve!: () => void;
+      WaitFirstQueueTest.goPromises.push(new Promise<void>((r) => (goResolve = r)));
+      WaitFirstQueueTest.goResolvers.push(goResolve);
+      let consumedResolve!: () => void;
+      WaitFirstQueueTest.consumedPromises.push(new Promise<void>((r) => (consumedResolve = r)));
+      WaitFirstQueueTest.consumedResolvers.push(consumedResolve);
+    }
+  }
 
   @DBOS.workflow()
   static async processTask(taskId: number) {
-    // Higher task_id sleeps less, so tasks complete in reverse order
-    await DBOS.sleepms(2000 * (WaitFirstQueueTest.numTasks - 1 - taskId));
+    await WaitFirstQueueTest.goPromises[taskId];
     return `result-${taskId}`;
   }
 
@@ -782,11 +808,12 @@ class WaitFirstQueueTest {
 
     const results: string[] = [];
     let remaining = [...handles];
-    while (remaining.length > 0) {
+    for (let roundIdx = 0; roundIdx < WaitFirstQueueTest.numTasks; roundIdx++) {
       const completed = await DBOS.waitFirst(remaining);
       const result = (await completed.getResult()) as string;
       results.push(result);
       remaining = remaining.filter((h) => h.workflowID !== completed.workflowID);
+      WaitFirstQueueTest.consumedResolvers[roundIdx]();
     }
     return results;
   }
