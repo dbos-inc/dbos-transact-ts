@@ -704,10 +704,13 @@ export class DBOS {
     if (handles.length === 0) {
       throw new Error('handles must not be empty');
     }
-    // Build a map from workflow ID to handle.
+    // Build a map from workflow ID to handle, disallowing duplicates.
     const handleMap = new Map<string, WorkflowHandle<unknown>>();
-    for (let i = handles.length - 1; i >= 0; i--) {
-      handleMap.set(handles[i].workflowID, handles[i]);
+    for (const handle of handles) {
+      if (handleMap.has(handle.workflowID)) {
+        throw new Error(`Duplicate workflow ID in waitFirst: ${handle.workflowID}`);
+      }
+      handleMap.set(handle.workflowID, handle);
     }
     const workflowIds = [...handleMap.keys()];
 
