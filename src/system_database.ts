@@ -65,225 +65,6 @@ export const DEFAULT_POOL_SIZE = 10;
 
 export const DBOS_STREAM_CLOSED_SENTINEL = '__DBOS_STREAM_CLOSED__';
 
-/**
- * General notes:
- *   The responsibilities of the `SystemDatabase` are to store data for workflows, and
- *     associated steps, transactions, messages, and events.  The system DB is
- *     also the IPC mechanism that performs notifications when things change, for
- *     example a receive is unblocked when a send occurs, or a cancel interrupts
- *     the receive.
- *   The `SystemDatabase` expects values in inputs/outputs/errors to be JSON.  However,
- *     the serialization process of turning data into JSON or converting it back, should
- *     be done elsewhere (executor), as it may require application-specific logic or extensions.
- */
-export interface SystemDatabase {
-  init(): Promise<void>;
-  destroy(): Promise<void>;
-
-  initWorkflowStatus(
-    initStatus: WorkflowStatusInternal,
-    ownerXid: string | null,
-    options?: {
-      isRecoveryRequest?: boolean;
-      isDequeuedRequest?: boolean;
-      maxRetries?: number;
-    },
-  ): Promise<{
-    status: string;
-    shouldExecuteOnThisExecutor: boolean;
-    deadlineEpochMS?: number;
-    serialization: SysDBSerializationFormat | null;
-  }>;
-  recordWorkflowOutput(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
-  recordWorkflowError(workflowID: string, status: WorkflowStatusInternal): Promise<void>;
-
-  getPendingWorkflows(executorID: string, appVersion: string): Promise<GetPendingWorkflowsOutput[]>;
-
-  // If there is no record, res will be undefined;
-  //  otherwise will be defined (with potentially undefined contents)
-  getOperationResultAndThrowIfCancelled(
-    workflowID: string,
-    functionID: number,
-  ): Promise<SystemDatabaseStoredResult | undefined>;
-  getAllOperationResults(workflowID: string): Promise<operation_outputs[]>;
-  recordOperationResult(
-    workflowID: string,
-    functionID: number,
-    functionName: string,
-    checkConflict: boolean,
-    startTimeEpochMs: number,
-    options?: {
-      childWorkflowID?: string | null;
-      output?: string | null;
-      error?: string | null;
-      serialization?: string | null;
-    },
-  ): Promise<void>;
-
-  getWorkflowStatus(workflowID: string, callerID?: string, callerFN?: number): Promise<WorkflowStatusInternal | null>;
-  awaitWorkflowResult(
-    workflowID: string,
-    timeoutSeconds?: number,
-    callerID?: string,
-    timerFuncID?: number,
-  ): Promise<SystemDatabaseStoredResult | undefined>;
-
-  awaitFirstWorkflowId(workflowIds: string[], callerID?: string): Promise<string>;
-
-  // Workflow management
-  setWorkflowStatus(
-    workflowID: string,
-    status: (typeof StatusString)[keyof typeof StatusString],
-    resetRecoveryAttempts: boolean,
-  ): Promise<void>;
-  cancelWorkflow(workflowID: string): Promise<void>;
-  resumeWorkflow(workflowID: string): Promise<void>;
-  deleteWorkflow(workflowID: string, deleteChildren?: boolean): Promise<void>;
-  getWorkflowChildren(workflowID: string): Promise<string[]>;
-  exportWorkflow(workflowID: string, exportChildren?: boolean): Promise<ExportedWorkflow[]>;
-  importWorkflow(workflows: ExportedWorkflow[]): Promise<void>;
-  forkWorkflow(
-    workflowID: string,
-    startStep: number,
-    options?: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number },
-  ): Promise<string>;
-  checkIfCanceled(workflowID: string): Promise<void>;
-  registerRunningWorkflow(workflowID: string, workflowPromise: Promise<unknown>): void;
-  checkForRunningWorkflow(workflowID: string): boolean;
-  awaitRunningWorkflows(): Promise<void>; // Use in clean shutdown
-
-  // Queues
-  clearQueueAssignment(workflowID: string): Promise<boolean>;
-  getDeduplicatedWorkflow(queueName: string, deduplicationID: string): Promise<string | null>;
-  getQueuePartitions(queueName: string): Promise<string[]>;
-
-  findAndMarkStartableWorkflows(
-    queue: WorkflowQueue,
-    executorID: string,
-    appVersion: string,
-    queuePartitionKey?: string | null,
-  ): Promise<string[]>;
-
-  // Actions w/ durable records and notifications
-  durableSleepms(workflowID: string, functionID: number, duration: number): Promise<void>;
-
-  send(
-    workflowID: string,
-    functionID: number,
-    destinationID: string,
-    message: string | null,
-    topic: string | undefined,
-    serialization: string | null,
-    messageUUID?: string,
-  ): Promise<void>;
-  sendDirect(
-    destinationID: string,
-    message: string | null,
-    topic: string | undefined,
-    serialization: string | null,
-    messageUUID?: string,
-  ): Promise<void>;
-  recv(
-    workflowID: string,
-    functionID: number,
-    timeoutFunctionID: number,
-    topic?: string,
-    timeoutSeconds?: number,
-  ): Promise<{ serializedValue: string | null; serialization: string | null }>;
-
-  setEvent(
-    workflowID: string,
-    functionID: number,
-    key: string,
-    value: string | null,
-    serialization: string | null,
-  ): Promise<void>;
-  getEvent(
-    workflowID: string,
-    key: string,
-    timeoutSeconds: number,
-    callerWorkflow?: {
-      workflowID: string;
-      functionID: number;
-      timeoutFunctionID: number;
-    },
-  ): Promise<{ serializedValue: string | null; serialization: string | null }>;
-
-  // Event receiver state queries / updates
-  // An event dispatcher may keep state in the system database
-  //   The 'service' should be unique to the event receiver keeping state, to separate from others
-  //   The 'workflowFnName' workflow function name should be the fully qualified / unique function name dispatched
-  //   The 'key' field allows multiple records per service / workflow function
-  //   The service+workflowFnName+key uniquely identifies the record, which is associated with:
-  //     'value' - a value set by the event receiver service; this string may be a JSON to keep complex details
-  //     A version, either as a sequence number (long integer), or as a time (high precision floating point).
-  //       If versions are in use, any upsert is discarded if the version field is less than what is already stored.
-  //       The upsert returns the current record, which is useful if it is more recent.
-  getEventDispatchState(service: string, workflowFnName: string, key: string): Promise<DBOSExternalState | undefined>;
-  upsertEventDispatchState(state: DBOSExternalState): Promise<DBOSExternalState>;
-
-  // Streaming
-  writeStreamFromWorkflow(
-    workflowID: string,
-    functionID: number,
-    key: string,
-    serializedValue: string,
-    serialization: string | null,
-    functionName: string,
-  ): Promise<void>;
-  writeStreamFromStep(
-    workflowID: string,
-    functionID: number,
-    key: string,
-    serializedValue: string,
-    serialization: string | null,
-  ): Promise<void>;
-  closeStream(workflowID: string, functionID: number, key: string): Promise<void>;
-  readStream(
-    workflowID: string,
-    key: string,
-    offset: number,
-  ): Promise<{ serializedValue: string; serialization: string | null }>;
-
-  // Workflow management
-  listWorkflows(input: GetWorkflowsInput): Promise<WorkflowStatusInternal[]>;
-  garbageCollect(cutoffEpochTimestampMs?: number, rowsThreshold?: number): Promise<void>;
-  getMetrics(startTime: string, endTime: string): Promise<MetricData[]>;
-
-  // Patching
-  checkPatch(
-    workflowID: string,
-    functionID: number,
-    patchName: string,
-    deprecated: boolean,
-  ): Promise<{ isPatched: boolean; hasEntry: boolean }>;
-
-  getSerializer(): DBOSSerializer;
-
-  // Run a callback and record the step result in a single system DB transaction.
-  // If the step was already recorded, returns the previous serialized result without running the callback.
-  // The callback receives a PoolClient that should be passed to any SystemDatabase methods
-  // called within the callback so they run on the same transaction.
-  // The callback should return the serialized output string to record.
-  runTransactionalStep(
-    workflowID: string,
-    functionID: number,
-    functionName: string,
-    callback: (client: PoolClient) => Promise<string | null>,
-  ): Promise<SystemDatabaseStoredResult | undefined>;
-
-  // Dynamic workflow schedules
-  createSchedule(schedule: WorkflowScheduleInternal, client?: PoolClient): Promise<void>;
-  listSchedules(
-    filters?: { status?: string | string[]; workflowName?: string | string[]; scheduleNamePrefix?: string | string[] },
-    client?: PoolClient,
-  ): Promise<WorkflowScheduleInternal[]>;
-  getSchedule(name: string, client?: PoolClient): Promise<WorkflowScheduleInternal | null>;
-  deleteSchedule(name: string, client?: PoolClient): Promise<void>;
-  setScheduleStatus(name: string, status: string, client?: PoolClient): Promise<void>;
-  applySchedules(schedules: WorkflowScheduleInternal[]): Promise<void>;
-}
-
 export interface WorkflowScheduleInternal {
   scheduleId: string;
   scheduleName: string;
@@ -929,7 +710,18 @@ function dbRetry(
   };
 }
 
-export class PostgresSystemDatabase implements SystemDatabase {
+/**
+ * General notes:
+ *   The responsibilities of the `SystemDatabase` are to store data for workflows, and
+ *     associated steps, transactions, messages, and events.  The system DB is
+ *     also the IPC mechanism that performs notifications when things change, for
+ *     example a receive is unblocked when a send occurs, or a cancel interrupts
+ *     the receive.
+ *   The `SystemDatabase` expects values in inputs/outputs/errors to be JSON.  However,
+ *     the serialization process of turning data into JSON or converting it back, should
+ *     be done elsewhere (executor), as it may require application-specific logic or extensions.
+ */
+export class SystemDatabase {
   readonly pool: Pool;
   readonly schemaName: string;
 

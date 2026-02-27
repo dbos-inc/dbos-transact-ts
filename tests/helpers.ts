@@ -2,7 +2,7 @@ import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { DBOS, StatusString } from '../src';
 import { sleepms } from '../src/utils';
 import { isValidDatabaseName, translateDbosConfig } from '../src/config';
-import { ensureSystemDatabase, PostgresSystemDatabase } from '../src/system_database';
+import { ensureSystemDatabase, SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { dropPGDatabase, maskDatabaseUrl } from '../src/datasource';
 import { Client } from 'pg';
@@ -133,7 +133,7 @@ export async function reexecuteWorkflowById(
   updateName?: string,
 ) {
   expect(DBOSExecutor.globalInstance).toBeDefined();
-  await (DBOSExecutor.globalInstance?.systemDatabase as PostgresSystemDatabase).setWorkflowStatus(
+  await (DBOSExecutor.globalInstance?.systemDatabase as SystemDatabase).setWorkflowStatus(
     workflowId,
     StatusString.PENDING,
     resetRecoveryAttempts,

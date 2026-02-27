@@ -28,12 +28,7 @@ import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
-import {
-  type SystemDatabase,
-  PostgresSystemDatabase,
-  type WorkflowStatusInternal,
-  type SystemDatabaseStoredResult,
-} from './system_database';
+import { SystemDatabase, type WorkflowStatusInternal, type SystemDatabaseStoredResult } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
   getRegisteredFunctionClassName,
@@ -262,7 +257,7 @@ export class DBOSExecutor {
       this.systemDatabase = systemDatabase;
     } else {
       this.logger.debug('Using Postgres system database');
-      this.systemDatabase = new PostgresSystemDatabase(
+      this.systemDatabase = new SystemDatabase(
         this.config.systemDatabaseUrl,
         this.logger,
         this.serializer,

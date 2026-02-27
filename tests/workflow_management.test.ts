@@ -11,7 +11,7 @@ import { Client } from 'pg';
 import { WorkflowHandle, WorkflowStatus } from '../src/workflow';
 import { randomUUID } from 'node:crypto';
 import { globalParams, sleepms } from '../src/utils';
-import { PostgresSystemDatabase } from '../src/system_database';
+import { SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getWorkflow, globalTimeout, listQueuedWorkflows, listWorkflows } from '../src/workflow_management';
 import {
@@ -253,7 +253,7 @@ describe('workflow-management-tests', () => {
 
     const logger = new GlobalLogger();
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
+    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
     try {
       const input: GetWorkflowsInput = {};
       const infos = await listWorkflows(sysdb, input);
@@ -508,7 +508,7 @@ describe('test-list-queues', () => {
 
     const logger = new GlobalLogger();
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
+    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, logger, DBOSJSON);
     try {
       let input: GetWorkflowsInput = {};
       let output: WorkflowStatus[] = [];
@@ -752,7 +752,7 @@ describe('test-list-queues', () => {
     // Wait one second, start one final workflow, then timeout all workflows started more than one second ago
     await sleepms(1000);
     const finalHandle = await DBOS.startWorkflow(TestGlobalTimeout).blockedWorkflow();
-    await globalTimeout(DBOSExecutor.globalInstance?.systemDatabase as PostgresSystemDatabase, Date.now() - 1000);
+    await globalTimeout(DBOSExecutor.globalInstance?.systemDatabase as SystemDatabase, Date.now() - 1000);
 
     // Verify all workflows started before the global timeout are cancelled
     for (const handle of handles) {
@@ -1225,7 +1225,7 @@ describe('test-list-steps', () => {
     expect(result1).toEqual(result2);
 
     expect(config.systemDatabaseUrl).toBeDefined();
-    const sysdb = new PostgresSystemDatabase(config.systemDatabaseUrl!, new GlobalLogger(), DBOSJSON);
+    const sysdb = new SystemDatabase(config.systemDatabaseUrl!, new GlobalLogger(), DBOSJSON);
     try {
       const wfs = await listWorkflows(sysdb, {});
       expect(wfs.length).toBe(2);
@@ -1978,7 +1978,7 @@ describe('wf-cancel-tests', () => {
     const result = await handle.getResult();
     expect(result).toBe(workflowId);
 
-    const sysDb = DBOSExecutor.globalInstance!.systemDatabase as PostgresSystemDatabase;
+    const sysDb = DBOSExecutor.globalInstance!.systemDatabase as SystemDatabase;
 
     // Export with children
     const exported = await sysDb.exportWorkflow(workflowId, true);

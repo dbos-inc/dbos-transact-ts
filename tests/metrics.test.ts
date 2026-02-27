@@ -1,6 +1,6 @@
 import { DBOS, DBOSConfig } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { PostgresSystemDatabase } from '../src/system_database';
+import { SystemDatabase } from '../src/system_database';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import assert from 'node:assert';
 
@@ -21,7 +21,7 @@ describe('metrics-tests', () => {
     await DBOS.shutdown();
   }, 10000);
 
-  const sysDB = () => DBOSExecutor.globalInstance!.systemDatabase as PostgresSystemDatabase;
+  const sysDB = () => DBOSExecutor.globalInstance!.systemDatabase as SystemDatabase;
 
   const testWorkflowA = DBOS.registerWorkflow(
     async () => {
