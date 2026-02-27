@@ -1978,7 +1978,7 @@ describe('wf-cancel-tests', () => {
     const result = await handle.getResult();
     expect(result).toBe(workflowId);
 
-    const sysDb = DBOSExecutor.globalInstance!.systemDatabase as SystemDatabase;
+    const sysDb = DBOSExecutor.globalInstance!.systemDatabase;
 
     // Export with children
     const exported = await sysDb.exportWorkflow(workflowId, true);

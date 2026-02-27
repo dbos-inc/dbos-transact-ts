@@ -5,7 +5,6 @@
 import { DBOS, DBOSConfig } from '../src';
 import { DBOSExecutor } from '../src/dbos-executor';
 import { DBOSWorkflowCancelledError } from '../src/error';
-import { SystemDatabase } from '../src/system_database';
 import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 
@@ -59,7 +58,7 @@ class PGSDBTests {
   }
 }
 
-const sysDB = () => DBOSExecutor.globalInstance!.systemDatabase as SystemDatabase;
+const sysDB = () => DBOSExecutor.globalInstance!.systemDatabase;
 
 async function doTheNonWFTimeoutTest() {
   let ct = Date.now();

@@ -1,7 +1,6 @@
 import { DBOS, WorkflowQueue } from '../src/';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { randomUUID } from 'node:crypto';
-import { SystemDatabase } from '../src/system_database';
 import { Client } from 'pg';
 
 const cockroachdbUrl = process.env.DBOS_COCKROACHDB_URL;
@@ -66,7 +65,7 @@ describeIf('cockroachdb', () => {
 
   beforeEach(async () => {
     await DBOS.launch();
-    const sysDB = DBOSExecutor.globalInstance!.systemDatabase as SystemDatabase;
+    const sysDB = DBOSExecutor.globalInstance!.systemDatabase;
     sysDB.dbPollingIntervalResultMs = 100;
     sysDB.dbPollingIntervalEventMs = 100;
   }, 60000);
