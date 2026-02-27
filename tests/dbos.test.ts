@@ -1,5 +1,5 @@
 import { WorkflowHandle, DBOS, DBOSSerializer, WorkflowQueue } from '../src/';
-import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, setUpDBOSTestSysDb, Event } from './helpers';
 import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
@@ -99,6 +99,131 @@ describe('dbos-tests', () => {
     await expect(DBOSTestClass.sendWorkflow(handle.workflowID)).resolves.toBeFalsy(); // return void.
     expect(await handle.getResult()).toBe(true);
   });
+
+  class SendIdempotencyTestClass {
+    static recvTwoMessagesEvent = new Event();
+    static recvWfEvent = new Event();
+    static recvStepEvent = new Event();
+
+    @DBOS.workflow()
+    static async recvTwoMsgs() {
+      const msg1 = await DBOS.recv<string>(undefined, 10);
+      SendIdempotencyTestClass.recvTwoMessagesEvent.set();
+      const msg2 = await DBOS.recv<string>(undefined, 2);
+      return `${msg1}-${msg2}`;
+    }
+
+    @DBOS.workflow()
+    static async recvTwoOnTopic() {
+      const msg1 = await DBOS.recv<string>('t', 10);
+      const msg2 = await DBOS.recv<string>('t', 10);
+      return `${msg1}-${msg2}`;
+    }
+
+    @DBOS.workflow()
+    static async recvTwoMsgsWfIdem() {
+      const msg1 = await DBOS.recv<string>(undefined, 10);
+      SendIdempotencyTestClass.recvWfEvent.set();
+      const msg2 = await DBOS.recv<string>(undefined, 2);
+      return `${msg1}-${msg2}`;
+    }
+
+    @DBOS.workflow()
+    static async sendWithKeyWF(dest: string, msg: string, key: string) {
+      await DBOS.send(dest, msg, undefined, key);
+    }
+
+    @DBOS.workflow()
+    static async recvOneMsg() {
+      return String(await DBOS.recv<string>('s', 10));
+    }
+
+    @DBOS.step()
+    static async sendFromStep(dest: string, msg: string, topic: string) {
+      await DBOS.send(dest, msg, topic);
+    }
+
+    @DBOS.workflow()
+    static async sendFromStepWF(dest: string, msg: string, topic: string) {
+      await SendIdempotencyTestClass.sendFromStep(dest, msg, topic);
+    }
+
+    @DBOS.workflow()
+    static async recvTwoMsgsAgain() {
+      const msg1 = await DBOS.recv<string>(undefined, 10);
+      SendIdempotencyTestClass.recvStepEvent.set();
+      const msg2 = await DBOS.recv<string>(undefined, 2);
+      return `${msg1}-${msg2}`;
+    }
+
+    @DBOS.step()
+    static async sendFromStepWithKey(dest: string, msg: string, key: string) {
+      await DBOS.send(dest, msg, undefined, key);
+    }
+
+    @DBOS.workflow()
+    static async sendFromStepIdemWF(dest: string, msg: string, key: string) {
+      await SendIdempotencyTestClass.sendFromStepWithKey(dest, msg, key);
+    }
+  }
+
+  test('send-idempotency-key', async () => {
+    // Test 1: Sending with the same idempotency key twice delivers only one message.
+    SendIdempotencyTestClass.recvTwoMessagesEvent.clear();
+    const destUUID = randomUUID();
+    const handle = await DBOS.startWorkflow(SendIdempotencyTestClass, { workflowID: destUUID }).recvTwoMsgs();
+
+    const idemKey = randomUUID();
+    await DBOS.send(destUUID, 'hello', undefined, idemKey);
+    await SendIdempotencyTestClass.recvTwoMessagesEvent.wait();
+    // Duplicate send with the same key should be silently ignored.
+    await DBOS.send(destUUID, 'hello_duplicate', undefined, idemKey);
+    // The second recv times out (returns null), proving only one message was delivered.
+    expect(await handle.getResult()).toBe('hello-null');
+
+    // Test 2: Different idempotency keys deliver separate messages.
+    const destUUID2 = randomUUID();
+    const handle2 = await DBOS.startWorkflow(SendIdempotencyTestClass, { workflowID: destUUID2 }).recvTwoOnTopic();
+
+    await DBOS.send(destUUID2, 'a', 't', randomUUID());
+    await DBOS.send(destUUID2, 'b', 't', randomUUID());
+    expect(await handle2.getResult()).toBe('a-b');
+
+    // Test 3: Send from a workflow with same idempotency key twice delivers only one message.
+    SendIdempotencyTestClass.recvWfEvent.clear();
+    const destUUIDwf = randomUUID();
+    const handleWf = await DBOS.startWorkflow(SendIdempotencyTestClass, { workflowID: destUUIDwf }).recvTwoMsgsWfIdem();
+
+    const wfIdemKey = randomUUID();
+    await SendIdempotencyTestClass.sendWithKeyWF(destUUIDwf, 'hello_wf', wfIdemKey);
+    await SendIdempotencyTestClass.recvWfEvent.wait();
+
+    // Duplicate send with the same key should be silently ignored.
+    await SendIdempotencyTestClass.sendWithKeyWF(destUUIDwf, 'hello_wf_dup', wfIdemKey);
+    // The second recv times out (returns null), proving only one message was delivered.
+    expect(await handleWf.getResult()).toBe('hello_wf-null');
+
+    // Test 4: Send from a step (without idempotency key).
+    const destUUID3 = randomUUID();
+    const handle3 = await DBOS.startWorkflow(SendIdempotencyTestClass, { workflowID: destUUID3 }).recvOneMsg();
+
+    await SendIdempotencyTestClass.sendFromStepWF(destUUID3, 'from_step', 's');
+    expect(await handle3.getResult()).toBe('from_step');
+
+    // Test 5: Send from a step with same idempotency key twice delivers only one message.
+    SendIdempotencyTestClass.recvStepEvent.clear();
+    const destUUID4 = randomUUID();
+    const handle4 = await DBOS.startWorkflow(SendIdempotencyTestClass, { workflowID: destUUID4 }).recvTwoMsgsAgain();
+
+    const stepIdemKey = randomUUID();
+    await SendIdempotencyTestClass.sendFromStepIdemWF(destUUID4, 'hello_step', stepIdemKey);
+    await SendIdempotencyTestClass.recvStepEvent.wait();
+
+    // Duplicate send with the same key should be silently ignored.
+    await SendIdempotencyTestClass.sendFromStepIdemWF(destUUID4, 'hello_step_dup', stepIdemKey);
+    // The second recv times out (returns null), proving only one message was delivered.
+    expect(await handle4.getResult()).toBe('hello_step-null');
+  }, 30000);
 
   test('simple-workflow-events', async () => {
     const handle: WorkflowHandle<number> = await DBOS.startWorkflow(DBOSTestClass).setEventWorkflow();
@@ -489,7 +614,7 @@ describe('dbos-tests', () => {
         systemDatabaseUrl: config.systemDatabaseUrl!,
       });
       const workflows = await badClient.listWorkflows({});
-      assert.equal(workflows.length, 5);
+      assert.equal(workflows.length, 3);
       assert.equal(workflows[0].output, jsonSerializer.stringify(message));
       const badClientSteps = await badClient.listWorkflowSteps(workflows[0].workflowID);
       assert.ok(badClientSteps);

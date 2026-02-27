@@ -1112,21 +1112,13 @@ export class DBOS {
     options?: SendOptions,
   ): Promise<void> {
     ensureDBOSIsLaunched('send');
-    if (DBOS.isWithinWorkflow()) {
-      if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.send` inside a `step` or `transaction`');
-      }
-      if (idempotencyKey) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `DBOS.send` with an idempotency key from within a workflow',
-        );
-      }
+    const sermsg = serializeValue(
+      message,
+      DBOS.#executor.serializer,
+      options?.serializationType ?? DBOS.defaultSerializationType,
+    );
+    if (DBOS.isInWorkflow()) {
       const functionID: number = functionIDGetIncrement();
-      const sermsg = serializeValue(
-        message,
-        DBOS.#executor.serializer,
-        options?.serializationType ?? DBOS.defaultSerializationType,
-      );
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
         functionID,
@@ -1134,15 +1126,17 @@ export class DBOS {
         sermsg.serializedValue,
         topic,
         sermsg.serialization,
+        idempotencyKey,
+      );
+    } else {
+      return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
+        destinationID,
+        sermsg.serializedValue,
+        topic,
+        sermsg.serialization,
+        idempotencyKey,
       );
     }
-    return DBOS.#executor.runSendTempWF(
-      destinationID,
-      message,
-      topic,
-      idempotencyKey,
-      options?.serializationType ?? DBOS.defaultSerializationType,
-    ); // Temp WF variant
   }
 
   /**

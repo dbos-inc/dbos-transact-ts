@@ -251,5 +251,11 @@ export function allMigrations(
         )`,
       ],
     },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."notifications" ADD COLUMN "consumed" BOOLEAN NOT NULL DEFAULT false`,
+        `CREATE INDEX "idx_notifications_unconsumed" ON "${schemaName}"."notifications" ("destination_uuid", "topic") WHERE consumed = false`,
+      ],
+    },
   ];
 }

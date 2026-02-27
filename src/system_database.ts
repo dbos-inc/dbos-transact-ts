@@ -174,6 +174,14 @@ export interface SystemDatabase {
     message: string | null,
     topic: string | undefined,
     serialization: string | null,
+    messageUUID?: string,
+  ): Promise<void>;
+  sendDirect(
+    destinationID: string,
+    message: string | null,
+    topic: string | undefined,
+    serialization: string | null,
+    messageUUID?: string,
   ): Promise<void>;
   recv(
     workflowID: string,
@@ -1457,16 +1465,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
     message: string | null,
     topic: string | undefined,
     serialization: string | null,
+    messageUUID?: string,
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
+    messageUUID = messageUUID ?? randomUUID();
     const client: PoolClient = await this.pool.connect();
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
         await client.query(
-          `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization) VALUES ($1, $2, $3, $4);`,
-          [destinationID, topic, message, serialization],
+          `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization, message_uuid)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (message_uuid) DO NOTHING;`,
+          [destinationID, topic, message, serialization, messageUUID],
         );
         return undefined;
       });
@@ -1482,6 +1494,32 @@ export class PostgresSystemDatabase implements SystemDatabase {
       }
     } finally {
       client.release();
+    }
+  }
+
+  @dbRetry()
+  async sendDirect(
+    destinationID: string,
+    message: string | null,
+    topic: string | undefined,
+    serialization: string | null,
+    messageUUID?: string,
+  ): Promise<void> {
+    topic = topic ?? this.nullTopic;
+    messageUUID = messageUUID ?? randomUUID();
+    try {
+      await this.pool.query(
+        `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization, message_uuid)
+         VALUES ($1, $2, $3, $4, $5)
+         ON CONFLICT (message_uuid) DO NOTHING;`,
+        [destinationID, topic, message, serialization, messageUUID],
+      );
+    } catch (error) {
+      const err: DatabaseError = error as DatabaseError;
+      if (err.code === '23503') {
+        throw new DBOSNonExistentWorkflowError(`Sent to non-existent destination workflow UUID: ${destinationID}`);
+      }
+      throw err;
     }
   }
 
@@ -1525,7 +1563,7 @@ export class PostgresSystemDatabase implements SystemDatabase {
         // Check if the key is already in the DB, then wait for the notification if it isn't.
         const initRecvRows = (
           await this.pool.query<notifications>(
-            `SELECT topic FROM "${this.schemaName}".notifications WHERE destination_uuid=$1 AND topic=$2;`,
+            `SELECT topic FROM "${this.schemaName}".notifications WHERE destination_uuid=$1 AND topic=$2 AND consumed = false;`,
             [workflowID, topic],
           )
         ).rows;
@@ -1575,14 +1613,17 @@ export class PostgresSystemDatabase implements SystemDatabase {
       await client.query(`BEGIN ISOLATION LEVEL READ COMMITTED`);
       const finalRecvRows = (
         await client.query<notifications>(
-          `DELETE FROM "${this.schemaName}".notifications
+          `UPDATE "${this.schemaName}".notifications
+        SET consumed = true
         WHERE destination_uuid = $1
           AND topic = $2
+          AND consumed = false
           AND message_uuid = (
             SELECT message_uuid
             FROM "${this.schemaName}".notifications
             WHERE destination_uuid = $1
               AND topic = $2
+              AND consumed = false
             ORDER BY created_at_epoch_ms ASC
             LIMIT 1
           )
