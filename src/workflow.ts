@@ -1,5 +1,5 @@
 /* eslint-disable @typescript-eslint/no-explicit-any */
-import { SystemDatabase, WorkflowStatusInternal } from './system_database';
+import { type SystemDatabase, WorkflowStatusInternal } from './system_database';
 import { ConfiguredInstance } from './decorators';
 import { deserializePositionalArgs, registerSerializationRecipe } from './serialization';
 import { DBOS, runInternalStep } from './dbos';

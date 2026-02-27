@@ -13,7 +13,6 @@ import {
 import { DBOSJSON, DBOSPortableJSON } from '../src/serialization';
 import { randomUUID } from 'node:crypto';
 import { DBOSExecutor } from '../src/dbos-executor';
-import { PostgresSystemDatabase } from '../src/system_database';
 import { z } from 'zod';
 
 const _queue = new WorkflowQueue('testq');
@@ -249,7 +248,7 @@ describe('portable-serizlization-tests', () => {
     await checkStreamSer(wfhp.workflowID, 'pstream', DBOSPortableJSON.name());
 
     // Test copy+paste workflow
-    const sysDb = DBOSExecutor.globalInstance!.systemDatabase as PostgresSystemDatabase;
+    const sysDb = DBOSExecutor.globalInstance!.systemDatabase;
     // Export with children
     const exported = await sysDb.exportWorkflow(wfhp.workflowID, true);
 
