@@ -174,6 +174,7 @@ export interface SystemDatabase {
     message: string | null,
     topic: string | undefined,
     serialization: string | null,
+    messageUUID?: string,
   ): Promise<void>;
   sendDirect(
     destinationID: string,
@@ -1464,16 +1465,20 @@ export class PostgresSystemDatabase implements SystemDatabase {
     message: string | null,
     topic: string | undefined,
     serialization: string | null,
+    messageUUID?: string,
   ): Promise<void> {
     topic = topic ?? this.nullTopic;
+    messageUUID = messageUUID ?? randomUUID();
     const client: PoolClient = await this.pool.connect();
 
     try {
       await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
       await this.#runAndRecordResult(client, DBOS_FUNCNAME_SEND, workflowID, functionID, async () => {
         await client.query(
-          `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization) VALUES ($1, $2, $3, $4);`,
-          [destinationID, topic, message, serialization],
+          `INSERT INTO "${this.schemaName}".notifications (destination_uuid, topic, message, serialization, message_uuid)
+           VALUES ($1, $2, $3, $4, $5)
+           ON CONFLICT (message_uuid) DO NOTHING;`,
+          [destinationID, topic, message, serialization, messageUUID],
         );
         return undefined;
       });

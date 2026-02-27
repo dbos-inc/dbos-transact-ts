@@ -1118,11 +1118,6 @@ export class DBOS {
       options?.serializationType ?? DBOS.defaultSerializationType,
     );
     if (DBOS.isInWorkflow()) {
-      if (idempotencyKey) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `DBOS.send` with an idempotency key from within a workflow',
-        );
-      }
       const functionID: number = functionIDGetIncrement();
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
@@ -1131,6 +1126,7 @@ export class DBOS {
         sermsg.serializedValue,
         topic,
         sermsg.serialization,
+        idempotencyKey,
       );
     } else {
       return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
