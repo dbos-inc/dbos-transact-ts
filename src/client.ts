@@ -1,6 +1,5 @@
 import {
-  PostgresSystemDatabase,
-  type SystemDatabase,
+  SystemDatabase,
   type WorkflowStatusInternal,
   type WorkflowScheduleInternal,
   DBOS_STREAM_CLOSED_SENTINEL,
@@ -172,7 +171,7 @@ export class DBOSClient {
     systemDatabaseSchemaName?: string,
   ) {
     this.logger = new GlobalLogger();
-    this.systemDatabase = new PostgresSystemDatabase(
+    this.systemDatabase = new SystemDatabase(
       systemDatabaseUrl,
       this.logger,
       serializer,
