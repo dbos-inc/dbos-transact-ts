@@ -122,6 +122,8 @@ export interface EnqueueOptions {
   priority?: number;
   // Partition key for partitioned queues
   queuePartitionKey?: string;
+  // Application version to set on the enqueued workflow (overrides the current app version)
+  applicationVersion?: string;
 }
 
 export interface ExistenceCheck {

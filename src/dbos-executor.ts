@@ -459,7 +459,7 @@ export class DBOSExecutor {
       authenticatedRoles: pctx?.authenticatedRoles || [],
       request: pctx?.request || {},
       executorId: globalParams.executorID,
-      applicationVersion: globalParams.appVersion,
+      applicationVersion: params.enqueueOptions?.applicationVersion ?? globalParams.appVersion,
       applicationID: globalParams.appID,
       createdAt: Date.now(), // Remember the start time of this workflow,
       timeoutMS: timeoutMS,

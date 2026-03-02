@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { DBOS, DBOSClient, StatusString } from '../src';
+import { DBOS, DBOSClient, StatusString, WorkflowQueue } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 
@@ -278,5 +278,52 @@ describe('test-app-version', () => {
     } finally {
       await client.destroy();
     }
+  });
+
+  test('test-enqueue-with-custom-version', async () => {
+    const queue = new WorkflowQueue('version-enqueue-queue');
+
+    class TestEnqueueVersion {
+      @DBOS.workflow()
+      static async versionedWorkflow() {
+        await Promise.resolve();
+        return 42;
+      }
+    }
+
+    const v1 = 'enqueue-v1';
+    const v2 = 'enqueue-v2';
+
+    // Launch on v1
+    config.applicationVersion = v1;
+    await DBOS.shutdown();
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // Enqueue a workflow targeting v2
+    const handle = await DBOS.startWorkflow(TestEnqueueVersion, {
+      queueName: queue.name,
+      enqueueOptions: { applicationVersion: v2 },
+    }).versionedWorkflow();
+
+    // The workflow should be enqueued but not dequeued by v1
+    const status = await handle.getStatus();
+    expect(status?.status).toBe(StatusString.ENQUEUED);
+    expect(status?.applicationVersion).toBe(v2);
+
+    // Shutdown and relaunch on v2
+    await DBOS.shutdown();
+    config = generateDBOSTestConfig();
+    config.applicationVersion = v2;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // The workflow should now complete on v2
+    const result = await handle.getResult();
+    expect(result).toBe(42);
+
+    const finalStatus = await handle.getStatus();
+    expect(finalStatus?.status).toBe(StatusString.SUCCESS);
+    expect(finalStatus?.applicationVersion).toBe(v2);
   });
 });
