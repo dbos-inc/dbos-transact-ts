@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { DBOS, StatusString } from '../src';
+import { DBOS, DBOSClient, StatusString } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 
@@ -134,5 +134,149 @@ describe('test-app-version', () => {
     // Verify those values are set on workflows
     expect(status?.applicationVersion).toBe(testVersion);
     expect(status?.executorId).toBe(testExecutorID);
+  });
+
+  test('test-version-registration-on-launch', async () => {
+    class _TestVersionReg {
+      @DBOS.workflow()
+      static async testWorkflow() {
+        return Promise.resolve(0);
+      }
+    }
+
+    // Launch with a specific version
+    const v1 = 'version-reg-v1';
+    config.applicationVersion = v1;
+    await DBOS.shutdown();
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // The version should be registered and be the latest
+    const latest = await DBOS.getLatestApplicationVersion();
+    expect(latest.versionName).toBe(v1);
+
+    const versions = await DBOS.listApplicationVersions();
+    expect(versions.length).toBeGreaterThanOrEqual(1);
+    expect(versions[0].versionName).toBe(v1);
+    expect(versions[0].versionId).toBeDefined();
+    expect(versions[0].versionTimestamp).toBeGreaterThan(0);
+    expect(versions[0].createdAt).toBeGreaterThan(0);
+  });
+
+  test('test-list-and-set-latest-version', async () => {
+    class _TestListVersions {
+      @DBOS.workflow()
+      static async testWorkflow() {
+        return Promise.resolve(0);
+      }
+    }
+
+    // Launch with version v1
+    const v1 = 'list-versions-v1';
+    config.applicationVersion = v1;
+    await DBOS.shutdown();
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // Shutdown and launch with version v2
+    const v2 = 'list-versions-v2';
+    await DBOS.shutdown();
+    config = generateDBOSTestConfig();
+    config.applicationVersion = v2;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // v2 should be the latest (launched most recently)
+    // Both should appear in the list
+    const versions = await DBOS.listApplicationVersions();
+    const versionNames = versions.map((v) => v.versionName);
+    expect(versionNames).toContain(v1);
+    expect(versionNames).toContain(v2);
+    expect(versions[0].versionName).toBe(v2);
+
+    const latest = await DBOS.getLatestApplicationVersion();
+    expect(latest.versionName).toBe(v2);
+
+    // Set v1 back as latest
+    await DBOS.setLatestApplicationVersion(v1);
+    const latestAgain = await DBOS.getLatestApplicationVersion();
+    expect(latestAgain.versionName).toBe(v1);
+  });
+
+  test('test-idempotent-version-creation', async () => {
+    class _TestIdempotent {
+      @DBOS.workflow()
+      static async testWorkflow() {
+        return Promise.resolve(0);
+      }
+    }
+
+    const v1 = 'idempotent-v1';
+    config.applicationVersion = v1;
+    await DBOS.shutdown();
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // Creating the same version again should be a no-op (relaunch with same version)
+    const versionsBefore = await DBOS.listApplicationVersions();
+    const v1Count = versionsBefore.filter((v) => v.versionName === v1).length;
+    expect(v1Count).toBe(1);
+
+    await DBOS.shutdown();
+    config = generateDBOSTestConfig();
+    config.applicationVersion = v1;
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    const versionsAfter = await DBOS.listApplicationVersions();
+    const v1CountAfter = versionsAfter.filter((v) => v.versionName === v1).length;
+    expect(v1CountAfter).toBe(1);
+  });
+
+  test('test-client-version-api', async () => {
+    class _TestClientVersions {
+      @DBOS.workflow()
+      static async testWorkflow() {
+        return Promise.resolve(0);
+      }
+    }
+
+    // Launch with a version
+    const v1 = 'client-version-v1';
+    config.applicationVersion = v1;
+    await DBOS.shutdown();
+    DBOS.setConfig(config);
+    await DBOS.launch();
+
+    // Create a client and test version API
+    const client = await DBOSClient.create({
+      systemDatabaseUrl: config.systemDatabaseUrl!,
+    });
+    try {
+      const versions = await client.listApplicationVersions();
+      expect(versions.length).toBeGreaterThanOrEqual(1);
+      expect(versions.map((v) => v.versionName)).toContain(v1);
+
+      const latest = await client.getLatestApplicationVersion();
+      expect(latest.versionName).toBe(v1);
+
+      // Shutdown and launch with v2, then verify via client
+      const v2 = 'client-version-v2';
+      await DBOS.shutdown();
+      config = generateDBOSTestConfig();
+      config.applicationVersion = v2;
+      DBOS.setConfig(config);
+      await DBOS.launch();
+
+      const latestAfter = await client.getLatestApplicationVersion();
+      expect(latestAfter.versionName).toBe(v2);
+
+      // Set v1 back as latest via client
+      await client.setLatestApplicationVersion(v1);
+      const latestReverted = await client.getLatestApplicationVersion();
+      expect(latestReverted.versionName).toBe(v1);
+    } finally {
+      await client.destroy();
+    }
   });
 });
