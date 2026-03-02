@@ -101,6 +101,7 @@ import {
   DBOS_STREAM_CLOSED_SENTINEL,
   DBOS_FUNCNAME_WRITESTREAM,
   WorkflowScheduleInternal,
+  VersionInfo,
 } from './system_database';
 import { PoolClient } from 'pg';
 import {
@@ -329,6 +330,15 @@ export class DBOS {
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
+
+    // Register the current application version
+    await executor.systemDatabase.createApplicationVersion(globalParams.appVersion);
+    const latest = await executor.systemDatabase.getLatestApplicationVersion();
+    if (latest.versionName !== globalParams.appVersion) {
+      executor.logger.warn(
+        `Current version '${globalParams.appVersion}' is not the latest version. Latest version is '${latest.versionName}'.`,
+      );
+    }
 
     await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
     for (const [_n, ds] of transactionalDataSources) {
@@ -2092,5 +2102,33 @@ export class DBOS {
     const executor = DBOSExecutor.globalInstance!;
     const workflowIDs = await backfillScheduleImpl(executor.systemDatabase, executor.serializer, name, start, end);
     return workflowIDs.map((id) => new RetrievedHandle(executor.systemDatabase, id));
+  }
+
+  // ==================== Application Versions ====================
+
+  /**
+   * List all registered application versions, ordered by version_timestamp descending (latest first).
+   */
+  static async listApplicationVersions(): Promise<VersionInfo[]> {
+    ensureDBOSIsLaunched('listApplicationVersions');
+    return await DBOSExecutor.globalInstance!.systemDatabase.listApplicationVersions();
+  }
+
+  /**
+   * Get the latest application version (the one with the highest version_timestamp).
+   * Throws if no versions are registered.
+   */
+  static async getLatestApplicationVersion(): Promise<VersionInfo> {
+    ensureDBOSIsLaunched('getLatestApplicationVersion');
+    return await DBOSExecutor.globalInstance!.systemDatabase.getLatestApplicationVersion();
+  }
+
+  /**
+   * Set a version as the latest by updating its version_timestamp to now.
+   * @param versionName - The version name to promote to latest
+   */
+  static async setLatestApplicationVersion(versionName: string): Promise<void> {
+    ensureDBOSIsLaunched('setLatestApplicationVersion');
+    await DBOSExecutor.globalInstance!.systemDatabase.updateApplicationVersionTimestamp(versionName, Date.now());
   }
 }

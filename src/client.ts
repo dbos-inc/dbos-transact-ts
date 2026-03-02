@@ -2,6 +2,7 @@ import {
   SystemDatabase,
   type WorkflowStatusInternal,
   type WorkflowScheduleInternal,
+  type VersionInfo,
   DBOS_STREAM_CLOSED_SENTINEL,
   DEFAULT_POOL_SIZE,
 } from './system_database';
@@ -526,5 +527,19 @@ export class DBOSClient {
   async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
     const workflowIDs = await backfillSchedule(this.systemDatabase, this.serializer, name, start, end);
     return workflowIDs.map((id) => new ClientHandle(this.systemDatabase, id));
+  }
+
+  // ==================== Application Versions ====================
+
+  async listApplicationVersions(): Promise<VersionInfo[]> {
+    return this.systemDatabase.listApplicationVersions();
+  }
+
+  async getLatestApplicationVersion(): Promise<VersionInfo> {
+    return this.systemDatabase.getLatestApplicationVersion();
+  }
+
+  async setLatestApplicationVersion(versionName: string): Promise<void> {
+    await this.systemDatabase.updateApplicationVersionTimestamp(versionName, Date.now());
   }
 }

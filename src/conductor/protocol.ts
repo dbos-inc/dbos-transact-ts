@@ -26,6 +26,8 @@ export enum MessageType {
   RESUME_SCHEDULE = 'resume_schedule',
   BACKFILL_SCHEDULE = 'backfill_schedule',
   TRIGGER_SCHEDULE = 'trigger_schedule',
+  LIST_APPLICATION_VERSIONS = 'list_application_versions',
+  SET_LATEST_APPLICATION_VERSION = 'set_latest_application_version',
 }
 
 export interface BaseMessage {
@@ -631,5 +633,48 @@ export class BackfillScheduleResponse extends BaseResponse {
   constructor(request_id: string, workflow_ids: string[], error_message?: string) {
     super(MessageType.BACKFILL_SCHEDULE, request_id, error_message);
     this.workflow_ids = workflow_ids;
+  }
+}
+
+// --- Application Versions protocol messages ---
+
+export interface ApplicationVersionOutput {
+  version_id: string;
+  version_name: string;
+  version_timestamp: number;
+  created_at: number;
+}
+
+export class ListApplicationVersionsRequest implements BaseMessage {
+  type = MessageType.LIST_APPLICATION_VERSIONS;
+  request_id: string;
+  constructor(request_id: string) {
+    this.request_id = request_id;
+  }
+}
+
+export class ListApplicationVersionsResponse extends BaseResponse {
+  output: ApplicationVersionOutput[];
+  constructor(request_id: string, output: ApplicationVersionOutput[], error_message?: string) {
+    super(MessageType.LIST_APPLICATION_VERSIONS, request_id, error_message);
+    this.output = output;
+  }
+}
+
+export class SetLatestApplicationVersionRequest implements BaseMessage {
+  type = MessageType.SET_LATEST_APPLICATION_VERSION;
+  request_id: string;
+  version_name: string;
+  constructor(request_id: string, version_name: string) {
+    this.request_id = request_id;
+    this.version_name = version_name;
+  }
+}
+
+export class SetLatestApplicationVersionResponse extends BaseResponse {
+  success: boolean;
+  constructor(request_id: string, success: boolean, error_message?: string) {
+    super(MessageType.SET_LATEST_APPLICATION_VERSION, request_id, error_message);
+    this.success = success;
   }
 }
