@@ -4,7 +4,12 @@ import { randomUUID } from 'node:crypto';
 import { StatusString } from '../src/workflow';
 import { DBOSConfig } from '../src/dbos-executor';
 import { Client, Pool } from 'pg';
-import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInitializationError } from '../src/error';
+import {
+  DBOSWorkflowCancelledError,
+  DBOSAwaitedWorkflowCancelledError,
+  DBOSInitializationError,
+  DBOSDataValidationError,
+} from '../src/error';
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
 import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
@@ -864,5 +869,19 @@ describe('custom-pool-test', () => {
     });
     const clientHandle = client.retrieveWorkflow(handle.workflowID);
     assert.equal(await clientHandle.getResult(), message);
+  });
+});
+
+describe('timeout-validation-tests', () => {
+  test('sleep rejects timeout exceeding 32-bit max', async () => {
+    await assert.rejects(() => DBOS.sleep(2_147_483_648), DBOSDataValidationError);
+  });
+
+  test('recv rejects timeout exceeding 32-bit max', async () => {
+    await assert.rejects(() => DBOS.recv('topic', 2_147_484), DBOSDataValidationError);
+  });
+
+  test('getEvent rejects timeout exceeding 32-bit max', async () => {
+    await assert.rejects(() => DBOS.getEvent('wfid', 'key', 2_147_484), DBOSDataValidationError);
   });
 });

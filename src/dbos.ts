@@ -32,6 +32,7 @@ import {
   DBOSConflictingRegistrationError,
   DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
   DBOSUnexpectedStepError,
+  DBOSDataValidationError,
 } from './error';
 import {
   getDbosConfig,
@@ -81,7 +82,7 @@ import {
   clearAllRegistrations,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { defaultEnableOTLP, globalParams, sleepms } from './utils';
+import { defaultEnableOTLP, globalParams, MAX_TIMEOUT_MS, sleepms } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -858,6 +859,11 @@ export class DBOS {
    * @param durationMS - Length of sleep, in milliseconds.
    */
   static async sleepms(durationMS: number): Promise<void> {
+    if (durationMS > MAX_TIMEOUT_MS) {
+      throw new DBOSDataValidationError(
+        `DBOS.sleep duration exceeds maximum allowed timeout in Node.js of ${MAX_TIMEOUT_MS}ms `,
+      );
+    }
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       if (DBOS.isInTransaction()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.sleep` inside a `transaction`');
@@ -1162,6 +1168,11 @@ export class DBOS {
    * @returns Any message received, or `null` if the timeout expires
    */
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
+    if (timeoutSeconds !== undefined && timeoutSeconds * 1000 > MAX_TIMEOUT_MS) {
+      throw new DBOSDataValidationError(
+        `DBOS.recv timeout exceeds maximum allowed timeout in Node.js of ${MAX_TIMEOUT_MS}ms`,
+      );
+    }
     ensureDBOSIsLaunched('recv');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1230,6 +1241,11 @@ export class DBOS {
    * @returns The value to associate with `key`, or `null` if the timeout is hit
    */
   static async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
+    if (timeoutSeconds !== undefined && timeoutSeconds * 1000 > MAX_TIMEOUT_MS) {
+      throw new DBOSDataValidationError(
+        `DBOS.getEvent timeout exceeds maximum allowed timeout in Node.js of ${MAX_TIMEOUT_MS}ms`,
+      );
+    }
     ensureDBOSIsLaunched('getEvent');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
