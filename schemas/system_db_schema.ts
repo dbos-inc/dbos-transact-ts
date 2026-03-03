@@ -98,6 +98,13 @@ export interface workflow_schedules {
   context: string;
 }
 
+export interface application_versions {
+  version_id: string;
+  version_name: string;
+  version_timestamp: number;
+  created_at: number;
+}
+
 // This is the deserialized version of operation_outputs
 export interface step_info {
   function_id: number;

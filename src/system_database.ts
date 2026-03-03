@@ -20,6 +20,7 @@ import {
   streams,
   event_dispatch_kv,
   workflow_schedules,
+  application_versions,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
 import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
@@ -75,6 +76,13 @@ export interface WorkflowScheduleInternal {
   context: string; // JSON-serialized
 }
 
+export interface VersionInfo {
+  versionId: string;
+  versionName: string;
+  versionTimestamp: number;
+  createdAt: number;
+}
+
 // For internal use, not serialized status.
 export interface WorkflowStatusInternal {
   workflowUUID: string;
@@ -114,6 +122,8 @@ export interface EnqueueOptions {
   priority?: number;
   // Partition key for partitioned queues
   queuePartitionKey?: string;
+  // Application version to set on the enqueued workflow (overrides the current app version)
+  applicationVersion?: string;
 }
 
 export interface ExistenceCheck {
@@ -2614,6 +2624,59 @@ export class SystemDatabase {
     } finally {
       client.release();
     }
+  }
+
+  // ==================== Application Versions ====================
+  async createApplicationVersion(versionName: string): Promise<void> {
+    const versionId = randomUUID();
+    await this.pool.query(
+      `INSERT INTO "${this.schemaName}".application_versions (version_id, version_name)
+       VALUES ($1, $2)
+       ON CONFLICT (version_name) DO NOTHING`,
+      [versionId, versionName],
+    );
+  }
+
+  async updateApplicationVersionTimestamp(versionName: string, newTimestamp: number): Promise<void> {
+    await this.pool.query(
+      `UPDATE "${this.schemaName}".application_versions
+       SET version_timestamp = $1
+       WHERE version_name = $2`,
+      [newTimestamp, versionName],
+    );
+  }
+
+  async listApplicationVersions(): Promise<VersionInfo[]> {
+    const { rows } = await this.pool.query<application_versions>(
+      `SELECT version_id, version_name, version_timestamp, created_at
+       FROM "${this.schemaName}".application_versions
+       ORDER BY version_timestamp DESC`,
+    );
+    return rows.map((r) => ({
+      versionId: r.version_id,
+      versionName: r.version_name,
+      versionTimestamp: Number(r.version_timestamp),
+      createdAt: Number(r.created_at),
+    }));
+  }
+
+  async getLatestApplicationVersion(): Promise<VersionInfo> {
+    const { rows } = await this.pool.query<application_versions>(
+      `SELECT version_id, version_name, version_timestamp, created_at
+       FROM "${this.schemaName}".application_versions
+       ORDER BY version_timestamp DESC
+       LIMIT 1`,
+    );
+    if (rows.length === 0) {
+      throw new DBOSInitializationError('No application versions found');
+    }
+    const r = rows[0];
+    return {
+      versionId: r.version_id,
+      versionName: r.version_name,
+      versionTimestamp: Number(r.version_timestamp),
+      createdAt: Number(r.created_at),
+    };
   }
 
   // ==================== Internal ====================

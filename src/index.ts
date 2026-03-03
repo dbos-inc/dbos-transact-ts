@@ -43,3 +43,5 @@ export { StepConfig } from './step';
 export { FunctionName, ConfiguredInstance, MethodParameter } from './decorators';
 
 export { DBOSConfig, DBOSExternalState } from './dbos-executor';
+
+export { VersionInfo } from './system_database';
