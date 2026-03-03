@@ -1168,11 +1168,6 @@ export class DBOS {
    * @returns Any message received, or `null` if the timeout expires
    */
   static async recv<T>(topic?: string, timeoutSeconds?: number): Promise<T | null> {
-    if (timeoutSeconds !== undefined && timeoutSeconds * 1000 > MAX_TIMEOUT_MS) {
-      throw new DBOSDataValidationError(
-        `DBOS.recv timeout exceeds maximum allowed timeout in Node.js of ${MAX_TIMEOUT_MS}ms`,
-      );
-    }
     ensureDBOSIsLaunched('recv');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
@@ -1241,11 +1236,6 @@ export class DBOS {
    * @returns The value to associate with `key`, or `null` if the timeout is hit
    */
   static async getEvent<T>(workflowID: string, key: string, timeoutSeconds?: number): Promise<T | null> {
-    if (timeoutSeconds !== undefined && timeoutSeconds * 1000 > MAX_TIMEOUT_MS) {
-      throw new DBOSDataValidationError(
-        `DBOS.getEvent timeout exceeds maximum allowed timeout in Node.js of ${MAX_TIMEOUT_MS}ms`,
-      );
-    }
     ensureDBOSIsLaunched('getEvent');
     if (DBOS.isWithinWorkflow()) {
       if (!DBOS.isInWorkflow()) {
