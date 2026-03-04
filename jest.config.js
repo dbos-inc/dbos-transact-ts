@@ -1,6 +1,9 @@
 /** @type {import('ts-jest').JestConfigWithTsJest} */
 module.exports = {
   preset: 'ts-jest',
+  transform: {
+    '^.+\\.tsx?$': ['ts-jest', { diagnostics: { ignoreCodes: [151002] } }],
+  },
   testEnvironment: 'node',
   testRegex: '((\\.|/)(test|spec))\\.(ts|js)?$',
   testPathIgnorePatterns: ['packages/*', 'tests/bundler-test/node_modules', 'tests/bundler-test/dist'],

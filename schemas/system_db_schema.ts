@@ -36,6 +36,7 @@ export interface notifications {
   destination_uuid: string;
   topic: string;
   message: string;
+  consumed: boolean;
   serialization: SysDBSerializationFormat | null;
 }
 
@@ -95,6 +96,13 @@ export interface workflow_schedules {
   schedule: string;
   status: string;
   context: string;
+}
+
+export interface application_versions {
+  version_id: string;
+  version_name: string;
+  version_timestamp: number;
+  created_at: number;
 }
 
 // This is the deserialized version of operation_outputs

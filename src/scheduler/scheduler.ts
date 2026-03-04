@@ -2,7 +2,7 @@ import { type SystemDatabase, WorkflowScheduleInternal, type WorkflowStatusInter
 import { DBOSSerializer, serializeArgs } from '../serialization';
 import { randomUUID } from 'crypto';
 import { DBOS } from '..';
-import { DBOSLifecycleCallback, getFunctionRegistrationByName } from '../decorators';
+import { DBOSLifecycleCallback } from '../decorators';
 import { INTERNAL_QUEUE_NAME } from '../utils';
 import { TimeMatcher } from './crontab';
 import { DBOSExecutor } from '../dbos-executor';
@@ -150,16 +150,17 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
     serializer: DBOSSerializer,
     signal: AbortSignal,
   ): Promise<void> {
-    // Look up the registered workflow function
-    const methReg = getFunctionRegistrationByName(workflowClassName, workflowName);
-    if (!methReg || !methReg.registeredFunction) {
-      DBOS.logger.warn(
-        `Dynamic scheduler: workflow ${workflowClassName}.${workflowName} for schedule "${scheduleName}" is not registered; skipping`,
-      );
-      return;
-    }
-
     const timeMatcher = new TimeMatcher(cronExpression);
+
+    const sched: WorkflowScheduleInternal = {
+      scheduleId: '',
+      scheduleName,
+      workflowName,
+      workflowClassName,
+      schedule: cronExpression,
+      status: 'ACTIVE',
+      context: serializedContext,
+    };
 
     let lastExec = new Date().setMilliseconds(0);
 
@@ -198,9 +199,9 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
           lastExec = nextExec;
           continue;
         }
-        const wfParams = { workflowID, queueName: INTERNAL_QUEUE_NAME };
         const context = serializer.parse(serializedContext);
-        await DBOS.startWorkflow(methReg.registeredFunction, wfParams)(date, context);
+        const systemDatabase = DBOSExecutor.globalInstance!.systemDatabase;
+        await enqueueScheduledWorkflow(systemDatabase, serializer, sched, workflowID, date, context);
       } catch (e) {
         DBOS.logger.warn(
           `Dynamic scheduler: error firing workflow for schedule "${scheduleName}": ${(e as Error).message}`,
@@ -238,7 +239,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
   }
 }
 
-function enqueueScheduledWorkflow(
+async function enqueueScheduledWorkflow(
   systemDatabase: SystemDatabase,
   serializer: DBOSSerializer,
   sched: WorkflowScheduleInternal,
@@ -247,12 +248,15 @@ function enqueueScheduledWorkflow(
   context: unknown,
 ): Promise<void> {
   const serparam = serializeArgs([scheduledDate, context], undefined, serializer, undefined);
+  // Always enqueue scheduled workflows to the latest application version
+  const latestVersion = await DBOS.getLatestApplicationVersion();
   const internalStatus: WorkflowStatusInternal = {
     workflowUUID: workflowID,
     status: StatusString.ENQUEUED,
     workflowName: sched.workflowName,
     workflowClassName: sched.workflowClassName,
     workflowConfigName: '',
+    applicationVersion: latestVersion.versionName,
     queueName: INTERNAL_QUEUE_NAME,
     authenticatedUser: '',
     output: null,
@@ -269,7 +273,8 @@ function enqueueScheduledWorkflow(
     queuePartitionKey: undefined,
     serialization: serparam.serialization,
   };
-  return systemDatabase.initWorkflowStatus(internalStatus, null).then(() => {});
+  await systemDatabase.initWorkflowStatus(internalStatus, null);
+  return;
 }
 
 export async function triggerSchedule(

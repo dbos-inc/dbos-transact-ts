@@ -65,21 +65,6 @@ class TransitionTests {
   }
 
   @knexds.transaction()
-  static async oopsCallSendFromTx() {
-    await DBOS.send('aaa', 'a', 'aa');
-  }
-
-  @DBOS.workflow()
-  static async oopsCallSendFromTxWF() {
-    return await TransitionTests.oopsCallSendFromTx();
-  }
-
-  @DBOS.step({ retriesAllowed: false })
-  static async oopsCallSendFromStep() {
-    await DBOS.send('aaa', 'a', 'aa');
-  }
-
-  @knexds.transaction()
   static async oopsCallGetFromTx() {
     await DBOS.getEvent('aaa', 'a');
   }
@@ -149,13 +134,6 @@ async function main9() {
     await TransitionTests.callStepFromStep();
     await expect(() => TransitionTests.oopsCallTransactionFromStep()).rejects.toThrow(
       'Invalid call to a `transaction` function from within a `step`',
-    );
-
-    await expect(() => TransitionTests.oopsCallSendFromTxWF()).rejects.toThrow(
-      'Invalid call to `DBOS.send` inside a `step` or `transaction`',
-    );
-    await expect(() => TransitionTests.oopsCallSendFromStep()).rejects.toThrow(
-      'Invalid call to `DBOS.send` inside a `step` or `transaction`',
     );
     await expect(() => TransitionTests.oopsCallGetFromTxWF()).rejects.toThrow(
       'Invalid call to `DBOS.getEvent` inside a `step` or `transaction`',

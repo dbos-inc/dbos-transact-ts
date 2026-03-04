@@ -1,8 +1,8 @@
 import {
-  PostgresSystemDatabase,
-  type SystemDatabase,
+  SystemDatabase,
   type WorkflowStatusInternal,
   type WorkflowScheduleInternal,
+  type VersionInfo,
   DBOS_STREAM_CLOSED_SENTINEL,
   DEFAULT_POOL_SIZE,
 } from './system_database';
@@ -172,7 +172,7 @@ export class DBOSClient {
     systemDatabaseSchemaName?: string,
   ) {
     this.logger = new GlobalLogger();
-    this.systemDatabase = new PostgresSystemDatabase(
+    this.systemDatabase = new SystemDatabase(
       systemDatabaseUrl,
       this.logger,
       serializer,
@@ -331,43 +331,14 @@ export class DBOSClient {
     idempotencyKey?: string,
     options?: ClientSendOptions,
   ): Promise<void> {
-    idempotencyKey ??= randomUUID();
+    const messageUUID = idempotencyKey ?? randomUUID();
     const sermsg = serializeValue(message, this.serializer, options?.serializationType);
-    const srwfp = serializeArgs(
-      [destinationID, message, topic, options?.serializationType],
-      undefined,
-      this.serializer,
-      options?.serializationType,
-    );
-    const internalStatus: WorkflowStatusInternal = {
-      workflowUUID: `${destinationID}-${idempotencyKey}`,
-      status: StatusString.SUCCESS,
-      workflowName: 'temp_workflow-send-client',
-      workflowClassName: '',
-      workflowConfigName: '',
-      authenticatedUser: '',
-      output: null,
-      error: null,
-      assumedRole: '',
-      authenticatedRoles: [],
-      request: {},
-      executorId: '',
-      applicationID: '',
-      createdAt: Date.now(),
-      input: srwfp.serializedValue,
-      deduplicationID: undefined,
-      priority: 0,
-      queuePartitionKey: undefined,
-      serialization: srwfp.serialization,
-    };
-    await this.systemDatabase.initWorkflowStatus(internalStatus, null);
-    await this.systemDatabase.send(
-      internalStatus.workflowUUID,
-      0,
+    await this.systemDatabase.sendDirect(
       destinationID,
       sermsg.serializedValue,
       topic,
       sermsg.serialization,
+      messageUUID,
     );
   }
 
@@ -422,6 +393,21 @@ export class DBOSClient {
 
   listWorkflowSteps(workflowID: string): Promise<StepInfo[] | undefined> {
     return listWorkflowSteps(this.systemDatabase, workflowID);
+  }
+
+  async waitFirst(handles: WorkflowHandle<unknown>[]): Promise<WorkflowHandle<unknown>> {
+    if (handles.length === 0) {
+      throw new Error('handles must not be empty');
+    }
+    const handleMap = new Map<string, WorkflowHandle<unknown>>();
+    for (const handle of handles) {
+      if (handleMap.has(handle.workflowID)) {
+        throw new Error(`Duplicate workflow ID in waitFirst: ${handle.workflowID}`);
+      }
+      handleMap.set(handle.workflowID, handle);
+    }
+    const completedId = await this.systemDatabase.awaitFirstWorkflowId([...handleMap.keys()]);
+    return handleMap.get(completedId)!;
   }
 
   /**
@@ -541,5 +527,19 @@ export class DBOSClient {
   async backfillSchedule(name: string, start: Date, end: Date): Promise<WorkflowHandle<unknown>[]> {
     const workflowIDs = await backfillSchedule(this.systemDatabase, this.serializer, name, start, end);
     return workflowIDs.map((id) => new ClientHandle(this.systemDatabase, id));
+  }
+
+  // ==================== Application Versions ====================
+
+  async listApplicationVersions(): Promise<VersionInfo[]> {
+    return this.systemDatabase.listApplicationVersions();
+  }
+
+  async getLatestApplicationVersion(): Promise<VersionInfo> {
+    return this.systemDatabase.getLatestApplicationVersion();
+  }
+
+  async setLatestApplicationVersion(versionName: string): Promise<void> {
+    await this.systemDatabase.updateApplicationVersionTimestamp(versionName, Date.now());
   }
 }

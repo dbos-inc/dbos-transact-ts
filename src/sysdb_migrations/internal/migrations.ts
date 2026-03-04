@@ -251,5 +251,22 @@ export function allMigrations(
         )`,
       ],
     },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."notifications" ADD COLUMN "consumed" BOOLEAN NOT NULL DEFAULT false`,
+        `CREATE INDEX "idx_notifications_unconsumed" ON "${schemaName}"."notifications" ("destination_uuid", "topic") WHERE consumed = false`,
+      ],
+    },
+    {
+      pg: [
+        `CREATE TABLE "${schemaName}"."application_versions" (
+          "version_id" TEXT NOT NULL,
+          "version_name" TEXT NOT NULL UNIQUE,
+          "version_timestamp" BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000.0)::bigint,
+          "created_at" BIGINT NOT NULL DEFAULT (EXTRACT(EPOCH FROM now()) * 1000.0)::bigint,
+          CONSTRAINT "application_versions_pkey" PRIMARY KEY ("version_id")
+        )`,
+      ],
+    },
   ];
 }

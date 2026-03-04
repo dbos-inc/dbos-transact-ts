@@ -28,12 +28,7 @@ import { TelemetryCollector } from './telemetry/collector';
 import { getActiveSpan, runWithTrace, SpanStatusCode, Tracer } from './telemetry/traces';
 import { DBOSContextualLogger, GlobalLogger } from './telemetry/logs';
 import { TelemetryExporter } from './telemetry/exporters';
-import {
-  type SystemDatabase,
-  PostgresSystemDatabase,
-  type WorkflowStatusInternal,
-  type SystemDatabaseStoredResult,
-} from './system_database';
+import { SystemDatabase, type WorkflowStatusInternal, type SystemDatabaseStoredResult } from './system_database';
 import { randomUUID } from 'node:crypto';
 import {
   getRegisteredFunctionClassName,
@@ -262,7 +257,7 @@ export class DBOSExecutor {
       this.systemDatabase = systemDatabase;
     } else {
       this.logger.debug('Using Postgres system database');
-      this.systemDatabase = new PostgresSystemDatabase(
+      this.systemDatabase = new SystemDatabase(
         this.config.systemDatabaseUrl,
         this.logger,
         this.serializer,
@@ -464,7 +459,7 @@ export class DBOSExecutor {
       authenticatedRoles: pctx?.authenticatedRoles || [],
       request: pctx?.request || {},
       executorId: globalParams.executorID,
-      applicationVersion: globalParams.appVersion,
+      applicationVersion: params.enqueueOptions?.applicationVersion ?? globalParams.appVersion,
       applicationID: globalParams.appID,
       createdAt: Date.now(), // Remember the start time of this workflow,
       timeoutMS: timeoutMS,
@@ -849,49 +844,6 @@ export class DBOSExecutor {
     }
   }
 
-  async runSendTempWF<T>(
-    destinationId: string,
-    message: T,
-    topic: string | undefined,
-    idempotencyKey: string | undefined,
-    serialization: WorkflowSerializationFormat | null | undefined,
-  ): Promise<void> {
-    // Create a workflow and call send.
-    const temp_workflow = async (
-      destinationId: string,
-      message: T,
-      topic?: string,
-      serialization?: WorkflowSerializationFormat | null,
-    ) => {
-      const ctx = getCurrentContextStore();
-      const functionID: number = functionIDGetIncrement();
-      const sermsg = serializeValue(message, this.serializer, serialization ?? undefined);
-      await this.systemDatabase.send(
-        ctx!.workflowId!,
-        functionID,
-        destinationId,
-        sermsg.serializedValue,
-        topic,
-        sermsg.serialization,
-      );
-    };
-    const workflowUUID = idempotencyKey ? destinationId + idempotencyKey : undefined;
-    return (
-      await this.workflow(
-        temp_workflow,
-        {
-          workflowUUID: workflowUUID,
-          tempWfType: TempWorkflowType.send,
-          configuredInstance: null,
-        },
-        destinationId,
-        message,
-        topic,
-        serialization,
-      )
-    ).getResult();
-  }
-
   /**
    * Wait for a workflow to emit an event, then return its value.
    */
@@ -1136,6 +1088,7 @@ export class DBOSExecutor {
         );
       });
     } else if (nameArr[1] === TempWorkflowType.send) {
+      // Backwards compatibility: recover send temp workflows created before sendDirect was introduced.
       const swf = async (
         destinationID: string,
         message: unknown,

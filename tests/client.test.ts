@@ -1,7 +1,7 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS, DBOSClient, WorkflowQueue, StatusString } from '../src';
 import { globalParams, sleepms } from '../src/utils';
-import { generateDBOSTestConfig, recoverPendingWorkflows, reexecuteWorkflowById, setUpDBOSTestSysDb } from './helpers';
+import { generateDBOSTestConfig, recoverPendingWorkflows, setUpDBOSTestSysDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { spawnSync } from 'child_process';
 import { DBOSQueueDuplicatedError, DBOSAwaitedWorkflowCancelledError } from '../src/error';
@@ -590,60 +590,12 @@ describe('DBOSClient', () => {
     expect(result).toBe(message);
   });
 
-  test('DBOSClient-send-failure', async () => {
-    const now = Date.now();
-    const workflowID = `client-send-failure-${now}`;
-    const topic = `test-topic-${now}`;
-    const message = `Hello, DBOS! (${now})`;
-    const idempotencyKey = `idempotency-key-${now}`;
-    const sendWFID = `${workflowID}-${idempotencyKey}`;
-
-    await DBOS.launch();
-    runClientSendWorker(workflowID, topic, globalParams.appVersion);
-
-    const client = await DBOSClient.create({ systemDatabaseUrl });
-    const dbClient = new Client(poolConfig);
-    try {
-      await dbClient.connect();
-      await client.send<string>(workflowID, message, topic, idempotencyKey);
-
-      // simulate a crash in send by deleting the results of the send operation, leaving just the WF status table result
-      const res1 = await dbClient.query('DELETE FROM dbos.operation_outputs WHERE workflow_uuid = $1', [sendWFID]);
-      expect(res1.rowCount).toBe(1);
-      const res2 = await dbClient.query('DELETE FROM dbos.notifications WHERE destination_uuid = $1', [workflowID]);
-      expect(res2.rowCount).toBe(1);
-      const res3 = await dbClient.query<{ recovery_attempts: string }>(
-        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-        [sendWFID],
-      );
-      expect(res3.rows).toHaveLength(1);
-      expect(res3.rows[0].recovery_attempts).toBe('1');
-
-      await (await reexecuteWorkflowById(sendWFID, false))!.getResult();
-      const res4 = await dbClient.query<{ recovery_attempts: string }>(
-        'SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1',
-        [sendWFID],
-      );
-      expect(res4.rows).toHaveLength(1);
-      expect(res4.rows[0].recovery_attempts).toBe('2');
-    } finally {
-      await dbClient.end();
-      await client.destroy();
-    }
-
-    await recoverPendingWorkflows();
-    const handle = DBOS.retrieveWorkflow<string>(workflowID);
-    const result = await handle.getResult();
-    expect(result).toBe(message);
-  }, 30000);
-
   test('DBOSClient-send-idempotent', async () => {
     const now = Date.now();
     const workflowID = `client-send-${now}`;
     const topic = `test-topic-${now}`;
     const message = `Hello, DBOS! (${now})`;
     const idempotencyKey = `idempotency-key-${now}`;
-    const sendWFID = `${workflowID}-${idempotencyKey}`;
 
     await DBOS.launch();
     runClientSendWorker(workflowID, topic, globalParams.appVersion);
@@ -661,10 +613,6 @@ describe('DBOSClient', () => {
       await dbClient.connect();
       const res = await dbClient.query('SELECT * FROM dbos.notifications WHERE destination_uuid = $1', [workflowID]);
       expect(res.rows).toHaveLength(1);
-      const res2 = await dbClient.query('SELECT * FROM dbos.operation_outputs WHERE workflow_uuid = $1', [sendWFID]);
-      expect(res2.rows).toHaveLength(1);
-      const res3 = await dbClient.query('SELECT * FROM dbos.workflow_status WHERE workflow_uuid = $1', [sendWFID]);
-      expect(res3.rows).toHaveLength(1);
     } finally {
       await dbClient.end();
     }

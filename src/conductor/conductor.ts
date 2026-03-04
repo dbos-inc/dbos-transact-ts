@@ -573,6 +573,47 @@ export class Conductor {
             );
             currWebsocket.send(JSON.stringify(triggerSchedResp));
             break;
+          case protocol.MessageType.LIST_APPLICATION_VERSIONS:
+            let versionsOutput: protocol.ApplicationVersionOutput[] = [];
+            try {
+              const versions = await this.dbosExec.systemDatabase.listApplicationVersions();
+              versionsOutput = versions.map((v) => ({
+                version_id: v.versionId,
+                version_name: v.versionName,
+                version_timestamp: v.versionTimestamp,
+                created_at: v.createdAt,
+              }));
+            } catch (e) {
+              errorMsg = `Exception encountered when listing application versions: ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+            }
+            const listVersionsResp = new protocol.ListApplicationVersionsResponse(
+              baseMsg.request_id,
+              versionsOutput,
+              errorMsg,
+            );
+            currWebsocket.send(JSON.stringify(listVersionsResp));
+            break;
+          case protocol.MessageType.SET_LATEST_APPLICATION_VERSION:
+            const setVersionMsg = baseMsg as protocol.SetLatestApplicationVersionRequest;
+            let setVersionSuccess = true;
+            try {
+              await this.dbosExec.systemDatabase.updateApplicationVersionTimestamp(
+                setVersionMsg.version_name,
+                Date.now(),
+              );
+            } catch (e) {
+              errorMsg = `Exception encountered when setting latest application version '${setVersionMsg.version_name}': ${(e as Error).message}`;
+              this.dbosExec.logger.error(errorMsg);
+              setVersionSuccess = false;
+            }
+            const setVersionResp = new protocol.SetLatestApplicationVersionResponse(
+              baseMsg.request_id,
+              setVersionSuccess,
+              errorMsg,
+            );
+            currWebsocket.send(JSON.stringify(setVersionResp));
+            break;
           default:
             this.dbosExec.logger.warn(`Unknown message type: ${baseMsg.type}`);
             // Still need to send a response to the conductor
@@ -592,10 +633,17 @@ export class Conductor {
       });
 
       currWebsocket.on('unexpected-response', (_, res) => {
-        this.dbosExec.logger.warn(`Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}}`);
-        if (this.reconnectTimeout === undefined) {
-          this.resetWebsocket(currWebsocket, currPing);
-        }
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
+        res.on('end', () => {
+          const body = Buffer.concat(chunks).toString('utf-8');
+          this.dbosExec.logger.warn(
+            `Unexpected response from conductor: ${res.statusCode} ${res.statusMessage}. Details: ${body}`,
+          );
+          if (this.reconnectTimeout === undefined) {
+            this.resetWebsocket(currWebsocket, currPing);
+          }
+        });
       });
 
       currWebsocket.on('error', (err) => {

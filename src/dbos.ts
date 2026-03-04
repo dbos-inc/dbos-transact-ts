@@ -101,6 +101,7 @@ import {
   DBOS_STREAM_CLOSED_SENTINEL,
   DBOS_FUNCNAME_WRITESTREAM,
   WorkflowScheduleInternal,
+  VersionInfo,
 } from './system_database';
 import { PoolClient } from 'pg';
 import {
@@ -329,6 +330,15 @@ export class DBOS {
 
     const executor: DBOSExecutor = DBOSExecutor.globalInstance;
     await executor.init();
+
+    // Register the current application version
+    await executor.systemDatabase.createApplicationVersion(globalParams.appVersion);
+    const latest = await executor.systemDatabase.getLatestApplicationVersion();
+    if (latest.versionName !== globalParams.appVersion) {
+      executor.logger.warn(
+        `Current version '${globalParams.appVersion}' is not the latest version. Latest version is '${latest.versionName}'.`,
+      );
+    }
 
     await DBOSExecutor.globalInstance.initEventReceivers(this.#dbosConfig?.listenQueues || null);
     for (const [_n, ds] of transactionalDataSources) {
@@ -690,6 +700,35 @@ export class DBOS {
       workflowID,
       assignedFuncID,
     );
+  }
+
+  /**
+   * Wait for any one of the given workflow handles to complete and return it.
+   * Polls the database until at least one workflow's status is no longer PENDING or ENQUEUED,
+   * then returns the corresponding handle.
+   * @param handles - Non-empty array of workflow handles to wait on
+   * @returns The first handle whose workflow has completed
+   */
+  static async waitFirst(handles: WorkflowHandle<unknown>[]): Promise<WorkflowHandle<unknown>> {
+    ensureDBOSIsLaunched('waitFirst');
+    if (handles.length === 0) {
+      throw new Error('handles must not be empty');
+    }
+    // Build a map from workflow ID to handle, disallowing duplicates.
+    const handleMap = new Map<string, WorkflowHandle<unknown>>();
+    for (const handle of handles) {
+      if (handleMap.has(handle.workflowID)) {
+        throw new Error(`Duplicate workflow ID in waitFirst: ${handle.workflowID}`);
+      }
+      handleMap.set(handle.workflowID, handle);
+    }
+    const workflowIds = [...handleMap.keys()];
+
+    const completedId = await runInternalStep(async () => {
+      return await DBOSExecutor.globalInstance!.systemDatabase.awaitFirstWorkflowId(workflowIds, DBOS.workflowID);
+    }, 'DBOS.waitFirst');
+
+    return handleMap.get(completedId)!;
   }
 
   /**
@@ -1083,21 +1122,13 @@ export class DBOS {
     options?: SendOptions,
   ): Promise<void> {
     ensureDBOSIsLaunched('send');
-    if (DBOS.isWithinWorkflow()) {
-      if (!DBOS.isInWorkflow()) {
-        throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.send` inside a `step` or `transaction`');
-      }
-      if (idempotencyKey) {
-        throw new DBOSInvalidWorkflowTransitionError(
-          'Invalid call to `DBOS.send` with an idempotency key from within a workflow',
-        );
-      }
+    const sermsg = serializeValue(
+      message,
+      DBOS.#executor.serializer,
+      options?.serializationType ?? DBOS.defaultSerializationType,
+    );
+    if (DBOS.isInWorkflow()) {
       const functionID: number = functionIDGetIncrement();
-      const sermsg = serializeValue(
-        message,
-        DBOS.#executor.serializer,
-        options?.serializationType ?? DBOS.defaultSerializationType,
-      );
       return await DBOSExecutor.globalInstance!.systemDatabase.send(
         DBOS.workflowID!,
         functionID,
@@ -1105,15 +1136,17 @@ export class DBOS {
         sermsg.serializedValue,
         topic,
         sermsg.serialization,
+        idempotencyKey,
+      );
+    } else {
+      return DBOSExecutor.globalInstance!.systemDatabase.sendDirect(
+        destinationID,
+        sermsg.serializedValue,
+        topic,
+        sermsg.serialization,
+        idempotencyKey,
       );
     }
-    return DBOS.#executor.runSendTempWF(
-      destinationID,
-      message,
-      topic,
-      idempotencyKey,
-      options?.serializationType ?? DBOS.defaultSerializationType,
-    ); // Temp WF variant
   }
 
   /**
@@ -2069,5 +2102,33 @@ export class DBOS {
     const executor = DBOSExecutor.globalInstance!;
     const workflowIDs = await backfillScheduleImpl(executor.systemDatabase, executor.serializer, name, start, end);
     return workflowIDs.map((id) => new RetrievedHandle(executor.systemDatabase, id));
+  }
+
+  // ==================== Application Versions ====================
+
+  /**
+   * List all registered application versions, ordered by version_timestamp descending (latest first).
+   */
+  static async listApplicationVersions(): Promise<VersionInfo[]> {
+    ensureDBOSIsLaunched('listApplicationVersions');
+    return await DBOSExecutor.globalInstance!.systemDatabase.listApplicationVersions();
+  }
+
+  /**
+   * Get the latest application version (the one with the highest version_timestamp).
+   * Throws if no versions are registered.
+   */
+  static async getLatestApplicationVersion(): Promise<VersionInfo> {
+    ensureDBOSIsLaunched('getLatestApplicationVersion');
+    return await DBOSExecutor.globalInstance!.systemDatabase.getLatestApplicationVersion();
+  }
+
+  /**
+   * Set a version as the latest by updating its version_timestamp to now.
+   * @param versionName - The version name to promote to latest
+   */
+  static async setLatestApplicationVersion(versionName: string): Promise<void> {
+    ensureDBOSIsLaunched('setLatestApplicationVersion');
+    await DBOSExecutor.globalInstance!.systemDatabase.updateApplicationVersionTimestamp(versionName, Date.now());
   }
 }
