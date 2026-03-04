@@ -1519,9 +1519,13 @@ export class SystemDatabase {
   // ==================== Sleep ====================
   @dbRetry()
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
+    let cancelled = false;
     let resolveNotification: () => void;
     const cancelPromise = new Promise<void>((resolve) => {
-      resolveNotification = resolve;
+      resolveNotification = () => {
+        cancelled = true;
+        resolve();
+      };
     });
 
     const cbr = this.cancelWakeupMap.registerCallback(workflowID, resolveNotification!);
@@ -1529,7 +1533,7 @@ export class SystemDatabase {
       const { cancel: cancelInitial, endTime } = await this.#durableSleep(workflowID, functionID, durationMS);
       cancelInitial();
 
-      while (Date.now() < endTime) {
+      while (!cancelled && Date.now() < endTime) {
         const { promise, cancel } = cancellableSleep(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
         try {
           await Promise.race([cancelPromise, promise]);
