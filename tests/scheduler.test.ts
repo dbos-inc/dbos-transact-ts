@@ -578,47 +578,92 @@ describe('dynamic-scheduler-tests', () => {
   const regBackfillWf = DBOS.registerWorkflow(backfillWorkflow, { name: 'backfillWorkflow' });
 
   test('backfill-schedule', async () => {
-    backfillResults.dates = [];
-    backfillResults.contexts = [];
-
-    // Create an every-minute schedule
-    await DBOS.createSchedule({
-      scheduleName: 'backfill-test',
-      workflowFn: regBackfillWf,
-      schedule: '* * * * *',
-      context: { source: 'backfill' },
-    });
-
-    // Backfill a 5-minute window in the past
-    const end = new Date();
-    end.setMilliseconds(0);
-    const start = new Date(end.getTime() - 5 * 60 * 1000);
-
-    const handles = await DBOS.backfillSchedule('backfill-test', start, end);
-    // Every-minute schedule over 5 minutes should yield ~5 handles (start exclusive, end exclusive)
-    expect(handles.length).toBeGreaterThanOrEqual(4);
-    expect(handles.length).toBeLessThanOrEqual(5);
-
-    // Wait for all workflows to complete
-    for (const h of handles) {
-      await h.getResult();
+    // Helper: compute local-time midnight for a given date (cron uses local time)
+    function localMidnight(year: number, month: number, day: number): Date {
+      return new Date(year, month - 1, day, 0, 0, 0, 0);
+    }
+    // Helper: compute a local-time Date from components
+    function localTime(year: number, month: number, day: number, hour: number, minute: number): Date {
+      return new Date(year, month - 1, day, hour, minute, 0, 0);
     }
 
-    expect(backfillResults.dates.length).toBe(handles.length);
-    // All contexts should match
-    for (const ctx of backfillResults.contexts) {
-      expect(ctx).toEqual({ source: 'backfill' });
+    // Helper to run a backfill and verify exact scheduled dates
+    async function testBackfill(scheduleName: string, cronExpr: string, start: Date, end: Date, expectedDates: Date[]) {
+      backfillResults.dates = [];
+      backfillResults.contexts = [];
+
+      await DBOS.createSchedule({
+        scheduleName,
+        workflowFn: regBackfillWf,
+        schedule: cronExpr,
+        context: { source: scheduleName },
+      });
+
+      const handles = await DBOS.backfillSchedule(scheduleName, start, end);
+      expect(handles.length).toBe(expectedDates.length);
+
+      for (const h of handles) {
+        await h.getResult();
+      }
+
+      expect(backfillResults.dates.length).toBe(expectedDates.length);
+      const actualSorted = backfillResults.dates.map((d) => d.getTime()).sort((a, b) => a - b);
+      const expectedSorted = expectedDates.map((d) => d.getTime()).sort((a, b) => a - b);
+      expect(actualSorted).toEqual(expectedSorted);
+
+      for (const ctx of backfillResults.contexts) {
+        expect(ctx).toEqual({ source: scheduleName });
+      }
+
+      await DBOS.deleteSchedule(scheduleName);
     }
-    // All dates should be within range
-    for (const d of backfillResults.dates) {
-      expect(d.getTime()).toBeGreaterThanOrEqual(start.getTime());
-      expect(d.getTime()).toBeLessThan(end.getTime());
-    }
+
+    // --- Every-minute schedule: backfill 6 minutes ---
+    // "* * * * *" fires every minute. Window: 10:00 to 10:06 (local).
+    // Expected fires at :01, :02, :03, :04, :05 (5 fires).
+    const everyMinStart = localTime(2025, 1, 15, 10, 0);
+    const everyMinEnd = localTime(2025, 1, 15, 10, 6);
+    await testBackfill('backfill-every-min', '* * * * *', everyMinStart, everyMinEnd, [
+      localTime(2025, 1, 15, 10, 1),
+      localTime(2025, 1, 15, 10, 2),
+      localTime(2025, 1, 15, 10, 3),
+      localTime(2025, 1, 15, 10, 4),
+      localTime(2025, 1, 15, 10, 5),
+    ]);
+
+    // --- Every-two-hours schedule: backfill 12 hours ---
+    // "0 */2 * * *" fires at even hours: 00:00, 02:00, 04:00, ...
+    // Window: 01:00 to 13:00 (local) on 2025-01-15.
+    // Expected fires: 02:00, 04:00, 06:00, 08:00, 10:00, 12:00 (6 fires).
+    const every2hStart = localTime(2025, 1, 15, 1, 0);
+    const every2hEnd = localTime(2025, 1, 15, 13, 0);
+    await testBackfill('backfill-every-2h', '0 */2 * * *', every2hStart, every2hEnd, [
+      localTime(2025, 1, 15, 2, 0),
+      localTime(2025, 1, 15, 4, 0),
+      localTime(2025, 1, 15, 6, 0),
+      localTime(2025, 1, 15, 8, 0),
+      localTime(2025, 1, 15, 10, 0),
+      localTime(2025, 1, 15, 12, 0),
+    ]);
+
+    // --- Every Thursday schedule: backfill ~6 weeks ---
+    // "0 0 * * 4" fires at midnight every Thursday (local time).
+    // Window: 2025-01-01 (Wednesday) to 2025-02-14 (Friday), exclusive end.
+    // Thursdays in range: Jan 2, 9, 16, 23, 30, Feb 6, 13 (7 fires).
+    const thuStart = localMidnight(2025, 1, 1);
+    const thuEnd = localMidnight(2025, 2, 14);
+    await testBackfill('backfill-every-thu', '0 0 * * 4', thuStart, thuEnd, [
+      localMidnight(2025, 1, 2),
+      localMidnight(2025, 1, 9),
+      localMidnight(2025, 1, 16),
+      localMidnight(2025, 1, 23),
+      localMidnight(2025, 1, 30),
+      localMidnight(2025, 2, 6),
+      localMidnight(2025, 2, 13),
+    ]);
 
     // Backfilling a nonexistent schedule should throw
-    await expect(DBOS.backfillSchedule('nonexistent', start, end)).rejects.toThrow(/not found/);
-
-    await DBOS.deleteSchedule('backfill-test');
+    await expect(DBOS.backfillSchedule('nonexistent', everyMinStart, everyMinEnd)).rejects.toThrow(/not found/);
   }, 30000);
 
   // ---------------------------------------------------------------------------
