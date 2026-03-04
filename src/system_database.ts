@@ -23,7 +23,7 @@ import {
   application_versions,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
-import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
+import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, MAX_TIMEOUT_MS, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
@@ -1526,14 +1526,16 @@ export class SystemDatabase {
 
     const cbr = this.cancelWakeupMap.registerCallback(workflowID, resolveNotification!);
     try {
-      let timeoutPromise: Promise<void> = Promise.resolve();
-      const { promise, cancel: timeoutCancel } = await this.#durableSleep(workflowID, functionID, durationMS);
-      timeoutPromise = promise;
+      const { cancel: cancelInitial, endTime } = await this.#durableSleep(workflowID, functionID, durationMS);
+      cancelInitial();
 
-      try {
-        await Promise.race([cancelPromise, timeoutPromise]);
-      } finally {
-        timeoutCancel();
+      while (Date.now() < endTime) {
+        const { promise, cancel } = cancellableSleep(Math.min(endTime - Date.now(), MAX_TIMEOUT_MS));
+        try {
+          await Promise.race([cancelPromise, promise]);
+        } finally {
+          cancel();
+        }
       }
     } finally {
       this.cancelWakeupMap.deregisterCallback(cbr);

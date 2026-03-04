@@ -32,7 +32,6 @@ import {
   DBOSConflictingRegistrationError,
   DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
   DBOSUnexpectedStepError,
-  DBOSDataValidationError,
 } from './error';
 import {
   getDbosConfig,
@@ -859,11 +858,6 @@ export class DBOS {
    * @param durationMS - Length of sleep, in milliseconds.
    */
   static async sleepms(durationMS: number): Promise<void> {
-    if (durationMS > MAX_TIMEOUT_MS) {
-      throw new DBOSDataValidationError(
-        `DBOS.sleep duration exceeds maximum allowed timeout in Node.js of ${MAX_TIMEOUT_MS}ms `,
-      );
-    }
     if (DBOS.isWithinWorkflow() && !DBOS.isInStep()) {
       if (DBOS.isInTransaction()) {
         throw new DBOSInvalidWorkflowTransitionError('Invalid call to `DBOS.sleep` inside a `transaction`');
@@ -874,7 +868,10 @@ export class DBOS {
       }
       return await DBOSExecutor.globalInstance!.systemDatabase.durableSleepms(DBOS.workflowID!, functionID, durationMS);
     }
-    await sleepms(durationMS);
+    const endTime = Date.now() + durationMS;
+    while (Date.now() < endTime) {
+      await sleepms(Math.min(endTime - Date.now(), MAX_TIMEOUT_MS));
+    }
   }
   /** @see sleepms */
   static async sleepSeconds(durationSec: number): Promise<void> {
