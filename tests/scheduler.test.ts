@@ -598,6 +598,9 @@ describe('dynamic-scheduler-tests', () => {
         schedule: cronExpr,
         context: { source: scheduleName },
       });
+      // Pause so the live scheduler loop doesn't also invoke backfillWorkflow
+      // and add extra entries to the shared backfillResults array.
+      await DBOS.pauseSchedule(scheduleName);
 
       const handles = await DBOS.backfillSchedule(scheduleName, start, end);
       expect(handles.length).toBe(expectedDates.length);
