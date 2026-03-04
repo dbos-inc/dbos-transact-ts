@@ -167,6 +167,8 @@ export class ScheduledReceiver implements DBOSLifecycleCallback {
         break;
       }
 
+      // If TimeMatcher did not find the next occurrence of the schedule yet,
+      // we must have it determine the next wakeup time.
       if (!timeMatcher.match(nextExec)) {
         lastExec = nextExec;
         continue;
