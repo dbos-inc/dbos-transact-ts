@@ -23,7 +23,7 @@ import {
   application_versions,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
-import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, MAX_TIMEOUT_MS, sleepms } from './utils';
+import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
@@ -1530,7 +1530,7 @@ export class SystemDatabase {
       cancelInitial();
 
       while (Date.now() < endTime) {
-        const { promise, cancel } = cancellableSleep(Math.min(endTime - Date.now(), MAX_TIMEOUT_MS));
+        const { promise, cancel } = cancellableSleep(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
         try {
           await Promise.race([cancelPromise, promise]);
         } finally {

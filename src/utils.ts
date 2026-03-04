@@ -58,7 +58,9 @@ export const globalParams = {
 export const sleepms = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 // Node.js setTimeout uses a 32-bit signed integer for the delay, so the max is 2^31 - 1 ms (~24.8 days).
-export const MAX_TIMEOUT_MS = 2_147_483_647;
+export const sleepConfig = {
+  maxTimeoutMS: 2_147_483_647,
+};
 
 // The name of the internal queue used by DBOS
 export const INTERNAL_QUEUE_NAME = '_dbos_internal_queue';

@@ -81,7 +81,7 @@ import {
   clearAllRegistrations,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { defaultEnableOTLP, globalParams, MAX_TIMEOUT_MS, sleepms } from './utils';
+import { defaultEnableOTLP, globalParams, sleepConfig, sleepms } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -870,7 +870,7 @@ export class DBOS {
     }
     const endTime = Date.now() + durationMS;
     while (Date.now() < endTime) {
-      await sleepms(Math.min(endTime - Date.now(), MAX_TIMEOUT_MS));
+      await sleepms(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
     }
   }
   /** @see sleepms */

@@ -8,6 +8,7 @@ import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInit
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
 import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
+import { sleepConfig } from '../src/utils';
 
 describe('dbos-tests', () => {
   let username: string;
@@ -887,4 +888,21 @@ describe('long-sleep-tests', () => {
       spy.mockRestore();
     }
   });
+
+  test('workflow sleep works with reduced maxTimeoutMS', async () => {
+    const config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    const saved = sleepConfig.maxTimeoutMS;
+    sleepConfig.maxTimeoutMS = 10;
+    try {
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass).sleepingWorkflow(1000);
+      const result = await handle.getResult();
+      assert.strictEqual(result, 42);
+    } finally {
+      sleepConfig.maxTimeoutMS = saved;
+      await DBOS.shutdown();
+    }
+  }, 10000);
 });
