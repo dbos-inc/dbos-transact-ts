@@ -1,6 +1,5 @@
 import { workflow_status } from '../schemas/system_db_schema';
 import { DBOS } from '../src';
-import { sleepms } from '../src/utils';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb } from './helpers';
 import { Client, PoolConfig } from 'pg';
 import { DBOSConfig } from '../src/dbos-executor';
@@ -20,8 +19,6 @@ class ClientTest {
     return await DBOS.recv<string>(topic, 60);
   }
 }
-
-type EnqueueTest = typeof ClientTest.enqueueTest;
 
 describe('PostgreSQL Client Functions', () => {
   let config: DBOSConfig;
