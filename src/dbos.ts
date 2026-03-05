@@ -81,7 +81,7 @@ import {
   clearAllRegistrations,
   getRegisteredFunctionFullName,
 } from './decorators';
-import { defaultEnableOTLP, globalParams, sleepms } from './utils';
+import { defaultEnableOTLP, globalParams, sleepConfig, sleepms } from './utils';
 import {
   deserializeValue,
   JSONValue,
@@ -868,7 +868,10 @@ export class DBOS {
       }
       return await DBOSExecutor.globalInstance!.systemDatabase.durableSleepms(DBOS.workflowID!, functionID, durationMS);
     }
-    await sleepms(durationMS);
+    const endTime = Date.now() + durationMS;
+    while (Date.now() < endTime) {
+      await sleepms(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
+    }
   }
   /** @see sleepms */
   static async sleepSeconds(durationSec: number): Promise<void> {
