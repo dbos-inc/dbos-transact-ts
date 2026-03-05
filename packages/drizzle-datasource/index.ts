@@ -265,14 +265,19 @@ export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
     return DrizzleDataSource.#getClient(this.#provider) as CT;
   }
 
-  static async initializeDBOSSchema(config: ClientConfig, schemaName: string = 'dbos'): Promise<void> {
-    const client = new Client(config);
-    try {
-      await client.connect();
-      await client.query(createTransactionCompletionSchemaPG(schemaName));
-      await client.query(createTransactionCompletionTablePG(schemaName));
-    } finally {
-      await client.end();
+  static async initializeDBOSSchema(configOrClient: ClientConfig | Client, schemaName: string = 'dbos'): Promise<void> {
+    if (configOrClient instanceof Client) {
+      await configOrClient.query(createTransactionCompletionSchemaPG(schemaName));
+      await configOrClient.query(createTransactionCompletionTablePG(schemaName));
+    } else {
+      const client = new Client(configOrClient);
+      try {
+        await client.connect();
+        await client.query(createTransactionCompletionSchemaPG(schemaName));
+        await client.query(createTransactionCompletionTablePG(schemaName));
+      } finally {
+        await client.end();
+      }
     }
   }
 
