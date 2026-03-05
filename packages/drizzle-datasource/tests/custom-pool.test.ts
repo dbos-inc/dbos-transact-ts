@@ -62,12 +62,11 @@ describe('DrizzleDataSource with custom Pool', () => {
       await client.end();
     }
 
-    const schemaClient = new Client(config);
+    const poolClient = await customPool.connect();
     try {
-      await schemaClient.connect();
-      await DrizzleDataSource.initializeDBOSSchema(schemaClient);
+      await DrizzleDataSource.initializeDBOSSchema(poolClient);
     } finally {
-      await schemaClient.end();
+      poolClient.release();
     }
 
     const drizzlePool = new Pool(config);

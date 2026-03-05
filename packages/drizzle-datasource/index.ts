@@ -1,4 +1,4 @@
-import { Client, ClientConfig, Pool, PoolConfig } from 'pg';
+import { Client, ClientConfig, Pool, PoolClient, PoolConfig } from 'pg';
 import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
@@ -265,8 +265,11 @@ export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
     return DrizzleDataSource.#getClient(this.#provider) as CT;
   }
 
-  static async initializeDBOSSchema(configOrClient: ClientConfig | Client, schemaName: string = 'dbos'): Promise<void> {
-    if (configOrClient instanceof Client) {
+  static async initializeDBOSSchema(
+    configOrClient: ClientConfig | Client | PoolClient,
+    schemaName: string = 'dbos',
+  ): Promise<void> {
+    if (typeof configOrClient === 'object' && 'query' in configOrClient) {
       await configOrClient.query(createTransactionCompletionSchemaPG(schemaName));
       await configOrClient.query(createTransactionCompletionTablePG(schemaName));
     } else {
