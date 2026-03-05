@@ -44,22 +44,24 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'drizzle';
   #connection: DrizzleConnection | undefined;
   readonly schemaName: string;
+  readonly #userProvidedPool: boolean;
 
   constructor(
     readonly name: string,
-    private readonly config: PoolConfig,
+    private readonly configOrPool: PoolConfig | Pool,
     private readonly entities: { [key: string]: object } = {},
     schemaName: string = 'dbos',
   ) {
     this.schemaName = schemaName;
+    this.#userProvidedPool = configOrPool instanceof Pool;
   }
 
   async initialize(): Promise<void> {
     const conn = this.#connection;
 
-    const driver = new Pool(this.config);
+    const driver = this.configOrPool instanceof Pool ? this.configOrPool : new Pool(this.configOrPool);
     const db = drizzle(driver, { schema: this.entities });
-    this.#connection = { db, end: () => driver.end() };
+    this.#connection = { db, end: this.#userProvidedPool ? async () => {} : () => driver.end() };
     await conn?.end();
 
     let installed = false;
@@ -278,11 +280,11 @@ export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
 
   constructor(
     readonly name: string,
-    config: PoolConfig,
+    configOrPool: PoolConfig | Pool,
     entities: { [key: string]: object } = {},
     schemaName: string = 'dbos',
   ) {
-    this.#provider = new DrizzleTransactionHandler(name, config, entities, schemaName);
+    this.#provider = new DrizzleTransactionHandler(name, configOrPool, entities, schemaName);
     registerDataSource(this.#provider);
   }
 
