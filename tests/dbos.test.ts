@@ -8,6 +8,7 @@ import { DBOSWorkflowCancelledError, DBOSAwaitedWorkflowCancelledError, DBOSInit
 import assert from 'node:assert';
 import { DBOSClient } from '../dist/src';
 import { dropPGDatabase, ensurePGDatabase } from '../src/database_utils';
+import { sleepConfig } from '../src/utils';
 
 describe('dbos-tests', () => {
   let username: string;
@@ -865,4 +866,43 @@ describe('custom-pool-test', () => {
     const clientHandle = client.retrieveWorkflow(handle.workflowID);
     assert.equal(await clientHandle.getResult(), message);
   });
+});
+
+describe('long-sleep-tests', () => {
+  test('sleep exceeding 32-bit max does not produce TimeoutOverflowWarning', async () => {
+    let warned = false;
+    const listener = (warning: Error) => {
+      if (warning.name === 'TimeoutOverflowWarning') warned = true;
+    };
+    process.on('warning', listener);
+    const spy = jest.spyOn(globalThis, 'setTimeout');
+    try {
+      void DBOS.sleep(3_000_000_000);
+      await new Promise((r) => setTimeout(r, 50));
+      assert.strictEqual(warned, false, 'Should not produce TimeoutOverflowWarning');
+    } finally {
+      process.off('warning', listener);
+      for (const call of spy.mock.results) {
+        if (call.type === 'return') clearTimeout(call.value);
+      }
+      spy.mockRestore();
+    }
+  });
+
+  test('workflow sleep works with reduced maxTimeoutMS', async () => {
+    const config = generateDBOSTestConfig();
+    await setUpDBOSTestSysDb(config);
+    DBOS.setConfig(config);
+    await DBOS.launch();
+    const saved = sleepConfig.maxTimeoutMS;
+    sleepConfig.maxTimeoutMS = 10;
+    try {
+      const handle = await DBOS.startWorkflow(DBOSTimeoutTestClass).sleepingWorkflow(1000);
+      const result = await handle.getResult();
+      assert.strictEqual(result, 42);
+    } finally {
+      sleepConfig.maxTimeoutMS = saved;
+      await DBOS.shutdown();
+    }
+  }, 10000);
 });
