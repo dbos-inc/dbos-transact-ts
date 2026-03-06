@@ -2214,15 +2214,21 @@ describe('wf-cancel-tests', () => {
     await NotifsTest.recvEvent.wait();
     await handle.getResult();
 
+    // Send a third notification that won't be consumed
+    await DBOS.send(wfid, 'unconsumed', 'topic_c');
+
     const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
     const notifications = await sysdb.getAllNotifications(wfid);
-    expect(notifications.length).toBe(2);
+    expect(notifications.length).toBe(3);
     expect(notifications[0].topic).toBe('topic_a');
     expect(notifications[0].message).toBe('hello');
     expect(notifications[0].consumed).toBe(true);
     expect(notifications[1].topic).toBe('topic_b');
     expect(notifications[1].message).toEqual({ data: 123 });
     expect(notifications[1].consumed).toBe(true);
+    expect(notifications[2].topic).toBe('topic_c');
+    expect(notifications[2].message).toBe('unconsumed');
+    expect(notifications[2].consumed).toBe(false);
 
     expect(await sysdb.getAllNotifications('nonexistent')).toEqual([]);
   });
