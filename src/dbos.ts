@@ -803,8 +803,8 @@ export class DBOS {
    */
   static async cancelWorkflows(workflowIDs: string[]): Promise<void> {
     ensureDBOSIsLaunched('cancelWorkflows');
-    return await runInternalStep(async () => {
-      return await DBOSExecutor.globalInstance!.systemDatabase.cancelWorkflows(workflowIDs);
+    return runInternalStep(async () => {
+      return DBOSExecutor.globalInstance!.systemDatabase.cancelWorkflows(workflowIDs);
     }, 'DBOS.cancelWorkflow');
   }
 
@@ -825,7 +825,7 @@ export class DBOS {
   static async resumeWorkflows<T>(workflowIDs: string[]): Promise<WorkflowHandle<Awaited<T>>[]> {
     ensureDBOSIsLaunched('resumeWorkflows');
     await runInternalStep(async () => {
-      return await DBOSExecutor.globalInstance!.systemDatabase.resumeWorkflows(workflowIDs);
+      return DBOSExecutor.globalInstance!.systemDatabase.resumeWorkflows(workflowIDs);
     }, 'DBOS.resumeWorkflow');
     return workflowIDs.map((wfid) => this.retrieveWorkflow(wfid));
   }
@@ -853,8 +853,8 @@ export class DBOS {
    */
   static async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
     ensureDBOSIsLaunched('deleteWorkflows');
-    return await runInternalStep(async () => {
-      return await DBOSExecutor.globalInstance!.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
+    return runInternalStep(async () => {
+      return DBOSExecutor.globalInstance!.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
     }, 'DBOS.deleteWorkflow');
   }
 
