@@ -1,5 +1,5 @@
 import { StatusString, WorkflowHandle, DBOS, ConfiguredInstance, DBOSClient } from '../src';
-import { DBOSConfig, DBOSExecutor, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
+import { DBOSConfig, DBOS_QUEUE_MAX_PRIORITY, DBOS_QUEUE_MIN_PRIORITY } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
   setUpDBOSTestSysDb,
@@ -557,7 +557,7 @@ describe('queued-wf-tests-simple', () => {
     });
 
     // Cancel the blocked workflow. Verify the regular workflow runs.
-    await DBOSExecutor.globalInstance?.cancelWorkflow(wfid);
+    await DBOS.cancelWorkflow(wfid);
     await expect(blockedHandle.getStatus()).resolves.toMatchObject({
       status: StatusString.CANCELLED,
     });
@@ -615,7 +615,7 @@ describe('queued-wf-tests-simple', () => {
       status: StatusString.ENQUEUED,
     });
 
-    await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
+    await DBOS.resumeWorkflow(wfid);
 
     await expect(regularHandle.getResult()).resolves.toBeUndefined();
 
@@ -676,7 +676,7 @@ describe('queued-wf-tests-simple', () => {
       status: StatusString.ENQUEUED,
     });
 
-    await DBOSExecutor.globalInstance?.resumeWorkflow(wfid);
+    await DBOS.resumeWorkflow(wfid);
     console.log('RESUMED', wfid);
 
     await expect(regularHandle.getResult()).resolves.toBeUndefined();
