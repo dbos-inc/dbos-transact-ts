@@ -32,7 +32,7 @@ import { connectToPGAndReportOutcome, ensurePGDatabase, maskDatabaseUrl } from '
 import { runSysMigrationsPg } from './sysdb_migrations/migration_runner';
 import { allMigrations } from './sysdb_migrations/internal/migrations';
 import { DEBUG_TRIGGER_STEP_COMMIT, DEBUG_TRIGGER_INITWF_COMMIT, debugTriggerPoint } from './debugpoint';
-import { DBOSPortableJSON, DBOSSerializer } from './serialization';
+import { DBOSPortableJSON, DBOSSerializer, safeParse } from './serialization';
 
 /* Result from Sys DB */
 export interface SystemDatabaseStoredResult {
@@ -2057,7 +2057,7 @@ export class SystemDatabase {
       );
       const events: Record<string, unknown> = {};
       for (const row of result.rows) {
-        events[row.key] = this.serializer.parse(row.value);
+        events[row.key] = safeParse(this.serializer, row.value, row.serialization);
       }
       return events;
     } finally {
@@ -2085,7 +2085,7 @@ export class SystemDatabase {
       );
       return result.rows.map((row) => ({
         topic: row.topic === this.nullTopic ? null : row.topic,
-        message: this.serializer.parse(row.message),
+        message: safeParse(this.serializer, row.message, row.serialization),
         createdAtEpochMs: Number(row.created_at_epoch_ms),
         consumed: row.consumed,
       }));
@@ -2105,7 +2105,7 @@ export class SystemDatabase {
       );
       const streams: Record<string, unknown[]> = {};
       for (const row of result.rows) {
-        const value = this.serializer.parse(row.value);
+        const value = safeParse(this.serializer, row.value, row.serialization);
         if (value === DBOS_STREAM_CLOSED_SENTINEL) {
           continue;
         }
