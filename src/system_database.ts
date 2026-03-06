@@ -23,7 +23,7 @@ import {
   application_versions,
   SysDBSerializationFormat,
 } from '../schemas/system_db_schema';
-import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepms } from './utils';
+import { globalParams, cancellableSleep, INTERNAL_QUEUE_NAME, sleepConfig, sleepms } from './utils';
 import { GlobalLogger } from './telemetry/logs';
 import { WorkflowQueue } from './wfqueue';
 import { randomUUID } from 'crypto';
@@ -1519,21 +1519,27 @@ export class SystemDatabase {
   // ==================== Sleep ====================
   @dbRetry()
   async durableSleepms(workflowID: string, functionID: number, durationMS: number): Promise<void> {
+    let cancelled = false;
     let resolveNotification: () => void;
     const cancelPromise = new Promise<void>((resolve) => {
-      resolveNotification = resolve;
+      resolveNotification = () => {
+        cancelled = true;
+        resolve();
+      };
     });
 
     const cbr = this.cancelWakeupMap.registerCallback(workflowID, resolveNotification!);
     try {
-      let timeoutPromise: Promise<void> = Promise.resolve();
-      const { promise, cancel: timeoutCancel } = await this.#durableSleep(workflowID, functionID, durationMS);
-      timeoutPromise = promise;
+      const { cancel: cancelInitial, endTime } = await this.#durableSleep(workflowID, functionID, durationMS);
+      cancelInitial();
 
-      try {
-        await Promise.race([cancelPromise, timeoutPromise]);
-      } finally {
-        timeoutCancel();
+      while (!cancelled && Date.now() < endTime) {
+        const { promise, cancel } = cancellableSleep(Math.min(endTime - Date.now(), sleepConfig.maxTimeoutMS));
+        try {
+          await Promise.race([cancelPromise, promise]);
+        } finally {
+          cancel();
+        }
       }
     } finally {
       this.cancelWakeupMap.deregisterCallback(cbr);

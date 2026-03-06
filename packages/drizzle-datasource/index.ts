@@ -1,4 +1,4 @@
-import { Client, ClientConfig, Pool, PoolConfig } from 'pg';
+import { Client, ClientConfig, Pool, PoolClient, PoolConfig } from 'pg';
 import { DBOS, DBOSWorkflowConflictError, FunctionName } from '@dbos-inc/dbos-sdk';
 import {
   type DataSourceTransactionHandler,
@@ -44,22 +44,24 @@ class DrizzleTransactionHandler implements DataSourceTransactionHandler {
   readonly dsType = 'drizzle';
   #connection: DrizzleConnection | undefined;
   readonly schemaName: string;
+  readonly #userProvidedPool: boolean;
 
   constructor(
     readonly name: string,
-    private readonly config: PoolConfig,
+    private readonly configOrPool: PoolConfig | Pool,
     private readonly entities: { [key: string]: object } = {},
     schemaName: string = 'dbos',
   ) {
     this.schemaName = schemaName;
+    this.#userProvidedPool = configOrPool instanceof Pool;
   }
 
   async initialize(): Promise<void> {
     const conn = this.#connection;
 
-    const driver = new Pool(this.config);
+    const driver = this.configOrPool instanceof Pool ? this.configOrPool : new Pool(this.configOrPool);
     const db = drizzle(driver, { schema: this.entities });
-    this.#connection = { db, end: () => driver.end() };
+    this.#connection = { db, end: this.#userProvidedPool ? async () => {} : () => driver.end() };
     await conn?.end();
 
     let installed = false;
@@ -263,14 +265,22 @@ export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
     return DrizzleDataSource.#getClient(this.#provider) as CT;
   }
 
-  static async initializeDBOSSchema(config: ClientConfig, schemaName: string = 'dbos'): Promise<void> {
-    const client = new Client(config);
-    try {
-      await client.connect();
-      await client.query(createTransactionCompletionSchemaPG(schemaName));
-      await client.query(createTransactionCompletionTablePG(schemaName));
-    } finally {
-      await client.end();
+  static async initializeDBOSSchema(
+    configOrClient: ClientConfig | Client | PoolClient,
+    schemaName: string = 'dbos',
+  ): Promise<void> {
+    if (typeof configOrClient === 'object' && 'query' in configOrClient) {
+      await configOrClient.query(createTransactionCompletionSchemaPG(schemaName));
+      await configOrClient.query(createTransactionCompletionTablePG(schemaName));
+    } else {
+      const client = new Client(configOrClient);
+      try {
+        await client.connect();
+        await client.query(createTransactionCompletionSchemaPG(schemaName));
+        await client.query(createTransactionCompletionTablePG(schemaName));
+      } finally {
+        await client.end();
+      }
     }
   }
 
@@ -278,11 +288,11 @@ export class DrizzleDataSource<CT = NodePgDatabase<{ [key: string]: object }>>
 
   constructor(
     readonly name: string,
-    config: PoolConfig,
+    configOrPool: PoolConfig | Pool,
     entities: { [key: string]: object } = {},
     schemaName: string = 'dbos',
   ) {
-    this.#provider = new DrizzleTransactionHandler(name, config, entities, schemaName);
+    this.#provider = new DrizzleTransactionHandler(name, configOrPool, entities, schemaName);
     registerDataSource(this.#provider);
   }
 

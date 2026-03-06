@@ -182,6 +182,13 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
         break;
       }
 
+      // If TimeMatcher did not find the next occurrence of the schedule yet,
+      // we must have it determine the next wakeup time.
+      if (!timeMatcher.match(nextExec)) {
+        lastExec = nextExec;
+        continue;
+      }
+
       const date = new Date(nextExec);
       const workflowID = `sched-${scheduleName}-${date.toISOString()}`;
 
@@ -304,6 +311,14 @@ export async function backfillSchedule(
 
   while (current < end.getTime()) {
     const next = timeMatcher.nextWakeupTime(current);
+
+    // If TimeMatcher did not find the next occurrence of the schedule yet,
+    // we must have it determine the next wakeup time.
+    if (!timeMatcher.match(next)) {
+      current = next.getTime();
+      continue;
+    }
+
     if (next.getTime() >= end.getTime()) break;
 
     const workflowID = `sched-${name}-${next.toISOString()}`;

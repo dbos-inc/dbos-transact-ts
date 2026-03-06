@@ -286,30 +286,53 @@ export class DBOSContextualLogger implements DLogger {
   }
 }
 
+const logLevelValues: Record<string, number> = {
+  debug: 0,
+  info: 1,
+  warn: 2,
+  error: 3,
+};
+
 export class DBOSConsoleLogger implements DLogger {
-  constructor(readonly config: LoggerConfig) {}
+  private readonly levelValue: number;
+
+  constructor(readonly config: LoggerConfig) {
+    const level = config.logLevel ?? 'info';
+    if (!(level in logLevelValues)) {
+      console.warn(
+        `Unknown log level '${level}', defaulting to 'info'. Valid levels: ${Object.keys(logLevelValues).join(', ')}`,
+      );
+    }
+    this.levelValue = logLevelValues[level] ?? logLevelValues['info'];
+  }
 
   info(logEntry: unknown, _metadata?: ContextualMetadata): void {
-    console.log(logEntry);
+    if (this.levelValue <= logLevelValues['info']) {
+      console.log(logEntry);
+    }
   }
 
   debug(logEntry: unknown, _metadata?: ContextualMetadata): void {
-    if (this.config.logLevel === 'debug') {
+    if (this.levelValue <= logLevelValues['debug']) {
       console.debug(logEntry);
     }
   }
 
   warn(logEntry: unknown, _metadata?: ContextualMetadata): void {
-    console.warn(logEntry);
+    if (this.levelValue <= logLevelValues['warn']) {
+      console.warn(logEntry);
+    }
   }
 
   error(inputError: unknown, metadata?: ContextualMetadata & StackTrace): void {
-    if (inputError instanceof Error) {
-      console.error(inputError);
-    } else if (metadata?.stack) {
-      console.error(inputError, '\n', metadata.stack);
-    } else {
-      console.error(inputError);
+    if (this.levelValue <= logLevelValues['error']) {
+      if (inputError instanceof Error) {
+        console.error(inputError);
+      } else if (metadata?.stack) {
+        console.error(inputError, '\n', metadata.stack);
+      } else {
+        console.error(inputError);
+      }
     }
   }
 }
