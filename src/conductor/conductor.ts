@@ -160,7 +160,7 @@ export class Conductor {
             const cancelIds = cancelMsg.workflow_ids ?? [cancelMsg.workflow_id];
             let cancelSuccess = true;
             try {
-              await this.dbosExec.cancelWorkflows(cancelIds);
+              await this.dbosExec.systemDatabase.cancelWorkflows(cancelIds);
             } catch (e) {
               errorMsg = `Exception encountered when cancelling workflow(s) ${String(cancelIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
@@ -174,7 +174,7 @@ export class Conductor {
             const deleteIds = deleteMsg.workflow_ids ?? [deleteMsg.workflow_id];
             let deleteSuccess = true;
             try {
-              await this.dbosExec.deleteWorkflows(deleteIds, deleteMsg.delete_children ?? false);
+              await this.dbosExec.systemDatabase.deleteWorkflows(deleteIds, deleteMsg.delete_children ?? false);
             } catch (e) {
               errorMsg = `Exception encountered when deleting workflow(s) ${String(deleteIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
@@ -188,7 +188,7 @@ export class Conductor {
             const resumeIds = resumeMsg.workflow_ids ?? [resumeMsg.workflow_id];
             let resumeSuccess = true;
             try {
-              await this.dbosExec.resumeWorkflows(resumeIds);
+              await this.dbosExec.systemDatabase.resumeWorkflows(resumeIds);
             } catch (e) {
               errorMsg = `Exception encountered when resuming workflow(s) ${String(resumeIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);

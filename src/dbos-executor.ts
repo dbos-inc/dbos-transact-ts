@@ -1147,16 +1147,6 @@ export class DBOSExecutor {
     return oc;
   }
 
-  async cancelWorkflow(workflowID: string): Promise<void> {
-    await this.systemDatabase.cancelWorkflows([workflowID]);
-    this.logger.info(`Cancelling workflow ${workflowID}`);
-  }
-
-  async cancelWorkflows(workflowIDs: string[]): Promise<void> {
-    await this.systemDatabase.cancelWorkflows(workflowIDs);
-    this.logger.info(`Cancelling workflow(s): ${String(workflowIDs)}`);
-  }
-
   async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
     const outputs = await this.systemDatabase.getAllOperationResults(workflowID);
     return outputs.map((row) => {
@@ -1168,24 +1158,6 @@ export class DBOSExecutor {
         error: row.error !== null ? deserializeError(this.serializer.parse(row.error as unknown as string)) : null,
       };
     });
-  }
-
-  async resumeWorkflow(workflowID: string): Promise<void> {
-    await this.systemDatabase.resumeWorkflows([workflowID]);
-  }
-
-  async resumeWorkflows(workflowIDs: string[]): Promise<void> {
-    await this.systemDatabase.resumeWorkflows(workflowIDs);
-  }
-
-  async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
-    await this.systemDatabase.deleteWorkflows([workflowID], deleteChildren);
-    this.logger.info(`Deleted workflow ${workflowID}${deleteChildren ? ' and its children' : ''}`);
-  }
-
-  async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
-    await this.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
-    this.logger.info(`Deleted workflow(s): ${String(workflowIDs)}${deleteChildren ? ' and their children' : ''}`);
   }
 
   /**

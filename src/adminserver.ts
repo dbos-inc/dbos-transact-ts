@@ -365,7 +365,7 @@ export class DBOSAdminServer {
       path: workflowCancelUrl,
       handler: async (req, res, params) => {
         const workflowId = params!.workflow_id;
-        await dbosExec.cancelWorkflow(workflowId);
+        await dbosExec.systemDatabase.cancelWorkflows([workflowId]);
         sendNoContent(res);
       },
     });
@@ -385,7 +385,7 @@ export class DBOSAdminServer {
         const workflowId = params!.workflow_id;
         dbosExec.logger.info(`Resuming workflow with ID: ${workflowId}`);
         try {
-          await dbosExec.resumeWorkflow(workflowId);
+          await dbosExec.systemDatabase.resumeWorkflows([workflowId]);
           sendNoContent(res);
         } catch (e) {
           let errorMessage = '';
