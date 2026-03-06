@@ -14,11 +14,7 @@ import { globalParams, sleepms } from '../src/utils';
 import { SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getWorkflow, globalTimeout, listQueuedWorkflows, listWorkflows } from '../src/workflow_management';
-import {
-  DBOSAwaitedWorkflowCancelledError,
-  DBOSNonExistentWorkflowError,
-  DBOSWorkflowCancelledError,
-} from '../src/error';
+import { DBOSAwaitedWorkflowCancelledError, DBOSWorkflowCancelledError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSJSON } from '../src/serialization';
 

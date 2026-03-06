@@ -162,7 +162,7 @@ export class Conductor {
             try {
               await this.dbosExec.cancelWorkflows(cancelIds);
             } catch (e) {
-              errorMsg = `Exception encountered when cancelling workflow(s) ${cancelIds}: ${(e as Error).message}`;
+              errorMsg = `Exception encountered when cancelling workflow(s) ${String(cancelIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
               cancelSuccess = false;
             }
@@ -176,7 +176,7 @@ export class Conductor {
             try {
               await this.dbosExec.deleteWorkflows(deleteIds, deleteMsg.delete_children ?? false);
             } catch (e) {
-              errorMsg = `Exception encountered when deleting workflow(s) ${deleteIds}: ${(e as Error).message}`;
+              errorMsg = `Exception encountered when deleting workflow(s) ${String(deleteIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
               deleteSuccess = false;
             }
@@ -190,7 +190,7 @@ export class Conductor {
             try {
               await this.dbosExec.resumeWorkflows(resumeIds);
             } catch (e) {
-              errorMsg = `Exception encountered when resuming workflow(s) ${resumeIds}: ${(e as Error).message}`;
+              errorMsg = `Exception encountered when resuming workflow(s) ${String(resumeIds)}: ${(e as Error).message}`;
               this.dbosExec.logger.error(errorMsg);
               resumeSuccess = false;
             }
@@ -662,7 +662,7 @@ export class Conductor {
               const rawStreams = await this.dbosExec.systemDatabase.getAllStreamEntries(streamsMsg.workflow_id);
               streamOutputs = Object.entries(rawStreams).map(([key, values]) => ({
                 key,
-                values: (values as unknown[]).map((v) => String(v)),
+                values: values.map((v) => String(v)),
               }));
             } catch (e) {
               errorMsg = `Exception encountered when getting streams for workflow ${streamsMsg.workflow_id}: ${(e as Error).message}`;
