@@ -374,10 +374,8 @@ describe('workflow-management-tests', () => {
     expect(TestEndpoints.tries).toBe(2);
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
-    // Resume a non-existant workflow should throw an error
-    await expect(DBOS.resumeWorkflow('fake-workflow')).rejects.toThrow(
-      new DBOSNonExistentWorkflowError(`Workflow fake-workflow does not exist`),
-    );
+    // Resume a non-existent workflow is a no-op (bulk UPDATE affects 0 rows)
+    await DBOS.resumeWorkflow('fake-workflow');
 
     // fork the workflow
     const wfh = await DBOS.forkWorkflow(workflowID, 0);

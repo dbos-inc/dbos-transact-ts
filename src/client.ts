@@ -364,7 +364,7 @@ export class DBOSClient {
   }
 
   cancelWorkflow(workflowID: string): Promise<void> {
-    return this.systemDatabase.cancelWorkflow(workflowID);
+    return this.systemDatabase.cancelWorkflows([workflowID]);
   }
 
   cancelWorkflows(workflowIDs: string[]): Promise<void> {
@@ -372,7 +372,7 @@ export class DBOSClient {
   }
 
   resumeWorkflow(workflowID: string): Promise<void> {
-    return this.systemDatabase.resumeWorkflow(workflowID);
+    return this.systemDatabase.resumeWorkflows([workflowID]);
   }
 
   resumeWorkflows(workflowIDs: string[]): Promise<void> {

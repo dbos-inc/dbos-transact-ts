@@ -545,7 +545,7 @@ export class DBOSExecutor {
         return await Promise.race([callPromise, timeoutPromise]);
       } catch (err) {
         if (err === timeoutResult) {
-          await sysdb.cancelWorkflow(workflowID);
+          await sysdb.cancelWorkflows([workflowID]);
           await callPromise.catch(() => {});
           throw new DBOSWorkflowCancelledError(workflowID);
         }
@@ -1148,13 +1148,13 @@ export class DBOSExecutor {
   }
 
   async cancelWorkflow(workflowID: string): Promise<void> {
-    await this.systemDatabase.cancelWorkflow(workflowID);
+    await this.systemDatabase.cancelWorkflows([workflowID]);
     this.logger.info(`Cancelling workflow ${workflowID}`);
   }
 
   async cancelWorkflows(workflowIDs: string[]): Promise<void> {
     await this.systemDatabase.cancelWorkflows(workflowIDs);
-    this.logger.info(`Cancelling workflow(s): ${workflowIDs}`);
+    this.logger.info(`Cancelling workflow(s): ${String(workflowIDs)}`);
   }
 
   async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
@@ -1171,7 +1171,7 @@ export class DBOSExecutor {
   }
 
   async resumeWorkflow(workflowID: string): Promise<void> {
-    await this.systemDatabase.resumeWorkflow(workflowID);
+    await this.systemDatabase.resumeWorkflows([workflowID]);
   }
 
   async resumeWorkflows(workflowIDs: string[]): Promise<void> {
@@ -1179,13 +1179,13 @@ export class DBOSExecutor {
   }
 
   async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
-    await this.systemDatabase.deleteWorkflow(workflowID, deleteChildren);
+    await this.systemDatabase.deleteWorkflows([workflowID], deleteChildren);
     this.logger.info(`Deleted workflow ${workflowID}${deleteChildren ? ' and its children' : ''}`);
   }
 
   async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
     await this.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
-    this.logger.info(`Deleted workflow(s): ${workflowIDs}${deleteChildren ? ' and their children' : ''}`);
+    this.logger.info(`Deleted workflow(s): ${String(workflowIDs)}${deleteChildren ? ' and their children' : ''}`);
   }
 
   /**

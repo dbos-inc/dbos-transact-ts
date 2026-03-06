@@ -906,71 +906,21 @@ export class SystemDatabase {
   }
 
   // ==================== Workflow Management ====================
-  async cancelWorkflow(workflowID: string): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      const statusResult = await this.getWorkflowStatusValue(client, workflowID);
-      if (!statusResult) {
-        throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
-      }
-      if (
-        statusResult === StatusString.SUCCESS ||
-        statusResult === StatusString.ERROR ||
-        statusResult === StatusString.CANCELLED
-      ) {
-        await client.query('ROLLBACK');
-        return;
-      }
-
-      // Set the workflow's status to CANCELLED and remove it from any queue it is on
-      await this.updateWorkflowStatus(client, workflowID, StatusString.CANCELLED, {
-        update: { queueName: null, resetDeduplicationID: true, resetStartedAtEpochMs: true },
-      });
-
-      await client.query('COMMIT');
-    } catch (error) {
-      this.logger.error(error);
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-
-    this.#setWFCancelMap(workflowID);
-  }
-
   async cancelWorkflows(workflowIDs: string[]): Promise<void> {
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
-
-      // Set the workflows' status to CANCELLED and remove them from any queue,
-      // but only if the workflow is not already complete.
-      await client.query(
-        `UPDATE "${this.schemaName}".workflow_status
-         SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL, updated_at = $2
-         WHERE workflow_uuid = ANY($3)
-           AND status NOT IN ($4, $5, $6)`,
-        [
-          StatusString.CANCELLED,
-          Date.now(),
-          workflowIDs,
-          StatusString.SUCCESS,
-          StatusString.ERROR,
-          StatusString.CANCELLED,
-        ],
-      );
-
-      await client.query('COMMIT');
-    } catch (error) {
-      this.logger.error(error);
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    await this.pool.query(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL, updated_at = $2
+       WHERE workflow_uuid = ANY($3)
+         AND status NOT IN ($4, $5, $6)`,
+      [
+        StatusString.CANCELLED,
+        Date.now(),
+        workflowIDs,
+        StatusString.SUCCESS,
+        StatusString.ERROR,
+        StatusString.CANCELLED,
+      ],
+    );
 
     for (const workflowID of workflowIDs) {
       this.#setWFCancelMap(workflowID);
@@ -987,74 +937,20 @@ export class SystemDatabase {
     }
   }
 
-  async resumeWorkflow(workflowID: string): Promise<void> {
-    this.#clearWFCancelMap(workflowID);
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
-
-      // Check workflow status. If it is complete, do nothing.
-      const statusResult = await this.getWorkflowStatusValue(client, workflowID);
-      if (!statusResult || statusResult === StatusString.SUCCESS || statusResult === StatusString.ERROR) {
-        await client.query('ROLLBACK');
-        if (!statusResult) {
-          if (statusResult === undefined) {
-            throw new DBOSNonExistentWorkflowError(`Workflow ${workflowID} does not exist`);
-          }
-        }
-        return;
-      }
-
-      // Set the workflow's status to ENQUEUED and reset recovery attempts and deadline.
-      await this.updateWorkflowStatus(client, workflowID, StatusString.ENQUEUED, {
-        update: {
-          queueName: INTERNAL_QUEUE_NAME,
-          resetRecoveryAttempts: true,
-          resetDeadline: true,
-          resetDeduplicationID: true,
-          resetStartedAtEpochMs: true,
-        },
-        throwOnFailure: false,
-      });
-
-      await client.query('COMMIT');
-    } catch (error) {
-      this.logger.error(error);
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
-  }
-
   async resumeWorkflows(workflowIDs: string[]): Promise<void> {
     for (const workflowID of workflowIDs) {
       this.#clearWFCancelMap(workflowID);
     }
-    const client = await this.pool.connect();
-    try {
-      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
 
-      // Set the workflows' status to ENQUEUED and clear recovery attempts and deadline,
-      // but only if the workflow is not already complete.
-      await client.query(
-        `UPDATE "${this.schemaName}".workflow_status
-         SET status = $1, queue_name = $2, recovery_attempts = 0,
-             workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
-             started_at_epoch_ms = NULL, updated_at = $3
-         WHERE workflow_uuid = ANY($4)
-           AND status NOT IN ($5, $6)`,
-        [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, Date.now(), workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
-      );
-
-      await client.query('COMMIT');
-    } catch (error) {
-      this.logger.error(error);
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
-    }
+    await this.pool.query(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET status = $1, queue_name = $2, recovery_attempts = 0,
+           workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
+           started_at_epoch_ms = NULL, updated_at = $3
+       WHERE workflow_uuid = ANY($4)
+         AND status NOT IN ($5, $6)`,
+      [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, Date.now(), workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
+    );
   }
 
   async getWorkflowChildren(workflowID: string): Promise<string[]> {
@@ -1088,55 +984,17 @@ export class SystemDatabase {
     return children;
   }
 
-  async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
-    let workflowsToDelete: string[] = [workflowID];
-
-    if (deleteChildren) {
-      const children = await this.getWorkflowChildren(workflowID);
-      workflowsToDelete = [...workflowsToDelete, ...children];
-    }
-
-    const client = await this.pool.connect();
-    try {
-      await client.query(
-        `DELETE FROM "${this.schemaName}".workflow_status
-         WHERE workflow_uuid = ANY($1)`,
-        [workflowsToDelete],
-      );
-    } finally {
-      client.release();
-    }
-
-    // Clean up in-memory maps
-    for (const wfid of workflowsToDelete) {
-      this.runningWorkflowMap.delete(wfid);
-      this.workflowCancellationMap.delete(wfid);
-    }
-  }
-
   async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
-    let workflowsToDelete: string[] = [...workflowIDs];
-
+    const allIds = [...workflowIDs];
     if (deleteChildren) {
       for (const wfid of workflowIDs) {
-        const children = await this.getWorkflowChildren(wfid);
-        workflowsToDelete = [...workflowsToDelete, ...children];
+        allIds.push(...(await this.getWorkflowChildren(wfid)));
       }
     }
 
-    const client = await this.pool.connect();
-    try {
-      await client.query(
-        `DELETE FROM "${this.schemaName}".workflow_status
-         WHERE workflow_uuid = ANY($1)`,
-        [workflowsToDelete],
-      );
-    } finally {
-      client.release();
-    }
+    await this.pool.query(`DELETE FROM "${this.schemaName}".workflow_status WHERE workflow_uuid = ANY($1)`, [allIds]);
 
-    // Clean up in-memory maps
-    for (const wfid of workflowsToDelete) {
+    for (const wfid of allIds) {
       this.runningWorkflowMap.delete(wfid);
       this.workflowCancellationMap.delete(wfid);
     }
