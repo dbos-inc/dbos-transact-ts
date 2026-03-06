@@ -911,15 +911,8 @@ export class SystemDatabase {
       `UPDATE "${this.schemaName}".workflow_status
        SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL, updated_at = $2
        WHERE workflow_uuid = ANY($3)
-         AND status NOT IN ($4, $5, $6)`,
-      [
-        StatusString.CANCELLED,
-        Date.now(),
-        workflowIDs,
-        StatusString.SUCCESS,
-        StatusString.ERROR,
-        StatusString.CANCELLED,
-      ],
+         AND status NOT IN ($4, $5)`,
+      [StatusString.CANCELLED, Date.now(), workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
     );
 
     for (const workflowID of workflowIDs) {
