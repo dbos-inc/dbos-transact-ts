@@ -624,7 +624,7 @@ export class Conductor {
               const rawEvents = await this.dbosExec.systemDatabase.getAllEvents(eventsMsg.workflow_id);
               eventOutputs = Object.entries(rawEvents).map(([key, value]) => ({
                 key,
-                value: String(value),
+                value: inspect(value),
               }));
             } catch (e) {
               errorMsg = `Exception encountered when getting events for workflow ${eventsMsg.workflow_id}: ${(e as Error).message}`;
@@ -640,7 +640,7 @@ export class Conductor {
               const rawNotifs = await this.dbosExec.systemDatabase.getAllNotifications(notifsMsg.workflow_id);
               notifOutputs = rawNotifs.map((n) => ({
                 topic: n.topic,
-                message: String(n.message),
+                message: inspect(n.message),
                 created_at_epoch_ms: n.createdAtEpochMs,
                 consumed: n.consumed,
               }));
@@ -662,7 +662,7 @@ export class Conductor {
               const rawStreams = await this.dbosExec.systemDatabase.getAllStreamEntries(streamsMsg.workflow_id);
               streamOutputs = Object.entries(rawStreams).map(([key, values]) => ({
                 key,
-                values: values.map((v) => String(v)),
+                values: values.map((v) => inspect(v)),
               }));
             } catch (e) {
               errorMsg = `Exception encountered when getting streams for workflow ${streamsMsg.workflow_id}: ${(e as Error).message}`;
