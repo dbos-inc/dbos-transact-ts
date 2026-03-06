@@ -1,4 +1,4 @@
-import { GetWorkflowsInput, StatusString, DBOS, WorkflowQueue } from '../src';
+import { GetWorkflowsInput, StatusString, DBOS, DBOSClient, WorkflowQueue } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
@@ -2164,6 +2164,37 @@ describe('wf-cancel-tests', () => {
 
     for (const wfid of wfids) {
       expect(await DBOS.getWorkflowStatus(wfid)).toBeNull();
+    }
+  });
+
+  test('test-client-delete-workflows', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      // Single delete
+      const wfid1 = randomUUID();
+      const h1 = await DBOS.startWorkflow(BulkDeleteTest, { workflowID: wfid1 }).simpleWorkflow(1);
+      expect(await h1.getResult()).toBe(1);
+      expect(await DBOS.getWorkflowStatus(wfid1)).not.toBeNull();
+
+      await client.deleteWorkflow(wfid1);
+      expect(await DBOS.getWorkflowStatus(wfid1)).toBeNull();
+
+      // Bulk delete
+      const wfids: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const wfid = randomUUID();
+        wfids.push(wfid);
+        const h = await DBOS.startWorkflow(BulkDeleteTest, { workflowID: wfid }).simpleWorkflow(i);
+        expect(await h.getResult()).toBe(i);
+      }
+
+      await client.deleteWorkflows(wfids);
+
+      for (const wfid of wfids) {
+        expect(await DBOS.getWorkflowStatus(wfid)).toBeNull();
+      }
+    } finally {
+      await client.destroy();
     }
   });
 

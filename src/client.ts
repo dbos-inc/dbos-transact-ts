@@ -379,6 +379,14 @@ export class DBOSClient {
     return this.systemDatabase.resumeWorkflows(workflowIDs);
   }
 
+  deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
+    return this.systemDatabase.deleteWorkflows([workflowID], deleteChildren);
+  }
+
+  deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
+    return this.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
+  }
+
   forkWorkflow(
     workflowID: string,
     startStep: number,
