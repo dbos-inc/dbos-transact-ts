@@ -545,7 +545,7 @@ export class DBOSExecutor {
         return await Promise.race([callPromise, timeoutPromise]);
       } catch (err) {
         if (err === timeoutResult) {
-          await sysdb.cancelWorkflow(workflowID);
+          await sysdb.cancelWorkflows([workflowID]);
           await callPromise.catch(() => {});
           throw new DBOSWorkflowCancelledError(workflowID);
         }
@@ -1147,11 +1147,6 @@ export class DBOSExecutor {
     return oc;
   }
 
-  async cancelWorkflow(workflowID: string): Promise<void> {
-    await this.systemDatabase.cancelWorkflow(workflowID);
-    this.logger.info(`Cancelling workflow ${workflowID}`);
-  }
-
   async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
     const outputs = await this.systemDatabase.getAllOperationResults(workflowID);
     return outputs.map((row) => {
@@ -1163,15 +1158,6 @@ export class DBOSExecutor {
         error: row.error !== null ? deserializeError(this.serializer.parse(row.error as unknown as string)) : null,
       };
     });
-  }
-
-  async resumeWorkflow(workflowID: string): Promise<void> {
-    await this.systemDatabase.resumeWorkflow(workflowID);
-  }
-
-  async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
-    await this.systemDatabase.deleteWorkflow(workflowID, deleteChildren);
-    this.logger.info(`Deleted workflow ${workflowID}${deleteChildren ? ' and its children' : ''}`);
   }
 
   /**

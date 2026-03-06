@@ -92,9 +92,9 @@ export function toWorkflowStatus(internal: WorkflowStatusInternal, serializer: D
 export async function globalTimeout(sysdb: SystemDatabase, cutoffEpochTimestampMs: number): Promise<void> {
   const cutoffIso = new Date(cutoffEpochTimestampMs).toISOString();
   for (const workflow of await listWorkflows(sysdb, { status: 'PENDING', endTime: cutoffIso })) {
-    await sysdb.cancelWorkflow(workflow.workflowID);
+    await sysdb.cancelWorkflows([workflow.workflowID]);
   }
   for (const workflow of await listWorkflows(sysdb, { status: 'ENQUEUED', endTime: cutoffIso })) {
-    await sysdb.cancelWorkflow(workflow.workflowID);
+    await sysdb.cancelWorkflows([workflow.workflowID]);
   }
 }
