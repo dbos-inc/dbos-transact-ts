@@ -941,6 +941,42 @@ export class SystemDatabase {
     this.#setWFCancelMap(workflowID);
   }
 
+  async cancelWorkflows(workflowIDs: string[]): Promise<void> {
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL READ COMMITTED');
+
+      // Set the workflows' status to CANCELLED and remove them from any queue,
+      // but only if the workflow is not already complete.
+      await client.query(
+        `UPDATE "${this.schemaName}".workflow_status
+         SET status = $1, queue_name = NULL, deduplication_id = NULL, started_at_epoch_ms = NULL, updated_at = $2
+         WHERE workflow_uuid = ANY($3)
+           AND status NOT IN ($4, $5, $6)`,
+        [
+          StatusString.CANCELLED,
+          Date.now(),
+          workflowIDs,
+          StatusString.SUCCESS,
+          StatusString.ERROR,
+          StatusString.CANCELLED,
+        ],
+      );
+
+      await client.query('COMMIT');
+    } catch (error) {
+      this.logger.error(error);
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+
+    for (const workflowID of workflowIDs) {
+      this.#setWFCancelMap(workflowID);
+    }
+  }
+
   @dbRetry()
   async checkIfCanceled(workflowID: string): Promise<void> {
     const client = await this.pool.connect();
@@ -991,6 +1027,36 @@ export class SystemDatabase {
     }
   }
 
+  async resumeWorkflows(workflowIDs: string[]): Promise<void> {
+    for (const workflowID of workflowIDs) {
+      this.#clearWFCancelMap(workflowID);
+    }
+    const client = await this.pool.connect();
+    try {
+      await client.query('BEGIN ISOLATION LEVEL REPEATABLE READ');
+
+      // Set the workflows' status to ENQUEUED and clear recovery attempts and deadline,
+      // but only if the workflow is not already complete.
+      await client.query(
+        `UPDATE "${this.schemaName}".workflow_status
+         SET status = $1, queue_name = $2, recovery_attempts = 0,
+             workflow_deadline_epoch_ms = NULL, deduplication_id = NULL,
+             started_at_epoch_ms = NULL, updated_at = $3
+         WHERE workflow_uuid = ANY($4)
+           AND status NOT IN ($5, $6)`,
+        [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, Date.now(), workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
+      );
+
+      await client.query('COMMIT');
+    } catch (error) {
+      this.logger.error(error);
+      await client.query('ROLLBACK');
+      throw error;
+    } finally {
+      client.release();
+    }
+  }
+
   async getWorkflowChildren(workflowID: string): Promise<string[]> {
     // BFS to find all descendant workflows
     const visited = new Set<string>([workflowID]);
@@ -1028,6 +1094,34 @@ export class SystemDatabase {
     if (deleteChildren) {
       const children = await this.getWorkflowChildren(workflowID);
       workflowsToDelete = [...workflowsToDelete, ...children];
+    }
+
+    const client = await this.pool.connect();
+    try {
+      await client.query(
+        `DELETE FROM "${this.schemaName}".workflow_status
+         WHERE workflow_uuid = ANY($1)`,
+        [workflowsToDelete],
+      );
+    } finally {
+      client.release();
+    }
+
+    // Clean up in-memory maps
+    for (const wfid of workflowsToDelete) {
+      this.runningWorkflowMap.delete(wfid);
+      this.workflowCancellationMap.delete(wfid);
+    }
+  }
+
+  async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
+    let workflowsToDelete: string[] = [...workflowIDs];
+
+    if (deleteChildren) {
+      for (const wfid of workflowIDs) {
+        const children = await this.getWorkflowChildren(wfid);
+        workflowsToDelete = [...workflowsToDelete, ...children];
+      }
     }
 
     const client = await this.pool.connect();
@@ -2095,6 +2189,81 @@ export class SystemDatabase {
       // Deserialize the value before returning
       const row = result.rows[0] as { value: string; serialization: string | null };
       return { serializedValue: row.value, serialization: row.serialization };
+    } finally {
+      client.release();
+    }
+  }
+
+  // ==================== Observability: Workflow Communications ====================
+
+  async getAllEvents(workflowID: string): Promise<Record<string, unknown>> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query<{ key: string; value: string; serialization: string | null }>(
+        `SELECT key, value, serialization FROM "${this.schemaName}".workflow_events
+         WHERE workflow_uuid = $1`,
+        [workflowID],
+      );
+      const events: Record<string, unknown> = {};
+      for (const row of result.rows) {
+        events[row.key] = this.serializer.parse(row.value);
+      }
+      return events;
+    } finally {
+      client.release();
+    }
+  }
+
+  async getAllNotifications(
+    workflowID: string,
+  ): Promise<{ topic: string | null; message: unknown; createdAtEpochMs: number; consumed: boolean }[]> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query<{
+        topic: string;
+        message: string;
+        serialization: string | null;
+        created_at_epoch_ms: string;
+        consumed: boolean;
+      }>(
+        `SELECT topic, message, serialization, created_at_epoch_ms, consumed
+         FROM "${this.schemaName}".notifications
+         WHERE destination_uuid = $1
+         ORDER BY created_at_epoch_ms`,
+        [workflowID],
+      );
+      return result.rows.map((row) => ({
+        topic: row.topic === this.nullTopic ? null : row.topic,
+        message: this.serializer.parse(row.message),
+        createdAtEpochMs: Number(row.created_at_epoch_ms),
+        consumed: row.consumed,
+      }));
+    } finally {
+      client.release();
+    }
+  }
+
+  async getAllStreamEntries(workflowID: string): Promise<Record<string, unknown[]>> {
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query<{ key: string; value: string; serialization: string | null }>(
+        `SELECT key, value, serialization FROM "${this.schemaName}".streams
+         WHERE workflow_uuid = $1
+         ORDER BY key, "offset"`,
+        [workflowID],
+      );
+      const streams: Record<string, unknown[]> = {};
+      for (const row of result.rows) {
+        const value = this.serializer.parse(row.value);
+        if (value === DBOS_STREAM_CLOSED_SENTINEL) {
+          continue;
+        }
+        if (!streams[row.key]) {
+          streams[row.key] = [];
+        }
+        streams[row.key].push(value);
+      }
+      return streams;
     } finally {
       client.release();
     }

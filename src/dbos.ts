@@ -801,6 +801,17 @@ export class DBOS {
   }
 
   /**
+   * Cancel multiple workflows given their IDs.
+   * @param workflowIDs - IDs of the workflows to cancel
+   */
+  static async cancelWorkflows(workflowIDs: string[]): Promise<void> {
+    ensureDBOSIsLaunched('cancelWorkflows');
+    return await runInternalStep(async () => {
+      return await DBOS.#executor.cancelWorkflows(workflowIDs);
+    }, 'DBOS.cancelWorkflow');
+  }
+
+  /**
    * Resume a workflow given its ID.
    * @param workflowID - ID of the workflow
    */
@@ -810,6 +821,19 @@ export class DBOS {
       return await DBOS.#executor.resumeWorkflow(workflowID);
     }, 'DBOS.resumeWorkflow');
     return this.retrieveWorkflow(workflowID);
+  }
+
+  /**
+   * Resume multiple workflows given their IDs.
+   * @param workflowIDs - IDs of the workflows to resume
+   * @returns An array of workflow handles
+   */
+  static async resumeWorkflows<T>(workflowIDs: string[]): Promise<WorkflowHandle<Awaited<T>>[]> {
+    ensureDBOSIsLaunched('resumeWorkflows');
+    await runInternalStep(async () => {
+      return await DBOS.#executor.resumeWorkflows(workflowIDs);
+    }, 'DBOS.resumeWorkflow');
+    return workflowIDs.map((wfid) => this.retrieveWorkflow(wfid));
   }
 
   /**
@@ -825,6 +849,21 @@ export class DBOS {
     ensureDBOSIsLaunched('deleteWorkflow');
     return await runInternalStep(async () => {
       return await DBOS.#executor.deleteWorkflow(workflowID, deleteChildren);
+    }, 'DBOS.deleteWorkflow');
+  }
+
+  /**
+   * Delete multiple workflows and optionally all their child workflows.
+   *
+   * WARNING: This operation is irreversible.
+   *
+   * @param workflowIDs - IDs of the workflows to delete
+   * @param deleteChildren - If true, also delete all child workflows recursively (default: false)
+   */
+  static async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
+    ensureDBOSIsLaunched('deleteWorkflows');
+    return await runInternalStep(async () => {
+      return await DBOS.#executor.deleteWorkflows(workflowIDs, deleteChildren);
     }, 'DBOS.deleteWorkflow');
   }
 

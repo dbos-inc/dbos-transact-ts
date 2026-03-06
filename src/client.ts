@@ -367,8 +367,16 @@ export class DBOSClient {
     return this.systemDatabase.cancelWorkflow(workflowID);
   }
 
+  cancelWorkflows(workflowIDs: string[]): Promise<void> {
+    return this.systemDatabase.cancelWorkflows(workflowIDs);
+  }
+
   resumeWorkflow(workflowID: string): Promise<void> {
     return this.systemDatabase.resumeWorkflow(workflowID);
+  }
+
+  resumeWorkflows(workflowIDs: string[]): Promise<void> {
+    return this.systemDatabase.resumeWorkflows(workflowIDs);
   }
 
   forkWorkflow(

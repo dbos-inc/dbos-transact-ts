@@ -1152,6 +1152,11 @@ export class DBOSExecutor {
     this.logger.info(`Cancelling workflow ${workflowID}`);
   }
 
+  async cancelWorkflows(workflowIDs: string[]): Promise<void> {
+    await this.systemDatabase.cancelWorkflows(workflowIDs);
+    this.logger.info(`Cancelling workflow(s): ${workflowIDs}`);
+  }
+
   async getWorkflowSteps(workflowID: string): Promise<step_info[]> {
     const outputs = await this.systemDatabase.getAllOperationResults(workflowID);
     return outputs.map((row) => {
@@ -1169,9 +1174,18 @@ export class DBOSExecutor {
     await this.systemDatabase.resumeWorkflow(workflowID);
   }
 
+  async resumeWorkflows(workflowIDs: string[]): Promise<void> {
+    await this.systemDatabase.resumeWorkflows(workflowIDs);
+  }
+
   async deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
     await this.systemDatabase.deleteWorkflow(workflowID, deleteChildren);
     this.logger.info(`Deleted workflow ${workflowID}${deleteChildren ? ' and its children' : ''}`);
+  }
+
+  async deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
+    await this.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
+    this.logger.info(`Deleted workflow(s): ${workflowIDs}${deleteChildren ? ' and their children' : ''}`);
   }
 
   /**
