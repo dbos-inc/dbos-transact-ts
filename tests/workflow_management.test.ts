@@ -1705,6 +1705,8 @@ describe('wf-cancel-tests', () => {
 
   beforeEach(async () => {
     WFwith2Steps.stepsExecuted = 0;
+    WFwith2Steps.step1Started = new Event();
+    WFwith2Steps.step1Gate = new Event();
     await DBOS.launch();
   });
 
@@ -1712,53 +1714,24 @@ describe('wf-cancel-tests', () => {
     await DBOS.shutdown();
   }, 10000);
 
-  test('test-two-steps-base', async () => {
-    const wfid = randomUUID();
-    const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
-
-    await wfh.getResult();
-
-    expect(WFwith2Steps.stepsExecuted).toBe(2);
-  });
-
-  test('test-two-steps-cancel', async () => {
-    const wfid = randomUUID();
-
-    try {
-      const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
-
-      await DBOS.cancelWorkflow(wfid);
-      await wfh.getResult();
-    } catch (e) {
-      console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
-
-      expect(WFwith2Steps.stepsExecuted).toBe(1);
-
-      const wfstatus = await DBOS.getWorkflowStatus(wfid);
-
-      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
-    }
-  });
-
   test('test-two-steps-cancel-resume', async () => {
     const wfid = randomUUID();
-
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
-    try {
-      await DBOS.cancelWorkflow(wfid);
+    // Wait for step1 to start, then cancel before it completes
+    await WFwith2Steps.step1Started.wait();
+    await DBOS.cancelWorkflow(wfid);
+    WFwith2Steps.step1Gate.set();
 
-      await wfh.getResult();
-    } catch (e) {
-      console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    expect(WFwith2Steps.stepsExecuted).toBe(1);
 
-      expect(WFwith2Steps.stepsExecuted).toBe(1);
+    const wfstatus = await DBOS.getWorkflowStatus(wfid);
+    expect(wfstatus?.status).toBe(StatusString.CANCELLED);
 
-      const wfstatus = await DBOS.getWorkflowStatus(wfid);
-
-      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
-    }
-
+    // Resume and let it complete - reset the gate for the replayed step1
+    WFwith2Steps.step1Gate = new Event();
+    WFwith2Steps.step1Gate.set();
     const wfh2 = await DBOS.resumeWorkflow(wfid);
     await wfh2.getResult();
     const resstatus = await DBOS.getWorkflowStatus(wfid);
@@ -1767,6 +1740,7 @@ describe('wf-cancel-tests', () => {
 
   test('test-resume-on-a-completed-ws', async () => {
     const wfid = randomUUID();
+    WFwith2Steps.step1Gate.set();
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
     await wfh.getResult();
@@ -1824,27 +1798,27 @@ describe('wf-cancel-tests', () => {
   });
 
   class WFwith2Steps {
-    static stepsExecuted = 0 as number;
+    static stepsExecuted = 0;
+    static step1Started = new Event();
+    static step1Gate = new Event();
 
     @DBOS.step()
     static async step1() {
       WFwith2Steps.stepsExecuted++;
-      console.log(`Step 1  ${WFwith2Steps.stepsExecuted}`);
-      await DBOS.sleepSeconds(1);
+      WFwith2Steps.step1Started.set();
+      await WFwith2Steps.step1Gate.wait();
     }
 
     @DBOS.step()
-    // eslint-disable-next-line @typescript-eslint/require-await
     static async step2() {
+      await Promise.resolve();
       WFwith2Steps.stepsExecuted++;
-      console.log(`Step 1  ${WFwith2Steps.stepsExecuted}`);
     }
 
     @DBOS.workflow()
     static async workflowWithSteps() {
       await WFwith2Steps.step1();
       await WFwith2Steps.step2();
-      return Promise.resolve();
     }
   }
 
