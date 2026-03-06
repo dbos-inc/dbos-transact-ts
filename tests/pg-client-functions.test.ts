@@ -106,13 +106,19 @@ describe('PostgreSQL Client Functions', () => {
         `
         SELECT dbos.enqueue_workflow(
           workflow_name => 'enqueueTest',
-          queue_name => 'test-queue',
+          queue_name => $5,
           class_name => 'ClientTest', 
           workflow_id => $1,
           positional_args => ARRAY[$2::JSON, $3::JSON, $4::JSON]
         )
       `,
-        [wfid, JSON.stringify(42), JSON.stringify('test'), JSON.stringify({ first: 'John', last: 'Doe', age: 30 })],
+        [
+          wfid,
+          JSON.stringify(42),
+          JSON.stringify('test'),
+          JSON.stringify({ first: 'John', last: 'Doe', age: 30 }),
+          testQueue.name,
+        ],
       );
 
       expect(enqueueResult.rowCount).toEqual(1);
@@ -157,12 +163,17 @@ describe('PostgreSQL Client Functions', () => {
         `
         SELECT dbos.enqueue_workflow(
           workflow_name => 'enqueueTest',
-          queue_name => 'test-queue',
+          queue_name => $4,
           class_name => 'ClientTest', 
           positional_args => ARRAY[$1::JSON, $2::JSON, $3::JSON]
         )
       `,
-        [JSON.stringify(42), JSON.stringify('test'), JSON.stringify({ first: 'John', last: 'Doe', age: 30 })],
+        [
+          JSON.stringify(42),
+          JSON.stringify('test'),
+          JSON.stringify({ first: 'John', last: 'Doe', age: 30 }),
+          testQueue.name,
+        ],
       );
 
       expect(enqueueResult.rowCount).toEqual(1);

@@ -148,7 +148,7 @@ describeIf('cockroachdb', () => {
   });
 
   test('pg-enqueue', async () => {
-    const client = new Client(config.systemDatabaseUrl!);
+    const client = new Client(config.systemDatabaseUrl);
     let wfid: string;
 
     try {
@@ -185,7 +185,7 @@ describeIf('cockroachdb', () => {
   test('pg-send', async () => {
     const handle = await DBOS.startWorkflow(CRDBTestClass).receiveWorkflow();
 
-    const client = new Client(config.systemDatabaseUrl!);
+    const client = new Client(config.systemDatabaseUrl);
     try {
       await client.connect();
 
