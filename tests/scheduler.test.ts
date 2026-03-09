@@ -1,5 +1,5 @@
 import { DBOS, ConfiguredInstance, DBOSClient } from '../src';
-import { DBOSConfig } from '../src/dbos-executor';
+import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import { generateDBOSTestConfig, setUpDBOSTestSysDb, dropDatabase } from './helpers';
 import { sleepms } from '../src/utils';
 
@@ -801,6 +801,64 @@ describe('dynamic-scheduler-tests', () => {
 
     await DBOS.deleteSchedule('tz-utc');
     await DBOS.deleteSchedule('tz-ny');
+  }, 30000);
+
+  // ---------------------------------------------------------------------------
+  // Automatic backfill on restart
+  // ---------------------------------------------------------------------------
+  const autoBackfillResults: { dates: Date[] } = { dates: [] };
+  async function autoBackfillWf(scheduledDate: Date, _context: unknown) {
+    autoBackfillResults.dates.push(scheduledDate);
+    await Promise.resolve();
+  }
+  const regAutoBackfillWf = DBOS.registerWorkflow(autoBackfillWf, { name: 'autoBackfillWf' });
+
+  // Matches Python test_automatic_backfill_on_restart
+  test('automatic-backfill-on-restart', async () => {
+    autoBackfillResults.dates = [];
+
+    // Create an hourly schedule with automatic_backfill enabled (won't fire naturally during test)
+    await DBOS.createSchedule({
+      scheduleName: 'backfill-restart',
+      workflowFn: regAutoBackfillWf,
+      schedule: '0 * * * *',
+      options: { automaticBackfill: true },
+    });
+
+    // Set lastFiredAt to 3 hours ago, simulating that the scheduler was down
+    const threeHoursAgo = new Date(Date.now() - 3 * 60 * 60 * 1000);
+    threeHoursAgo.setMinutes(0, 0, 0);
+    await DBOSExecutor.globalInstance!.systemDatabase.updateLastFiredAt(
+      'backfill-restart',
+      threeHoursAgo.toISOString(),
+    );
+
+    // Verify the schedule metadata reflects our changes
+    const sched = await DBOS.getSchedule('backfill-restart');
+    expect(sched).not.toBeNull();
+    expect(sched!.automaticBackfill).toBe(true);
+    expect(sched!.lastFiredAt).not.toBeNull();
+    expect(new Date(sched!.lastFiredAt!).getTime()).toBe(threeHoursAgo.getTime());
+
+    // Shutdown and relaunch — the scheduler should backfill on startup
+    await DBOS.shutdown();
+    await DBOS.launch();
+
+    // Wait for the scheduler polling loop to pick up the schedule and backfill
+    await retryUntilSuccess(() => {
+      expect(autoBackfillResults.dates.length).toBeGreaterThanOrEqual(2);
+    });
+
+    // Verify the backfilled times are hourly slots between lastFiredAt and now
+    const firedTimes = autoBackfillResults.dates.map((d) => d.getTime()).sort((a, b) => a - b);
+    for (const t of firedTimes) {
+      expect(t).toBeGreaterThan(threeHoursAgo.getTime());
+      expect(t).toBeLessThanOrEqual(Date.now());
+      // Hourly cron fires at minute 0
+      expect(new Date(t).getUTCMinutes()).toBe(0);
+    }
+
+    await DBOS.deleteSchedule('backfill-restart');
   }, 30000);
 
   // ---------------------------------------------------------------------------
