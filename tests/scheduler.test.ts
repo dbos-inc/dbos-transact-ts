@@ -726,6 +726,84 @@ describe('dynamic-scheduler-tests', () => {
   }, 30000);
 
   // ---------------------------------------------------------------------------
+  // Backfill with timezone
+  // ---------------------------------------------------------------------------
+  const backfillTzUtcResults: { dates: Date[] } = { dates: [] };
+  const backfillTzNyResults: { dates: Date[] } = { dates: [] };
+  async function backfillTzUtcWf(scheduledDate: Date, _context: unknown) {
+    backfillTzUtcResults.dates.push(scheduledDate);
+    await Promise.resolve();
+  }
+  async function backfillTzNyWf(scheduledDate: Date, _context: unknown) {
+    backfillTzNyResults.dates.push(scheduledDate);
+    await Promise.resolve();
+  }
+  const regBackfillTzUtc = DBOS.registerWorkflow(backfillTzUtcWf, { name: 'backfillTzUtcWf' });
+  const regBackfillTzNy = DBOS.registerWorkflow(backfillTzNyWf, { name: 'backfillTzNyWf' });
+
+  // Matches Python test_backfill_with_timezone
+  test('backfill-with-timezone', async () => {
+    backfillTzUtcResults.dates = [];
+    backfillTzNyResults.dates = [];
+
+    // Same cron (midnight daily), different timezones
+    await DBOS.createSchedule({
+      scheduleName: 'tz-utc',
+      workflowFn: regBackfillTzUtc,
+      schedule: '0 0 * * *',
+      options: { cronTimezone: 'UTC' },
+    });
+    await DBOS.createSchedule({
+      scheduleName: 'tz-ny',
+      workflowFn: regBackfillTzNy,
+      schedule: '0 0 * * *',
+      options: { cronTimezone: 'America/New_York' },
+    });
+    // Pause both so the live scheduler doesn't interfere
+    await DBOS.pauseSchedule('tz-utc');
+    await DBOS.pauseSchedule('tz-ny');
+
+    // Backfill a window that contains two UTC midnights and two NY midnights.
+    // In winter, America/New_York is UTC-5.
+    const start = new Date(Date.UTC(2024, 11, 31, 23, 0, 0)); // Dec 31 23:00 UTC
+    const end = new Date(Date.UTC(2025, 0, 3, 0, 0, 0)); // Jan 3 00:00 UTC
+
+    const handlesUtc = await DBOS.backfillSchedule('tz-utc', start, end);
+    const handlesNy = await DBOS.backfillSchedule('tz-ny', start, end);
+
+    for (const h of [...handlesUtc, ...handlesNy]) {
+      await h.getResult();
+    }
+
+    // UTC schedule: midnight UTC on Jan 1 and Jan 2
+    const utcTimes = backfillTzUtcResults.dates.map((d) => d.getTime()).sort((a, b) => a - b);
+    expect(utcTimes.length).toBe(2);
+    const utc0 = new Date(utcTimes[0]);
+    const utc1 = new Date(utcTimes[1]);
+    expect(utc0.getUTCDate()).toBe(1);
+    expect(utc0.getUTCHours()).toBe(0);
+    expect(utc1.getUTCDate()).toBe(2);
+    expect(utc1.getUTCHours()).toBe(0);
+
+    // NY schedule: midnight Eastern = 05:00 UTC (winter), so Jan 1 05:00 UTC and Jan 2 05:00 UTC
+    const nyTimes = backfillTzNyResults.dates.map((d) => d.getTime()).sort((a, b) => a - b);
+    expect(nyTimes.length).toBe(2);
+    const ny0 = new Date(nyTimes[0]);
+    const ny1 = new Date(nyTimes[1]);
+    expect(ny0.getUTCHours()).toBe(5);
+    expect(ny0.getUTCMinutes()).toBe(0);
+    expect(ny1.getUTCHours()).toBe(5);
+    expect(ny1.getUTCMinutes()).toBe(0);
+
+    // The NY fires should be different instants from the UTC fires
+    expect(nyTimes[0]).not.toBe(utcTimes[0]);
+    expect(nyTimes[1]).not.toBe(utcTimes[1]);
+
+    await DBOS.deleteSchedule('tz-utc');
+    await DBOS.deleteSchedule('tz-ny');
+  }, 30000);
+
+  // ---------------------------------------------------------------------------
   // Class-based workflows
   // ---------------------------------------------------------------------------
   class ScheduledClass {
