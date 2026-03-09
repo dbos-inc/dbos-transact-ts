@@ -112,7 +112,7 @@ import {
   triggerSchedule as triggerScheduleImpl,
   backfillSchedule as backfillScheduleImpl,
 } from './scheduler/scheduler';
-import { validateCrontab } from './scheduler/crontab';
+import { validateCrontab, validateTimezone } from './scheduler/crontab';
 import { wfQueueRunner } from './wfqueue';
 import { registerAuthChecker } from './authdecorators';
 import assert from 'node:assert';
@@ -2001,6 +2001,8 @@ export class DBOS {
     workflowFn: ScheduledWorkflowFn;
     schedule: string;
     context?: unknown;
+    automaticBackfill?: boolean;
+    cronTimezone?: string;
   }): Promise<void> {
     ensureDBOSIsLaunched('createSchedule');
 
@@ -2013,6 +2015,9 @@ export class DBOS {
 
     const { className, name: funcName } = getRegisteredFunctionFullName(options.workflowFn);
     validateCrontab(options.schedule);
+    if (options.cronTimezone) {
+      validateTimezone(options.cronTimezone);
+    }
 
     const serializer = DBOSExecutor.globalInstance!.serializer;
     const schedInternal: WorkflowScheduleInternal = {
@@ -2023,6 +2028,9 @@ export class DBOS {
       schedule: options.schedule,
       status: 'ACTIVE',
       context: serializer.stringify(options.context),
+      lastFiredAt: null,
+      automaticBackfill: options.automaticBackfill ?? false,
+      cronTimezone: options.cronTimezone ?? null,
     };
 
     await runTransactionalInternalStep(
@@ -2085,6 +2093,8 @@ export class DBOS {
       workflowFn: ScheduledWorkflowFn;
       schedule: string;
       context?: unknown;
+      automaticBackfill?: boolean;
+      cronTimezone?: string;
     }>,
   ): Promise<void> {
     ensureDBOSIsLaunched('applySchedules');
@@ -2103,6 +2113,9 @@ export class DBOS {
       }
       const { className, name: funcName } = getRegisteredFunctionFullName(sched.workflowFn);
       validateCrontab(sched.schedule);
+      if (sched.cronTimezone) {
+        validateTimezone(sched.cronTimezone);
+      }
       internals.push({
         scheduleId: createScheduleId(),
         scheduleName: sched.scheduleName,
@@ -2111,6 +2124,9 @@ export class DBOS {
         schedule: sched.schedule,
         status: 'ACTIVE',
         context: serializer.stringify(sched.context),
+        lastFiredAt: null,
+        automaticBackfill: sched.automaticBackfill ?? false,
+        cronTimezone: sched.cronTimezone ?? null,
       });
     }
 

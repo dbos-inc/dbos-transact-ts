@@ -268,5 +268,12 @@ export function allMigrations(
         )`,
       ],
     },
+    {
+      pg: [
+        `ALTER TABLE "${schemaName}"."workflow_schedules" ADD COLUMN "last_fired_at" TEXT DEFAULT NULL`,
+        `ALTER TABLE "${schemaName}"."workflow_schedules" ADD COLUMN "automatic_backfill" BOOLEAN NOT NULL DEFAULT FALSE`,
+        `ALTER TABLE "${schemaName}"."workflow_schedules" ADD COLUMN "cron_timezone" TEXT DEFAULT NULL`,
+      ],
+    },
   ];
 }

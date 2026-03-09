@@ -229,6 +229,18 @@ export function validateCrontab(pattern: string) {
   return executablePatterns.join(' ');
 }
 
+/**
+ * Validates an IANA timezone string.
+ *   Throws on error.
+ */
+export function validateTimezone(timezone: string): void {
+  try {
+    Intl.DateTimeFormat(undefined, { timeZone: timezone });
+  } catch {
+    throw new Error(`Invalid timezone: '${timezone}'`);
+  }
+}
+
 /*
  * The node-cron core allows only numbers (including multiple numbers e.g 1,2).
  * This module is going to translate the month names, week day names and ranges

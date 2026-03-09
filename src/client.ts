@@ -45,7 +45,7 @@ import {
   triggerSchedule,
   backfillSchedule,
 } from './scheduler/scheduler';
-import { validateCrontab } from './scheduler/crontab';
+import { validateCrontab, validateTimezone } from './scheduler/crontab';
 
 /**
  * EnqueueOptions defines the options that can be passed to the `enqueue` method of the DBOSClient.
@@ -470,8 +470,13 @@ export class DBOSClient {
     workflowClassName?: string;
     schedule: string;
     context?: unknown;
+    automaticBackfill?: boolean;
+    cronTimezone?: string;
   }): Promise<void> {
     validateCrontab(options.schedule);
+    if (options.cronTimezone) {
+      validateTimezone(options.cronTimezone);
+    }
     const schedInternal: WorkflowScheduleInternal = {
       scheduleId: createScheduleId(),
       scheduleName: options.scheduleName,
@@ -480,6 +485,9 @@ export class DBOSClient {
       schedule: options.schedule,
       status: 'ACTIVE',
       context: this.serializer.stringify(options.context),
+      lastFiredAt: null,
+      automaticBackfill: options.automaticBackfill ?? false,
+      cronTimezone: options.cronTimezone ?? null,
     };
     await this.systemDatabase.createSchedule(schedInternal);
   }
@@ -517,11 +525,16 @@ export class DBOSClient {
       workflowClassName?: string;
       schedule: string;
       context?: unknown;
+      automaticBackfill?: boolean;
+      cronTimezone?: string;
     }>,
   ): Promise<void> {
     const internals: WorkflowScheduleInternal[] = [];
     for (const sched of schedules) {
       validateCrontab(sched.schedule);
+      if (sched.cronTimezone) {
+        validateTimezone(sched.cronTimezone);
+      }
       internals.push({
         scheduleId: createScheduleId(),
         scheduleName: sched.scheduleName,
@@ -530,6 +543,9 @@ export class DBOSClient {
         schedule: sched.schedule,
         status: 'ACTIVE',
         context: this.serializer.stringify(sched.context),
+        lastFiredAt: null,
+        automaticBackfill: sched.automaticBackfill ?? false,
+        cronTimezone: sched.cronTimezone ?? null,
       });
     }
     await this.systemDatabase.applySchedules(internals);

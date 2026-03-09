@@ -74,6 +74,9 @@ export interface WorkflowScheduleInternal {
   schedule: string;
   status: string;
   context: string; // JSON-serialized
+  lastFiredAt: string | null;
+  automaticBackfill: boolean;
+  cronTimezone: string | null;
 }
 
 export interface VersionInfo {
@@ -2526,8 +2529,8 @@ export class SystemDatabase {
     try {
       await q.query(
         `INSERT INTO "${this.schemaName}".workflow_schedules
-         (schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context)
-         VALUES ($1, $2, $3, $4, $5, $6, $7)`,
+         (schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context, last_fired_at, automatic_backfill, cron_timezone)
+         VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
         [
           schedule.scheduleId,
           schedule.scheduleName,
@@ -2536,6 +2539,9 @@ export class SystemDatabase {
           schedule.schedule,
           schedule.status,
           schedule.context,
+          schedule.lastFiredAt,
+          schedule.automaticBackfill,
+          schedule.cronTimezone,
         ],
       );
     } catch (e) {
@@ -2584,7 +2590,7 @@ export class SystemDatabase {
 
     const where = conditions.length > 0 ? ` WHERE ${conditions.join(' AND ')}` : '';
     const result = await q.query(
-      `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context
+      `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context, last_fired_at, automatic_backfill, cron_timezone
        FROM "${this.schemaName}".workflow_schedules${where}
        ORDER BY schedule_name`,
       params,
@@ -2598,13 +2604,16 @@ export class SystemDatabase {
       schedule: row.schedule,
       status: row.status,
       context: row.context,
+      lastFiredAt: row.last_fired_at ?? null,
+      automaticBackfill: !!row.automatic_backfill,
+      cronTimezone: row.cron_timezone ?? null,
     }));
   }
 
   async getSchedule(name: string, client?: PoolClient): Promise<WorkflowScheduleInternal | null> {
     const q = client ?? this.pool;
     const result = await q.query(
-      `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context
+      `SELECT schedule_id, schedule_name, workflow_name, workflow_class_name, schedule, status, context, last_fired_at, automatic_backfill, cron_timezone
        FROM "${this.schemaName}".workflow_schedules
        WHERE schedule_name = $1`,
       [name],
@@ -2619,6 +2628,9 @@ export class SystemDatabase {
       schedule: row.schedule,
       status: row.status,
       context: row.context,
+      lastFiredAt: row.last_fired_at ?? null,
+      automaticBackfill: !!row.automatic_backfill,
+      cronTimezone: row.cron_timezone ?? null,
     };
   }
 
@@ -2633,6 +2645,13 @@ export class SystemDatabase {
       status,
       name,
     ]);
+  }
+
+  async updateLastFiredAt(name: string, lastFiredAt: string): Promise<void> {
+    await this.pool.query(
+      `UPDATE "${this.schemaName}".workflow_schedules SET last_fired_at = $1 WHERE schedule_name = $2`,
+      [lastFiredAt, name],
+    );
   }
 
   async applySchedules(schedules: WorkflowScheduleInternal[]): Promise<void> {
