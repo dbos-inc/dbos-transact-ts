@@ -38,7 +38,6 @@ describe('dynamic-scheduler-tests', () => {
   const regMyWf = DBOS.registerWorkflow(myWorkflow, { name: 'myWorkflow' });
   const regOtherWf = DBOS.registerWorkflow(otherWorkflow, { name: 'otherWorkflow' });
 
-  // Matches Python test_schedule_crud
   test('schedule-crud', async () => {
     // Create a schedule with context
     await DBOS.createSchedule({
@@ -177,7 +176,6 @@ describe('dynamic-scheduler-tests', () => {
   }
   const regBadApplyWf = DBOS.registerWorkflow(badApplyWorkflow, { name: 'badApplyWorkflow' });
 
-  // Matches Python test_apply_schedules
   test('apply-schedules', async () => {
     // Apply two schedules at once, sched-b with options
     await DBOS.applySchedules([
@@ -281,7 +279,6 @@ describe('dynamic-scheduler-tests', () => {
   }
   const regCrudWf = DBOS.registerWorkflow(crudWorkflow, { name: 'crudWorkflow' });
 
-  // Matches Python test_schedule_crud_from_workflow
   test('schedule-crud-from-workflow', async () => {
     const handle = await DBOS.startWorkflow(regCrudWf)();
     await handle.getResult();
@@ -741,7 +738,6 @@ describe('dynamic-scheduler-tests', () => {
   const regBackfillTzUtc = DBOS.registerWorkflow(backfillTzUtcWf, { name: 'backfillTzUtcWf' });
   const regBackfillTzNy = DBOS.registerWorkflow(backfillTzNyWf, { name: 'backfillTzNyWf' });
 
-  // Matches Python test_backfill_with_timezone
   test('backfill-with-timezone', async () => {
     backfillTzUtcResults.dates = [];
     backfillTzNyResults.dates = [];
@@ -813,7 +809,6 @@ describe('dynamic-scheduler-tests', () => {
   }
   const regAutoBackfillWf = DBOS.registerWorkflow(autoBackfillWf, { name: 'autoBackfillWf' });
 
-  // Matches Python test_automatic_backfill_on_restart
   test('automatic-backfill-on-restart', async () => {
     autoBackfillResults.dates = [];
 
