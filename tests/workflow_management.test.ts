@@ -1,4 +1,4 @@
-import { GetWorkflowsInput, StatusString, DBOS, WorkflowQueue } from '../src';
+import { GetWorkflowsInput, StatusString, DBOS, DBOSClient, WorkflowQueue } from '../src';
 import { DBOSConfig, DBOSExecutor } from '../src/dbos-executor';
 import {
   generateDBOSTestConfig,
@@ -14,11 +14,7 @@ import { globalParams, sleepms } from '../src/utils';
 import { SystemDatabase } from '../src/system_database';
 import { GlobalLogger } from '../src/telemetry/logs';
 import { getWorkflow, globalTimeout, listQueuedWorkflows, listWorkflows } from '../src/workflow_management';
-import {
-  DBOSAwaitedWorkflowCancelledError,
-  DBOSNonExistentWorkflowError,
-  DBOSWorkflowCancelledError,
-} from '../src/error';
+import { DBOSAwaitedWorkflowCancelledError, DBOSWorkflowCancelledError } from '../src/error';
 import assert from 'node:assert';
 import { DBOSJSON } from '../src/serialization';
 
@@ -374,10 +370,8 @@ describe('workflow-management-tests', () => {
     expect(TestEndpoints.tries).toBe(2);
     expect(result.rows[0].status).toBe(StatusString.SUCCESS);
 
-    // Resume a non-existant workflow should throw an error
-    await expect(DBOS.resumeWorkflow('fake-workflow')).rejects.toThrow(
-      new DBOSNonExistentWorkflowError(`Workflow fake-workflow does not exist`),
-    );
+    // Resume a non-existent workflow is a no-op (bulk UPDATE affects 0 rows)
+    await DBOS.resumeWorkflow('fake-workflow');
 
     // fork the workflow
     const wfh = await DBOS.forkWorkflow(workflowID, 0);
@@ -1711,6 +1705,8 @@ describe('wf-cancel-tests', () => {
 
   beforeEach(async () => {
     WFwith2Steps.stepsExecuted = 0;
+    WFwith2Steps.step1Started = new Event();
+    WFwith2Steps.step1Gate = new Event();
     await DBOS.launch();
   });
 
@@ -1718,53 +1714,24 @@ describe('wf-cancel-tests', () => {
     await DBOS.shutdown();
   }, 10000);
 
-  test('test-two-steps-base', async () => {
-    const wfid = randomUUID();
-    const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
-
-    await wfh.getResult();
-
-    expect(WFwith2Steps.stepsExecuted).toBe(2);
-  });
-
-  test('test-two-steps-cancel', async () => {
-    const wfid = randomUUID();
-
-    try {
-      const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
-
-      await DBOS.cancelWorkflow(wfid);
-      await wfh.getResult();
-    } catch (e) {
-      console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
-
-      expect(WFwith2Steps.stepsExecuted).toBe(1);
-
-      const wfstatus = await DBOS.getWorkflowStatus(wfid);
-
-      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
-    }
-  });
-
   test('test-two-steps-cancel-resume', async () => {
     const wfid = randomUUID();
-
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
-    try {
-      await DBOS.cancelWorkflow(wfid);
+    // Wait for step1 to start, then cancel before it completes
+    await WFwith2Steps.step1Started.wait();
+    await DBOS.cancelWorkflow(wfid);
+    WFwith2Steps.step1Gate.set();
 
-      await wfh.getResult();
-    } catch (e) {
-      console.log(`number executed  ${WFwith2Steps.stepsExecuted}`);
+    await expect(wfh.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    expect(WFwith2Steps.stepsExecuted).toBe(1);
 
-      expect(WFwith2Steps.stepsExecuted).toBe(1);
+    const wfstatus = await DBOS.getWorkflowStatus(wfid);
+    expect(wfstatus?.status).toBe(StatusString.CANCELLED);
 
-      const wfstatus = await DBOS.getWorkflowStatus(wfid);
-
-      expect(wfstatus?.status).toBe(StatusString.CANCELLED);
-    }
-
+    // Resume and let it complete - reset the gate for the replayed step1
+    WFwith2Steps.step1Gate = new Event();
+    WFwith2Steps.step1Gate.set();
     const wfh2 = await DBOS.resumeWorkflow(wfid);
     await wfh2.getResult();
     const resstatus = await DBOS.getWorkflowStatus(wfid);
@@ -1773,6 +1740,7 @@ describe('wf-cancel-tests', () => {
 
   test('test-resume-on-a-completed-ws', async () => {
     const wfid = randomUUID();
+    WFwith2Steps.step1Gate.set();
     const wfh = await DBOS.startWorkflow(WFwith2Steps, { workflowID: wfid }).workflowWithSteps();
 
     await wfh.getResult();
@@ -1830,27 +1798,27 @@ describe('wf-cancel-tests', () => {
   });
 
   class WFwith2Steps {
-    static stepsExecuted = 0 as number;
+    static stepsExecuted = 0;
+    static step1Started = new Event();
+    static step1Gate = new Event();
 
     @DBOS.step()
     static async step1() {
       WFwith2Steps.stepsExecuted++;
-      console.log(`Step 1  ${WFwith2Steps.stepsExecuted}`);
-      await DBOS.sleepSeconds(1);
+      WFwith2Steps.step1Started.set();
+      await WFwith2Steps.step1Gate.wait();
     }
 
     @DBOS.step()
-    // eslint-disable-next-line @typescript-eslint/require-await
     static async step2() {
+      await Promise.resolve();
       WFwith2Steps.stepsExecuted++;
-      console.log(`Step 1  ${WFwith2Steps.stepsExecuted}`);
     }
 
     @DBOS.workflow()
     static async workflowWithSteps() {
       await WFwith2Steps.step1();
       await WFwith2Steps.step2();
-      return Promise.resolve();
     }
   }
 
@@ -2043,5 +2011,307 @@ describe('wf-cancel-tests', () => {
     // The forked workflow has the event
     const forkedEventValue = await DBOS.getEvent(forkedHandle.workflowID, 'key');
     expect(forkedEventValue).toBe('value');
+  });
+
+  // ==================== Bulk Cancel/Resume/Delete Tests ====================
+
+  class BulkCancelTest {
+    static stepsCompleted = 0;
+    static workflowEvents: Record<string, Event> = {};
+    static mainEvents: Record<string, Event> = {};
+
+    @DBOS.step()
+    static async stepOne(): Promise<void> {
+      await Promise.resolve();
+      BulkCancelTest.stepsCompleted++;
+    }
+
+    @DBOS.step()
+    static async stepTwo(): Promise<void> {
+      await Promise.resolve();
+      BulkCancelTest.stepsCompleted++;
+    }
+
+    @DBOS.workflow()
+    static async blockingWorkflow(): Promise<string> {
+      const wfid = DBOS.workflowID!;
+      await BulkCancelTest.stepOne();
+      BulkCancelTest.mainEvents[wfid].set();
+      await BulkCancelTest.workflowEvents[wfid].wait();
+      await BulkCancelTest.stepTwo();
+      return wfid;
+    }
+  }
+
+  test('test-bulk-cancel', async () => {
+    BulkCancelTest.stepsCompleted = 0;
+    BulkCancelTest.workflowEvents = {};
+    BulkCancelTest.mainEvents = {};
+
+    const wfids: string[] = [];
+    const handles: WorkflowHandle<string>[] = [];
+    for (let i = 0; i < 3; i++) {
+      const wfid = randomUUID();
+      wfids.push(wfid);
+      BulkCancelTest.workflowEvents[wfid] = new Event();
+      BulkCancelTest.mainEvents[wfid] = new Event();
+      const h = await DBOS.startWorkflow(BulkCancelTest, { workflowID: wfid }).blockingWorkflow();
+      handles.push(h);
+      await BulkCancelTest.mainEvents[wfid].wait();
+    }
+
+    expect(BulkCancelTest.stepsCompleted).toBe(3);
+
+    await DBOS.cancelWorkflows(wfids);
+
+    for (const wfid of wfids) {
+      BulkCancelTest.workflowEvents[wfid].set();
+    }
+
+    for (const handle of handles) {
+      await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    }
+
+    expect(BulkCancelTest.stepsCompleted).toBe(3);
+  });
+
+  class BulkResumeTest {
+    static stepsCompleted = 0;
+    static workflowEvents: Record<string, Event> = {};
+    static mainEvents: Record<string, Event> = {};
+
+    @DBOS.step()
+    static async stepOne(): Promise<void> {
+      await Promise.resolve();
+      BulkResumeTest.stepsCompleted++;
+    }
+
+    @DBOS.step()
+    static async stepTwo(): Promise<void> {
+      await Promise.resolve();
+      BulkResumeTest.stepsCompleted++;
+    }
+
+    @DBOS.workflow()
+    static async blockingWorkflow(x: number): Promise<number> {
+      const wfid = DBOS.workflowID!;
+      await BulkResumeTest.stepOne();
+      BulkResumeTest.mainEvents[wfid].set();
+      await BulkResumeTest.workflowEvents[wfid].wait();
+      await BulkResumeTest.stepTwo();
+      return x;
+    }
+  }
+
+  test('test-bulk-resume', async () => {
+    BulkResumeTest.stepsCompleted = 0;
+    BulkResumeTest.workflowEvents = {};
+    BulkResumeTest.mainEvents = {};
+
+    const wfids: string[] = [];
+    const handles: WorkflowHandle<number>[] = [];
+    for (let i = 0; i < 3; i++) {
+      const wfid = randomUUID();
+      wfids.push(wfid);
+      BulkResumeTest.workflowEvents[wfid] = new Event();
+      BulkResumeTest.mainEvents[wfid] = new Event();
+      const h = await DBOS.startWorkflow(BulkResumeTest, { workflowID: wfid }).blockingWorkflow(i);
+      handles.push(h);
+      await BulkResumeTest.mainEvents[wfid].wait();
+    }
+
+    expect(BulkResumeTest.stepsCompleted).toBe(3);
+
+    await DBOS.cancelWorkflows(wfids);
+    for (const wfid of wfids) {
+      BulkResumeTest.workflowEvents[wfid].set();
+    }
+    for (const handle of handles) {
+      await expect(handle.getResult()).rejects.toThrow(DBOSWorkflowCancelledError);
+    }
+    expect(BulkResumeTest.stepsCompleted).toBe(3);
+
+    const resumedHandles = await DBOS.resumeWorkflows(wfids);
+    expect(resumedHandles.length).toBe(3);
+    for (let i = 0; i < resumedHandles.length; i++) {
+      expect(await resumedHandles[i].getResult()).toBe(i);
+    }
+    expect(BulkResumeTest.stepsCompleted).toBe(6);
+  });
+
+  class BulkDeleteTest {
+    @DBOS.workflow()
+    static async simpleWorkflow(x: number): Promise<number> {
+      await Promise.resolve();
+      return x;
+    }
+  }
+
+  test('test-bulk-delete', async () => {
+    const wfids: string[] = [];
+    for (let i = 0; i < 3; i++) {
+      const wfid = randomUUID();
+      wfids.push(wfid);
+      const h = await DBOS.startWorkflow(BulkDeleteTest, { workflowID: wfid }).simpleWorkflow(i);
+      expect(await h.getResult()).toBe(i);
+    }
+
+    for (const wfid of wfids) {
+      expect(await DBOS.getWorkflowStatus(wfid)).not.toBeNull();
+    }
+
+    await DBOS.deleteWorkflows(wfids);
+
+    for (const wfid of wfids) {
+      expect(await DBOS.getWorkflowStatus(wfid)).toBeNull();
+    }
+  });
+
+  test('test-client-delete-workflows', async () => {
+    const client = await DBOSClient.create({ systemDatabaseUrl: config.systemDatabaseUrl! });
+    try {
+      // Single delete
+      const wfid1 = randomUUID();
+      const h1 = await DBOS.startWorkflow(BulkDeleteTest, { workflowID: wfid1 }).simpleWorkflow(1);
+      expect(await h1.getResult()).toBe(1);
+      expect(await DBOS.getWorkflowStatus(wfid1)).not.toBeNull();
+
+      await client.deleteWorkflow(wfid1);
+      expect(await DBOS.getWorkflowStatus(wfid1)).toBeNull();
+
+      // Bulk delete
+      const wfids: string[] = [];
+      for (let i = 0; i < 3; i++) {
+        const wfid = randomUUID();
+        wfids.push(wfid);
+        const h = await DBOS.startWorkflow(BulkDeleteTest, { workflowID: wfid }).simpleWorkflow(i);
+        expect(await h.getResult()).toBe(i);
+      }
+
+      await client.deleteWorkflows(wfids);
+
+      for (const wfid of wfids) {
+        expect(await DBOS.getWorkflowStatus(wfid)).toBeNull();
+      }
+    } finally {
+      await client.destroy();
+    }
+  });
+
+  // ==================== Observability Tests ====================
+
+  class EventsTest {
+    @DBOS.workflow()
+    static async eventWorkflow(): Promise<string> {
+      await DBOS.setEvent('key1', 'value1');
+      await DBOS.setEvent('key2', 42);
+      await DBOS.setEvent('key1', 'updated');
+      return DBOS.workflowID!;
+    }
+  }
+
+  test('test-get-all-events', async () => {
+    const handle = await DBOS.startWorkflow(EventsTest).eventWorkflow();
+    const wfid = await handle.getResult();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const events = await sysdb.getAllEvents(wfid);
+    expect(events).toEqual({ key1: 'updated', key2: 42 });
+
+    const emptyEvents = await sysdb.getAllEvents('nonexistent');
+    expect(emptyEvents).toEqual({});
+  });
+
+  class NotifsTest {
+    static recvEvent = new Event();
+
+    @DBOS.workflow()
+    static async receiverWorkflow(): Promise<string> {
+      await DBOS.recv('topic_a');
+      await DBOS.recv('topic_b');
+      NotifsTest.recvEvent.set();
+      return DBOS.workflowID!;
+    }
+  }
+
+  test('test-get-all-notifications', async () => {
+    NotifsTest.recvEvent = new Event();
+
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(NotifsTest, { workflowID: wfid }).receiverWorkflow();
+
+    await DBOS.send(wfid, 'hello', 'topic_a');
+    await DBOS.send(wfid, { data: 123 }, 'topic_b');
+    await NotifsTest.recvEvent.wait();
+    await handle.getResult();
+
+    // Send a third notification that won't be consumed
+    await DBOS.send(wfid, 'unconsumed', 'topic_c');
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const notifications = await sysdb.getAllNotifications(wfid);
+    expect(notifications.length).toBe(3);
+    expect(notifications[0].topic).toBe('topic_a');
+    expect(notifications[0].message).toBe('hello');
+    expect(notifications[0].consumed).toBe(true);
+    expect(notifications[1].topic).toBe('topic_b');
+    expect(notifications[1].message).toEqual({ data: 123 });
+    expect(notifications[1].consumed).toBe(true);
+    expect(notifications[2].topic).toBe('topic_c');
+    expect(notifications[2].message).toBe('unconsumed');
+    expect(notifications[2].consumed).toBe(false);
+
+    expect(await sysdb.getAllNotifications('nonexistent')).toEqual([]);
+  });
+
+  class NullTopicTest {
+    static recvEvent = new Event();
+
+    @DBOS.workflow()
+    static async receiverWorkflow(): Promise<string> {
+      await DBOS.recv();
+      NullTopicTest.recvEvent.set();
+      return DBOS.workflowID!;
+    }
+  }
+
+  test('test-get-all-notifications-null-topic', async () => {
+    NullTopicTest.recvEvent = new Event();
+
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(NullTopicTest, { workflowID: wfid }).receiverWorkflow();
+
+    await DBOS.send(wfid, 'no_topic_msg');
+    await NullTopicTest.recvEvent.wait();
+    await handle.getResult();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const notifications = await sysdb.getAllNotifications(wfid);
+    expect(notifications.length).toBe(1);
+    expect(notifications[0].topic).toBeNull();
+    expect(notifications[0].message).toBe('no_topic_msg');
+  });
+
+  class StreamsTest {
+    @DBOS.workflow()
+    static async streamWorkflow(): Promise<string> {
+      await DBOS.writeStream('stream_a', 10);
+      await DBOS.writeStream('stream_a', 20);
+      await DBOS.writeStream('stream_b', 'hello');
+      await DBOS.closeStream('stream_a');
+      await DBOS.closeStream('stream_b');
+      return DBOS.workflowID!;
+    }
+  }
+
+  test('test-get-all-stream-entries', async () => {
+    const handle = await DBOS.startWorkflow(StreamsTest).streamWorkflow();
+    const wfid = await handle.getResult();
+
+    const sysdb = DBOSExecutor.globalInstance!.systemDatabase;
+    const streams = await sysdb.getAllStreamEntries(wfid);
+    expect(streams).toEqual({ stream_a: [10, 20], stream_b: ['hello'] });
+
+    expect(await sysdb.getAllStreamEntries('nonexistent')).toEqual({});
   });
 });

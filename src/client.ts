@@ -364,11 +364,27 @@ export class DBOSClient {
   }
 
   cancelWorkflow(workflowID: string): Promise<void> {
-    return this.systemDatabase.cancelWorkflow(workflowID);
+    return this.systemDatabase.cancelWorkflows([workflowID]);
+  }
+
+  cancelWorkflows(workflowIDs: string[]): Promise<void> {
+    return this.systemDatabase.cancelWorkflows(workflowIDs);
   }
 
   resumeWorkflow(workflowID: string): Promise<void> {
-    return this.systemDatabase.resumeWorkflow(workflowID);
+    return this.systemDatabase.resumeWorkflows([workflowID]);
+  }
+
+  resumeWorkflows(workflowIDs: string[]): Promise<void> {
+    return this.systemDatabase.resumeWorkflows(workflowIDs);
+  }
+
+  deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
+    return this.systemDatabase.deleteWorkflows([workflowID], deleteChildren);
+  }
+
+  deleteWorkflows(workflowIDs: string[], deleteChildren: boolean = false): Promise<void> {
+    return this.systemDatabase.deleteWorkflows(workflowIDs, deleteChildren);
   }
 
   forkWorkflow(
