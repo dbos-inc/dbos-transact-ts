@@ -42,6 +42,7 @@ import {
   type WorkflowSchedule,
   toWorkflowSchedule,
   createScheduleId,
+  ScheduleOptions,
   triggerSchedule,
   backfillSchedule,
 } from './scheduler/scheduler';
@@ -470,12 +471,11 @@ export class DBOSClient {
     workflowClassName?: string;
     schedule: string;
     context?: unknown;
-    automaticBackfill?: boolean;
-    cronTimezone?: string;
+    options?: ScheduleOptions;
   }): Promise<void> {
     validateCrontab(options.schedule);
-    if (options.cronTimezone) {
-      validateTimezone(options.cronTimezone);
+    if (options.options?.cronTimezone) {
+      validateTimezone(options.options.cronTimezone);
     }
     const schedInternal: WorkflowScheduleInternal = {
       scheduleId: createScheduleId(),
@@ -486,8 +486,8 @@ export class DBOSClient {
       status: 'ACTIVE',
       context: this.serializer.stringify(options.context),
       lastFiredAt: null,
-      automaticBackfill: options.automaticBackfill ?? false,
-      cronTimezone: options.cronTimezone ?? null,
+      automaticBackfill: options.options?.automaticBackfill ?? false,
+      cronTimezone: options.options?.cronTimezone ?? null,
     };
     await this.systemDatabase.createSchedule(schedInternal);
   }

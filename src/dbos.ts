@@ -107,6 +107,7 @@ import { PoolClient } from 'pg';
 import {
   WorkflowSchedule,
   ScheduledWorkflowFn,
+  ScheduleOptions,
   toWorkflowSchedule,
   createScheduleId,
   triggerSchedule as triggerScheduleImpl,
@@ -2001,8 +2002,7 @@ export class DBOS {
     workflowFn: ScheduledWorkflowFn;
     schedule: string;
     context?: unknown;
-    automaticBackfill?: boolean;
-    cronTimezone?: string;
+    options?: ScheduleOptions;
   }): Promise<void> {
     ensureDBOSIsLaunched('createSchedule');
 
@@ -2015,8 +2015,8 @@ export class DBOS {
 
     const { className, name: funcName } = getRegisteredFunctionFullName(options.workflowFn);
     validateCrontab(options.schedule);
-    if (options.cronTimezone) {
-      validateTimezone(options.cronTimezone);
+    if (options.options?.cronTimezone) {
+      validateTimezone(options.options.cronTimezone);
     }
 
     const serializer = DBOSExecutor.globalInstance!.serializer;
@@ -2029,8 +2029,8 @@ export class DBOS {
       status: 'ACTIVE',
       context: serializer.stringify(options.context),
       lastFiredAt: null,
-      automaticBackfill: options.automaticBackfill ?? false,
-      cronTimezone: options.cronTimezone ?? null,
+      automaticBackfill: options.options?.automaticBackfill ?? false,
+      cronTimezone: options.options?.cronTimezone ?? null,
     };
 
     await runTransactionalInternalStep(

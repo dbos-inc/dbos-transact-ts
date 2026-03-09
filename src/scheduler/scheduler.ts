@@ -14,6 +14,11 @@ import { StatusString } from '../workflow';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ScheduledWorkflowFn = (scheduledDate: Date, context: any) => Promise<void>;
 
+export interface ScheduleOptions {
+  automaticBackfill?: boolean;
+  cronTimezone?: string;
+}
+
 export interface WorkflowSchedule {
   scheduleId: string;
   scheduleName: string;
