@@ -163,3 +163,45 @@ describe('disable-otlp', () => {
     expect(spans.length).toBe(1);
   });
 });
+
+describe('external-provider-span-propagation', () => {
+  beforeAll(async () => {
+    memoryExporter.reset();
+    // tracingEnabled: true tells DBOS to create real spans through whatever
+    // TracerProvider is registered (the module-level NodeTracerProvider above).
+    DBOS.setConfig({ name: 'external-provider-test', tracingEnabled: true });
+    await DBOS.launch();
+  });
+
+  afterAll(async () => {
+    await DBOS.shutdown();
+  });
+
+  test('spans-flow-through-external-provider', async () => {
+    expect(isTraceContextWorking()).toBe(true);
+
+    const app = createApp();
+    const server = app.listen(0);
+
+    const { port } = server.address() as AddressInfo;
+
+    const res = await fetch(`http://localhost:${port}/test`);
+
+    expect(res.status).toBe(200);
+    server.close();
+
+    const spans = memoryExporter.getFinishedSpans();
+    const realSpans = spans.filter((s) => s.name !== 'probe');
+    expect(realSpans.length).toBe(3);
+
+    const stepSpan = realSpans[0];
+    const workflowSpan = realSpans[1];
+    const httpSpan = realSpans[2];
+
+    // DBOS spans are children of the HTTP span — same trace, correct parent-child
+    expect(getParentSpanID(stepSpan)).toBe(workflowSpan?.spanContext().spanId);
+    expect(stepSpan?.spanContext().traceId).toBe(workflowSpan?.spanContext().traceId);
+    expect(getParentSpanID(workflowSpan)).toBe(httpSpan?.spanContext().spanId);
+    expect(workflowSpan?.spanContext().traceId).toBe(httpSpan?.spanContext().traceId);
+  });
+});

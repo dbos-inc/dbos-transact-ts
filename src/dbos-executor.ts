@@ -103,6 +103,7 @@ export interface DBOSConfig {
   systemDatabaseSchemaName?: string;
 
   enableOTLP?: boolean;
+  tracingEnabled?: boolean;
   logLevel?: string;
   addContextMetadata?: boolean;
   otlpTracesEndpoints?: string[];

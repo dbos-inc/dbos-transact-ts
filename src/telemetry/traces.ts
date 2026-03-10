@@ -77,7 +77,7 @@ class StubSpan implements DBOSSpan {
 }
 
 export function runWithTrace<R>(span: DBOSSpan, func: () => Promise<R>): Promise<R> {
-  if (!globalParams.enableOTLP) {
+  if (!globalParams.tracingEnabled) {
     return func();
   }
   const { context, trace } = require('@opentelemetry/api');
@@ -85,7 +85,7 @@ export function runWithTrace<R>(span: DBOSSpan, func: () => Promise<R>): Promise
 }
 
 export function getActiveSpan() {
-  if (!globalParams.enableOTLP) {
+  if (!globalParams.tracingEnabled) {
     return undefined;
   }
   const { trace } = require('@opentelemetry/api');
@@ -93,7 +93,7 @@ export function getActiveSpan() {
 }
 
 export function isTraceContextWorking(): boolean {
-  if (!globalParams.enableOTLP) {
+  if (!globalParams.tracingEnabled) {
     return false;
   }
   const { context, trace } = require('@opentelemetry/api');
@@ -110,7 +110,7 @@ export function isTraceContextWorking(): boolean {
 }
 
 export function installTraceContextManager(appName: string = 'dbos'): void {
-  if (!globalParams.enableOTLP) {
+  if (!globalParams.tracingEnabled) {
     return;
   }
   const { AsyncLocalStorageContextManager } = require('@opentelemetry/context-async-hooks');
@@ -121,6 +121,8 @@ export function installTraceContextManager(appName: string = 'dbos'): void {
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
 
+  // setGlobalTracerProvider is "first one wins" — if an external provider
+  // (e.g., dd-trace) is already registered, this call is safely ignored.
   const provider: BasicTracerProviderType = new BasicTracerProvider({
     resource: {
       attributes: {
@@ -136,28 +138,15 @@ export class Tracer {
   readonly executorID: string;
   constructor(
     private readonly telemetryCollector: TelemetryCollector,
-    appName: string = 'dbos',
+    _appName: string = 'dbos',
   ) {
     this.applicationID = globalParams.appID;
     this.executorID = globalParams.executorID; // for consistency with src/context.ts
-    if (!globalParams.enableOTLP) {
-      return;
-    }
-    const { trace } = require('@opentelemetry/api');
-    const { BasicTracerProvider } = require('@opentelemetry/sdk-trace-base');
-
-    const tracer: BasicTracerProviderType = new BasicTracerProvider({
-      resource: {
-        attributes: {
-          'service.name': appName,
-        },
-      },
-    });
-    trace.setGlobalTracerProvider(tracer);
+    // TracerProvider is set up in installTraceContextManager(), no need to duplicate here.
   }
 
   startSpanWithContext(spanContext: unknown, name: string, attributes?: Attributes): DBOSSpan {
-    if (!globalParams.enableOTLP) {
+    if (!globalParams.tracingEnabled) {
       return new StubSpan();
     }
     const opentelemetry = require('@opentelemetry/api');
@@ -167,7 +156,7 @@ export class Tracer {
   }
 
   startSpan(name: string, attributes?: Attributes, inputSpan?: DBOSSpan): DBOSSpan {
-    if (!globalParams.enableOTLP) {
+    if (!globalParams.tracingEnabled) {
       return new StubSpan();
     }
     const parentSpan = inputSpan as Span;
@@ -184,7 +173,7 @@ export class Tracer {
   }
 
   endSpan(inputSpan: DBOSSpan) {
-    if (!globalParams.enableOTLP) {
+    if (!globalParams.tracingEnabled) {
       return;
     }
     const { hrTime } = require('@opentelemetry/core');
@@ -197,6 +186,10 @@ export class Tracer {
       span.setAttribute('executorID', this.executorID);
     }
     span.end(hrTime(performance.now()));
-    this.telemetryCollector.push(span);
+    // Only push to DBOS's own collector when DBOS manages export.
+    // When an external TracerProvider is used, span.end() triggers its processors.
+    if (globalParams.enableOTLP) {
+      this.telemetryCollector.push(span);
+    }
   }
 }

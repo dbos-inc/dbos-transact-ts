@@ -294,6 +294,7 @@ export class DBOS {
     }
 
     globalParams.enableOTLP = DBOS.#dbosConfig?.enableOTLP ?? defaultEnableOTLP();
+    globalParams.tracingEnabled = DBOS.#dbosConfig?.tracingEnabled || globalParams.enableOTLP;
 
     if (!isTraceContextWorking()) installTraceContextManager(internalConfig.name);
 
