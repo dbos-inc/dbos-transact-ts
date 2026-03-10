@@ -1701,12 +1701,14 @@ describe('test-fork', () => {
 
     @DBOS.step()
     static async stepOne(x: number): Promise<number> {
+      await Promise.resolve();
       ResumeForkQueueWorkflow.stepOneCount++;
       return x + 1;
     }
 
     @DBOS.step()
     static async stepTwo(x: number): Promise<number> {
+      await Promise.resolve();
       ResumeForkQueueWorkflow.stepTwoCount++;
       return x + 2;
     }
