@@ -8,7 +8,14 @@ import {
   functionIDGetIncrement,
   functionIDGet,
 } from './context';
-import { DBOSConfig, DBOSExecutor, DBOSExternalState, InternalWorkflowParams } from './dbos-executor';
+import {
+  DBOSConfig,
+  DBOSExecutor,
+  DBOSExternalState,
+  InternalWorkflowParams,
+  DBOS_QUEUE_MIN_PRIORITY,
+  DBOS_QUEUE_MAX_PRIORITY,
+} from './dbos-executor';
 import { DBOSSpan, getActiveSpan, installTraceContextManager, isTraceContextWorking, Tracer } from './telemetry/traces';
 import {
   GetWorkflowsInput,
@@ -32,6 +39,7 @@ import {
   DBOSConflictingRegistrationError,
   DBOSAwaitedWorkflowExceededMaxRecoveryAttempts,
   DBOSUnexpectedStepError,
+  DBOSInvalidQueuePriorityError,
 } from './error';
 import {
   getDbosConfig,
@@ -774,6 +782,22 @@ export class DBOS {
     return await runInternalStep(async () => {
       return await DBOS.#executor.listQueuedWorkflows(input);
     }, 'DBOS.listQueuedWorkflows');
+  }
+
+  /**
+   * Set the priority of a queued workflow.
+   * Only affects workflows with ENQUEUED status.
+   * @param workflowID - ID of the workflow
+   * @param priority - Priority value (1 to 2,147,483,647). Lower values are dequeued first.
+   */
+  static async setWorkflowPriority(workflowID: string, priority: number): Promise<void> {
+    ensureDBOSIsLaunched('setWorkflowPriority');
+    if (priority < DBOS_QUEUE_MIN_PRIORITY || priority > DBOS_QUEUE_MAX_PRIORITY) {
+      throw new DBOSInvalidQueuePriorityError(priority, DBOS_QUEUE_MIN_PRIORITY, DBOS_QUEUE_MAX_PRIORITY);
+    }
+    return runInternalStep(async () => {
+      return DBOSExecutor.globalInstance!.systemDatabase.setWorkflowPriority(workflowID, priority);
+    }, 'DBOS.setWorkflowPriority');
   }
 
   /**

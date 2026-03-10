@@ -380,6 +380,10 @@ export class DBOSClient {
     return this.systemDatabase.resumeWorkflows(workflowIDs);
   }
 
+  setWorkflowPriority(workflowID: string, priority: number): Promise<void> {
+    return this.systemDatabase.setWorkflowPriority(workflowID, priority);
+  }
+
   deleteWorkflow(workflowID: string, deleteChildren: boolean = false): Promise<void> {
     return this.systemDatabase.deleteWorkflows([workflowID], deleteChildren);
   }
