@@ -146,4 +146,56 @@ describeIf('cockroachdb', () => {
     }
     expect(readValues).toEqual(testValues);
   });
+
+  test('pg-enqueue', async () => {
+    const client = new Client(config.systemDatabaseUrl);
+    let wfid: string;
+
+    try {
+      await client.connect();
+
+      // Use PostgreSQL function to enqueue
+      const enqueueResult = await client.query<{ enqueue_workflow: string }>(
+        `
+        SELECT dbos.enqueue_workflow(
+          'testWorkflow', 
+          'crdb-test-queue', 
+          ARRAY[$1::JSON], 
+          '{}'::JSON, 
+          'CRDBTestClass'
+        )
+      `,
+        [JSON.stringify('queued')],
+      );
+
+      expect(enqueueResult.rowCount).toEqual(1);
+      wfid = enqueueResult.rows[0].enqueue_workflow;
+    } finally {
+      await client.end();
+    }
+
+    const handle = DBOS.retrieveWorkflow<string>(wfid);
+    const status = await handle.getStatus();
+    expect(status).toBeDefined();
+
+    const result = await handle.getResult();
+    expect(result).toBe('QUEUED');
+  });
+
+  test('pg-send', async () => {
+    const handle = await DBOS.startWorkflow(CRDBTestClass).receiveWorkflow();
+
+    const client = new Client(config.systemDatabaseUrl);
+    try {
+      await client.connect();
+
+      await client.query<{ enqueue_workflow: string }>(`SELECT dbos.send_message($1, $2)`, [
+        handle.workflowID,
+        JSON.stringify('hello'),
+      ]);
+    } finally {
+      await client.end();
+    }
+    expect(await handle.getResult()).toBe('hello');
+  }, 10000);
 });
