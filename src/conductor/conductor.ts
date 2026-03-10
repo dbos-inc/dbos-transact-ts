@@ -473,6 +473,9 @@ export class Conductor {
                 schedule: s.schedule,
                 status: s.status,
                 context: inspect(this.dbosExec.serializer.parse(s.context)),
+                last_fired_at: s.lastFiredAt,
+                automatic_backfill: s.automaticBackfill,
+                cron_timezone: s.cronTimezone,
               }));
             } catch (e) {
               errorMsg = `Exception encountered when listing schedules: ${(e as Error).message}`;
@@ -495,6 +498,9 @@ export class Conductor {
                   schedule: sched.schedule,
                   status: sched.status,
                   context: inspect(this.dbosExec.serializer.parse(sched.context)),
+                  last_fired_at: sched.lastFiredAt,
+                  automatic_backfill: sched.automaticBackfill,
+                  cron_timezone: sched.cronTimezone,
                 };
               }
             } catch (e) {

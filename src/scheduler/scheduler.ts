@@ -14,6 +14,11 @@ import { StatusString } from '../workflow';
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type ScheduledWorkflowFn = (scheduledDate: Date, context: any) => Promise<void>;
 
+export interface ScheduleOptions {
+  automaticBackfill?: boolean;
+  cronTimezone?: string;
+}
+
 export interface WorkflowSchedule {
   scheduleId: string;
   scheduleName: string;
@@ -22,6 +27,9 @@ export interface WorkflowSchedule {
   schedule: string;
   status: string; // "ACTIVE" | "PAUSED"
   context: unknown; // deserialized
+  lastFiredAt: string | null;
+  automaticBackfill: boolean;
+  cronTimezone: string | null;
 }
 
 export function toWorkflowSchedule(internal: WorkflowScheduleInternal, serializer: DBOSSerializer): WorkflowSchedule {
@@ -35,6 +43,9 @@ export function toWorkflowSchedule(internal: WorkflowScheduleInternal, serialize
     schedule: internal.schedule,
     status: internal.status,
     context,
+    lastFiredAt: internal.lastFiredAt,
+    automaticBackfill: internal.automaticBackfill,
+    cronTimezone: internal.cronTimezone,
   };
 }
 
@@ -120,6 +131,29 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
           }
 
           if (!this.#scheduleLoops.has(sched.scheduleName)) {
+            // Automatic backfill: if enabled and lastFiredAt is set,
+            // backfill missed executions before starting the thread.
+            if (sched.automaticBackfill && sched.lastFiredAt) {
+              try {
+                const lastFired = new Date(sched.lastFiredAt);
+                const now = new Date();
+                if (lastFired < now) {
+                  const executor = DBOSExecutor.globalInstance!;
+                  await backfillSchedule(
+                    executor.systemDatabase,
+                    executor.serializer,
+                    sched.scheduleName,
+                    lastFired,
+                    now,
+                  );
+                }
+              } catch (e) {
+                DBOS.logger.warn(
+                  `Dynamic scheduler: error backfilling schedule "${sched.scheduleName}": ${(e as Error).message}`,
+                );
+              }
+            }
+
             // Active and no running loop — start one
             const controller = new AbortController();
             const executor = DBOSExecutor.globalInstance!;
@@ -131,6 +165,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
               sched.context,
               executor.serializer,
               controller.signal,
+              sched.cronTimezone ?? undefined,
             );
             this.#scheduleLoops.set(sched.scheduleName, { controller, promise, scheduleId: sched.scheduleId });
           }
@@ -149,8 +184,9 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
     serializedContext: string,
     serializer: DBOSSerializer,
     signal: AbortSignal,
+    cronTimezone?: string,
   ): Promise<void> {
-    const timeMatcher = new TimeMatcher(cronExpression);
+    const timeMatcher = new TimeMatcher(cronExpression, cronTimezone);
 
     const sched: WorkflowScheduleInternal = {
       scheduleId: '',
@@ -160,6 +196,9 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
       schedule: cronExpression,
       status: 'ACTIVE',
       context: serializedContext,
+      lastFiredAt: null,
+      automaticBackfill: false,
+      cronTimezone: cronTimezone ?? null,
     };
 
     let lastExec = new Date().setMilliseconds(0);
@@ -202,6 +241,7 @@ export class DynamicSchedulerLoop implements DBOSLifecycleCallback {
         const context = serializer.parse(serializedContext);
         const systemDatabase = DBOSExecutor.globalInstance!.systemDatabase;
         await enqueueScheduledWorkflow(systemDatabase, serializer, sched, workflowID, date, context);
+        await systemDatabase.updateLastFiredAt(scheduleName, date.toISOString());
       } catch (e) {
         DBOS.logger.warn(
           `Dynamic scheduler: error firing workflow for schedule "${scheduleName}": ${(e as Error).message}`,
@@ -305,7 +345,7 @@ export async function backfillSchedule(
     throw new DBOSError(`Schedule "${name}" not found`);
   }
   const context = serializer.parse(sched.context);
-  const timeMatcher = new TimeMatcher(sched.schedule);
+  const timeMatcher = new TimeMatcher(sched.schedule, sched.cronTimezone ?? undefined);
   const workflowIDs: string[] = [];
   let current = start.getTime();
 
