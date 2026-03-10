@@ -1317,6 +1317,78 @@ describe('enqueue-options', () => {
       }).parentWorkflow(7),
     ).rejects.toBeInstanceOf(DBOSInvalidQueuePriorityError);
   }, 30000);
+
+  class SetPriorityTest {
+    static setPriorityQueue = new WorkflowQueue('test_set_priority_queue', { concurrency: 1, priorityEnabled: true });
+
+    static resolveBlocker: () => void;
+    static blockerPromise = new Promise<void>((resolve) => {
+      SetPriorityTest.resolveBlocker = resolve;
+    });
+
+    static executionOrder: number[] = [];
+
+    @DBOS.workflow()
+    static async blockerWorkflow(): Promise<void> {
+      await SetPriorityTest.blockerPromise;
+    }
+
+    @DBOS.workflow()
+    static async trackedWorkflow(id: number): Promise<number> {
+      await Promise.resolve();
+      SetPriorityTest.executionOrder.push(id);
+      return id;
+    }
+  }
+
+  test('test_setWorkflowPriority', async () => {
+    // Start a blocker workflow to hold the queue
+    const blockerHandle = await DBOS.startWorkflow(SetPriorityTest, {
+      queueName: SetPriorityTest.setPriorityQueue.name,
+    }).blockerWorkflow();
+
+    // Enqueue workflows with priorities 5, 4, 3
+    const handle1 = await DBOS.startWorkflow(SetPriorityTest, {
+      queueName: SetPriorityTest.setPriorityQueue.name,
+      enqueueOptions: { priority: 5 },
+    }).trackedWorkflow(1);
+
+    const handle2 = await DBOS.startWorkflow(SetPriorityTest, {
+      queueName: SetPriorityTest.setPriorityQueue.name,
+      enqueueOptions: { priority: 4 },
+    }).trackedWorkflow(2);
+
+    const handle3 = await DBOS.startWorkflow(SetPriorityTest, {
+      queueName: SetPriorityTest.setPriorityQueue.name,
+      enqueueOptions: { priority: 3 },
+    }).trackedWorkflow(3);
+
+    // Update priority of workflow 1 (was 5) to 1 (highest)
+    await DBOS.setWorkflowPriority(handle1.workflowID, 1);
+
+    // Verify the priority was updated
+    const status = await handle1.getStatus();
+    expect(status?.priority).toBe(1);
+
+    // Unblock the queue
+    SetPriorityTest.resolveBlocker();
+    await blockerHandle.getResult();
+
+    // Wait for all to complete
+    await handle1.getResult();
+    await handle2.getResult();
+    await handle3.getResult();
+
+    // Workflow 1 should run first (priority 1), then 3 (priority 3), then 2 (priority 4)
+    expect(SetPriorityTest.executionOrder).toEqual([1, 3, 2]);
+
+    // Test invalid priority
+    await expect(DBOS.setWorkflowPriority('some-id', 0)).rejects.toBeInstanceOf(DBOSInvalidQueuePriorityError);
+    await expect(DBOS.setWorkflowPriority('some-id', -1)).rejects.toBeInstanceOf(DBOSInvalidQueuePriorityError);
+    await expect(DBOS.setWorkflowPriority('some-id', DBOS_QUEUE_MAX_PRIORITY + 1)).rejects.toBeInstanceOf(
+      DBOSInvalidQueuePriorityError,
+    );
+  }, 30000);
 });
 
 describe('queue-time-outs', () => {

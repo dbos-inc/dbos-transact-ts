@@ -949,6 +949,16 @@ export class SystemDatabase {
     );
   }
 
+  async setWorkflowPriority(workflowID: string, priority: number): Promise<void> {
+    await this.pool.query(
+      `UPDATE "${this.schemaName}".workflow_status
+       SET priority = $1, updated_at = $2
+       WHERE workflow_uuid = $3
+         AND status = $4`,
+      [priority, Date.now(), workflowID, StatusString.ENQUEUED],
+    );
+  }
+
   async getWorkflowChildren(workflowID: string): Promise<string[]> {
     // BFS to find all descendant workflows
     const visited = new Set<string>([workflowID]);
