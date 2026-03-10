@@ -1692,6 +1692,85 @@ describe('test-fork', () => {
       expect(await DBOS.getEvent(forkHandle.workflowID, testForkEventsKey)).toBe(2);
     }
   }, 10000);
+
+  class ResumeForkQueueWorkflow {
+    static stepOneCount = 0;
+    static stepTwoCount = 0;
+    static step1Gate = new Event();
+    static step1Started = new Event();
+
+    @DBOS.step()
+    static async stepOne(x: number): Promise<number> {
+      ResumeForkQueueWorkflow.stepOneCount++;
+      return x + 1;
+    }
+
+    @DBOS.step()
+    static async stepTwo(x: number): Promise<number> {
+      ResumeForkQueueWorkflow.stepTwoCount++;
+      return x + 2;
+    }
+
+    @DBOS.workflow()
+    static async simpleWorkflow(x: number): Promise<number> {
+      const a = await ResumeForkQueueWorkflow.stepOne(x);
+      ResumeForkQueueWorkflow.step1Started.set();
+      await ResumeForkQueueWorkflow.step1Gate.wait();
+      const b = await ResumeForkQueueWorkflow.stepTwo(x);
+      return a + b;
+    }
+  }
+
+  test('test-resume-and-fork-to-queue', async () => {
+    const _queue = new WorkflowQueue('test_resume_fork_queue');
+
+    ResumeForkQueueWorkflow.stepOneCount = 0;
+    ResumeForkQueueWorkflow.stepTwoCount = 0;
+    ResumeForkQueueWorkflow.step1Gate = new Event();
+    ResumeForkQueueWorkflow.step1Started = new Event();
+
+    const input = 5;
+    const expectedOutput = input + 1 + (input + 2);
+
+    // Enqueue workflow, let stepOne run, then cancel before stepTwo
+    const wfid = randomUUID();
+    const handle = await DBOS.startWorkflow(ResumeForkQueueWorkflow, {
+      workflowID: wfid,
+      queueName: _queue.name,
+    }).simpleWorkflow(input);
+    await ResumeForkQueueWorkflow.step1Started.wait();
+    await DBOS.cancelWorkflow(wfid);
+    ResumeForkQueueWorkflow.step1Gate.set();
+    await expect(handle.getResult()).rejects.toThrow();
+    expect(ResumeForkQueueWorkflow.stepOneCount).toBe(1);
+    expect(ResumeForkQueueWorkflow.stepTwoCount).toBe(0);
+
+    // Resume the workflow onto the queue and verify queue_name
+    ResumeForkQueueWorkflow.step1Gate = new Event();
+    ResumeForkQueueWorkflow.step1Gate.set(); // Don't block on replay
+    ResumeForkQueueWorkflow.step1Started = new Event();
+    const resumedHandle = await DBOS.resumeWorkflow(wfid, { queueName: 'test_resume_fork_queue' });
+    const resumedStatus = await resumedHandle.getStatus();
+    expect(resumedStatus?.queueName).toBe('test_resume_fork_queue');
+    await expect(resumedHandle.getResult()).resolves.toBe(expectedOutput);
+    expect(ResumeForkQueueWorkflow.stepOneCount).toBe(1); // Step 1 replayed from checkpoint
+    expect(ResumeForkQueueWorkflow.stepTwoCount).toBe(1);
+
+    // Fork the workflow onto the queue from step 1 and verify queue_name
+    ResumeForkQueueWorkflow.step1Gate = new Event();
+    ResumeForkQueueWorkflow.step1Gate.set();
+    ResumeForkQueueWorkflow.step1Started = new Event();
+    const forkedHandle = await DBOS.forkWorkflow(wfid, 1, {
+      queueName: 'test_resume_fork_queue',
+      queuePartitionKey: 'my_partition',
+    });
+    const forkedStatus = await forkedHandle.getStatus();
+    expect(forkedStatus?.queueName).toBe('test_resume_fork_queue');
+    expect(forkedStatus?.forkedFrom).toBe(wfid);
+    await expect(forkedHandle.getResult()).resolves.toBe(expectedOutput);
+    expect(ResumeForkQueueWorkflow.stepOneCount).toBe(1); // Step 1 replayed from checkpoint
+    expect(ResumeForkQueueWorkflow.stepTwoCount).toBe(2); // Step 2 was re-executed
+  }, 30000);
 });
 
 describe('wf-cancel-tests', () => {

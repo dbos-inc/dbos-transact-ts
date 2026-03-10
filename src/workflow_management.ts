@@ -45,7 +45,13 @@ export async function forkWorkflow(
   sysdb: SystemDatabase,
   workflowID: string,
   startStep: number,
-  options: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number } = {},
+  options: {
+    newWorkflowID?: string;
+    applicationVersion?: string;
+    timeoutMS?: number;
+    queueName?: string;
+    queuePartitionKey?: string;
+  } = {},
 ): Promise<string> {
   const newWorkflowID = options.newWorkflowID ?? randomUUID();
   await sysdb.forkWorkflow(workflowID, startStep, { ...options, newWorkflowID });

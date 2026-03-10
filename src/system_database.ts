@@ -933,7 +933,7 @@ export class SystemDatabase {
     }
   }
 
-  async resumeWorkflows(workflowIDs: string[]): Promise<void> {
+  async resumeWorkflows(workflowIDs: string[], queueName?: string): Promise<void> {
     for (const workflowID of workflowIDs) {
       this.#clearWFCancelMap(workflowID);
     }
@@ -945,7 +945,14 @@ export class SystemDatabase {
            started_at_epoch_ms = NULL, updated_at = $3
        WHERE workflow_uuid = ANY($4)
          AND status NOT IN ($5, $6)`,
-      [StatusString.ENQUEUED, INTERNAL_QUEUE_NAME, Date.now(), workflowIDs, StatusString.SUCCESS, StatusString.ERROR],
+      [
+        StatusString.ENQUEUED,
+        queueName ?? INTERNAL_QUEUE_NAME,
+        Date.now(),
+        workflowIDs,
+        StatusString.SUCCESS,
+        StatusString.ERROR,
+      ],
     );
   }
 
@@ -1009,7 +1016,13 @@ export class SystemDatabase {
   async forkWorkflow(
     workflowID: string,
     startStep: number,
-    options: { newWorkflowID?: string; applicationVersion?: string; timeoutMS?: number } = {},
+    options: {
+      newWorkflowID?: string;
+      applicationVersion?: string;
+      timeoutMS?: number;
+      queueName?: string;
+      queuePartitionKey?: string;
+    } = {},
   ): Promise<string> {
     const newWorkflowID = options.newWorkflowID ?? randomUUID();
     const workflowStatus = await this.getWorkflowStatus(workflowID);
@@ -1036,7 +1049,7 @@ export class SystemDatabase {
           workflowName: workflowStatus.workflowName,
           workflowClassName: workflowStatus.workflowClassName,
           workflowConfigName: workflowStatus.workflowConfigName,
-          queueName: INTERNAL_QUEUE_NAME,
+          queueName: options.queueName ?? INTERNAL_QUEUE_NAME,
           authenticatedUser: workflowStatus.authenticatedUser,
           assumedRole: workflowStatus.assumedRole,
           authenticatedRoles: workflowStatus.authenticatedRoles,
@@ -1053,7 +1066,7 @@ export class SystemDatabase {
           input: workflowStatus.input,
           deduplicationID: undefined,
           priority: 0,
-          queuePartitionKey: undefined,
+          queuePartitionKey: options.queuePartitionKey,
           forkedFrom: workflowID,
           serialization: workflowStatus.serialization,
         },
