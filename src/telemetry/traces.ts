@@ -141,8 +141,7 @@ export class Tracer {
     _appName: string = 'dbos',
   ) {
     this.applicationID = globalParams.appID;
-    this.executorID = globalParams.executorID; // for consistency with src/context.ts
-    // TracerProvider is set up in installTraceContextManager(), no need to duplicate here.
+    this.executorID = globalParams.executorID;
   }
 
   startSpanWithContext(spanContext: unknown, name: string, attributes?: Attributes): DBOSSpan {
