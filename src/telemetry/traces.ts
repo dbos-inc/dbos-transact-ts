@@ -117,12 +117,11 @@ export function installTraceContextManager(appName: string = 'dbos'): void {
   const { context, trace } = require('@opentelemetry/api');
   const { BasicTracerProvider } = require('@opentelemetry/sdk-trace-base');
 
+  // setGlobalTracerProvider and setGlobalContextManager are "first one wins."
+  // If an external provider is already registered, these calls are safely ignored.
   const contextManager = new AsyncLocalStorageContextManager();
   contextManager.enable();
   context.setGlobalContextManager(contextManager);
-
-  // setGlobalTracerProvider is "first one wins" — if an external provider
-  // (e.g., dd-trace) is already registered, this call is safely ignored.
   const provider: BasicTracerProviderType = new BasicTracerProvider({
     resource: {
       attributes: {
